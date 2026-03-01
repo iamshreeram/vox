@@ -449,8 +449,8 @@
         "description": "Couper le son du système pendant l'enregistrement"
       },
       "appendTrailingSpace": {
-        "label": "Ajouter un espace final",
-        "description": "Ajouter un espace après la transcription collée"
+        "label": "Ajouter une espace final",
+        "description": "Ajouter une espace après la transcription collée"
       },
       "keyboardImplementation": {
         "title": "Gestion du clavier",
