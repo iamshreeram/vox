@@ -132,7 +132,7 @@ mod macos {
             let path = plugin_launch_agent_path(Path::new("/Users/someone"), "Vox");
             assert_eq!(
                 path,
-                Path::new("/Users/someone/Library/LaunchAgents/Handy.plist")
+                Path::new("/Users/someone/Library/LaunchAgents/Vox.plist")
             );
         }
 
