@@ -58,6 +58,16 @@
   --ov-open-w: 392px; /* Live panel, expanded */
   --ov-base-h: 40px; /* control-row height (.sbase) */
   --ov-cap-max-h: 64px; /* max height of the scrolling live-text region */
+
+  /* Siri-style multi-hue palette for the active-recording waveform/dot only.
+     Fixed (not theme-dependent, like Apple's own Siri treatment) -- the whole
+     point is a recognizable, consistent "listening" signature regardless of
+     light/dark mode. */
+  --siri-1: #4facfe; /* azure */
+  --siri-2: #8e54e9; /* violet */
+  --siri-3: #f86ca7; /* pink */
+  --siri-4: #ffb86b; /* warm amber -- echoes the Vox gold brand accent */
+  --siri-5: #22d3c9; /* teal */
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -313,8 +323,8 @@
   justify-self: end;
 }
 .sdot {
-  width: 7px;
-  height: 7px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   flex: none;
   box-sizing: border-box;
@@ -323,9 +333,34 @@
     opacity 180ms ease;
 }
 .sdot.ready {
-  background: var(--s-accent);
+  /* Layered backgrounds: a soft off-center highlight over the spinning
+     rainbow conic gradient -- the same "radial highlight = 3D sphere" trick
+     as the app icon, just small enough to read as a mini orb instead of a
+     flat spinning disc. */
+  background:
+    radial-gradient(
+      circle at 35% 30%,
+      rgba(255, 255, 255, 0.85),
+      rgba(255, 255, 255, 0) 55%
+    ),
+    conic-gradient(
+      from 0deg,
+      var(--siri-1),
+      var(--siri-2),
+      var(--siri-3),
+      var(--siri-4),
+      var(--siri-5),
+      var(--siri-1)
+    );
   opacity: 1;
-  animation: sdot-pulse 1.9s infinite;
+  animation:
+    sdot-pulse 1.9s infinite,
+    siri-spin 2.2s linear infinite;
+}
+@keyframes siri-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 /* A quiet neutral dot while the host has not delivered its first sample yet. */
 .sdot.arming {
@@ -374,6 +409,45 @@
     height 80ms linear,
     background-color 180ms ease,
     opacity 180ms ease;
+}
+/* Siri-style flowing colorful gradient while actually capturing audio. Each bar
+   is offset on a shared delay stagger (nth-child) so the color sweeps across
+   the row like a wave rather than every bar flashing the same hue at once. */
+.swave.ready i {
+  background: linear-gradient(
+    180deg,
+    var(--siri-1),
+    var(--siri-2) 30%,
+    var(--siri-3) 55%,
+    var(--siri-4) 80%,
+    var(--siri-5)
+  );
+  background-size: 100% 260%;
+  animation: siri-wave-color 2.2s ease-in-out infinite;
+}
+.swave.ready i:nth-child(2),
+.swave.ready i:nth-child(8) {
+  animation-delay: 110ms;
+}
+.swave.ready i:nth-child(3),
+.swave.ready i:nth-child(7) {
+  animation-delay: 220ms;
+}
+.swave.ready i:nth-child(4),
+.swave.ready i:nth-child(6) {
+  animation-delay: 330ms;
+}
+.swave.ready i:nth-child(5) {
+  animation-delay: 440ms;
+}
+@keyframes siri-wave-color {
+  0%,
+  100% {
+    background-position: 0% 0%;
+  }
+  50% {
+    background-position: 0% 100%;
+  }
 }
 .swave.arming i {
   height: 6px !important;
