@@ -21,6 +21,14 @@ works with whatever CLI-based coding agent the user already has installed.
   deferred it - see vox's `ARCH.md` SS8 "Streaming LLM->TTS replies: needs
   its own design pass"). This phase is synchronous: send prompt, wait,
   get full reply back.
+- No mid-flight user-initiated cancellation in this phase (note, not
+  omission: vox's bridge DOES have this -- a `CancellationToken` +
+  `Popen`/poll-loop path that `terminate()`s then `kill()`s on demand,
+  separate from the timeout path. It's a genuinely useful pattern worth
+  revisiting once this phase wires into the app's existing
+  `cancel_current_operation` concept (`utils.rs`) -- deferred here
+  alongside the rest of the hotkey-flow wiring, not because it isn't
+  valuable.)
 - No multi-agent chaining/planning. One subprocess call, one reply.
 - No actual wiring into the dictation hotkey UI yet - this phase delivers
   the bridge itself plus tests proving it correctly invokes the subprocess,
@@ -103,9 +111,25 @@ prompt flag> "<prompt>"` with the prompt passed as a single argument -
   `std::process::Command::arg`, never `format!` into a `sh -c` string;
   this is a security requirement, not a style preference - the prompt is
   user speech and must never be shell-interpreted).
-- FR3: Stdout is captured and trimmed; that trimmed text is the
-  `AgentReply.text`. An empty-after-trim stdout with exit code 0 is
-  `AgentBridgeError::EmptyReply`, not a successful empty-string reply.
+- FR3: Stdout is **first stripped of ANSI/OSC terminal escape sequences**,
+  then trimmed; that cleaned text is the `AgentReply.text`. This is a
+  real, proven-necessary requirement, not speculative hardening: vox's
+  own Code Puppy bridge needed exactly this because `code-puppy -p`
+  (like many interactive CLIs run outside a real TTY) still emits ANSI
+  color codes (CSI, `\x1b[...letter`) and OSC sequences (terminal
+  theme/title-bar control, `\x1b]...\x07` or `\x1b]...\x1b\\`) even in
+  its "headless" output -- vox's `tests/test_code_puppy_bridge.py` has a
+  real captured sample (`REAL_SAMPLE_OUTPUT`) full of this noise. Since
+  this phase is product-agnostic, assume ANY configured CLI could do the
+  same and strip both sequence families unconditionally before treating
+  stdout as the reply. An empty-after-strip-and-trim stdout with exit
+  code 0 is `AgentBridgeError::EmptyReply`, not a successful empty-string
+  reply.
+- FR3a: An empty or whitespace-only `prompt` is rejected before spawning
+  anything -- `AgentBridgeError::EmptyReply`-adjacent validation (or a
+  dedicated variant, implementer's choice, document which) happens
+  up-front. Mirrors vox's `CodePuppyAgentWorker.run()` raising on
+  whitespace-only task text before ever touching the bridge.
 - FR4: Binary resolution: `agent_bridge_binary_path` must be set and the
   file must exist. If unset, `AgentBridgeError::NotConfigured` - fail
   fast with a message telling the user to configure a binary path in
@@ -165,8 +189,21 @@ the explicitly marked `_real` ones.
 | T8  | Fake process exceeds the configured timeout (simulate with a fake that sleeps past it) | `AgentBridgeError::Timeout`, and the fake asserts the process was actually killed (not left running) |
 | T9  | Fake process exits with code 1 and stderr `"traceback: boom"`                          | `AgentBridgeError::NonZeroExit { code: Some(1), stderr }` where `stderr` contains `"boom"`           |
 | T10 | Fake process exits 0 with empty stdout                                                 | `AgentBridgeError::EmptyReply`                                                                       |
-| T11 | Fake process exits 0 with stdout `"   \n  "` (whitespace only)                         | `AgentBridgeError::EmptyReply` (trimmed-empty counts as empty)                                       |
-| T12 | stderr longer than the configured cap                                                  | Error's stderr field is truncated to the cap, does not OOM/hang                                      |
+| T10 | Fake process exits 0 with stdout `"   \n  "` (whitespace only)                         | `AgentBridgeError::EmptyReply` (trimmed-empty counts as empty)                                       |
+| T11 | stderr longer than the configured cap                                                  | Error's stderr field is truncated to the cap, does not OOM/hang                                      |
+| T12 | Prompt is empty or whitespace-only                                                      | Rejected before any spawn attempt -- ports vox's `EmptyTaskError` validation in `CodePuppyAgentWorker.run()` |
+
+### ANSI/OSC terminal-noise stripping (FR3 -- ported from vox's real captured output)
+
+Real sample adapted from vox's own `test_code_puppy_bridge.py`
+`REAL_SAMPLE_OUTPUT` fixture -- this is not a hypothetical edge case, it's
+what an actual CLI agent's "headless" output looked like in production.
+
+| #   | Given stdout                                                                                          | Expect                                                                    |
+| --- | ---------------------------------------------------------------------------------------------------------| ------------------------------------------------------------------------------ |
+| T13 | OSC theme-set sequence + CSI color codes mixed into plain text (e.g. a terminal setting its background color, then red-coloring a word, per vox's own test fixture) | Cleaned text has only the plain words, no escape bytes remain |
+| T14 | Full realistic sample: banner text + OSC theme-set sequences + plain reply text + trailing OSC noise    | Only the plain reply text remains, all escape sequences removed            |
+| T15 | stdout with no escape sequences at all                                                                 | Passed through unchanged (stripping is a no-op, not a corruption risk)     |
 
 ### Settings gate
 
