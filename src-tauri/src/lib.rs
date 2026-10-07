@@ -253,7 +253,12 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             .unwrap(),
         )
         .tooltip(tray::tray_tooltip())
-        .icon_as_template(true);
+        // Not a template image: the Vox tray glyph is a deliberately colorful
+        // gold orb, not a monochrome system-style silhouette. A template
+        // image here would make AppKit discard all RGB and render
+        // alpha-only black/white, which is exactly the "not colorful" bug
+        // this fixes.
+        .icon_as_template(false);
 
     // Windows notification-area convention: left click opens the app, right click
     // shows the menu. Elsewhere (macOS menu bar, Linux) the menu stays on left click.
@@ -774,12 +779,23 @@ pub fn run(cli_args: CliArgs) {
         ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
-    specta_builder
-        .export(
-            Typescript::default().bigint(BigIntExportBehavior::Number),
-            "../src/bindings.ts",
-        )
-        .expect("Failed to export typescript bindings");
+    // Dev convenience only (regenerates bindings.ts while running `cargo
+    // tauri dev`/`cargo run` from the project root, where this relative
+    // path resolves). Must never crash a real running instance: the same
+    // debug-assertions build also ships as the installed .app (`tauri
+    // build --debug`), where CWD is unrelated to the source tree and this
+    // path is never writable -- panicking here previously killed the app
+    // instantly on every non-dev launch (Finder/Dock/Spotlight/launchd),
+    // completely independent of and easily mistaken for the Gatekeeper
+    // issues launched from those same surfaces.
+    if let Err(err) = specta_builder.export(
+        Typescript::default().bigint(BigIntExportBehavior::Number),
+        "../src/bindings.ts",
+    ) {
+        log::warn!(
+            "Skipping TypeScript bindings export (expected outside `cargo tauri dev`): {err}"
+        );
+    }
 
     let invoke_handler = specta_builder.invoke_handler();
 
@@ -816,11 +832,11 @@ pub fn run(cli_args: CliArgs) {
                     Target::new(if let Some(data_dir) = portable::data_dir() {
                         TargetKind::Folder {
                             path: data_dir.join("logs"),
-                            file_name: Some("handy".into()),
+                            file_name: Some("vox".into()),
                         }
                     } else {
                         TargetKind::LogDir {
-                            file_name: Some("handy".into()),
+                            file_name: Some("vox".into()),
                         }
                     })
                     .filter(|metadata| {
