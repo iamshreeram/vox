@@ -1,0 +1,32 @@
+# Phase Status
+
+Single source of truth for which phase is claimed/in-progress/done. Read
+this before claiming a phase. Update it (on `main`, commit + push) the
+moment you claim a phase — before you create your worktree — so two models
+starting at nearly the same time don't both grab the same work.
+
+**Claim protocol:**
+1. `git checkout main && git pull`
+2. Edit your phase's row below: `status` → `in_progress`, `owner` → your
+   agent id / model name, `claimed_at` → current UTC timestamp.
+3. Commit (`docs(vox-phases): claim phase N`) and push directly to `main`.
+   If the push is rejected (someone else pushed first), `pull --rebase` and
+   check whether they claimed the *same* phase — if so, pick a different
+   one. This file is intentionally tiny so merge conflicts here are rare
+   and trivial to resolve by hand.
+4. Only after your claim is pushed, create your worktree (see
+   `WORKTREE-CONVENTION.md`) and start the TDD loop.
+5. When done (PR opened or merged), flip `status` → `done` and fill in `pr`.
+
+| # | Phase | status | owner | branch | claimed_at | pr |
+|---|---|---|---|---|---|---|
+| 1 | Memory | not_started | — | `phase/1-memory` | — | — |
+| 2 | Command Router + Safety Gate | not_started | — | `phase/2-command-router` | — | — |
+| 3 | Agent Bridge | not_started | — | `phase/3-agent-bridge` | — | — |
+| 4 | Native TTS | not_started | — | `phase/4-tts` | — | — |
+| 5 | Wake Word | not_started | — | `phase/5-wakeword` | — | — |
+| 6 | Ambient Mode | blocked_on_5 | — | `phase/6-ambient-mode` | — | — |
+| 7 | Screen OCR | not_started | — | `phase/7-vision-ocr` | — | — |
+
+Valid `status` values: `not_started`, `blocked_on_<n>`, `in_progress`,
+`in_review` (PR open), `done`.

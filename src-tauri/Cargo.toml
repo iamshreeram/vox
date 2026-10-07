@@ -1,8 +1,8 @@
 [package]
 name = "handy"
 version = "0.9.8"
-description = "Handy"
-authors = ["cjpais"]
+description = "Vox"
+authors = ["iamshreeram"]
 edition = "2021"
 license = "MIT"
 default-run = "handy"

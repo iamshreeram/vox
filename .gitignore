@@ -45,3 +45,6 @@ result
 
 # Python bytecode (scripts/)
 __pycache__/
+
+# Parallel phase-development worktrees (docs/vox-phases/WORKTREE-CONVENTION.md)
+.worktrees/

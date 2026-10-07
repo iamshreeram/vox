@@ -1,18 +1,23 @@
-/* Handy Colors */
+/* Vox Colors */
 
 :root {
   /* Palette source of truth. Each themed color is defined once as a
      light/dark pair; the active tokens below and the `data-theme` overrides
-     in App.css reference these, so a hex value lives in exactly one place. */
+     in App.css reference these, so a hex value lives in exactly one place.
+     Brand accent: warm Siri-gold, replacing the legacy Handy pink. Light mode
+     uses a deeper antique gold for AA-ish text contrast on a white background
+     (it's used as literal text/link color in a few spots, not just fills);
+     dark mode uses a brighter saffron gold since it only needs to pop against
+     a dark surface. */
   --light-color-text: #0f0f0f;
   --light-color-background: #fbfbfb;
-  --light-color-logo-primary: #faa2ca;
-  --light-color-logo-stroke: #382731;
+  --light-color-logo-primary: #a6790a;
+  --light-color-logo-stroke: #3a2a0f;
 
   --dark-color-text: #fbfbfb;
   --dark-color-background: #2c2b29;
-  --dark-color-logo-primary: #f28cbb;
-  --dark-color-logo-stroke: #fad1ed;
+  --dark-color-logo-primary: #f4c430;
+  --dark-color-logo-stroke: #fff3c4;
 
   /* Semantic status colors. First used by SecureInputWarning; intended to
      replace the ad-hoc yellow-500/red-500 usages (e.g. ui/Alert.tsx) over
@@ -23,7 +28,7 @@
   --dark-color-error: #f87171;
 
   /* Tokens that do not change between light and dark */
-  --color-background-ui: #da5893;
+  --color-background-ui: #c9971e;
   --color-text-stroke: #f6f6f6;
   --color-mid-gray: #808080;
 
