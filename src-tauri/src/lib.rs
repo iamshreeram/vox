@@ -861,7 +861,7 @@ pub fn run(cli_args: CliArgs) {
         builder = builder.plugin(tauri_nspanel::init());
     }
 
-    // Single-instance forwards CLI args to an already-running Handy and exits.
+    // Single-instance forwards CLI args to an already-running Vox and exits.
     // That would make the headless path
     // (--transcribe-file/--list-devices/--list-models) a silent no-op whenever the
     // app is already open, so skip it in headless mode and run a standalone
@@ -979,7 +979,7 @@ pub fn run(cli_args: CliArgs) {
             // Disable WebView2 browser accelerators (F5, F6, Ctrl+F, F12, ...).
             // A settings window has no use for them, and pressing F6 while
             // recording a shortcut was reported to turn the whole window white
-            // (cjpais/Handy#1940), likely by triggering WebView2 focus cycling.
+            // WebView2 can lose focus when activation policy is cycled.
             // DevTools stays enabled; only the F12 accelerator is lost.
             #[cfg(target_os = "windows")]
             {

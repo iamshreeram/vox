@@ -14,9 +14,7 @@ speaking it aloud is a Phase 4 integration once both exist). Mirrors vox's
 ## 2. Non-goals (read this twice - this phase is tightly scoped on purpose)
 
 - **Observation only.** No click/move/type/scroll/hotkey actions. No
-  Plan->Observe->Act->Verify loop. Vox's own docs are explicit that this
-  was a deliberate scope decision (its `.vox/decisions.md` D-4) because a
-  real computer-use action loop is redundant with Code Puppy + cua-driver.
+  Plan->Observe->Act->Verify loop. A real computer-use action loop is deliberately out of scope here.
   Do not add any action capability here, however small or tempting.
 - No continuous/automatic screen monitoring - single-shot, user-triggered
   capture only.
@@ -98,7 +96,7 @@ pub vision_enabled: bool, // default: false - matches vox's own off-by-default
   `VisionError::CaptureFailed` with a human-readable reason, distinct from
   an OCR failure. **The error text must explicitly mention Screen
   Recording permission** (`System Settings -> Privacy & Security ->
-  Screen Recording`) for both the "binary not found" and "non-zero exit"
+Screen Recording`) for both the "binary not found" and "non-zero exit"
   cases -- ports vox's own error messages verbatim-in-spirit, since a
   missing permission is the single most likely real-world cause of
   either failure.
@@ -150,11 +148,11 @@ split pattern as Phases 3/4.
 
 ### Capture failure handling
 
-| #   | Given                                                                                    | Expect                                                             |
-| --- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| T3  | Fake capture process exits non-zero                                                      | `VisionError::CaptureFailed`, OCR step never attempted             |
-| T3a | Fake capture process exits non-zero OR the capture binary is missing                       | Error text contains "Screen Recording" -- ports vox's own permission-guidance error messages |
-| T4  | Fake capture process "succeeds" but produces no output file (simulate a filesystem race) | `VisionError::CaptureFailed`, not a confusing downstream OCR error |
+| #   | Given                                                                                    | Expect                                                                                       |
+| --- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| T3  | Fake capture process exits non-zero                                                      | `VisionError::CaptureFailed`, OCR step never attempted                                       |
+| T3a | Fake capture process exits non-zero OR the capture binary is missing                     | Error text contains "Screen Recording" -- ports vox's own permission-guidance error messages |
+| T4  | Fake capture process "succeeds" but produces no output file (simulate a filesystem race) | `VisionError::CaptureFailed`, not a confusing downstream OCR error                           |
 
 ### OCR failure handling
 

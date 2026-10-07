@@ -7,7 +7,7 @@
 ## 1. Goal
 
 Opt-in, continuous-listening wake-word detection mirroring vox's
-`src/vox/wakeword/` (openWakeWord, ONNX-based). Handy already has `ort`
+`src/vox/wakeword/` (openWakeWord, ONNX-based). Vox already has `ort`
 (via `transcribe-rs`) for ONNX inference and `rustfft` for spectral math,
 plus `vad-rs`/`earshot` for voice-activity detection - this phase is mostly
 assembling existing capability, not inventing new infrastructure.

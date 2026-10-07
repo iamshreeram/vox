@@ -1,198 +1,79 @@
 ---
 name: voxrs-goals
 argument-hint: [phase-number-or-slug]
-description: Build the next (or specified) Vox-rs phase end-to-end via strict TDD in an isolated git worktree, following docs/vox-phases/. Use when picking up phased Vox-rs development work, with or without a specific phase argument.
+description: Build or review one Vox-RS roadmap phase via TDD in an isolated worktree, following docs/vox-phases/.
 ---
 
-# /voxrs-goals - Build a Vox-rs phase via TDD in an isolated worktree
+# /voxrs-goals — Build one Vox-RS phase
 
-**Argument (optional):** `$ARGUMENTS` - a phase number (`1`-`7`) or slug
-(e.g. `memory`, `tts`). If empty, pick the next eligible phase yourself
-(see STEP 2).
+**Argument (optional):** `$ARGUMENTS` — a phase number (`1`-`7`) or slug. If empty, pick the next eligible phase from `docs/vox-phases/STATUS.md`.
 
-Follow every step below in order. Do not skip steps. Do not improvise
-around them even if a shortcut looks obviously fine - the whole point of
-this command is that a cheap/low-reasoning model can run it unattended and
-still produce correct, reviewable work.
+## Mandatory personal-repository guardrails
 
-## STEP 0: Activate required skills
-
-Call `activate_skill` for both of these before doing anything else:
-
-- `test-driven-development`
-- `using-git-worktrees`
-
-Internalize the TDD iron law before writing a single line of code:
-**no production code without a failing test first.** If at any point you
-catch yourself writing implementation before its test, stop, delete what
-you wrote, and start that piece over with the test.
-
-## STEP 1: Orient yourself
-
-Read, in this order:
-
-1. `docs/vox-phases/README.md` - overall plan, ground rules, dependency
-   graph.
-2. `docs/vox-phases/STATUS.md` - current claim/progress state.
-3. `docs/vox-phases/WORKTREE-CONVENTION.md` - exact commands for worktree
-   setup/teardown.
-
-## STEP 2: Pick a phase
-
-- If `$ARGUMENTS` names a phase (number or slug), that is your target.
-  Check its row in `STATUS.md`:
-  - If `status` is `done` or `in_progress` with a _different_ owner, stop
-    and report this to the user instead of proceeding - do not duplicate
-    or collide with in-flight work.
-  - If `status` is `blocked_on_<n>`, check phase `<n>`'s status; if it is
-    not `done`, stop and report that this phase isn't ready yet.
-- If `$ARGUMENTS` is empty, scan `STATUS.md` top to bottom and pick the
-  first row whose `status` is `not_started` (skip any `blocked_on_<n>` row
-  unless phase `<n>` is `done`, in which case treat it as eligible).
-- If literally every phase is `done` or legitimately blocked with no
-  eligible phase, stop and report that to the user - do not invent new
-  scope.
-
-## STEP 3: Claim it
-
-Per `STATUS.md`'s own claim protocol:
+This is Ram's personal GitHub repository. Before creating any commit:
 
 ```bash
-cd /Users/s0v06yb/ram/projects/rust/Handy
-git checkout main && git pull
+git setlive
+git config user.name
+git config user.email
+git var GIT_AUTHOR_IDENT
+git var GIT_COMMITTER_IDENT
 ```
 
-Edit `docs/vox-phases/STATUS.md`: set your chosen phase's `status` to
-`in_progress`, `owner` to your agent id (use the id you were given, or
-`agent` plus a timestamp if you have no specific id), `claimed_at` to
-the current UTC time.
+Expected identity: `Shreeram <shreeram.v@live.com>`. Before every push, inspect the complete outgoing range:
 
 ```bash
-git add docs/vox-phases/STATUS.md
-git commit -m "docs(vox-phases): claim phase <N> - <slug>"
-git push
+git log origin/$(git branch --show-current)..HEAD --format='%h %an <%ae> | %cn <%ce> %s'
 ```
 
-If the push is rejected, `git pull --rebase` and re-check the row you
-claimed - if someone else claimed the exact same phase first, go back to
-STEP 2 and pick a different eligible one. Do not force-push.
+STOP if any author/committer is not the personal identity. Do not push corporate, tool, or agent identities. Do not put employer branding, internal agents/tools, corporate addresses, or internal artifact/index hosts into source, docs, templates, commits, or assets. Preserve historical technical identifiers only when required for compatibility, and label them as legacy identifiers. Search changed files before commit. AI assistants must not open/submit PRs; Ram submits PRs himself.
 
-## STEP 4: Set up the worktree
+## STEP 0: Required skills
 
-Follow `WORKTREE-CONVENTION.md` exactly:
+Activate `test-driven-development` and `using-git-worktrees` before coding. Follow the TDD iron law: **no production code without a failing test first.**
 
-```bash
-PHASE_NUM=<N>
-PHASE_SLUG=<slug>
-BRANCH="phase/${PHASE_NUM}-${PHASE_SLUG}"
-WORKTREE=".worktrees/phase-${PHASE_NUM}-${PHASE_SLUG}"
+## STEP 1: Orient
 
-git worktree add "$WORKTREE" -b "$BRANCH"
-cd "$WORKTREE"
-bun install
-cd src-tauri && cargo build && cd ..
-cargo test --manifest-path src-tauri/Cargo.toml
-bun run lint
-```
+Read:
+1. `docs/vox-phases/README.md`
+2. `docs/vox-phases/STATUS.md`
+3. `docs/vox-phases/WORKTREE-CONVENTION.md`
+4. The selected `docs/vox-phases/PHASE-<N>-<slug>.md` in full
+5. The corresponding Python Vox implementation and its tests under the local Python Vox checkout, when available. Compare behavior rather than copying names/identifiers; note deliberate differences in the phase spec. Never copy private machine paths into committed docs.
 
-If the baseline `cargo test` or `bun run lint` is not clean on a fresh
-worktree off `main`, **stop and report this** rather than building on top
-of a broken baseline - this means something upstream regressed and needs
-separate attention first.
+## STEP 2: Select one phase
 
-All remaining work happens **inside this worktree directory**. Do not edit
-files in the primary checkout.
+- If an explicit phase is provided, verify it is eligible and not being worked by someone else.
+- If no phase is provided, choose the first eligible `not_started` phase.
+- If blocked or already owned by someone else, stop and report that.
+- Build only one phase per run. If the user asks for multiple phases, take them one at a time in separate worktrees and report progress clearly.
 
-## STEP 5: Read the phase doc, fully
+## STEP 3: Claim without committing to main
 
-Read `docs/vox-phases/PHASE-<N>-<slug>.md` top to bottom before writing
-anything. Pay particular attention to:
+Do not commit directly to `main`. Create the phase branch/worktree and record the claim in that branch's `STATUS.md` row with owner `Shreeram`, status `in_progress`, and a UTC timestamp. The owner field is the human project owner, never the assistant/session/tool ID. Commit the claim to the phase branch using the verified personal identity.
 
-- Section 2 (Non-goals) - these are explicit scope boundaries, not
-  suggestions. Do not implement anything listed there.
-- Section 3 (Design) - follow the stated file layout, trait shapes, and
-  "before you write any code" instructions (some phases require reading
-  an existing file like `managers/history.rs` first to mirror its
-  conventions - actually do this, don't skip it).
-- Section 7/6 (Test cases) - this is your TDD checklist, in order.
+Before any push, run the outgoing-identity check above. Push only the phase branch, not `main`. Never force-push unless the user explicitly approves rewriting that branch; if approved, use `--force-with-lease`.
 
-## STEP 6: TDD loop, one test case at a time
+## STEP 4: Create/update the worktree and verify baseline
 
-For every test case listed in the phase doc's test-case table, in order:
+Follow `WORKTREE-CONVENTION.md`. Use `.worktrees/phase-<N>-<slug>/`. Run setup and baseline tests. If baseline tests or lint fail before implementation, stop and report rather than layering work on a broken baseline.
 
-1. **RED** - write that one test. Nothing else. Run it.
-2. **Verify it fails for the right reason** (missing feature, not a typo
-   or compile error in the test itself). If it errors instead of failing
-   cleanly, fix the test until it fails correctly.
-3. **GREEN** - write the minimum production code to make that test pass.
-   Do not implement later test cases' behavior early "while you're in
-   there" - one test at a time.
-4. **Verify it passes**, and verify every previously-passing test in this
-   phase's module still passes too.
-5. **REFACTOR** - clean up naming/duplication now that it's green. Keep
-   all tests green through this step.
-6. Commit: small commits, e.g. `test(vox-phase-<N>): add <test name>` then
-   `feat(vox-phase-<N>): implement <behavior>`.
-7. Move to the next test case.
+## STEP 5: TDD implementation
 
-Never write production code for a test case you haven't written yet.
-Never mark a test case "done" without having watched it fail first - if
-you're not sure whether you actually watched it fail, delete the
-implementation and redo that test case properly.
+For each test case in the phase doc, in order:
+1. Write one test and run it.
+2. Confirm it fails for the expected missing behavior, not a test/compile mistake.
+3. Implement the minimum production code.
+4. Rerun the new and existing tests.
+5. Refactor only while tests stay green.
+6. Commit focused increments using the verified personal identity.
 
-## STEP 7: Full validation before calling the phase done
+No arbitrary shell execution from voice text. Respect the phase non-goals. Keep files cohesive and below the repository's 600-line guidance where practical.
 
-Run ALL of these, inside the worktree, and they must all be clean:
+## STEP 6: Validate
 
-```bash
-cargo test --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
-cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-bun run lint
-bun run format:check
-```
+Run the phase's required full validation commands. Report pre-existing failures separately and do not claim a globally clean check if unrelated baseline debt remains. Run `git diff --check`, inspect changed files for internal/company references and false branding/URLs, then inspect all outgoing author/committer identities.
 
-Then walk the phase doc's own "Acceptance Criteria" checklist line by
-line and confirm each box honestly - do not check a box you didn't
-actually verify.
+## STEP 7: Finish
 
-## STEP 8: Finish
-
-```bash
-git push -u origin "$BRANCH"
-```
-
-Then, back in the **primary checkout** (not the worktree):
-
-```bash
-cd /Users/s0v06yb/ram/projects/rust/Handy
-git checkout main && git pull
-```
-
-Edit `docs/vox-phases/STATUS.md`: set the phase's `status` to `in_review`
-and fill in the `pr` column (if you have the ability to open a PR via
-`gh pr create` against `iamshreeram/vox`, do so and link it; if not,
-state clearly in your final report that a human needs to open the PR from
-branch `$BRANCH`).
-
-```bash
-git add docs/vox-phases/STATUS.md
-git commit -m "docs(vox-phases): phase <N> ready for review"
-git push
-```
-
-## STEP 9: Report
-
-Tell the user, plainly:
-
-- Which phase you built, and its branch name.
-- How many test cases from the doc you implemented, and confirm every one
-  was watched red before green.
-- The exact validation commands from STEP 7 and that they all passed.
-- Any Non-goal you were tempted to implement and correctly didn't.
-- Whether a PR was opened, or needs to be opened manually.
-- Whether `STATUS.md` was updated on `main`.
-
-Do not start a second phase in the same invocation unless the user
-explicitly asked for more than one - one `/voxrs-goals` run builds one
-phase.
+Push the phase branch after the identity and content audits. Update the phase row to `in_review` in the phase branch. Do not open the PR. Give Ram the branch and PR URL to submit manually, plus truthful test results and any known gaps.

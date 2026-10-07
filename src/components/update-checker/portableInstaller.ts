@@ -3,18 +3,16 @@
 // page to hand-pick one of ~27 assets, deep-link the NSIS setup.exe for their
 // platform and architecture.
 //
-// The URL comes straight out of the updater manifest (`Update.rawJson`) rather
-// than being rebuilt from the bundler's file-naming convention: it stays correct
-// if asset names or the repo slug change, and it points at the immutable
-// `releases/download/v<version>/…` tag URL instead of a moving `latest` link.
+// Vox release URLs are sourced from the updater manifest. If no matching
+// installer is present, send the user to the repository releases page; if no
+// releases are published yet, this page makes that state clear.
 
 export const PORTABLE_RELEASES_URL =
-  "https://github.com/cjpais/Handy/releases/latest";
+  "https://github.com/iamshreeram/vox/releases/latest";
 
 /**
  * Pick the NSIS installer URL for the running target out of the update manifest.
- * Falls back to the generic releases page whenever there is no matching entry —
- * e.g. a portable install on a platform Handy ships no NSIS bundle for.
+ * Falls back to Vox's repository releases page whenever there is no matching entry.
  *
  * @param rawJson `Update.rawJson`, the deserialized `latest.json` manifest
  * @param platformName value from `@tauri-apps/plugin-os` `platform()`

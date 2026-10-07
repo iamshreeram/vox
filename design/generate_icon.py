@@ -2,14 +2,11 @@
 """Generate the Vox 'Soundwave Orb' icon set -- card #3 from the design
 gallery, picked as-is (plain gold radial-gradient sphere + two faint
 concentric ripple rings, NO rainbow). Mirrors the approach in
-~/ram/projects/python/vox/scripts/generate_icons.py: plain PIL primitives,
+the separate Python Vox project's procedural icon generator: plain PIL primitives,
 numpy-vectorized gradient math, no design tool needed, fully reproducible.
 
 Usage:
-    uv run --with pillow --with numpy \\
-      --index-url https://pypi.ci.artifacts.walmart.com/artifactory/api/pypi/external-pypi/simple \\
-      --allow-insecure-host pypi.ci.artifacts.walmart.com \\
-      python3 design/generate_icon.py
+    uv run --with pillow --with numpy python3 design/generate_icon.py
 """
 from pathlib import Path
 

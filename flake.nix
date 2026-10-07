@@ -1,5 +1,5 @@
 {
-  description = "Handy - A free, open source, and extensible speech-to-text application that works completely offline";
+  description = "Vox - A free, open source, and extensible speech-to-text application that works completely offline";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -86,7 +86,7 @@
           };
         in
         {
-          handy = pkgs.rustPlatform.buildRustPackage {
+          vox = pkgs.rustPlatform.buildRustPackage {
             pname = "vox";
             inherit version;
             src = self;
@@ -178,14 +178,14 @@
 
             meta = {
               description = "A free, open source, and extensible speech-to-text application that works completely offline";
-              homepage = "https://github.com/cjpais/Handy";
+              homepage = "https://github.com/iamshreeram/vox";
               license = lib.licenses.mit;
               mainProgram = "vox";
               platforms = supportedSystems;
             };
           };
 
-          default = self.packages.${system}.handy;
+          default = self.packages.${system}.vox;
         }
       );
 
@@ -194,7 +194,7 @@
         { lib, pkgs, ... }:
         {
           imports = [ ./nix/module.nix ];
-          programs.handy.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.handy;
+          programs.vox.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.vox;
         };
 
       # Home-manager module for per-user service
@@ -202,7 +202,7 @@
         { lib, pkgs, ... }:
         {
           imports = [ ./nix/hm-module.nix ];
-          services.handy.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.handy;
+          services.vox.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.vox;
         };
 
       # Development shell for building from source
@@ -242,7 +242,7 @@
             XDG_DATA_DIRS = "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:${pkgs.hicolor-icon-theme}/share";
 
             shellHook = ''
-              echo "Handy development environment"
+              echo "Vox development environment"
               bun install
               echo "Run 'bun run tauri dev' to start"
             '';

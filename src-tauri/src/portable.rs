@@ -1,4 +1,4 @@
-//! Portable mode support for Handy.
+//! Portable mode support for Vox.
 //!
 //! When a file named `portable` exists next to the executable, all user data
 //! (settings, models, recordings, database, logs) is stored in a `Data/`
@@ -31,6 +31,8 @@ pub fn init() {
             // empty/invalid marker alongside an existing Data/ dir, this is a
             // real portable install — upgrade the marker in place.
             eprintln!("[portable] upgrading legacy empty marker to magic string");
+            // Persisted compatibility token: keep the historical marker text
+            // so existing portable installs continue to be recognized after rebranding.
             let _ = std::fs::write(&marker_path, "Handy Portable Mode");
             true
         } else {
@@ -114,7 +116,9 @@ pub fn store_path(relative: &str) -> PathBuf {
     }
 }
 
-/// Check if a marker file path contains the portable magic string.
+/// Check if a marker file path contains the historical portable magic string.
+/// This token is persisted in user installations; do not rename it without a
+/// migration that continues to accept the old value.
 /// Extracted for testability.
 fn is_valid_portable_marker(path: &std::path::Path) -> bool {
     std::fs::read_to_string(path)

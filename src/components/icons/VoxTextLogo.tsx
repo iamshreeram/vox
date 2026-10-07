@@ -4,7 +4,7 @@ import React from "react";
    brand wordmark glyph (SVG <text>), never user-facing translatable copy. */
 
 /**
- * "Vox" wordmark. Two-tone like the legacy Handy mark (a soft stroke/shadow
+ * "Vox" wordmark. Two-tone like the legacy Vox mark (a soft stroke/shadow
  * layer behind a solid fill layer) but drawn as real text instead of traced
  * letterforms, and themed entirely through the `.logo-primary` /
  * `.logo-stroke` CSS classes (see theme.css) so it follows the gold

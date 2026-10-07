@@ -114,22 +114,18 @@ prompt flag> "<prompt>"` with the prompt passed as a single argument -
 - FR3: Stdout is **first stripped of ANSI/OSC terminal escape sequences**,
   then trimmed; that cleaned text is the `AgentReply.text`. This is a
   real, proven-necessary requirement, not speculative hardening: vox's
-  own Code Puppy bridge needed exactly this because `code-puppy -p`
-  (like many interactive CLIs run outside a real TTY) still emits ANSI
-  color codes (CSI, `\x1b[...letter`) and OSC sequences (terminal
-  theme/title-bar control, `\x1b]...\x07` or `\x1b]...\x1b\\`) even in
-  its "headless" output -- vox's `tests/test_code_puppy_bridge.py` has a
-  real captured sample (`REAL_SAMPLE_OUTPUT`) full of this noise. Since
-  this phase is product-agnostic, assume ANY configured CLI could do the
-  same and strip both sequence families unconditionally before treating
-  stdout as the reply. An empty-after-strip-and-trim stdout with exit
-  code 0 is `AgentBridgeError::EmptyReply`, not a successful empty-string
-  reply.
+  Python bridge needed escape-sequence handling because interactive
+  command-line tools can emit ANSI color codes (CSI) and OSC sequences
+  (terminal theme/title-bar control) even when run without a real TTY.
+  Since this phase is product-agnostic, assume ANY configured CLI could
+  do the same and strip both sequence families unconditionally before
+  treating stdout as the reply. An empty-after-strip-and-trim stdout
+  with exit code 0 is `AgentBridgeError::EmptyReply`, not a successful
+  empty-string reply.
 - FR3a: An empty or whitespace-only `prompt` is rejected before spawning
   anything -- `AgentBridgeError::EmptyReply`-adjacent validation (or a
   dedicated variant, implementer's choice, document which) happens
-  up-front. Mirrors vox's `CodePuppyAgentWorker.run()` raising on
-  whitespace-only task text before ever touching the bridge.
+  up-front. Reject whitespace-only task text before touching the bridge.
 - FR4: Binary resolution: `agent_bridge_binary_path` must be set and the
   file must exist. If unset, `AgentBridgeError::NotConfigured` - fail
   fast with a message telling the user to configure a binary path in
@@ -191,19 +187,18 @@ the explicitly marked `_real` ones.
 | T10 | Fake process exits 0 with empty stdout                                                 | `AgentBridgeError::EmptyReply`                                                                       |
 | T10 | Fake process exits 0 with stdout `"   \n  "` (whitespace only)                         | `AgentBridgeError::EmptyReply` (trimmed-empty counts as empty)                                       |
 | T11 | stderr longer than the configured cap                                                  | Error's stderr field is truncated to the cap, does not OOM/hang                                      |
-| T12 | Prompt is empty or whitespace-only                                                      | Rejected before any spawn attempt -- ports vox's `EmptyTaskError` validation in `CodePuppyAgentWorker.run()` |
+| T12 | Prompt is empty or whitespace-only                                                     | Rejected before any spawn attempt -- mirrors vox's worker-adapter validation                         |
 
 ### ANSI/OSC terminal-noise stripping (FR3 -- ported from vox's real captured output)
 
-Real sample adapted from vox's own `test_code_puppy_bridge.py`
-`REAL_SAMPLE_OUTPUT` fixture -- this is not a hypothetical edge case, it's
-what an actual CLI agent's "headless" output looked like in production.
+Real sample adapted from the Python bridge test suite -- this is not a
+hypothetical edge case, it's what a real CLI agent's "headless" output looked like in production.
 
-| #   | Given stdout                                                                                          | Expect                                                                    |
-| --- | ---------------------------------------------------------------------------------------------------------| ------------------------------------------------------------------------------ |
-| T13 | OSC theme-set sequence + CSI color codes mixed into plain text (e.g. a terminal setting its background color, then red-coloring a word, per vox's own test fixture) | Cleaned text has only the plain words, no escape bytes remain |
-| T14 | Full realistic sample: banner text + OSC theme-set sequences + plain reply text + trailing OSC noise    | Only the plain reply text remains, all escape sequences removed            |
-| T15 | stdout with no escape sequences at all                                                                 | Passed through unchanged (stripping is a no-op, not a corruption risk)     |
+| #   | Given stdout                                                                                                                                                        | Expect                                                                 |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| T13 | OSC theme-set sequence + CSI color codes mixed into plain text (e.g. a terminal setting its background color, then red-coloring a word, per vox's own test fixture) | Cleaned text has only the plain words, no escape bytes remain          |
+| T14 | Full realistic sample: banner text + OSC theme-set sequences + plain reply text + trailing OSC noise                                                                | Only the plain reply text remains, all escape sequences removed        |
+| T15 | stdout with no escape sequences at all                                                                                                                              | Passed through unchanged (stripping is a no-op, not a corruption risk) |
 
 ### Settings gate
 

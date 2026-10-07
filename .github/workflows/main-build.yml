@@ -1,8 +1,8 @@
 name: "Main Branch Build"
 
-# Runs the full cross-platform build on every push to main so breakage is
-# caught before a manual release is triggered. Artifacts are kept for 30 days
-# so any commit on main has a downloadable, testable build.
+# Builds every platform on pushes to main for CI verification. Artifacts are
+# not uploaded and binaries are not signed until Vox-specific credentials are
+# configured by the repository owner.
 
 on:
   push:
@@ -15,7 +15,7 @@ concurrency:
 jobs:
   build:
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -47,6 +47,6 @@ jobs:
       platform: ${{ matrix.platform }}
       target: ${{ matrix.target }}
       build-args: ${{ matrix.args }}
-      upload-artifacts: true
-      sign-binaries: true
+      upload-artifacts: false
+      sign-binaries: false
     secrets: inherit
