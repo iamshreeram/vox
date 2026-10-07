@@ -31,7 +31,7 @@ in
         PartOf = [ "graphical-session.target" ];
       };
       Service = {
-        ExecStart = "${cfg.package}/bin/handy";
+        ExecStart = "${cfg.package}/bin/vox";
         Restart = "on-failure";
         RestartSec = 5;
       };
