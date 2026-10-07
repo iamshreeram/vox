@@ -65,7 +65,7 @@ own mini-project with its own branch, its own tests, and its own PR.
 ```
 Phase 1: Memory (SQLite facts + recall)         [no deps]
 Phase 2: Command Router + Safety Gate           [no deps]
-Phase 3: Agent Bridge (code-puppy subprocess)   [no deps]
+Phase 3: Agent Bridge (external CLI agent subprocess)  [no deps]
 Phase 4: Native TTS (macOS AVSpeechSynthesizer) [no deps]
 Phase 5: Wake Word (ONNX, openWakeWord-style)   [depends on: existing VAD]
 Phase 6: Ambient Mode (rolling transcript)      [depends on: Phase 5]
@@ -85,7 +85,7 @@ from Phase 5's branch — see `STATUS.md` for current branch heads).
 | `WORKTREE-CONVENTION.md` | Exact directory/branch naming + setup/teardown commands. |
 | `PHASE-1-memory.md` | SQLite memory manager: facts, recall gate. |
 | `PHASE-2-command-router.md` | Deterministic command routing + consequential-action confirmation gate. |
-| `PHASE-3-agent-bridge.md` | Subprocess bridge to `code-puppy -p` for escalated/delegated requests. |
+| `PHASE-3-agent-bridge.md` | Subprocess bridge to a user-configured external coding-agent CLI for escalated/delegated requests. |
 | `PHASE-4-tts.md` | Native macOS text-to-speech output manager. |
 | `PHASE-5-wakeword.md` | Opt-in "Hey Vox"-style wake word detection. |
 | `PHASE-6-ambient-mode.md` | Rolling-transcript ambient listening + Engagement Judge. |

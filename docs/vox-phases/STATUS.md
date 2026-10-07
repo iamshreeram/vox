@@ -20,7 +20,7 @@ starting at nearly the same time don't both grab the same work.
 
 | # | Phase | status | owner | branch | claimed_at | pr |
 |---|---|---|---|---|---|---|
-| 1 | Memory | in_progress | code-puppy-ad8268 | `phase/1-memory` | 2026-10-07T06:54:43Z | — |
+| 1 | Memory | in_review | agent-ad8268 | `phase/1-memory` | 2026-10-07T06:54:43Z | https://github.com/iamshreeram/vox/pull/new/phase/1-memory (not yet opened — see repo's PR template: AI must not open this PR, user must submit it manually) |
 | 2 | Command Router + Safety Gate | not_started | — | `phase/2-command-router` | — | — |
 | 3 | Agent Bridge | not_started | — | `phase/3-agent-bridge` | — | — |
 | 4 | Native TTS | not_started | — | `phase/4-tts` | — | — |
