@@ -460,7 +460,7 @@ fn build_apple_intelligence_bridge() {
     };
 
     if !Path::new(source_file).exists() {
-        panic!("Source file {} is missing!", source_file);
+        panic!("Source file {source_file} is missing!");
     }
 
     // See SDKROOT note above — same env-override pattern for non-Xcode toolchains.
