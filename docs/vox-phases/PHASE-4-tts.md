@@ -1,17 +1,36 @@
-# Phase 4 - Native TTS (macOS AVSpeechSynthesizer)
+# Phase 4 - Native TTS (macOS NSSpeechSynthesizer)
 
 **Branch:** `phase/4-tts` - **Worktree:** `.worktrees/phase-4-tts/`
 **Depends on:** nothing
 
 ## 1. Goal
 
-Give Vox a voice. A `TtsManager` that can speak text aloud on macOS via
-`AVSpeechSynthesizer`, mirroring vox's Apple TTS backend
-(`src/vox/tts/apple_engine.py`) - the simplest of vox's three TTS backends,
-and the right first target since Handy already depends on `objc2` +
-`objc2-app-kit` + `objc2-foundation` for its existing macOS paste path.
+Give Vox a voice. A `TtsManager` that can speak text aloud on macOS,
+mirroring vox's Apple TTS backend (`src/vox/tts/apple_engine.py`) - the
+simplest of vox's three TTS backends, and the right first target.
 Porting Kokoro inference to Rust is explicitly deferred to a later phase,
 not this one (see Non-goals).
+
+**CORRECTED API choice:** an earlier draft of this doc specified
+`AVSpeechSynthesizer` (AVFoundation). vox's actual, proven, shipped
+implementation uses the older **`NSSpeechSynthesizer`** (AppKit) instead,
+and that turns out to be the better choice here too, not just a
+porting-fidelity nitpick:
+
+- AppKit bindings (`objc2-app-kit`) are **already a dependency** (the
+  existing macOS paste path uses them) -- zero new crates needed. Rust's
+  own NFR2 below already flags "check before adding a new objc2-\*
+  subcrate"; this sidesteps that question entirely.
+- `NSSpeechSynthesizer`'s completion model is a dead-simple poll loop
+  (`isSpeaking()`), exactly matching this phase's blocking `speak()`
+  design. `AVSpeechSynthesizer`'s real API is delegate/callback-based
+  (`AVSpeechSynthesizerDelegate` methods), which would need meaningfully
+  more FFI scaffolding in Rust (a delegate object implementing an objc2
+  protocol) to get the same blocking behavior this trait wants.
+
+Use `NSSpeechSynthesizer` unless a concrete reason to need
+AVFoundation-only features (e.g. a specific enhanced/neural voice only
+exposed there) surfaces during implementation.
 
 ## 2. Non-goals
 
@@ -31,11 +50,14 @@ not this one (see Non-goals).
 ## 3. Design
 
 New file: `src-tauri/src/managers/tts.rs`, macOS implementation behind
-`cfg(target_os = "macos")` using `objc2`/`objc2-foundation` bindings to
-`AVFoundation`'s `AVSpeechSynthesizer`/`AVSpeechUtterance`. If an
-`objc2-avf-audio` (or equivalently named) crate exists and covers
-`AVSpeechSynthesizer`, use it instead of hand-rolling raw `objc2::msg_send!`
-calls - check before writing manual FFI bindings.
+`cfg(target_os = "macos")` using the existing `objc2-app-kit` dependency
+to drive `NSSpeechSynthesizer` (see §1's corrected-API note for why this,
+not AVFoundation). vox's actual implementation is a useful reference
+shape: lazily create the synthesizer on first use, apply the configured
+voice id via `setVoice:` before the first utterance, call
+`startSpeakingString:`, then poll `isSpeaking()` in a sleep loop
+(vox polls every 50ms) until it returns false or `stop()`
+(`stopSpeaking()`) is called from another thread.
 
 ```rust
 pub trait TtsEngine: Send + Sync {
@@ -65,8 +87,11 @@ pub enum TtsError {
 ```rust
 pub tts_enabled: bool,        // default: false
 pub tts_voice_id: Option<String>, // default: None -> system default voice
-pub tts_rate: f32,            // default: 0.5 (AVSpeechUtterance's own
-                               // normalized 0.0-1.0 rate scale)
+pub tts_rate: f32,            // default: 200.0 (NSSpeechSynthesizer's
+                               // `rate` property is words-per-minute, NOT
+                               // a 0.0-1.0 normalized scale like
+                               // AVSpeechUtterance -- 200 wpm is a
+                               // commonly-cited natural-sounding default)
 ```
 
 ### Tauri commands
@@ -75,7 +100,8 @@ pub tts_rate: f32,            // default: 0.5 (AVSpeechUtterance's own
 - `tts_stop() -> Result<(), String>`
 - `tts_is_speaking() -> Result<bool, String>`
 - `tts_list_voices() -> Result<Vec<VoiceInfo>, String>` (id + display name
-  - language code, from `AVSpeechSynthesisVoice.speechVoices()`)
+  + language code, from `NSSpeechSynthesizer.availableVoices()` plus
+  `NSSpeechSynthesizer.attributesForVoice:` for the display name/locale)
 
 ## 4. Functional requirements
 
@@ -105,11 +131,8 @@ pub tts_rate: f32,            // default: 0.5 (AVSpeechUtterance's own
 
 - NFR1: `speak()` must run off the Tauri async runtime's worker threads
   (blocking call pattern, same note as Phase 3's NFR2).
-- NFR2: No new third-party crate beyond possibly one `objc2-*` subcrate for
-  AVFoundation bindings if `objc2-app-kit`/`objc2-foundation` alone don't
-  cover `AVSpeechSynthesizer` - check the `objc2` project's crate family
-  first (it ships per-framework crates, e.g. `objc2-avf-audio`) before
-  hand-writing raw message-send FFI.
+- NFR2: No new third-party crate -- `objc2-app-kit` (already a dependency
+  for the existing paste path) covers `NSSpeechSynthesizer` fully.
 - NFR3: Must not regress existing macOS paste functionality - this phase
   adds AVFoundation usage alongside, not instead of, the existing
   `objc2-app-kit` paste-path usage; run the full existing test suite, not
@@ -137,6 +160,7 @@ contract tests and real-engine tests.
 | T6  | `stop()` called when nothing is speaking                                                          | No-op, no panic, no error                                                                                                                                                         |
 | T7  | Two sequential `speak()` calls from the same thread, one after the other completes                | Both complete successfully, no overlap (hard to assert overlap directly without audio capture - at minimum assert both return `Ok(())` and `is_speaking()` is `false` after both) |
 | T8  | `tts_voice_id` set to `"definitely-not-a-real-voice-id"`                                          | `speak()` still succeeds (falls back to default voice per FR5), does not error                                                                                                    |
+| T8a | `tts_voice_id` set to a real voice id, then `speak()` called                                       | The configured voice is applied to the synthesizer before the first utterance (ports vox's `test_voice_is_applied_on_first_use`) -- assert via a fake synthesizer recording the `setVoice:` call, same technique vox's test uses |
 | T9  | `tts_list_voices()` on a macOS machine                                                            | Returns a non-empty list; every entry has a non-empty `id` and non-empty `language` code                                                                                          |
 
 ### Settings gate
