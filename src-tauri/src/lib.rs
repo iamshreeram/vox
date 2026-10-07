@@ -36,6 +36,7 @@ use env_filter::Builder as EnvFilterBuilder;
 use managers::audio::AudioRecordingManager;
 use managers::history::HistoryManager;
 use managers::memory::MemoryManager;
+use managers::command_router::CommandRouter;
 use managers::model::ModelManager;
 use managers::transcription::TranscriptionManager;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -185,6 +186,21 @@ fn should_force_show_permissions_window(app: &AppHandle) -> bool {
     false
 }
 
+/// Real `.app` scanning only exists on macOS; other platforms get a
+/// discovery that always reports no apps, so voice-command app-open
+/// matching deterministically returns `NoMatch` there (folder matching
+/// still works everywhere via `CommandRouter`'s own home-dir lookup).
+fn new_app_discovery() -> Box<dyn managers::command_router::AppDiscovery> {
+    #[cfg(target_os = "macos")]
+    {
+        Box::new(managers::command_router::MacAppDiscovery)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Box::new(managers::command_router::NullAppDiscovery)
+    }
+}
+
 fn initialize_core_logic(app_handle: &AppHandle) {
     // Note: Enigo (keyboard/mouse simulation) is NOT initialized here.
     // The frontend is responsible for calling the `initialize_enigo` command
@@ -208,6 +224,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
     let memory_manager =
         Arc::new(MemoryManager::new(app_handle).expect("Failed to initialize memory manager"));
+    let command_router = Arc::new(CommandRouter::new(new_app_discovery()));
 
     // Initialize the transcribe-cpp native backend (logging + backend module
     // registration) once, before any whisper model is loaded.
@@ -222,6 +239,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
     app_handle.manage(memory_manager.clone());
+    app_handle.manage(command_router.clone());
     app_handle.manage(tray::TrayState::new());
 
     // Note: Shortcuts are NOT initialized here.

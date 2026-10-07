@@ -13,7 +13,9 @@
 //! keyword vox actually tests against.
 //!
 //! `#![allow(dead_code)]`: nothing in this module is called from
-//! production code yet, matching CommandRouter's own non-goal.
+//! production code yet -- there is no destructive action implemented for
+//! it to gate (`CommandRouter`'s actions are all non-destructive opens).
+//! Wire this in once a later phase adds a consequential action.
 #![allow(dead_code)]
 
 use regex::Regex;

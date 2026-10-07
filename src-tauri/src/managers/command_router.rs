@@ -24,12 +24,13 @@
 //!   like `open_url`) isn't implemented yet -- this phase's non-goals
 //!   explicitly defer command *execution* wiring to a later phase.
 //!
-//! `#![allow(dead_code)]`: nothing in this module is called from
-//! production code yet -- that wiring is explicitly this phase's
-//! non-goal ("No actual command execution integration with the
-//! dictation hotkey flow yet"). Remove this once a later phase wires
-//! `CommandRouter` in.
-#![allow(dead_code)]
+//! Wired into the post-transcription pipeline in `actions.rs`, gated by
+//! the `voice_commands_enabled` setting (default off): when enabled, a
+//! recognized "open X" transcript is executed (via the OS opener) instead
+//! of being pasted. `SafetyPolicy`'s confirmation gate has no destructive
+//! action to guard yet (`OpenApp`/`OpenPath`/`OpenUrl` are all
+//! non-destructive), so it remains library-only until a later phase adds
+//! an action worth confirming.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -168,9 +169,8 @@ const KNOWN_FOLDERS: &[(&str, &str)] = &[
 ];
 
 impl CommandRouter {
-    /// Production constructor (real `$HOME`/`$USERPROFILE`). Not yet called
-    /// outside tests -- this phase's non-goals explicitly defer wiring the
-    /// router into the dictation hotkey flow to a later phase.
+    /// Production constructor (real `$HOME`/`$USERPROFILE`). Used by
+    /// `lib.rs` at startup; tests use `with_home` with fakes instead.
     pub fn new(discovery: Box<dyn AppDiscovery>) -> Self {
         Self::with_home(discovery, Box::new(RealHomeDir))
     }

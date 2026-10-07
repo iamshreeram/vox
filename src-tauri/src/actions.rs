@@ -3,7 +3,9 @@ use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
 use crate::managers::audio::AudioRecordingManager;
+use crate::managers::command_router::{CommandAction, CommandRouter, RouteDecision};
 use crate::managers::history::HistoryManager;
+use crate::managers::memory::MemoryManager;
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
@@ -14,7 +16,7 @@ use crate::utils::{
     self, show_processing_overlay, show_recording_overlay, show_transcribing_overlay,
 };
 use crate::TranscriptionCoordinator;
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::future::Future;
@@ -22,6 +24,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Manager;
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_opener::OpenerExt;
 
 const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
@@ -92,6 +95,60 @@ fn build_system_prompt(prompt_template: &str) -> String {
 /// transcription".
 fn is_blank_transcription(transcription: &str) -> bool {
     transcription.trim().is_empty()
+}
+
+/// Gate for the voice-command hook (`voice_commands_enabled` setting,
+/// default off). Pure with respect to I/O -- `CommandRouter::route` itself
+/// does the real matching; this just applies the enable/disable gate so
+/// the behavior is independently testable without a running app.
+fn decide_voice_command(
+    router: &CommandRouter,
+    voice_commands_enabled: bool,
+    transcript: &str,
+) -> Option<CommandAction> {
+    if !voice_commands_enabled {
+        return None;
+    }
+    match router.route(transcript) {
+        RouteDecision::Matched { action } => Some(action),
+        RouteDecision::NoMatch => None,
+    }
+}
+
+/// Gate for the memory-capture hook (`memory_enabled` setting, default
+/// off). Same reasoning as `decide_voice_command` above.
+fn decide_memory_fact(memory_enabled: bool, transcript: &str) -> Option<String> {
+    if !memory_enabled {
+        return None;
+    }
+    MemoryManager::extract_fact(transcript)
+}
+
+/// Performs a matched voice command via the OS opener (never arbitrary
+/// shell execution -- mirrors the phase doc's non-goal). Returns a short
+/// human-readable description for the confirmation toast.
+fn execute_command_action(app: &AppHandle, action: &CommandAction) -> Result<String, String> {
+    match action {
+        CommandAction::OpenApp { name, resolved_path } => {
+            let path = resolved_path.to_string_lossy().to_string();
+            app.opener()
+                .open_path(path, None::<String>)
+                .map(|_| format!("Opened {name}"))
+                .map_err(|e| format!("Failed to open {name}: {e}"))
+        }
+        CommandAction::OpenPath { path } => {
+            let display = path.to_string_lossy().to_string();
+            app.opener()
+                .open_path(display.clone(), None::<String>)
+                .map(|_| format!("Opened {display}"))
+                .map_err(|e| format!("Failed to open {display}: {e}"))
+        }
+        CommandAction::OpenUrl { url } => app
+            .opener()
+            .open_url(url.clone(), None::<String>)
+            .map(|_| format!("Opened {url}"))
+            .map_err(|e| format!("Failed to open {url}: {e}")),
+    }
 }
 
 async fn complete_unless_cancelled<F, C>(operation: F, is_cancelled: C) -> Option<F::Output>
@@ -725,6 +782,49 @@ impl ShortcutAction for TranscribeAction {
                                 return;
                             }
 
+                            // Voice-command / memory hooks run on the raw
+                            // transcript (never the post-processed text, so
+                            // an LLM rewrite can't mangle a trigger phrase),
+                            // before `transcription` is moved into
+                            // `save_entry` below. Both are opt-in and off
+                            // by default.
+                            let hook_settings = get_settings(&ah);
+                            let mut skip_paste_for_command = false;
+
+                            if hook_settings.voice_commands_enabled {
+                                let router = ah.state::<Arc<CommandRouter>>();
+                                if let Some(action) =
+                                    decide_voice_command(&router, true, &transcription)
+                                {
+                                    match execute_command_action(&ah, &action) {
+                                        Ok(description) => {
+                                            info!("Voice command executed: {description}");
+                                            let _ =
+                                                ah.emit("voice-command-executed", description);
+                                            skip_paste_for_command = true;
+                                        }
+                                        Err(err) => {
+                                            error!("Failed to execute voice command: {err}");
+                                        }
+                                    }
+                                }
+                            }
+
+                            if hook_settings.memory_enabled {
+                                if let Some(fact) =
+                                    decide_memory_fact(true, &transcription)
+                                {
+                                    let memory_manager = ah.state::<Arc<MemoryManager>>();
+                                    match memory_manager.remember(&fact, &transcription) {
+                                        Ok(id) => {
+                                            info!("Remembered fact (id {id}): {fact}");
+                                            let _ = ah.emit("memory-remembered", fact.clone());
+                                        }
+                                        Err(err) => error!("Failed to remember fact: {err}"),
+                                    }
+                                }
+                            }
+
                             // Save to history if WAV was saved
                             if wav_saved {
                                 if let Err(err) = hm.save_entry(
@@ -738,7 +838,7 @@ impl ShortcutAction for TranscribeAction {
                                 }
                             }
 
-                            if processed.final_text.is_empty() {
+                            if skip_paste_for_command || processed.final_text.is_empty() {
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                             } else {
@@ -884,11 +984,15 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_unless_cancelled, is_blank_transcription, should_use_streaming_overlay,
-        strip_think_block,
+        complete_unless_cancelled, decide_memory_fact, decide_voice_command,
+        is_blank_transcription, should_use_streaming_overlay, strip_think_block,
+    };
+    use crate::managers::command_router::{
+        AppDiscovery, CommandAction, CommandRouter, HomeDirProvider, NullAppDiscovery,
     };
     use crate::settings::OverlayStyle;
     use std::future;
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::thread;
@@ -967,5 +1071,74 @@ mod tests {
         assert!(!should_use_streaming_overlay(OverlayStyle::Live, false));
         assert!(!should_use_streaming_overlay(OverlayStyle::Minimal, true));
         assert!(!should_use_streaming_overlay(OverlayStyle::None, true));
+    }
+
+    struct FakeAppDiscovery(Vec<PathBuf>);
+    impl AppDiscovery for FakeAppDiscovery {
+        fn scan_installed_apps(&self) -> Vec<PathBuf> {
+            self.0.clone()
+        }
+    }
+
+    struct FakeHome(PathBuf);
+    impl HomeDirProvider for FakeHome {
+        fn home_dir(&self) -> Option<PathBuf> {
+            Some(self.0.clone())
+        }
+    }
+
+    #[test]
+    fn voice_command_disabled_never_routes_even_on_a_matching_phrase() {
+        let router = CommandRouter::with_home(
+            Box::new(FakeAppDiscovery(vec![PathBuf::from("/Applications/iTerm.app")])),
+            Box::new(FakeHome(PathBuf::from("/tmp"))),
+        );
+        assert_eq!(decide_voice_command(&router, false, "open iterm"), None);
+    }
+
+    #[test]
+    fn voice_command_enabled_but_no_match_returns_none() {
+        let router = CommandRouter::new(Box::new(NullAppDiscovery));
+        assert_eq!(
+            decide_voice_command(&router, true, "what's the weather"),
+            None
+        );
+    }
+
+    #[test]
+    fn voice_command_enabled_and_matching_returns_the_action() {
+        let router = CommandRouter::with_home(
+            Box::new(FakeAppDiscovery(vec![PathBuf::from("/Applications/iTerm.app")])),
+            Box::new(FakeHome(PathBuf::from("/tmp"))),
+        );
+        let action = decide_voice_command(&router, true, "open iterm");
+        assert_eq!(
+            action,
+            Some(CommandAction::OpenApp {
+                name: "iTerm".to_string(),
+                resolved_path: PathBuf::from("/Applications/iTerm.app"),
+            })
+        );
+    }
+
+    #[test]
+    fn memory_disabled_never_extracts_even_on_a_trigger_phrase() {
+        assert_eq!(
+            decide_memory_fact(false, "remember that I prefer tea"),
+            None
+        );
+    }
+
+    #[test]
+    fn memory_enabled_but_no_trigger_phrase_returns_none() {
+        assert_eq!(decide_memory_fact(true, "what's the weather"), None);
+    }
+
+    #[test]
+    fn memory_enabled_and_triggered_extracts_the_fact() {
+        assert_eq!(
+            decide_memory_fact(true, "remember that I prefer tea"),
+            Some("I prefer tea".to_string())
+        );
     }
 }

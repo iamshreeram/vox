@@ -447,6 +447,8 @@ pub struct AppSettings {
     pub history_limit: usize,
     #[serde(default)]
     pub memory_enabled: bool,
+    #[serde(default)]
+    pub voice_commands_enabled: bool,
     #[serde(default = "default_recording_retention_period")]
     pub recording_retention_period: RecordingRetentionPeriod,
     #[serde(default)]
@@ -961,6 +963,7 @@ pub fn get_default_settings() -> AppSettings {
         word_correction_threshold: default_word_correction_threshold(),
         history_limit: default_history_limit(),
         memory_enabled: false,
+        voice_commands_enabled: false,
         recording_retention_period: default_recording_retention_period(),
         paste_method: PasteMethod::default(),
         clipboard_handling: ClipboardHandling::default(),
@@ -1561,6 +1564,17 @@ mod tests {
     #[test]
     fn memory_is_disabled_by_default() {
         assert!(!get_default_settings().memory_enabled);
+    }
+
+    #[test]
+    fn voice_commands_enabled_defaults_false_when_missing_from_legacy_settings() {
+        let settings: AppSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(!settings.voice_commands_enabled);
+    }
+
+    #[test]
+    fn voice_commands_are_disabled_by_default() {
+        assert!(!get_default_settings().voice_commands_enabled);
     }
 
     #[test]

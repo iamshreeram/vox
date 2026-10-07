@@ -181,6 +181,27 @@ function App() {
     };
   }, [t]);
 
+  // Memory (Phase 1) and Voice Commands (Phase 2) are both opt-in and
+  // silent otherwise; these toasts are the only in-app confirmation a user
+  // gets that either one actually did something.
+  useEffect(() => {
+    const unlisten = listen<string>("memory-remembered", (event) => {
+      toast.success(`\ud83e\udde0 ${event.payload}`);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen<string>("voice-command-executed", (event) => {
+      toast.success(event.payload);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   // Listen for transcription failures and show a toast.
   // The payload is the backend error message (also logged to handy.log).
   useEffect(() => {

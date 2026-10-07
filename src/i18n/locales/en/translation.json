@@ -270,6 +270,19 @@
         "label": "Experimental Features",
         "description": "Enable experimental features that are still in development."
       },
+      "memory": {
+        "label": "Memory",
+        "description": "Lets Vox remember facts you dictate (e.g. \"remember that I prefer tea\") in a local, offline database. Dictation is pasted as usual either way; remembered facts are only stored for future recall, never sent anywhere.",
+        "addPlaceholder": "Type a fact to remember...",
+        "addButton": "Remember",
+        "forgetButton": "Forget",
+        "empty": "No facts remembered yet. Say \"remember that...\" while dictating, or add one above.",
+        "rememberedToast": "Remembered."
+      },
+      "voiceCommands": {
+        "label": "Voice Commands",
+        "description": "Lets phrases like \"open Safari\" or \"open Downloads\" open the real app/folder instead of being pasted as text. Only recognized, deterministic commands run \u2014 anything else falls back to normal dictation."
+      },
       "lazyStreamClose": {
         "label": "Keep Mic Open Between Transcriptions",
         "description": "Keeps the microphone stream open for 30 seconds after recording stops, reducing latency for back-to-back transcriptions. May degrade Bluetooth audio quality while active."

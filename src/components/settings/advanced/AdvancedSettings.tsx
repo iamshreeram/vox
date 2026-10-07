@@ -24,11 +24,15 @@ import { LazyStreamClose } from "../LazyStreamClose";
 import { FillerWordRemoval } from "../FillerWordRemoval";
 import { ChineseScriptSetting } from "../ChineseScript";
 import { VadBackendSelector } from "../VadBackendSelector";
+import { MemoryToggle } from "../MemoryToggle";
+import { MemoryFactsList } from "../MemoryFactsList";
+import { VoiceCommandsToggle } from "../VoiceCommandsToggle";
 
 export const AdvancedSettings: React.FC = () => {
   const { t } = useTranslation();
   const { getSetting } = useSettings();
   const experimentalEnabled = getSetting("experimental_enabled") || false;
+  const memoryEnabled = getSetting("memory_enabled") || false;
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
@@ -74,6 +78,9 @@ export const AdvancedSettings: React.FC = () => {
           <AccelerationSelector descriptionMode="tooltip" grouped={true} />
           <LazyStreamClose descriptionMode="tooltip" grouped={true} />
           <VadBackendSelector descriptionMode="tooltip" grouped={true} />
+          <MemoryToggle descriptionMode="tooltip" grouped={true} />
+          {memoryEnabled && <MemoryFactsList />}
+          <VoiceCommandsToggle descriptionMode="tooltip" grouped={true} />
         </SettingsGroup>
       )}
     </div>
