@@ -25,8 +25,8 @@ starting at nearly the same time don't both grab the same work.
 | 2   | Command Router + Safety Gate | done         | Shreeram | `phase/2-command-router` | 2026-10-07T09:35:28Z | https://github.com/iamshreeram/vox/pull/2 (merged)                                                             |
 | 3   | Agent Bridge                 | not_started  | —        | `phase/3-agent-bridge`   | —                    | —                                                                                                             |
 | 4   | Native TTS                   | not_started  | —        | `phase/4-tts`            | —                    | —                                                                                                             |
-| 5   | Wake Word                    | not_started  | —        | `phase/5-wakeword`       | —                    | —                                                                                                             |
-| 6   | Ambient Mode                 | blocked_on_5 | —        | `phase/6-ambient-mode`   | —                    | —                                                                                                             |
+| 5   | Wake Word                    | in_progress  | Shreeram | `phase/5-wakeword`       | 2026-10-08T00:00:00Z | multi-agent task queue: see `docs/vox-phases/PHASE-5-6-TASK-QUEUE.md`                                          |
+| 6   | Ambient Mode                 | in_progress  | Shreeram | `phase/6-ambient-mode`   | 2026-10-08T00:00:00Z | multi-agent task queue: see `docs/vox-phases/PHASE-5-6-TASK-QUEUE.md`                                          |
 | 7   | Screen OCR                   | not_started  | —        | `phase/7-vision-ocr`     | —                    | —                                                                                                             |
 
 Valid `status` values: `not_started`, `blocked_on_<n>`, `in_progress`,
