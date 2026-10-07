@@ -38,8 +38,23 @@ pub struct SafetyPolicy {
 
 impl SafetyPolicy {
     pub fn new(trigger_keywords: Vec<String>) -> Self {
-        let _ = trigger_keywords;
-        todo!("RED: implemented in the next commit")
+        let patterns = trigger_keywords
+            .iter()
+            .map(|keyword| {
+                let trimmed = keyword.trim_end_matches(' ');
+                let escaped = regex::escape(trimmed);
+                // "rm " (trailing space preserved) is a prefix-boundary
+                // check, not a strict whole-word match -- see the
+                // DEFAULT_TRIGGER_KEYWORDS doc comment above.
+                let pattern = if keyword.ends_with(' ') {
+                    format!(r"(?i)\b{escaped} ")
+                } else {
+                    format!(r"(?i)\b{escaped}\b")
+                };
+                Regex::new(&pattern).expect("escaped keyword is always a valid regex")
+            })
+            .collect();
+        Self { patterns }
     }
 
     pub fn default_keywords() -> Vec<String> {
@@ -49,8 +64,20 @@ impl SafetyPolicy {
     /// FR4/FR5: whole-word, case-insensitive keyword matching.
     /// FR6: an empty keyword list is a deliberate user opt-out -> Allow.
     pub fn decision_for_text(&self, text: &str) -> SafetyDecision {
-        let _ = text;
-        todo!("RED: implemented in the next commit")
+        // T20: empty text is explicitly not consequential. Every pattern
+        // below would also naturally fail to match "", so this is for
+        // clarity/documentation of intent rather than being load-bearing.
+        if self.patterns.is_empty() || text.is_empty() {
+            return SafetyDecision::Allow;
+        }
+        for pattern in &self.patterns {
+            if pattern.is_match(text) {
+                return SafetyDecision::RequireConfirmation {
+                    original_text: text.to_string(),
+                };
+            }
+        }
+        SafetyDecision::Allow
     }
 }
 
