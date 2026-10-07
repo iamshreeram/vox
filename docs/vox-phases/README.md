@@ -79,17 +79,17 @@ from Phase 5's branch — see `STATUS.md` for current branch heads).
 
 ## Files in this directory
 
-| File | Purpose |
-|---|---|
-| `STATUS.md` | Live phase claim/progress table. Read before claiming work, update when claiming/finishing. |
-| `WORKTREE-CONVENTION.md` | Exact directory/branch naming + setup/teardown commands. |
-| `PHASE-1-memory.md` | SQLite memory manager: facts, recall gate. |
-| `PHASE-2-command-router.md` | Deterministic command routing + consequential-action confirmation gate. |
-| `PHASE-3-agent-bridge.md` | Subprocess bridge to a user-configured external coding-agent CLI for escalated/delegated requests. |
-| `PHASE-4-tts.md` | Native macOS text-to-speech output manager. |
-| `PHASE-5-wakeword.md` | Opt-in "Hey Vox"-style wake word detection. |
-| `PHASE-6-ambient-mode.md` | Rolling-transcript ambient listening + Engagement Judge. |
-| `PHASE-7-vision-ocr.md` | Opt-in "what's on my screen" OCR voice command. |
+| File                        | Purpose                                                                                            |
+| --------------------------- | -------------------------------------------------------------------------------------------------- |
+| `STATUS.md`                 | Live phase claim/progress table. Read before claiming work, update when claiming/finishing.        |
+| `WORKTREE-CONVENTION.md`    | Exact directory/branch naming + setup/teardown commands.                                           |
+| `PHASE-1-memory.md`         | SQLite memory manager: facts, recall gate.                                                         |
+| `PHASE-2-command-router.md` | Deterministic command routing + consequential-action confirmation gate.                            |
+| `PHASE-3-agent-bridge.md`   | Subprocess bridge to a user-configured external coding-agent CLI for escalated/delegated requests. |
+| `PHASE-4-tts.md`            | Native macOS text-to-speech output manager.                                                        |
+| `PHASE-5-wakeword.md`       | Opt-in "Hey Vox"-style wake word detection.                                                        |
+| `PHASE-6-ambient-mode.md`   | Rolling-transcript ambient listening + Engagement Judge.                                           |
+| `PHASE-7-vision-ocr.md`     | Opt-in "what's on my screen" OCR voice command.                                                    |
 
 ## How to actually build one
 

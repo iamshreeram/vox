@@ -12,7 +12,7 @@ Downloads") plus a confirmation gate for phrases that sound consequential
 
 ## 2. Non-goals
 
-- No actual command *execution* integration with the dictation hotkey flow
+- No actual command _execution_ integration with the dictation hotkey flow
   yet — that's a later wiring phase. This phase delivers a `CommandRouter`
   and `SafetyPolicy` that take a transcript string and return a decision;
   proving the decision logic is correct is the whole job here.
@@ -67,7 +67,7 @@ pub enum SafetyDecision {
   - Windows/Linux: out of scope for this phase (return `NoMatch` for app-open
     commands on non-macOS; the router itself must still compile and its
     unit tests must still pass on all platforms using fakes/fixtures, per
-    the platform-gating ground rule — only the *real* filesystem scan is
+    the platform-gating ground rule — only the _real_ filesystem scan is
     macOS-only).
 - Known-folder lookup (Downloads, Documents, Desktop, Home, Pictures,
   Movies, Music) works cross-platform via the `dirs`-style standard paths
@@ -134,44 +134,44 @@ impl SafetyPolicy {
 
 ### `CommandRouter` — open app
 
-| # | Given installed apps | Input | Expect |
-|---|---|---|---|
-| T1 | `["iTerm.app", "Safari.app"]` | `"open iterm"` | `Matched { OpenApp { name: "iTerm", .. } }` |
-| T2 | `["iTerm.app"]` | `"open ITERM"` | Matched (case-insensitive) |
-| T3 | `["Visual Studio Code.app"]` | `"launch Visual Studio Code"` | Matched |
-| T4 | `["Visual Studio Code.app"]` | `"launch VS Code"` | Define and assert one consistent outcome (either matched via an alias table, or `NoMatch` if no alias exists yet) — do not leave this ambiguous; pick `NoMatch` for this phase (no alias table yet) and assert it explicitly so a future phase changing this is a deliberate, visible test change |
-| T5 | `[]` (no apps installed/found) | `"open iterm"` | `NoMatch` |
-| T6 | `["iTerm.app"]` | `"open xcodebuilder"` (no such app, not similar enough) | `NoMatch` |
-| T7 | `["iTerm.app"]` | `""` (empty) | `NoMatch`, no panic |
-| T8 | `["iTerm.app"]` | `""` (emoji/unicode garbage) | `NoMatch`, no panic |
-| T9 | `["iTerm.app"]` | 10,000-character string of random words | `NoMatch` (or matched if it happens to contain "open iterm" — the point of this test is "doesn't panic/hang", assert it returns within a reasonable time, e.g. under 100ms) |
+| #   | Given installed apps           | Input                                                   | Expect                                                                                                                                                                                                                                                                                            |
+| --- | ------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T1  | `["iTerm.app", "Safari.app"]`  | `"open iterm"`                                          | `Matched { OpenApp { name: "iTerm", .. } }`                                                                                                                                                                                                                                                       |
+| T2  | `["iTerm.app"]`                | `"open ITERM"`                                          | Matched (case-insensitive)                                                                                                                                                                                                                                                                        |
+| T3  | `["Visual Studio Code.app"]`   | `"launch Visual Studio Code"`                           | Matched                                                                                                                                                                                                                                                                                           |
+| T4  | `["Visual Studio Code.app"]`   | `"launch VS Code"`                                      | Define and assert one consistent outcome (either matched via an alias table, or `NoMatch` if no alias exists yet) — do not leave this ambiguous; pick `NoMatch` for this phase (no alias table yet) and assert it explicitly so a future phase changing this is a deliberate, visible test change |
+| T5  | `[]` (no apps installed/found) | `"open iterm"`                                          | `NoMatch`                                                                                                                                                                                                                                                                                         |
+| T6  | `["iTerm.app"]`                | `"open xcodebuilder"` (no such app, not similar enough) | `NoMatch`                                                                                                                                                                                                                                                                                         |
+| T7  | `["iTerm.app"]`                | `""` (empty)                                            | `NoMatch`, no panic                                                                                                                                                                                                                                                                               |
+| T8  | `["iTerm.app"]`                | `""` (emoji/unicode garbage)                            | `NoMatch`, no panic                                                                                                                                                                                                                                                                               |
+| T9  | `["iTerm.app"]`                | 10,000-character string of random words                 | `NoMatch` (or matched if it happens to contain "open iterm" — the point of this test is "doesn't panic/hang", assert it returns within a reasonable time, e.g. under 100ms)                                                                                                                       |
 
 ### `CommandRouter` — open path/folder
 
-| # | Input | Expect |
-|---|---|---|
-| T10 | `"open downloads"` | `Matched { OpenPath { path: <platform Downloads dir> } }` |
-| T11 | `"open my downloads folder"` | Matched (same as T10 — trailing/filler words tolerated) |
-| T12 | `"open the moon"` | `NoMatch` |
+| #   | Input                        | Expect                                                    |
+| --- | ---------------------------- | --------------------------------------------------------- |
+| T10 | `"open downloads"`           | `Matched { OpenPath { path: <platform Downloads dir> } }` |
+| T11 | `"open my downloads folder"` | Matched (same as T10 — trailing/filler words tolerated)   |
+| T12 | `"open the moon"`            | `NoMatch`                                                 |
 
 ### `SafetyPolicy`
 
-| # | Trigger list | Input | Expect |
-|---|---|---|---|
-| T13 | default | `"delete the file"` | `RequireConfirmation` |
-| T14 | default | `"DELETE the file"` | `RequireConfirmation` (case-insensitive) |
-| T15 | default | `"I live in Sendai"` | `Allow` (whole-word match only — "send" must not match inside "Sendai") |
-| T16 | default | `"please send this email"` | `RequireConfirmation` |
-| T17 | default | `"what's the weather"` | `Allow` |
-| T18 | `[]` (empty, user-cleared) | `"delete everything"` | `Allow` (explicit opt-out, see FR6) |
-| T19 | custom `["banana"]` | `"please banana the repo"` | `RequireConfirmation` |
-| T20 | default | `""` | `Allow` (empty text is not consequential) |
-| T21 | default | `"rm -rf /"` | `RequireConfirmation` (matches `"rm "` trigger) |
+| #   | Trigger list               | Input                      | Expect                                                                  |
+| --- | -------------------------- | -------------------------- | ----------------------------------------------------------------------- |
+| T13 | default                    | `"delete the file"`        | `RequireConfirmation`                                                   |
+| T14 | default                    | `"DELETE the file"`        | `RequireConfirmation` (case-insensitive)                                |
+| T15 | default                    | `"I live in Sendai"`       | `Allow` (whole-word match only — "send" must not match inside "Sendai") |
+| T16 | default                    | `"please send this email"` | `RequireConfirmation`                                                   |
+| T17 | default                    | `"what's the weather"`     | `Allow`                                                                 |
+| T18 | `[]` (empty, user-cleared) | `"delete everything"`      | `Allow` (explicit opt-out, see FR6)                                     |
+| T19 | custom `["banana"]`        | `"please banana the repo"` | `RequireConfirmation`                                                   |
+| T20 | default                    | `""`                       | `Allow` (empty text is not consequential)                               |
+| T21 | default                    | `"rm -rf /"`               | `RequireConfirmation` (matches `"rm "` trigger)                         |
 
 ### Integration sanity
 
-| # | Scenario | Expect |
-|---|---|---|
+| #   | Scenario                                                                   | Expect                                                                                                              |
+| --- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | T22 | `route()` called from 2 threads concurrently with a shared router instance | No panic, no data race (run under `cargo test` normally; if a cache is added per NFR2, specifically stress it here) |
 
 ## 7. Acceptance criteria

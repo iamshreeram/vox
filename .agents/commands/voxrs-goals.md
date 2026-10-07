@@ -41,7 +41,7 @@ Read, in this order:
 
 - If `$ARGUMENTS` names a phase (number or slug), that is your target.
   Check its row in `STATUS.md`:
-  - If `status` is `done` or `in_progress` with a *different* owner, stop
+  - If `status` is `done` or `in_progress` with a _different_ owner, stop
     and report this to the user instead of proceeding - do not duplicate
     or collide with in-flight work.
   - If `status` is `blocked_on_<n>`, check phase `<n>`'s status; if it is

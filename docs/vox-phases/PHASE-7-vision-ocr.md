@@ -114,49 +114,49 @@ split pattern as Phases 3/4.
 
 ### Settings gate
 
-| # | Given | Expect |
-|---|---|---|
-| T1 | `vision_enabled = false` (default) | `vision_read_screen` returns `VisionError::Disabled`; fake process runner asserts it was never invoked |
-| T2 | Default value of `vision_enabled` | `false` |
+| #   | Given                              | Expect                                                                                                 |
+| --- | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| T1  | `vision_enabled = false` (default) | `vision_read_screen` returns `VisionError::Disabled`; fake process runner asserts it was never invoked |
+| T2  | Default value of `vision_enabled`  | `false`                                                                                                |
 
 ### Capture failure handling
 
-| # | Given | Expect |
-|---|---|---|
-| T3 | Fake capture process exits non-zero | `VisionError::CaptureFailed`, OCR step never attempted |
-| T4 | Fake capture process "succeeds" but produces no output file (simulate a filesystem race) | `VisionError::CaptureFailed`, not a confusing downstream OCR error |
+| #   | Given                                                                                    | Expect                                                             |
+| --- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| T3  | Fake capture process exits non-zero                                                      | `VisionError::CaptureFailed`, OCR step never attempted             |
+| T4  | Fake capture process "succeeds" but produces no output file (simulate a filesystem race) | `VisionError::CaptureFailed`, not a confusing downstream OCR error |
 
 ### OCR failure handling
 
-| # | Given | Expect |
-|---|---|---|
-| T5 | Capture succeeds, fake OCR adapter returns an error | `VisionError::OcrFailed`, distinct variant from capture failures |
-| T6 | Capture succeeds, fake OCR adapter returns empty text (simulating a blank screenshot) | `Ok(OcrResult { text: "", .. })` - not an error, per FR5 |
-| T7 | Capture succeeds, fake OCR adapter returns a long multi-paragraph text | Returned verbatim, no truncation introduced by this layer (any truncation is a caller's/UI's decision, not this manager's) |
+| #   | Given                                                                                 | Expect                                                                                                                     |
+| --- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| T5  | Capture succeeds, fake OCR adapter returns an error                                   | `VisionError::OcrFailed`, distinct variant from capture failures                                                           |
+| T6  | Capture succeeds, fake OCR adapter returns empty text (simulating a blank screenshot) | `Ok(OcrResult { text: "", .. })` - not an error, per FR5                                                                   |
+| T7  | Capture succeeds, fake OCR adapter returns a long multi-paragraph text                | Returned verbatim, no truncation introduced by this layer (any truncation is a caller's/UI's decision, not this manager's) |
 
 ### Cleanup (FR6)
 
-| # | Given | Expect |
-|---|---|---|
-| T8 | Full success path (capture + OCR both succeed) using a real temp-file-based fake | No leftover temp file exists after `capture_and_read` returns |
-| T9 | Capture succeeds but OCR fails | No leftover temp file exists after the error is returned (this is the easy-to-get-wrong case - verify it explicitly) |
+| #   | Given                                                                            | Expect                                                                                                               |
+| --- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| T8  | Full success path (capture + OCR both succeed) using a real temp-file-based fake | No leftover temp file exists after `capture_and_read` returns                                                        |
+| T9  | Capture succeeds but OCR fails                                                   | No leftover temp file exists after the error is returned (this is the easy-to-get-wrong case - verify it explicitly) |
 
 ### Cross-platform
 
-| # | Given | Expect |
-|---|---|---|
+| #   | Given                                                          | Expect                                             |
+| --- | -------------------------------------------------------------- | -------------------------------------------------- |
 | T10 | Non-macOS target (or a directly-exercised stub implementation) | `VisionError::Unsupported`, crate compiles cleanly |
 
 ### Timeout (NFR3)
 
-| # | Given | Expect |
-|---|---|---|
+| #   | Given                                                          | Expect                                                                                    |
+| --- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | T11 | Fake Vision-framework call configured to hang past the timeout | Returns a timeout-flavored error within a bounded test time, does not hang the test suite |
 
 ### Real-hardware smoke test (documented in PR, not CI-asserted)
 
-| # | Scenario | Expect |
-|---|---|---|
+| #   | Scenario                                                                                                                      | Expect                                                                                                                     |
+| --- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | T12 | Run on a real Mac, open a text-heavy window (e.g. this very markdown file in an editor), call `vision_read_screen()` for real | Returned text contains a recognizable fragment of what was actually on screen. Document in the PR that this was performed. |
 
 ## 7. Acceptance criteria

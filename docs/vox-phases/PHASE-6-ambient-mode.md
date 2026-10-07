@@ -9,8 +9,8 @@ with it at the settings level.
 
 Opt-in, off-by-default "room mode": continuous VAD-segmented transcription
 into a short RAM-only rolling buffer, with a deterministic Engagement Judge
-that decides whether speech was *addressed to* Vox ("Vox, what time is
-it") versus merely *mentioning* Vox ("I was telling Vox earlier...";
+that decides whether speech was _addressed to_ Vox ("Vox, what time is
+it") versus merely _mentioning_ Vox ("I was telling Vox earlier...";
 "Vox is a good idea actually"). Mirrors vox's `src/vox/ambient/` (`transcript.py`,
 `engagement.py`, `echo.py`, `coordinator.py`).
 
@@ -133,39 +133,39 @@ pub ambient_window_ms: u64,     // default: 90_000 (90s, matches vox)
 
 ### `RollingTranscript`
 
-| # | Given | Expect |
-|---|---|---|
-| T1 | Push 3 segments at t=0, t=1000, t=2000ms | `recent_window(3000)` returns all 3, in chronological order |
-| T2 | Push a segment at t=0, then another at t=100_000 (past the 90s window) | `recent_window` anchored at the latest timestamp no longer includes the t=0 segment |
-| T3 | Push 1000 segments spread across a much longer time range than the window | Internal storage size stays bounded (does not grow unboundedly - assert via a size/len check, not just query-time filtering) |
-| T4 | `clear()` after pushing several segments | `recent_window` returns empty immediately after |
-| T5 | `recent_window` called on a brand-new, empty transcript | Returns empty, no panic |
-| T6 | Concurrent `push` from one thread and `recent_window` reads from another, run for a short stress duration | No panic, no data race (use a loom-style or simple concurrent stress test with `std::thread`) |
+| #   | Given                                                                                                     | Expect                                                                                                                       |
+| --- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| T1  | Push 3 segments at t=0, t=1000, t=2000ms                                                                  | `recent_window(3000)` returns all 3, in chronological order                                                                  |
+| T2  | Push a segment at t=0, then another at t=100_000 (past the 90s window)                                    | `recent_window` anchored at the latest timestamp no longer includes the t=0 segment                                          |
+| T3  | Push 1000 segments spread across a much longer time range than the window                                 | Internal storage size stays bounded (does not grow unboundedly - assert via a size/len check, not just query-time filtering) |
+| T4  | `clear()` after pushing several segments                                                                  | `recent_window` returns empty immediately after                                                                              |
+| T5  | `recent_window` called on a brand-new, empty transcript                                                   | Returns empty, no panic                                                                                                      |
+| T6  | Concurrent `push` from one thread and `recent_window` reads from another, run for a short stress duration | No panic, no data race (use a loom-style or simple concurrent stress test with `std::thread`)                                |
 
 ### `EngagementJudge`
 
-| # | Wake name | Input | Expect |
-|---|---|---|---|
-| T7 | "Vox" | `"Vox, what time is it"` | `Addressed { extracted_request: "what time is it" }` |
-| T8 | "Vox" | `"vox what time is it"` (no comma, lowercase) | `Addressed` (case-insensitive, punctuation-tolerant - confirm against the ported heuristic's actual tolerance; if the ported heuristic requires the comma, this test instead asserts `Unrelated` or `Mentioned` and that must match vox's real behavior, not a guess) |
-| T9 | "Vox" | `"I was telling Vox about the project"` | `Mentioned` |
-| T10 | "Vox" | `"Vox is a good name for this"` | `Mentioned` (statement about Vox, not addressed to it) |
-| T11 | "Vox" | `"what's the weather like today"` | `Unrelated` |
-| T12 | "Vox" | `""` | `Unrelated`, no panic |
-| T13 | "Computer" (non-default wake name) | `"Computer, lights off"` | `Addressed { extracted_request: "lights off" }` - proves FR7 (no hardcoding) |
-| T14 | "Vox" | `"VOX VOX VOX what time is it"` (repeated) | `Addressed` with a sane extracted request (define exact expected string in the test once implemented, don't leave it vague) |
+| #   | Wake name                          | Input                                         | Expect                                                                                                                                                                                                                                                                |
+| --- | ---------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T7  | "Vox"                              | `"Vox, what time is it"`                      | `Addressed { extracted_request: "what time is it" }`                                                                                                                                                                                                                  |
+| T8  | "Vox"                              | `"vox what time is it"` (no comma, lowercase) | `Addressed` (case-insensitive, punctuation-tolerant - confirm against the ported heuristic's actual tolerance; if the ported heuristic requires the comma, this test instead asserts `Unrelated` or `Mentioned` and that must match vox's real behavior, not a guess) |
+| T9  | "Vox"                              | `"I was telling Vox about the project"`       | `Mentioned`                                                                                                                                                                                                                                                           |
+| T10 | "Vox"                              | `"Vox is a good name for this"`               | `Mentioned` (statement about Vox, not addressed to it)                                                                                                                                                                                                                |
+| T11 | "Vox"                              | `"what's the weather like today"`             | `Unrelated`                                                                                                                                                                                                                                                           |
+| T12 | "Vox"                              | `""`                                          | `Unrelated`, no panic                                                                                                                                                                                                                                                 |
+| T13 | "Computer" (non-default wake name) | `"Computer, lights off"`                      | `Addressed { extracted_request: "lights off" }` - proves FR7 (no hardcoding)                                                                                                                                                                                          |
+| T14 | "Vox"                              | `"VOX VOX VOX what time is it"` (repeated)    | `Addressed` with a sane extracted request (define exact expected string in the test once implemented, don't leave it vague)                                                                                                                                           |
 
 ### Mutual exclusion with wake word (FR1)
 
-| # | Given | Action | Expect |
-|---|---|---|---|
+| #   | Given                                                      | Action                                       | Expect                                                                                                                                                                             |
+| --- | ---------------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | T15 | `wake_word_enabled = true`, `ambient_mode_enabled = false` | Attempt to set `ambient_mode_enabled = true` | Defined behavior occurs (either rejected with a clear error, or wake word auto-disables) - whichever is chosen, both settings' final state is asserted, not just the attempted one |
-| T16 | Both `false` (fresh install default) | Enable ambient mode | Succeeds, wake word stays `false` |
+| T16 | Both `false` (fresh install default)                       | Enable ambient mode                          | Succeeds, wake word stays `false`                                                                                                                                                  |
 
 ### Settings defaults
 
-| # | Given | Expect |
-|---|---|---|
+| #   | Given          | Expect                                                                                       |
+| --- | -------------- | -------------------------------------------------------------------------------------------- |
 | T17 | Fresh settings | `ambient_mode_enabled == false`, `ambient_wake_name == "Vox"`, `ambient_window_ms == 90_000` |
 
 ## 7. Acceptance criteria

@@ -117,31 +117,31 @@ pub wake_word_confidence_threshold: f32, // default: 0.5, matching openWakeWord'
 
 ### Core detection behavior
 
-| # | Given | Expect |
-|---|---|---|
-| T1 | Synthetic audio clip of actual recorded/synthesized wake-word speech (generate via macOS `say` command the same way vox's own `test_openwakeword_engine_real.py` does, or use a bundled fixture WAV) fed frame-by-frame | At least one `process_frame` call returns `Some(detection)` with `confidence >= threshold` |
-| T2 | 10 seconds of all-zero (silence) frames | No detection ever returned |
-| T3 | 10 seconds of synthesized unrelated speech (e.g. `say "the quick brown fox"`) | No detection returned (or if the placeholder pretrained model has false positives on this phrase, document that as a known limitation - do not weaken the test, instead document the limitation and choose a confirmed-clean phrase for the fixture) |
-| T4 | Empty slice passed to `process_frame` | No panic, returns `None` |
-| T5 | Slice of `f32::NAN`/`f32::INFINITY` values | No panic; either returns `None` or a sanitized result - must not propagate NaN into a confidence score (assert `!confidence.is_nan()` if a detection is somehow returned) |
-| T6 | A buffer shorter than one full analysis window | No panic, returns `None` (buffered internally for the next call, not discarded silently - verify by feeding the rest of the window in a follow-up call and confirming detection still works end-to-end across the split) |
-| T7 | `reset()` called mid-utterance (feed half the wake word's audio, reset, feed silence) | No detection (the reset utterance's partial audio must not "linger" and combine with anything after) |
-| T8 | Two `WakeWordEngine` instances constructed with different `model_name`s, each fed the same audio appropriate to ITS model | Each only detects its own wake word's audio (proves no global/shared state leaks between instances) |
+| #   | Given                                                                                                                                                                                                                   | Expect                                                                                                                                                                                                                                               |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T1  | Synthetic audio clip of actual recorded/synthesized wake-word speech (generate via macOS `say` command the same way vox's own `test_openwakeword_engine_real.py` does, or use a bundled fixture WAV) fed frame-by-frame | At least one `process_frame` call returns `Some(detection)` with `confidence >= threshold`                                                                                                                                                           |
+| T2  | 10 seconds of all-zero (silence) frames                                                                                                                                                                                 | No detection ever returned                                                                                                                                                                                                                           |
+| T3  | 10 seconds of synthesized unrelated speech (e.g. `say "the quick brown fox"`)                                                                                                                                           | No detection returned (or if the placeholder pretrained model has false positives on this phrase, document that as a known limitation - do not weaken the test, instead document the limitation and choose a confirmed-clean phrase for the fixture) |
+| T4  | Empty slice passed to `process_frame`                                                                                                                                                                                   | No panic, returns `None`                                                                                                                                                                                                                             |
+| T5  | Slice of `f32::NAN`/`f32::INFINITY` values                                                                                                                                                                              | No panic; either returns `None` or a sanitized result - must not propagate NaN into a confidence score (assert `!confidence.is_nan()` if a detection is somehow returned)                                                                            |
+| T6  | A buffer shorter than one full analysis window                                                                                                                                                                          | No panic, returns `None` (buffered internally for the next call, not discarded silently - verify by feeding the rest of the window in a follow-up call and confirming detection still works end-to-end across the split)                             |
+| T7  | `reset()` called mid-utterance (feed half the wake word's audio, reset, feed silence)                                                                                                                                   | No detection (the reset utterance's partial audio must not "linger" and combine with anything after)                                                                                                                                                 |
+| T8  | Two `WakeWordEngine` instances constructed with different `model_name`s, each fed the same audio appropriate to ITS model                                                                                               | Each only detects its own wake word's audio (proves no global/shared state leaks between instances)                                                                                                                                                  |
 
 ### Threshold / confidence validity
 
-| # | Given | Expect |
-|---|---|---|
-| T9 | Threshold set very high (e.g. 0.99) with borderline-confidence audio | No detection (confirms threshold is actually applied, not just logged) |
-| T10 | Threshold set very low (e.g. 0.01) with the same borderline audio | Detection fires (confirms the threshold is configurable both directions) |
-| T11 | Any detection returned, across all tests | `0.0 <= confidence <= 1.0` always |
+| #   | Given                                                                | Expect                                                                   |
+| --- | -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| T9  | Threshold set very high (e.g. 0.99) with borderline-confidence audio | No detection (confirms threshold is actually applied, not just logged)   |
+| T10 | Threshold set very low (e.g. 0.01) with the same borderline audio    | Detection fires (confirms the threshold is configurable both directions) |
+| T11 | Any detection returned, across all tests                             | `0.0 <= confidence <= 1.0` always                                        |
 
 ### Settings gate
 
-| # | Given | Expect |
-|---|---|---|
+| #   | Given                                 | Expect                                                                                                                                                                                                           |
+| --- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | T12 | `wake_word_enabled = false` (default) | The live audio pipeline integration point (even if just a feature-flag check function in this phase, since full pipeline wiring is a later phase) returns "disabled", and no engine is constructed/no mic opened |
-| T13 | Default value of `wake_word_enabled` | `false` |
+| T13 | Default value of `wake_word_enabled`  | `false`                                                                                                                                                                                                          |
 
 ## 7. Acceptance criteria
 

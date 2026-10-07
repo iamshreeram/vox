@@ -141,62 +141,62 @@ through `tauri-specta` like the rest of the codebase (check how
 
 ### `extract_fact`
 
-| # | Given | Expect |
-|---|---|---|
-| T1 | `"remember that I prefer tea"` | `Some("I prefer tea")` |
-| T2 | `"Remember That I Prefer Tea"` (mixed case) | `Some("I Prefer Tea")` (trigger match is case-insensitive; captured fact text preserves original casing) |
-| T3 | `"don't forget that the garage code is 4521"` | `Some("the garage code is 4521")` |
-| T4 | `"note that my dentist appointment is Tuesday"` | `Some("my dentist appointment is Tuesday")` |
-| T5 | `"what's the weather today"` (no trigger phrase) | `None` |
-| T6 | `""` (empty string) | `None` |
-| T7 | `"remember"` (trigger word with nothing after it) | `None` (no fact text to extract) |
-| T8 | `"   remember that   i like coffee  "` (extra whitespace) | `Some("i like coffee")` (trimmed) |
-| T9 | `"please remember that i like coffee"` (trigger phrase not at the very start) | `Some("i like coffee")` — match the trigger phrase anywhere in the transcript, not only at position 0 (vox's filler-word cleanup means transcripts often have a leading "please"/"hey" the STT added) |
-| T10 | `"remember that remember that nested"` (trigger phrase appears twice) | `Some("remember that nested")` — only the *first* match's prefix is stripped |
+| #   | Given                                                                         | Expect                                                                                                                                                                                                |
+| --- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T1  | `"remember that I prefer tea"`                                                | `Some("I prefer tea")`                                                                                                                                                                                |
+| T2  | `"Remember That I Prefer Tea"` (mixed case)                                   | `Some("I Prefer Tea")` (trigger match is case-insensitive; captured fact text preserves original casing)                                                                                              |
+| T3  | `"don't forget that the garage code is 4521"`                                 | `Some("the garage code is 4521")`                                                                                                                                                                     |
+| T4  | `"note that my dentist appointment is Tuesday"`                               | `Some("my dentist appointment is Tuesday")`                                                                                                                                                           |
+| T5  | `"what's the weather today"` (no trigger phrase)                              | `None`                                                                                                                                                                                                |
+| T6  | `""` (empty string)                                                           | `None`                                                                                                                                                                                                |
+| T7  | `"remember"` (trigger word with nothing after it)                             | `None` (no fact text to extract)                                                                                                                                                                      |
+| T8  | `"   remember that   i like coffee  "` (extra whitespace)                     | `Some("i like coffee")` (trimmed)                                                                                                                                                                     |
+| T9  | `"please remember that i like coffee"` (trigger phrase not at the very start) | `Some("i like coffee")` — match the trigger phrase anywhere in the transcript, not only at position 0 (vox's filler-word cleanup means transcripts often have a leading "please"/"hey" the STT added) |
+| T10 | `"remember that remember that nested"` (trigger phrase appears twice)         | `Some("remember that nested")` — only the _first_ match's prefix is stripped                                                                                                                          |
 
 ### `remember` / persistence
 
-| # | Given | Expect |
-|---|---|---|
-| T11 | `remember("prefers tea", "remember that I prefer tea")` | Returns an `id > 0` |
-| T12 | After T11, call `list_all()` | Contains exactly one fact with `text == "prefers tea"` |
-| T13 | Store a fact, close and reopen the `MemoryManager` against the same DB file (simulating app restart) | The fact is still present via `list_all()` |
-| T14 | Store 3 facts in sequence | `list_all()` returns them ordered most-recent-first |
+| #   | Given                                                                                                | Expect                                                 |
+| --- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| T11 | `remember("prefers tea", "remember that I prefer tea")`                                              | Returns an `id > 0`                                    |
+| T12 | After T11, call `list_all()`                                                                         | Contains exactly one fact with `text == "prefers tea"` |
+| T13 | Store a fact, close and reopen the `MemoryManager` against the same DB file (simulating app restart) | The fact is still present via `list_all()`             |
+| T14 | Store 3 facts in sequence                                                                            | `list_all()` returns them ordered most-recent-first    |
 
 ### `recall`
 
-| # | Given facts | Query | Expect |
-|---|---|---|---|
-| T15 | `["prefers tea over coffee"]` | `"what do I prefer to drink"` | overlap on "prefer" → returned |
-| T16 | `["prefers tea over coffee"]` | `"what's the capital of France"` | no meaningful overlap → empty result |
-| T17 | `["garage code is 4521"]` | `"what's my garage code"` | overlap on "garage"/"code" → returned |
-| T18 | `["prefers tea", "allergic to peanuts"]` | `"tea"` | only the tea fact returned, not the peanut one |
-| T19 | 5 facts all matching a broad query, `limit = 2` | query matching all 5 | exactly 2 returned, the 2 most recent of the matches |
-| T20 | No facts stored at all | any query | empty result, not an error |
-| T21 | A fact containing only stopwords after extraction (edge case, e.g. `"remember that it is"` → fact text `"it is"`) | any query | does not crash; matches nothing meaningful (every word is a stopword) — assert no panic and an empty/near-empty result, not a specific crash-free behavior beyond "doesn't error" |
-| T22 | Query with different casing than the stored fact (`"TEA"` vs stored `"tea"`) | — | still matches (case-insensitive) |
+| #   | Given facts                                                                                                       | Query                            | Expect                                                                                                                                                                            |
+| --- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T15 | `["prefers tea over coffee"]`                                                                                     | `"what do I prefer to drink"`    | overlap on "prefer" → returned                                                                                                                                                    |
+| T16 | `["prefers tea over coffee"]`                                                                                     | `"what's the capital of France"` | no meaningful overlap → empty result                                                                                                                                              |
+| T17 | `["garage code is 4521"]`                                                                                         | `"what's my garage code"`        | overlap on "garage"/"code" → returned                                                                                                                                             |
+| T18 | `["prefers tea", "allergic to peanuts"]`                                                                          | `"tea"`                          | only the tea fact returned, not the peanut one                                                                                                                                    |
+| T19 | 5 facts all matching a broad query, `limit = 2`                                                                   | query matching all 5             | exactly 2 returned, the 2 most recent of the matches                                                                                                                              |
+| T20 | No facts stored at all                                                                                            | any query                        | empty result, not an error                                                                                                                                                        |
+| T21 | A fact containing only stopwords after extraction (edge case, e.g. `"remember that it is"` → fact text `"it is"`) | any query                        | does not crash; matches nothing meaningful (every word is a stopword) — assert no panic and an empty/near-empty result, not a specific crash-free behavior beyond "doesn't error" |
+| T22 | Query with different casing than the stored fact (`"TEA"` vs stored `"tea"`)                                      | —                                | still matches (case-insensitive)                                                                                                                                                  |
 
 ### `forget`
 
-| # | Given | Expect |
-|---|---|---|
-| T23 | Store a fact, `forget(id)`, then `list_all()` | Fact no longer present |
-| T24 | `forget(99999)` (id that was never used) | Returns `Ok(())`, does not error |
+| #   | Given                                            | Expect                                         |
+| --- | ------------------------------------------------ | ---------------------------------------------- |
+| T23 | Store a fact, `forget(id)`, then `list_all()`    | Fact no longer present                         |
+| T24 | `forget(99999)` (id that was never used)         | Returns `Ok(())`, does not error               |
 | T25 | `forget` a fact, then `forget` the same id again | Second call also returns `Ok(())` (idempotent) |
 
 ### Settings / enablement gate
 
-| # | Given | Expect |
-|---|---|---|
-| T26 | `memory_enabled = false` (default) | `memory_remember` Tauri command returns an error containing "disabled" (or equivalent clear message), and does NOT write a row to the `facts` table |
-| T27 | `memory_enabled = false` | `memory_recall` Tauri command also returns the same clear disabled-error, not an empty-results success |
-| T28 | Flip `memory_enabled` to `true` via `memory_set_enabled` | Subsequent `memory_remember`/`memory_recall` calls work normally |
-| T29 | Default value of `memory_enabled` on fresh settings | `false` |
+| #   | Given                                                    | Expect                                                                                                                                              |
+| --- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T26 | `memory_enabled = false` (default)                       | `memory_remember` Tauri command returns an error containing "disabled" (or equivalent clear message), and does NOT write a row to the `facts` table |
+| T27 | `memory_enabled = false`                                 | `memory_recall` Tauri command also returns the same clear disabled-error, not an empty-results success                                              |
+| T28 | Flip `memory_enabled` to `true` via `memory_set_enabled` | Subsequent `memory_remember`/`memory_recall` calls work normally                                                                                    |
+| T29 | Default value of `memory_enabled` on fresh settings      | `false`                                                                                                                                             |
 
 ### Concurrency / integration sanity
 
-| # | Given | Expect |
-|---|---|---|
+| #   | Given                                                                                                      | Expect                                                       |
+| --- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | T30 | Two `remember()` calls issued concurrently from two threads (simulate with `std::thread::spawn` in a test) | Both facts are persisted, no row lost, no panic, no deadlock |
 
 ## 8. Acceptance criteria
