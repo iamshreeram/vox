@@ -3,6 +3,18 @@
 //! as whole-word/phrase matches against the text, fail-open toward
 //! safety (any ambiguity means "require confirmation", never a silent
 //! "allow").
+//!
+//! Deliberate improvement over vox, not a divergence from it: vox's own
+//! `decision_for_text` uses plain substring matching (`keyword in text`),
+//! which means its own "send" keyword would false-positive inside
+//! "Sendai" -- untested in vox's suite, but a real latent bug there. This
+//! port uses whole-word/phrase regex matching instead (FR4/FR5 in the
+//! phase doc), which is strictly more correct and still passes every
+//! keyword vox actually tests against.
+//!
+//! `#![allow(dead_code)]`: nothing in this module is called from
+//! production code yet, matching CommandRouter's own non-goal.
+#![allow(dead_code)]
 
 use regex::Regex;
 
@@ -58,7 +70,10 @@ impl SafetyPolicy {
     }
 
     pub fn default_keywords() -> Vec<String> {
-        DEFAULT_TRIGGER_KEYWORDS.iter().map(|s| s.to_string()).collect()
+        DEFAULT_TRIGGER_KEYWORDS
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     }
 
     /// FR4/FR5: whole-word, case-insensitive keyword matching.
@@ -144,7 +159,10 @@ mod tests {
 
     #[test]
     fn t20_empty_text_is_allowed() {
-        assert_eq!(default_policy().decision_for_text(""), SafetyDecision::Allow);
+        assert_eq!(
+            default_policy().decision_for_text(""),
+            SafetyDecision::Allow
+        );
     }
 
     #[test]

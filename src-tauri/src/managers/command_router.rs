@@ -17,11 +17,19 @@
 //!   `CFBundleDisplayName`/`CFBundleName` from Info.plist (e.g. Visual
 //!   Studio Code's bundle name is just "Code"). This phase only indexes
 //!   by folder name -- full Info.plist parsing needs a new dependency
-//!   (`plist` crate) and isn't required by any test case here. Follow-up.
+//!   (a plist-parsing crate) and isn't required by any test case here.
+//!   Follow-up.
 //! - Python's static YAML phrase allowlist (tier 1, for curated STT
 //!   mishearing corrections like "eater" -> iTerm, and non-app actions
 //!   like `open_url`) isn't implemented yet -- this phase's non-goals
 //!   explicitly defer command *execution* wiring to a later phase.
+//!
+//! `#![allow(dead_code)]`: nothing in this module is called from
+//! production code yet -- that wiring is explicitly this phase's
+//! non-goal ("No actual command execution integration with the
+//! dictation hotkey flow yet"). Remove this once a later phase wires
+//! `CommandRouter` in.
+#![allow(dead_code)]
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -38,11 +46,18 @@ pub enum RouteDecision {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::enum_variant_names)] // Open* naming is this phase doc's own spec
 pub enum CommandAction {
-    OpenApp { name: String, resolved_path: PathBuf },
-    OpenPath { path: PathBuf },
-    #[allow(dead_code)] // no voice command produces this yet in this phase
-    OpenUrl { url: String },
+    OpenApp {
+        name: String,
+        resolved_path: PathBuf,
+    },
+    OpenPath {
+        path: PathBuf,
+    },
+    OpenUrl {
+        url: String,
+    },
 }
 
 /// Supplies installed application bundle paths. Real filesystem scanning
@@ -156,7 +171,6 @@ impl CommandRouter {
     /// Production constructor (real `$HOME`/`$USERPROFILE`). Not yet called
     /// outside tests -- this phase's non-goals explicitly defer wiring the
     /// router into the dictation hotkey flow to a later phase.
-    #[allow(dead_code)]
     pub fn new(discovery: Box<dyn AppDiscovery>) -> Self {
         Self::with_home(discovery, Box::new(RealHomeDir))
     }
@@ -227,7 +241,11 @@ impl CommandRouter {
             });
             apps
         } else {
-            cache.as_ref().expect("just checked Some above").apps.clone()
+            cache
+                .as_ref()
+                .expect("just checked Some above")
+                .apps
+                .clone()
         }
     }
 
@@ -249,7 +267,11 @@ impl CommandRouter {
         let apps = self.apps();
         let stems: Vec<(String, &PathBuf)> = apps
             .iter()
-            .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(|s| (s.to_lowercase(), p)))
+            .filter_map(|p| {
+                p.file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| (s.to_lowercase(), p))
+            })
             .collect();
 
         if let Some((name, path)) = stems.iter().find(|(name, _)| name == subject) {
@@ -279,7 +301,11 @@ impl CommandRouter {
         let cleaned = Self::canonicalize_folder_name(subject);
         let (_, relative) = KNOWN_FOLDERS.iter().find(|(key, _)| *key == cleaned)?;
         let home = self.home.home_dir()?;
-        let path = if relative.is_empty() { home } else { home.join(relative) };
+        let path = if relative.is_empty() {
+            home
+        } else {
+            home.join(relative)
+        };
         path.exists().then_some(CommandAction::OpenPath { path })
     }
 
@@ -387,7 +413,10 @@ mod tests {
     #[test]
     fn t3_matches_multiword_app_name_with_launch_verb() {
         let router = router_with_apps(&["Visual Studio Code.app"]);
-        assert_opens_app(router.route("launch Visual Studio Code"), "Visual Studio Code");
+        assert_opens_app(
+            router.route("launch Visual Studio Code"),
+            "Visual Studio Code",
+        );
     }
 
     #[test]
@@ -456,7 +485,10 @@ mod tests {
     fn t10_matches_known_folder() {
         let (dir, home) = temp_home_with_folders(&["Downloads"]);
         let router = CommandRouter::with_home(apps(&[]), home);
-        assert_opens_path(router.route("open downloads"), &dir.path().join("Downloads"));
+        assert_opens_path(
+            router.route("open downloads"),
+            &dir.path().join("Downloads"),
+        );
     }
 
     #[test]
@@ -504,7 +536,10 @@ mod tests {
     fn applications_is_a_known_folder() {
         let (dir, home) = temp_home_with_folders(&["Applications"]);
         let router = CommandRouter::with_home(apps(&[]), home);
-        assert_opens_path(router.route("open applications"), &dir.path().join("Applications"));
+        assert_opens_path(
+            router.route("open applications"),
+            &dir.path().join("Applications"),
+        );
     }
 
     // ---- additional verbs (ported from vox's dynamic-apps test suite) ----
@@ -535,7 +570,10 @@ mod tests {
     fn explicit_folder_wording_overrides_app_collision() {
         let (dir, home) = temp_home_with_folders(&["Music"]);
         let router = CommandRouter::with_home(apps(&["Music.app"]), home);
-        assert_opens_path(router.route("open the music folder"), &dir.path().join("Music"));
+        assert_opens_path(
+            router.route("open the music folder"),
+            &dir.path().join("Music"),
+        );
     }
 
     #[test]
@@ -557,7 +595,11 @@ mod tests {
             .map(|i| {
                 let router = Arc::clone(&router);
                 thread::spawn(move || {
-                    let text = if i % 2 == 0 { "open iterm" } else { "open downloads" };
+                    let text = if i % 2 == 0 {
+                        "open iterm"
+                    } else {
+                        "open downloads"
+                    };
                     router.route(text)
                 })
             })
