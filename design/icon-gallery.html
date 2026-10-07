@@ -1,0 +1,1628 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vox — Icon &amp; Direction Gallery</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .icon-card svg {
+        width: 128px;
+        height: 128px;
+      }
+      .glow:hover {
+        box-shadow:
+          0 0 0 2px #f4c430,
+          0 8px 30px rgba(244, 196, 48, 0.25);
+      }
+    </style>
+  </head>
+  <body class="bg-[#121212] text-[#f2f2f2] min-h-screen">
+    <header class="max-w-6xl mx-auto px-6 pt-14 pb-8 text-center">
+      <div class="inline-flex items-center gap-3 mb-4">
+        <span class="text-4xl font-black tracking-tight" style="color: #f4c430"
+          >Vox</span
+        >
+        <span
+          class="text-sm uppercase tracking-widest text-[#999] border border-[#333] rounded-full px-3 py-1"
+          >icon &amp; direction gallery</span
+        >
+      </div>
+      <p class="text-[#aaa] max-w-2xl mx-auto">
+        Eight distinct icon directions for Vox, built as scalable SVG (no raster
+        blur at any Dock/menu-bar size). Reference sample pulled from
+        <code class="text-[#f4c430]"
+          >~/ram/projects/python/vox/src/vox/assets/app_icon_1024.png</code
+        >
+        — directions #1 and #2 evolve that exact mic glyph into the new gold
+        brand; the rest explore further out.
+      </p>
+    </header>
+
+    <!-- ICON GALLERY -->
+    <section class="max-w-6xl mx-auto px-6 pb-20">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <!-- 1: Gold Mic on Charcoal (direct evolution of the Python sample) -->
+        <div
+          class="icon-card glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center transition-all"
+        >
+          <span
+            class="text-xs font-bold text-[#121212] bg-[#f4c430] rounded-full px-2 py-0.5 mb-3"
+            >TOP PICK · SAFE</span
+          >
+          <svg viewBox="0 0 512 512">
+            <defs>
+              <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#f6cf5a" />
+                <stop offset="1" stop-color="#d4a017" />
+              </linearGradient>
+            </defs>
+            <rect
+              x="30"
+              y="30"
+              width="452"
+              height="452"
+              rx="100"
+              fill="#1c1d22"
+            />
+            <rect
+              x="216"
+              y="112"
+              width="112"
+              height="176"
+              rx="56"
+              fill="url(#g1)"
+            />
+            <path
+              d="M176 272 a80 80 0 0 0 160 0"
+              stroke="url(#g1)"
+              stroke-width="22"
+              fill="none"
+              stroke-linecap="round"
+            />
+            <line
+              x1="256"
+              y1="352"
+              x2="256"
+              y2="400"
+              stroke="url(#g1)"
+              stroke-width="22"
+              stroke-linecap="round"
+            />
+            <rect
+              x="186"
+              y="408"
+              width="140"
+              height="26"
+              rx="13"
+              fill="url(#g1)"
+            />
+          </svg>
+          <h3 class="mt-4 font-bold">1 · Gold Mic Capsule</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Direct gold reskin of your existing mic glyph on the same dark
+            charcoal background. Familiar, proven at tiny sizes, zero redesign
+            risk.
+          </p>
+          <span class="mt-3 text-xs text-[#f4c430]"
+            >Best for: fastest ship, brand continuity</span
+          >
+        </div>
+
+        <!-- 2: Inverse gold bg -->
+        <div
+          class="icon-card glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center transition-all"
+        >
+          <span
+            class="text-xs font-bold text-[#121212] bg-[#f4c430] rounded-full px-2 py-0.5 mb-3"
+            >TOP PICK · BOLD</span
+          >
+          <svg viewBox="0 0 512 512">
+            <rect
+              x="30"
+              y="30"
+              width="452"
+              height="452"
+              rx="100"
+              fill="#f4c430"
+            />
+            <rect
+              x="216"
+              y="112"
+              width="112"
+              height="176"
+              rx="56"
+              fill="#1c1d22"
+            />
+            <path
+              d="M176 272 a80 80 0 0 0 160 0"
+              stroke="#1c1d22"
+              stroke-width="22"
+              fill="none"
+              stroke-linecap="round"
+            />
+            <line
+              x1="256"
+              y1="352"
+              x2="256"
+              y2="400"
+              stroke="#1c1d22"
+              stroke-width="22"
+              stroke-linecap="round"
+            />
+            <rect
+              x="186"
+              y="408"
+              width="140"
+              height="26"
+              rx="13"
+              fill="#1c1d22"
+            />
+          </svg>
+          <h3 class="mt-4 font-bold">2 · Solid Gold Mic</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Inverted: gold background, charcoal mic. Pops hardest in the Dock
+            and app switcher — highest visibility of the set.
+          </p>
+          <span class="mt-3 text-xs text-[#f4c430]"
+            >Best for: Dock/App-switcher standout</span
+          >
+        </div>
+
+        <!-- 3: Soundwave Orb -->
+        <div
+          class="icon-card glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center transition-all"
+        >
+          <span
+            class="text-xs font-bold text-[#121212] bg-[#f4c430] rounded-full px-2 py-0.5 mb-3"
+            >TOP PICK · AMBIENT</span
+          >
+          <svg viewBox="0 0 512 512">
+            <defs>
+              <radialGradient id="g3" cx="35%" cy="30%" r="75%">
+                <stop offset="0" stop-color="#ffe9a8" />
+                <stop offset="0.5" stop-color="#f4c430" />
+                <stop offset="1" stop-color="#b9820a" />
+              </radialGradient>
+            </defs>
+            <rect
+              x="30"
+              y="30"
+              width="452"
+              height="452"
+              rx="100"
+              fill="#15161a"
+            />
+            <circle cx="256" cy="256" r="150" fill="url(#g3)" />
+            <circle
+              cx="256"
+              cy="256"
+              r="190"
+              fill="none"
+              stroke="#f4c430"
+              stroke-opacity="0.35"
+              stroke-width="10"
+            />
+            <circle
+              cx="256"
+              cy="256"
+              r="222"
+              fill="none"
+              stroke="#f4c430"
+              stroke-opacity="0.15"
+              stroke-width="8"
+            />
+          </svg>
+          <h3 class="mt-4 font-bold">3 · Soundwave Orb</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Siri-like glowing orb with listening ripples. No literal mic — reads
+            as "ambient, always-on assistant" rather than "push-to-talk app."
+          </p>
+          <span class="mt-3 text-xs text-[#f4c430]"
+            >Best for: autonomous/ambient positioning</span
+          >
+        </div>
+
+        <!-- 4: Equalizer Bars -->
+        <div
+          class="icon-card glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center transition-all"
+        >
+          <svg viewBox="0 0 512 512">
+            <rect
+              x="30"
+              y="30"
+              width="452"
+              height="452"
+              rx="100"
+              fill="#1c1d22"
+            />
+            <rect
+              x="140"
+              y="226"
+              width="34"
+              height="60"
+              rx="17"
+              fill="#f4c430"
+            />
+            <rect
+              x="194"
+              y="186"
+              width="34"
+              height="140"
+              rx="17"
+              fill="#f4c430"
+            />
+            <rect
+              x="248"
+              y="136"
+              width="34"
+              height="240"
+              rx="17"
+              fill="#f4c430"
+            />
+            <rect
+              x="302"
+              y="186"
+              width="34"
+              height="140"
+              rx="17"
+              fill="#f4c430"
+            />
+            <rect
+              x="356"
+              y="226"
+              width="34"
+              height="60"
+              rx="17"
+              fill="#f4c430"
+            />
+          </svg>
+          <h3 class="mt-4 font-bold">4 · Equalizer Bars</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Abstract audio-levels motif, no mic shape at all. Minimal and reads
+            clearly even at 16px menu-bar size.
+          </p>
+          <span class="mt-3 text-xs text-[#999]"
+            >Best for: tray/status icon, minimalist fans</span
+          >
+        </div>
+
+        <!-- 5: V Monogram Waveform -->
+        <div
+          class="icon-card glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center transition-all"
+        >
+          <svg viewBox="0 0 512 512">
+            <rect
+              x="30"
+              y="30"
+              width="452"
+              height="452"
+              rx="100"
+              fill="#1c1d22"
+            />
+            <path
+              d="M140 140 L256 372 L372 140"
+              fill="none"
+              stroke="#f4c430"
+              stroke-width="34"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <circle cx="140" cy="140" r="12" fill="#f4c430" />
+            <circle cx="372" cy="140" r="12" fill="#f4c430" />
+          </svg>
+          <h3 class="mt-4 font-bold">5 · V Monogram</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Bold geometric "V" — ties the brand name directly into the mark.
+            Distinctive and ownable, unlike generic mic icons.
+          </p>
+          <span class="mt-3 text-xs text-[#999]"
+            >Best for: brand recognition, merch/favicon</span
+          >
+        </div>
+
+        <!-- 6: Halo Mic -->
+        <div
+          class="icon-card glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center transition-all"
+        >
+          <svg viewBox="0 0 512 512">
+            <rect
+              x="30"
+              y="30"
+              width="452"
+              height="452"
+              rx="100"
+              fill="#1c1d22"
+            />
+            <circle
+              cx="256"
+              cy="256"
+              r="150"
+              fill="none"
+              stroke="#f4c430"
+              stroke-width="14"
+            />
+            <rect
+              x="226"
+              y="176"
+              width="60"
+              height="96"
+              rx="30"
+              fill="#f4c430"
+            />
+            <path
+              d="M206 268 a50 50 0 0 0 100 0"
+              stroke="#f4c430"
+              stroke-width="14"
+              fill="none"
+              stroke-linecap="round"
+            />
+          </svg>
+          <h3 class="mt-4 font-bold">6 · Halo Mic</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Mic inside a "live" ring — doubles as a status indicator (ring could
+            pulse/fill while actively listening).
+          </p>
+          <span class="mt-3 text-xs text-[#999]"
+            >Best for: pairing with a live-recording state animation</span
+          >
+        </div>
+
+        <!-- 7: Agent Hex -->
+        <div
+          class="icon-card glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center transition-all"
+        >
+          <svg viewBox="0 0 512 512">
+            <polygon
+              points="256,40 440,148 440,364 256,472 72,364 72,148"
+              fill="#1c1d22"
+              stroke="#f4c430"
+              stroke-width="10"
+            />
+            <rect
+              x="226"
+              y="186"
+              width="60"
+              height="96"
+              rx="30"
+              fill="#f4c430"
+            />
+            <path
+              d="M206 278 a50 50 0 0 0 100 0"
+              stroke="#f4c430"
+              stroke-width="14"
+              fill="none"
+              stroke-linecap="round"
+            />
+            <line
+              x1="256"
+              y1="328"
+              x2="256"
+              y2="352"
+              stroke="#f4c430"
+              stroke-width="14"
+              stroke-linecap="round"
+            />
+          </svg>
+          <h3 class="mt-4 font-bold">7 · Agent Hex</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Hexagon badge instead of rounded square — signals "autonomous agent
+            / system tool" rather than a casual consumer app.
+          </p>
+          <span class="mt-3 text-xs text-[#999]"
+            >Best for: dev-tool / power-user framing</span
+          >
+        </div>
+
+        <!-- 8: Gradient Wave Orb -->
+        <div
+          class="icon-card glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center transition-all"
+        >
+          <svg viewBox="0 0 512 512">
+            <defs>
+              <linearGradient id="g8" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#ffe199" />
+                <stop offset="1" stop-color="#c98a0f" />
+              </linearGradient>
+            </defs>
+            <circle cx="256" cy="256" r="226" fill="url(#g8)" />
+            <path
+              d="M110 256 Q 150 180 190 256 T 270 256 T 350 256 T 402 256"
+              fill="none"
+              stroke="#1c1d22"
+              stroke-width="16"
+              stroke-linecap="round"
+            />
+          </svg>
+          <h3 class="mt-4 font-bold">8 · Gradient Wave Orb</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Soft friendly sphere with a simple waveform squiggle — approachable,
+            Assistant/Google-adjacent feel for a less "techy" audience.
+          </p>
+          <span class="mt-3 text-xs text-[#999]"
+            >Best for: friendlier/consumer-facing framing</span
+          >
+        </div>
+      </div>
+    </section>
+
+    <!-- SIRI-COLORFUL VARIATIONS OF #3 -->
+    <header class="max-w-6xl mx-auto px-6 pb-6 pt-4 text-center">
+      <h2 class="text-2xl font-black" style="color: #f4c430">
+        Soundwave Orb — Siri-Colorful Variations
+      </h2>
+      <p class="text-[#999] mt-2 max-w-2xl mx-auto text-sm">
+        You picked #3. Here are six true multi-hue takes — layered blurred color
+        blobs blended with
+        <code class="text-[#f4c430]">mix-blend-mode: screen</code>, the same
+        technique that gives Apple's own Siri orb its soft organic glow, instead
+        of a single flat gold tone.
+      </p>
+    </header>
+    <section class="max-w-6xl mx-auto px-6 pb-20">
+      <style>
+        .siri-orb {
+          position: relative;
+          width: 160px;
+          height: 160px;
+          border-radius: 9999px;
+          overflow: hidden;
+          background: #0c0c0e;
+        }
+        .siri-orb .blob {
+          position: absolute;
+          border-radius: 9999px;
+          filter: blur(22px);
+          mix-blend-mode: screen;
+        }
+        .siri-ring {
+          position: relative;
+          width: 160px;
+          height: 160px;
+          border-radius: 9999px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #0c0c0e;
+        }
+      </style>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div
+          class="glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center"
+        >
+          <span
+            class="text-xs font-bold text-[#121212] bg-[#f4c430] rounded-full px-2 py-0.5 mb-3"
+            >RECOMMENDED</span
+          >
+          <div class="siri-orb">
+            <div
+              class="blob"
+              style="
+                width: 120px;
+                height: 120px;
+                left: 10px;
+                top: 10px;
+                background: #4facfe;
+              "
+            ></div>
+            <div
+              class="blob"
+              style="
+                width: 110px;
+                height: 110px;
+                right: 5px;
+                top: 15px;
+                background: #f86ca7;
+              "
+            ></div>
+            <div
+              class="blob"
+              style="
+                width: 110px;
+                height: 110px;
+                left: 25px;
+                bottom: 0;
+                background: #8e54e9;
+              "
+            ></div>
+            <div
+              class="blob"
+              style="
+                width: 100px;
+                height: 100px;
+                right: 15px;
+                bottom: 5px;
+                background: #ffb86b;
+              "
+            ></div>
+          </div>
+          <h3 class="mt-4 font-bold">3a · Classic Siri Swirl</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Four blurred color blobs (blue/pink/violet/amber) blended on a dark
+            base — closest match to Apple's actual Siri orb.
+          </p>
+        </div>
+
+        <div
+          class="glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center"
+        >
+          <div class="siri-ring">
+            <div
+              style="
+                width: 140px;
+                height: 140px;
+                border-radius: 9999px;
+                background: conic-gradient(
+                  from 0deg,
+                  #4facfe,
+                  #8e54e9,
+                  #f86ca7,
+                  #ffb86b,
+                  #22d3c9,
+                  #4facfe
+                );
+                padding: 10px;
+              "
+            >
+              <div
+                style="
+                  width: 100%;
+                  height: 100%;
+                  border-radius: 9999px;
+                  background: #0c0c0e;
+                "
+              ></div>
+            </div>
+          </div>
+          <h3 class="mt-4 font-bold">3b · Conic Listening Ring</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Full-hue conic gradient ring around a dark core — this one literally
+            spins in the real app (see live preview below), mirroring the
+            recording dot.
+          </p>
+        </div>
+
+        <div
+          class="glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center"
+        >
+          <span
+            class="text-xs font-bold text-[#121212] bg-[#f4c430] rounded-full px-2 py-0.5 mb-3"
+            >ON-BRAND</span
+          >
+          <div class="siri-orb">
+            <div
+              class="blob"
+              style="
+                width: 150px;
+                height: 150px;
+                left: 5px;
+                top: 5px;
+                background: #ffb86b;
+                mix-blend-mode: normal;
+              "
+            ></div>
+            <div
+              class="blob"
+              style="
+                width: 90px;
+                height: 90px;
+                right: -10px;
+                top: 5px;
+                background: #4facfe;
+              "
+            ></div>
+            <div
+              class="blob"
+              style="
+                width: 90px;
+                height: 90px;
+                left: 0;
+                bottom: -10px;
+                background: #f86ca7;
+              "
+            ></div>
+          </div>
+          <h3 class="mt-4 font-bold">3c · Vox Gold-Siri Hybrid</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Gold stays dominant (keeps brand identity) with blue/pink creeping
+            in at the edges only. Colorful without abandoning the Vox palette.
+          </p>
+        </div>
+
+        <div
+          class="glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center"
+        >
+          <div
+            class="siri-orb"
+            style="
+              background: linear-gradient(
+                135deg,
+                #4facfe,
+                #8e54e9 40%,
+                #f86ca7 75%,
+                #ffb86b
+              );
+            "
+          ></div>
+          <h3 class="mt-4 font-bold">3d · Diagonal Dual-Tone</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Clean linear sweep, no blur/blend tricks — reads crisply even at
+            tiny menu-bar sizes where blurred blobs can turn muddy.
+          </p>
+        </div>
+
+        <div
+          class="glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center"
+        >
+          <div
+            class="siri-orb"
+            style="
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              background: radial-gradient(
+                circle at 35% 30%,
+                #ffe9a8,
+                #f4c430 45%,
+                #8e54e9 90%
+              );
+            "
+          >
+            <svg width="90" height="30" viewBox="0 0 90 30">
+              <path
+                d="M2 15 Q12 2 22 15 T42 15 T62 15 T82 15"
+                fill="none"
+                stroke="#0c0c0e"
+                stroke-width="4"
+                stroke-linecap="round"
+              />
+            </svg>
+          </div>
+          <h3 class="mt-4 font-bold">3e · Rainbow Waveform Orb</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Gold-to-violet radial base with a waveform squiggle overlay — keeps
+            a literal "sound" cue instead of pure abstraction.
+          </p>
+        </div>
+
+        <div
+          class="glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center"
+        >
+          <div
+            class="siri-orb"
+            style="
+              background: conic-gradient(
+                from 90deg,
+                #4facfe,
+                #8e54e9,
+                #f86ca7,
+                #ffb86b,
+                #22d3c9,
+                #4facfe
+              );
+              filter: blur(6px);
+            "
+          ></div>
+          <h3 class="mt-4 font-bold">3f · Motion-Blur Spin</h3>
+          <p class="text-sm text-[#999] mt-1">
+            A touch of blur suggests the orb is already spinning/listening, even
+            as a static image — works well as a loading/arming state.
+          </p>
+        </div>
+      </div>
+
+      <!-- LIVE PREVIEW of the real recording-overlay animation, same CSS as the app -->
+      <div class="mt-10 bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-8">
+        <h3 class="font-bold mb-1" style="color: #f4c430">
+          Live preview — actual recording overlay animation
+        </h3>
+        <p class="text-sm text-[#999] mb-6">
+          This is the real CSS now wired into
+          <code class="text-[#f4c430]">RecordingOverlay.css</code> — the
+          waveform bars and status dot that appear when you hit Option+Space and
+          start speaking.
+        </p>
+        <style>
+          @keyframes demo-wave-color {
+            0%,
+            100% {
+              background-position: 0% 0%;
+            }
+            50% {
+              background-position: 0% 100%;
+            }
+          }
+          @keyframes demo-spin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
+          @keyframes demo-pulse {
+            0% {
+              box-shadow: 0 0 0 0 rgba(244, 196, 48, 0.45);
+            }
+            70% {
+              box-shadow: 0 0 0 7px transparent;
+            }
+          }
+          .demo-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 9999px;
+            background: conic-gradient(
+              from 0deg,
+              #4facfe,
+              #8e54e9,
+              #f86ca7,
+              #ffb86b,
+              #22d3c9,
+              #4facfe
+            );
+            animation:
+              demo-pulse 1.9s infinite,
+              demo-spin 2.2s linear infinite;
+          }
+          .demo-wave {
+            display: flex;
+            align-items: flex-end;
+            gap: 5px;
+            height: 36px;
+          }
+          .demo-wave i {
+            display: block;
+            width: 7px;
+            border-radius: 3px;
+            background: linear-gradient(
+              180deg,
+              #4facfe,
+              #8e54e9 30%,
+              #f86ca7 55%,
+              #ffb86b 80%,
+              #22d3c9
+            );
+            background-size: 100% 260%;
+            animation: demo-wave-color 2.2s ease-in-out infinite;
+          }
+        </style>
+        <div
+          class="flex items-center gap-8 justify-center bg-[#0c0c0e] rounded-full px-10 py-6 w-fit mx-auto"
+        >
+          <div class="demo-dot"></div>
+          <div class="demo-wave">
+            <i style="height: 14px"></i>
+            <i style="height: 24px; animation-delay: 110ms"></i>
+            <i style="height: 32px; animation-delay: 220ms"></i>
+            <i style="height: 20px; animation-delay: 330ms"></i>
+            <i style="height: 36px; animation-delay: 440ms"></i>
+            <i style="height: 20px; animation-delay: 330ms"></i>
+            <i style="height: 32px; animation-delay: 220ms"></i>
+            <i style="height: 24px; animation-delay: 110ms"></i>
+            <i style="height: 14px"></i>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- REFINED GOLD-SIRI HYBRID (fixing the washed-out screen-blend) -->
+    <header class="max-w-6xl mx-auto px-6 pb-6 pt-4 text-center">
+      <h2 class="text-2xl font-black" style="color: #f4c430">
+        Gold-Siri Hybrid — Refined (more gold AND more color)
+      </h2>
+      <p class="text-[#999] mt-2 max-w-2xl mx-auto text-sm">
+        The first pass used
+        <code class="text-[#f4c430]">mix-blend-mode: screen</code>, which always
+        lightens — that's exactly what was washing out both the gold and the
+        colors at once. These four swap to
+        <code class="text-[#f4c430]">overlay</code>/solid-ring techniques that
+        preserve saturation on both ends, plus lean on radial-gradient
+        highlight/shadow placement for a sphere-like 3D read instead of flat
+        blended circles.
+      </p>
+    </header>
+    <section class="max-w-6xl mx-auto px-6 pb-20">
+      <style>
+        .orb3d {
+          position: relative;
+          width: 160px;
+          height: 160px;
+          border-radius: 9999px;
+          overflow: hidden;
+        }
+        .orb3d .blob2 {
+          position: absolute;
+          border-radius: 9999px;
+          filter: blur(14px);
+          mix-blend-mode: overlay;
+          opacity: 0.95;
+        }
+      </style>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div
+          class="glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center"
+        >
+          <span
+            class="text-xs font-bold text-[#121212] bg-[#f4c430] rounded-full px-2 py-0.5 mb-3"
+            >RECOMMENDED</span
+          >
+          <div
+            class="orb3d"
+            style="
+              background: radial-gradient(
+                circle at 32% 28%,
+                #fff0c4,
+                #f4c430 40%,
+                #a86f08 88%
+              );
+            "
+          >
+            <div
+              class="blob2"
+              style="
+                width: 90px;
+                height: 90px;
+                right: -15px;
+                top: 0;
+                background: #4facfe;
+              "
+            ></div>
+            <div
+              class="blob2"
+              style="
+                width: 90px;
+                height: 90px;
+                left: -15px;
+                bottom: -10px;
+                background: #f86ca7;
+              "
+            ></div>
+          </div>
+          <h3 class="mt-4 font-bold">3c-v2 · Overlay-Blend Gold Sphere</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Gold sphere (radial gradient already gives it real 3D shading) with
+            blue/pink pushed to the rim using <code>overlay</code> blend — both
+            read vivid now, nothing washes out.
+          </p>
+        </div>
+
+        <div
+          class="glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center"
+        >
+          <span
+            class="text-xs font-bold text-[#121212] bg-[#f4c430] rounded-full px-2 py-0.5 mb-3"
+            >RECOMMENDED</span
+          >
+          <div
+            class="orb3d"
+            style="
+              background: radial-gradient(
+                circle at 32% 28%,
+                #fff0c4,
+                #f4c430 42%,
+                #9c6706 90%
+              );
+              padding: 8px;
+              box-sizing: border-box;
+            "
+          >
+            <div
+              style="
+                position: absolute;
+                inset: 0;
+                border-radius: 9999px;
+                padding: 8px;
+                background: conic-gradient(
+                  from 0deg,
+                  #4facfe,
+                  #8e54e9,
+                  #f86ca7,
+                  #ffb86b,
+                  #22d3c9,
+                  #4facfe
+                );
+                -webkit-mask:
+                  linear-gradient(#000 0 0) content-box,
+                  linear-gradient(#000 0 0);
+                -webkit-mask-composite: xor;
+                mask-composite: exclude;
+              "
+            ></div>
+          </div>
+          <h3 class="mt-4 font-bold">3c-v3 · Gold Sphere, Rainbow Corona</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Solid gold 3D sphere body, full-saturation rotating rainbow ring
+            right at the edge — reads as unmistakably gold AND unmistakably
+            colorful, nothing blended/muddied together.
+          </p>
+        </div>
+
+        <div
+          class="glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center"
+        >
+          <div
+            class="orb3d"
+            style="
+              background: radial-gradient(
+                circle at 32% 28%,
+                #fff0c4,
+                #f4c430 45%,
+                #a86f08 90%
+              );
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            "
+          >
+            <div style="position: relative; width: 100%; height: 100%">
+              <div
+                style="
+                  position: absolute;
+                  width: 20px;
+                  height: 20px;
+                  border-radius: 9999px;
+                  background: #4facfe;
+                  top: 18px;
+                  left: 24px;
+                  box-shadow: 0 0 14px 2px #4facfe;
+                "
+              ></div>
+              <div
+                style="
+                  position: absolute;
+                  width: 16px;
+                  height: 16px;
+                  border-radius: 9999px;
+                  background: #f86ca7;
+                  bottom: 22px;
+                  right: 20px;
+                  box-shadow: 0 0 12px 2px #f86ca7;
+                "
+              ></div>
+              <div
+                style="
+                  position: absolute;
+                  width: 12px;
+                  height: 12px;
+                  border-radius: 9999px;
+                  background: #22d3c9;
+                  bottom: 34px;
+                  left: 20px;
+                  box-shadow: 0 0 10px 2px #22d3c9;
+                "
+              ></div>
+            </div>
+          </div>
+          <h3 class="mt-4 font-bold">3c-v4 · Gold Sphere + Color Sparkles</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Solid saturated gold body, 3 crisp glowing color "sparkle" dots
+            instead of blurred blobs — jewel-like accents, gold stays the clear
+            majority color.
+          </p>
+        </div>
+
+        <div
+          class="glow bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 flex flex-col items-center text-center"
+        >
+          <div
+            class="orb3d"
+            style="
+              background: conic-gradient(
+                from 20deg,
+                #f4c430,
+                #ffb86b,
+                #4facfe,
+                #8e54e9,
+                #f86ca7,
+                #f4c430
+              );
+            "
+          >
+            <div
+              style="
+                position: absolute;
+                inset: 18px;
+                border-radius: 9999px;
+                background: radial-gradient(
+                  circle at 32% 28%,
+                  #fff0c4,
+                  #f4c430 55%,
+                  #a86f08 100%
+                );
+              "
+            ></div>
+          </div>
+          <h3 class="mt-4 font-bold">
+            3c-v5 · Rainbow Ring, Gold Core (inverse of v3)
+          </h3>
+          <p class="text-sm text-[#999] mt-1">
+            Full-saturation rainbow forms the outer body, gold sphere sits inset
+            in the center — gold reads as the "nucleus," rainbow as the energy
+            around it. Most colorful of the five.
+          </p>
+        </div>
+      </div>
+
+      <!-- 3D MENU BAR MOCKUP -->
+      <div class="mt-10 bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-8">
+        <h3 class="font-bold mb-1" style="color: #f4c430">
+          How the 3D sphere reads at real menu-bar size
+        </h3>
+        <p class="text-sm text-[#999] mb-6">
+          Radial-gradient highlight (light source top-left) + darkened edge is
+          what sells "3D sphere" rather than "flat circle" — same trick works at
+          18px as it does at 160px. Shown against both menu bar appearances
+          since macOS renders light/dark differently.
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div>
+            <p class="text-xs text-[#999] mb-2">Dark menu bar</p>
+            <div
+              class="bg-[#1c1c1e] rounded-lg px-4 py-2 flex items-center justify-end gap-3"
+            >
+              <div
+                style="
+                  width: 18px;
+                  height: 18px;
+                  border-radius: 9999px;
+                  background: radial-gradient(
+                    circle at 32% 28%,
+                    #fff0c4,
+                    #f4c430 45%,
+                    #a86f08 95%
+                  );
+                  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+                "
+              ></div>
+              <span class="text-[#eee] text-xs">Wed 6:18 PM</span>
+            </div>
+          </div>
+          <div>
+            <p class="text-xs text-[#999] mb-2">Light menu bar</p>
+            <div
+              class="bg-[#eceff1] rounded-lg px-4 py-2 flex items-center justify-end gap-3"
+            >
+              <div
+                style="
+                  width: 18px;
+                  height: 18px;
+                  border-radius: 9999px;
+                  background: radial-gradient(
+                    circle at 32% 28%,
+                    #fff0c4,
+                    #f4c430 45%,
+                    #a86f08 95%
+                  );
+                  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+                "
+              ></div>
+              <span class="text-[#333] text-xs">Wed 6:18 PM</span>
+            </div>
+          </div>
+        </div>
+        <p class="text-xs text-[#999] mt-4">Zoomed 8x for detail inspection:</p>
+        <div class="flex gap-6 mt-2">
+          <div
+            style="
+              width: 96px;
+              height: 96px;
+              border-radius: 9999px;
+              background: radial-gradient(
+                circle at 32% 28%,
+                #fff0c4,
+                #f4c430 45%,
+                #a86f08 95%
+              );
+              box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+            "
+          ></div>
+          <div
+            style="
+              width: 96px;
+              height: 96px;
+              border-radius: 9999px;
+              background: conic-gradient(
+                from 20deg,
+                #f4c430,
+                #ffb86b,
+                #4facfe,
+                #8e54e9,
+                #f86ca7,
+                #f4c430
+              );
+              padding: 6px;
+              box-sizing: border-box;
+            "
+          >
+            <div
+              style="
+                width: 100%;
+                height: 100%;
+                border-radius: 9999px;
+                background: radial-gradient(
+                  circle at 32% 28%,
+                  #fff0c4,
+                  #f4c430 55%,
+                  #a86f08 100%
+                );
+              "
+            ></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MORE RECORDING-OVERLAY ANIMATION DIRECTIONS -->
+    <header class="max-w-6xl mx-auto px-6 pb-6 pt-4 text-center">
+      <h2 class="text-2xl font-black" style="color: #f4c430">
+        More Recording-Overlay Animation Directions
+      </h2>
+      <p class="text-[#999] mt-2 max-w-2xl mx-auto text-sm">
+        Glad you liked the first one — for the record, that's the only one
+        actually wired into
+        <code class="text-[#f4c430]">RecordingOverlay.css</code>
+        right now. Everything below is a pure mockup, nothing is applied to the
+        app until you pick.
+      </p>
+    </header>
+    <section class="max-w-6xl mx-auto px-6 pb-20">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- B: Pulsing orb dot -->
+        <div class="bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6">
+          <style>
+            @keyframes b-pulse {
+              0%,
+              100% {
+                transform: scale(1);
+              }
+              50% {
+                transform: scale(1.35);
+              }
+            }
+            @keyframes b-hue {
+              to {
+                filter: hue-rotate(360deg);
+              }
+            }
+            .b-orb {
+              width: 16px;
+              height: 16px;
+              border-radius: 9999px;
+              background: radial-gradient(
+                circle at 35% 30%,
+                #fff0c4,
+                #4facfe 40%,
+                #8e54e9 100%
+              );
+              animation:
+                b-pulse 1.3s ease-in-out infinite,
+                b-hue 3s linear infinite;
+            }
+          </style>
+          <h3 class="font-bold mb-3">B · Breathing Orb Dot</h3>
+          <div
+            class="bg-[#0c0c0e] rounded-full px-8 py-5 w-fit flex items-center gap-4"
+          >
+            <div class="b-orb"></div>
+            <span class="text-[#888] text-xs"
+              >swap the flat/conic dot for a small gradient sphere that scales
+              with mic amplitude instead of just rotating</span
+            >
+          </div>
+        </div>
+
+        <!-- C: Morphing blob -->
+        <div class="bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6">
+          <style>
+            @keyframes c-morph {
+              0%,
+              100% {
+                border-radius: 40% 60% 55% 45% / 50% 45% 55% 50%;
+                transform: scaleX(1);
+              }
+              50% {
+                border-radius: 55% 45% 40% 60% / 45% 55% 45% 55%;
+                transform: scaleX(1.5);
+              }
+            }
+            .c-blob {
+              width: 40px;
+              height: 28px;
+              background: linear-gradient(
+                120deg,
+                #4facfe,
+                #8e54e9,
+                #f86ca7,
+                #ffb86b
+              );
+              animation: c-morph 1.8s ease-in-out infinite;
+            }
+          </style>
+          <h3 class="font-bold mb-3">C · Morphing Blob (no bars)</h3>
+          <div
+            class="bg-[#0c0c0e] rounded-full px-8 py-5 w-fit flex items-center gap-4"
+          >
+            <div class="c-blob"></div>
+            <span class="text-[#888] text-xs"
+              >replace discrete bars entirely with one amorphous squishing
+              Siri-blob — more organic, less "equalizer app"</span
+            >
+          </div>
+        </div>
+
+        <!-- D: Scanning rainbow sweep -->
+        <div class="bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6">
+          <style>
+            @keyframes d-sweep {
+              0% {
+                background-position: -60px 0;
+              }
+              100% {
+                background-position: 60px 0;
+              }
+            }
+            .d-wave {
+              position: relative;
+              display: flex;
+              align-items: flex-end;
+              gap: 5px;
+              height: 30px;
+            }
+            .d-wave i {
+              width: 6px;
+              border-radius: 3px;
+              background: #e8c468;
+            }
+            .d-sweep-mask {
+              position: absolute;
+              inset: 0;
+              background: linear-gradient(
+                100deg,
+                transparent 30%,
+                rgba(79, 172, 254, 0.9) 42%,
+                rgba(142, 84, 233, 0.9) 50%,
+                rgba(248, 108, 167, 0.9) 58%,
+                transparent 70%
+              );
+              background-size: 200% 100%;
+              mix-blend-mode: screen;
+              animation: d-sweep 1.6s linear infinite alternate;
+            }
+          </style>
+          <h3 class="font-bold mb-3">D · Scanning Rainbow Sweep</h3>
+          <div class="bg-[#0c0c0e] rounded-full px-8 py-5 w-fit">
+            <div class="d-wave">
+              <i style="height: 12px"></i>
+              <i style="height: 22px"></i>
+              <i style="height: 30px"></i>
+              <i style="height: 18px"></i>
+              <i style="height: 26px"></i>
+              <i style="height: 14px"></i>
+              <div class="d-sweep-mask"></div>
+            </div>
+          </div>
+          <p class="text-[#888] text-xs mt-3">
+            bars stay a calm base color; one coordinated rainbow "scanner" light
+            sweeps across the whole group together, instead of each bar
+            animating independently
+          </p>
+        </div>
+
+        <!-- E: Ambient halo glow -->
+        <div class="bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6">
+          <style>
+            @keyframes e-glow {
+              0%,
+              100% {
+                opacity: 0.5;
+                transform: scale(0.95);
+              }
+              50% {
+                opacity: 0.9;
+                transform: scale(1.08);
+              }
+            }
+            .e-wrap {
+              position: relative;
+              width: fit-content;
+            }
+            .e-halo {
+              position: absolute;
+              inset: -14px;
+              border-radius: 9999px;
+              background: radial-gradient(
+                circle,
+                rgba(79, 172, 254, 0.35),
+                rgba(142, 84, 233, 0.25) 40%,
+                rgba(248, 108, 167, 0.15) 70%,
+                transparent 80%
+              );
+              filter: blur(6px);
+              animation: e-glow 2.4s ease-in-out infinite;
+              z-index: 0;
+            }
+            .e-pill {
+              position: relative;
+              z-index: 1;
+            }
+          </style>
+          <h3 class="font-bold mb-3">E · Ambient Halo Glow</h3>
+          <div class="e-wrap">
+            <div class="e-halo"></div>
+            <div
+              class="e-pill bg-[#0c0c0e] rounded-full px-8 py-5 flex items-center gap-2"
+            >
+              <i
+                style="
+                  width: 5px;
+                  height: 14px;
+                  border-radius: 3px;
+                  background: #f4c430;
+                  display: inline-block;
+                "
+              ></i>
+              <i
+                style="
+                  width: 5px;
+                  height: 22px;
+                  border-radius: 3px;
+                  background: #f4c430;
+                  display: inline-block;
+                "
+              ></i>
+              <i
+                style="
+                  width: 5px;
+                  height: 16px;
+                  border-radius: 3px;
+                  background: #f4c430;
+                  display: inline-block;
+                "
+              ></i>
+            </div>
+          </div>
+          <p class="text-[#888] text-xs mt-3">
+            keeps bars simple/flat gold, but the whole pill breathes a soft
+            colorful glow behind it — cheapest to implement, most "ambient
+            assistant" feeling without changing the bars at all
+          </p>
+        </div>
+      </div>
+
+      <!-- F: Unified orb + bars, full width -->
+      <div class="mt-6 bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6">
+        <style>
+          @keyframes f-spin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
+          @keyframes f-wave {
+            0%,
+            100% {
+              background-position: 0% 0%;
+            }
+            50% {
+              background-position: 0% 100%;
+            }
+          }
+          .f-orb {
+            width: 16px;
+            height: 16px;
+            border-radius: 9999px;
+            background: conic-gradient(
+              from 0deg,
+              #4facfe,
+              #8e54e9,
+              #f86ca7,
+              #ffb86b,
+              #22d3c9,
+              #4facfe
+            );
+            animation: f-spin 2.2s linear infinite;
+          }
+          .f-wave {
+            display: flex;
+            align-items: flex-end;
+            gap: 5px;
+            height: 30px;
+          }
+          .f-wave i {
+            width: 6px;
+            border-radius: 3px;
+            background: linear-gradient(
+              180deg,
+              #4facfe,
+              #8e54e9 30%,
+              #f86ca7 55%,
+              #ffb86b 80%,
+              #22d3c9
+            );
+            background-size: 100% 260%;
+            animation: f-wave 2.2s ease-in-out infinite;
+          }
+        </style>
+        <h3 class="font-bold mb-3">
+          F · Unified System (orb replaces dot, synced with bars)
+        </h3>
+        <div
+          class="bg-[#0c0c0e] rounded-full px-8 py-5 w-fit flex items-center gap-4"
+        >
+          <div class="f-orb"></div>
+          <div class="f-wave">
+            <i style="height: 12px"></i>
+            <i style="height: 22px; animation-delay: 110ms"></i>
+            <i style="height: 30px; animation-delay: 220ms"></i>
+            <i style="height: 18px; animation-delay: 330ms"></i>
+            <i style="height: 26px; animation-delay: 220ms"></i>
+            <i style="height: 14px; animation-delay: 110ms"></i>
+          </div>
+        </div>
+        <p class="text-[#888] text-xs mt-3">
+          same spinning gradient orb as the current dot, but paired with bars
+          sharing the exact same color phase — reads as one cohesive animated
+          organism instead of two separately-animated parts
+        </p>
+      </div>
+    </section>
+
+    <!-- HOW TO APPLY -->
+    <section class="max-w-6xl mx-auto px-6 pb-20">
+      <div class="bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-8">
+        <h2 class="text-xl font-bold mb-3" style="color: #f4c430">
+          Applying your pick
+        </h2>
+        <ol class="list-decimal list-inside space-y-2 text-[#ccc] text-sm">
+          <li>
+            Export the chosen SVG card above as a 1024×1024 PNG (any browser
+            "save SVG as PNG" tool, or I can do it for you with Pillow — same
+            method the Python Vox icon generator uses).
+          </li>
+          <li>
+            Run
+            <code class="text-[#f4c430]"
+              >bun run tauri icon path/to/chosen.png</code
+            >
+            from the Rust Vox repo root — regenerates <code>.icns</code>,
+            <code>.ico</code>, and every platform size in one shot.
+          </li>
+          <li>
+            <strong>macOS icon cache tip</strong> (this is likely why the gold
+            icon "isn't showing" yet): macOS aggressively caches app icons by
+            path. After replacing <code>/Applications/Vox.app</code>, run:
+            <pre class="bg-[#111] rounded-lg p-3 mt-2 overflow-x-auto text-xs">
+touch /Applications/Vox.app
+killall Dock
+killall Finder</pre
+            >
+            or, for a guaranteed clean slate, delete and re-copy the
+            <code>.app</code> under a brand-new filename once, then rename it
+            back.
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ROADMAP -->
+    <header class="max-w-6xl mx-auto px-6 pb-6 text-center">
+      <h2 class="text-2xl font-black" style="color: #f4c430">
+        Full Autonomous Assistant — Suggested Roadmap
+      </h2>
+      <p class="text-[#999] mt-2 max-w-2xl mx-auto text-sm">
+        Your Python <code class="text-[#f4c430]">vox</code> repo already
+        prototypes most of this. Suggested order to port/build it into the Rust
+        Vox app, building on the dictation foundation already shipped and the
+        Phase 1 (Memory) groundwork already on
+        <code class="text-[#f4c430]">phase/1-memory</code>.
+      </p>
+    </header>
+
+    <section class="max-w-6xl mx-auto px-6 pb-20">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div class="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-5">
+          <span
+            class="text-xs font-bold bg-[#2a2a2a] text-[#f4c430] rounded-full px-2 py-0.5"
+            >SHIPPED</span
+          >
+          <h3 class="font-bold mt-2">Dictation core</h3>
+          <p class="text-sm text-[#999] mt-1">
+            VAD, Whisper/Parakeet transcription, global shortcuts, paste
+            injection, model management. The foundation everything else sits on.
+          </p>
+        </div>
+
+        <div class="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-5">
+          <span
+            class="text-xs font-bold bg-[#2a2a2a] text-[#f4c430] rounded-full px-2 py-0.5"
+            >IN PROGRESS</span
+          >
+          <h3 class="font-bold mt-2">Phase 1 — Memory</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Deterministic SQLite fact store (remember/recall/forget). Built,
+            tested, on its own branch — needs a PR merge before anything can
+            build on it.
+          </p>
+        </div>
+
+        <div class="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-5">
+          <span
+            class="text-xs font-bold bg-[#2a2a2a] text-[#ccc] rounded-full px-2 py-0.5"
+            >NEXT</span
+          >
+          <h3 class="font-bold mt-2">Phase 2 — Command Router + Safety Gate</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Deterministic "open X / go to Y" command matching with a
+            confirmation gate before anything destructive runs. Already spec'd
+            in <code class="text-[#f4c430]">docs/vox-phases/</code>.
+          </p>
+        </div>
+
+        <div class="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-5">
+          <span
+            class="text-xs font-bold bg-[#2a2a2a] text-[#ccc] rounded-full px-2 py-0.5"
+            >NEXT</span
+          >
+          <h3 class="font-bold mt-2">Phase 3 — Agent Bridge</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Headless subprocess bridge to a user-configured coding-agent CLI for
+            anything the router can't handle deterministically.
+          </p>
+        </div>
+
+        <div class="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-5">
+          <span
+            class="text-xs font-bold bg-[#2a2a2a] text-[#ccc] rounded-full px-2 py-0.5"
+            >LATER</span
+          >
+          <h3 class="font-bold mt-2">Phase 4 — Native TTS</h3>
+          <p class="text-sm text-[#999] mt-1">
+            AVSpeechSynthesizer-based spoken replies — turns Vox from "dictation
+            tool" into something that actually talks back.
+          </p>
+        </div>
+
+        <div class="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-5">
+          <span
+            class="text-xs font-bold bg-[#2a2a2a] text-[#ccc] rounded-full px-2 py-0.5"
+            >LATER</span
+          >
+          <h3 class="font-bold mt-2">Phase 5 — Wake Word</h3>
+          <p class="text-sm text-[#999] mt-1">
+            ONNX/openWakeWord-style "Hey Vox" detection — the thing that makes
+            it feel autonomous instead of hotkey-driven.
+          </p>
+        </div>
+
+        <div class="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-5">
+          <span
+            class="text-xs font-bold bg-[#2a2a2a] text-[#ccc] rounded-full px-2 py-0.5"
+            >LATER</span
+          >
+          <h3 class="font-bold mt-2">Phase 6 — Ambient Mode</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Rolling transcript + engagement judge — decides when to actually
+            jump in vs. silently listen. Highest-risk/most-novel phase.
+          </p>
+        </div>
+
+        <div class="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-5">
+          <span
+            class="text-xs font-bold bg-[#2a2a2a] text-[#ccc] rounded-full px-2 py-0.5"
+            >LATER</span
+          >
+          <h3 class="font-bold mt-2">Phase 7 — Vision / Screen OCR</h3>
+          <p class="text-sm text-[#999] mt-1">
+            Opt-in Apple Vision screen reading, so Vox can answer "what's on my
+            screen" — privacy-sensitive, opt-in only by design.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="text-center text-[#666] text-xs pb-10">
+      Generated by sona · all icons are inline SVG, infinitely
+      re-colorable/scalable, zero external assets.
+    </footer>
+  </body>
+</html>
