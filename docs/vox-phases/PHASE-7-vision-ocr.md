@@ -35,7 +35,11 @@ screen capture) piped into Apple's on-device Vision framework OCR via
 hand-rolling FFI, same principle as Phase 4).
 
 ```rust
-pub struct OcrResult { pub text: String, pub captured_at_ms: u64 }
+pub struct OcrResult { pub text: String, pub confidence: f32, pub captured_at_ms: u64 }
+// confidence: average VNRecognizedTextObservation confidence across all
+// recognized text candidates, 0.0 if none found -- mirrors vox's own
+// OcrResult.confidence (src/vox/vision/ocr.py's _recognize_via_vision_framework
+// averages topCandidates_(1).confidence() per observation).
 
 #[derive(Debug)]
 pub enum VisionError {
@@ -49,6 +53,21 @@ pub trait ScreenOcr: Send + Sync {
     fn capture_and_read(&self) -> Result<OcrResult, VisionError>;
 }
 ```
+
+**Verified against vox's actual `screen_capture.py`:** the `screencapture
+-x <path>` + 10-second timeout design below is exactly what vox already
+ships (not just a reasonable guess) -- vox's own `_real_capture` uses
+the identical command and timeout value. One concrete detail vox's error
+messages get right that this phase must also include: **both the
+"command not found" and "non-zero exit" failure paths explicitly mention
+Screen Recording permission** (`System Settings -> Privacy & Security ->
+Screen Recording`) in the error text, not just a generic
+"capture failed" message -- a bare non-zero exit from `screencapture` is
+the single most likely real-world cause and is often exactly this
+permission being unset, per vox's own first-hand experience building
+this. Given this whole project's own extensive experience this session
+with how unhelpful generic permission failures are, treat this as a hard
+requirement, not a nice-to-have.
 
 ### Settings addition
 
@@ -77,7 +96,12 @@ pub vision_enabled: bool, // default: false - matches vox's own off-by-default
 - FR3: A capture failure (e.g. `screencapture` binary missing/returns
   non-zero, simulate via a fake process runner) returns
   `VisionError::CaptureFailed` with a human-readable reason, distinct from
-  an OCR failure.
+  an OCR failure. **The error text must explicitly mention Screen
+  Recording permission** (`System Settings -> Privacy & Security ->
+  Screen Recording`) for both the "binary not found" and "non-zero exit"
+  cases -- ports vox's own error messages verbatim-in-spirit, since a
+  missing permission is the single most likely real-world cause of
+  either failure.
 - FR4: An OCR failure on a successfully-captured image (e.g. Vision
   framework returns an error, simulate via a fake OCR adapter) returns
   `VisionError::OcrFailed`, distinct from `CaptureFailed`.
@@ -89,7 +113,12 @@ pub vision_enabled: bool, // default: false - matches vox's own off-by-default
   Vision framework flow) are always cleaned up, including when OCR fails
   partway through - use a scope guard / RAII pattern or explicit
   cleanup-on-every-path, and test both the success and failure paths leave
-  no leftover temp file.
+  no leftover temp file. **Deliberate improvement over vox, not a gap
+  ported incorrectly:** vox's own `ScreenCaptureAdapter` does NOT clean up
+  its captured PNGs at all (they accumulate in `output_dir` indefinitely).
+  This phase's stricter zero-persistence stance (NFR1) is an intentional,
+  stronger privacy posture for this port -- don't "fix" this requirement
+  away thinking it's a porting mismatch.
 
 ## 5. Non-functional requirements
 
@@ -124,6 +153,7 @@ split pattern as Phases 3/4.
 | #   | Given                                                                                    | Expect                                                             |
 | --- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | T3  | Fake capture process exits non-zero                                                      | `VisionError::CaptureFailed`, OCR step never attempted             |
+| T3a | Fake capture process exits non-zero OR the capture binary is missing                       | Error text contains "Screen Recording" -- ports vox's own permission-guidance error messages |
 | T4  | Fake capture process "succeeds" but produces no output file (simulate a filesystem race) | `VisionError::CaptureFailed`, not a confusing downstream OCR error |
 
 ### OCR failure handling
