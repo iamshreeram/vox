@@ -64,7 +64,7 @@ git checkout main && git pull
 
 Edit `docs/vox-phases/STATUS.md`: set your chosen phase's `status` to
 `in_progress`, `owner` to your agent id (use the id you were given, or
-`code-puppy` plus a timestamp if you have no specific id), `claimed_at` to
+`agent` plus a timestamp if you have no specific id), `claimed_at` to
 the current UTC time.
 
 ```bash
