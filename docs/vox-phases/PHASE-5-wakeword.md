@@ -37,16 +37,63 @@ New file: `src-tauri/src/managers/wakeword.rs`.
 pub struct WakeWordDetection { pub model_name: String, pub confidence: f32, pub timestamp_ms: u64 }
 
 pub trait WakeWordEngine: Send + Sync {
-    /// Feed one frame of mono audio (sample rate must match the model's
-    /// expected rate - resample via the existing `rubato` dependency if
-    /// the input stream doesn't already match, same as the STT pipeline
-    /// does). Returns Some(detection) if this frame's rolling window
-    /// crosses the configured confidence threshold.
+    /// Feed one frame of mono audio. NOT arbitrary-sized: vox's own
+    /// openWakeWord usage is hard-fixed to 80ms chunks at 16kHz (1280
+    /// samples) -- this is openWakeWord's melspectrogram/embedding
+    /// pipeline's own fixed framing, not independently configurable
+    /// upstream. Resample to 16kHz via the existing `rubato` dependency
+    /// if the input stream doesn't already match (same as the STT
+    /// pipeline does), and buffer/accumulate to exactly 1280 samples
+    /// per model inference call -- a caller passing a different chunk
+    /// size must not silently misalign the model's expected framing.
+    /// Returns Some(detection) if this frame's rolling window crosses
+    /// the configured confidence threshold.
     fn process_frame(&mut self, samples: &[f32]) -> Option<WakeWordDetection>;
 
     fn reset(&mut self);
+
+    /// Mic-arbitration hooks (see NFR3) -- a later integration phase's
+    /// coordinator pauses this immediately on any non-idle app state and
+    /// resumes it after a cooldown once idle, mirroring vox's
+    /// WakeWordCoordinator.on_state_changed. Not exercised by this
+    /// phase's own test suite beyond "exists and is a plain state flag",
+    /// since the actual pause/resume-on-state-change wiring is later-
+    /// phase integration work -- but the shape must exist now so that
+    /// wiring doesn't need to retrofit the trait.
+    fn pause(&mut self);
+    fn resume(&mut self);
 }
 ```
+
+**Model input dtype:** openWakeWord's ONNX models expect **int16 PCM**,
+not float32. vox converts at the model call boundary
+(`clip(chunk * 32767, -32768, 32767).astype(int16)`) since the rest of
+its audio pipeline (like this Rust port's) is float32 in `[-1, 1]`
+throughout. Do the same -- convert only at the ONNX call site, keep
+`f32` everywhere else in this trait's own interface.
+
+**Placeholder model:** vox uses **`hey_jarvis`** specifically (openWakeWord's
+pretrained model closest to a personal-assistant wake phrase -- there is
+no pretrained "hey vox"). Use the same one here as the default
+placeholder, not a different arbitrary pretrained model, so this port's
+behavior is directly comparable to vox's own measured numbers: vox
+measured ~1% CPU per prediction, 0.96 confidence on a real synthesized
+"hey jarvis" utterance vs 0.00002 on unrelated speech and 0.0 on
+silence -- a wide, safe margin. Use these as sanity-check reference
+points for T1-T3 below, not just "some detection happened"/"no detection
+happened".
+
+**Model distribution:** vox's models are NOT bundled -- they're
+downloaded on first use (`openwakeword.utils.download_models`, cached
+locally, idempotent no-op if already present) because Model() does NOT
+auto-download and fails with a confusing raw ONNX "file not found"
+error otherwise. This repo already has a real download/cache
+infrastructure for exactly this shape of problem (`managers/model.rs` +
+`managers/model/download.rs`, used for STT models) -- reuse that
+pattern for the wake-word model file rather than bundling it statically
+or inventing a second download mechanism. A clear, specific error state
+for "model not downloaded yet" is part of this phase's job, mirroring
+the STT model manager's own UX for the same situation.
 
 Feature extraction (mel-spectrogram) is the part most worth getting right:
 openWakeWord's own preprocessing pipeline (melspectrogram -> embedding
@@ -106,12 +153,22 @@ pub wake_word_confidence_threshold: f32, // default: 0.5, matching openWakeWord'
 - NFR2: Uses `ort` (already pulled in via `transcribe-rs`) for inference
   and `rustfft` (already a dependency) for the mel-spectrogram FFT step -
   no new heavyweight ML dependency.
-- NFR3: Runs on a background thread, never blocks the UI or the existing
-  dictation-hotkey recording path - the two must be able to coexist or, if
-  truly mutually exclusive (vox's wake word and ambient mode are mutually
-  exclusive with each other, but vox's wake word is NOT exclusive with
-  hotkey dictation - verify this against vox's source and match it, don't
-  assume).
+- NFR3: Runs on a background thread, never blocks the UI. **Resolved**
+  (an earlier draft of this doc flagged this as needing verification
+  against vox's source rather than assuming -- now verified): wake word
+  and hotkey dictation are NOT feature-level mutually exclusive (both can
+  be enabled at once), but they ARE mic-arbitration exclusive at any
+  given instant, per vox's `WakeWordCoordinator.on_state_changed`: the
+  wake-word listener is paused immediately whenever the app goes
+  non-idle (recording or speaking), and resumes only after a configurable
+  cooldown period once idle again (vox: `cooldown_seconds`) -- this
+  cooldown is what prevents the wake-word listener from picking up the
+  tail end of Vox's own TTS reply as a false trigger. This phase doesn't
+  need to implement that full coordinator (that's integration-phase
+  wiring, per this phase's own non-goals), but `WakeWordEngine` should
+  expose whatever `pause()`/`resume()`-shaped hooks a later coordinator
+  will need to replicate this behavior, rather than only exposing
+  process_frame/reset and forcing an awkward retrofit later.
 
 ## 6. Test cases (write FIRST, red->green->refactor)
 
