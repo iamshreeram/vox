@@ -60,7 +60,7 @@ vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
 earshot = "1.2.2"
 enigo = "0.6.1"
 rodio = { git = "https://github.com/cjpais/rodio.git" }
-reqwest = { version = "0.12", features = ["json", "stream", "gzip", "brotli", "deflate"] }
+reqwest = { version = "0.12", features = ["blocking", "json", "stream", "gzip", "brotli", "deflate"] }
 futures-util = "0.3"
 rustfft = "6.4.0"
 strsim = "0.11.0"
@@ -80,6 +80,12 @@ sha2 = "0.10"
 # Canary, Cohere). Per-platform backend features are added in the target tables.
 transcribe-rs = { version = "0.3.8", features = ["onnx"] }
 transcribe-cpp = { version = "0.3.0", default-features = false }
+# Not a new dependency: ort is already pulled in transitively via
+# transcribe-rs/vad-rs at the exact version pinned below (see Cargo.lock).
+# Declared directly here only so wakeword.rs can use it for the
+# melspectrogram -> embedding -> classifier ONNX cascade (W4), per the
+# phase doc's NFR2.
+ort = { version = "=2.0.0-rc.12", default-features = false, features = ["ndarray"] }
 handy-keys = "0.3.4"
 ferrous-opencc = "0.2.3"
 clap = { version = "4", features = ["derive"] }

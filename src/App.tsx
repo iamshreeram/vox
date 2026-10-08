@@ -28,7 +28,7 @@ import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
 import { WhatsNewGate } from "./components/whats-new";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
-import { commands } from "@/bindings";
+import { commands, type WakeWordDetection, type AmbientAddressedPayload } from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 
 type OnboardingStep = "accessibility" | "model" | "done";
@@ -192,6 +192,28 @@ function App() {
       unlisten.then((fn) => fn());
     };
   }, []);
+
+  useEffect(() => {
+    const unlisten = listen<WakeWordDetection>("wakeword://detected", () => {
+      toast.success(t("settings.advanced.wakeWord.detectedToast"));
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [t]);
+
+  useEffect(() => {
+    const unlisten = listen<AmbientAddressedPayload>("ambient://addressed", (event) => {
+      toast.success(
+        t("settings.advanced.ambientMode.addressedToast", {
+          request: event.payload.extracted_request,
+        }),
+      );
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [t]);
 
   useEffect(() => {
     const unlisten = listen<string>("voice-command-executed", (event) => {

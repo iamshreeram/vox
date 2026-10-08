@@ -83,6 +83,27 @@ chmod +x "$WRAPPER"
 # ---- 3. launchd user agent -----------------------------------------------
 echo "Registering launchd user agent..."
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+
+# launchd agents start with a near-empty environment (just PATH) -- they do
+# NOT inherit proxy settings exported by your shell's profile, even though
+# an interactive terminal session usually has them. On a network that needs
+# a proxy for outbound HTTPS (e.g. a corporate network), this silently
+# broke the wake-word model download: it worked fine from a shell, timed
+# out after 60s when attempted by the actual running app. Fix: forward
+# whatever proxy variables happen to be set in THIS install script's own
+# environment into the agent's plist, generically -- this script has no
+# opinion on what network you're on, it just passes through what's already
+# configured (or nothing, if you're not behind a proxy).
+PROXY_ENV_XML=""
+for var in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy; do
+  value="${!var:-}"
+  if [ -n "$value" ]; then
+    PROXY_ENV_XML="${PROXY_ENV_XML}        <key>${var}</key>
+        <string>${value}</string>
+"
+  fi
+done
+
 cat > "$AGENT_PLIST" <<PLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -104,7 +125,7 @@ cat > "$AGENT_PLIST" <<PLIST_EOF
     <string>$HOME/Library/Logs/${APP_NAME_LOWER}-launchd.err.log</string>
     <key>ProcessType</key>
     <string>Interactive</string>
-</dict>
+$([ -n "$PROXY_ENV_XML" ] && printf '    <key>EnvironmentVariables</key>\n    <dict>\n%s    </dict>\n' "$PROXY_ENV_XML")</dict>
 </plist>
 PLIST_EOF
 launchctl bootstrap "gui/${UID_NUM}" "$AGENT_PLIST"

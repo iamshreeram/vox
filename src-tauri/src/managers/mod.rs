@@ -1,3 +1,5 @@
+pub mod ambient;
+pub mod ambient_listener;
 pub mod audio;
 pub mod command_router;
 pub mod gguf_meta;
@@ -7,3 +9,5 @@ pub mod model;
 pub mod model_capabilities;
 pub mod safety_policy;
 pub mod transcription;
+pub mod wakeword;
+pub mod wakeword_listener;
