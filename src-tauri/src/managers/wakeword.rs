@@ -145,7 +145,11 @@ impl<C: FrameClassifier> WakeWordEngine for BufferingWakeWordEngine<C> {
         // implementation), so a classifier bug or a corrupted ONNX output
         // could otherwise slip a NaN confidence into a real `Some(detection)`
         // despite this function's own f32::clamp call below. Sanitize first.
-        let raw_score = if raw_score.is_finite() { raw_score } else { 0.0 };
+        let raw_score = if raw_score.is_finite() {
+            raw_score
+        } else {
+            0.0
+        };
         let confidence = raw_score.clamp(0.0, 1.0);
         if confidence < self.confidence_threshold {
             return None;
@@ -653,8 +657,30 @@ impl OpenWakeWordClassifier {
     ///   `ort-2.0.0-rc.12` if the exact method name isn't obvious; do not
     ///   guess and leave it uncompiled.
     pub fn load_from_dir(dir: &std::path::Path) -> anyhow::Result<Self> {
-        let _ = dir;
-        todo!("W4: load the 3 ONNX sessions from dir; see doc comment above for exact input/output names and shapes")
+        use ort::session::Session;
+
+        let build_session = |file_name: &str| -> anyhow::Result<Session> {
+            let builder = Session::builder().map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            let builder = builder
+                .with_inter_threads(1)
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            let mut builder = builder
+                .with_intra_threads(1)
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            builder
+                .commit_from_file(dir.join(file_name))
+                .map_err(|error| anyhow::anyhow!(error.to_string()))
+        };
+
+        Ok(Self {
+            melspec_session: build_session("melspectrogram.onnx")?,
+            embedding_session: build_session("embedding_model.onnx")?,
+            classifier_session: build_session("classifier.onnx")?,
+            raw_history: Vec::with_capacity(RAW_HISTORY_MAX_SAMPLES),
+            melspec_buffer: vec![[1.0; MEL_BINS]; MELSPEC_WINDOW_FRAMES],
+            feature_buffer: vec![[0.0; EMBEDDING_DIM]; EMBEDDING_CONTEXT_FRAMES],
+            calls_since_reset: 0,
+        })
     }
 }
 
@@ -724,8 +750,110 @@ impl FrameClassifier for OpenWakeWordClassifier {
     ///    `0.0` if it is NaN or infinite (belt-and-suspenders on top of the
     ///    caller's own sanitization in `BufferingWakeWordEngine`).
     fn classify(&mut self, window: &[f32]) -> f32 {
-        let _ = window;
-        todo!("W4: implement the 8-step algorithm documented above")
+        use ort::value::Tensor;
+
+        self.raw_history.extend(window.iter().map(|sample| {
+            let scaled = sample * 32767.0;
+            (scaled as i16) as f32
+        }));
+        if self.raw_history.len() > RAW_HISTORY_MAX_SAMPLES {
+            let excess = self.raw_history.len() - RAW_HISTORY_MAX_SAMPLES;
+            self.raw_history.drain(..excess);
+        }
+
+        let history_start = self
+            .raw_history
+            .len()
+            .saturating_sub(WINDOW_SAMPLES + MELSPEC_LOOKBACK_SAMPLES);
+        let audio = &self.raw_history[history_start..];
+        let audio_tensor = match Tensor::<f32>::from_array(([1, audio.len()], audio.to_vec())) {
+            Ok(tensor) => tensor,
+            Err(_) => return 0.0,
+        };
+        let spec_output = match self
+            .melspec_session
+            .run(ort::inputs!["input" => audio_tensor])
+        {
+            Ok(outputs) => outputs,
+            Err(_) => return 0.0,
+        };
+        let spec = match spec_output["output"].try_extract_tensor::<f32>() {
+            Ok((_, values)) if values.len() % MEL_BINS == 0 => values
+                .iter()
+                .map(|value| value / 10.0 + 2.0)
+                .collect::<Vec<_>>(),
+            _ => return 0.0,
+        };
+        for row in spec.chunks_exact(MEL_BINS) {
+            let mut mel_row = [0.0; MEL_BINS];
+            mel_row.copy_from_slice(row);
+            self.melspec_buffer.push(mel_row);
+        }
+        if self.melspec_buffer.len() > MELSPEC_BUFFER_MAX_FRAMES {
+            let excess = self.melspec_buffer.len() - MELSPEC_BUFFER_MAX_FRAMES;
+            self.melspec_buffer.drain(..excess);
+        }
+
+        let mel_start = self.melspec_buffer.len() - MELSPEC_WINDOW_FRAMES;
+        let mel_values = self.melspec_buffer[mel_start..]
+            .iter()
+            .flat_map(|row| row.iter().copied())
+            .collect::<Vec<_>>();
+        let mel_tensor = match Tensor::<f32>::from_array(([1, 76, 32, 1], mel_values)) {
+            Ok(tensor) => tensor,
+            Err(_) => return 0.0,
+        };
+        let embedding_output = match self
+            .embedding_session
+            .run(ort::inputs!["input_1" => mel_tensor])
+        {
+            Ok(outputs) => outputs,
+            Err(_) => return 0.0,
+        };
+        let embedding = match embedding_output["conv2d_19"].try_extract_tensor::<f32>() {
+            Ok((_, values)) if values.len() == EMBEDDING_DIM => {
+                let mut row = [0.0; EMBEDDING_DIM];
+                row.copy_from_slice(values);
+                row
+            }
+            _ => return 0.0,
+        };
+        self.feature_buffer.push(embedding);
+        if self.feature_buffer.len() > FEATURE_BUFFER_MAX_FRAMES {
+            let excess = self.feature_buffer.len() - FEATURE_BUFFER_MAX_FRAMES;
+            self.feature_buffer.drain(..excess);
+        }
+
+        let feature_start = self.feature_buffer.len() - EMBEDDING_CONTEXT_FRAMES;
+        let feature_values = self.feature_buffer[feature_start..]
+            .iter()
+            .flat_map(|row| row.iter().copied())
+            .collect::<Vec<_>>();
+        let feature_tensor = match Tensor::<f32>::from_array(([1, 16, 96], feature_values)) {
+            Ok(tensor) => tensor,
+            Err(_) => return 0.0,
+        };
+        let classifier_output = match self
+            .classifier_session
+            .run(ort::inputs!["x.1" => feature_tensor])
+        {
+            Ok(outputs) => outputs,
+            Err(_) => return 0.0,
+        };
+        let score = match classifier_output["53"].try_extract_tensor::<f32>() {
+            Ok((_, values)) if values.len() == 1 => values[0],
+            _ => return 0.0,
+        };
+
+        let previous_calls = self.calls_since_reset;
+        self.calls_since_reset += 1;
+        if previous_calls < ZERO_GUARD_FRAMES {
+            0.0
+        } else if score.is_finite() {
+            score
+        } else {
+            0.0
+        }
     }
 
     /// Clears all rolling state back to the exact construction-time
@@ -735,7 +863,10 @@ impl FrameClassifier for OpenWakeWordClassifier {
     /// Required for T7 -- see the `FrameClassifier::reset` trait doc
     /// comment for why this must exist and be wired up.
     fn reset(&mut self) {
-        todo!("W4: reset all rolling buffers to their construction-time initial values")
+        self.raw_history.clear();
+        self.melspec_buffer = vec![[1.0; MEL_BINS]; MELSPEC_WINDOW_FRAMES];
+        self.feature_buffer = vec![[0.0; EMBEDDING_DIM]; EMBEDDING_CONTEXT_FRAMES];
+        self.calls_since_reset = 0;
     }
 }
 
@@ -898,7 +1029,10 @@ mod real_classifier_tests {
 
     fn assert_valid_confidence(c: f32) {
         assert!(!c.is_nan(), "confidence must never be NaN");
-        assert!((0.0..=1.0).contains(&c), "confidence {c} out of [0,1] range");
+        assert!(
+            (0.0..=1.0).contains(&c),
+            "confidence {c} out of [0,1] range"
+        );
     }
 
     #[test]
@@ -1071,11 +1205,8 @@ mod real_classifier_tests {
             (0.0_f32, UNRELATED_PCM),
             (0.0_f32, BORDERLINE_PCM),
         ] {
-            let mut engine = BufferingWakeWordEngine::new(
-                "hey_jarvis".to_string(),
-                threshold,
-                new_classifier(),
-            );
+            let mut engine =
+                BufferingWakeWordEngine::new("hey_jarvis".to_string(), threshold, new_classifier());
             let samples = pcm_bytes_to_f32(pcm);
             for d in feed_all_frames(&mut engine, &samples) {
                 assert_valid_confidence(d.confidence);
@@ -1083,5 +1214,3 @@ mod real_classifier_tests {
         }
     }
 }
-
-
