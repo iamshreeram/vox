@@ -448,6 +448,12 @@ pub struct AppSettings {
     #[serde(default)]
     pub memory_enabled: bool,
     #[serde(default)]
+    pub ambient_mode_enabled: bool,
+    #[serde(default = "default_ambient_wake_name")]
+    pub ambient_wake_name: String,
+    #[serde(default = "default_ambient_window_ms")]
+    pub ambient_window_ms: u64,
+    #[serde(default)]
     pub voice_commands_enabled: bool,
     #[serde(default)]
     pub wake_word_enabled: bool,
@@ -657,6 +663,14 @@ fn default_auto_submit() -> bool {
 
 fn default_history_limit() -> usize {
     5
+}
+
+fn default_ambient_wake_name() -> String {
+    "Vox".to_string()
+}
+
+fn default_ambient_window_ms() -> u64 {
+    90_000
 }
 
 fn default_recording_retention_period() -> RecordingRetentionPeriod {
@@ -983,6 +997,9 @@ pub fn get_default_settings() -> AppSettings {
         word_correction_threshold: default_word_correction_threshold(),
         history_limit: default_history_limit(),
         memory_enabled: false,
+        ambient_mode_enabled: false,
+        ambient_wake_name: default_ambient_wake_name(),
+        ambient_window_ms: default_ambient_window_ms(),
         voice_commands_enabled: false,
         wake_word_enabled: false,
         wake_word_model_name: default_wake_word_model_name(),
@@ -1583,6 +1600,22 @@ mod tests {
     fn memory_enabled_defaults_false_when_missing_from_legacy_settings() {
         let settings: AppSettings = serde_json::from_value(serde_json::json!({})).unwrap();
         assert!(!settings.memory_enabled);
+    }
+
+    #[test]
+    fn ambient_settings_defaults_when_missing_from_legacy_settings() {
+        let settings: AppSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(!settings.ambient_mode_enabled);
+        assert_eq!(settings.ambient_wake_name, "Vox");
+        assert_eq!(settings.ambient_window_ms, 90_000);
+    }
+
+    #[test]
+    fn ambient_settings_are_disabled_by_default() {
+        let settings = get_default_settings();
+        assert!(!settings.ambient_mode_enabled);
+        assert_eq!(settings.ambient_wake_name, "Vox");
+        assert_eq!(settings.ambient_window_ms, 90_000);
     }
 
     #[test]

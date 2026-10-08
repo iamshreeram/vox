@@ -94,6 +94,7 @@ const settingUpdaters: {
   autostart_enabled: (value) =>
     commands.changeAutostartSetting(value as boolean),
   wake_word_enabled: (value) => commands.wakewordSetEnabled(value as boolean),
+  ambient_mode_enabled: (value) => commands.ambientSetEnabled(value as boolean),
   update_checks_enabled: (value) =>
     commands.changeUpdateChecksSetting(value as boolean),
   show_whats_new_on_update: (value) =>
