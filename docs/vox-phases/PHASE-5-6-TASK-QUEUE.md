@@ -154,8 +154,8 @@ Updated by the Validator as tasks complete. See `tasks/phase-5-tasks.md`,
 | W4 | Real ONNX inference pipeline | W2, W3 | merged | `phase/5-wakeword`, merged @ d8f4a310 (red-phase scaffold + fixtures) + b9d81fb7 (real implementation) |
 | W5 | pause/resume + multi-instance isolation | W1 | merged | `phase5-w5-pause-resume`, merged @ bb32f2a5 (logic already existed from W2; this added T8 + pause/resume tests only) |
 | W6 | Tauri commands + events | W1 | merged | `phase5-w6-commands`, merged @ 56c0916a (plus a Validator fix: f32->JSON confidence test compared against an f64 literal, corrected @ d26b9433) |
-| W7 | Mic-flow integration (scope ext.) | W4, W5, W6 | queued | — |
-| W8 | Settings UI (scope ext.) | W6 (finalize after W7) | queued | — |
+| W7 | Mic-flow integration (scope ext.) | W4, W5, W6 | merged | `phase/5-wakeword`, merged @ 9363dfeb |
+| W8 | Settings UI (scope ext.) | W6 (finalize after W7) | merged | `phase/5-wakeword`, merged @ f7ede817 |
 | A1 | Settings + scaffolding | — | merged | merged into `phase/6-ambient-mode` @ 0c45a34f |
 | A2 | RollingTranscript | A1 | merged | `phase6-a2-transcript`, merged @ fde6fd3f |
 | A3 | EngagementJudge | A1 | merged | `phase6-a3-engagement`, merged @ 7459330d |
