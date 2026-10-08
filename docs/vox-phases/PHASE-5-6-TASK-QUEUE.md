@@ -151,7 +151,7 @@ Updated by the Validator as tasks complete. See `tasks/phase-5-tasks.md`,
 | W1 | Settings + scaffolding | — | merged | merged into `phase/5-wakeword` (plus a Validator fix: `WakeWordDetection` was missing `Serialize`/`Deserialize`/`Type` derives in the Implementer's actual commit vs. spec — corrected @ 11993517) |
 | W2 | Frame buffering/validation | W1 | merged | `phase5-w2-framing`, merged @ 12ad08e1 |
 | W3 | Model download/cache | W1 | merged | `phase5-w3-download`, merged @ 89557656 |
-| W4 | Real ONNX inference pipeline | W2, W3 | queued | — |
+| W4 | Real ONNX inference pipeline | W2, W3 | **BLOCKED** — see note below | — |
 | W5 | pause/resume + multi-instance isolation | W1 | merged | `phase5-w5-pause-resume`, merged @ bb32f2a5 (logic already existed from W2; this added T8 + pause/resume tests only) |
 | W6 | Tauri commands + events | W1 | merged | `phase5-w6-commands`, merged @ 56c0916a (plus a Validator fix: f32->JSON confidence test compared against an f64 literal, corrected @ d26b9433) |
 | W7 | Mic-flow integration (scope ext.) | W4, W5, W6 | queued | — |
@@ -160,7 +160,7 @@ Updated by the Validator as tasks complete. See `tasks/phase-5-tasks.md`,
 | A2 | RollingTranscript | A1 | merged | `phase6-a2-transcript`, merged @ fde6fd3f |
 | A3 | EngagementJudge | A1 | merged | `phase6-a3-engagement`, merged @ 7459330d |
 | A4 | EchoSuppressor | A1 | merged | `phase6-a4-echo`, merged @ 90686d23 |
-| A5 | Coordinator + mutual exclusion | A2, A3, A4, W1 | queued | — |
+| A5 | Coordinator + mutual exclusion | A2, A3, A4, W1 | merged | `phase6-a5-coordinator`, merged @ a2d778f9. **Structural change: `phase/6-ambient-mode` now also contains all of `phase/5-wakeword`'s commits** (merged in to get `wake_word_enabled` for the mutual-exclusion logic) -- it is now the combined integration branch. `phase/5-wakeword` is unchanged/standalone and still fine to keep developing W7/W8 against until final combination. |
 | A6 | Tauri commands + events | A1 (ACTUALLY also needs A2 -- `ambient_clear()` needs a working `RollingTranscript::clear()`, despite the doc saying "depends on A1 only"; discovered during Round 2 planning) | merged | `phase6-a6-commands`, merged @ cc716533 (plus a Validator fix: `ambient::mod` was missing `RollingTranscript`'s re-export — same class of bug as W1's, corrected @ 1158032a) |
 | A7 | Mic-flow integration (scope ext.) | A5, A6 | queued | — |
 | A8 | Settings UI (scope ext.) | A6 (finalize after A7) | queued | — |
@@ -209,6 +209,30 @@ Updated by the Validator as tasks complete. See `tasks/phase-5-tasks.md`,
   with the task at hand. This caused at least 3 Implementers to report a
   false "fmt failure." Always scope `rustfmt --check` to the specific
   non-root files actually touched.
+
+### W4 formally BLOCKED (2026-10-08) -- do not attempt without explicit sign-off
+
+Investigated directly: the phase doc's instruction to "read
+`src/vox/wakeword/openwakeword_engine.py` ... it documents the exact
+preprocessing" is **incorrect**. That file is a thin wrapper around the
+`openwakeword` PyPI package's `Model.predict()` -- the real melspectrogram
+/ embedding / classifier cascade math lives inside that external package,
+which is **not installed or vendored anywhere in this environment**
+(confirmed: `uv pip show openwakeword` -> not found, no `.onnx` wake-word
+model files exist locally, only an unrelated VAD model). Outbound network
+access to GitHub IS available, so a full faithful port is *possible* (fetch
+real openWakeWord source + real pretrained ONNX files), but doing this
+correctly is a substantial, failure-prone undertaking -- the classifier is
+sensitive to exact preprocessing match, and a subtly-wrong port would
+*silently* ship a non-functional detector with green-looking tests. This is
+not something to improvise; it needs an explicit scope decision (full
+faithful port vs. harness-only-with-deferred-accuracy-tests vs. defer
+entirely) before any Implementer touches it. Asked Ram directly, no
+response yet (session timed out) -- defaulted to **not attempting it**
+rather than guessing, since a wrong answer here is worse than no answer.
+**W7 (mic integration) and W8 (Settings UI) both formally depend on W4** per
+the original plan; W7 cannot be meaningfully completed until W4 is resolved
+one way or another.
 | U1 | Shared Listening Mode UI section | W8, A8 | queued | — |
 | U2 | Permission/onboarding copy | W7 or A7 | queued | — |
 | U3 | i18n + final lint/build pass | W8, A8, U1 | queued | — |
