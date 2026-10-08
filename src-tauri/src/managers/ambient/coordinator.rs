@@ -2,20 +2,16 @@
 //! `EngagementJudge` + `EchoSuppressor` together, plus the mutual-exclusion
 //! rule against Wake Word (Phase 5). See
 //! `docs/vox-phases/PHASE-6-ambient-mode.md` section 3.
-//!
-//! NOTE: wiring these mutual-exclusion functions into the actual
-//! `ambient_set_enabled`/`wakeword_set_enabled` Tauri commands is deferred
-//! until the `phase/5-wakeword` and `phase/6-ambient-mode` branches are
-//! combined (they currently live on separate branches) -- this task only
-//! builds and tests the pure settings-mutation logic itself.
 
 use super::echo::EchoSuppressor;
 use super::engagement::EngagementJudge;
 use super::transcript::RollingTranscript;
 
+use std::sync::Arc;
+
 #[allow(dead_code)]
 pub struct AmbientCoordinator {
-    pub transcript: RollingTranscript,
+    pub transcript: Arc<RollingTranscript>,
     pub judge: EngagementJudge,
     pub echo: EchoSuppressor,
 }
@@ -24,6 +20,14 @@ pub struct AmbientCoordinator {
 impl AmbientCoordinator {
     pub fn new(
         transcript: RollingTranscript,
+        judge: EngagementJudge,
+        echo: EchoSuppressor,
+    ) -> Self {
+        Self::with_shared_transcript(Arc::new(transcript), judge, echo)
+    }
+
+    pub fn with_shared_transcript(
+        transcript: Arc<RollingTranscript>,
         judge: EngagementJudge,
         echo: EchoSuppressor,
     ) -> Self {

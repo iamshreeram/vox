@@ -33,6 +33,8 @@ use tauri_specta::{collect_commands, collect_events, Builder};
 pub use utils::env_flag_enabled;
 
 use env_filter::Builder as EnvFilterBuilder;
+use managers::ambient::{AmbientCoordinator, EchoSuppressor, EngagementJudge, RollingTranscript};
+use managers::ambient_listener::AmbientListener;
 use managers::audio::AudioRecordingManager;
 use managers::command_router::CommandRouter;
 use managers::history::HistoryManager;
@@ -227,6 +229,13 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         Arc::new(MemoryManager::new(app_handle).expect("Failed to initialize memory manager"));
     let command_router = Arc::new(CommandRouter::new(new_app_discovery()));
     let wakeword_listener = Arc::new(WakeWordListener::new(app_handle.clone()));
+    let ambient_transcript = Arc::new(RollingTranscript::new(90_000));
+    let ambient_coordinator = Arc::new(AmbientCoordinator::with_shared_transcript(
+        Arc::clone(&ambient_transcript),
+        EngagementJudge::new(vec!["vox".to_string()]),
+        EchoSuppressor::new(),
+    ));
+    let ambient_listener = Arc::new(AmbientListener::new(app_handle.clone()));
 
     // Initialize the transcribe-cpp native backend (logging + backend module
     // registration) once, before any whisper model is loaded.
@@ -243,8 +252,14 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(memory_manager.clone());
     app_handle.manage(command_router.clone());
     app_handle.manage(wakeword_listener.clone());
-    if get_settings(app_handle).wake_word_enabled {
+    app_handle.manage(ambient_transcript);
+    app_handle.manage(ambient_coordinator);
+    app_handle.manage(ambient_listener.clone());
+    let startup_settings = get_settings(app_handle);
+    if startup_settings.wake_word_enabled {
         wakeword_listener.start();
+    } else if startup_settings.ambient_mode_enabled {
+        ambient_listener.start();
     }
     app_handle.manage(tray::TrayState::new());
 

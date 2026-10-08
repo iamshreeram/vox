@@ -1,29 +1,35 @@
 use crate::managers::ambient::RollingTranscript;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 pub const AMBIENT_ADDRESSED_EVENT: &str = "ambient://addressed";
 
 fn update_ambient_mode_enabled(settings: &mut crate::settings::AppSettings, enabled: bool) {
-    settings.ambient_mode_enabled = enabled;
+    if enabled {
+        crate::managers::ambient::coordinator::enabling_ambient_mode_disables_wake_word(settings);
+    } else {
+        settings.ambient_mode_enabled = false;
+    }
 }
 
-/// NOTE: direct settings write placeholder -- once task A5 lands (mutual
-/// exclusion with Wake Word), this must go through A5's shared validation
-/// function instead of writing the setting directly.
 #[tauri::command]
 #[specta::specta]
 pub fn ambient_set_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = crate::settings::get_settings(&app);
     update_ambient_mode_enabled(&mut settings, enabled);
     crate::settings::write_settings(&app, settings);
+    let listener = app.state::<Arc<crate::managers::ambient_listener::AmbientListener>>();
+    if enabled {
+        app.state::<Arc<crate::managers::wakeword_listener::WakeWordListener>>()
+            .stop();
+        listener.start();
+    } else {
+        listener.stop();
+    }
     Ok(())
 }
 
-/// NOTE: this command will panic at runtime until task A7 registers an
-/// `Arc<RollingTranscript>` as managed Tauri state (`app.manage(...)`) --
-/// that registration doesn't exist yet. This task only builds the IPC
-/// surface/shape; A7 wires it to the live coordinator.
+/// Shared RAM-only transcript registered alongside the ambient listener.
 #[tauri::command]
 #[specta::specta]
 pub fn ambient_clear(transcript: State<'_, Arc<RollingTranscript>>) -> Result<(), String> {
@@ -36,10 +42,6 @@ pub struct AmbientAddressedPayload {
     pub extracted_request: String,
 }
 
-/// Emits the ambient-addressed event. Thin wrapper around `AppHandle::emit`
-/// -- payload shape covered by the serialization test below; no
-/// `tauri::test` mock-AppHandle infra exists in this crate (matches
-/// `commands/memory.rs`'s and `commands/wakeword.rs`'s house style).
 #[allow(dead_code)]
 pub fn emit_ambient_addressed(app: &AppHandle, extracted_request: &str) -> tauri::Result<()> {
     app.emit(
@@ -56,18 +58,23 @@ mod tests {
     use crate::settings::get_default_settings;
 
     #[test]
-    fn enabling_ambient_mode_updates_the_setting() {
+    fn enabling_ambient_mode_disables_wake_word_and_round_trips_settings_value() {
         let mut settings = get_default_settings();
+        settings.wake_word_enabled = true;
         update_ambient_mode_enabled(&mut settings, true);
-        assert!(settings.ambient_mode_enabled);
+        let serialized = serde_json::to_value(&settings).unwrap();
+        let loaded: crate::settings::AppSettings = serde_json::from_value(serialized).unwrap();
+        assert!(loaded.ambient_mode_enabled);
+        assert!(!loaded.wake_word_enabled);
     }
 
     #[test]
-    fn disabling_ambient_mode_updates_the_setting() {
+    fn disabling_ambient_mode_does_not_change_wake_word() {
         let mut settings = get_default_settings();
-        update_ambient_mode_enabled(&mut settings, true);
+        settings.wake_word_enabled = true;
         update_ambient_mode_enabled(&mut settings, false);
         assert!(!settings.ambient_mode_enabled);
+        assert!(settings.wake_word_enabled);
     }
 
     #[test]
