@@ -148,22 +148,54 @@ Updated by the Validator as tasks complete. See `tasks/phase-5-tasks.md`,
 
 | ID | Title | Depends on | Status | Branch |
 | --- | --- | --- | --- | --- |
-| W1 | Settings + scaffolding | — | merged | `phase5-w1-scaffolding` (merged into `phase/5-wakeword` @ 56aa76d7) |
-| W2 | Frame buffering/validation | W1 | queued | — |
-| W3 | Model download/cache | W1 | queued | — |
+| W1 | Settings + scaffolding | — | merged | merged into `phase/5-wakeword` (plus a Validator fix: `WakeWordDetection` was missing `Serialize`/`Deserialize`/`Type` derives in the Implementer's actual commit vs. spec — corrected @ 11993517) |
+| W2 | Frame buffering/validation | W1 | merged | `phase5-w2-framing`, merged @ 12ad08e1 |
+| W3 | Model download/cache | W1 | queued (serialize after W2, same file) | — |
 | W4 | Real ONNX inference pipeline | W2, W3 | queued | — |
-| W5 | pause/resume + multi-instance isolation | W1 | queued | — |
-| W6 | Tauri commands + events | W1 | queued | — |
+| W5 | pause/resume + multi-instance isolation | W1 | queued (serialize after W3, same file) | — |
+| W6 | Tauri commands + events | W1 | merged | `phase5-w6-commands`, merged @ 56c0916a (plus a Validator fix: f32->JSON confidence test compared against an f64 literal, corrected @ d26b9433) |
 | W7 | Mic-flow integration (scope ext.) | W4, W5, W6 | queued | — |
 | W8 | Settings UI (scope ext.) | W6 (finalize after W7) | queued | — |
-| A1 | Settings + scaffolding | — | merged | `phase6-a1-scaffolding` (merged into `phase/6-ambient-mode` @ 0c45a34f) |
-| A2 | RollingTranscript | A1 | queued | — |
-| A3 | EngagementJudge | A1 | queued | — |
-| A4 | EchoSuppressor | A1 | queued | — |
+| A1 | Settings + scaffolding | — | merged | merged into `phase/6-ambient-mode` @ 0c45a34f |
+| A2 | RollingTranscript | A1 | merged | `phase6-a2-transcript`, merged @ fde6fd3f |
+| A3 | EngagementJudge | A1 | merged | `phase6-a3-engagement`, merged @ 7459330d |
+| A4 | EchoSuppressor | A1 | merged | `phase6-a4-echo`, merged @ 90686d23 |
 | A5 | Coordinator + mutual exclusion | A2, A3, A4, W1 | queued | — |
-| A6 | Tauri commands + events | A1 | queued | — |
+| A6 | Tauri commands + events | A1 (ACTUALLY also needs A2 -- `ambient_clear()` needs a working `RollingTranscript::clear()`, despite the doc saying "depends on A1 only"; discovered during Round 2 planning) | queued (serialize after A2, done) | — |
 | A7 | Mic-flow integration (scope ext.) | A5, A6 | queued | — |
 | A8 | Settings UI (scope ext.) | A6 (finalize after A7) | queued | — |
+
+### Execution notes from Round 1/2 (read before continuing)
+
+- **Branch naming bug (fixed):** see the corrected flat naming convention
+  above -- nested branch names under an existing integration branch are
+  rejected by git.
+- **Implementers may silently rewrite dictated code instead of using it
+  verbatim.** W1's actual commit replaced the Validator's exact specified
+  `WakeWordDetection` struct with an equivalent-looking rewrite that quietly
+  dropped the `Serialize`/`Deserialize`/`Type` derives (needed for Tauri
+  event emission + specta bindings). It still passed behavioral verification
+  (tests/clippy/fmt all green) because nothing in W1's own test suite
+  exercised serialization -- that gap only surfaced when W6 tried to emit
+  the struct as an event. **Lesson: behavioral test-passing is not proof of
+  literal-spec compliance for "shape" contracts whose properties (like
+  derives) aren't exercised by that same task's own tests.** The Validator
+  must spot-check actual file contents against the dictated spec, not just
+  rerun tests, especially for the first task that defines a shared type.
+- **RollingTranscript's method signatures were corrected from `&mut self` to
+  `&self`** (A2) -- the phase doc's shown signatures can't satisfy NFR2's
+  concurrent-access requirement; `&self` + internal `Mutex` (mirroring
+  `MemoryManager`) is required instead.
+- **Disk space:** each worktree has its own multi-GB `target/` directory:
+  running more than ~3 concurrent `cargo build/test` worktrees at once on a
+  460GB disk risks `No space left on device` mid-task (this happened during
+  Round 2a and corrupted several Implementers' ability to report verified
+  results). Delete a task's worktree (which deletes its `target/`) the
+  moment it's merged; don't let old phase worktrees linger after their PR
+  merges either.
+- **A6's dependency is actually A1 + A2, not A1 alone** -- its
+  `ambient_clear()` needs a real, working `RollingTranscript::clear()` to
+  be meaningfully testable.
 | U1 | Shared Listening Mode UI section | W8, A8 | queued | — |
 | U2 | Permission/onboarding copy | W7 or A7 | queued | — |
 | U3 | i18n + final lint/build pass | W8, A8, U1 | queued | — |
