@@ -102,16 +102,26 @@ mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
 # whatever proxy variables happen to be set in THIS install script's own
 # environment into the agent's plist, generically -- this script has no
 # opinion on what network you're on, it just passes through what's already
-# configured (or nothing, if you're not behind a proxy).
+# configured (or nothing, if you're not behind a proxy). A proxy that was
+# trusted blindly was confirmed to actively break the app rather than help
+# it, so verify HTTPS connectivity through it before forwarding any proxy
+# settings; a misconfigured or unreachable proxy should not be baked in.
 PROXY_ENV_XML=""
-for var in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy; do
-  value="${!var:-}"
-  if [ -n "$value" ]; then
-    PROXY_ENV_XML="${PROXY_ENV_XML}        <key>${var}</key>
+HTTPS_PROXY_URL="${HTTPS_PROXY:-${https_proxy:-}}"
+if [ -n "$HTTPS_PROXY_URL" ]; then
+  if curl --proxy "$HTTPS_PROXY_URL" --silent --head --fail --max-time 5 https://huggingface.co >/dev/null 2>&1; then
+    for var in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy; do
+      value="${!var:-}"
+      if [ -n "$value" ]; then
+        PROXY_ENV_XML="${PROXY_ENV_XML}        <key>${var}</key>
         <string>${value}</string>
 "
+      fi
+    done
+  else
+    echo "Note: HTTPS_PROXY is set but a live connectivity check through it failed -- not forwarding it to the app (it will connect directly instead)."
   fi
-done
+fi
 
 cat > "$AGENT_PLIST" <<PLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>
