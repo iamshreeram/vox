@@ -254,3 +254,199 @@ mod buffering_tests {
         assert!(engine.process_frame(&vec![0.0_f32; 1280]).is_none());
     }
 }
+
+/// openWakeWord's pipeline needs 3 ONNX model files per model: a
+/// melspectrogram featurizer, a shared embedding model, and a
+/// model-specific classifier. Not bundled -- downloaded on first use and
+/// cached locally, matching the existing STT model manager's pattern
+/// (`managers/model.rs` + `managers/model/download.rs`).
+pub const WAKEWORD_MODEL_FILES: [&str; 3] = [
+    "melspectrogram.onnx",
+    "embedding_model.onnx",
+    "classifier.onnx",
+];
+
+/// Whether a wake-word model's files are present locally. Distinct from a
+/// download failure -- querying readiness never attempts a download.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModelReadiness {
+    NotDownloaded,
+    Ready,
+}
+
+/// A distinct, specific error for a failed model download -- never let a
+/// missing file surface as a raw ONNX runtime "file not found" error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModelDownloadError {
+    Network(String),
+    Io(String),
+}
+
+/// Abstracts the actual file transfer so tests never hit the network.
+/// The real production implementation (reqwest-based, following
+/// `managers/model/download.rs`'s resumable-HTTP pattern) is wired in by a
+/// later task; this trait is the seam.
+pub trait ModelDownloader: Send + Sync {
+    /// Downloads `file_name` for `model_name` to `destination`.
+    fn download_file(
+        &self,
+        model_name: &str,
+        file_name: &str,
+        destination: &std::path::Path,
+    ) -> Result<(), ModelDownloadError>;
+}
+
+/// Resolves the wake-word model directory under the app's data dir.
+pub fn wakeword_model_dir(app_data_dir: &std::path::Path, model_name: &str) -> std::path::PathBuf {
+    app_data_dir.join("wakeword_models").join(model_name)
+}
+
+/// Checks whether all of a model's files are already present locally.
+/// Never attempts a download -- purely a filesystem check.
+pub fn model_readiness(app_data_dir: &std::path::Path, model_name: &str) -> ModelReadiness {
+    let dir = wakeword_model_dir(app_data_dir, model_name);
+    let all_present = WAKEWORD_MODEL_FILES
+        .iter()
+        .all(|file| dir.join(file).is_file());
+    if all_present {
+        ModelReadiness::Ready
+    } else {
+        ModelReadiness::NotDownloaded
+    }
+}
+
+/// Ensures all of a model's files are present locally, downloading any
+/// missing ones. Idempotent: a file already present is never re-downloaded.
+/// Atomic per-file: downloads to a `.partial` sibling first and only renames
+/// it into place on success; on failure the partial is deleted so no
+/// corrupt/incomplete file is ever left at the final path.
+pub fn ensure_model_downloaded(
+    app_data_dir: &std::path::Path,
+    model_name: &str,
+    downloader: &dyn ModelDownloader,
+) -> Result<(), ModelDownloadError> {
+    let dir = wakeword_model_dir(app_data_dir, model_name);
+    std::fs::create_dir_all(&dir).map_err(|e| ModelDownloadError::Io(e.to_string()))?;
+    for file in WAKEWORD_MODEL_FILES {
+        let destination = dir.join(file);
+        if destination.is_file() {
+            continue;
+        }
+        let tmp_destination = dir.join(format!("{file}.partial"));
+        match downloader.download_file(model_name, file, &tmp_destination) {
+            Ok(()) => {
+                std::fs::rename(&tmp_destination, &destination)
+                    .map_err(|e| ModelDownloadError::Io(e.to_string()))?;
+            }
+            Err(error) => {
+                let _ = std::fs::remove_file(&tmp_destination);
+                return Err(error);
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod download_tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    struct FakeDownloader {
+        calls: Arc<Mutex<Vec<String>>>,
+        should_fail: bool,
+    }
+
+    impl ModelDownloader for FakeDownloader {
+        fn download_file(
+            &self,
+            _model_name: &str,
+            file_name: &str,
+            destination: &std::path::Path,
+        ) -> Result<(), ModelDownloadError> {
+            self.calls.lock().unwrap().push(file_name.to_string());
+            if self.should_fail {
+                // Simulate a transfer that wrote some bytes before failing.
+                let _ = std::fs::write(destination, b"partial-garbage");
+                return Err(ModelDownloadError::Network("connection reset".to_string()));
+            }
+            std::fs::write(destination, b"fake-model-bytes").unwrap();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn fresh_cache_dir_downloads_all_three_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let downloader = FakeDownloader {
+            calls: calls.clone(),
+            should_fail: false,
+        };
+        let result = ensure_model_downloaded(dir.path(), "hey_jarvis", &downloader);
+        assert!(result.is_ok());
+        assert_eq!(calls.lock().unwrap().len(), 3);
+        assert_eq!(
+            model_readiness(dir.path(), "hey_jarvis"),
+            ModelReadiness::Ready
+        );
+    }
+
+    #[test]
+    fn already_present_model_is_not_redownloaded() {
+        let dir = tempfile::tempdir().unwrap();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let downloader = FakeDownloader {
+            calls: calls.clone(),
+            should_fail: false,
+        };
+        ensure_model_downloaded(dir.path(), "hey_jarvis", &downloader).unwrap();
+        assert_eq!(calls.lock().unwrap().len(), 3);
+
+        ensure_model_downloaded(dir.path(), "hey_jarvis", &downloader).unwrap();
+        assert_eq!(calls.lock().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn failed_download_returns_distinct_error_and_leaves_no_partial_file_at_final_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let downloader = FakeDownloader {
+            calls,
+            should_fail: true,
+        };
+        let result = ensure_model_downloaded(dir.path(), "hey_jarvis", &downloader);
+        assert!(matches!(result, Err(ModelDownloadError::Network(_))));
+
+        let model_dir = wakeword_model_dir(dir.path(), "hey_jarvis");
+        let final_path = model_dir.join(WAKEWORD_MODEL_FILES[0]);
+        assert!(!final_path.exists());
+        let tmp_path = model_dir.join(format!("{}.partial", WAKEWORD_MODEL_FILES[0]));
+        assert!(!tmp_path.exists());
+    }
+
+    #[test]
+    fn readiness_before_any_download_is_not_downloaded() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            model_readiness(dir.path(), "hey_jarvis"),
+            ModelReadiness::NotDownloaded
+        );
+    }
+
+    #[test]
+    fn readiness_after_a_failed_download_is_still_not_downloaded_not_a_crash() {
+        let dir = tempfile::tempdir().unwrap();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let downloader = FakeDownloader {
+            calls,
+            should_fail: true,
+        };
+        let result = ensure_model_downloaded(dir.path(), "hey_jarvis", &downloader);
+        assert!(result.is_err());
+        assert_eq!(
+            model_readiness(dir.path(), "hey_jarvis"),
+            ModelReadiness::NotDownloaded
+        );
+    }
+}
