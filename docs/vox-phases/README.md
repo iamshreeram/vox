@@ -51,6 +51,7 @@ Phases 1-5 and 7 can be developed independently. Phase 6 depends on Phase 5 and 
 | `tasks/phase-5-tasks.md`    | Phase 5 task cards (files, tests, acceptance criteria per task). |
 | `tasks/phase-6-tasks.md`    | Phase 6 task cards. |
 | `tasks/ui-wiring-tasks.md`  | Cross-cutting Settings UI task cards shared by Phases 5 and 6. |
+| `BACKLOG-voice-command-expansion.md` | Ideas backlog for "transcript into action" follow-ups beyond Phase 2 -- not a claimed phase, see the file itself before promoting anything out of it. |
 
 ## Starting a phase
 
