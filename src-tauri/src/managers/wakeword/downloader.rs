@@ -7,6 +7,14 @@ use std::time::Duration;
 const OPEN_WAKE_WORD_RELEASE: &str =
     "https://github.com/dscripka/openWakeWord/releases/download/v0.5.1";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+// `.timeout()` alone bounds the whole request, but observed in practice
+// (behind a corporate HTTPS-proxy CONNECT tunnel) it does not reliably fire
+// if the proxy accepts the TCP connection but never completes the CONNECT
+// handshake to the real destination -- the request hangs well past
+// REQUEST_TIMEOUT with no error. `.connect_timeout()` bounds that specific
+// phase independently and does fire, so this is a deliberate belt-and-braces
+// pairing, not redundant with REQUEST_TIMEOUT above.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Resolves this repo's public model name to its upstream openWakeWord release filename.
 pub fn upstream_filename(
@@ -36,6 +44,7 @@ impl Default for HttpModelDownloader {
         Self {
             client: Client::builder()
                 .timeout(REQUEST_TIMEOUT)
+                .connect_timeout(CONNECT_TIMEOUT)
                 .build()
                 .expect("reqwest blocking client configuration is valid"),
         }
@@ -153,6 +162,25 @@ mod tests {
             .download_url(&format!("http://{address}/"), Path::new("unused"))
             .unwrap_err();
         assert!(matches!(error, ModelDownloadError::Network(_)));
+    }
+
+    // Manual diagnostic only -- hits the real network, never run in CI/`cargo test`.
+    // `cargo test --lib downloader::tests::real_download_against_live_github_release -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn real_download_against_live_github_release() {
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("melspectrogram.onnx");
+        let result = HttpModelDownloader::default().download_file(
+            "hey_jarvis",
+            "melspectrogram.onnx",
+            &destination,
+        );
+        eprintln!("result: {result:?}");
+        result.unwrap();
+        let size = std::fs::metadata(&destination).unwrap().len();
+        eprintln!("downloaded {size} bytes");
+        assert!(size > 0);
     }
 
     #[test]
