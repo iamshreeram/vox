@@ -279,6 +279,10 @@
         "empty": "No facts remembered yet. Say \"remember that...\" while dictating, or add one above.",
         "rememberedToast": "Remembered."
       },
+      "listeningMode": {
+        "title": "Listening Mode",
+        "description": "Choose one way for Vox to listen without a hotkey: Wake Word listens only for a trigger phrase; Ambient Mode transcribes nearby audio into a short-lived, RAM-only buffer and acts only when addressed. Only one mode can be active at a time."
+      },
       "ambientMode": {
         "label": "Ambient Mode",
         "description": "Continuously transcribes nearby audio into a short-lived, RAM-only buffer that is never written to disk. Vox acts only when it detects that you addressed your wake name (for example, \"Vox, what time is it?\").",
