@@ -1,3 +1,4 @@
+pub mod ambient;
 pub mod audio;
 pub mod command_router;
 pub mod gguf_meta;
