@@ -279,6 +279,11 @@
         "empty": "No facts remembered yet. Say \"remember that...\" while dictating, or add one above.",
         "rememberedToast": "Remembered."
       },
+      "wakeWord": {
+        "label": "Wake Word",
+        "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
+        "detectedToast": "Wake word detected \u2014 listening..."
+      },
       "voiceCommands": {
         "label": "Voice Commands",
         "description": "Lets phrases like \"open Safari\" or \"open Downloads\" open the real app/folder instead of being pasted as text. Only recognized, deterministic commands run \u2014 anything else falls back to normal dictation."

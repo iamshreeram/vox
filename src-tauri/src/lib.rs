@@ -34,11 +34,12 @@ pub use utils::env_flag_enabled;
 
 use env_filter::Builder as EnvFilterBuilder;
 use managers::audio::AudioRecordingManager;
+use managers::command_router::CommandRouter;
 use managers::history::HistoryManager;
 use managers::memory::MemoryManager;
-use managers::command_router::CommandRouter;
 use managers::model::ModelManager;
 use managers::transcription::TranscriptionManager;
+use managers::wakeword_listener::WakeWordListener;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use tauri::image::Image;
@@ -225,6 +226,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let memory_manager =
         Arc::new(MemoryManager::new(app_handle).expect("Failed to initialize memory manager"));
     let command_router = Arc::new(CommandRouter::new(new_app_discovery()));
+    let wakeword_listener = Arc::new(WakeWordListener::new(app_handle.clone()));
 
     // Initialize the transcribe-cpp native backend (logging + backend module
     // registration) once, before any whisper model is loaded.
@@ -240,6 +242,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(history_manager.clone());
     app_handle.manage(memory_manager.clone());
     app_handle.manage(command_router.clone());
+    app_handle.manage(wakeword_listener.clone());
+    if get_settings(app_handle).wake_word_enabled {
+        wakeword_listener.start();
+    }
     app_handle.manage(tray::TrayState::new());
 
     // Note: Shortcuts are NOT initialized here.
@@ -797,13 +803,16 @@ pub fn run(cli_args: CliArgs) {
             commands::memory::memory_list_all,
             commands::memory::memory_forget,
             commands::memory::memory_set_enabled,
+            commands::wakeword::wakeword_set_enabled,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
             managers::transcription::StreamTextEvent,
             managers::transcription::StreamPhaseEvent,
-        ]);
+        ])
+        .typ::<settings::AppSettings>()
+        .typ::<managers::wakeword::WakeWordDetection>();
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
     // Dev convenience only (regenerates bindings.ts while running `cargo
