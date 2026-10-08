@@ -4,15 +4,16 @@ use crate::audio_toolkit::{list_input_devices, AudioRecorder};
 use crate::helpers::clamshell;
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::wakeword::{
-    model_readiness, wakeword_model_dir, BufferingWakeWordEngine, ModelReadiness,
-    OpenWakeWordClassifier, WakeWordDetection, WakeWordEngine,
+    ensure_model_downloaded, model_readiness, wakeword_model_dir, BufferingWakeWordEngine,
+    HttpModelDownloader, ModelDownloader, ModelReadiness, OpenWakeWordClassifier,
+    WakeWordDetection, WakeWordEngine,
 };
 use crate::settings::{get_settings, AppSettings};
 use log::warn;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 const STATE_POLL_INTERVAL: Duration = Duration::from_millis(150);
 
@@ -36,7 +37,7 @@ fn configured_engine(
 ) -> Option<Box<dyn WakeWordEngine>> {
     match model_readiness(app_data_dir, model_name) {
         ModelReadiness::NotDownloaded => {
-            warn!("Wake-word model '{model_name}' is not downloaded; wake-word listening will remain unavailable until the model is installed");
+            warn!("Wake-word model '{model_name}' is not downloaded yet");
             None
         }
         ModelReadiness::Ready => {
@@ -54,6 +55,23 @@ fn configured_engine(
             }
         }
     }
+}
+
+/// Download missing files and install a constructed engine into the listener's shared slot.
+fn download_and_install_engine(
+    app_data_dir: &std::path::Path,
+    model_name: &str,
+    confidence_threshold: f32,
+    downloader: &dyn ModelDownloader,
+    engine: &Mutex<Option<Box<dyn WakeWordEngine>>>,
+    build_engine: impl FnOnce(&std::path::Path, &str, f32) -> Option<Box<dyn WakeWordEngine>>,
+) -> Result<(), String> {
+    ensure_model_downloaded(app_data_dir, model_name, downloader)
+        .map_err(|error| format!("{error:?}"))?;
+    let installed = build_engine(app_data_dir, model_name, confidence_threshold)
+        .ok_or_else(|| format!("downloaded wake-word model '{model_name}' could not be loaded"))?;
+    *engine.lock().unwrap() = Some(installed);
+    Ok(())
 }
 
 /// Standalone listener with its own microphone recorder, separate from
@@ -104,6 +122,7 @@ impl WakeWordListener {
         let engine = Arc::clone(&self.engine);
         let enabled = Arc::clone(&self.enabled);
         std::thread::spawn(move || {
+            let mut download_attempted = false;
             let mut was_recording = false;
             let mut idle_after_recording = None;
             let mut stream_open = false;
@@ -124,6 +143,11 @@ impl WakeWordListener {
                     was_recording = false;
                     idle_after_recording = None;
                     cooldown_completed = false;
+                    // Reset so turning the feature back on retries a previous
+                    // download failure instead of staying stuck until the app
+                    // restarts (this thread is spawned once for the app's
+                    // entire lifetime, not per toggle-on).
+                    download_attempted = false;
                     continue;
                 }
                 let is_recording = app
@@ -149,6 +173,38 @@ impl WakeWordListener {
                     idle_after_recording = Some(std::time::Instant::now());
                 }
                 let settings = get_settings(&app);
+                if engine.lock().unwrap().is_none() && !download_attempted {
+                    download_attempted = true;
+                    let result = app
+                        .path()
+                        .app_data_dir()
+                        .map_err(|error| error.to_string())
+                        .and_then(|app_data_dir| {
+                            download_and_install_engine(
+                                &app_data_dir,
+                                &settings.wake_word_model_name,
+                                settings.wake_word_confidence_threshold,
+                                &HttpModelDownloader::default(),
+                                &engine,
+                                configured_engine,
+                            )
+                        });
+                    if let Err(error) = result {
+                        warn!(
+                            "Failed to download/load wake-word model '{}': {error}",
+                            settings.wake_word_model_name
+                        );
+                        let _ = app.emit(
+                            "wakeword-model-download-failed",
+                            serde_json::json!({ "model_name": settings.wake_word_model_name, "error": error }),
+                        );
+                    }
+                    continue;
+                }
+                let engine_available = engine.lock().unwrap().is_some();
+                if !engine_available {
+                    continue;
+                }
                 if !cooldown_completed {
                     let ready_at = idle_after_recording.get_or_insert_with(std::time::Instant::now);
                     if ready_at.elapsed()
@@ -157,10 +213,6 @@ impl WakeWordListener {
                         continue;
                     }
                     cooldown_completed = true;
-                }
-                let engine_available = engine.lock().unwrap().is_some();
-                if !engine_available {
-                    continue;
                 }
                 if let Some(engine) = engine.lock().unwrap().as_mut() {
                     engine.resume();
@@ -327,6 +379,41 @@ mod tests {
         fn reset(&mut self) {}
         fn pause(&mut self) {}
         fn resume(&mut self) {}
+    }
+
+    struct FakeModelDownloader;
+
+    impl ModelDownloader for FakeModelDownloader {
+        fn download_file(
+            &self,
+            _model_name: &str,
+            _file_name: &str,
+            destination: &std::path::Path,
+        ) -> Result<(), crate::managers::wakeword::ModelDownloadError> {
+            std::fs::write(destination, b"fake model").map_err(|error| {
+                crate::managers::wakeword::ModelDownloadError::Io(error.to_string())
+            })
+        }
+    }
+
+    #[test]
+    fn missing_model_download_installs_engine_without_reconstructing_listener() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine: Mutex<Option<Box<dyn WakeWordEngine>>> = Mutex::new(None);
+        download_and_install_engine(
+            dir.path(),
+            "hey_jarvis",
+            0.5,
+            &FakeModelDownloader,
+            &engine,
+            |_, _, _| Some(Box::new(TestEngine)),
+        )
+        .unwrap();
+        assert!(engine.lock().unwrap().is_some());
+        assert_eq!(
+            model_readiness(dir.path(), "hey_jarvis"),
+            ModelReadiness::Ready
+        );
     }
 
     #[test]

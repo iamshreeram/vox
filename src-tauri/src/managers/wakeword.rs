@@ -288,6 +288,9 @@ pub const WAKEWORD_MODEL_FILES: [&str; 3] = [
     "classifier.onnx",
 ];
 
+mod downloader;
+pub use downloader::HttpModelDownloader;
+
 /// Whether a wake-word model's files are present locally. Distinct from a
 /// download failure -- querying readiness never attempts a download.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -305,9 +308,6 @@ pub enum ModelDownloadError {
 }
 
 /// Abstracts the actual file transfer so tests never hit the network.
-/// The real production implementation (reqwest-based, following
-/// `managers/model/download.rs`'s resumable-HTTP pattern) is wired in by a
-/// later task; this trait is the seam.
 pub trait ModelDownloader: Send + Sync {
     /// Downloads `file_name` for `model_name` to `destination`.
     fn download_file(
