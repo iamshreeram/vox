@@ -59,7 +59,10 @@ mod tests {
         };
         let value = serde_json::to_value(&detection).unwrap();
         assert_eq!(value["model_name"], "hey_jarvis");
-        assert_eq!(value["confidence"], 0.87);
+        // f32 -> JSON widens to f64, so 0.87_f32 round-trips as
+        // 0.8700000047683716 in the JSON number; cast back to f32 before
+        // comparing instead of asserting against the f64 literal directly.
+        assert_eq!(value["confidence"].as_f64().unwrap() as f32, 0.87_f32);
         assert_eq!(value["timestamp_ms"], 12345);
     }
 

@@ -129,7 +129,10 @@ fn decide_memory_fact(memory_enabled: bool, transcript: &str) -> Option<String> 
 /// human-readable description for the confirmation toast.
 fn execute_command_action(app: &AppHandle, action: &CommandAction) -> Result<String, String> {
     match action {
-        CommandAction::OpenApp { name, resolved_path } => {
+        CommandAction::OpenApp {
+            name,
+            resolved_path,
+        } => {
             let path = resolved_path.to_string_lossy().to_string();
             app.opener()
                 .open_path(path, None::<String>)
@@ -799,8 +802,7 @@ impl ShortcutAction for TranscribeAction {
                                     match execute_command_action(&ah, &action) {
                                         Ok(description) => {
                                             info!("Voice command executed: {description}");
-                                            let _ =
-                                                ah.emit("voice-command-executed", description);
+                                            let _ = ah.emit("voice-command-executed", description);
                                             skip_paste_for_command = true;
                                         }
                                         Err(err) => {
@@ -811,9 +813,7 @@ impl ShortcutAction for TranscribeAction {
                             }
 
                             if hook_settings.memory_enabled {
-                                if let Some(fact) =
-                                    decide_memory_fact(true, &transcription)
-                                {
+                                if let Some(fact) = decide_memory_fact(true, &transcription) {
                                     let memory_manager = ah.state::<Arc<MemoryManager>>();
                                     match memory_manager.remember(&fact, &transcription) {
                                         Ok(id) => {
@@ -1090,7 +1090,9 @@ mod tests {
     #[test]
     fn voice_command_disabled_never_routes_even_on_a_matching_phrase() {
         let router = CommandRouter::with_home(
-            Box::new(FakeAppDiscovery(vec![PathBuf::from("/Applications/iTerm.app")])),
+            Box::new(FakeAppDiscovery(vec![PathBuf::from(
+                "/Applications/iTerm.app",
+            )])),
             Box::new(FakeHome(PathBuf::from("/tmp"))),
         );
         assert_eq!(decide_voice_command(&router, false, "open iterm"), None);
@@ -1108,7 +1110,9 @@ mod tests {
     #[test]
     fn voice_command_enabled_and_matching_returns_the_action() {
         let router = CommandRouter::with_home(
-            Box::new(FakeAppDiscovery(vec![PathBuf::from("/Applications/iTerm.app")])),
+            Box::new(FakeAppDiscovery(vec![PathBuf::from(
+                "/Applications/iTerm.app",
+            )])),
             Box::new(FakeHome(PathBuf::from("/tmp"))),
         );
         let action = decide_voice_command(&router, true, "open iterm");
