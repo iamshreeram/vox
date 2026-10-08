@@ -1,3 +1,4 @@
+pub mod ambient;
 pub mod audio;
 pub mod history;
 pub mod memory;
