@@ -29,12 +29,22 @@ re-discovers or re-implements what's already here.
   CopyToClipboard` (Settings → Advanced → Output group → "Clipboard
   Handling"), default `DontModify`. No new code needed for either of
   these — they just need to be enabled.
+- **`CommandAction::OpenUrl` is now wired up** (was "built but not wired"
+  below as of the previous revision of this doc): `CommandRouter::route`
+  recognizes an explicit `"open website <name>"` phrase (defaults to
+  `.com` when the remainder has no dot) and a bare spoken/literal domain
+  with the `"go to"`/`"open"` verbs (`"go to google dot com"`,
+  `"open google.com"`). Only bare domains are accepted -- no scheme, path,
+  port, or userinfo -- since the match is handed straight to the OS URL
+  opener; see `match_url`/`is_valid_domain` in `command_router.rs` and its
+  16 `u1`-`u16` unit tests for the exact accepted/rejected phrasing
+  (including rejecting scheme-smuggling attempts like
+  `"javascript:alert(1)"`).
 
 ## Built but not wired up yet (exists in code, inert)
 
 | Item | Where | What's missing |
 | --- | --- | --- |
-| `CommandAction::OpenUrl` | `command_router.rs` | The enum variant and its execution path (`actions.rs::execute_command_action`) both exist, but nothing ever *produces* an `OpenUrl` decision — there's no trigger phrase pattern yet (e.g. "open website X" / "go to x dot com"), and no URL-safety validation on arbitrary dictated text before treating it as a URL. |
 | `SafetyPolicy` | `managers/safety_policy.rs` | Fully built and tested (`delete`/`send`/`push`/`deploy`/`rm `/`format`/`uninstall` keyword gate, whole-word matching, configurable list), but `#![allow(dead_code)]` — nothing destructive exists yet for it to gate. Needs an actual confirm/cancel UI flow (toast with Confirm/Cancel, or a voice "yes"/"cancel" follow-up with a timeout-to-deny) once any consequential action ships. |
 | App alias matching via `CFBundleDisplayName`/`CFBundleName` | `command_router.rs` module docs, documented gap | Only indexes by `.app` folder stem today, so e.g. "VS Code" won't match `Visual Studio Code.app` (whose bundle display name is "Code"). Needs an Info.plist-parsing crate. |
 | Curated STT-mishearing phrase allowlist (vox's "tier 1" YAML table — e.g. "eater" → iTerm) | documented gap in `command_router.rs` | Not ported yet; would reduce false `NoMatch`es for commonly-misheard app names. |
@@ -71,7 +81,9 @@ re-discovers or re-implements what's already here.
 
 1. Validate today's "open X" + clipboard behavior actually satisfies real
    usage (in progress).
-2. `OpenUrl` wiring — smallest gap, the execution path already exists.
+2. Validate the new `OpenUrl` phrasing ("go to X dot com" / "open website
+   X") live, with `voice_commands_enabled` on (already the case on this
+   machine).
 3. Scope and claim Phase 3 (Agent Bridge) for the open-ended/general-query
    case, rather than building a parallel ad hoc system.
 4. Only then consider the pluggable skill architecture for

@@ -31,7 +31,17 @@
 //! action to guard yet (`OpenApp`/`OpenPath`/`OpenUrl` are all
 //! non-destructive), so it remains library-only until a later phase adds
 //! an action worth confirming.
+//!
+//! `CommandAction::OpenUrl` is produced by two trigger shapes: an explicit
+//! "website" keyword (`"open website facebook"` -> defaults to `.com` if
+//! the remainder has no dot) and a bare spoken/literal domain with the
+//! "go to"/"open" verbs (`"go to google dot com"`, `"open google.com"`).
+//! Only bare domains are ever accepted -- no scheme, path, port, or
+//! userinfo -- since the result is handed straight to the OS URL opener;
+//! see `match_url`/`is_valid_domain` below.
 
+use once_cell::sync::Lazy;
+use regex::Regex;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -207,6 +217,7 @@ impl CommandRouter {
         // own Music.app vs the ~/Music folder); otherwise app-launch wins
         // as the more common intent for a bare ambiguous name.
         let explicit_folder = subject.ends_with("folder") || subject.ends_with("directory");
+        let explicit_website = subject.starts_with("website ");
         if explicit_folder {
             if let Some(action) = self.match_known_folder(subject) {
                 return RouteDecision::Matched { action };
@@ -214,11 +225,22 @@ impl CommandRouter {
             if let Some(action) = self.match_app(subject) {
                 return RouteDecision::Matched { action };
             }
+        } else if explicit_website {
+            // Explicit "website" intent that fails domain validation must
+            // return NoMatch outright, not fall back to guessing an
+            // app/folder named after the (possibly garbage) remainder.
+            return match Self::match_url(subject) {
+                Some(action) => RouteDecision::Matched { action },
+                None => RouteDecision::NoMatch,
+            };
         } else {
             if let Some(action) = self.match_app(subject) {
                 return RouteDecision::Matched { action };
             }
             if let Some(action) = self.match_known_folder(subject) {
+                return RouteDecision::Matched { action };
+            }
+            if let Some(action) = Self::match_url(subject) {
                 return RouteDecision::Matched { action };
             }
         }
@@ -295,6 +317,74 @@ impl CommandRouter {
             name,
             resolved_path: path.clone(),
         }
+    }
+
+    /// Matches `CommandAction::OpenUrl` (backlog item: "open website X" /
+    /// "go to x dot com"). Deliberately conservative: only bare domains are
+    /// accepted (no scheme, no path, no port, no userinfo) -- anything else
+    /// is treated as a non-match rather than guessed at, since this result
+    /// gets handed straight to the OS URL opener.
+    fn match_url(subject: &str) -> Option<CommandAction> {
+        let (explicit, rest) = match subject.strip_prefix("website ") {
+            Some(rest) => (true, rest.trim()),
+            None => (false, subject.trim()),
+        };
+        if rest.is_empty() {
+            return None;
+        }
+        // When speech is split into several words, require explicit "dot"
+        // separators between domain labels so path words cannot be folded
+        // into an otherwise-valid label by the normalization step below.
+        let tokens: Vec<_> = rest.split_whitespace().collect();
+        if tokens.len() > 1
+            && tokens.iter().enumerate().any(|(index, token)| {
+                (index % 2 == 0 && *token == "dot") || (index % 2 == 1 && *token != "dot")
+            })
+        {
+            return None;
+        }
+
+        let mut normalized = Self::normalize_spoken_domain(rest);
+        if explicit && !normalized.contains('.') {
+            normalized.push_str(".com");
+        }
+
+        if Self::is_valid_domain(&normalized) {
+            Some(CommandAction::OpenUrl {
+                url: format!("https://{normalized}"),
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Converts spoken-style domains ("google dot com") into literal ones
+    /// ("google.com"). Tokens are joined with no separator since the
+    /// spoken/literal "dot" is itself the separator; this also means any
+    /// stray extra word (e.g. a trailing "slash search") gets smashed into
+    /// the surrounding label and reliably fails `is_valid_domain` rather
+    /// than being silently dropped -- this phase only supports bare
+    /// domains, never paths.
+    fn normalize_spoken_domain(rest: &str) -> String {
+        rest.split_whitespace()
+            .map(|token| if token == "dot" { "." } else { token })
+            .collect::<String>()
+    }
+
+    /// Conservative bare-domain validator: lowercase alphanumeric labels
+    /// (hyphens allowed mid-label, never leading/trailing), at least one
+    /// literal dot, and a purely-alphabetic final TLD label 2-24 chars
+    /// long. Rejects colons/slashes/@ by construction (not in the allowed
+    /// character class), which blocks scheme-smuggling attempts like
+    /// "javascript:alert(1)" before they ever reach the OS URL opener.
+    fn is_valid_domain(candidate: &str) -> bool {
+        static DOMAIN_RE: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(
+                r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,24}$",
+            )
+            .expect("static domain regex is valid")
+        });
+        candidate.len() <= 253 && DOMAIN_RE.is_match(candidate)
     }
 
     fn match_known_folder(&self, subject: &str) -> Option<CommandAction> {
@@ -608,5 +698,144 @@ mod tests {
         for handle in handles {
             handle.join().expect("worker thread panicked");
         }
+    }
+    // ---- open website / URL (backlog: "open website X" / "go to x dot com") ----
+
+    fn assert_opens_url(decision: RouteDecision, expected_url: &str) {
+        match decision {
+            RouteDecision::Matched {
+                action: CommandAction::OpenUrl { url },
+            } => assert_eq!(url, expected_url),
+            other => panic!("expected Matched{{OpenUrl}}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn u1_go_to_spoken_dot_domain_opens_url() {
+        let router = router_with_apps(&[]);
+        assert_opens_url(router.route("go to google dot com"), "https://google.com");
+    }
+
+    #[test]
+    fn u2_open_website_with_bare_name_defaults_to_dot_com() {
+        let router = router_with_apps(&[]);
+        assert_opens_url(
+            router.route("open website facebook"),
+            "https://facebook.com",
+        );
+    }
+
+    #[test]
+    fn u3_open_literal_dotted_domain_opens_url() {
+        let router = router_with_apps(&[]);
+        assert_opens_url(router.route("open google.com"), "https://google.com");
+    }
+
+    #[test]
+    fn u4_open_website_with_spoken_subdomain_dots() {
+        let router = router_with_apps(&[]);
+        assert_opens_url(
+            router.route("open website www dot example dot com"),
+            "https://www.example.com",
+        );
+    }
+
+    #[test]
+    fn u5_hyphenated_domain_label_is_valid() {
+        let router = router_with_apps(&[]);
+        assert_opens_url(router.route("go to my-site dot com"), "https://my-site.com");
+    }
+
+    #[test]
+    fn u6_installed_app_still_wins_over_url_fallback_for_go_to() {
+        // Regression: adding URL matching must not break the existing
+        // app-launch behavior of the "go to" verb when there's no dot.
+        let router = router_with_apps(&["Slack.app"]);
+        assert_opens_app(router.route("go to slack"), "Slack");
+    }
+
+    #[test]
+    fn u7_open_website_with_nothing_after_is_no_match() {
+        let router = router_with_apps(&[]);
+        assert_eq!(router.route("open website"), RouteDecision::NoMatch);
+    }
+
+    #[test]
+    fn u8_bare_word_with_no_dot_and_no_website_keyword_is_no_match() {
+        let router = router_with_apps(&[]);
+        assert_eq!(router.route("go to facebook"), RouteDecision::NoMatch);
+    }
+
+    #[test]
+    fn u9_single_letter_tld_is_rejected() {
+        let router = router_with_apps(&[]);
+        assert_eq!(router.route("go to example dot x"), RouteDecision::NoMatch);
+    }
+
+    #[test]
+    fn u10_numeric_tld_is_rejected() {
+        let router = router_with_apps(&[]);
+        assert_eq!(router.route("go to 123 dot 456"), RouteDecision::NoMatch);
+    }
+
+    #[test]
+    fn u11_colon_scheme_smuggling_is_rejected() {
+        let router = router_with_apps(&[]);
+        assert_eq!(
+            router.route("go to javascript:alert(1)"),
+            RouteDecision::NoMatch
+        );
+    }
+
+    #[test]
+    fn u12_trailing_extra_words_after_domain_is_rejected_not_truncated() {
+        // Must not silently truncate to just the domain and drop a path --
+        // this phase explicitly only supports bare domains, not paths.
+        let router = router_with_apps(&[]);
+        assert_eq!(
+            router.route("go to google dot com slash search"),
+            RouteDecision::NoMatch
+        );
+    }
+
+    #[test]
+    fn u13_explicit_website_keyword_does_not_fall_back_to_app_guessing_on_failure() {
+        // Explicit "website" intent that fails validation must return
+        // NoMatch outright, not silently try to match an app/folder named
+        // after the garbage text.
+        let router = router_with_apps(&["Javascript:alert(1).app"]);
+        assert_eq!(
+            router.route("open website javascript:alert(1)"),
+            RouteDecision::NoMatch
+        );
+    }
+
+    #[test]
+    fn u14_multiple_spaces_are_tolerated() {
+        let router = router_with_apps(&[]);
+        assert_opens_url(
+            router.route("go to   google   dot   com"),
+            "https://google.com",
+        );
+    }
+
+    #[test]
+    fn u15_empty_and_whitespace_only_still_no_match_no_panic() {
+        let router = router_with_apps(&[]);
+        assert_eq!(router.route("go to"), RouteDecision::NoMatch);
+        assert_eq!(router.route("open website   "), RouteDecision::NoMatch);
+    }
+
+    #[test]
+    fn u16_long_dot_spam_does_not_hang() {
+        let router = router_with_apps(&[]);
+        let long_text = format!("go to {}", "dot ".repeat(2000));
+        let start = Instant::now();
+        let _ = router.route(&long_text);
+        assert!(
+            start.elapsed() < Duration::from_millis(100),
+            "route() took too long on url-shaped pathological input: {:?}",
+            start.elapsed()
+        );
     }
 }
