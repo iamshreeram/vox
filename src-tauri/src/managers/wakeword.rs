@@ -450,3 +450,75 @@ mod download_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod pause_resume_tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    struct SpyClassifier {
+        calls: Arc<Mutex<usize>>,
+        fixed_confidence: f32,
+    }
+
+    impl FrameClassifier for SpyClassifier {
+        fn classify(&mut self, _window: &[f32]) -> f32 {
+            *self.calls.lock().unwrap() += 1;
+            self.fixed_confidence
+        }
+    }
+
+    #[test]
+    fn paused_engine_returns_none_and_never_invokes_the_classifier() {
+        let calls = Arc::new(Mutex::new(0usize));
+        let classifier = SpyClassifier {
+            calls: calls.clone(),
+            fixed_confidence: 0.9,
+        };
+        let mut engine = BufferingWakeWordEngine::new("model_a".to_string(), 0.5, classifier);
+        engine.pause();
+        assert!(engine.process_frame(&vec![0.1_f32; 1280]).is_none());
+        assert_eq!(*calls.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn resume_after_pause_restores_normal_detection() {
+        let calls = Arc::new(Mutex::new(0usize));
+        let classifier = SpyClassifier {
+            calls: calls.clone(),
+            fixed_confidence: 0.9,
+        };
+        let mut engine = BufferingWakeWordEngine::new("model_a".to_string(), 0.5, classifier);
+        engine.pause();
+        assert!(engine.process_frame(&vec![0.1_f32; 1280]).is_none());
+        engine.resume();
+        assert!(engine.process_frame(&vec![0.1_f32; 1280]).is_some());
+        assert_eq!(*calls.lock().unwrap(), 1);
+    }
+
+    #[test]
+    fn t8_two_instances_with_different_models_do_not_share_state() {
+        let calls_a = Arc::new(Mutex::new(0usize));
+        let calls_b = Arc::new(Mutex::new(0usize));
+        let classifier_a = SpyClassifier {
+            calls: calls_a.clone(),
+            fixed_confidence: 0.9,
+        };
+        let classifier_b = SpyClassifier {
+            calls: calls_b.clone(),
+            fixed_confidence: 0.1,
+        };
+        let mut engine_a = BufferingWakeWordEngine::new("model_a".to_string(), 0.5, classifier_a);
+        let mut engine_b = BufferingWakeWordEngine::new("model_b".to_string(), 0.5, classifier_b);
+
+        let detection_a = engine_a.process_frame(&vec![0.1_f32; 1280]);
+        assert!(detection_a.is_some());
+        assert_eq!(detection_a.unwrap().model_name, "model_a");
+        assert_eq!(*calls_a.lock().unwrap(), 1);
+        assert_eq!(*calls_b.lock().unwrap(), 0);
+
+        assert!(engine_b.process_frame(&vec![0.2_f32; 1280]).is_none());
+        assert_eq!(*calls_b.lock().unwrap(), 1);
+        assert_eq!(*calls_a.lock().unwrap(), 1);
+    }
+}
