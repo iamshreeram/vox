@@ -1,5 +1,5 @@
 use crate::managers::wakeword::WakeWordDetection;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 pub const WAKEWORD_DETECTED_EVENT: &str = "wakeword://detected";
 
@@ -13,6 +13,13 @@ pub fn wakeword_set_enabled(app: AppHandle, enabled: bool) -> Result<(), String>
     let mut settings = crate::settings::get_settings(&app);
     update_wake_word_enabled(&mut settings, enabled);
     crate::settings::write_settings(&app, settings);
+    let listener =
+        app.state::<std::sync::Arc<crate::managers::wakeword_listener::WakeWordListener>>();
+    if enabled {
+        listener.start();
+    } else {
+        listener.stop();
+    }
     Ok(())
 }
 

@@ -461,6 +461,8 @@ pub struct AppSettings {
     pub wake_word_model_name: String,
     #[serde(default = "default_wake_word_confidence_threshold")]
     pub wake_word_confidence_threshold: f32,
+    #[serde(default = "default_wake_word_cooldown_ms")]
+    pub wake_word_cooldown_ms: u32,
     #[serde(default = "default_recording_retention_period")]
     pub recording_retention_period: RecordingRetentionPeriod,
     #[serde(default)]
@@ -558,6 +560,10 @@ fn default_wake_word_model_name() -> String {
 
 fn default_wake_word_confidence_threshold() -> f32 {
     0.5
+}
+
+fn default_wake_word_cooldown_ms() -> u32 {
+    500
 }
 
 const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 2;
@@ -998,6 +1004,7 @@ pub fn get_default_settings() -> AppSettings {
         wake_word_enabled: false,
         wake_word_model_name: default_wake_word_model_name(),
         wake_word_confidence_threshold: default_wake_word_confidence_threshold(),
+        wake_word_cooldown_ms: default_wake_word_cooldown_ms(),
         recording_retention_period: default_recording_retention_period(),
         paste_method: PasteMethod::default(),
         clipboard_handling: ClipboardHandling::default(),
@@ -1633,6 +1640,7 @@ mod tests {
         assert!(!settings.wake_word_enabled);
         assert_eq!(settings.wake_word_model_name, "hey_jarvis");
         assert_eq!(settings.wake_word_confidence_threshold, 0.5);
+        assert_eq!(settings.wake_word_cooldown_ms, 500);
     }
 
     #[test]
@@ -1641,6 +1649,7 @@ mod tests {
         assert!(!settings.wake_word_enabled);
         assert_eq!(settings.wake_word_model_name, "hey_jarvis");
         assert_eq!(settings.wake_word_confidence_threshold, 0.5);
+        assert_eq!(settings.wake_word_cooldown_ms, 500);
     }
 
     #[test]
