@@ -3,9 +3,14 @@
 #![allow(dead_code)]
 
 use crate::settings::AppSettings;
+use serde::{Deserialize, Serialize};
+use specta::Type;
 
-/// A wake-word detection emitted by an engine.
-#[derive(Debug, Clone, PartialEq)]
+/// A wake-word detection emitted by an engine. Must be Serialize/Type so it
+/// can be sent as a Tauri event payload (see `commands/wakeword.rs`'s
+/// `wakeword://detected` event, task W6) and exported to the TypeScript
+/// bindings via specta.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 pub struct WakeWordDetection {
     pub model_name: String,
     pub confidence: f32,
