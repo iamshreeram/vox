@@ -151,7 +151,7 @@ Updated by the Validator as tasks complete. See `tasks/phase-5-tasks.md`,
 | W1 | Settings + scaffolding | — | merged | merged into `phase/5-wakeword` (plus a Validator fix: `WakeWordDetection` was missing `Serialize`/`Deserialize`/`Type` derives in the Implementer's actual commit vs. spec — corrected @ 11993517) |
 | W2 | Frame buffering/validation | W1 | merged | `phase5-w2-framing`, merged @ 12ad08e1 |
 | W3 | Model download/cache | W1 | merged | `phase5-w3-download`, merged @ 89557656 |
-| W4 | Real ONNX inference pipeline | W2, W3 | **BLOCKED** — see note below | — |
+| W4 | Real ONNX inference pipeline | W2, W3 | merged | `phase/5-wakeword`, merged @ d8f4a310 (red-phase scaffold + fixtures) + b9d81fb7 (real implementation) |
 | W5 | pause/resume + multi-instance isolation | W1 | merged | `phase5-w5-pause-resume`, merged @ bb32f2a5 (logic already existed from W2; this added T8 + pause/resume tests only) |
 | W6 | Tauri commands + events | W1 | merged | `phase5-w6-commands`, merged @ 56c0916a (plus a Validator fix: f32->JSON confidence test compared against an f64 literal, corrected @ d26b9433) |
 | W7 | Mic-flow integration (scope ext.) | W4, W5, W6 | queued | — |
@@ -209,6 +209,50 @@ Updated by the Validator as tasks complete. See `tasks/phase-5-tasks.md`,
   with the task at hand. This caused at least 3 Implementers to report a
   false "fmt failure." Always scope `rustfmt --check` to the specific
   non-root files actually touched.
+
+### W4 RESOLVED (2026-10-08) -- used the real public openWakeWord project directly
+
+Follow-up to the "W4 formally BLOCKED" note below: Ram gave an explicit
+scope decision -- don't attempt to port the unavailable private `vox`
+Python wrapper; instead use the real, public `dscripka/openWakeWord`
+project (Apache-2.0) directly as the reference, since its source and
+pretrained ONNX models are openly available (the blocker's own
+investigation had already confirmed outbound GitHub access works).
+
+What actually happened: cloned the real openWakeWord v0.5.1 source,
+downloaded its real pretrained ONNX models (melspectrogram, embedding,
+hey_jarvis), and verified their exact input/output tensor names and
+shapes directly via `onnx.load()` rather than guessing. Ran the REAL
+Python pipeline (not a port -- the actual upstream code) against real
+macOS-`say`-synthesized "hey jarvis" / unrelated-speech / silence audio to
+empirically derive test bounds. This surfaced an important finding: the
+upstream pipeline's own feature-buffer priming is non-deterministic
+(unseeded `np.random`) -- two independent real Python runs on identical
+audio produced different early-frame scores (0.9949 vs 0.9963 peak
+confidence). This ruled out brittle exact-float-matching as a test
+strategy in favor of wide, empirically-justified safety-margin bounds
+(e.g. "> 0.9" for real wake-word audio vs "< 0.01" for silence/unrelated
+speech -- both with 10-100x margin from the real observed values).
+
+The real pretrained ONNX models (3.5MB total) and real synthesized audio
+were committed as test fixtures (`src-tauri/tests/fixtures/wakeword/`,
+with Apache-2.0 attribution in `models/NOTICE.md`) so T1-T11 run fully
+offline/deterministically in `cargo test` -- no network dependency at test
+time (network was only needed once, to fetch the reference).
+
+Also fixed two bugs discovered while designing this: (1) a latent
+NaN-propagation bug in `BufferingWakeWordEngine` (`f32::clamp` does not
+sanitize NaN), and (2) `FrameClassifier` had no `reset()` method, so
+`WakeWordEngine::reset()` could not actually clear a stateful classifier's
+own rolling buffers -- required for T7 to be meaningful once a real
+stateful classifier exists.
+
+Final state: `cargo test --lib managers::wakeword` 31/31 passing,
+`cargo clippy --lib` clean for `wakeword.rs`, `cargo fmt --check` clean,
+full crate `cargo test --lib` 392/393 passing (1 pre-existing flaky,
+unrelated `clipboard.rs` timing test, confirmed to pass on rerun with zero
+code changes). Commits: `d8f4a310` (red-phase scaffold + fixtures),
+`b9d81fb7` (real ONNX cascade implementation).
 
 ### W4 formally BLOCKED (2026-10-08) -- do not attempt without explicit sign-off
 
