@@ -22,7 +22,11 @@ pub struct AmbientCoordinator {
 
 #[allow(dead_code)]
 impl AmbientCoordinator {
-    pub fn new(transcript: RollingTranscript, judge: EngagementJudge, echo: EchoSuppressor) -> Self {
+    pub fn new(
+        transcript: RollingTranscript,
+        judge: EngagementJudge,
+        echo: EchoSuppressor,
+    ) -> Self {
         Self {
             transcript,
             judge,
@@ -99,7 +103,9 @@ mod tests {
             EngagementJudge::new(vec!["vox".to_string()]),
             EchoSuppressor::new(),
         );
-        coordinator.transcript.add_segment("hello", 0, 0, 0.9, false);
+        coordinator
+            .transcript
+            .add_segment("hello", 0, 0, 0.9, false);
         assert_eq!(coordinator.transcript.stored_segment_count(), 1);
     }
 }
