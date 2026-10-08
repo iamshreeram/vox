@@ -49,6 +49,15 @@ fi
 echo "== Installing ${APP_NAME} =="
 
 # ---- 1. Stop anything currently running, replace the bundle -------------
+# Remember whether it was actually running so step 5 can restart it --
+# re-running this script should always leave you running the build you
+# just installed, not silently leave the old process's copy in memory or
+# require a manual relaunch to find that out.
+WAS_RUNNING=false
+if pgrep -f "${APP_NAME}.app/Contents/MacOS/${APP_NAME_LOWER}-bin" >/dev/null 2>&1; then
+  WAS_RUNNING=true
+fi
+
 echo "Stopping any running instance..."
 launchctl bootout "gui/${UID_NUM}/${AGENT_LABEL}" 2>/dev/null || true
 pkill -f "${APP_NAME}.app/Contents/MacOS/" 2>/dev/null || true
@@ -168,6 +177,16 @@ codesign --force --deep -s "$SIGN_IDENTITY" "$DEST_APP"
 
 mdimport "$DEST_APP" >/dev/null 2>&1 || true
 
+# ---- 5. Restart, if it was running before this script stopped it --------
+# Without this, every re-install silently leaves the just-replaced build
+# sitting unused in /Applications until someone remembers to relaunch it
+# by hand -- easy to mistake for "the fix didn't work" when really it's
+# just the OLD process still (not) running.
+if [ "$WAS_RUNNING" = true ]; then
+  echo "Restarting (it was running before this install)..."
+  open "$DEST_APP"
+fi
+
 cat <<EOF
 
 == Install complete ==
@@ -178,5 +197,7 @@ Launch any of these ways -- all now work, including Spotlight/Dock:
   - Terminal:  open "${DEST_APP}"
 
 Re-run this script any time after a fresh 'bun run tauri build --debug'
-to pick up new code -- it's fully idempotent.
+to pick up new code -- it's fully idempotent. If it was already running,
+it's been restarted automatically; otherwise it's left stopped, same as
+you left it.
 EOF
