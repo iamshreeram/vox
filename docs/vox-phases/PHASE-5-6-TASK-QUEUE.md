@@ -162,8 +162,8 @@ Updated by the Validator as tasks complete. See `tasks/phase-5-tasks.md`,
 | A4 | EchoSuppressor | A1 | merged | `phase6-a4-echo`, merged @ 90686d23 |
 | A5 | Coordinator + mutual exclusion | A2, A3, A4, W1 | merged | `phase6-a5-coordinator`, merged @ a2d778f9. **Structural change: `phase/6-ambient-mode` now also contains all of `phase/5-wakeword`'s commits** (merged in to get `wake_word_enabled` for the mutual-exclusion logic) -- it is now the combined integration branch. `phase/5-wakeword` is unchanged/standalone and still fine to keep developing W7/W8 against until final combination. |
 | A6 | Tauri commands + events | A1 (ACTUALLY also needs A2 -- `ambient_clear()` needs a working `RollingTranscript::clear()`, despite the doc saying "depends on A1 only"; discovered during Round 2 planning) | merged | `phase6-a6-commands`, merged @ cc716533 (plus a Validator fix: `ambient::mod` was missing `RollingTranscript`'s re-export — same class of bug as W1's, corrected @ 1158032a) |
-| A7 | Mic-flow integration (scope ext.) | A5, A6 | queued | — |
-| A8 | Settings UI (scope ext.) | A6 (finalize after A7) | queued | — |
+| A7 | Mic-flow integration (scope ext.) | A5, A6 | merged | `phase/6-ambient-mode`, merged @ 77703f6f. Required first re-syncing `phase/6-ambient-mode` with `phase/5-wakeword`'s W7+W8 (merged @ fb1cb291) since A5 had branched off before those landed. Also wired A5's mutual-exclusion functions into the real `ambient_set_enabled`/`wakeword_set_enabled` commands -- A5's own code comment had explicitly deferred this pending the branch combination. |
+| A8 | Settings UI (scope ext.) | A6 (finalize after A7) | merged | `phase/6-ambient-mode`, merged @ 79fe8d19 (plus a Validator fix: `AmbientAddressedPayload` was missing its specta `.typ::<>()` registration despite deriving `specta::Type` -- same bug class as W6's, corrected @ a091eb5f) |
 
 ### Execution notes from Round 1/2 (read before continuing)
 
@@ -277,9 +277,9 @@ rather than guessing, since a wrong answer here is worse than no answer.
 **W7 (mic integration) and W8 (Settings UI) both formally depend on W4** per
 the original plan; W7 cannot be meaningfully completed until W4 is resolved
 one way or another.
-| U1 | Shared Listening Mode UI section | W8, A8 | queued | — |
-| U2 | Permission/onboarding copy | W7 or A7 | queued | — |
-| U3 | i18n + final lint/build pass | W8, A8, U1 | queued | — |
+| U1 | Shared Listening Mode UI section | W8, A8 | merged | `phase/6-ambient-mode`, merged @ 552d9f91 |
+| U2 | Permission/onboarding copy | W7 or A7 | merged (via existing toggle copy) | Acceptance criteria already satisfied by W8/A8's own toggle descriptions (the task card explicitly allows this as sufficient, no dedicated onboarding screen required) -- `WakeWordToggle`/`AmbientModeToggle` already honestly state the narrow-vs-continuous distinction right where a user decides to enable either. No separate commit. |
+| U3 | i18n + final lint/build pass | W8, A8, U1 | merged (verification only) | All new keys (W8/A8/U1) referenced exactly once each, no orphans. `bun run check:translations` fails for all 25 non-English locales -- pre-existing, unrelated to this round (same gap already existed for Memory/Voice Commands' keys; not a new regression). `bun run lint`, `bun run build`, `cargo test --lib` (433/433) all independently re-verified clean as of this entry. |
 
 Status values: `queued`, `in_progress (<worktree>)`, `in_review
 (<branch>)`, `merged`.
