@@ -34,9 +34,9 @@ pub use utils::env_flag_enabled;
 
 use env_filter::Builder as EnvFilterBuilder;
 use managers::audio::AudioRecordingManager;
+use managers::command_router::CommandRouter;
 use managers::history::HistoryManager;
 use managers::memory::MemoryManager;
-use managers::command_router::CommandRouter;
 use managers::model::ModelManager;
 use managers::transcription::TranscriptionManager;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -797,6 +797,8 @@ pub fn run(cli_args: CliArgs) {
             commands::memory::memory_list_all,
             commands::memory::memory_forget,
             commands::memory::memory_set_enabled,
+            commands::ambient::ambient_set_enabled,
+            commands::ambient::ambient_clear,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![
