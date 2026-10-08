@@ -27,6 +27,7 @@ import { VadBackendSelector } from "../VadBackendSelector";
 import { MemoryToggle } from "../MemoryToggle";
 import { MemoryFactsList } from "../MemoryFactsList";
 import { VoiceCommandsToggle } from "../VoiceCommandsToggle";
+import { WakeWordToggle } from "../WakeWordToggle";
 
 export const AdvancedSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -81,6 +82,7 @@ export const AdvancedSettings: React.FC = () => {
           <MemoryToggle descriptionMode="tooltip" grouped={true} />
           {memoryEnabled && <MemoryFactsList />}
           <VoiceCommandsToggle descriptionMode="tooltip" grouped={true} />
+          <WakeWordToggle descriptionMode="tooltip" grouped={true} />
         </SettingsGroup>
       )}
     </div>
