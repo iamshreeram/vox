@@ -101,6 +101,7 @@ fn is_blank_transcription(transcription: &str) -> bool {
 /// default off). Pure with respect to I/O -- `CommandRouter::route` itself
 /// does the real matching; this just applies the enable/disable gate so
 /// the behavior is independently testable without a running app.
+#[cfg(test)]
 fn decide_voice_command(
     router: &CommandRouter,
     voice_commands_enabled: bool,
@@ -113,6 +114,14 @@ fn decide_voice_command(
         RouteDecision::Matched { action } => Some(action),
         RouteDecision::NoMatch => None,
     }
+}
+
+fn should_escalate_to_agent_bridge(
+    route: &RouteDecision,
+    voice_commands_enabled: bool,
+    agent_bridge_enabled: bool,
+) -> bool {
+    voice_commands_enabled && agent_bridge_enabled && matches!(route, RouteDecision::NoMatch)
 }
 
 /// Gate for the memory-capture hook (`memory_enabled` setting, default
@@ -796,19 +805,61 @@ impl ShortcutAction for TranscribeAction {
 
                             if hook_settings.voice_commands_enabled {
                                 let router = ah.state::<Arc<CommandRouter>>();
-                                if let Some(action) =
-                                    decide_voice_command(&router, true, &transcription)
-                                {
-                                    match execute_command_action(&ah, &action) {
-                                        Ok(description) => {
-                                            info!("Voice command executed: {description}");
-                                            let _ = ah.emit("voice-command-executed", description);
-                                            skip_paste_for_command = true;
-                                        }
-                                        Err(err) => {
-                                            error!("Failed to execute voice command: {err}");
+                                match router.route(&transcription) {
+                                    RouteDecision::Matched { action } => {
+                                        match execute_command_action(&ah, &action) {
+                                            Ok(description) => {
+                                                info!("Voice command executed: {description}");
+                                                let _ =
+                                                    ah.emit("voice-command-executed", description);
+                                                skip_paste_for_command = true;
+                                            }
+                                            Err(err) => {
+                                                error!("Failed to execute voice command: {err}");
+                                            }
                                         }
                                     }
+                                    RouteDecision::NoMatch
+                                        if should_escalate_to_agent_bridge(
+                                            &RouteDecision::NoMatch,
+                                            hook_settings.voice_commands_enabled,
+                                            hook_settings.agent_bridge_enabled,
+                                        ) =>
+                                    {
+                                        let app = ah.clone();
+                                        let settings = hook_settings.clone();
+                                        let prompt = transcription.clone();
+                                        tauri::async_runtime::spawn(async move {
+                                            let worker = crate::managers::agent_bridge::CliAgentWorker::from_settings(
+                                                settings.agent_bridge_binary_path.clone(),
+                                                settings.agent_bridge_prompt_flag.clone(),
+                                                settings.agent_bridge_timeout_secs,
+                                            );
+                                            let result = match worker {
+                                                Ok(worker) => crate::commands::agent_bridge::invoke_with_worker(
+                                                    &settings,
+                                                    &prompt,
+                                                    &worker,
+                                                ),
+                                                Err(crate::managers::agent_bridge::AgentBridgeError::NotConfigured) => Err(
+                                                    "No agent binary is configured. Set a binary path in Settings.".to_string(),
+                                                ),
+                                                Err(crate::managers::agent_bridge::AgentBridgeError::BinaryNotFound) => Err(
+                                                    "The configured agent binary was not found. Check its path in Settings.".to_string(),
+                                                ),
+                                                Err(error) => Err(format!("Could not configure the agent: {error:?}")),
+                                            };
+                                            match result {
+                                                Ok(reply) => {
+                                                    let _ = app.emit("agent-bridge-reply", reply);
+                                                }
+                                                Err(message) => {
+                                                    let _ = app.emit("agent-bridge-error", message);
+                                                }
+                                            }
+                                        });
+                                    }
+                                    RouteDecision::NoMatch => {}
                                 }
                             }
 
@@ -985,10 +1036,12 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 mod tests {
     use super::{
         complete_unless_cancelled, decide_memory_fact, decide_voice_command,
-        is_blank_transcription, should_use_streaming_overlay, strip_think_block,
+        is_blank_transcription, should_escalate_to_agent_bridge, should_use_streaming_overlay,
+        strip_think_block,
     };
     use crate::managers::command_router::{
         AppDiscovery, CommandAction, CommandRouter, HomeDirProvider, NullAppDiscovery,
+        RouteDecision,
     };
     use crate::settings::OverlayStyle;
     use std::future;
@@ -1123,6 +1176,35 @@ mod tests {
                 resolved_path: PathBuf::from("/Applications/iTerm.app"),
             })
         );
+    }
+
+    #[test]
+    fn agent_bridge_escalates_when_enabled_and_route_is_no_match() {
+        assert!(should_escalate_to_agent_bridge(
+            &RouteDecision::NoMatch,
+            true,
+            true
+        ));
+    }
+
+    #[test]
+    fn agent_bridge_does_not_escalate_when_disabled_or_command_matched() {
+        assert!(!should_escalate_to_agent_bridge(
+            &RouteDecision::NoMatch,
+            true,
+            false
+        ));
+        assert!(!should_escalate_to_agent_bridge(
+            &RouteDecision::NoMatch,
+            false,
+            true
+        ));
+        let matched = RouteDecision::Matched {
+            action: CommandAction::OpenUrl {
+                url: "https://example.com".to_string(),
+            },
+        };
+        assert!(!should_escalate_to_agent_bridge(&matched, true, true));
     }
 
     #[test]

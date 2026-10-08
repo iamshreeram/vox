@@ -301,6 +301,13 @@
         "label": "Voice Commands",
         "description": "Lets phrases like \"open Safari\" or \"open Downloads\" open the real app/folder instead of being pasted as text. Only recognized, deterministic commands run \u2014 anything else falls back to normal dictation."
       },
+      "agentBridge": {
+        "label": "Agent Bridge",
+        "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
+        "binaryPathLabel": "Agent binary path",
+        "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "suggestionFailedTitle": "Agent suggestion failed"
+      },
       "lazyStreamClose": {
         "label": "Keep Mic Open Between Transcriptions",
         "description": "Keeps the microphone stream open for 30 seconds after recording stops, reducing latency for back-to-back transcriptions. May degrade Bluetooth audio quality while active."
