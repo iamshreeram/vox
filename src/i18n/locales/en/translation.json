@@ -279,10 +279,19 @@
         "empty": "No facts remembered yet. Say \"remember that...\" while dictating, or add one above.",
         "rememberedToast": "Remembered."
       },
+      "ambientMode": {
+        "label": "Ambient Mode",
+        "description": "Continuously transcribes nearby audio into a short-lived, RAM-only buffer that is never written to disk. Vox acts only when it detects that you addressed your wake name (for example, \"Vox, what time is it?\").",
+        "clearButton": "Clear ambient history",
+        "clearedToast": "Ambient history cleared.",
+        "addressedToast": "Vox heard: {{request}}",
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+      },
       "wakeWord": {
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
-        "detectedToast": "Wake word detected \u2014 listening..."
+        "detectedToast": "Wake word detected \u2014 listening...",
+        "disabledByAmbientMode": "Turn off Ambient Mode to enable Wake Word."
       },
       "voiceCommands": {
         "label": "Voice Commands",

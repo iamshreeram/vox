@@ -37,5 +37,6 @@ export { UpdateChecksToggle } from "./UpdateChecksToggle";
 export { ShowWhatsNewOnUpdate } from "./ShowWhatsNewOnUpdate";
 export { MemoryToggle } from "./MemoryToggle";
 export { WakeWordToggle } from "./WakeWordToggle";
+export { AmbientModeToggle } from "./AmbientModeToggle";
 export { MemoryFactsList } from "./MemoryFactsList";
 export { VoiceCommandsToggle } from "./VoiceCommandsToggle";
