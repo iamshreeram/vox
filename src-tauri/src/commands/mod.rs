@@ -4,6 +4,7 @@ pub mod history;
 pub mod memory;
 pub mod models;
 pub mod transcription;
+pub mod wakeword;
 
 use crate::settings::{
     get_settings, update_checks_forced_disabled, write_settings, AppSettings, LogLevel,

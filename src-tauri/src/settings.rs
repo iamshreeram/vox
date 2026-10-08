@@ -455,6 +455,12 @@ pub struct AppSettings {
     pub ambient_window_ms: u64,
     #[serde(default)]
     pub voice_commands_enabled: bool,
+    #[serde(default)]
+    pub wake_word_enabled: bool,
+    #[serde(default = "default_wake_word_model_name")]
+    pub wake_word_model_name: String,
+    #[serde(default = "default_wake_word_confidence_threshold")]
+    pub wake_word_confidence_threshold: f32,
     #[serde(default = "default_recording_retention_period")]
     pub recording_retention_period: RecordingRetentionPeriod,
     #[serde(default)]
@@ -544,6 +550,14 @@ pub struct AppSettings {
 
 fn default_model() -> String {
     "".to_string()
+}
+
+fn default_wake_word_model_name() -> String {
+    "hey_jarvis".to_string()
+}
+
+fn default_wake_word_confidence_threshold() -> f32 {
+    0.5
 }
 
 const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 2;
@@ -981,6 +995,9 @@ pub fn get_default_settings() -> AppSettings {
         ambient_wake_name: default_ambient_wake_name(),
         ambient_window_ms: default_ambient_window_ms(),
         voice_commands_enabled: false,
+        wake_word_enabled: false,
+        wake_word_model_name: default_wake_word_model_name(),
+        wake_word_confidence_threshold: default_wake_word_confidence_threshold(),
         recording_retention_period: default_recording_retention_period(),
         paste_method: PasteMethod::default(),
         clipboard_handling: ClipboardHandling::default(),
@@ -1608,6 +1625,22 @@ mod tests {
     #[test]
     fn voice_commands_are_disabled_by_default() {
         assert!(!get_default_settings().voice_commands_enabled);
+    }
+
+    #[test]
+    fn wake_word_settings_default_when_missing_from_legacy_settings() {
+        let settings: AppSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(!settings.wake_word_enabled);
+        assert_eq!(settings.wake_word_model_name, "hey_jarvis");
+        assert_eq!(settings.wake_word_confidence_threshold, 0.5);
+    }
+
+    #[test]
+    fn wake_word_settings_have_expected_defaults() {
+        let settings = get_default_settings();
+        assert!(!settings.wake_word_enabled);
+        assert_eq!(settings.wake_word_model_name, "hey_jarvis");
+        assert_eq!(settings.wake_word_confidence_threshold, 0.5);
     }
 
     #[test]
