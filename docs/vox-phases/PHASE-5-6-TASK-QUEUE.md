@@ -58,8 +58,13 @@ bun install && cd src-tauri && cargo build && cd ..
 cargo test --manifest-path src-tauri/Cargo.toml   # baseline must be green
 ```
 
-Branch naming: `phase/<5|6>-<slug>/<task-id>-<short-name>`
-Worktree naming: `.worktrees/phase-<5|6>-<task-id>-<short-name>/`
+Branch naming: `phase<5|6>-<task-id>-<short-name>` (flat, NOT nested under
+`phase/5-wakeword/...` or `phase/6-ambient-mode/...` -- git refs cannot be
+both a leaf and a directory, so `phase/5-wakeword/w1-foo` is rejected by
+git while `phase/5-wakeword` already exists as a branch. Discovered during
+Round 1 (W1/A1) execution 2026-10-08; this flat scheme is the corrected
+convention from here on.)
+Worktree naming: `.worktrees/phase-<5|6>-<task-id>-<short-name>/` (unchanged)
 
 When a task is validated and merged, its worktree and branch are deleted
 (same cleanup commands as `WORKTREE-CONVENTION.md`), freeing the slot for
@@ -143,7 +148,7 @@ Updated by the Validator as tasks complete. See `tasks/phase-5-tasks.md`,
 
 | ID | Title | Depends on | Status | Branch |
 | --- | --- | --- | --- | --- |
-| W1 | Settings + scaffolding | — | queued | — |
+| W1 | Settings + scaffolding | — | merged | `phase5-w1-scaffolding` (merged into `phase/5-wakeword` @ 56aa76d7) |
 | W2 | Frame buffering/validation | W1 | queued | — |
 | W3 | Model download/cache | W1 | queued | — |
 | W4 | Real ONNX inference pipeline | W2, W3 | queued | — |
@@ -151,7 +156,7 @@ Updated by the Validator as tasks complete. See `tasks/phase-5-tasks.md`,
 | W6 | Tauri commands + events | W1 | queued | — |
 | W7 | Mic-flow integration (scope ext.) | W4, W5, W6 | queued | — |
 | W8 | Settings UI (scope ext.) | W6 (finalize after W7) | queued | — |
-| A1 | Settings + scaffolding | — | queued | — |
+| A1 | Settings + scaffolding | — | merged | `phase6-a1-scaffolding` (merged into `phase/6-ambient-mode` @ 0c45a34f) |
 | A2 | RollingTranscript | A1 | queued | — |
 | A3 | EngagementJudge | A1 | queued | — |
 | A4 | EchoSuppressor | A1 | queued | — |
