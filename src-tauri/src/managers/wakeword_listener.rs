@@ -1,6 +1,6 @@
 //! Dedicated wake-word microphone capture and arbitration with dictation.
 
-use crate::audio_toolkit::{list_input_devices, AudioRecorder};
+use crate::audio_toolkit::{list_input_devices, AudioRecorder, VadPolicy};
 use crate::helpers::clamshell;
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::wakeword::{
@@ -326,6 +326,20 @@ fn open_recorder(
         .map_err(|error| error.to_string())?
         .with_audio_callback(audio_cb);
     recorder.open(device).map_err(|error| error.to_string())?;
+    // `open()` only sets up the cpal stream; it does NOT start draining it
+    // into the audio callback -- that requires a separate `start()` call
+    // (see `AudioRecorder::start`'s own doc comment). Without this, the
+    // real root cause of "wake word never fires": the stream opens
+    // successfully (confirmed in logs), the OS happily delivers audio into
+    // an internal ring buffer, but nothing ever reads that buffer out to
+    // `audio_cb` -- `process_frame` is never called even once, no matter
+    // what's said into the microphone. `VadPolicy::Disabled` because this
+    // engine does its own windowing/classification on every raw frame; the
+    // recorder's own VAD is a filter for a different consumer (dictation)
+    // and would silently drop frames this engine needs to see.
+    recorder
+        .start(VadPolicy::Disabled)
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
