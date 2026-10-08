@@ -829,7 +829,8 @@ pub fn run(cli_args: CliArgs) {
             managers::transcription::StreamPhaseEvent,
         ])
         .typ::<settings::AppSettings>()
-        .typ::<managers::wakeword::WakeWordDetection>();
+        .typ::<managers::wakeword::WakeWordDetection>()
+        .typ::<commands::ambient::AmbientAddressedPayload>();
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
     // Dev convenience only (regenerates bindings.ts while running `cargo
