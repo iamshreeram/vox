@@ -7,7 +7,11 @@
     "model": "Model",
     "quit": "Quit",
     "cancel": "Cancel",
-    "secureInputWarning": "⚠ Shortcuts blocked by Secure Input"
+    "secureInputWarning": "\u26a0 Shortcuts blocked by Secure Input",
+    "listeningMode": "Listening Mode",
+    "listeningModeHotkeyOnly": "Hotkey Only",
+    "listeningModeWakeWord": "Wake Word",
+    "listeningModeAmbient": "Ambient Mode"
   },
   "sidebar": {
     "general": "General",
@@ -16,7 +20,8 @@
     "postProcessing": "Post Process",
     "history": "History",
     "debug": "Debug",
-    "about": "About"
+    "about": "About",
+    "experimental": "Experimental"
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
