@@ -10,7 +10,7 @@ use crate::managers::wakeword::{
 };
 use crate::settings::{get_settings, AppSettings};
 use log::warn;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
@@ -28,6 +28,95 @@ pub fn should_feed_wakeword_frame(wake_word_enabled: bool, is_recording: bool) -
 /// auto-starting a dictation recording.
 pub fn should_auto_start_recording_on_detection(is_recording: bool) -> bool {
     !is_recording
+}
+
+/// True while a wake-word-triggered recording is in progress and hasn't
+/// yet been auto-finished by sustained silence. Reset at the start of
+/// EVERY recording regardless of trigger (see `on_recording_started`), so
+/// it can never leak into an unrelated later session (e.g. a manual
+/// hotkey recording that happens to start right after a wake-word one
+/// ends).
+static SILENCE_WATCH_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// Epoch ms when the mic was last observed as NOT silent during the
+/// currently-active watch.
+static LAST_VOICED_AT_MS: AtomicU64 = AtomicU64::new(0);
+/// Threshold (ms) for the currently-active watch, copied in once at
+/// `on_recording_started` time so the hot per-frame level callback never
+/// needs to touch settings.
+static SILENCE_TIMEOUT_MS: AtomicU64 = AtomicU64::new(0);
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// Called once at the very start of every recording, regardless of how it
+/// was triggered. Only a wake-word-triggered start (`shortcut_str ==
+/// "wake_word"`, the exact source string `handle_detection` passes to
+/// `send_transcription_input`) arms the silence watch; every other
+/// trigger (hotkey, CLI, SIGUSR2, ...) explicitly disarms it. This is the
+/// single place that decides "is this session eligible for
+/// silence-auto-finish" -- calling it unconditionally on every start (not
+/// just wake-word ones) is what guarantees a stale armed watch can never
+/// bleed into a later, unrelated manual recording.
+pub fn on_recording_started(shortcut_str: &str, silence_timeout_ms: u32) {
+    if shortcut_str == "wake_word" && silence_timeout_ms > 0 {
+        SILENCE_TIMEOUT_MS.store(silence_timeout_ms as u64, Ordering::Relaxed);
+        LAST_VOICED_AT_MS.store(now_ms(), Ordering::Relaxed);
+        SILENCE_WATCH_ACTIVE.store(true, Ordering::Relaxed);
+    } else {
+        SILENCE_WATCH_ACTIVE.store(false, Ordering::Relaxed);
+    }
+}
+
+/// A mic-level reading counts as silence for auto-finish purposes when
+/// every bucket is at or below this floor -- mirrors the near-zero bars a
+/// human would visually read as silence in the overlay's own waveform.
+/// An empty slice (no buckets at all) also counts as silent.
+const SILENCE_LEVEL_FLOOR: f32 = 0.02;
+
+fn is_silent_mic_level(levels: &[f32]) -> bool {
+    levels.iter().all(|&v| v <= SILENCE_LEVEL_FLOOR)
+}
+
+/// Pure: has enough silence elapsed to auto-finish? `threshold_ms == 0` is
+/// the disabled sentinel -- never fires, no matter how long the silence.
+fn should_auto_finish_on_silence(silence_elapsed_ms: u64, threshold_ms: u64) -> bool {
+    threshold_ms > 0 && silence_elapsed_ms >= threshold_ms
+}
+
+/// Called on every mic-level sample while ANY recording is active (cheap
+/// no-op via the atomic load unless a wake-word silence watch is
+/// currently armed -- zero behavior change for hotkey recordings). Once
+/// enough silence has elapsed, re-sends the exact same external "press"
+/// signal a real second hotkey press would send to end a locked
+/// wake-word session -- this reuses the already-correct, already-tested
+/// stop path in `TranscriptionCoordinator` instead of touching recording
+/// state directly.
+pub fn check_silence_and_maybe_finish(app: &AppHandle, levels: &[f32]) {
+    if !SILENCE_WATCH_ACTIVE.load(Ordering::Relaxed) {
+        return;
+    }
+    let now = now_ms();
+    if is_silent_mic_level(levels) {
+        let threshold = SILENCE_TIMEOUT_MS.load(Ordering::Relaxed);
+        let last_voiced = LAST_VOICED_AT_MS.load(Ordering::Relaxed);
+        let elapsed = now.saturating_sub(last_voiced);
+        if should_auto_finish_on_silence(elapsed, threshold) {
+            // Disarm first so a slow stop can't cause a double-fire from a
+            // later call on this same still-silent recording.
+            SILENCE_WATCH_ACTIVE.store(false, Ordering::Relaxed);
+            crate::signal_handle::send_transcription_input(
+                app,
+                "transcribe",
+                "wake_word_silence_timeout",
+            );
+        }
+    } else {
+        LAST_VOICED_AT_MS.store(now, Ordering::Relaxed);
+    }
 }
 
 fn configured_engine(
@@ -445,5 +534,44 @@ mod tests {
     fn unavailable_model_is_a_non_fatal_absent_engine() {
         let temp_dir = tempfile::tempdir().unwrap();
         assert!(configured_engine(temp_dir.path(), "not-installed", 0.5).is_none());
+    }
+
+    // ---- wake-word silence auto-finish (pure helpers) ----
+
+    #[test]
+    fn silence_all_buckets_at_or_below_floor_is_silent() {
+        assert!(is_silent_mic_level(&[0.0, 0.02, 0.0, 0.01]));
+    }
+
+    #[test]
+    fn silence_empty_levels_counts_as_silent() {
+        assert!(is_silent_mic_level(&[]));
+    }
+
+    #[test]
+    fn silence_any_bucket_above_floor_is_not_silent() {
+        assert!(!is_silent_mic_level(&[0.0, 0.0, 0.03, 0.0]));
+    }
+
+    #[test]
+    fn auto_finish_before_threshold_is_false() {
+        assert!(!should_auto_finish_on_silence(1499, 1500));
+    }
+
+    #[test]
+    fn auto_finish_at_threshold_is_true() {
+        assert!(should_auto_finish_on_silence(1500, 1500));
+    }
+
+    #[test]
+    fn auto_finish_past_threshold_is_true() {
+        assert!(should_auto_finish_on_silence(5000, 1500));
+    }
+
+    #[test]
+    fn auto_finish_is_always_false_when_threshold_is_zero_sentinel() {
+        // threshold_ms == 0 means the feature is disabled -- never fires,
+        // even with a very long silence.
+        assert!(!should_auto_finish_on_silence(999_999, 0));
     }
 }

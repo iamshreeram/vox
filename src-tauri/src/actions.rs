@@ -454,7 +454,7 @@ pub(crate) async fn process_transcription_output(
 }
 
 impl ShortcutAction for TranscribeAction {
-    fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+    fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
 
@@ -494,6 +494,10 @@ impl ShortcutAction for TranscribeAction {
         // Get the microphone mode to determine audio feedback timing
         let plan_started = Instant::now();
         let settings = get_settings(app);
+        crate::managers::wakeword_listener::on_recording_started(
+            shortcut_str,
+            settings.wake_word_silence_timeout_ms,
+        );
         let is_always_on = settings.always_on_microphone;
 
         let selected_model_info = app

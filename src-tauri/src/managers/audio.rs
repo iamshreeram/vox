@@ -339,6 +339,10 @@ fn create_audio_recorder(
             let app_handle = app_handle.clone();
             move |levels| {
                 utils::emit_levels(&app_handle, &levels);
+                crate::managers::wakeword_listener::check_silence_and_maybe_finish(
+                    &app_handle,
+                    &levels,
+                );
             }
         })
         .with_audio_callback({
