@@ -1,4 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { Check, Copy } from "lucide-react";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import "./RecordingOverlay.css";
@@ -11,6 +13,7 @@ import type {
 } from "@/bindings";
 import i18n, { syncLanguageFromSettings } from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
+import { copyOverlayText } from "./clipboard";
 
 type OverlayState = "recording" | "streaming" | "transcribing" | "processing";
 
@@ -43,6 +46,7 @@ const RecordingOverlay: React.FC = () => {
   // True once live text overflows the cap. A top overlay fades its top edge only
   // while overflowing, so the resting first line stays crisp flush under the pill.
   const [overflowing, setOverflowing] = useState(false);
+  const [showCopied, setShowCopied] = useState(false);
 
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
   // Live-text scroll-back: the text region "sticks" to the newest line while the
@@ -231,6 +235,18 @@ const RecordingOverlay: React.FC = () => {
   if (state === "streaming") {
     const hasText =
       streamText.committed.length > 0 || streamText.tentative.length > 0;
+    const fullText =
+      streamText.committed +
+      (streamText.committed ? " " : "") +
+      streamText.tentative;
+    const hasCopyableText =
+      (streamText.committed + " " + streamText.tentative).trim().length > 0;
+    const handleCopy = async () => {
+      if (await copyOverlayText(fullText, { writeText })) {
+        setShowCopied(true);
+        setTimeout(() => setShowCopied(false), 1500);
+      }
+    };
     const working = phase === "working";
     // Keep the panel open whenever there's text — even while finalizing — so the
     // transcript stays put under a working spinner instead of collapsing and
@@ -248,6 +264,17 @@ const RecordingOverlay: React.FC = () => {
           }`}
         >
           <div className="stext">
+            {hasCopyableText && (
+              <button
+                type="button"
+                className="stext-copy"
+                title={t(showCopied ? "overlay.copied" : "overlay.copy")}
+                aria-label={t(showCopied ? "overlay.copied" : "overlay.copy")}
+                onClick={handleCopy}
+              >
+                {showCopied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+              </button>
+            )}
             <div className="stext-clip">
               <div
                 className={`stext-cap ${overflowing ? "overflowing" : ""}`}
