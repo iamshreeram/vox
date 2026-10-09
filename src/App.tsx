@@ -202,6 +202,25 @@ function App() {
     };
   }, [t]);
 
+  // The backend retries a failed wake-word model download via a configured
+  // proxy if one is available, but if BOTH the direct attempt and that
+  // fallback fail (e.g. no proxy configured, or the proxy itself is also
+  // unreachable), wake word silently never activates with zero visibility
+  // to the user otherwise -- this was a real, confirmed-in-the-field gap.
+  useEffect(() => {
+    const unlisten = listen<{ model_name: string; error: string }>(
+      "wakeword-model-download-failed",
+      (event) => {
+        toast.error(t("settings.advanced.wakeWord.downloadFailedTitle"), {
+          description: event.payload.error,
+        });
+      },
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [t]);
+
   useEffect(() => {
     const unlisten = listen<AmbientAddressedPayload>("ambient://addressed", (event) => {
       toast.success(
