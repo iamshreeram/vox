@@ -27,6 +27,8 @@ import { VadBackendSelector } from "../VadBackendSelector";
 import { MemoryToggle } from "../MemoryToggle";
 import { MemoryFactsList } from "../MemoryFactsList";
 import { VoiceCommandsToggle } from "../VoiceCommandsToggle";
+import { AgentBridgeToggle } from "../AgentBridgeToggle";
+import { AgentBridgeBinaryPathField } from "../AgentBridgeBinaryPathField";
 import { ListeningModeSection } from "../ListeningModeSection";
 
 export const AdvancedSettings: React.FC = () => {
@@ -34,6 +36,7 @@ export const AdvancedSettings: React.FC = () => {
   const { getSetting } = useSettings();
   const experimentalEnabled = getSetting("experimental_enabled") || false;
   const memoryEnabled = getSetting("memory_enabled") || false;
+  const agentBridgeEnabled = getSetting("agent_bridge_enabled") || false;
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
@@ -82,6 +85,10 @@ export const AdvancedSettings: React.FC = () => {
           <MemoryToggle descriptionMode="tooltip" grouped={true} />
           {memoryEnabled && <MemoryFactsList />}
           <VoiceCommandsToggle descriptionMode="tooltip" grouped={true} />
+          <AgentBridgeToggle descriptionMode="tooltip" grouped={true} />
+          {agentBridgeEnabled && (
+            <AgentBridgeBinaryPathField descriptionMode="tooltip" grouped={true} />
+          )}
           <ListeningModeSection />
         </SettingsGroup>
       )}

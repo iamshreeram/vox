@@ -224,6 +224,26 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const unlisten = listen<string>("agent-bridge-reply", (event) => {
+      toast.success(event.payload);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen<string>("agent-bridge-error", (event) => {
+      toast.error(t("settings.advanced.agentBridge.suggestionFailedTitle"), {
+        description: event.payload,
+      });
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [t]);
+
   // Listen for transcription failures and show a toast.
   // The payload is the backend error message (also logged to handy.log).
   useEffect(() => {

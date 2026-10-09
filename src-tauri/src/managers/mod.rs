@@ -1,3 +1,4 @@
+pub mod agent_bridge;
 pub mod ambient;
 pub mod ambient_listener;
 pub mod audio;

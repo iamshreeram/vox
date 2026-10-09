@@ -456,6 +456,14 @@ pub struct AppSettings {
     #[serde(default)]
     pub voice_commands_enabled: bool,
     #[serde(default)]
+    pub agent_bridge_enabled: bool,
+    #[serde(default)]
+    pub agent_bridge_binary_path: Option<String>,
+    #[serde(default = "default_agent_bridge_prompt_flag")]
+    pub agent_bridge_prompt_flag: String,
+    #[serde(default = "default_agent_bridge_timeout_secs")]
+    pub agent_bridge_timeout_secs: u64,
+    #[serde(default)]
     pub wake_word_enabled: bool,
     #[serde(default = "default_wake_word_model_name")]
     pub wake_word_model_name: String,
@@ -548,6 +556,14 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+}
+
+fn default_agent_bridge_prompt_flag() -> String {
+    "-p".to_string()
+}
+
+fn default_agent_bridge_timeout_secs() -> u64 {
+    60
 }
 
 fn default_model() -> String {
@@ -1001,6 +1017,10 @@ pub fn get_default_settings() -> AppSettings {
         ambient_wake_name: default_ambient_wake_name(),
         ambient_window_ms: default_ambient_window_ms(),
         voice_commands_enabled: false,
+        agent_bridge_enabled: false,
+        agent_bridge_binary_path: None,
+        agent_bridge_prompt_flag: default_agent_bridge_prompt_flag(),
+        agent_bridge_timeout_secs: default_agent_bridge_timeout_secs(),
         wake_word_enabled: false,
         wake_word_model_name: default_wake_word_model_name(),
         wake_word_confidence_threshold: default_wake_word_confidence_threshold(),
@@ -1621,6 +1641,59 @@ mod tests {
     #[test]
     fn memory_is_disabled_by_default() {
         assert!(!get_default_settings().memory_enabled);
+    }
+
+    #[test]
+    fn agent_bridge_enabled_defaults_false_when_missing_from_legacy_settings() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("agent_bridge_enabled");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.agent_bridge_enabled);
+    }
+
+    #[test]
+    fn agent_bridge_binary_path_defaults_none_when_missing_from_legacy_settings() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("agent_bridge_binary_path");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert_eq!(loaded.agent_bridge_binary_path, None);
+    }
+
+    #[test]
+    fn agent_bridge_prompt_flag_defaults_when_missing_from_legacy_settings() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("agent_bridge_prompt_flag");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert_eq!(loaded.agent_bridge_prompt_flag, "-p");
+    }
+
+    #[test]
+    fn agent_bridge_timeout_defaults_when_missing_from_legacy_settings() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("agent_bridge_timeout_secs");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert_eq!(loaded.agent_bridge_timeout_secs, 60);
+    }
+
+    #[test]
+    fn agent_bridge_defaults_are_correct() {
+        let settings = get_default_settings();
+        assert!(!settings.agent_bridge_enabled);
+        assert_eq!(settings.agent_bridge_binary_path, None);
+        assert_eq!(settings.agent_bridge_prompt_flag, "-p");
+        assert_eq!(settings.agent_bridge_timeout_secs, 60);
     }
 
     #[test]
