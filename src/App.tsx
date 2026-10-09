@@ -25,10 +25,15 @@ import {
 } from "./components/settings";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
+import { shouldFallBackToGeneral } from "./components/sectionGate";
 import { WhatsNewGate } from "./components/whats-new";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
-import { commands, type WakeWordDetection, type AmbientAddressedPayload } from "@/bindings";
+import {
+  commands,
+  type WakeWordDetection,
+  type AmbientAddressedPayload,
+} from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 
 type OnboardingStep = "accessibility" | "model" | "done";
@@ -84,6 +89,12 @@ function App() {
     document.documentElement.toggleAttribute(attribute, isShowingOnboarding);
     return () => document.documentElement.removeAttribute(attribute);
   }, [isShowingOnboarding]);
+
+  useEffect(() => {
+    if (shouldFallBackToGeneral(currentSection, settings, SECTIONS_CONFIG)) {
+      setCurrentSection("general");
+    }
+  }, [currentSection, settings]);
 
   // Reset the scroll position whenever the active section changes.
   useLayoutEffect(() => {
@@ -222,13 +233,16 @@ function App() {
   }, [t]);
 
   useEffect(() => {
-    const unlisten = listen<AmbientAddressedPayload>("ambient://addressed", (event) => {
-      toast.success(
-        t("settings.advanced.ambientMode.addressedToast", {
-          request: event.payload.extracted_request,
-        }),
-      );
-    });
+    const unlisten = listen<AmbientAddressedPayload>(
+      "ambient://addressed",
+      (event) => {
+        toast.success(
+          t("settings.advanced.ambientMode.addressedToast", {
+            request: event.payload.extracted_request,
+          }),
+        );
+      },
+    );
     return () => {
       unlisten.then((fn) => fn());
     };

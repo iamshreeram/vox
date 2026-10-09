@@ -1,6 +1,15 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Cog, FlaskConical, History, Info, Sparkles, Cpu, Mic } from "lucide-react";
+import {
+  Cog,
+  FlaskConical,
+  History,
+  Info,
+  Sparkles,
+  Cpu,
+  Mic,
+  Beaker,
+} from "lucide-react";
 import VoxTextLogo from "./icons/VoxTextLogo";
 import { useSettings } from "../hooks/useSettings";
 import {
@@ -11,6 +20,7 @@ import {
   AboutSettings,
   PostProcessingSettings,
   ModelsSettings,
+  ExperimentalSettings,
 } from "./settings";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
@@ -66,6 +76,12 @@ export const SECTIONS_CONFIG = {
     icon: FlaskConical,
     component: DebugSettings,
     enabled: (settings) => settings?.debug_mode ?? false,
+  },
+  experimental: {
+    labelKey: "sidebar.experimental",
+    icon: Beaker,
+    component: ExperimentalSettings,
+    enabled: (settings) => settings?.experimental_enabled ?? false,
   },
   about: {
     labelKey: "sidebar.about",
