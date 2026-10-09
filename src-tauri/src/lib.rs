@@ -44,7 +44,6 @@ use managers::transcription::TranscriptionManager;
 use managers::wakeword_listener::WakeWordListener;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
-use tauri::image::Image;
 pub use transcription_coordinator::TranscriptionCoordinator;
 
 use tauri::tray::TrayIconBuilder;
@@ -285,16 +284,31 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Choose the appropriate initial icon based on theme
     let initial_icon_path = tray::get_icon_path(initial_theme, tray::TrayIconState::Idle, false);
 
+    // Resolving and loading the initial tray icon must NEVER panic here:
+    // this runs inside `setup()`, which macOS's AppKit invokes synchronously
+    // from `applicationDidFinishLaunching` via an Objective-C callback. A
+    // Rust panic crossing that boundary cannot unwind (it hits
+    // `panic_cannot_unwind` and the whole process aborts via SIGABRT instead
+    // of returning a normal tauri::Result error) -- confirmed to happen for
+    // real: an intermittent `UnknownPath` resolve failure here (observed
+    // after a sleep/wake cycle) previously crashed the app on every single
+    // launch attempt with no recoverable error path at all. Falling back to
+    // no custom tray icon on failure is vastly preferable to that.
+    let initial_icon = match tray::load_tray_icon(
+        app_handle
+            .path()
+            .resolve(initial_icon_path, tauri::path::BaseDirectory::Resource),
+    ) {
+        Ok(image) => Some(image),
+        Err(err) => {
+            log::error!(
+                "Failed to resolve/load initial tray icon '{initial_icon_path}': {err} -- continuing startup without a custom tray icon instead of crashing"
+            );
+            None
+        }
+    };
+
     let mut tray_builder = TrayIconBuilder::new()
-        .icon(
-            Image::from_path(
-                app_handle
-                    .path()
-                    .resolve(initial_icon_path, tauri::path::BaseDirectory::Resource)
-                    .unwrap(),
-            )
-            .unwrap(),
-        )
         .tooltip(tray::tray_tooltip())
         // Not a template image: the Vox tray glyph is a deliberately colorful
         // gold orb, not a monochrome system-style silhouette. A template
@@ -302,6 +316,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         // alpha-only black/white, which is exactly the "not colorful" bug
         // this fixes.
         .icon_as_template(false);
+    if let Some(icon) = initial_icon {
+        tray_builder = tray_builder.icon(icon);
+    }
 
     // Windows notification-area convention: left click opens the app, right click
     // shows the menu. Elsewhere (macOS menu bar, Linux) the menu stays on left click.
