@@ -52,12 +52,15 @@ impl Default for HttpModelDownloader {
 }
 
 impl HttpModelDownloader {
+    /// Single-attempt download -- unchanged in behavior from before this
+    /// file's proxy-fallback addition. Every pre-existing test below calls
+    /// this directly and must keep passing identically.
     fn download_url(&self, url: &str, destination: &Path) -> Result<(), ModelDownloadError> {
         let mut response = self
             .client
             .get(url)
             .send()
-            .map_err(|error| ModelDownloadError::Network(error.to_string()))?;
+            .map_err(|error| ModelDownloadError::Network(format!("{error:?}")))?;
         if !response.status().is_success() {
             return Err(ModelDownloadError::Network(format!(
                 "HTTP {} from {url}",
@@ -67,7 +70,7 @@ impl HttpModelDownloader {
         let mut file = std::fs::File::create(destination)
             .map_err(|error| ModelDownloadError::Io(error.to_string()))?;
         let downloaded = std::io::copy(&mut response, &mut file)
-            .map_err(|error| ModelDownloadError::Network(error.to_string()))?;
+            .map_err(|error| ModelDownloadError::Network(format!("{error:?}")))?;
         if downloaded == 0 {
             return Err(ModelDownloadError::Network(format!(
                 "HTTP response from {url} contained an empty model file"
@@ -78,9 +81,77 @@ impl HttpModelDownloader {
         Ok(())
     }
 
+    /// GitHub Releases always 302-redirects asset downloads to a separate
+    /// CDN host (`release-assets.githubusercontent.com` at time of
+    /// writing). Confirmed on a real affected machine: that CDN host can be
+    /// blocked outright by a network that otherwise allowlists `github.com`
+    /// itself -- the TCP handshake completes, then the TLS/HTTP exchange
+    /// simply times out, consistent with SNI-based filtering rather than a
+    /// DNS or routing failure. On that same machine, the OS's own
+    /// configured HTTP(S) proxy reaches the exact same CDN host
+    /// successfully even though a direct connection cannot. Try direct
+    /// first (correct and sufficient on most networks, and actively
+    /// *required* on others -- see install-macos.sh's own history of a
+    /// misconfigured proxy breaking otherwise-working direct access), then
+    /// fall back to an explicit proxy client built from whatever standard
+    /// proxy env var is already present in this process's own environment,
+    /// if any, before giving up. Takes a URL directly (rather than
+    /// model/file names) so it's independently testable against a local
+    /// stub server without any real network dependency.
+    fn download_with_proxy_fallback(
+        &self,
+        url: &str,
+        destination: &Path,
+    ) -> Result<(), ModelDownloadError> {
+        let direct_error = match self.download_url(url, destination) {
+            Ok(()) => return Ok(()),
+            Err(error) => error,
+        };
+
+        let Some(proxy_url) = Self::configured_proxy_url() else {
+            return Err(direct_error);
+        };
+        let Ok(proxy) = reqwest::Proxy::all(&proxy_url) else {
+            return Err(direct_error);
+        };
+        let Ok(proxy_client) = Client::builder()
+            .timeout(REQUEST_TIMEOUT)
+            .connect_timeout(CONNECT_TIMEOUT)
+            .proxy(proxy)
+            .build()
+        else {
+            return Err(direct_error);
+        };
+
+        log::warn!(
+            "Direct download of {url} failed ({direct_error:?}); retrying via the configured proxy"
+        );
+        let fallback = HttpModelDownloader {
+            client: proxy_client,
+        };
+        fallback.download_url(url, destination).map_err(|proxy_error| {
+            ModelDownloadError::Network(format!(
+                "direct attempt failed ({direct_error:?}); proxy-fallback attempt also failed ({proxy_error:?})"
+            ))
+        })
+    }
+
     fn url_for(model_name: &str, file_name: &str) -> Result<String, ModelDownloadError> {
         let upstream = upstream_filename(model_name, file_name)?;
         Ok(format!("{OPEN_WAKE_WORD_RELEASE}/{upstream}"))
+    }
+
+    /// Reads a standard proxy env var from this process's own environment,
+    /// if any is set. Deliberately generic -- this must never hardcode any
+    /// specific proxy hostname, so it works for any user on any network
+    /// that needs a proxy, not one specific employer's infrastructure.
+    fn configured_proxy_url() -> Option<String> {
+        std::env::var("HTTPS_PROXY")
+            .or_else(|_| std::env::var("https_proxy"))
+            .or_else(|_| std::env::var("HTTP_PROXY"))
+            .or_else(|_| std::env::var("http_proxy"))
+            .ok()
+            .filter(|value| !value.is_empty())
     }
 }
 
@@ -92,7 +163,7 @@ impl ModelDownloader for HttpModelDownloader {
         destination: &Path,
     ) -> Result<(), ModelDownloadError> {
         let url = Self::url_for(model_name, file_name)?;
-        self.download_url(&url, destination)
+        self.download_with_proxy_fallback(&url, destination)
     }
 }
 
@@ -162,6 +233,85 @@ mod tests {
             .download_url(&format!("http://{address}/"), Path::new("unused"))
             .unwrap_err();
         assert!(matches!(error, ModelDownloadError::Network(_)));
+    }
+
+    // `configured_proxy_url()`/`download_with_proxy_fallback()` both read
+    // process-global env vars, so every scenario depending on their state
+    // lives in this ONE serialized test rather than separate #[test]
+    // functions -- Rust runs tests in parallel threads within the same
+    // process by default, and separate tests mutating the same global env
+    // var race each other (confirmed: an earlier version of this file had
+    // exactly this flake, failing nondeterministically depending on
+    // scheduling AND on whatever real proxy vars happened to already be set
+    // in the ambient shell running `cargo test`). The real env var state is
+    // captured up front and always restored before any assertion runs, so a
+    // failing assertion still can't leave the ambient environment mutated
+    // for whatever other test happens to run next.
+    #[test]
+    fn download_with_proxy_fallback_covers_both_branches() {
+        let proxy_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let proxy_address = proxy_listener.local_addr().unwrap();
+        thread::spawn(move || {
+            for stream in proxy_listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                let _ = stream.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello",
+                );
+            }
+        });
+        // Closed local ports: guaranteed to fail the "direct" attempt fast,
+        // with zero dependency on any real external network.
+        let closed_listener_a = TcpListener::bind("127.0.0.1:0").unwrap();
+        let closed_address_a = closed_listener_a.local_addr().unwrap();
+        drop(closed_listener_a);
+        let closed_listener_b = TcpListener::bind("127.0.0.1:0").unwrap();
+        let closed_address_b = closed_listener_b.local_addr().unwrap();
+        drop(closed_listener_b);
+
+        let previous = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"]
+            .map(|key| (key, std::env::var(key).ok()));
+
+        // Scenario 1: no proxy configured at all -> the direct error must
+        // pass straight through unchanged, no fallback attempted.
+        for (key, _) in &previous {
+            std::env::remove_var(key);
+        }
+        let dir_a = tempfile::tempdir().unwrap();
+        let destination_a = dir_a.path().join("asset");
+        let no_proxy_result = HttpModelDownloader::default().download_with_proxy_fallback(
+            &format!("http://{closed_address_a}/direct-should-fail"),
+            &destination_a,
+        );
+
+        // Scenario 2: a proxy IS configured -> fallback must retry through
+        // it and succeed, even though direct access fails.
+        std::env::set_var("HTTPS_PROXY", format!("http://{proxy_address}"));
+        let dir_b = tempfile::tempdir().unwrap();
+        let destination_b = dir_b.path().join("asset");
+        let with_proxy_result = HttpModelDownloader::default().download_with_proxy_fallback(
+            &format!("http://{closed_address_b}/direct-should-fail"),
+            &destination_b,
+        );
+        let with_proxy_bytes = std::fs::read(&destination_b);
+
+        for (key, value) in previous {
+            match value {
+                Some(value) => std::env::set_var(key, value),
+                None => std::env::remove_var(key),
+            }
+        }
+
+        assert!(matches!(
+            no_proxy_result,
+            Err(ModelDownloadError::Network(_))
+        ));
+        assert!(
+            with_proxy_result.is_ok(),
+            "expected proxy fallback to succeed, got {with_proxy_result:?}"
+        );
+        assert_eq!(with_proxy_bytes.unwrap(), b"hello");
     }
 
     // Manual diagnostic only -- hits the real network, never run in CI/`cargo test`.

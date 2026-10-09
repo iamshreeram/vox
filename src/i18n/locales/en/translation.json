@@ -295,7 +295,8 @@
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected \u2014 listening...",
-        "disabledByAmbientMode": "Turn off Ambient Mode to enable Wake Word."
+        "disabledByAmbientMode": "Turn off Ambient Mode to enable Wake Word.",
+        "downloadFailedTitle": "Wake word model couldn't be downloaded"
       },
       "voiceCommands": {
         "label": "Voice Commands",
