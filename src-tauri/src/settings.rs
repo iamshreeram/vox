@@ -471,6 +471,14 @@ pub struct AppSettings {
     pub wake_word_confidence_threshold: f32,
     #[serde(default = "default_wake_word_cooldown_ms")]
     pub wake_word_cooldown_ms: u32,
+    /// How long (ms) of sustained mic silence after a wake-word-triggered
+    /// recording auto-finishes it (transcribe + route, same as pressing
+    /// the hotkey again) -- without this, a locked wake-word session waits
+    /// forever for a manual second press. 0 disables the behavior entirely
+    /// (falls back to manual-press-to-finish). Hotkey-triggered recordings
+    /// are completely unaffected by this setting.
+    #[serde(default = "default_wake_word_silence_timeout_ms")]
+    pub wake_word_silence_timeout_ms: u32,
     #[serde(default = "default_recording_retention_period")]
     pub recording_retention_period: RecordingRetentionPeriod,
     #[serde(default)]
@@ -580,6 +588,10 @@ fn default_wake_word_confidence_threshold() -> f32 {
 
 fn default_wake_word_cooldown_ms() -> u32 {
     500
+}
+
+fn default_wake_word_silence_timeout_ms() -> u32 {
+    1500
 }
 
 const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 2;
@@ -1025,6 +1037,7 @@ pub fn get_default_settings() -> AppSettings {
         wake_word_model_name: default_wake_word_model_name(),
         wake_word_confidence_threshold: default_wake_word_confidence_threshold(),
         wake_word_cooldown_ms: default_wake_word_cooldown_ms(),
+        wake_word_silence_timeout_ms: default_wake_word_silence_timeout_ms(),
         recording_retention_period: default_recording_retention_period(),
         paste_method: PasteMethod::default(),
         clipboard_handling: ClipboardHandling::default(),
@@ -1714,6 +1727,7 @@ mod tests {
         assert_eq!(settings.wake_word_model_name, "hey_jarvis");
         assert_eq!(settings.wake_word_confidence_threshold, 0.5);
         assert_eq!(settings.wake_word_cooldown_ms, 500);
+        assert_eq!(settings.wake_word_silence_timeout_ms, 1500);
     }
 
     #[test]
@@ -1723,6 +1737,7 @@ mod tests {
         assert_eq!(settings.wake_word_model_name, "hey_jarvis");
         assert_eq!(settings.wake_word_confidence_threshold, 0.5);
         assert_eq!(settings.wake_word_cooldown_ms, 500);
+        assert_eq!(settings.wake_word_silence_timeout_ms, 1500);
     }
 
     #[test]
