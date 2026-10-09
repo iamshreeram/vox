@@ -434,7 +434,9 @@ fn apply_on_main(app: &AppHandle) {
     );
 }
 
-fn load_tray_icon(resolved_icon_path: tauri::Result<PathBuf>) -> tauri::Result<Image<'static>> {
+pub(crate) fn load_tray_icon(
+    resolved_icon_path: tauri::Result<PathBuf>,
+) -> tauri::Result<Image<'static>> {
     let resolved_icon_path = resolved_icon_path?;
     Image::from_path(&resolved_icon_path).map(Image::to_owned)
 }
