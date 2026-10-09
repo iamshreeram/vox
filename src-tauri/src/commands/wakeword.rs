@@ -3,7 +3,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 pub const WAKEWORD_DETECTED_EVENT: &str = "wakeword://detected";
 
-fn update_wake_word_enabled(settings: &mut crate::settings::AppSettings, enabled: bool) {
+pub(crate) fn update_wake_word_enabled(settings: &mut crate::settings::AppSettings, enabled: bool) {
     if enabled {
         crate::managers::ambient::coordinator::enabling_wake_word_disables_ambient_mode(settings);
     } else {
@@ -27,6 +27,14 @@ pub fn wakeword_set_enabled(app: AppHandle, enabled: bool) -> Result<(), String>
     } else {
         listener.stop();
     }
+    crate::tray::update_tray_menu(&app);
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "wake_word_enabled",
+            "value": enabled
+        }),
+    );
     Ok(())
 }
 
