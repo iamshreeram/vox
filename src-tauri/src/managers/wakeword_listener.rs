@@ -388,6 +388,20 @@ fn close_recorder(recorder: &Mutex<AudioRecorder>) {
     }
 }
 
+/// Called once, right before a fresh wake-word listening session's
+/// microphone stream is opened (i.e. only from `open_recorder`, never from
+/// the per-tick polling loop). Pre-consumes the classifier's cold-start
+/// "zero guard" window (see `WakeWordEngine::warm_up`'s doc comment) on
+/// synthetic silence so real microphone audio -- which may start arriving
+/// mid-utterance due to real audio-hardware stream-reopen latency -- is
+/// never subject to it. A no-op when no engine is loaded yet (model still
+/// downloading/failed to load).
+fn prepare_engine_for_fresh_listen(engine: &Mutex<Option<Box<dyn WakeWordEngine>>>) {
+    if let Some(engine) = engine.lock().unwrap().as_mut() {
+        engine.warm_up();
+    }
+}
+
 fn resolve_device(settings: &AppSettings) -> Result<Option<cpal::Device>, String> {
     let selected = if let Some(name) = settings.clamshell_microphone.as_ref() {
         if clamshell::is_clamshell().unwrap_or(false) {
@@ -418,6 +432,7 @@ fn open_recorder(
     if !get_settings(app).wake_word_enabled {
         return Err("wake-word setting was disabled before opening microphone".to_string());
     }
+    prepare_engine_for_fresh_listen(engine);
     let device = resolve_device(&settings)?;
     let app = app.clone();
     let engine = Arc::clone(engine);
@@ -525,6 +540,46 @@ mod tests {
         fn reset(&mut self) {}
         fn pause(&mut self) {}
         fn resume(&mut self) {}
+    }
+
+    /// Tracks `warm_up()` call count without needing a real model/classifier.
+    struct SpyWarmUpEngine {
+        warm_up_calls: Arc<Mutex<u32>>,
+    }
+
+    impl WakeWordEngine for SpyWarmUpEngine {
+        fn process_frame(&mut self, _samples: &[f32]) -> Option<WakeWordDetection> {
+            None
+        }
+        fn reset(&mut self) {}
+        fn pause(&mut self) {}
+        fn resume(&mut self) {}
+        fn warm_up(&mut self) {
+            *self.warm_up_calls.lock().unwrap() += 1;
+        }
+    }
+
+    #[test]
+    fn prepare_engine_for_fresh_listen_calls_warm_up_exactly_once() {
+        let calls = Arc::new(Mutex::new(0u32));
+        let engine: Mutex<Option<Box<dyn WakeWordEngine>>> = Mutex::new(Some(Box::new(
+            SpyWarmUpEngine {
+                warm_up_calls: Arc::clone(&calls),
+            },
+        )));
+        prepare_engine_for_fresh_listen(&engine);
+        assert_eq!(
+            *calls.lock().unwrap(),
+            1,
+            "opening a fresh wake-word listening session must warm up the engine exactly once"
+        );
+    }
+
+    #[test]
+    fn prepare_engine_for_fresh_listen_is_a_noop_when_engine_not_yet_loaded() {
+        // Model still downloading / failed to load -- must not panic.
+        let engine: Mutex<Option<Box<dyn WakeWordEngine>>> = Mutex::new(None);
+        prepare_engine_for_fresh_listen(&engine);
     }
 
     struct FakeModelDownloader;
