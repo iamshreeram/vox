@@ -174,8 +174,9 @@ echo "  [ok] $AGENT_PLIST"
 
 # ---- 4. Re-sign after structural changes ---------------------------------
 # Uses the stable local "Vox Local Dev Codesign" identity (self-signed,
-# created once via Keychain Access + `security import` + `security
-# add-trusted-cert -p codeSign`) instead of plain ad-hoc (`-s -`).
+# auto-created on first run by ./scripts/setup-codesign-identity.sh if it
+# doesn't already exist -- see that script's header for the full why)
+# instead of plain ad-hoc (`-s -`).
 #
 # This matters a lot more than it sounds: ad-hoc signing has NO stable
 # identity across builds -- it's just a hash of the binary's own content.
@@ -187,9 +188,11 @@ echo "  [ok] $AGENT_PLIST"
 # forever" on a fresh grant look like a bug rather than a side effect of
 # the previous re-sign. A real (even self-signed) certificate has its own
 # persistent identity, so the same cert across rebuilds keeps TCC's
-# grants valid. Falls back to ad-hoc if the cert isn't present on this
-# machine (e.g. a fresh clone) so the script still works, just with the
-# same per-rebuild permission churn as before.
+# grants valid. Auto-creates that identity on first run via
+# setup-codesign-identity.sh (one-time trust-settings prompt); only falls
+# back to ad-hoc if that creation itself fails for some reason (e.g. no
+# openssl, or the user declines the trust prompt), so the script still
+# works end to end either way.
 #
 # Deliberately NOT using --options runtime (hardened runtime): combined
 # with only ad-hoc/self-signed (non-notarized) signing, hardened runtime
@@ -198,11 +201,19 @@ echo "  [ok] $AGENT_PLIST"
 # logged receiving it) -- permission dialogs never had a chance to show
 # at all. Not needed for a local, non-sandboxed dev build regardless.
 echo "Re-signing..."
+if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "Vox Local Dev Codesign"; then
+  echo "  No stable 'Vox Local Dev Codesign' identity found yet -- creating one now (one-time setup)"
+  echo "  so Accessibility/Microphone grants survive future rebuilds. See"
+  echo "  scripts/setup-codesign-identity.sh for exactly what this does."
+  if ! "$(dirname "$0")/setup-codesign-identity.sh"; then
+    echo "  Could not create a stable identity automatically -- falling back to" >&2
+    echo "  ad-hoc; permissions will need re-granting after every future rebuild." >&2
+    echo "  Run ./scripts/setup-codesign-identity.sh by hand to retry." >&2
+  fi
+fi
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "Vox Local Dev Codesign"; then
   SIGN_IDENTITY="Vox Local Dev Codesign"
 else
-  echo "  (no 'Vox Local Dev Codesign' identity found -- falling back to ad-hoc;"
-  echo "   permissions will need re-granting after every future rebuild)"
   SIGN_IDENTITY="-"
 fi
 codesign --force --deep -s "$SIGN_IDENTITY" "$DEST_APP"
