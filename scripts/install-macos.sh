@@ -46,6 +46,28 @@ if [ ! -d "$SRC_APP" ]; then
   exit 1
 fi
 
+# Guard against a real, previously-confirmed footgun: if $SRC_APP is itself
+# an already-wrapped install (e.g. someone points this script at an existing
+# /Applications/Vox.app instead of a genuine fresh `tauri build` output --
+# this has actually happened, e.g. while testing this very script) then its
+# Contents/MacOS/${APP_NAME_LOWER} is just the thin launcher shell script,
+# not the real multi-hundred-megabyte compiled binary. Blindly `mv`-ing it
+# onto the destination's "-bin" path below would silently overwrite and
+# destroy the real binary there, leaving two tiny scripts that call each
+# other via launchd forever and nothing that actually runs the app --
+# confirmed to happen silently, with no error anywhere, until the app
+# mysteriously stops launching. Detect a shebang ("#!") at the start of the
+# source binary -- a real Mach-O binary never starts with those two bytes
+# -- and refuse to proceed if found, BEFORE touching the destination at all.
+SRC_BIN="${SRC_APP}/Contents/MacOS/${APP_NAME_LOWER}"
+if [ "$(head -c 2 "$SRC_BIN" 2>/dev/null)" = "#!" ]; then
+  echo "ERROR: ${SRC_BIN} is a shell script, not a real compiled binary." >&2
+  echo "This means \$SRC_APP is already a wrapped/installed app, not a fresh build -- running this" >&2
+  echo "script against it would destroy the real binary. Run 'bun run tauri build --debug' to produce a" >&2
+  echo "genuine fresh build, then re-run this script (with no argument, or pointing at that fresh build)." >&2
+  exit 1
+fi
+
 echo "== Installing ${APP_NAME} =="
 
 # ---- 1. Stop anything currently running, replace the bundle -------------
@@ -102,16 +124,26 @@ mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
 # whatever proxy variables happen to be set in THIS install script's own
 # environment into the agent's plist, generically -- this script has no
 # opinion on what network you're on, it just passes through what's already
-# configured (or nothing, if you're not behind a proxy).
+# configured (or nothing, if you're not behind a proxy). A proxy that was
+# trusted blindly was confirmed to actively break the app rather than help
+# it, so verify HTTPS connectivity through it before forwarding any proxy
+# settings; a misconfigured or unreachable proxy should not be baked in.
 PROXY_ENV_XML=""
-for var in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy; do
-  value="${!var:-}"
-  if [ -n "$value" ]; then
-    PROXY_ENV_XML="${PROXY_ENV_XML}        <key>${var}</key>
+HTTPS_PROXY_URL="${HTTPS_PROXY:-${https_proxy:-}}"
+if [ -n "$HTTPS_PROXY_URL" ]; then
+  if curl --proxy "$HTTPS_PROXY_URL" --silent --head --fail --max-time 5 https://huggingface.co >/dev/null 2>&1; then
+    for var in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy; do
+      value="${!var:-}"
+      if [ -n "$value" ]; then
+        PROXY_ENV_XML="${PROXY_ENV_XML}        <key>${var}</key>
         <string>${value}</string>
 "
+      fi
+    done
+  else
+    echo "Note: HTTPS_PROXY is set but a live connectivity check through it failed -- not forwarding it to the app (it will connect directly instead)."
   fi
-done
+fi
 
 cat > "$AGENT_PLIST" <<PLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>
