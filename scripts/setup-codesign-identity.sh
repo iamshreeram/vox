@@ -19,6 +19,16 @@
 # This script makes the stable-identity path available on ANY machine,
 # automatically.
 #
+# Confirmed on a real affected machine: `tccutil reset` reported resetting
+# Accessibility/Microphone for Vox TWICE in a single invocation -- directly
+# observable evidence of the stale duplicate TCC row described above. This
+# script clears that stale state unconditionally every time it runs (cheap,
+# safe, officially supported via Apple's own `tccutil`, scoped to Vox's own
+# bundle ID only) so a user gets a clean permission slate immediately, not
+# just a stable identity going forward -- those are two different fixes for
+# two symptoms of the same root cause, and both are needed for an existing
+# affected install to actually recover.
+#
 # Safe to run any time -- idempotent, does nothing if the identity already
 # exists. One-time cost on a fresh machine: macOS will show exactly ONE
 # "trust settings" authorization prompt (Touch ID / login password) when
@@ -32,10 +42,15 @@
 set -euo pipefail
 
 IDENTITY_NAME="Vox Local Dev Codesign"
+BUNDLE_ID="com.iamshreeram.vox"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 
+echo "== Clearing any stale Accessibility/Microphone permission state for ${BUNDLE_ID} =="
+tccutil reset Accessibility "$BUNDLE_ID" 2>&1 || true
+tccutil reset Microphone "$BUNDLE_ID" 2>&1 || true
+
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY_NAME"; then
-  echo "== '$IDENTITY_NAME' already exists -- nothing to do =="
+  echo "== '$IDENTITY_NAME' already exists -- nothing more to do =="
   exit 0
 fi
 
@@ -69,8 +84,17 @@ openssl req -x509 -newkey rsa:2048 -keyout "$WORKDIR/key.pem" \
 
 # PKCS#12 export needs a password even for a throwaway local dev identity;
 # the file is deleted (via the trap above) the moment this script exits.
+# OpenSSL 3.x defaults to AES-256/SHA-256 for this export, which macOS's
+# `security import` (SecKeychainItemImport) cannot read -- it fails with a
+# misleading "MAC verification failed (wrong password?)" even though the
+# password is correct. Confirmed to actually happen on a real machine with
+# OpenSSL 3.x (likely any Homebrew-installed OpenSSL today). Force the
+# legacy RC2/3DES+SHA1 encoding macOS actually supports -- not a security
+# downgrade that matters here, since this is a local, short-lived,
+# throwaway file.
 openssl pkcs12 -export -out "$WORKDIR/identity.p12" \
   -inkey "$WORKDIR/key.pem" -in "$WORKDIR/cert.pem" -passout pass:vox-local-dev \
+  -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg SHA1 \
   >/dev/null 2>&1
 
 echo "Importing into the login keychain..."
@@ -78,7 +102,14 @@ security import "$WORKDIR/identity.p12" -k "$KEYCHAIN" -P vox-local-dev \
   -T /usr/bin/codesign -T /usr/bin/security
 
 echo "Trusting the certificate for code signing -- macOS will prompt ONCE now:"
-security add-trusted-cert -d -r trustAsRoot -p codeSign -k "$KEYCHAIN" "$WORKDIR/cert.pem"
+# NOTE: use trustRoot here, not trustAsRoot -- confirmed on a real machine
+# that `security add-trusted-cert -r trustAsRoot` fails immediately with
+# "SecTrustSettingsSetTrustSettings: One or more parameters passed to a
+# function were not valid" (regardless of -d), never even reaching the
+# trust-settings dialog. trustRoot is correct for a self-signed CA:false
+# leaf cert used directly as its own trust anchor, which is exactly this
+# certificate's shape.
+security add-trusted-cert -d -r trustRoot -p codeSign -k "$KEYCHAIN" "$WORKDIR/cert.pem"
 
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY_NAME"; then
   echo "== '$IDENTITY_NAME' created and trusted successfully =="
