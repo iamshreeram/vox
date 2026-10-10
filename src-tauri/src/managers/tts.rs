@@ -28,9 +28,11 @@
 
 #![allow(dead_code)]
 
-use std::io;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::io::{self, Write};
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::thread;
+use std::time::{Duration, Instant};
 
 pub const MAX_SPEECH_CHARS: usize = 2000;
 pub const MIN_RATE_WPM: u32 = 80;
@@ -76,30 +78,82 @@ pub trait SpeechBackend: Send + Sync {
 /// boundaries survive), replaces `[` and `]` with spaces, collapses
 /// whitespace, trims, and truncates to [`MAX_SPEECH_CHARS`] characters on a
 /// char boundary. `None` if nothing speakable remains.
-pub fn sanitize_speech_text(_text: &str) -> Option<String> {
-    todo!("F1: implement")
+pub fn sanitize_speech_text(text: &str) -> Option<String> {
+    let mapped: String = text
+        .chars()
+        .map(|c| match c {
+            '[' | ']' => ' ',
+            '\n' | '\r' | '\t' => ' ',
+            c if c.is_control() => '\0',
+            c => c,
+        })
+        .filter(|c| *c != '\0')
+        .collect();
+    let collapsed = mapped.split_whitespace().collect::<Vec<_>>().join(" ");
+    let truncated: String = collapsed.chars().take(MAX_SPEECH_CHARS).collect();
+    let trimmed = truncated.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 /// Accepts only `[A-Za-z0-9 ._()-]{1,64}` (after trimming); anything else is
 /// dropped (`None`) so it can never reach argv.
-pub fn sanitize_voice(_voice: &str) -> Option<String> {
-    todo!("F1: implement")
+pub fn sanitize_voice(voice: &str) -> Option<String> {
+    let trimmed = voice.trim();
+    let len = trimmed.chars().count();
+    if !(1..=64).contains(&len) {
+        return None;
+    }
+    let allowed = trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '.' | '_' | '(' | ')' | '-'));
+    // A leading '-' would be parsed by `say` as an option, so it is refused.
+    if allowed && !trimmed.starts_with('-') {
+        Some(trimmed.to_string())
+    } else {
+        None
+    }
 }
 
-pub fn clamp_rate(_rate: u32) -> u32 {
-    todo!("F1: implement")
+pub fn clamp_rate(rate: u32) -> u32 {
+    rate.clamp(MIN_RATE_WPM, MAX_RATE_WPM)
 }
 
 /// argv for `/usr/bin/say` (WITHOUT the program name and WITHOUT the text):
 /// `[-v <voice>] [-r <rate>] -f -`. Voice is sanitized and rate clamped here.
-pub fn say_args(_voice: Option<&str>, _rate_wpm: Option<u32>) -> Vec<String> {
-    todo!("F1: implement")
+pub fn say_args(voice: Option<&str>, rate_wpm: Option<u32>) -> Vec<String> {
+    let mut args: Vec<String> = Vec::new();
+    if let Some(v) = voice.and_then(sanitize_voice) {
+        args.push("-v".to_string());
+        args.push(v);
+    }
+    if let Some(r) = rate_wpm {
+        args.push("-r".to_string());
+        args.push(clamp_rate(r).to_string());
+    }
+    args.push("-f".to_string());
+    args.push("-".to_string());
+    args
 }
 
 /// Which fixed phrase (if any) an app event should speak. Command-outcome
 /// payloads are never spoken; only the agent reply text is.
-pub fn phrase_for_event(_event_name: &str, _payload: &str) -> Option<String> {
-    todo!("F1: implement")
+pub fn phrase_for_event(event_name: &str, payload: &str) -> Option<String> {
+    match event_name {
+        "agent-bridge-reply" => {
+            if payload.trim().is_empty() {
+                None
+            } else {
+                Some(payload.to_string())
+            }
+        }
+        "agent-bridge-error" | "voice-command-error" => Some(ERROR_PHRASE.to_string()),
+        "voice-command-executed" => Some(DONE_PHRASE.to_string()),
+        _ => None,
+    }
 }
 
 pub struct TtsManager {
@@ -127,64 +181,140 @@ impl TtsManager {
     /// previous speech (refuse with `CancelFailed` if unconfirmed); spawn; store.
     pub fn speak(
         &self,
-        _text: &str,
-        _voice: Option<&str>,
-        _rate_wpm: Option<u32>,
+        text: &str,
+        voice: Option<&str>,
+        rate_wpm: Option<u32>,
     ) -> Result<(), TtsError> {
-        todo!("F1: implement")
+        let text = sanitize_speech_text(text).ok_or(TtsError::Empty)?;
+        let voice = voice.and_then(sanitize_voice);
+        let rate = rate_wpm.map(clamp_rate);
+        let mut state = lock_state(&self.inner);
+        if state.recording_active {
+            return Err(TtsError::Recording);
+        }
+        let cancelled = match state.current.as_mut() {
+            Some(handle) => handle.kill(),
+            None => true,
+        };
+        if !cancelled {
+            return Err(TtsError::CancelFailed);
+        }
+        state.current = None;
+        match self.backend.spawn(&text, voice.as_deref(), rate) {
+            Ok(handle) => {
+                state.current = Some(handle);
+                Ok(())
+            }
+            Err(err) => Err(TtsError::Backend(err.to_string())),
+        }
     }
 
     /// Kill current speech. `true` if nothing was speaking or the kill was
     /// confirmed; `false` if it could not be confirmed (handle is retained).
     pub fn stop(&self) -> bool {
-        todo!("F1: implement")
+        let mut state = lock_state(&self.inner);
+        let ok = match state.current.as_mut() {
+            None => return true,
+            Some(handle) => handle.kill(),
+        };
+        if ok {
+            state.current = None;
+        }
+        ok
     }
 
     pub fn is_speaking(&self) -> bool {
-        todo!("F1: implement")
+        let mut state = lock_state(&self.inner);
+        let running = match state.current.as_mut() {
+            Some(handle) => handle.is_running(),
+            None => false,
+        };
+        if !running {
+            state.current = None;
+        }
+        running
     }
 
     /// Recording is starting: under the lock, set the recording flag and
     /// synchronously stop current speech (bounded). No background work.
     pub fn note_recording_started(&self) {
-        todo!("F1: implement")
+        let mut state = lock_state(&self.inner);
+        state.recording_active = true;
+        let ok = match state.current.as_mut() {
+            None => true,
+            Some(handle) => handle.kill(),
+        };
+        if ok {
+            state.current = None;
+        }
     }
 
     /// The mic stopped: clear the recording flag so speech may resume.
     pub fn note_recording_stopped(&self) {
-        todo!("F1: implement")
+        let mut state = lock_state(&self.inner);
+        state.recording_active = false;
     }
 }
 
 /// A real child process wrapped as a [`SpeechHandle`], with a detached reaper
 /// thread so natural completion is reaped without anyone polling.
 pub struct ProcessHandle {
-    _private: (),
+    child: Arc<Mutex<Option<Child>>>,
+    pid: u32,
 }
 
 impl ProcessHandle {
     pub fn pid(&self) -> u32 {
-        todo!("F1: implement")
+        self.pid
     }
 }
 
 impl SpeechHandle for ProcessHandle {
     fn kill(&mut self) -> bool {
-        todo!("F1: implement")
+        let mut slot = lock_slot(&self.child);
+        if let Some(child) = slot.as_mut() {
+            // Ignore the error: the child may already have exited.
+            let _ = child.kill();
+        }
+        let deadline = Instant::now() + KILL_CONFIRM_BOUND;
+        loop {
+            match try_reap(&mut *slot) {
+                None | Some(false) => return true,
+                Some(true) => {}
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
     }
     fn is_running(&mut self) -> bool {
-        todo!("F1: implement")
+        let mut slot = lock_slot(&self.child);
+        matches!(try_reap(&mut *slot), Some(true))
     }
 }
 
 /// Spawns `command` with piped stdin, writes `stdin_text` then closes stdin
 /// (write failures are tolerated: the child may already be gone), and starts
 /// the reaper.
-pub fn spawn_process_handle(
-    _command: &mut std::process::Command,
-    _stdin_text: &str,
-) -> io::Result<ProcessHandle> {
-    todo!("F1: implement")
+pub fn spawn_process_handle(command: &mut Command, stdin_text: &str) -> io::Result<ProcessHandle> {
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let mut child = command.spawn()?;
+    let pid = child.id();
+    if let Some(mut stdin) = child.stdin.take() {
+        let text = stdin_text.to_owned();
+        thread::spawn(move || {
+            // Errors (e.g. broken pipe) are expected if the child exited early.
+            let _ = stdin.write_all(text.as_bytes());
+            // `stdin` is dropped here, closing the pipe.
+        });
+    }
+    let child = Arc::new(Mutex::new(Some(child)));
+    spawn_reaper(child.clone());
+    Ok(ProcessHandle { child, pid })
 }
 
 /// macOS: spawns `/usr/bin/say` via [`spawn_process_handle`].
@@ -193,11 +323,11 @@ pub struct SayBackend;
 impl SpeechBackend for SayBackend {
     fn spawn(
         &self,
-        _text: &str,
-        _voice: Option<&str>,
-        _rate_wpm: Option<u32>,
+        text: &str,
+        voice: Option<&str>,
+        rate_wpm: Option<u32>,
     ) -> io::Result<Box<dyn SpeechHandle>> {
-        todo!("F1: implement")
+        spawn_say(text, voice, rate_wpm)
     }
 }
 
@@ -218,6 +348,79 @@ impl SpeechBackend for NullBackend {
     }
 }
 
+/// The speech backend appropriate for the current platform.
+pub fn default_backend() -> Box<dyn SpeechBackend> {
+    if cfg!(target_os = "macos") {
+        Box::new(SayBackend)
+    } else {
+        Box::new(NullBackend)
+    }
+}
+
+fn lock_state(inner: &Mutex<TtsState>) -> MutexGuard<'_, TtsState> {
+    inner.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn lock_slot(slot: &Mutex<Option<Child>>) -> MutexGuard<'_, Option<Child>> {
+    slot.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Polls the child in `slot`. Returns `None` if there is no child, `Some(true)`
+/// if it is still running, and `Some(false)` if it exited (or cannot be polled),
+/// in which case the child is taken out of the slot (and thereby reaped/dropped).
+fn try_reap(slot: &mut Option<Child>) -> Option<bool> {
+    let status = match slot.as_mut() {
+        None => return None,
+        Some(child) => child.try_wait(),
+    };
+    match status {
+        Ok(None) => Some(true),
+        _ => {
+            slot.take();
+            Some(false)
+        }
+    }
+}
+
+/// Detached reaper: polls the child without holding the lock while sleeping,
+/// so a naturally finished child is reaped without any external polling.
+fn spawn_reaper(child: Arc<Mutex<Option<Child>>>) {
+    thread::spawn(move || loop {
+        let still_running = {
+            let mut slot = lock_slot(&child);
+            try_reap(&mut *slot)
+        };
+        if !matches!(still_running, Some(true)) {
+            return;
+        }
+        thread::sleep(Duration::from_millis(75));
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn spawn_say(
+    text: &str,
+    voice: Option<&str>,
+    rate_wpm: Option<u32>,
+) -> io::Result<Box<dyn SpeechHandle>> {
+    let mut cmd = Command::new("/usr/bin/say");
+    cmd.args(say_args(voice, rate_wpm));
+    let handle = spawn_process_handle(&mut cmd, text)?;
+    Ok(Box::new(handle))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn spawn_say(
+    _text: &str,
+    _voice: Option<&str>,
+    _rate_wpm: Option<u32>,
+) -> io::Result<Box<dyn SpeechHandle>> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "speech is not supported on this platform",
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,9 +432,18 @@ mod tests {
 
     #[test]
     fn sanitize_speech_text_basics() {
-        assert_eq!(sanitize_speech_text("  hello   world  ").as_deref(), Some("hello world"));
-        assert_eq!(sanitize_speech_text("line1\nline2\tx").as_deref(), Some("line1 line2 x"));
-        assert_eq!(sanitize_speech_text("a\u{0}b\u{7}c").as_deref(), Some("abc"));
+        assert_eq!(
+            sanitize_speech_text("  hello   world  ").as_deref(),
+            Some("hello world")
+        );
+        assert_eq!(
+            sanitize_speech_text("line1\nline2\tx").as_deref(),
+            Some("line1 line2 x")
+        );
+        assert_eq!(
+            sanitize_speech_text("a\u{0}b\u{7}c").as_deref(),
+            Some("abc")
+        );
         assert_eq!(sanitize_speech_text(""), None);
         assert_eq!(sanitize_speech_text("   \n\t "), None);
         assert_eq!(sanitize_speech_text("\u{0}\u{1}\u{2}"), None);
@@ -252,7 +464,10 @@ mod tests {
         let out = sanitize_speech_text(&long).unwrap();
         assert_eq!(out.chars().count(), MAX_SPEECH_CHARS);
         let multibyte = "\u{e9}".repeat(3000);
-        assert_eq!(sanitize_speech_text(&multibyte).unwrap().chars().count(), 2000);
+        assert_eq!(
+            sanitize_speech_text(&multibyte).unwrap().chars().count(),
+            2000
+        );
         let exact = "a".repeat(2000);
         assert_eq!(sanitize_speech_text(&exact).unwrap(), exact);
     }
@@ -261,9 +476,27 @@ mod tests {
     fn sanitize_voice_is_a_strict_allowlist() {
         assert_eq!(sanitize_voice("Samantha").as_deref(), Some("Samantha"));
         assert_eq!(sanitize_voice("  Daniel  ").as_deref(), Some("Daniel"));
-        assert_eq!(sanitize_voice("Eddy (English (US))").as_deref(), Some("Eddy (English (US))"));
-        assert_eq!(sanitize_voice("en_US.voice-1").as_deref(), Some("en_US.voice-1"));
-        for bad in ["", "   ", "-v evil", "a;b", "a|b", "a`b", "a$b", "../x", "a\nb", "a\u{0}b", "voz\u{e9}"] {
+        assert_eq!(
+            sanitize_voice("Eddy (English (US))").as_deref(),
+            Some("Eddy (English (US))")
+        );
+        assert_eq!(
+            sanitize_voice("en_US.voice-1").as_deref(),
+            Some("en_US.voice-1")
+        );
+        for bad in [
+            "",
+            "   ",
+            "-v evil",
+            "a;b",
+            "a|b",
+            "a`b",
+            "a$b",
+            "../x",
+            "a\nb",
+            "a\u{0}b",
+            "voz\u{e9}",
+        ] {
             assert_eq!(sanitize_voice(bad), None, "{bad:?}");
         }
         assert!(sanitize_voice(&"a".repeat(64)).is_some());
@@ -291,17 +524,35 @@ mod tests {
         assert_eq!(say_args(None, Some(10)), vec!["-r", "80", "-f", "-"]);
         assert_eq!(say_args(None, Some(99_999)), vec!["-r", "400", "-f", "-"]);
         assert_eq!(say_args(Some("bad;voice"), None), vec!["-f", "-"]);
-        assert_eq!(say_args(Some("-v evil"), Some(150)), vec!["-r", "150", "-f", "-"]);
+        assert_eq!(
+            say_args(Some("-v evil"), Some(150)),
+            vec!["-r", "150", "-f", "-"]
+        );
     }
 
     #[test]
     fn events_map_to_fixed_phrases_and_agent_reply_text() {
-        assert_eq!(phrase_for_event("agent-bridge-reply", "It is sunny."), Some("It is sunny.".into()));
+        assert_eq!(
+            phrase_for_event("agent-bridge-reply", "It is sunny."),
+            Some("It is sunny.".into())
+        );
         assert_eq!(phrase_for_event("agent-bridge-reply", "   "), None);
-        assert_eq!(phrase_for_event("agent-bridge-error", "stack trace with /secret/path"), Some(ERROR_PHRASE.into()));
-        assert_eq!(phrase_for_event("voice-command-executed", "Opened https://secret.example/x"), Some(DONE_PHRASE.into()));
-        assert_eq!(phrase_for_event("voice-command-error", "token abc failed"), Some(ERROR_PHRASE.into()));
-        assert_eq!(phrase_for_event("memory-remembered", "my password is hunter2"), None);
+        assert_eq!(
+            phrase_for_event("agent-bridge-error", "stack trace with /secret/path"),
+            Some(ERROR_PHRASE.into())
+        );
+        assert_eq!(
+            phrase_for_event("voice-command-executed", "Opened https://secret.example/x"),
+            Some(DONE_PHRASE.into())
+        );
+        assert_eq!(
+            phrase_for_event("voice-command-error", "token abc failed"),
+            Some(ERROR_PHRASE.into())
+        );
+        assert_eq!(
+            phrase_for_event("memory-remembered", "my password is hunter2"),
+            None
+        );
         assert_eq!(phrase_for_event("theme-changed", ""), None);
         assert!(!DONE_PHRASE.contains('[') && !ERROR_PHRASE.contains('['));
     }
@@ -310,8 +561,16 @@ mod tests {
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Ev {
-        Spawn { id: usize, text: String, voice: Option<String>, rate: Option<u32> },
-        Kill { id: usize, ok: bool },
+        Spawn {
+            id: usize,
+            text: String,
+            voice: Option<String>,
+            rate: Option<u32>,
+        },
+        Kill {
+            id: usize,
+            ok: bool,
+        },
     }
 
     struct Shared {
@@ -339,7 +598,10 @@ mod tests {
             self.events.lock().unwrap().clone()
         }
         fn spawn_count(&self) -> usize {
-            self.events().iter().filter(|e| matches!(e, Ev::Spawn { .. })).count()
+            self.events()
+                .iter()
+                .filter(|e| matches!(e, Ev::Spawn { .. }))
+                .count()
         }
     }
 
@@ -350,12 +612,19 @@ mod tests {
         alive: bool,
     }
     impl SpeechBackend for FakeBackend {
-        fn spawn(&self, text: &str, voice: Option<&str>, rate: Option<u32>) -> io::Result<Box<dyn SpeechHandle>> {
+        fn spawn(
+            &self,
+            text: &str,
+            voice: Option<&str>,
+            rate: Option<u32>,
+        ) -> io::Result<Box<dyn SpeechHandle>> {
             if self.0.spawn_fails.load(Ordering::SeqCst) {
                 return Err(io::Error::new(io::ErrorKind::Other, "spawn failed"));
             }
             let alive_now = self.0.alive.load(Ordering::SeqCst);
-            self.0.alive_at_spawn_max.fetch_max(alive_now, Ordering::SeqCst);
+            self.0
+                .alive_at_spawn_max
+                .fetch_max(alive_now, Ordering::SeqCst);
             let id = self.0.next_id.fetch_add(1, Ordering::SeqCst);
             self.0.alive.fetch_add(1, Ordering::SeqCst);
             self.0.events.lock().unwrap().push(Ev::Spawn {
@@ -364,7 +633,11 @@ mod tests {
                 voice: voice.map(str::to_string),
                 rate,
             });
-            Ok(Box::new(FakeHandle { id, shared: self.0.clone(), alive: true }))
+            Ok(Box::new(FakeHandle {
+                id,
+                shared: self.0.clone(),
+                alive: true,
+            }))
         }
     }
     impl SpeechHandle for FakeHandle {
@@ -373,7 +646,11 @@ mod tests {
                 return true;
             }
             let ok = self.shared.kill_succeeds.load(Ordering::SeqCst);
-            self.shared.events.lock().unwrap().push(Ev::Kill { id: self.id, ok });
+            self.shared
+                .events
+                .lock()
+                .unwrap()
+                .push(Ev::Kill { id: self.id, ok });
             if ok {
                 self.alive = false;
                 self.shared.alive.fetch_sub(1, Ordering::SeqCst);
@@ -391,16 +668,25 @@ mod tests {
 
     fn manager() -> (TtsManager, Arc<Shared>) {
         let shared = Shared::new();
-        (TtsManager::new(Box::new(FakeBackend(shared.clone()))), shared)
+        (
+            TtsManager::new(Box::new(FakeBackend(shared.clone()))),
+            shared,
+        )
     }
 
     #[test]
     fn speak_spawns_once_with_sanitized_arguments() {
         let (tts, shared) = manager();
-        tts.speak("  hello\nthere ", Some("Samantha"), Some(9999)).unwrap();
+        tts.speak("  hello\nthere ", Some("Samantha"), Some(9999))
+            .unwrap();
         assert_eq!(
             shared.events(),
-            vec![Ev::Spawn { id: 1, text: "hello there".into(), voice: Some("Samantha".into()), rate: Some(400) }]
+            vec![Ev::Spawn {
+                id: 1,
+                text: "hello there".into(),
+                voice: Some("Samantha".into()),
+                rate: Some(400)
+            }]
         );
         assert!(tts.is_speaking());
     }
@@ -432,7 +718,11 @@ mod tests {
             })
             .collect();
         assert_eq!(kinds, vec!["spawn1", "kill1:true", "spawn2"]);
-        assert_eq!(shared.alive_at_spawn_max.load(Ordering::SeqCst), 0, "never two voices at once");
+        assert_eq!(
+            shared.alive_at_spawn_max.load(Ordering::SeqCst),
+            0,
+            "never two voices at once"
+        );
     }
 
     #[test]
@@ -440,7 +730,11 @@ mod tests {
         let (tts, shared) = manager();
         tts.speak("first", None, None).unwrap();
         for empty in ["", "   ", "\u{0}\n", "[[ ]]"] {
-            assert_eq!(tts.speak(empty, None, None), Err(TtsError::Empty), "{empty:?}");
+            assert_eq!(
+                tts.speak(empty, None, None),
+                Err(TtsError::Empty),
+                "{empty:?}"
+            );
         }
         assert_eq!(shared.spawn_count(), 1);
         assert!(tts.is_speaking(), "current speech untouched");
@@ -454,7 +748,14 @@ mod tests {
         assert!(tts.stop());
         assert!(!tts.is_speaking());
         assert!(tts.stop());
-        assert_eq!(shared.events().iter().filter(|e| matches!(e, Ev::Kill { .. })).count(), 1);
+        assert_eq!(
+            shared
+                .events()
+                .iter()
+                .filter(|e| matches!(e, Ev::Kill { .. }))
+                .count(),
+            1
+        );
     }
 
     #[test]
@@ -466,7 +767,14 @@ mod tests {
         assert!(!tts.is_speaking());
         // A later speak does not need to (and does not) kill the finished one.
         tts.speak("again", None, None).unwrap();
-        assert_eq!(shared.events().iter().filter(|e| matches!(e, Ev::Kill { .. })).count(), 0);
+        assert_eq!(
+            shared
+                .events()
+                .iter()
+                .filter(|e| matches!(e, Ev::Kill { .. }))
+                .count(),
+            0
+        );
     }
 
     #[test]
@@ -474,8 +782,14 @@ mod tests {
         let (tts, shared) = manager();
         tts.speak("first", None, None).unwrap();
         shared.spawn_fails.store(true, Ordering::SeqCst);
-        assert!(matches!(tts.speak("second", None, None), Err(TtsError::Backend(_))));
-        assert!(!tts.is_speaking(), "previous speech was cancelled and nothing replaced it");
+        assert!(matches!(
+            tts.speak("second", None, None),
+            Err(TtsError::Backend(_))
+        ));
+        assert!(
+            !tts.is_speaking(),
+            "previous speech was cancelled and nothing replaced it"
+        );
     }
 
     #[test]
@@ -485,10 +799,14 @@ mod tests {
         shared.kill_succeeds.store(false, Ordering::SeqCst);
         assert_eq!(tts.speak("second", None, None), Err(TtsError::CancelFailed));
         assert_eq!(shared.spawn_count(), 1, "nothing new spawned");
-        assert!(tts.is_speaking(), "the unkillable handle is retained, not forgotten");
+        assert!(
+            tts.is_speaking(),
+            "the unkillable handle is retained, not forgotten"
+        );
         assert!(!tts.stop(), "stop reports it could not confirm");
         shared.kill_succeeds.store(true, Ordering::SeqCst);
-        tts.speak("third", None, None).expect("works once kills succeed again");
+        tts.speak("third", None, None)
+            .expect("works once kills succeed again");
         assert_eq!(shared.spawn_count(), 2);
     }
 
@@ -497,11 +815,18 @@ mod tests {
         let (tts, shared) = manager();
         tts.speak("long reply", None, None).unwrap();
         tts.note_recording_started();
-        assert!(!tts.is_speaking(), "speech is already stopped when note_recording_started returns");
-        assert_eq!(tts.speak("late reply", None, None), Err(TtsError::Recording));
+        assert!(
+            !tts.is_speaking(),
+            "speech is already stopped when note_recording_started returns"
+        );
+        assert_eq!(
+            tts.speak("late reply", None, None),
+            Err(TtsError::Recording)
+        );
         assert_eq!(shared.spawn_count(), 1);
         tts.note_recording_stopped();
-        tts.speak("after", None, None).expect("speech resumes after recording");
+        tts.speak("after", None, None)
+            .expect("speech resumes after recording");
         assert_eq!(shared.spawn_count(), 2);
     }
 
@@ -558,7 +883,11 @@ mod tests {
                 "a child was alive right after recording start"
             );
             thread::sleep(Duration::from_millis(2));
-            assert_eq!(shared.alive.load(Ordering::SeqCst), 0, "a child spawned during recording");
+            assert_eq!(
+                shared.alive.load(Ordering::SeqCst),
+                0,
+                "a child spawned during recording"
+            );
             tts.note_recording_stopped();
             thread::sleep(Duration::from_millis(2));
         }
@@ -595,7 +924,10 @@ mod tests {
     #[test]
     fn null_backend_reports_a_backend_error() {
         let tts = TtsManager::new(Box::new(NullBackend));
-        assert!(matches!(tts.speak("hi", None, None), Err(TtsError::Backend(_)) | Err(TtsError::Unsupported)));
+        assert!(matches!(
+            tts.speak("hi", None, None),
+            Err(TtsError::Backend(_)) | Err(TtsError::Unsupported)
+        ));
         assert!(!tts.is_speaking());
     }
 
@@ -659,7 +991,11 @@ mod tests {
             assert!(handle.is_running());
             let started = Instant::now();
             assert!(handle.kill(), "kill must be confirmed");
-            assert!(started.elapsed() < Duration::from_millis(600), "bounded: {:?}", started.elapsed());
+            assert!(
+                started.elapsed() < Duration::from_millis(600),
+                "bounded: {:?}",
+                started.elapsed()
+            );
             assert!(!handle.is_running());
             assert!(wait_until(Duration::from_secs(2), || !process_exists(pid)));
         }

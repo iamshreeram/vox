@@ -7,7 +7,7 @@
     "model": "Model",
     "quit": "Quit",
     "cancel": "Cancel",
-    "secureInputWarning": "\u26a0 Shortcuts blocked by Secure Input",
+    "secureInputWarning": "⚠ Shortcuts blocked by Secure Input",
     "listeningMode": "Listening Mode",
     "listeningModeHotkeyOnly": "Hotkey Only",
     "listeningModeWakeWord": "Wake Word",
@@ -302,13 +302,13 @@
       "wakeWord": {
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
-        "detectedToast": "Wake word detected \u2014 listening...",
+        "detectedToast": "Wake word detected — listening...",
         "disabledByAmbientMode": "Turn off Ambient Mode to enable Wake Word.",
         "downloadFailedTitle": "Wake word model couldn't be downloaded"
       },
       "voiceCommands": {
         "label": "Voice Commands",
-        "description": "Lets phrases like \"open Safari\" or \"open Downloads\" open the real app/folder instead of being pasted as text. Only recognized, deterministic commands run \u2014 anything else falls back to normal dictation."
+        "description": "Lets phrases like \"open Safari\" or \"open Downloads\" open the real app/folder instead of being pasted as text. Only recognized, deterministic commands run — anything else falls back to normal dictation."
       },
       "agentBridge": {
         "label": "Agent Bridge",
@@ -316,6 +316,22 @@
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
         "suggestionFailedTitle": "Agent suggestion failed"
+      },
+      "tts": {
+        "groupTitle": "Spoken replies",
+        "label": "Spoken Replies",
+        "description": "Speaks agent replies and short confirmation or failure phrases aloud. Spoken output is audible to anyone nearby. Speech is paused while you are recording and never plays into your microphone on purpose.",
+        "voiceLabel": "Voice",
+        "voiceDescription": "Name of a system voice (for example \"Samantha\"). Leave empty to use the system default.",
+        "voicePlaceholder": "System default",
+        "rateLabel": "Speaking rate",
+        "rateDescription": "How fast spoken replies are read, in words per minute.",
+        "rateValue": "{{value}} wpm",
+        "testLabel": "Test voice",
+        "testDescription": "Speak a short sample with the current voice and rate.",
+        "testButton": "Test voice",
+        "stopButton": "Stop",
+        "testPhrase": "This is how spoken replies will sound."
       },
       "lazyStreamClose": {
         "label": "Keep Mic Open Between Transcriptions",

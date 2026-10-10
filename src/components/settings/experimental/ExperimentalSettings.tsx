@@ -11,6 +11,7 @@ import { MemoryFactsList } from "../MemoryFactsList";
 import { VoiceCommandsToggle } from "../VoiceCommandsToggle";
 import { AgentBridgeToggle } from "../AgentBridgeToggle";
 import { AgentBridgeBinaryPathField } from "../AgentBridgeBinaryPathField";
+import { TtsSettings } from "../TtsSettings";
 import { ListeningModeSection } from "../ListeningModeSection";
 import { useSettings } from "../../../hooks/useSettings";
 
@@ -42,6 +43,9 @@ export const ExperimentalSettings: React.FC = () => {
           />
         )}
         <ListeningModeSection />
+      </SettingsGroup>
+      <SettingsGroup title={t("settings.advanced.tts.groupTitle")}>
+        <TtsSettings descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
     </div>
   );
