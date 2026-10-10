@@ -849,6 +849,7 @@ pub fn run(cli_args: CliArgs) {
             commands::ambient::ambient_set_enabled,
             commands::ambient::ambient_clear,
             commands::wakeword::wakeword_set_enabled,
+            commands::voice_shortcuts::set_voice_shortcuts,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![

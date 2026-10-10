@@ -16,10 +16,11 @@
 
 #![allow(dead_code)]
 
-use crate::managers::command_router::CommandRouter;
+use crate::managers::command_router::{CommandAction, CommandRouter, RouteDecision};
 use crate::managers::voice_common::{normalize_phrase, HookEvent, VoiceHookOutcome};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 pub const MAX_SHORTCUTS: usize = 50;
@@ -44,30 +45,156 @@ pub enum VoiceShortcutAction {
 }
 
 /// Validates one shortcut. `Err` carries a user-presentable reason.
-pub fn validate_shortcut(_shortcut: &VoiceShortcut) -> Result<(), String> {
-    let _ = normalize_phrase;
-    todo!("F4: implement")
+pub fn validate_shortcut(shortcut: &VoiceShortcut) -> Result<(), String> {
+    let phrase_chars = normalize_phrase(&shortcut.phrase).chars().count();
+    if !(MIN_PHRASE_CHARS..=MAX_PHRASE_CHARS).contains(&phrase_chars) {
+        return Err(format!(
+            "Shortcut phrase must be {MIN_PHRASE_CHARS} to {MAX_PHRASE_CHARS} characters"
+        ));
+    }
+    match &shortcut.action {
+        VoiceShortcutAction::OpenUrl { url } => validate_url(url),
+        VoiceShortcutAction::OpenPath { path } => validate_path(path),
+        VoiceShortcutAction::OpenApp { name } => validate_app(name),
+    }
+}
+
+fn validate_url(target: &str) -> Result<(), String> {
+    if target.chars().count() > MAX_URL_CHARS {
+        return Err(format!("URL must be at most {MAX_URL_CHARS} characters"));
+    }
+    if target.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err("URL must not contain spaces or control characters".into());
+    }
+    // Require the scheme and a non-empty authority up front: the URL parser
+    // would otherwise read "https:///path" as having the host "path".
+    let after_scheme = ["https://", "http://"]
+        .iter()
+        .find_map(|prefix| {
+            target
+                .get(..prefix.len())
+                .filter(|head| head.eq_ignore_ascii_case(prefix))
+                .map(|_| &target[prefix.len()..])
+        })
+        .ok_or_else(|| "URL must start with http:// or https://".to_string())?;
+    if after_scheme.is_empty() || after_scheme.starts_with(['/', '\\', '?', '#']) {
+        return Err("URL must include a host".into());
+    }
+    let parsed = url::Url::parse(target).map_err(|_| "URL is not valid".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("URL must use http or https".into());
+    }
+    match parsed.host_str() {
+        Some(host) if !host.is_empty() => Ok(()),
+        _ => Err("URL must include a host".into()),
+    }
+}
+
+fn validate_path(path: &str) -> Result<(), String> {
+    if path.is_empty() {
+        return Err("Folder path must not be empty".into());
+    }
+    if path.chars().count() > MAX_PATH_CHARS {
+        return Err(format!(
+            "Folder path must be at most {MAX_PATH_CHARS} characters"
+        ));
+    }
+    if path.contains('\0') {
+        return Err("Folder path must not contain NUL characters".into());
+    }
+    if path.starts_with('~') {
+        if path != "~" && !path.starts_with("~/") {
+            return Err("Only ~ or ~/ home-relative folder paths are supported".into());
+        }
+    } else if !(path.starts_with('/') || Path::new(path).is_absolute()) {
+        return Err("Folder path must be absolute or start with ~/".into());
+    }
+    if has_parent_component(path) {
+        return Err("Folder path must not contain ..".into());
+    }
+    Ok(())
+}
+
+fn validate_app(name: &str) -> Result<(), String> {
+    let chars = name.trim().chars().count();
+    if (1..=MAX_APP_NAME_CHARS).contains(&chars) {
+        Ok(())
+    } else {
+        Err(format!(
+            "App name must be 1 to {MAX_APP_NAME_CHARS} characters"
+        ))
+    }
+}
+
+fn has_parent_component(path: &str) -> bool {
+    path.split(['/', '\\']).any(|part| part == "..")
 }
 
 /// Validates a whole list: at most [`MAX_SHORTCUTS`], every entry valid, and
 /// no two entries sharing the same normalized phrase.
-pub fn validate_all(_shortcuts: &[VoiceShortcut]) -> Result<(), String> {
-    todo!("F4: implement")
+pub fn validate_all(shortcuts: &[VoiceShortcut]) -> Result<(), String> {
+    if shortcuts.len() > MAX_SHORTCUTS {
+        return Err(format!(
+            "At most {MAX_SHORTCUTS} voice shortcuts are allowed"
+        ));
+    }
+    let mut seen = HashSet::new();
+    for shortcut in shortcuts {
+        validate_shortcut(shortcut)?;
+        let key = normalize_phrase(&shortcut.phrase);
+        if !seen.insert(key.clone()) {
+            return Err(format!("More than one shortcut uses the phrase \"{key}\""));
+        }
+    }
+    Ok(())
 }
 
 /// Whole-utterance match on the normalized phrase. Invalid entries are
 /// skipped; among valid entries the first wins for a given phrase.
 pub fn match_shortcut<'a>(
-    _shortcuts: &'a [VoiceShortcut],
-    _transcript: &str,
+    shortcuts: &'a [VoiceShortcut],
+    transcript: &str,
 ) -> Option<&'a VoiceShortcut> {
-    todo!("F4: implement")
+    let spoken = normalize_phrase(transcript);
+    shortcuts.iter().find(|shortcut| {
+        normalize_phrase(&shortcut.phrase) == spoken && validate_shortcut(shortcut).is_ok()
+    })
 }
 
 /// Expands a leading `~` / `~/` using `home`. Rejects `~user/...`, any `..`
 /// component, a missing home when `~` is used, NUL, and non-absolute results.
-pub fn expand_path(_path: &str, _home: Option<&Path>) -> Result<PathBuf, String> {
-    todo!("F4: implement")
+pub fn expand_path(path: &str, home: Option<&Path>) -> Result<PathBuf, String> {
+    if path.is_empty() {
+        return Err("Folder path must not be empty".into());
+    }
+    if path.contains('\0') {
+        return Err("Folder path must not contain NUL characters".into());
+    }
+    if has_parent_component(path) {
+        return Err("Folder path must not contain ..".into());
+    }
+    if path == "~" || path.starts_with("~/") {
+        let home = home.ok_or_else(|| "Home folder is unknown; cannot expand ~".to_string())?;
+        if !home.is_absolute() {
+            return Err("Home folder is not an absolute path".into());
+        }
+        // `path[1..]` drops the `~`; trimming leading slashes stops a
+        // `~//x` input from being treated as an absolute path by `join`.
+        let rest = path[1..].trim_start_matches('/');
+        return Ok(if rest.is_empty() {
+            home.to_path_buf()
+        } else {
+            home.join(rest)
+        });
+    }
+    if path.starts_with('~') {
+        return Err("Only ~ or ~/ home-relative folder paths are supported".into());
+    }
+    if path.starts_with('/') || Path::new(path).is_absolute() {
+        Ok(PathBuf::from(path))
+    } else {
+        Err("Folder path must be absolute or start with ~/".into())
+    }
 }
 
 pub trait ShortcutOpener {
@@ -79,12 +206,45 @@ pub trait ShortcutOpener {
 /// Executes a shortcut. Ok carries a short description that never contains
 /// the full URL/path (it is shown in the UI/logs and may be spoken).
 pub fn execute_shortcut(
-    _shortcut: &VoiceShortcut,
-    _router: &CommandRouter,
-    _home: Option<&Path>,
-    _opener: &dyn ShortcutOpener,
+    shortcut: &VoiceShortcut,
+    router: &CommandRouter,
+    home: Option<&Path>,
+    opener: &dyn ShortcutOpener,
 ) -> Result<String, String> {
-    todo!("F4: implement")
+    // Settings may have been hand-edited since they were saved.
+    validate_shortcut(shortcut)?;
+    match &shortcut.action {
+        VoiceShortcutAction::OpenUrl { url } => opener.open_url(url)?,
+        VoiceShortcutAction::OpenPath { path } => {
+            let resolved = expand_path(path, home)?;
+            let meta =
+                std::fs::metadata(&resolved).map_err(|_| "Folder does not exist".to_string())?;
+            if !meta.is_dir() {
+                return Err("Path is not a folder".into());
+            }
+            opener.open_path(&resolved)?;
+        }
+        VoiceShortcutAction::OpenApp { name } => {
+            let spoken = format!("open {}", name.trim());
+            match router.route(&spoken) {
+                RouteDecision::Matched {
+                    action: CommandAction::OpenApp { resolved_path, .. },
+                } => opener.open_app(&resolved_path)?,
+                _ => return Err(format!("No installed app matches \"{}\"", name.trim())),
+            }
+        }
+    }
+    Ok(describe(&shortcut.phrase))
+}
+
+/// Short, URL- and path-free description of a successful run.
+fn describe(phrase: &str) -> String {
+    let label = normalize_phrase(phrase);
+    if label.contains(['/', '\\']) {
+        "Ran voice shortcut".into()
+    } else {
+        format!("Ran shortcut \"{label}\"")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,15 +257,25 @@ pub struct ShortcutHookResult {
 /// commands are off); the caller continues. `Some` => the utterance is
 /// consumed (`HANDLED`) whether execution succeeded or failed.
 pub fn run_shortcut_hook(
-    _voice_commands_enabled: bool,
-    _shortcuts: &[VoiceShortcut],
-    _transcript: &str,
-    _router: &CommandRouter,
-    _home: Option<&Path>,
-    _opener: &dyn ShortcutOpener,
+    voice_commands_enabled: bool,
+    shortcuts: &[VoiceShortcut],
+    transcript: &str,
+    router: &CommandRouter,
+    home: Option<&Path>,
+    opener: &dyn ShortcutOpener,
 ) -> Option<ShortcutHookResult> {
-    let _ = (VoiceHookOutcome::HANDLED, HookEvent::Executed(String::new()));
-    todo!("F4: implement")
+    if !voice_commands_enabled {
+        return None;
+    }
+    let shortcut = match_shortcut(shortcuts, transcript)?;
+    let event = match execute_shortcut(shortcut, router, home, opener) {
+        Ok(description) => HookEvent::Executed(description),
+        Err(message) => HookEvent::Error(message),
+    };
+    Some(ShortcutHookResult {
+        outcome: VoiceHookOutcome::HANDLED,
+        event,
+    })
 }
 
 #[cfg(test)]
@@ -147,7 +317,11 @@ mod tests {
         assert!(validate_shortcut(&url_sc(&"a".repeat(60), "https://example.com")).is_ok());
         assert!(validate_shortcut(&url_sc(&"a".repeat(61), "https://example.com")).is_err());
         // Trailing punctuation does not count toward the length.
-        assert!(validate_shortcut(&url_sc(&format!("{}!!!", "a".repeat(60)), "https://example.com")).is_ok());
+        assert!(validate_shortcut(&url_sc(
+            &format!("{}!!!", "a".repeat(60)),
+            "https://example.com"
+        ))
+        .is_ok());
     }
 
     // ---------- validate_shortcut: url ----------
@@ -223,28 +397,45 @@ mod tests {
     #[test]
     fn validate_all_accepts_empty_and_valid_lists() {
         assert!(validate_all(&[]).is_ok());
-        assert!(validate_all(&[url_sc("work", "https://a.com"), url_sc("home", "https://b.com")]).is_ok());
+        assert!(validate_all(&[
+            url_sc("work", "https://a.com"),
+            url_sc("home", "https://b.com")
+        ])
+        .is_ok());
     }
 
     #[test]
     fn validate_all_rejects_the_whole_list_on_any_invalid_entry() {
-        let list = [url_sc("work", "https://a.com"), url_sc("bad", "javascript:1")];
+        let list = [
+            url_sc("work", "https://a.com"),
+            url_sc("bad", "javascript:1"),
+        ];
         assert!(validate_all(&list).is_err());
     }
 
     #[test]
     fn validate_all_rejects_duplicate_normalized_phrases() {
-        let list = [url_sc("Open Work", "https://a.com"), url_sc("open work!", "https://b.com")];
+        let list = [
+            url_sc("Open Work", "https://a.com"),
+            url_sc("open work!", "https://b.com"),
+        ];
         assert!(validate_all(&list).is_err());
-        let list = [url_sc("please open work", "https://a.com"), url_sc("open work", "https://b.com")];
+        let list = [
+            url_sc("please open work", "https://a.com"),
+            url_sc("open work", "https://b.com"),
+        ];
         assert!(validate_all(&list).is_err());
     }
 
     #[test]
     fn validate_all_caps_the_list_at_fifty() {
-        let fifty: Vec<_> = (0..50).map(|i| url_sc(&format!("shortcut {i}"), "https://a.com")).collect();
+        let fifty: Vec<_> = (0..50)
+            .map(|i| url_sc(&format!("shortcut {i}"), "https://a.com"))
+            .collect();
         assert!(validate_all(&fifty).is_ok());
-        let fifty_one: Vec<_> = (0..51).map(|i| url_sc(&format!("shortcut {i}"), "https://a.com")).collect();
+        let fifty_one: Vec<_> = (0..51)
+            .map(|i| url_sc(&format!("shortcut {i}"), "https://a.com"))
+            .collect();
         assert!(validate_all(&fifty_one).is_err());
     }
 
@@ -253,27 +444,55 @@ mod tests {
     #[test]
     fn match_is_whole_utterance_and_normalized() {
         let list = [url_sc("Open Work", "https://work.example")];
-        for hit in ["open work", "Open Work.", "  OPEN   WORK  ", "please open work!"] {
+        for hit in [
+            "open work",
+            "Open Work.",
+            "  OPEN   WORK  ",
+            "please open work!",
+        ] {
             assert!(match_shortcut(&list, hit).is_some(), "{hit}");
         }
-        for miss in ["open work now", "please open work now", "open", "work", "open works", ""] {
+        for miss in [
+            "open work now",
+            "please open work now",
+            "open",
+            "work",
+            "open works",
+            "",
+        ] {
             assert!(match_shortcut(&list, miss).is_none(), "{miss}");
         }
     }
 
     #[test]
     fn first_valid_entry_wins_for_a_phrase() {
-        let list = [url_sc("go", "https://first.example"), url_sc("go", "https://second.example")];
+        let list = [
+            url_sc("go", "https://first.example"),
+            url_sc("go", "https://second.example"),
+        ];
         // (A list like this fails validate_all, but a corrupted file can hold it.)
         let hit = match_shortcut(&list, "go").expect("match");
-        assert_eq!(hit.action, VoiceShortcutAction::OpenUrl { url: "https://first.example".into() });
+        assert_eq!(
+            hit.action,
+            VoiceShortcutAction::OpenUrl {
+                url: "https://first.example".into()
+            }
+        );
     }
 
     #[test]
     fn invalid_entries_are_skipped_never_returned() {
-        let list = [url_sc("go", "javascript:alert(1)"), url_sc("go", "https://ok.example")];
+        let list = [
+            url_sc("go", "javascript:alert(1)"),
+            url_sc("go", "https://ok.example"),
+        ];
         let hit = match_shortcut(&list, "go").expect("the valid duplicate is used");
-        assert_eq!(hit.action, VoiceShortcutAction::OpenUrl { url: "https://ok.example".into() });
+        assert_eq!(
+            hit.action,
+            VoiceShortcutAction::OpenUrl {
+                url: "https://ok.example".into()
+            }
+        );
         let only_bad = [url_sc("go", "javascript:alert(1)")];
         assert!(match_shortcut(&only_bad, "go").is_none());
     }
@@ -291,9 +510,18 @@ mod tests {
     #[test]
     fn expand_path_handles_home_forms() {
         let home = Path::new("/Users/me");
-        assert_eq!(expand_path("~/Documents", Some(home)).unwrap(), PathBuf::from("/Users/me/Documents"));
-        assert_eq!(expand_path("~", Some(home)).unwrap(), PathBuf::from("/Users/me"));
-        assert_eq!(expand_path("/tmp", Some(home)).unwrap(), PathBuf::from("/tmp"));
+        assert_eq!(
+            expand_path("~/Documents", Some(home)).unwrap(),
+            PathBuf::from("/Users/me/Documents")
+        );
+        assert_eq!(
+            expand_path("~", Some(home)).unwrap(),
+            PathBuf::from("/Users/me")
+        );
+        assert_eq!(
+            expand_path("/tmp", Some(home)).unwrap(),
+            PathBuf::from("/tmp")
+        );
         assert_eq!(expand_path("/tmp", None).unwrap(), PathBuf::from("/tmp"));
     }
 
@@ -371,7 +599,10 @@ mod tests {
         let opener = FakeOpener::default();
         let sc = url_sc("work", "https://secret.example/private?token=abc");
         let description = execute_shortcut(&sc, &router, None, &opener).expect("ok");
-        assert_eq!(opener.calls(), vec!["url:https://secret.example/private?token=abc"]);
+        assert_eq!(
+            opener.calls(),
+            vec!["url:https://secret.example/private?token=abc"]
+        );
         assert!(!description.contains("secret.example"), "{description}");
         assert!(!description.contains("token"), "{description}");
     }
@@ -380,7 +611,9 @@ mod tests {
     fn invalid_url_is_rejected_at_execution_even_if_it_slipped_into_settings() {
         let (_home, router) = router(&[]);
         let opener = FakeOpener::default();
-        assert!(execute_shortcut(&url_sc("x1", "javascript:alert(1)"), &router, None, &opener).is_err());
+        assert!(
+            execute_shortcut(&url_sc("x1", "javascript:alert(1)"), &router, None, &opener).is_err()
+        );
         assert!(opener.calls().is_empty());
     }
 
@@ -398,7 +631,10 @@ mod tests {
 
         let opener = FakeOpener::default();
         let file_sc = path_sc("stuff", file.to_str().unwrap());
-        assert!(execute_shortcut(&file_sc, &router, None, &opener).is_err(), "files are refused");
+        assert!(
+            execute_shortcut(&file_sc, &router, None, &opener).is_err(),
+            "files are refused"
+        );
         assert!(opener.calls().is_empty());
 
         let missing = path_sc("stuff", tmp.path().join("nope").to_str().unwrap());
@@ -444,8 +680,13 @@ mod tests {
     #[test]
     fn opener_failure_is_an_error() {
         let (_home, router) = router(&[]);
-        let opener = FakeOpener { fail: true, ..Default::default() };
-        assert!(execute_shortcut(&url_sc("work", "https://a.com"), &router, None, &opener).is_err());
+        let opener = FakeOpener {
+            fail: true,
+            ..Default::default()
+        };
+        assert!(
+            execute_shortcut(&url_sc("work", "https://a.com"), &router, None, &opener).is_err()
+        );
     }
 
     // ---------- hook: matched failures never paste or escalate ----------
@@ -455,9 +696,18 @@ mod tests {
         let (_home, router) = router(&[]);
         let opener = FakeOpener::default();
         let list = [url_sc("work", "https://a.com")];
-        assert_eq!(run_shortcut_hook(false, &list, "work", &router, None, &opener), None);
-        assert_eq!(run_shortcut_hook(true, &list, "something else", &router, None, &opener), None);
-        assert_eq!(run_shortcut_hook(true, &[], "work", &router, None, &opener), None);
+        assert_eq!(
+            run_shortcut_hook(false, &list, "work", &router, None, &opener),
+            None
+        );
+        assert_eq!(
+            run_shortcut_hook(true, &list, "something else", &router, None, &opener),
+            None
+        );
+        assert_eq!(
+            run_shortcut_hook(true, &[], "work", &router, None, &opener),
+            None
+        );
         assert!(opener.calls().is_empty());
     }
 
@@ -466,7 +716,8 @@ mod tests {
         let (_home, router) = router(&[]);
         let opener = FakeOpener::default();
         let list = [url_sc("work", "https://a.com")];
-        let result = run_shortcut_hook(true, &list, "Work.", &router, None, &opener).expect("matched");
+        let result =
+            run_shortcut_hook(true, &list, "Work.", &router, None, &opener).expect("matched");
         assert_eq!(result.outcome, VoiceHookOutcome::HANDLED);
         assert!(matches!(result.event, HookEvent::Executed(_)));
     }
@@ -474,10 +725,17 @@ mod tests {
     #[test]
     fn hook_failure_is_still_handled_never_pastes_or_escalates() {
         let (_home, router) = router(&[]);
-        let opener = FakeOpener { fail: true, ..Default::default() };
-        let list = [url_sc("work", "https://a.com"), app_sc("thing", "downloads")];
+        let opener = FakeOpener {
+            fail: true,
+            ..Default::default()
+        };
+        let list = [
+            url_sc("work", "https://a.com"),
+            app_sc("thing", "downloads"),
+        ];
         for utterance in ["work", "thing"] {
-            let result = run_shortcut_hook(true, &list, utterance, &router, None, &opener).expect("matched");
+            let result =
+                run_shortcut_hook(true, &list, utterance, &router, None, &opener).expect("matched");
             assert!(result.outcome.skip_paste, "{utterance}");
             assert!(!result.outcome.escalate_to_agent, "{utterance}");
             assert!(matches!(result.event, HookEvent::Error(_)), "{utterance}");

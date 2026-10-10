@@ -982,6 +982,14 @@ async ambientClear() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async setVoiceShortcuts(shortcuts: VoiceShortcut[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_voice_shortcuts", { shortcuts }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async wakewordSetEnabled(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("wakeword_set_enabled", { enabled }) };
@@ -1066,7 +1074,7 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
  */
-selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; memory_enabled?: boolean; ambient_mode_enabled?: boolean; ambient_wake_name?: string; ambient_window_ms?: number; voice_commands_enabled?: boolean; agent_bridge_enabled?: boolean; agent_bridge_binary_path?: string | null; agent_bridge_prompt_flag?: string; agent_bridge_timeout_secs?: number; wake_word_enabled?: boolean; wake_word_model_name?: string; wake_word_confidence_threshold?: number; wake_word_cooldown_ms?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
+selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; memory_enabled?: boolean; ambient_mode_enabled?: boolean; ambient_wake_name?: string; ambient_window_ms?: number; voice_commands_enabled?: boolean; voice_shortcuts?: VoiceShortcut[]; agent_bridge_enabled?: boolean; agent_bridge_binary_path?: string | null; agent_bridge_prompt_flag?: string; agent_bridge_timeout_secs?: number; wake_word_enabled?: boolean; wake_word_model_name?: string; wake_word_confidence_threshold?: number; wake_word_cooldown_ms?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
 /**
  * Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
  * after the target app actually reads the transcript, instead of after a
@@ -1272,6 +1280,8 @@ export type Theme = "system" | "light" | "dark" | "aurora"
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
+export type VoiceShortcut = { phrase: string; action: VoiceShortcutAction }
+export type VoiceShortcutAction = { type: "open_url"; url: string } | { type: "open_path"; path: string } | { type: "open_app"; name: string }
 /**
  * A wake-word detection emitted by an engine. Must be Serialize/Type so it
  * can be sent as a Tauri event payload (see `commands/wakeword.rs`'s
