@@ -5,6 +5,7 @@ pub mod audio;
 pub mod command_router;
 pub mod gguf_meta;
 pub mod history;
+pub mod media_control;
 pub mod memory;
 pub mod model;
 pub mod model_capabilities;

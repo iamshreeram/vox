@@ -757,6 +757,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_memory_enabled_setting,
             shortcut::change_agent_bridge_enabled_setting,
             shortcut::change_agent_bridge_binary_path_setting,
+            shortcut::change_voice_media_controls_setting,
             shortcut::change_post_process_base_url_setting,
             shortcut::change_post_process_api_key_setting,
             shortcut::change_post_process_model_setting,

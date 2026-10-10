@@ -5,11 +5,14 @@ use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::command_router::{CommandAction, CommandRouter, RouteDecision};
 use crate::managers::history::HistoryManager;
+use crate::managers::media_control::{
+    decide_media_command, run_media_hook, MediaHookResult, OsascriptRunner,
+};
 use crate::managers::memory::MemoryManager;
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
-use crate::managers::voice_common::HookEvent;
+use crate::managers::voice_common::{HookEvent, VoiceHookOutcome};
 use crate::managers::voice_shortcuts::{run_shortcut_hook, ShortcutOpener};
 use crate::settings::{get_settings, AppSettings, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID};
 use crate::shortcut;
@@ -117,6 +120,13 @@ fn decide_voice_command(
         RouteDecision::Matched { action } => Some(action),
         RouteDecision::NoMatch => None,
     }
+}
+
+/// Whether a media-hook result means the utterance was consumed: a matched
+/// media command (success or failure) is never pasted and never escalated to
+/// the router or agent bridge. `None` means it was not a media command.
+fn media_hook_consumes_utterance(result: Option<&MediaHookResult>) -> bool {
+    result.is_some_and(|result| result.outcome.skip_paste)
 }
 
 fn should_escalate_to_agent_bridge(
@@ -836,9 +846,12 @@ impl ShortcutAction for TranscribeAction {
                             let hook_settings = get_settings(&ah);
                             let mut skip_paste_for_command = false;
 
-                            // Custom voice shortcuts run first. A matched shortcut
-                            // consumes the utterance (even if it failed), so the
-                            // built-in router and agent escalation are skipped.
+                            // Voice hooks run in a fixed order and each one that
+                            // matches CONSUMES the utterance (even if it fails):
+                            // custom shortcut -> media control -> built-in router
+                            // -> agent bridge (only on a genuine router NoMatch).
+                            let mut hook_consumed = false;
+
                             let shortcut_hook = {
                                 let router = ah.state::<Arc<CommandRouter>>();
                                 let home = std::env::var_os("HOME").map(PathBuf::from);
@@ -864,7 +877,63 @@ impl ShortcutAction for TranscribeAction {
                                     }
                                 }
                                 skip_paste_for_command = hook.outcome.skip_paste;
-                            } else if hook_settings.voice_commands_enabled {
+                                hook_consumed = true;
+                            }
+
+                            // Media controls. The cheap pure gate avoids spawning a
+                            // thread for ordinary dictation; the osascript call
+                            // itself (up to 5s) runs on a blocking thread so the
+                            // async runtime stays free.
+                            if !hook_consumed {
+                                let media_result = if decide_media_command(
+                                    hook_settings.voice_media_controls_enabled,
+                                    hook_settings.voice_commands_enabled,
+                                    &transcription,
+                                )
+                                .is_some()
+                                {
+                                    let media_text = transcription.clone();
+                                    match tauri::async_runtime::spawn_blocking(move || {
+                                        run_media_hook(true, true, &media_text, &OsascriptRunner)
+                                    })
+                                    .await
+                                    {
+                                        Ok(result) => result,
+                                        Err(join_err) => {
+                                            // The utterance matched a media command, so it
+                                            // is still consumed even if the run crashed.
+                                            error!("Media control task failed: {join_err}");
+                                            Some(MediaHookResult {
+                                                outcome: VoiceHookOutcome::HANDLED,
+                                                event: HookEvent::Error(
+                                                    "Media control failed unexpectedly.".to_string(),
+                                                ),
+                                            })
+                                        }
+                                    }
+                                } else {
+                                    None
+                                };
+                                if let Some(result) = media_result.as_ref() {
+                                    match &result.event {
+                                        HookEvent::Executed(description) => {
+                                            info!("Media control executed: {description}");
+                                            let _ = ah
+                                                .emit("voice-command-executed", description.clone());
+                                        }
+                                        HookEvent::Error(message) => {
+                                            error!("Failed to run media control: {message}");
+                                            let _ = ah.emit("voice-command-error", message.clone());
+                                        }
+                                    }
+                                }
+                                if media_hook_consumes_utterance(media_result.as_ref()) {
+                                    skip_paste_for_command = true;
+                                    hook_consumed = true;
+                                }
+                            }
+
+                            if !hook_consumed && hook_settings.voice_commands_enabled {
                                 let router = ah.state::<Arc<CommandRouter>>();
                                 match router.route(&transcription) {
                                     RouteDecision::Matched { action } => {
@@ -1287,5 +1356,30 @@ mod tests {
             decide_memory_fact(true, "remember that I prefer tea"),
             Some("I prefer tea".to_string())
         );
+    }
+
+    #[test]
+    fn media_hook_consumes_utterance_when_executed() {
+        use crate::managers::voice_common::{HookEvent, VoiceHookOutcome};
+        let result = crate::managers::media_control::MediaHookResult {
+            outcome: VoiceHookOutcome::HANDLED,
+            event: HookEvent::Executed("Paused music".to_string()),
+        };
+        assert!(super::media_hook_consumes_utterance(Some(&result)));
+    }
+
+    #[test]
+    fn media_hook_consumes_utterance_when_execution_fails() {
+        use crate::managers::voice_common::{HookEvent, VoiceHookOutcome};
+        let result = crate::managers::media_control::MediaHookResult {
+            outcome: VoiceHookOutcome::HANDLED,
+            event: HookEvent::Error("Automation permission denied".to_string()),
+        };
+        assert!(super::media_hook_consumes_utterance(Some(&result)));
+    }
+
+    #[test]
+    fn media_hook_does_not_consume_when_not_a_media_command() {
+        assert!(!super::media_hook_consumes_utterance(None));
     }
 }

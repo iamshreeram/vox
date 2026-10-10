@@ -459,6 +459,10 @@ pub struct AppSettings {
     pub ambient_window_ms: u64,
     #[serde(default)]
     pub voice_commands_enabled: bool,
+    /// Whole-utterance media phrases ("pause", "next track", "volume 40").
+    /// Opt-in and only effective while `voice_commands_enabled` is on.
+    #[serde(default)]
+    pub voice_media_controls_enabled: bool,
     #[serde(default)]
     pub agent_bridge_enabled: bool,
     #[serde(default)]
@@ -1037,6 +1041,7 @@ pub fn get_default_settings() -> AppSettings {
         ambient_wake_name: default_ambient_wake_name(),
         ambient_window_ms: default_ambient_window_ms(),
         voice_commands_enabled: false,
+        voice_media_controls_enabled: false,
         agent_bridge_enabled: false,
         agent_bridge_binary_path: None,
         agent_bridge_prompt_flag: default_agent_bridge_prompt_flag(),
@@ -1698,6 +1703,15 @@ mod tests {
         let salvaged = salvage_settings(&settings);
         assert!(salvaged.voice_shortcuts.is_empty());
         assert_eq!(salvaged.history_limit, 77);
+    fn voice_media_controls_default_off_and_default_when_missing_from_legacy_settings() {
+        assert!(!get_default_settings().voice_media_controls_enabled);
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("voice_media_controls_enabled");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.voice_media_controls_enabled);
     }
 
     #[test]

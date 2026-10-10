@@ -187,6 +187,8 @@ const settingUpdaters: {
   },
   model_unload_timeout: (value) =>
     commands.setModelUnloadTimeout(value as ModelUnloadTimeout),
+  voice_media_controls_enabled: (value) =>
+    commands.changeVoiceMediaControlsSetting(value as boolean),
   lazy_stream_close: (value) =>
     commands.changeLazyStreamCloseSetting(value as boolean),
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),
