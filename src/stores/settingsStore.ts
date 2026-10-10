@@ -5,6 +5,7 @@ import type {
   AppSettings as Settings,
   AudioDevice,
   ChineseScript,
+  ModelUnloadTimeout,
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
   ShortcutActivation,
@@ -170,6 +171,22 @@ const settingUpdaters: {
   theme: (value) => commands.changeThemeSetting(value as string),
   experimental_enabled: (value) =>
     commands.changeExperimentalEnabledSetting(value as boolean),
+  voice_commands_enabled: (value) =>
+    commands.changeVoiceCommandsSetting(value as boolean),
+  memory_enabled: (value) =>
+    commands.changeMemoryEnabledSetting(value as boolean),
+  agent_bridge_enabled: (value) =>
+    commands.changeAgentBridgeEnabledSetting(value as boolean),
+  agent_bridge_binary_path: async (value) => {
+    const result = await commands.changeAgentBridgeBinaryPathSetting(
+      (value as string | null) ?? null,
+    );
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
+  model_unload_timeout: (value) =>
+    commands.setModelUnloadTimeout(value as ModelUnloadTimeout),
   lazy_stream_close: (value) =>
     commands.changeLazyStreamCloseSetting(value as boolean),
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),

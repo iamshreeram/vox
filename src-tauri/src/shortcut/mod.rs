@@ -1092,6 +1092,106 @@ pub fn change_post_process_enabled_setting(app: AppHandle, enabled: bool) -> Res
     Ok(())
 }
 
+/// Maximum accepted length of the agent binary path setting.
+pub(crate) const MAX_AGENT_BINARY_PATH_CHARS: usize = 1024;
+
+/// Normalizes the agent-bridge binary path before it is persisted: trims
+/// surrounding whitespace, maps blank to `None`, and rejects control
+/// characters (including NUL and newlines) and anything longer than
+/// [`MAX_AGENT_BINARY_PATH_CHARS`] characters. Existence is NOT checked here:
+/// the user may configure the path before installing the agent, and the bridge
+/// already reports a missing binary when it is used.
+pub(crate) fn normalize_agent_bridge_binary_path(
+    input: Option<String>,
+) -> Result<Option<String>, String> {
+    let Some(raw) = input else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if trimmed.chars().any(|c| c.is_control()) {
+        return Err("Agent binary path must not contain control characters".to_string());
+    }
+    if trimmed.chars().count() > MAX_AGENT_BINARY_PATH_CHARS {
+        return Err(format!(
+            "Agent binary path must be at most {MAX_AGENT_BINARY_PATH_CHARS} characters"
+        ));
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_voice_commands_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.voice_commands_enabled = enabled;
+    settings::write_settings(&app, settings);
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "voice_commands_enabled",
+            "value": enabled
+        }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_memory_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.memory_enabled = enabled;
+    settings::write_settings(&app, settings);
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "memory_enabled",
+            "value": enabled
+        }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_bridge_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.agent_bridge_enabled = enabled;
+    settings::write_settings(&app, settings);
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "agent_bridge_enabled",
+            "value": enabled
+        }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_bridge_binary_path_setting(
+    app: AppHandle,
+    path: Option<String>,
+) -> Result<(), String> {
+    // Validate before touching settings so a rejected path leaves the stored
+    // value unchanged.
+    let normalized = normalize_agent_bridge_binary_path(path)?;
+    let mut settings = settings::get_settings(&app);
+    settings.agent_bridge_binary_path = normalized.clone();
+    settings::write_settings(&app, settings);
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "agent_bridge_binary_path",
+            "value": normalized
+        }),
+    );
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_experimental_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
@@ -1493,7 +1593,9 @@ pub async fn get_available_accelerators() -> crate::managers::transcription::Ava
 
 #[cfg(test)]
 mod tests {
-    use super::parse_theme_setting;
+    use super::{
+        normalize_agent_bridge_binary_path, parse_theme_setting, MAX_AGENT_BINARY_PATH_CHARS,
+    };
     use crate::settings::Theme;
     use handy_keys::Hotkey;
     use tauri_plugin_global_shortcut::Shortcut;
@@ -1535,5 +1637,54 @@ mod tests {
             assert!(key.parse::<Shortcut>().is_ok(), "Tauri rejected {key}");
             assert!(key.parse::<Hotkey>().is_ok(), "HandyKeys rejected {key}");
         }
+    }
+
+    #[test]
+    fn agent_binary_path_none_and_blank_normalize_to_none() {
+        assert_eq!(normalize_agent_bridge_binary_path(None), Ok(None));
+        assert_eq!(normalize_agent_bridge_binary_path(Some(String::new())), Ok(None));
+        assert_eq!(normalize_agent_bridge_binary_path(Some("   \t ".into())), Ok(None));
+    }
+
+    #[test]
+    fn agent_binary_path_is_trimmed_and_otherwise_preserved() {
+        assert_eq!(
+            normalize_agent_bridge_binary_path(Some("  /usr/local/bin/agent  ".into())),
+            Ok(Some("/usr/local/bin/agent".into()))
+        );
+        assert_eq!(
+            normalize_agent_bridge_binary_path(Some("/opt/My Agent/bin/agent".into())),
+            Ok(Some("/opt/My Agent/bin/agent".into())),
+            "interior spaces are legal in paths"
+        );
+        assert_eq!(
+            normalize_agent_bridge_binary_path(Some("/opt/caf\u{e9}/agent".into())),
+            Ok(Some("/opt/caf\u{e9}/agent".into()))
+        );
+        assert_eq!(
+            normalize_agent_bridge_binary_path(Some("my-agent".into())),
+            Ok(Some("my-agent".into())),
+            "a bare command name resolved via PATH is allowed"
+        );
+    }
+
+    #[test]
+    fn agent_binary_path_rejects_control_characters() {
+        for bad in ["/bin/a\nb", "/bin/a\rb", "/bin/a\u{0}b", "/bin/a\tb", "/bin/a\u{7}b", "/bin/a\u{1b}[0m"] {
+            assert!(
+                normalize_agent_bridge_binary_path(Some(bad.to_string())).is_err(),
+                "{bad:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_binary_path_length_limit_is_in_characters() {
+        let ok = format!("/{}", "a".repeat(MAX_AGENT_BINARY_PATH_CHARS - 1));
+        assert!(normalize_agent_bridge_binary_path(Some(ok)).is_ok());
+        let too_long = format!("/{}", "a".repeat(MAX_AGENT_BINARY_PATH_CHARS));
+        assert!(normalize_agent_bridge_binary_path(Some(too_long)).is_err());
+        let multibyte = "\u{e9}".repeat(MAX_AGENT_BINARY_PATH_CHARS);
+        assert!(normalize_agent_bridge_binary_path(Some(multibyte)).is_ok(), "counted in chars, not bytes");
     }
 }
