@@ -12,17 +12,21 @@
 //! non-goals). The router itself and its matching logic are fully
 //! cross-platform and exercised everywhere via [`AppDiscovery`] fakes.
 //!
-//! Deliberately NOT ported from Python (documented gaps, not oversights):
-//! - Python aliases each app under both its `.app` folder name AND its
-//!   `CFBundleDisplayName`/`CFBundleName` from Info.plist (e.g. Visual
-//!   Studio Code's bundle name is just "Code"). This phase only indexes
-//!   by folder name -- full Info.plist parsing needs a new dependency
-//!   (a plist-parsing crate) and isn't required by any test case here.
-//!   Follow-up.
-//! - Python's static YAML phrase allowlist (tier 1, for curated STT
-//!   mishearing corrections like "eater" -> iTerm, and non-app actions
-//!   like `open_url`) isn't implemented yet -- this phase's non-goals
-//!   explicitly defer command *execution* wiring to a later phase.
+//! App matching: each installed `.app` is indexed by its folder (file
+//! stem) plus its Info.plist names (`CFBundleDisplayName`, then
+//! `CFBundleName`, so Visual Studio Code also answers to "Code"). Matches
+//! are ranked: exact stem, exact alias, stem prefix, alias prefix. Ties
+//! inside a rank go to the smallest path, so results never depend on
+//! directory scan order. Only when none of those match does a small curated
+//! table map common speech-to-text mishearings (e.g. "eater" -> iTerm,
+//! "vs code" -> Visual Studio Code) onto a target, which must itself resolve
+//! against the installed apps -- the router never invents an app that is not
+//! installed. The index (including plist aliases) is cached with the app list
+//! for the TTL, so plists are read once per refresh, not per route call.
+//!
+//! Not ported from Python: the non-app entries of Python's YAML phrase
+//! allowlist (e.g. `open_url`). URLs are handled by the bare-domain matcher
+//! in this module instead, and command *execution* wiring is a later phase.
 //!
 //! Wired into the post-transcription pipeline in `actions.rs`, gated by
 //! the `voice_commands_enabled` setting (default off): when enabled, a
@@ -75,11 +79,88 @@ pub enum CommandAction {
 /// is macOS-only; tests inject a fixed fake list instead of touching disk.
 pub trait AppDiscovery: Send + Sync {
     fn scan_installed_apps(&self) -> Vec<PathBuf>;
+
+    /// Extra names an installed app answers to (its bundle display name,
+    /// bundle name, ...). Called ONCE per app per cache refresh -- the parsed
+    /// index is cached with the app list for the TTL. Default: none.
+    fn aliases_for(&self, _app: &std::path::Path) -> Vec<String> {
+        Vec::new()
+    }
 }
+
+/// Aliases shorter than this (after normalization) are ignored.
+pub(crate) const MIN_ALIAS_CHARS: usize = 2;
+/// Aliases longer than this are ignored.
+pub(crate) const MAX_ALIAS_CHARS: usize = 100;
+/// `Info.plist` files larger than this are not read.
+pub(crate) const MAX_PLIST_BYTES: u64 = 1024 * 1024;
+
+/// `CFBundleDisplayName` then `CFBundleName` from an `Info.plist` (XML or
+/// binary). Non-string values, empty/whitespace values are skipped, values are
+/// trimmed, and duplicates (case-insensitive) keep the first. Malformed or
+/// non-dictionary input yields an empty list; never panics.
+pub(crate) fn bundle_names_from_plist_bytes(bytes: &[u8]) -> Vec<String> {
+    let Ok(value) = plist::Value::from_reader(std::io::Cursor::new(bytes)) else {
+        return Vec::new();
+    };
+    let Some(dict) = value.as_dictionary() else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = Vec::new();
+    for key in ["CFBundleDisplayName", "CFBundleName"] {
+        let Some(raw) = dict.get(key).and_then(plist::Value::as_string) else {
+            continue;
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let folded = trimmed.to_lowercase();
+        if names
+            .iter()
+            .any(|existing| existing.to_lowercase() == folded)
+        {
+            continue;
+        }
+        names.push(trimmed.to_string());
+    }
+    names
+}
+
+/// Reads `<app>/Contents/Info.plist` (only if it is at most
+/// [`MAX_PLIST_BYTES`]) and returns [`bundle_names_from_plist_bytes`]; a
+/// missing/unreadable/oversized file yields an empty list.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))] // only macOS discovery calls this in production
+pub(crate) fn read_bundle_names(app_path: &std::path::Path) -> Vec<String> {
+    let plist_path = app_path.join("Contents").join("Info.plist");
+    let Ok(metadata) = std::fs::metadata(&plist_path) else {
+        return Vec::new();
+    };
+    if metadata.len() > MAX_PLIST_BYTES {
+        return Vec::new();
+    }
+    match std::fs::read(&plist_path) {
+        Ok(bytes) => bundle_names_from_plist_bytes(&bytes),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Curated speech-to-text mishearings, consulted only when no installed
+/// app matches the subject directly. Each left-hand phrase maps to one
+/// target name, which is matched against the installed index (never
+/// invented). Lookups are single-step: a target never re-enters this table.
+const STT_ALIASES: &[(&str, &str)] = &[
+    ("vs code", "visual studio code"),
+    ("vscode", "visual studio code"),
+    ("eater", "iterm"),
+    ("i term", "iterm"),
+    ("chrome", "google chrome"),
+];
 
 /// Always reports no installed apps -- the production discovery for
 /// non-macOS targets, where app-open commands are out of scope for this
 /// phase and must deterministically return `NoMatch`.
+#[cfg_attr(target_os = "macos", allow(dead_code))] // macOS builds use MacAppDiscovery
 pub struct NullAppDiscovery;
 
 impl AppDiscovery for NullAppDiscovery {
@@ -120,6 +201,10 @@ impl AppDiscovery for MacAppDiscovery {
         }
         apps
     }
+
+    fn aliases_for(&self, app: &std::path::Path) -> Vec<String> {
+        read_bundle_names(app)
+    }
 }
 
 /// Supplies the user's home directory. Injectable so tests can point at a
@@ -145,8 +230,19 @@ impl HomeDirProvider for RealHomeDir {
     }
 }
 
+/// One installed app in the cached index. `stem_lower` and `aliases_lower`
+/// are pre-normalized (lowercased, length-filtered, deduplicated) at refresh
+/// time so `route()` never touches the filesystem.
+#[derive(Debug, Clone)]
+struct AppEntry {
+    path: PathBuf,
+    stem_lower: String,
+    aliases_lower: Vec<String>,
+}
+
+/// Cached app index plus the time it was built (drives the TTL).
 struct AppCache {
-    apps: Vec<PathBuf>,
+    entries: Vec<AppEntry>,
     fetched_at: Instant,
 }
 
@@ -249,26 +345,56 @@ impl CommandRouter {
 
     /// NFR2: cached app list, refreshed only after `cache_ttl` elapses --
     /// never rescans the filesystem on every route() call.
-    fn apps(&self) -> Vec<PathBuf> {
-        let mut cache = self.cache.lock().expect("app cache mutex poisoned");
+    fn entries(&self) -> Vec<AppEntry> {
+        let mut cache = self
+            .cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let needs_refresh = match cache.as_ref() {
             Some(c) => c.fetched_at.elapsed() >= self.cache_ttl,
             None => true,
         };
         if needs_refresh {
-            let apps = self.discovery.scan_installed_apps();
+            let entries = self.build_index();
             *cache = Some(AppCache {
-                apps: apps.clone(),
+                entries: entries.clone(),
                 fetched_at: Instant::now(),
             });
-            apps
+            entries
         } else {
             cache
                 .as_ref()
-                .expect("just checked Some above")
-                .apps
-                .clone()
+                .map(|c| c.entries.clone())
+                .unwrap_or_default()
         }
+    }
+
+    /// Scans installed apps once and reads each app's aliases once, producing
+    /// the normalized index that `route()` searches.
+    fn build_index(&self) -> Vec<AppEntry> {
+        self.discovery
+            .scan_installed_apps()
+            .into_iter()
+            .filter_map(|path| {
+                let stem_lower = path.file_stem()?.to_str()?.to_lowercase();
+                let mut aliases_lower: Vec<String> = Vec::new();
+                for raw in self.discovery.aliases_for(&path) {
+                    let alias = raw.trim().to_lowercase();
+                    let len = alias.chars().count();
+                    if !(MIN_ALIAS_CHARS..=MAX_ALIAS_CHARS).contains(&len) {
+                        continue;
+                    }
+                    if !aliases_lower.contains(&alias) {
+                        aliases_lower.push(alias);
+                    }
+                }
+                Some(AppEntry {
+                    path,
+                    stem_lower,
+                    aliases_lower,
+                })
+            })
+            .collect()
     }
 
     fn strip_open_verb(lower: &str) -> Option<&str> {
@@ -280,29 +406,44 @@ impl CommandRouter {
         None
     }
 
-    /// FR2/FR3: exact-normalized match first, then prefix tolerance for
-    /// trailing version suffixes ("iterm" -> an app folder named
-    /// "iterm2") -- ports vox's `AppRegistry.find` exactly rather than a
-    /// fuzzy similarity score, so there's no magic threshold to tune and
-    /// no risk of ever picking a merely-similar-but-wrong app.
+    /// FR2/FR3 + F6: ranked matching over the cached index. Ranks, first
+    /// non-empty wins: (1) stem == subject, (2) an alias == subject, (3) stem
+    /// starts with subject, (4) an alias starts with subject. Within a rank the
+    /// smallest path wins, so the result never depends on scan order. Only if
+    /// all four miss does the curated STT table apply: the heard phrase is
+    /// re-matched with ranks 1-4 against its target, once, and the target must
+    /// resolve against installed apps (an app is never invented).
     fn match_app(&self, subject: &str) -> Option<CommandAction> {
-        let apps = self.apps();
-        let stems: Vec<(String, &PathBuf)> = apps
-            .iter()
-            .filter_map(|p| {
-                p.file_stem()
-                    .and_then(|s| s.to_str())
-                    .map(|s| (s.to_lowercase(), p))
-            })
-            .collect();
-
-        if let Some((name, path)) = stems.iter().find(|(name, _)| name == subject) {
-            return Some(Self::open_app_action(name, path));
+        let entries = self.entries();
+        if let Some(action) = Self::rank_match(&entries, subject) {
+            return Some(action);
         }
-        stems
+        let target = STT_ALIASES
             .iter()
-            .find(|(name, _)| name.starts_with(subject))
-            .map(|(name, path)| Self::open_app_action(name, path))
+            .find(|(heard, _)| *heard == subject)
+            .map(|(_, target)| *target)?;
+        Self::rank_match(&entries, target)
+    }
+
+    /// Applies ranks 1-4 of [`CommandRouter::match_app`] for one key.
+    fn rank_match(entries: &[AppEntry], key: &str) -> Option<CommandAction> {
+        type Rank = fn(&AppEntry, &str) -> bool;
+        let ranks: [Rank; 4] = [
+            |e, k| e.stem_lower == k,
+            |e, k| e.aliases_lower.iter().any(|a| a == k),
+            |e, k| e.stem_lower.starts_with(k),
+            |e, k| e.aliases_lower.iter().any(|a| a.starts_with(k)),
+        ];
+        for matches in ranks {
+            let best = entries
+                .iter()
+                .filter(|e| matches(e, key))
+                .min_by(|a, b| a.path.cmp(&b.path));
+            if let Some(entry) = best {
+                return Some(Self::open_app_action(&entry.stem_lower, &entry.path));
+            }
+        }
+        None
     }
 
     fn open_app_action(lower_name: &str, path: &PathBuf) -> CommandAction {
@@ -510,15 +651,19 @@ mod tests {
     }
 
     #[test]
-    fn t4_abbreviation_without_alias_table_is_no_match() {
-        // Ported from vox's own behavior, not just this phase's
-        // assumption: AppRegistry.find has no entry for "vs code" (it only
-        // indexes the real folder/bundle names), and "visual studio code"
-        // does not start with the query "vs code" either, so this is
-        // NoMatch via the same exact+prefix mechanism as everything else
-        // -- no special-cased alias table needed to get this right.
+    fn t4_vs_code_abbreviation_resolves_through_the_curated_table() {
+        // REPLACES the old t4 ("launch VS Code" == NoMatch): the curated STT
+        // table now maps the common abbreviations onto the real installed app.
         let router = router_with_apps(&["Visual Studio Code.app"]);
-        assert_eq!(router.route("launch VS Code"), RouteDecision::NoMatch);
+        assert_opens_app(router.route("launch VS Code"), "Visual Studio Code");
+        assert_opens_app(router.route("open vscode"), "Visual Studio Code");
+    }
+
+    #[test]
+    fn t4b_an_abbreviation_in_no_table_is_still_no_match() {
+        let router = router_with_apps(&["Visual Studio Code.app"]);
+        assert_eq!(router.route("launch vsc"), RouteDecision::NoMatch);
+        assert_eq!(router.route("launch xyz code"), RouteDecision::NoMatch);
     }
 
     #[test]
@@ -837,5 +982,373 @@ mod tests {
             "route() took too long on url-shaped pathological input: {:?}",
             start.elapsed()
         );
+    }
+
+    // =====================================================================
+    // F6: bundle-name aliases, ranking, curated STT table, plist parsing
+    // =====================================================================
+
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    struct AliasedDiscovery {
+        apps: Vec<PathBuf>,
+        aliases: HashMap<PathBuf, Vec<String>>,
+        scans: Arc<AtomicUsize>,
+        alias_calls: Arc<AtomicUsize>,
+    }
+
+    impl AppDiscovery for AliasedDiscovery {
+        fn scan_installed_apps(&self) -> Vec<PathBuf> {
+            self.scans.fetch_add(1, Ordering::SeqCst);
+            self.apps.clone()
+        }
+        fn aliases_for(&self, app: &std::path::Path) -> Vec<String> {
+            self.alias_calls.fetch_add(1, Ordering::SeqCst);
+            self.aliases.get(app).cloned().unwrap_or_default()
+        }
+    }
+
+    struct Aliased {
+        router: CommandRouter,
+        scans: Arc<AtomicUsize>,
+        alias_calls: Arc<AtomicUsize>,
+    }
+
+    fn aliased(entries: &[(&str, &[&str])]) -> Aliased {
+        let scans = Arc::new(AtomicUsize::new(0));
+        let alias_calls = Arc::new(AtomicUsize::new(0));
+        let apps: Vec<PathBuf> = entries
+            .iter()
+            .map(|(path, _)| PathBuf::from(path))
+            .collect();
+        let aliases = entries
+            .iter()
+            .map(|(path, names)| {
+                (
+                    PathBuf::from(path),
+                    names.iter().map(|n| n.to_string()).collect(),
+                )
+            })
+            .collect();
+        let discovery = AliasedDiscovery {
+            apps,
+            aliases,
+            scans: scans.clone(),
+            alias_calls: alias_calls.clone(),
+        };
+        Aliased {
+            router: CommandRouter::with_home(Box::new(discovery), real_home()),
+            scans,
+            alias_calls,
+        }
+    }
+
+    fn opened_path(decision: RouteDecision) -> PathBuf {
+        match decision {
+            RouteDecision::Matched {
+                action: CommandAction::OpenApp { resolved_path, .. },
+            } => resolved_path,
+            other => panic!("expected Matched{{OpenApp}}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn alias_matches_the_bundle_display_name() {
+        let a = aliased(&[("/Applications/Visual Studio Code.app", &["Code"])]);
+        assert_opens_app(a.router.route("open code"), "Visual Studio Code");
+    }
+
+    #[test]
+    fn exact_stem_beats_an_alias_of_another_app() {
+        let a = aliased(&[
+            ("/Applications/Code.app", &[]),
+            ("/Applications/Visual Studio Code.app", &["Code"]),
+        ]);
+        assert_opens_app(a.router.route("open code"), "Code");
+    }
+
+    #[test]
+    fn exact_alias_beats_a_prefix_stem() {
+        let a = aliased(&[
+            ("/Applications/Codex.app", &[]),
+            ("/Applications/Visual Studio Code.app", &["Code"]),
+        ]);
+        assert_opens_app(a.router.route("open code"), "Visual Studio Code");
+    }
+
+    #[test]
+    fn prefix_stem_beats_prefix_alias() {
+        let a = aliased(&[
+            ("/Applications/Stickies.app", &["Notes Board"]),
+            ("/Applications/Notes Plus.app", &[]),
+        ]);
+        assert_opens_app(a.router.route("open notes"), "Notes Plus");
+    }
+
+    #[test]
+    fn prefix_alias_matches_when_nothing_ranks_higher() {
+        let a = aliased(&[("/Applications/Stickies.app", &["Notes Board"])]);
+        assert_opens_app(a.router.route("open notes"), "Stickies");
+    }
+
+    #[test]
+    fn alias_collisions_resolve_to_the_smallest_path_in_any_scan_order() {
+        let forward = aliased(&[("/a/Alpha.app", &["Editor"]), ("/b/Beta.app", &["Editor"])]);
+        let reverse = aliased(&[("/b/Beta.app", &["Editor"]), ("/a/Alpha.app", &["Editor"])]);
+        assert_eq!(
+            opened_path(forward.router.route("open editor")),
+            PathBuf::from("/a/Alpha.app")
+        );
+        assert_eq!(
+            opened_path(reverse.router.route("open editor")),
+            PathBuf::from("/a/Alpha.app")
+        );
+    }
+
+    #[test]
+    fn duplicate_stems_and_prefix_ties_resolve_to_the_smallest_path_in_any_scan_order() {
+        let dup_forward = aliased(&[("/a/Same.app", &[]), ("/b/Same.app", &[])]);
+        let dup_reverse = aliased(&[("/b/Same.app", &[]), ("/a/Same.app", &[])]);
+        assert_eq!(
+            opened_path(dup_forward.router.route("open same")),
+            PathBuf::from("/a/Same.app")
+        );
+        assert_eq!(
+            opened_path(dup_reverse.router.route("open same")),
+            PathBuf::from("/a/Same.app")
+        );
+
+        let tie_forward = aliased(&[
+            ("/Applications/Notes.app", &[]),
+            ("/Applications/Notebook.app", &[]),
+        ]);
+        let tie_reverse = aliased(&[
+            ("/Applications/Notebook.app", &[]),
+            ("/Applications/Notes.app", &[]),
+        ]);
+        assert_eq!(
+            opened_path(tie_forward.router.route("open note")),
+            PathBuf::from("/Applications/Notebook.app")
+        );
+        assert_eq!(
+            opened_path(tie_reverse.router.route("open note")),
+            PathBuf::from("/Applications/Notebook.app")
+        );
+    }
+
+    #[test]
+    fn too_short_empty_whitespace_and_oversized_aliases_are_ignored() {
+        let long = "x".repeat(101);
+        let a = aliased(&[("/Applications/Thing.app", &["X", "", "   ", long.as_str()])]);
+        assert_eq!(a.router.route("open x"), RouteDecision::NoMatch);
+        assert_eq!(
+            a.router.route(&format!("open {long}")),
+            RouteDecision::NoMatch
+        );
+        // The exact boundary lengths are accepted.
+        let two = aliased(&[("/Applications/Thing.app", &["ab"])]);
+        assert_opens_app(two.router.route("open ab"), "Thing");
+        let hundred = "y".repeat(100);
+        let max = aliased(&[("/Applications/Thing.app", &[hundred.as_str()])]);
+        assert_opens_app(max.router.route(&format!("open {hundred}")), "Thing");
+    }
+
+    #[test]
+    fn alias_matching_is_case_insensitive() {
+        let a = aliased(&[("/Applications/Visual Studio Code.app", &["Code"])]);
+        assert_opens_app(a.router.route("open CODE"), "Visual Studio Code");
+    }
+
+    // ---- curated STT-mishearing table ----
+
+    #[test]
+    fn curated_table_maps_common_mishearings_onto_installed_apps() {
+        let code = router_with_apps(&["Visual Studio Code.app"]);
+        assert_opens_app(code.route("open vs code"), "Visual Studio Code");
+        assert_opens_app(code.route("open vscode"), "Visual Studio Code");
+        let term = router_with_apps(&["iTerm.app"]);
+        assert_opens_app(term.route("open eater"), "iTerm");
+        let term2 = router_with_apps(&["iTerm2.app"]);
+        assert_opens_app(term2.route("open eater"), "iTerm2");
+        let chrome = router_with_apps(&["Google Chrome.app"]);
+        assert_opens_app(chrome.route("open chrome"), "Google Chrome");
+    }
+
+    #[test]
+    fn curated_table_never_invents_an_app_that_is_not_installed() {
+        let none = router_with_apps(&["Safari.app"]);
+        assert_eq!(none.route("open eater"), RouteDecision::NoMatch);
+        assert_eq!(none.route("open vs code"), RouteDecision::NoMatch);
+        assert_eq!(none.route("open chrome"), RouteDecision::NoMatch);
+    }
+
+    #[test]
+    fn direct_matches_always_beat_the_curated_table() {
+        // An app literally called Eater wins over mapping "eater" -> iTerm.
+        let both = router_with_apps(&["Eater.app", "iTerm.app"]);
+        assert_opens_app(both.route("open eater"), "Eater");
+        // "chrome" is a direct prefix of "Chrome Canary" -- direct beats curated.
+        let canary = router_with_apps(&["Chrome Canary.app", "Google Chrome.app"]);
+        assert_opens_app(canary.route("open chrome"), "Chrome Canary");
+    }
+
+    #[test]
+    fn curated_table_can_also_hit_an_alias() {
+        let a = aliased(&[("/Applications/Visual Studio Code.app", &["Code"])]);
+        assert_opens_app(a.router.route("open vs code"), "Visual Studio Code");
+    }
+
+    // ---- index caching ----
+
+    #[test]
+    fn aliases_are_read_once_per_cache_refresh_not_per_route() {
+        let a = aliased(&[
+            ("/Applications/One.app", &["Uno"]),
+            ("/Applications/Two.app", &["Dos"]),
+        ]);
+        for _ in 0..5 {
+            let _ = a.router.route("open uno");
+        }
+        assert_eq!(a.scans.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            a.alias_calls.load(Ordering::SeqCst),
+            2,
+            "once per app, not per route"
+        );
+    }
+
+    #[test]
+    fn a_ttl_refresh_rescans_and_rereads_aliases() {
+        let mut a = aliased(&[
+            ("/Applications/One.app", &["Uno"]),
+            ("/Applications/Two.app", &["Dos"]),
+        ]);
+        a.router.cache_ttl = Duration::ZERO;
+        for _ in 0..3 {
+            let _ = a.router.route("open uno");
+        }
+        assert_eq!(a.scans.load(Ordering::SeqCst), 3);
+        assert_eq!(a.alias_calls.load(Ordering::SeqCst), 6);
+    }
+
+    // ---- plist parsing ----
+
+    fn xml_plist(pairs: &[(&str, &str)]) -> Vec<u8> {
+        let mut body = String::from(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict>",
+        );
+        for (key, value) in pairs {
+            body.push_str(&format!("<key>{key}</key><string>{value}</string>"));
+        }
+        body.push_str("</dict></plist>");
+        body.into_bytes()
+    }
+
+    #[test]
+    fn plist_returns_display_name_then_bundle_name() {
+        let bytes = xml_plist(&[
+            ("CFBundleName", "Short"),
+            ("CFBundleDisplayName", "Pretty Name"),
+        ]);
+        assert_eq!(
+            bundle_names_from_plist_bytes(&bytes),
+            vec!["Pretty Name", "Short"]
+        );
+    }
+
+    #[test]
+    fn plist_dedups_case_insensitively_keeping_the_first() {
+        let bytes = xml_plist(&[("CFBundleDisplayName", "Code"), ("CFBundleName", "code")]);
+        assert_eq!(bundle_names_from_plist_bytes(&bytes), vec!["Code"]);
+    }
+
+    #[test]
+    fn plist_with_only_one_name_key() {
+        assert_eq!(
+            bundle_names_from_plist_bytes(&xml_plist(&[("CFBundleName", "Only")])),
+            vec!["Only"]
+        );
+        assert_eq!(
+            bundle_names_from_plist_bytes(&xml_plist(&[("CFBundleDisplayName", "OnlyDisplay")])),
+            vec!["OnlyDisplay"]
+        );
+    }
+
+    #[test]
+    fn plist_trims_and_drops_empty_names() {
+        let bytes = xml_plist(&[
+            ("CFBundleDisplayName", "  Padded  "),
+            ("CFBundleName", "   "),
+        ]);
+        assert_eq!(bundle_names_from_plist_bytes(&bytes), vec!["Padded"]);
+        assert!(bundle_names_from_plist_bytes(&xml_plist(&[("CFBundleName", "")])).is_empty());
+    }
+
+    #[test]
+    fn plist_ignores_non_string_values_and_unrelated_keys() {
+        let bytes = b"<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>CFBundleName</key><integer>5</integer><key>CFBundleDisplayName</key><array><string>x</string></array><key>Other</key><string>nope</string></dict></plist>";
+        assert!(bundle_names_from_plist_bytes(bytes).is_empty());
+    }
+
+    #[test]
+    fn plist_reads_binary_format() {
+        let mut dict = plist::Dictionary::new();
+        dict.insert(
+            "CFBundleDisplayName".into(),
+            plist::Value::String("Binary Name".into()),
+        );
+        let mut buffer = Vec::new();
+        plist::to_writer_binary(&mut buffer, &plist::Value::Dictionary(dict)).unwrap();
+        assert_eq!(bundle_names_from_plist_bytes(&buffer), vec!["Binary Name"]);
+    }
+
+    #[test]
+    fn malformed_empty_and_non_dictionary_plists_yield_nothing_without_panicking() {
+        assert!(bundle_names_from_plist_bytes(b"").is_empty());
+        assert!(bundle_names_from_plist_bytes(b"not a plist at all").is_empty());
+        assert!(bundle_names_from_plist_bytes(&[0xff, 0xfe, 0x00, 0x01]).is_empty());
+        assert!(bundle_names_from_plist_bytes(b"bplist00\x00\x01").is_empty());
+        assert!(bundle_names_from_plist_bytes(b"<?xml version=\"1.0\"?><plist version=\"1.0\"><array><string>a</string></array></plist>").is_empty());
+        assert!(bundle_names_from_plist_bytes(b"<plist><dict><key>CFBundleName</key>").is_empty());
+    }
+
+    #[test]
+    fn read_bundle_names_reads_the_app_info_plist() {
+        let dir = TempDir::new().unwrap();
+        let contents = dir.path().join("Thing.app/Contents");
+        std::fs::create_dir_all(&contents).unwrap();
+        std::fs::write(
+            contents.join("Info.plist"),
+            xml_plist(&[("CFBundleDisplayName", "Thing Pro")]),
+        )
+        .unwrap();
+        assert_eq!(
+            read_bundle_names(&dir.path().join("Thing.app")),
+            vec!["Thing Pro"]
+        );
+    }
+
+    #[test]
+    fn read_bundle_names_tolerates_missing_files() {
+        let dir = TempDir::new().unwrap();
+        assert!(read_bundle_names(&dir.path().join("Nope.app")).is_empty());
+        std::fs::create_dir_all(dir.path().join("Empty.app/Contents")).unwrap();
+        assert!(read_bundle_names(&dir.path().join("Empty.app")).is_empty());
+    }
+
+    #[test]
+    fn read_bundle_names_refuses_oversized_files() {
+        let dir = TempDir::new().unwrap();
+        let contents = dir.path().join("Huge.app/Contents");
+        std::fs::create_dir_all(&contents).unwrap();
+        let mut body = String::from(
+            "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>CFBundleName</key><string>Huge</string></dict></plist><!--",
+        );
+        body.push_str(&"a".repeat(MAX_PLIST_BYTES as usize));
+        body.push_str("-->");
+        std::fs::write(contents.join("Info.plist"), body).unwrap();
+        assert!(read_bundle_names(&dir.path().join("Huge.app")).is_empty());
     }
 }
