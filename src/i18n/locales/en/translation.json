@@ -234,6 +234,9 @@
       },
       "noModelsMatch": "No models match this filter."
     },
+    "appearance": {
+      "title": "Appearance"
+    },
     "sound": {
       "title": "Sound",
       "microphone": {
