@@ -746,11 +746,12 @@
   },
   "theme": {
     "title": "Application Theme",
-    "description": "Choose whether Vox follows your system theme or stays light or dark",
+    "description": "Choose whether Vox follows your system theme or stays light, dark, or Aurora",
     "options": {
       "system": "System",
       "light": "Light",
-      "dark": "Dark"
+      "dark": "Dark",
+      "aurora": "Aurora"
     }
   },
   "overlay": {
