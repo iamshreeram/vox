@@ -649,6 +649,41 @@ impl HistoryManager {
     }
 }
 
+/// Maximum rows a single search returns.
+pub(crate) const MAX_SEARCH_LIMIT: usize = 200;
+/// Rows returned when the caller gives no limit.
+pub(crate) const DEFAULT_SEARCH_LIMIT: usize = 50;
+
+/// Escapes `\`, `%` and `_` so user text is matched literally by a
+/// `LIKE ... ESCAPE '\'` clause.
+pub(crate) fn escape_like(_query: &str) -> String {
+    todo!("F5: implement")
+}
+
+/// `None` -> [`DEFAULT_SEARCH_LIMIT`]; otherwise clamped to `1..=MAX_SEARCH_LIMIT`.
+pub(crate) fn clamp_search_limit(_limit: Option<usize>) -> usize {
+    todo!("F5: implement")
+}
+
+impl HistoryManager {
+    /// Case-insensitive (ASCII only -- SQLite `LIKE`) literal substring search
+    /// over `transcription_text`, `post_processed_text` and `title`, newest
+    /// first (`ORDER BY id DESC`). The query is trimmed; a blank query returns
+    /// an empty list. Parameterized; user text is never interpolated into SQL.
+    /// A database failure is an `Err`, distinct from "no matches" (`Ok(vec![])`).
+    pub(crate) fn search_entries_with_conn(
+        _conn: &Connection,
+        _query: &str,
+        _limit: usize,
+    ) -> Result<Vec<HistoryEntry>> {
+        todo!("F5: implement")
+    }
+
+    pub fn search_entries(&self, _query: &str, _limit: Option<usize>) -> Result<Vec<HistoryEntry>> {
+        todo!("F5: implement")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -733,5 +768,142 @@ mod tests {
 
         assert_eq!(entry.timestamp, 100);
         assert_eq!(entry.transcription_text, "completed");
+    }
+
+    // ---------- F5: search ----------
+
+    fn insert_titled(conn: &Connection, title: &str, text: &str, post_processed: Option<&str>) -> i64 {
+        conn.execute(
+            "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested)
+             VALUES ('f.wav', 1, 0, ?1, ?2, ?3, NULL, 0)",
+            params![title, text, post_processed],
+        )
+        .unwrap();
+        conn.last_insert_rowid()
+    }
+
+    fn texts(entries: &[HistoryEntry]) -> Vec<String> {
+        entries.iter().map(|e| e.transcription_text.clone()).collect()
+    }
+
+    fn search(conn: &Connection, query: &str) -> Vec<HistoryEntry> {
+        HistoryManager::search_entries_with_conn(conn, query, 50).expect("search ok")
+    }
+
+    #[test]
+    fn escape_like_escapes_the_three_metacharacters() {
+        assert_eq!(escape_like("a%b_c\\d"), "a\\%b\\_c\\\\d");
+        assert_eq!(escape_like(""), "");
+        assert_eq!(escape_like("plain text"), "plain text");
+    }
+
+    #[test]
+    fn clamp_search_limit_defaults_and_bounds() {
+        assert_eq!(clamp_search_limit(None), 50);
+        assert_eq!(clamp_search_limit(Some(0)), 1);
+        assert_eq!(clamp_search_limit(Some(1)), 1);
+        assert_eq!(clamp_search_limit(Some(75)), 75);
+        assert_eq!(clamp_search_limit(Some(200)), 200);
+        assert_eq!(clamp_search_limit(Some(201)), 200);
+        assert_eq!(clamp_search_limit(Some(usize::MAX)), 200);
+    }
+
+    #[test]
+    fn search_matches_transcription_text_case_insensitively() {
+        let conn = setup_conn();
+        insert_titled(&conn, "t1", "Hello World", None);
+        insert_titled(&conn, "t2", "something else", None);
+        assert_eq!(texts(&search(&conn, "hello")), vec!["Hello World"]);
+        assert_eq!(texts(&search(&conn, "WORLD")), vec!["Hello World"]);
+    }
+
+    #[test]
+    fn search_matches_post_processed_text_and_title() {
+        let conn = setup_conn();
+        insert_titled(&conn, "Meeting notes", "raw words", Some("Polished Summary"));
+        insert_titled(&conn, "other", "unrelated", None);
+        assert_eq!(texts(&search(&conn, "polished")), vec!["raw words"]);
+        assert_eq!(texts(&search(&conn, "meeting")), vec!["raw words"]);
+    }
+
+    #[test]
+    fn search_with_null_post_processed_text_still_works() {
+        let conn = setup_conn();
+        insert_titled(&conn, "t", "alpha beta", None);
+        assert_eq!(search(&conn, "beta").len(), 1);
+        assert_eq!(search(&conn, "gamma").len(), 0);
+    }
+
+    #[test]
+    fn blank_or_whitespace_query_returns_empty_even_with_entries() {
+        let conn = setup_conn();
+        insert_titled(&conn, "t", "something", None);
+        assert!(search(&conn, "").is_empty());
+        assert!(search(&conn, "   \t\n").is_empty());
+    }
+
+    #[test]
+    fn query_is_trimmed() {
+        let conn = setup_conn();
+        insert_titled(&conn, "t", "padded query target", None);
+        assert_eq!(search(&conn, "   query target  ").len(), 1);
+    }
+
+    #[test]
+    fn like_metacharacters_match_literally() {
+        let conn = setup_conn();
+        insert_titled(&conn, "t", "100% sure", None);
+        insert_titled(&conn, "t", "1000 sure", None);
+        insert_titled(&conn, "t", "a_b", None);
+        insert_titled(&conn, "t", "axb", None);
+        insert_titled(&conn, "t", "back\\slash", None);
+        insert_titled(&conn, "t", "plain", None);
+        assert_eq!(texts(&search(&conn, "100%")), vec!["100% sure"]);
+        assert_eq!(texts(&search(&conn, "a_b")), vec!["a_b"]);
+        assert_eq!(texts(&search(&conn, "\\")), vec!["back\\slash"]);
+        assert_eq!(texts(&search(&conn, "%")), vec!["100% sure"]);
+        assert_eq!(texts(&search(&conn, "_")), vec!["a_b"]);
+    }
+
+    #[test]
+    fn results_are_newest_first_and_limited() {
+        let conn = setup_conn();
+        for i in 0..5 {
+            insert_titled(&conn, "t", &format!("common {i}"), None);
+        }
+        let all = HistoryManager::search_entries_with_conn(&conn, "common", 50).unwrap();
+        assert_eq!(texts(&all), vec!["common 4", "common 3", "common 2", "common 1", "common 0"]);
+        let two = HistoryManager::search_entries_with_conn(&conn, "common", 2).unwrap();
+        assert_eq!(texts(&two), vec!["common 4", "common 3"]);
+    }
+
+    #[test]
+    fn sql_injection_text_is_just_text() {
+        let conn = setup_conn();
+        insert_titled(&conn, "t", "keep me", None);
+        let result = HistoryManager::search_entries_with_conn(&conn, "'; DROP TABLE transcription_history; --", 50);
+        assert!(result.expect("ok").is_empty());
+        assert_eq!(search(&conn, "keep").len(), 1, "table intact");
+    }
+
+    #[test]
+    fn very_long_query_does_not_panic() {
+        let conn = setup_conn();
+        insert_titled(&conn, "t", "short", None);
+        let result = HistoryManager::search_entries_with_conn(&conn, &"x".repeat(10_000), 50);
+        assert!(result.expect("ok").is_empty());
+    }
+
+    #[test]
+    fn unicode_query_matches_unicode_text() {
+        let conn = setup_conn();
+        insert_titled(&conn, "t", "Caf\u{e9} au lait", None);
+        assert_eq!(search(&conn, "caf\u{e9}").len(), 1);
+    }
+
+    #[test]
+    fn database_failure_is_an_error_not_an_empty_result() {
+        let conn = Connection::open_in_memory().unwrap(); // no table
+        assert!(HistoryManager::search_entries_with_conn(&conn, "anything", 10).is_err());
     }
 }
