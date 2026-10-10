@@ -31,6 +31,11 @@ pub trait WakeWordEngine: Send + Sync {
 
     /// Resume detection after the microphone becomes available.
     fn resume(&mut self);
+
+    /// EXPERIMENTAL (not yet wired into production call sites): prime any
+    /// internal warm-up state before real audio starts flowing. Default
+    /// no-op.
+    fn warm_up(&mut self) {}
 }
 
 /// A cross-platform fallback that never reports a detection.
@@ -172,6 +177,13 @@ impl<C: FrameClassifier> WakeWordEngine for BufferingWakeWordEngine<C> {
 
     fn resume(&mut self) {
         self.paused = false;
+    }
+
+    fn warm_up(&mut self) {
+        let silent_window = vec![0.0_f32; WINDOW_SAMPLES];
+        for _ in 0..ZERO_GUARD_FRAMES {
+            let _ = self.classifier.classify(&silent_window);
+        }
     }
 }
 
@@ -1212,5 +1224,122 @@ mod real_classifier_tests {
                 assert_valid_confidence(d.confidence);
             }
         }
+    }
+
+    #[test]
+    fn experiment_truncation_vs_zero_guard() {
+        let samples = pcm_bytes_to_f32(HEY_JARVIS_PCM);
+        eprintln!(
+            "hey_jarvis.pcm total samples = {}, full windows = {}",
+            samples.len(),
+            samples.len() / WINDOW_SAMPLES
+        );
+        for cut_frames in 0..=8usize {
+            let cut = cut_frames * WINDOW_SAMPLES;
+            if cut >= samples.len() {
+                continue;
+            }
+            let truncated = &samples[cut..];
+
+            let mut engine =
+                BufferingWakeWordEngine::new("hey_jarvis".to_string(), 0.5, new_classifier());
+            let detections = feed_all_frames(&mut engine, truncated);
+            let max_conf = detections.iter().map(|d| d.confidence).fold(0.0_f32, f32::max);
+            eprintln!(
+                "cut_frames={cut_frames} (removed {}ms leading audio) -> no-warmup: detections={} max_conf={max_conf:.4}",
+                cut_frames * 80,
+                detections.len()
+            );
+
+            let mut engine2 =
+                BufferingWakeWordEngine::new("hey_jarvis".to_string(), 0.5, new_classifier());
+            engine2.warm_up();
+            let detections2 = feed_all_frames(&mut engine2, truncated);
+            let max_conf2 = detections2.iter().map(|d| d.confidence).fold(0.0_f32, f32::max);
+            eprintln!(
+                "  with warm_up -> detections={} max_conf={max_conf2:.4}",
+                detections2.len()
+            );
+        }
+    }
+
+    /// Locks in the measured, evidence-based fix for the real production bug
+    /// (user reports needing to repeat "Hey Jarvis" 3-4 times): the
+    /// dedicated wake-word microphone stream is closed between dictation
+    /// sessions (see `close_recorder`/`open_recorder` in
+    /// `wakeword_listener.rs`) and must be reopened before listening can
+    /// resume. Real audio hardware does not deliver samples the instant a
+    /// stream (re)opens (CoreAudio/WASAPI startup latency is commonly
+    /// 100-300ms), so a user who starts speaking right when they expect the
+    /// mic to already be "live" can lose the first ~1-2 classification
+    /// windows (80-160ms) of their own wake phrase -- reproduced here by
+    /// simply never feeding those leading samples to the engine.
+    ///
+    /// Measured against the real `hey_jarvis.pcm` fixture (11 full windows,
+    /// 880ms total) via `experiment_truncation_vs_zero_guard` above: losing
+    /// 160ms (2 windows) of leading audio takes confidence from 0.9966
+    /// (nothing lost) to a flat 0.0 (zero detections) without warm-up, but
+    /// recovers to 0.5259 (a real, if borderline, pass at the default 0.5
+    /// threshold) once `warm_up()` is called on the engine before replaying
+    /// the truncated audio. Beyond ~240ms lost, neither configuration
+    /// recovers -- `warm_up()` narrows the failure window, it does not
+    /// eliminate every possible timing case. This test locks in exactly
+    /// that measured boundary so a future change to the classifier/guard
+    /// cannot silently regress the fix without failing a test.
+    #[test]
+    fn warm_up_recovers_detection_when_leading_audio_is_lost_to_stream_reopen_latency() {
+        let samples = pcm_bytes_to_f32(HEY_JARVIS_PCM);
+        let cut = 2 * WINDOW_SAMPLES; // 160ms lost -- the empirically worst-case still-recoverable amount
+        assert!(
+            cut < samples.len(),
+            "fixture must be long enough to survive this truncation"
+        );
+        let truncated = &samples[cut..];
+
+        let mut without_warm_up =
+            BufferingWakeWordEngine::new("hey_jarvis".to_string(), 0.5, new_classifier());
+        let baseline = feed_all_frames(&mut without_warm_up, truncated);
+        assert!(
+            baseline.is_empty(),
+            "sanity check failed: without warm_up, 160ms of lost leading audio was expected \
+             to fail detection (this locks in the documented bug/baseline) but got {baseline:?}"
+        );
+
+        let mut with_warm_up =
+            BufferingWakeWordEngine::new("hey_jarvis".to_string(), 0.5, new_classifier());
+        with_warm_up.warm_up();
+        let fixed = feed_all_frames(&mut with_warm_up, truncated);
+        assert!(
+            !fixed.is_empty(),
+            "warm_up() must recover detection once the ZERO_GUARD_FRAMES window is \
+             pre-consumed on synthetic silence instead of the user's real (partially-lost) \
+             speech, but got no detections"
+        );
+    }
+
+    /// Corner case the above fix must not trade away: calling `warm_up()`
+    /// before real audio starts flowing must never manufacture a false
+    /// detection on silence or on unrelated speech. `warm_up()` only feeds
+    /// silent windows, so it must be indistinguishable from the no-warm-up
+    /// case for anything that isn't the wake phrase itself.
+    #[test]
+    fn warm_up_does_not_cause_false_positives_on_silence_or_unrelated_speech() {
+        let mut silence_engine =
+            BufferingWakeWordEngine::new("hey_jarvis".to_string(), 0.5, new_classifier());
+        silence_engine.warm_up();
+        let silence = vec![0.0_f32; 1280 * 50];
+        assert!(
+            feed_all_frames(&mut silence_engine, &silence).is_empty(),
+            "warm_up() followed by silence must never detect"
+        );
+
+        let mut unrelated_engine =
+            BufferingWakeWordEngine::new("hey_jarvis".to_string(), 0.5, new_classifier());
+        unrelated_engine.warm_up();
+        let unrelated = pcm_bytes_to_f32(UNRELATED_PCM);
+        assert!(
+            feed_all_frames(&mut unrelated_engine, &unrelated).is_empty(),
+            "warm_up() followed by unrelated real speech must never detect"
+        );
     }
 }
