@@ -103,3 +103,17 @@
   --color-warning: var(--aurora-color-warning);
   --color-error: var(--aurora-color-error);
 }
+
+/* "Custom": placeholder values only, matching the Rust defaults in
+   settings.rs (`default_custom_text`, etc. -- same as Aurora's palette).
+   Used only in the brief window before theme.ts's applyTheme() sets the
+   real, user-chosen values as higher-specificity inline properties on
+   <html> -- avoids a flash of wrong colors on boot. */
+:root[data-theme="custom"] {
+  --color-text: #f3f5f7;
+  --color-background: #161a23;
+  --color-logo-primary: #2dd4bf;
+  --color-logo-stroke: #a78bfa;
+  --color-warning: #fbbf24;
+  --color-error: #f87171;
+}

@@ -732,6 +732,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_audio_feedback_volume_setting,
             shortcut::change_sound_theme_setting,
             shortcut::change_theme_setting,
+            shortcut::update_custom_theme_colors,
             shortcut::change_start_hidden_setting,
             shortcut::change_autostart_setting,
             shortcut::change_translate_to_english_setting,
@@ -1089,7 +1090,11 @@ pub fn run(cli_args: CliArgs) {
             // of the wrong theme. See `apply_window_theme` for what this does per
             // platform.
             #[cfg(any(target_os = "windows", target_os = "macos"))]
-            shortcut::apply_window_theme(app.handle(), settings.theme);
+            shortcut::apply_window_theme(
+                app.handle(),
+                settings.theme,
+                &settings.custom_theme_colors.background,
+            );
 
             // CLI --debug flag overrides debug_mode and log level (runtime-only, not persisted)
             if cli_args.debug {

@@ -749,12 +749,22 @@
   },
   "theme": {
     "title": "Application Theme",
-    "description": "Choose whether Vox follows your system theme or stays light, dark, or Aurora",
+    "description": "Choose whether Vox follows your system theme or stays light, dark, Aurora, or a custom palette you edit yourself",
     "options": {
       "system": "System",
       "light": "Light",
       "dark": "Dark",
-      "aurora": "Aurora"
+      "aurora": "Aurora",
+      "custom": "Custom"
+    },
+    "custom": {
+      "text": "Text",
+      "background": "Background",
+      "accent": "Accent",
+      "accentSecondary": "Secondary Accent",
+      "warning": "Warning",
+      "error": "Error",
+      "description": "Pick any color for each part of the interface"
     }
   },
   "overlay": {

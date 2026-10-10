@@ -298,6 +298,156 @@ pub enum Theme {
     Light,
     Dark,
     Aurora,
+    /// User-edited palette, see `CustomThemeColors`.
+    Custom,
+}
+
+/// Exactly `#` followed by 6 ASCII hex digits, case-insensitive. No 3-digit
+/// shorthand, no whitespace, no named colors ("red") -- deliberately strict
+/// so a CSS custom property never silently receives garbage.
+pub fn is_valid_hex_color(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    bytes.len() == 7 && bytes[0] == b'#' && bytes[1..].iter().all(|b| b.is_ascii_hexdigit())
+}
+
+/// WCAG-style relative luminance of a `#rrggbb` hex color, in `[0.0, 1.0]`.
+/// This is a practical brightness-matching heuristic for picking native
+/// light/dark window chrome to match an arbitrary user-chosen background --
+/// it is NOT a contrast-ratio/accessibility guarantee. Returns `None` for an
+/// unparseable string rather than panicking.
+fn relative_luminance(hex: &str) -> Option<f64> {
+    if !is_valid_hex_color(hex) {
+        return None;
+    }
+    let channel = |start: usize| u8::from_str_radix(&hex[start..start + 2], 16).ok();
+    let (r, g, b) = (channel(1)?, channel(3)?, channel(5)?);
+    let linearize = |byte: u8| {
+        let s = byte as f64 / 255.0;
+        if s <= 0.04045 {
+            s / 12.92
+        } else {
+            ((s + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    Some(0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b))
+}
+
+/// Picks native window chrome to match an arbitrary custom background:
+/// `Light` when its relative luminance is above the 0.5 midpoint, `Dark`
+/// otherwise. An unparseable hex defensively defaults to `Dark`, matching
+/// the existing `_ => AppTheme::Dark // Default fallback` convention already
+/// used in `tray.rs`.
+pub fn native_chrome_for_hex_background(hex: &str) -> tauri::Theme {
+    match relative_luminance(hex) {
+        Some(luminance) if luminance > 0.5 => tauri::Theme::Light,
+        _ => tauri::Theme::Dark,
+    }
+}
+
+fn default_custom_text() -> String {
+    "#f3f5f7".to_string()
+}
+fn default_custom_background() -> String {
+    "#161a23".to_string()
+}
+fn default_custom_accent() -> String {
+    "#2dd4bf".to_string()
+}
+fn default_custom_accent_secondary() -> String {
+    "#a78bfa".to_string()
+}
+fn default_custom_warning() -> String {
+    "#fbbf24".to_string()
+}
+fn default_custom_error() -> String {
+    "#f87171".to_string()
+}
+
+/// Deserialization target before hex validation. Each field defaults
+/// independently so a PARTIALLY-specified persisted object (e.g. only
+/// `"text"` present) loads the given field and defaults the rest, rather
+/// than discarding the whole object -- that all-or-nothing reset is reserved
+/// for when a PRESENT field's value is invalid-format (see `TryFrom` below).
+#[derive(Deserialize)]
+struct RawCustomThemeColors {
+    #[serde(default = "default_custom_text")]
+    text: String,
+    #[serde(default = "default_custom_background")]
+    background: String,
+    #[serde(default = "default_custom_accent")]
+    accent: String,
+    #[serde(default = "default_custom_accent_secondary")]
+    accent_secondary: String,
+    #[serde(default = "default_custom_warning")]
+    warning: String,
+    #[serde(default = "default_custom_error")]
+    error: String,
+}
+
+/// A user-editable color palette for `Theme::Custom`. Every field is a
+/// validated `#rrggbb` hex string -- once a value of this type exists, it is
+/// guaranteed valid by construction (see the `TryFrom` impl below), so
+/// nothing downstream (CSS injection, the `update_custom_theme_colors`
+/// command) needs to re-validate.
+///
+/// `#[serde(try_from = ...)]`: deserializing goes through `RawCustomThemeColors`
+/// (per-field defaults for missing fields) and then this type's `TryFrom`
+/// (whole-object hex validation). If ANY present field is invalid hex, the
+/// whole `CustomThemeColors` fails to deserialize -- which makes the
+/// *top-level* `AppSettings.custom_theme_colors` field fail too, which is
+/// exactly what `salvage_settings` (see below) already knows how to handle:
+/// it drops just that one top-level field back to its full default and logs
+/// a warning, leaving every other setting untouched. No new salvage code
+/// needed -- this reuses that existing mechanism on purpose.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+#[serde(try_from = "RawCustomThemeColors")]
+pub struct CustomThemeColors {
+    pub text: String,
+    pub background: String,
+    pub accent: String,
+    pub accent_secondary: String,
+    pub warning: String,
+    pub error: String,
+}
+
+impl TryFrom<RawCustomThemeColors> for CustomThemeColors {
+    type Error = String;
+
+    fn try_from(raw: RawCustomThemeColors) -> Result<Self, String> {
+        for (name, value) in [
+            ("text", &raw.text),
+            ("background", &raw.background),
+            ("accent", &raw.accent),
+            ("accent_secondary", &raw.accent_secondary),
+            ("warning", &raw.warning),
+            ("error", &raw.error),
+        ] {
+            if !is_valid_hex_color(value) {
+                return Err(format!("invalid hex color for '{name}': {value:?}"));
+            }
+        }
+        Ok(CustomThemeColors {
+            text: raw.text,
+            background: raw.background,
+            accent: raw.accent,
+            accent_secondary: raw.accent_secondary,
+            warning: raw.warning,
+            error: raw.error,
+        })
+    }
+}
+
+impl Default for CustomThemeColors {
+    fn default() -> Self {
+        CustomThemeColors {
+            text: default_custom_text(),
+            background: default_custom_background(),
+            accent: default_custom_accent(),
+            accent_secondary: default_custom_accent_secondary(),
+            warning: default_custom_warning(),
+            error: default_custom_error(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
@@ -515,6 +665,8 @@ pub struct AppSettings {
     pub app_language: String,
     #[serde(default = "default_theme")]
     pub theme: Theme,
+    #[serde(default)]
+    pub custom_theme_colors: CustomThemeColors,
     #[serde(default)]
     pub experimental_enabled: bool,
     #[serde(default)]
@@ -1058,6 +1210,7 @@ pub fn get_default_settings() -> AppSettings {
         append_trailing_space: false,
         app_language: default_app_language(),
         theme: default_theme(),
+        custom_theme_colors: CustomThemeColors::default(),
         experimental_enabled: false,
         lazy_stream_close: false,
         keyboard_implementation: KeyboardImplementation::default(),
@@ -1742,6 +1895,147 @@ mod tests {
         assert_eq!(settings.wake_word_confidence_threshold, 0.5);
         assert_eq!(settings.wake_word_cooldown_ms, 500);
         assert_eq!(settings.wake_word_silence_timeout_ms, 1500);
+    }
+
+    // ---- custom theme colors ----
+
+    #[test]
+    fn is_valid_hex_color_accepts_lower_and_uppercase_six_digit() {
+        assert!(is_valid_hex_color("#f3f5f7"));
+        assert!(is_valid_hex_color("#F3F5F7"));
+        assert!(is_valid_hex_color("#AbCdEf"));
+    }
+
+    #[test]
+    fn is_valid_hex_color_rejects_every_known_bad_shape() {
+        assert!(!is_valid_hex_color(""), "empty string");
+        assert!(!is_valid_hex_color("#fff"), "3-digit shorthand");
+        assert!(!is_valid_hex_color(" #ffffff"), "leading whitespace");
+        assert!(!is_valid_hex_color("#ffffff "), "trailing whitespace");
+        assert!(!is_valid_hex_color("ffffff"), "missing #");
+        assert!(!is_valid_hex_color("#ffff"), "wrong length (short)");
+        assert!(!is_valid_hex_color("#fffffff"), "wrong length (long)");
+        assert!(!is_valid_hex_color("#gggggg"), "non-hex characters");
+        assert!(!is_valid_hex_color("red"), "named color");
+    }
+
+    #[test]
+    fn custom_theme_colors_full_valid_object_round_trips() {
+        let json = serde_json::json!({
+            "text": "#111111",
+            "background": "#222222",
+            "accent": "#333333",
+            "accent_secondary": "#444444",
+            "warning": "#555555",
+            "error": "#666666",
+        });
+        let parsed: CustomThemeColors = serde_json::from_value(json).unwrap();
+        assert_eq!(parsed.text, "#111111");
+        assert_eq!(parsed.background, "#222222");
+        assert_eq!(parsed.accent, "#333333");
+        assert_eq!(parsed.accent_secondary, "#444444");
+        assert_eq!(parsed.warning, "#555555");
+        assert_eq!(parsed.error, "#666666");
+    }
+
+    #[test]
+    fn custom_theme_colors_partial_object_defaults_missing_fields() {
+        let json = serde_json::json!({ "text": "#111111" });
+        let parsed: CustomThemeColors = serde_json::from_value(json).unwrap();
+        let defaults = CustomThemeColors::default();
+        assert_eq!(parsed.text, "#111111");
+        assert_eq!(parsed.background, defaults.background);
+        assert_eq!(parsed.accent, defaults.accent);
+        assert_eq!(parsed.accent_secondary, defaults.accent_secondary);
+        assert_eq!(parsed.warning, defaults.warning);
+        assert_eq!(parsed.error, defaults.error);
+    }
+
+    #[test]
+    fn custom_theme_colors_rejects_an_invalid_hex_field() {
+        let json = serde_json::json!({ "text": "not-hex" });
+        assert!(serde_json::from_value::<CustomThemeColors>(json).is_err());
+    }
+
+    #[test]
+    fn settings_json_missing_custom_theme_colors_key_gets_full_defaults() {
+        // Simulates an old settings.json written before this field existed.
+        let mut value = serde_json::to_value(get_default_settings()).unwrap();
+        value.as_object_mut().unwrap().remove("custom_theme_colors");
+        let settings: AppSettings = serde_json::from_value(value).unwrap();
+        assert_eq!(settings.custom_theme_colors, CustomThemeColors::default());
+    }
+
+    #[test]
+    fn settings_json_with_invalid_custom_theme_colors_salvages_just_that_field() {
+        let mut value = serde_json::to_value(get_default_settings()).unwrap();
+        let map = value.as_object_mut().unwrap();
+        map.insert(
+            "custom_theme_colors".to_string(),
+            serde_json::json!({ "text": "not-hex" }),
+        );
+        // A deliberately distinct, non-default value on an unrelated field,
+        // to prove salvage preserves it instead of resetting everything.
+        map.insert(
+            "selected_model".to_string(),
+            serde_json::json!("distinct-marker-model"),
+        );
+        let settings = salvage_settings(&value);
+        assert_eq!(settings.custom_theme_colors, CustomThemeColors::default());
+        assert_eq!(settings.selected_model, "distinct-marker-model");
+    }
+
+    // ---- native window chrome from a custom background ----
+
+    #[test]
+    fn relative_luminance_matches_hand_computed_values() {
+        assert!((relative_luminance("#000000").unwrap() - 0.0).abs() < 1e-9);
+        assert!((relative_luminance("#ffffff").unwrap() - 1.0).abs() < 1e-6);
+        assert!((relative_luminance("#808080").unwrap() - 0.216).abs() < 1e-3);
+        assert!((relative_luminance("#ff0000").unwrap() - 0.2126).abs() < 1e-3);
+        assert!((relative_luminance("#00ff00").unwrap() - 0.7152).abs() < 1e-3);
+        assert!((relative_luminance("#bbbbbb").unwrap() - 0.4966).abs() < 1e-3);
+        assert!((relative_luminance("#bcbcbc").unwrap() - 0.5028).abs() < 1e-3);
+        assert!(relative_luminance("not-hex").is_none());
+    }
+
+    #[test]
+    fn native_chrome_for_hex_background_picks_the_right_side_of_the_threshold() {
+        assert_eq!(
+            native_chrome_for_hex_background("#000000"),
+            tauri::Theme::Dark
+        );
+        assert_eq!(
+            native_chrome_for_hex_background("#ffffff"),
+            tauri::Theme::Light
+        );
+        assert_eq!(
+            native_chrome_for_hex_background("#808080"),
+            tauri::Theme::Dark
+        );
+        assert_eq!(
+            native_chrome_for_hex_background("#ff0000"),
+            tauri::Theme::Dark
+        );
+        assert_eq!(
+            native_chrome_for_hex_background("#00ff00"),
+            tauri::Theme::Light
+        );
+        // The exact pair that straddles the 0.5 threshold either side.
+        assert_eq!(
+            native_chrome_for_hex_background("#bbbbbb"),
+            tauri::Theme::Dark
+        );
+        assert_eq!(
+            native_chrome_for_hex_background("#bcbcbc"),
+            tauri::Theme::Light
+        );
+        // Invalid hex defensively defaults Dark, matching the existing
+        // `_ => AppTheme::Dark // Default fallback` convention in tray.rs.
+        assert_eq!(
+            native_chrome_for_hex_background("not-hex"),
+            tauri::Theme::Dark
+        );
     }
 
     #[test]

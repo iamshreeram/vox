@@ -104,6 +104,19 @@
   --s-hair: var(--dark-s-hair);
 }
 
+/* "Custom": dark-bucket placeholder only (matches the default custom palette,
+   which is dark-based). theme.ts's applyTheme() immediately overrides these
+   with the real light/dark bucket computed from the user's actual chosen
+   background, as higher-specificity inline properties -- this block only
+   covers the brief pre-JS window on boot. */
+:root[data-theme="custom"] {
+  --s-accent-soft: var(--dark-s-accent-soft);
+  --s-muted: var(--dark-s-muted);
+  --s-faint: var(--dark-s-faint);
+  --s-border: var(--dark-s-border);
+  --s-hair: var(--dark-s-hair);
+}
+
 /* Aurora reuses the dark neutrals -- it's a dark-based palette (see
    theme.css); --s-surface/--s-accent already pick up its own
    --color-background/--color-logo-primary values for free. */
