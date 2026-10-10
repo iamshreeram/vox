@@ -182,6 +182,50 @@ contract tests and real-engine tests.
 | --- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | T13 | Run the app, call `tts_speak("Vox is online")` for real on a real Mac with audio | You actually hear it. Document in the PR description that this was done. |
 
+## 6a. Design findings addendum (2026-10-10, ram-ai) -- READ BEFORE IMPLEMENTING
+
+Two concurrency designs for the `speak()`/`stop()`/`is_speaking()` trio were
+proposed and independently reviewed (ram-critic, 2 rounds) before any code
+was written. Both were REJECTED. Recording both here so a future attempt
+doesn't re-discover the same dead ends:
+
+**Design A (two mutexes: `call_lock` + `synthesizer_slot`)** -- rejected:
+relied on calling `stopSpeaking()` on the `NSSpeechSynthesizer` from a
+different thread than the one calling `startSpeakingString:`/`isSpeaking()`.
+This cross-thread Cocoa call was never established as safe, and the design
+had real startup/handoff races (stop() could race the synthesizer being
+published vs. started).
+
+**Design B (single-owner-thread actor + mpsc/oneshot channels + atomic
+generation counters)** -- rejected on a deeper, unresolved question: even
+with ALL native calls confined to one dedicated background thread (which
+does eliminate the cross-thread-call risk from Design A), it is still
+unverified whether `NSSpeechSynthesizer` requires an active run loop
+servicing that thread to function correctly at all (independent of whether
+delegate callbacks or polling `isSpeaking()` is used to observe
+completion). Sleeping in a poll loop is not equivalent to servicing a run
+loop. The original choice of `NSSpeechSynthesizer` over `AVSpeechSynthesizer`
+in SS1 above assumed polling sidesteps any run-loop requirement -- that
+assumption itself was never empirically verified and is exactly what's now
+in question. The generation-counter/atomic cancellation scheme in Design B
+also had a residual race (a stale `stop()` call for an old generation can
+race a concurrent `stop()` for the current generation and lose the newer
+cancellation) that would need a CAS-based linearization fix regardless.
+
+**Before attempting a Design C**: run a small, throwaway (not
+production-shipped) spike on real macOS hardware: spawn a background
+thread with NO run loop, construct a real `NSSpeechSynthesizer`, call
+`startSpeakingString:` with a short phrase, and poll `isSpeaking()` in a
+sleep loop from that same thread. Confirm empirically: (a) does audio
+actually play, (b) does `isSpeaking()` correctly transition
+false->true->false, (c) does calling `stopSpeaking()` from that same
+thread actually halt audio promptly. If any of these fail without a run
+loop, the design needs `CFRunLoopRun()` (or similar) serviced on the owner
+thread, which changes how `stop()`/shutdown must interrupt it. Do not
+skip this spike and re-guess -- both rejected designs above were
+reasonable-looking on paper and wrong in reviewable ways; this one open
+question is empirical, not a design judgment call.
+
 ## 7. Acceptance criteria
 
 - [ ] Every test in SS6 exists, watched failing, then passing (T13
