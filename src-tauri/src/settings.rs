@@ -451,6 +451,11 @@ pub struct AppSettings {
     pub history_limit: usize,
     #[serde(default)]
     pub memory_enabled: bool,
+    /// Prepend remembered facts (when `memory_enabled`) and the last few
+    /// exchanges to agent-bridge prompts. Opt-in: it sends more data to the
+    /// user-configured external agent. Turning it off clears the in-memory log.
+    #[serde(default)]
+    pub agent_context_enabled: bool,
     #[serde(default)]
     pub ambient_mode_enabled: bool,
     #[serde(default = "default_ambient_wake_name")]
@@ -1029,6 +1034,7 @@ pub fn get_default_settings() -> AppSettings {
         word_correction_threshold: default_word_correction_threshold(),
         history_limit: default_history_limit(),
         memory_enabled: false,
+        agent_context_enabled: false,
         ambient_mode_enabled: false,
         ambient_wake_name: default_ambient_wake_name(),
         ambient_window_ms: default_ambient_window_ms(),
@@ -1658,6 +1664,18 @@ mod tests {
     #[test]
     fn memory_is_disabled_by_default() {
         assert!(!get_default_settings().memory_enabled);
+    }
+
+    #[test]
+    fn agent_context_is_off_by_default_and_when_missing_from_legacy_settings() {
+        assert!(!get_default_settings().agent_context_enabled);
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("agent_context_enabled");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.agent_context_enabled);
     }
 
     #[test]
