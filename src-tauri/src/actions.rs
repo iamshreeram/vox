@@ -9,7 +9,7 @@ use crate::managers::conversation::{
 };
 use crate::managers::history::HistoryManager;
 use crate::managers::media_control::{
-    decide_media_command, run_media_hook, MediaHookResult, OsascriptRunner,
+    decide_media_command, run_media_hook, MediaHookResult, OsascriptRunner, ScriptRunner,
 };
 use crate::managers::memory::MemoryManager;
 use crate::managers::model::ModelManager;
@@ -130,6 +130,46 @@ fn decide_voice_command(
 /// the router or agent bridge. `None` means it was not a media command.
 fn media_hook_consumes_utterance(result: Option<&MediaHookResult>) -> bool {
     result.is_some_and(|result| result.outcome.skip_paste)
+}
+
+/// Which pre-router voice hook consumed an utterance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HookSource {
+    /// A user-defined voice shortcut.
+    Shortcut,
+    /// A whole-utterance media control.
+    Media,
+}
+
+/// A pre-router voice hook that consumed the utterance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UtteranceHookResult {
+    /// Which hook matched.
+    pub source: HookSource,
+    /// What the pipeline must do with the transcript (matched hooks never
+    /// paste and never escalate to the agent, even when they failed).
+    pub outcome: VoiceHookOutcome,
+    /// The event to emit (`voice-command-executed` / `voice-command-error`).
+    pub event: HookEvent,
+}
+
+/// Runs the pre-router voice hooks in their FIXED order: custom voice
+/// shortcut first, then media control. The first hook that matches consumes
+/// the utterance (success OR failure) and later hooks never run. `None` means
+/// nothing matched, so the caller continues to the built-in router and,
+/// only on a genuine router `NoMatch`, the agent bridge. Both hooks are gated
+/// on `voice_commands_enabled`; media additionally on
+/// `voice_media_controls_enabled`. Blocking (media can take seconds): call
+/// from a blocking thread.
+pub(crate) fn run_utterance_hooks(
+    _settings: &AppSettings,
+    _transcript: &str,
+    _router: &CommandRouter,
+    _home: Option<&Path>,
+    _opener: &dyn ShortcutOpener,
+    _media_runner: &dyn ScriptRunner,
+) -> Option<UtteranceHookResult> {
+    todo!("integration: implement")
 }
 
 fn should_escalate_to_agent_bridge(
@@ -1570,5 +1610,202 @@ mod tests {
         let log = ConversationLog::new();
         assert!(!finish_agent_exchange(None, &log, true, "q", "a", 5));
         assert_eq!(log.len(), 0);
+    }
+
+    mod utterance_hook_order {
+        use super::super::{run_utterance_hooks, HookSource, UtteranceHookResult};
+        use crate::managers::command_router::{AppDiscovery, CommandRouter, HomeDirProvider};
+        use crate::managers::media_control::{MediaError, ScriptRunner};
+        use crate::managers::voice_common::HookEvent;
+        use crate::managers::voice_shortcuts::{ShortcutOpener, VoiceShortcut, VoiceShortcutAction};
+        use crate::settings::{get_default_settings, AppSettings};
+        use std::path::{Path, PathBuf};
+        use std::sync::Mutex;
+
+        struct NoApps;
+        impl AppDiscovery for NoApps {
+            fn scan_installed_apps(&self) -> Vec<PathBuf> {
+                Vec::new()
+            }
+        }
+        struct NoHome;
+        impl HomeDirProvider for NoHome {
+            fn home_dir(&self) -> Option<PathBuf> {
+                None
+            }
+        }
+        fn router() -> CommandRouter {
+            CommandRouter::with_home(Box::new(NoApps), Box::new(NoHome))
+        }
+
+        #[derive(Default)]
+        struct Opener {
+            calls: Mutex<Vec<String>>,
+            fail: bool,
+        }
+        impl Opener {
+            fn record(&self, entry: String) -> Result<(), String> {
+                self.calls.lock().unwrap().push(entry);
+                if self.fail {
+                    Err("opener failed".into())
+                } else {
+                    Ok(())
+                }
+            }
+            fn count(&self) -> usize {
+                self.calls.lock().unwrap().len()
+            }
+        }
+        impl ShortcutOpener for Opener {
+            fn open_url(&self, url: &str) -> Result<(), String> {
+                self.record(format!("url:{url}"))
+            }
+            fn open_path(&self, path: &Path) -> Result<(), String> {
+                self.record(format!("path:{}", path.display()))
+            }
+            fn open_app(&self, app_path: &Path) -> Result<(), String> {
+                self.record(format!("app:{}", app_path.display()))
+            }
+        }
+
+        struct Runner {
+            scripts: Mutex<Vec<String>>,
+            result: Result<String, MediaError>,
+        }
+        impl Runner {
+            fn ok() -> Self {
+                Self {
+                    scripts: Mutex::new(Vec::new()),
+                    result: Ok("ok".into()),
+                }
+            }
+            fn failing() -> Self {
+                Self {
+                    scripts: Mutex::new(Vec::new()),
+                    result: Err(MediaError::PermissionDenied),
+                }
+            }
+            fn count(&self) -> usize {
+                self.scripts.lock().unwrap().len()
+            }
+        }
+        impl ScriptRunner for Runner {
+            fn run(&self, script: &str) -> Result<String, MediaError> {
+                self.scripts.lock().unwrap().push(script.to_string());
+                self.result.clone()
+            }
+        }
+
+        fn url_shortcut(phrase: &str, url: &str) -> VoiceShortcut {
+            VoiceShortcut {
+                phrase: phrase.to_string(),
+                action: VoiceShortcutAction::OpenUrl {
+                    url: url.to_string(),
+                },
+            }
+        }
+
+        fn settings(voice: bool, media: bool, shortcuts: Vec<VoiceShortcut>) -> AppSettings {
+            let mut s = get_default_settings();
+            s.voice_commands_enabled = voice;
+            s.voice_media_controls_enabled = media;
+            s.voice_shortcuts = shortcuts;
+            s
+        }
+
+        fn run(
+            settings: &AppSettings,
+            text: &str,
+            opener: &Opener,
+            runner: &Runner,
+        ) -> Option<UtteranceHookResult> {
+            run_utterance_hooks(settings, text, &router(), None, opener, runner)
+        }
+
+        #[test]
+        fn custom_shortcut_wins_over_media_for_the_same_phrase() {
+            let s = settings(true, true, vec![url_shortcut("pause", "https://example.com/p")]);
+            let (opener, runner) = (Opener::default(), Runner::ok());
+            let result = run(&s, "pause", &opener, &runner).expect("consumed");
+            assert_eq!(result.source, HookSource::Shortcut);
+            assert_eq!(opener.count(), 1);
+            assert_eq!(runner.count(), 0, "media must not run once a shortcut matched");
+        }
+
+        #[test]
+        fn media_runs_when_no_shortcut_matches() {
+            let s = settings(true, true, vec![url_shortcut("open docs", "https://example.com/d")]);
+            let (opener, runner) = (Opener::default(), Runner::ok());
+            let result = run(&s, "pause", &opener, &runner).expect("consumed");
+            assert_eq!(result.source, HookSource::Media);
+            assert!(result.outcome.skip_paste);
+            assert!(!result.outcome.escalate_to_agent);
+            assert_eq!(opener.count(), 0);
+            assert!(runner.count() >= 1);
+        }
+
+        #[test]
+        fn ordinary_dictation_matches_nothing_and_touches_nothing() {
+            let s = settings(true, true, vec![url_shortcut("open docs", "https://example.com/d")]);
+            let (opener, runner) = (Opener::default(), Runner::ok());
+            assert_eq!(run(&s, "please write me a short email to the team", &opener, &runner), None);
+            assert_eq!(run(&s, "", &opener, &runner), None);
+            assert_eq!(opener.count(), 0);
+            assert_eq!(runner.count(), 0);
+        }
+
+        #[test]
+        fn voice_commands_off_disables_both_hooks() {
+            let s = settings(false, true, vec![url_shortcut("pause", "https://example.com/p")]);
+            let (opener, runner) = (Opener::default(), Runner::ok());
+            assert_eq!(run(&s, "pause", &opener, &runner), None);
+            assert_eq!(run(&s, "volume 40", &opener, &runner), None);
+            assert_eq!(opener.count(), 0);
+            assert_eq!(runner.count(), 0);
+        }
+
+        #[test]
+        fn media_off_leaves_media_phrases_alone_but_shortcuts_still_work() {
+            let s = settings(true, false, vec![url_shortcut("open docs", "https://example.com/d")]);
+            let (opener, runner) = (Opener::default(), Runner::ok());
+            assert_eq!(run(&s, "pause", &opener, &runner), None, "falls through to dictation/router");
+            let result = run(&s, "open docs", &opener, &runner).expect("shortcut still works");
+            assert_eq!(result.source, HookSource::Shortcut);
+            assert_eq!(runner.count(), 0);
+        }
+
+        #[test]
+        fn failed_shortcut_still_consumes_and_never_falls_through_to_media() {
+            let s = settings(true, true, vec![url_shortcut("pause", "https://example.com/p")]);
+            let (opener, runner) = (Opener { fail: true, ..Opener::default() }, Runner::ok());
+            let result = run(&s, "pause", &opener, &runner).expect("consumed even though it failed");
+            assert_eq!(result.source, HookSource::Shortcut);
+            assert!(matches!(result.event, HookEvent::Error(_)));
+            assert!(result.outcome.skip_paste);
+            assert!(!result.outcome.escalate_to_agent);
+            assert_eq!(runner.count(), 0);
+        }
+
+        #[test]
+        fn failed_media_command_still_consumes_the_utterance() {
+            let s = settings(true, true, Vec::new());
+            let (opener, runner) = (Opener::default(), Runner::failing());
+            let result = run(&s, "next track", &opener, &runner).expect("consumed even though it failed");
+            assert_eq!(result.source, HookSource::Media);
+            assert!(matches!(result.event, HookEvent::Error(_)));
+            assert!(result.outcome.skip_paste);
+            assert!(!result.outcome.escalate_to_agent);
+        }
+
+        #[test]
+        fn error_events_never_contain_the_transcript() {
+            let s = settings(true, true, Vec::new());
+            let (opener, runner) = (Opener::default(), Runner::failing());
+            let result = run(&s, "volume 40", &opener, &runner).expect("consumed");
+            match result.event {
+                HookEvent::Error(message) => assert!(!message.contains("volume 40"), "{message}"),
+                other => panic!("expected an error event, got {other:?}"),
+            }
+        }
     }
 }
