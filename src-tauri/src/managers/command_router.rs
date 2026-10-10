@@ -12,17 +12,21 @@
 //! non-goals). The router itself and its matching logic are fully
 //! cross-platform and exercised everywhere via [`AppDiscovery`] fakes.
 //!
-//! Deliberately NOT ported from Python (documented gaps, not oversights):
-//! - Python aliases each app under both its `.app` folder name AND its
-//!   `CFBundleDisplayName`/`CFBundleName` from Info.plist (e.g. Visual
-//!   Studio Code's bundle name is just "Code"). This phase only indexes
-//!   by folder name -- full Info.plist parsing needs a new dependency
-//!   (a plist-parsing crate) and isn't required by any test case here.
-//!   Follow-up.
-//! - Python's static YAML phrase allowlist (tier 1, for curated STT
-//!   mishearing corrections like "eater" -> iTerm, and non-app actions
-//!   like `open_url`) isn't implemented yet -- this phase's non-goals
-//!   explicitly defer command *execution* wiring to a later phase.
+//! App matching: each installed `.app` is indexed by its folder (file
+//! stem) plus its Info.plist names (`CFBundleDisplayName`, then
+//! `CFBundleName`, so Visual Studio Code also answers to "Code"). Matches
+//! are ranked: exact stem, exact alias, stem prefix, alias prefix. Ties
+//! inside a rank go to the smallest path, so results never depend on
+//! directory scan order. Only when none of those match does a small curated
+//! table map common speech-to-text mishearings (e.g. "eater" -> iTerm,
+//! "vs code" -> Visual Studio Code) onto a target, which must itself resolve
+//! against the installed apps -- the router never invents an app that is not
+//! installed. The index (including plist aliases) is cached with the app list
+//! for the TTL, so plists are read once per refresh, not per route call.
+//!
+//! Not ported from Python: the non-app entries of Python's YAML phrase
+//! allowlist (e.g. `open_url`). URLs are handled by the bare-domain matcher
+//! in this module instead, and command *execution* wiring is a later phase.
 //!
 //! Wired into the post-transcription pipeline in `actions.rs`, gated by
 //! the `voice_commands_enabled` setting (default off): when enabled, a
@@ -95,20 +99,68 @@ pub(crate) const MAX_PLIST_BYTES: u64 = 1024 * 1024;
 /// binary). Non-string values, empty/whitespace values are skipped, values are
 /// trimmed, and duplicates (case-insensitive) keep the first. Malformed or
 /// non-dictionary input yields an empty list; never panics.
-pub(crate) fn bundle_names_from_plist_bytes(_bytes: &[u8]) -> Vec<String> {
-    todo!("F6: implement")
+pub(crate) fn bundle_names_from_plist_bytes(bytes: &[u8]) -> Vec<String> {
+    let Ok(value) = plist::Value::from_reader(std::io::Cursor::new(bytes)) else {
+        return Vec::new();
+    };
+    let Some(dict) = value.as_dictionary() else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = Vec::new();
+    for key in ["CFBundleDisplayName", "CFBundleName"] {
+        let Some(raw) = dict.get(key).and_then(plist::Value::as_string) else {
+            continue;
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let folded = trimmed.to_lowercase();
+        if names
+            .iter()
+            .any(|existing| existing.to_lowercase() == folded)
+        {
+            continue;
+        }
+        names.push(trimmed.to_string());
+    }
+    names
 }
 
 /// Reads `<app>/Contents/Info.plist` (only if it is at most
 /// [`MAX_PLIST_BYTES`]) and returns [`bundle_names_from_plist_bytes`]; a
 /// missing/unreadable/oversized file yields an empty list.
-pub(crate) fn read_bundle_names(_app_path: &std::path::Path) -> Vec<String> {
-    todo!("F6: implement")
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))] // only macOS discovery calls this in production
+pub(crate) fn read_bundle_names(app_path: &std::path::Path) -> Vec<String> {
+    let plist_path = app_path.join("Contents").join("Info.plist");
+    let Ok(metadata) = std::fs::metadata(&plist_path) else {
+        return Vec::new();
+    };
+    if metadata.len() > MAX_PLIST_BYTES {
+        return Vec::new();
+    }
+    match std::fs::read(&plist_path) {
+        Ok(bytes) => bundle_names_from_plist_bytes(&bytes),
+        Err(_) => Vec::new(),
+    }
 }
+
+/// Curated speech-to-text mishearings, consulted only when no installed
+/// app matches the subject directly. Each left-hand phrase maps to one
+/// target name, which is matched against the installed index (never
+/// invented). Lookups are single-step: a target never re-enters this table.
+const STT_ALIASES: &[(&str, &str)] = &[
+    ("vs code", "visual studio code"),
+    ("vscode", "visual studio code"),
+    ("eater", "iterm"),
+    ("i term", "iterm"),
+    ("chrome", "google chrome"),
+];
 
 /// Always reports no installed apps -- the production discovery for
 /// non-macOS targets, where app-open commands are out of scope for this
 /// phase and must deterministically return `NoMatch`.
+#[cfg_attr(target_os = "macos", allow(dead_code))] // macOS builds use MacAppDiscovery
 pub struct NullAppDiscovery;
 
 impl AppDiscovery for NullAppDiscovery {
@@ -149,6 +201,10 @@ impl AppDiscovery for MacAppDiscovery {
         }
         apps
     }
+
+    fn aliases_for(&self, app: &std::path::Path) -> Vec<String> {
+        read_bundle_names(app)
+    }
 }
 
 /// Supplies the user's home directory. Injectable so tests can point at a
@@ -174,8 +230,19 @@ impl HomeDirProvider for RealHomeDir {
     }
 }
 
+/// One installed app in the cached index. `stem_lower` and `aliases_lower`
+/// are pre-normalized (lowercased, length-filtered, deduplicated) at refresh
+/// time so `route()` never touches the filesystem.
+#[derive(Debug, Clone)]
+struct AppEntry {
+    path: PathBuf,
+    stem_lower: String,
+    aliases_lower: Vec<String>,
+}
+
+/// Cached app index plus the time it was built (drives the TTL).
 struct AppCache {
-    apps: Vec<PathBuf>,
+    entries: Vec<AppEntry>,
     fetched_at: Instant,
 }
 
@@ -278,26 +345,56 @@ impl CommandRouter {
 
     /// NFR2: cached app list, refreshed only after `cache_ttl` elapses --
     /// never rescans the filesystem on every route() call.
-    fn apps(&self) -> Vec<PathBuf> {
-        let mut cache = self.cache.lock().expect("app cache mutex poisoned");
+    fn entries(&self) -> Vec<AppEntry> {
+        let mut cache = self
+            .cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let needs_refresh = match cache.as_ref() {
             Some(c) => c.fetched_at.elapsed() >= self.cache_ttl,
             None => true,
         };
         if needs_refresh {
-            let apps = self.discovery.scan_installed_apps();
+            let entries = self.build_index();
             *cache = Some(AppCache {
-                apps: apps.clone(),
+                entries: entries.clone(),
                 fetched_at: Instant::now(),
             });
-            apps
+            entries
         } else {
             cache
                 .as_ref()
-                .expect("just checked Some above")
-                .apps
-                .clone()
+                .map(|c| c.entries.clone())
+                .unwrap_or_default()
         }
+    }
+
+    /// Scans installed apps once and reads each app's aliases once, producing
+    /// the normalized index that `route()` searches.
+    fn build_index(&self) -> Vec<AppEntry> {
+        self.discovery
+            .scan_installed_apps()
+            .into_iter()
+            .filter_map(|path| {
+                let stem_lower = path.file_stem()?.to_str()?.to_lowercase();
+                let mut aliases_lower: Vec<String> = Vec::new();
+                for raw in self.discovery.aliases_for(&path) {
+                    let alias = raw.trim().to_lowercase();
+                    let len = alias.chars().count();
+                    if !(MIN_ALIAS_CHARS..=MAX_ALIAS_CHARS).contains(&len) {
+                        continue;
+                    }
+                    if !aliases_lower.contains(&alias) {
+                        aliases_lower.push(alias);
+                    }
+                }
+                Some(AppEntry {
+                    path,
+                    stem_lower,
+                    aliases_lower,
+                })
+            })
+            .collect()
     }
 
     fn strip_open_verb(lower: &str) -> Option<&str> {
@@ -309,29 +406,44 @@ impl CommandRouter {
         None
     }
 
-    /// FR2/FR3: exact-normalized match first, then prefix tolerance for
-    /// trailing version suffixes ("iterm" -> an app folder named
-    /// "iterm2") -- ports vox's `AppRegistry.find` exactly rather than a
-    /// fuzzy similarity score, so there's no magic threshold to tune and
-    /// no risk of ever picking a merely-similar-but-wrong app.
+    /// FR2/FR3 + F6: ranked matching over the cached index. Ranks, first
+    /// non-empty wins: (1) stem == subject, (2) an alias == subject, (3) stem
+    /// starts with subject, (4) an alias starts with subject. Within a rank the
+    /// smallest path wins, so the result never depends on scan order. Only if
+    /// all four miss does the curated STT table apply: the heard phrase is
+    /// re-matched with ranks 1-4 against its target, once, and the target must
+    /// resolve against installed apps (an app is never invented).
     fn match_app(&self, subject: &str) -> Option<CommandAction> {
-        let apps = self.apps();
-        let stems: Vec<(String, &PathBuf)> = apps
-            .iter()
-            .filter_map(|p| {
-                p.file_stem()
-                    .and_then(|s| s.to_str())
-                    .map(|s| (s.to_lowercase(), p))
-            })
-            .collect();
-
-        if let Some((name, path)) = stems.iter().find(|(name, _)| name == subject) {
-            return Some(Self::open_app_action(name, path));
+        let entries = self.entries();
+        if let Some(action) = Self::rank_match(&entries, subject) {
+            return Some(action);
         }
-        stems
+        let target = STT_ALIASES
             .iter()
-            .find(|(name, _)| name.starts_with(subject))
-            .map(|(name, path)| Self::open_app_action(name, path))
+            .find(|(heard, _)| *heard == subject)
+            .map(|(_, target)| *target)?;
+        Self::rank_match(&entries, target)
+    }
+
+    /// Applies ranks 1-4 of [`CommandRouter::match_app`] for one key.
+    fn rank_match(entries: &[AppEntry], key: &str) -> Option<CommandAction> {
+        type Rank = fn(&AppEntry, &str) -> bool;
+        let ranks: [Rank; 4] = [
+            |e, k| e.stem_lower == k,
+            |e, k| e.aliases_lower.iter().any(|a| a == k),
+            |e, k| e.stem_lower.starts_with(k),
+            |e, k| e.aliases_lower.iter().any(|a| a.starts_with(k)),
+        ];
+        for matches in ranks {
+            let best = entries
+                .iter()
+                .filter(|e| matches(e, key))
+                .min_by(|a, b| a.path.cmp(&b.path));
+            if let Some(entry) = best {
+                return Some(Self::open_app_action(&entry.stem_lower, &entry.path));
+            }
+        }
+        None
     }
 
     fn open_app_action(lower_name: &str, path: &PathBuf) -> CommandAction {
@@ -907,11 +1019,17 @@ mod tests {
     fn aliased(entries: &[(&str, &[&str])]) -> Aliased {
         let scans = Arc::new(AtomicUsize::new(0));
         let alias_calls = Arc::new(AtomicUsize::new(0));
-        let apps: Vec<PathBuf> = entries.iter().map(|(path, _)| PathBuf::from(path)).collect();
+        let apps: Vec<PathBuf> = entries
+            .iter()
+            .map(|(path, _)| PathBuf::from(path))
+            .collect();
         let aliases = entries
             .iter()
             .map(|(path, names)| {
-                (PathBuf::from(path), names.iter().map(|n| n.to_string()).collect())
+                (
+                    PathBuf::from(path),
+                    names.iter().map(|n| n.to_string()).collect(),
+                )
             })
             .collect();
         let discovery = AliasedDiscovery {
@@ -977,27 +1095,39 @@ mod tests {
 
     #[test]
     fn alias_collisions_resolve_to_the_smallest_path_in_any_scan_order() {
-        let forward = aliased(&[
-            ("/a/Alpha.app", &["Editor"]),
-            ("/b/Beta.app", &["Editor"]),
-        ]);
-        let reverse = aliased(&[
-            ("/b/Beta.app", &["Editor"]),
-            ("/a/Alpha.app", &["Editor"]),
-        ]);
-        assert_eq!(opened_path(forward.router.route("open editor")), PathBuf::from("/a/Alpha.app"));
-        assert_eq!(opened_path(reverse.router.route("open editor")), PathBuf::from("/a/Alpha.app"));
+        let forward = aliased(&[("/a/Alpha.app", &["Editor"]), ("/b/Beta.app", &["Editor"])]);
+        let reverse = aliased(&[("/b/Beta.app", &["Editor"]), ("/a/Alpha.app", &["Editor"])]);
+        assert_eq!(
+            opened_path(forward.router.route("open editor")),
+            PathBuf::from("/a/Alpha.app")
+        );
+        assert_eq!(
+            opened_path(reverse.router.route("open editor")),
+            PathBuf::from("/a/Alpha.app")
+        );
     }
 
     #[test]
     fn duplicate_stems_and_prefix_ties_resolve_to_the_smallest_path_in_any_scan_order() {
         let dup_forward = aliased(&[("/a/Same.app", &[]), ("/b/Same.app", &[])]);
         let dup_reverse = aliased(&[("/b/Same.app", &[]), ("/a/Same.app", &[])]);
-        assert_eq!(opened_path(dup_forward.router.route("open same")), PathBuf::from("/a/Same.app"));
-        assert_eq!(opened_path(dup_reverse.router.route("open same")), PathBuf::from("/a/Same.app"));
+        assert_eq!(
+            opened_path(dup_forward.router.route("open same")),
+            PathBuf::from("/a/Same.app")
+        );
+        assert_eq!(
+            opened_path(dup_reverse.router.route("open same")),
+            PathBuf::from("/a/Same.app")
+        );
 
-        let tie_forward = aliased(&[("/Applications/Notes.app", &[]), ("/Applications/Notebook.app", &[])]);
-        let tie_reverse = aliased(&[("/Applications/Notebook.app", &[]), ("/Applications/Notes.app", &[])]);
+        let tie_forward = aliased(&[
+            ("/Applications/Notes.app", &[]),
+            ("/Applications/Notebook.app", &[]),
+        ]);
+        let tie_reverse = aliased(&[
+            ("/Applications/Notebook.app", &[]),
+            ("/Applications/Notes.app", &[]),
+        ]);
         assert_eq!(
             opened_path(tie_forward.router.route("open note")),
             PathBuf::from("/Applications/Notebook.app")
@@ -1013,7 +1143,10 @@ mod tests {
         let long = "x".repeat(101);
         let a = aliased(&[("/Applications/Thing.app", &["X", "", "   ", long.as_str()])]);
         assert_eq!(a.router.route("open x"), RouteDecision::NoMatch);
-        assert_eq!(a.router.route(&format!("open {long}")), RouteDecision::NoMatch);
+        assert_eq!(
+            a.router.route(&format!("open {long}")),
+            RouteDecision::NoMatch
+        );
         // The exact boundary lengths are accepted.
         let two = aliased(&[("/Applications/Thing.app", &["ab"])]);
         assert_opens_app(two.router.route("open ab"), "Thing");
@@ -1079,12 +1212,19 @@ mod tests {
             let _ = a.router.route("open uno");
         }
         assert_eq!(a.scans.load(Ordering::SeqCst), 1);
-        assert_eq!(a.alias_calls.load(Ordering::SeqCst), 2, "once per app, not per route");
+        assert_eq!(
+            a.alias_calls.load(Ordering::SeqCst),
+            2,
+            "once per app, not per route"
+        );
     }
 
     #[test]
     fn a_ttl_refresh_rescans_and_rereads_aliases() {
-        let mut a = aliased(&[("/Applications/One.app", &["Uno"]), ("/Applications/Two.app", &["Dos"])]);
+        let mut a = aliased(&[
+            ("/Applications/One.app", &["Uno"]),
+            ("/Applications/Two.app", &["Dos"]),
+        ]);
         a.router.cache_ttl = Duration::ZERO;
         for _ in 0..3 {
             let _ = a.router.route("open uno");
@@ -1108,8 +1248,14 @@ mod tests {
 
     #[test]
     fn plist_returns_display_name_then_bundle_name() {
-        let bytes = xml_plist(&[("CFBundleName", "Short"), ("CFBundleDisplayName", "Pretty Name")]);
-        assert_eq!(bundle_names_from_plist_bytes(&bytes), vec!["Pretty Name", "Short"]);
+        let bytes = xml_plist(&[
+            ("CFBundleName", "Short"),
+            ("CFBundleDisplayName", "Pretty Name"),
+        ]);
+        assert_eq!(
+            bundle_names_from_plist_bytes(&bytes),
+            vec!["Pretty Name", "Short"]
+        );
     }
 
     #[test]
@@ -1120,7 +1266,10 @@ mod tests {
 
     #[test]
     fn plist_with_only_one_name_key() {
-        assert_eq!(bundle_names_from_plist_bytes(&xml_plist(&[("CFBundleName", "Only")])), vec!["Only"]);
+        assert_eq!(
+            bundle_names_from_plist_bytes(&xml_plist(&[("CFBundleName", "Only")])),
+            vec!["Only"]
+        );
         assert_eq!(
             bundle_names_from_plist_bytes(&xml_plist(&[("CFBundleDisplayName", "OnlyDisplay")])),
             vec!["OnlyDisplay"]
@@ -1129,7 +1278,10 @@ mod tests {
 
     #[test]
     fn plist_trims_and_drops_empty_names() {
-        let bytes = xml_plist(&[("CFBundleDisplayName", "  Padded  "), ("CFBundleName", "   ")]);
+        let bytes = xml_plist(&[
+            ("CFBundleDisplayName", "  Padded  "),
+            ("CFBundleName", "   "),
+        ]);
         assert_eq!(bundle_names_from_plist_bytes(&bytes), vec!["Padded"]);
         assert!(bundle_names_from_plist_bytes(&xml_plist(&[("CFBundleName", "")])).is_empty());
     }
@@ -1143,7 +1295,10 @@ mod tests {
     #[test]
     fn plist_reads_binary_format() {
         let mut dict = plist::Dictionary::new();
-        dict.insert("CFBundleDisplayName".into(), plist::Value::String("Binary Name".into()));
+        dict.insert(
+            "CFBundleDisplayName".into(),
+            plist::Value::String("Binary Name".into()),
+        );
         let mut buffer = Vec::new();
         plist::to_writer_binary(&mut buffer, &plist::Value::Dictionary(dict)).unwrap();
         assert_eq!(bundle_names_from_plist_bytes(&buffer), vec!["Binary Name"]);
@@ -1164,8 +1319,15 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let contents = dir.path().join("Thing.app/Contents");
         std::fs::create_dir_all(&contents).unwrap();
-        std::fs::write(contents.join("Info.plist"), xml_plist(&[("CFBundleDisplayName", "Thing Pro")])).unwrap();
-        assert_eq!(read_bundle_names(&dir.path().join("Thing.app")), vec!["Thing Pro"]);
+        std::fs::write(
+            contents.join("Info.plist"),
+            xml_plist(&[("CFBundleDisplayName", "Thing Pro")]),
+        )
+        .unwrap();
+        assert_eq!(
+            read_bundle_names(&dir.path().join("Thing.app")),
+            vec!["Thing Pro"]
+        );
     }
 
     #[test]
