@@ -203,6 +203,76 @@ fn new_app_discovery() -> Box<dyn managers::command_router::AppDiscovery> {
     }
 }
 
+/// The app events that may be spoken aloud. Command-outcome events are
+/// included so their fixed phrases are spoken; their payloads never are.
+const TTS_EVENTS: [&str; 4] = [
+    "agent-bridge-reply",
+    "agent-bridge-error",
+    "voice-command-executed",
+    "voice-command-error",
+];
+
+/// Decides whether an app event should be spoken and, if so, what. Pure so
+/// the listener closure stays trivial. `None` when spoken replies are
+/// disabled or the event has no speakable phrase.
+fn tts_phrase_to_speak(enabled: bool, event_name: &str, payload: &str) -> Option<String> {
+    if !enabled {
+        return None;
+    }
+    managers::tts::phrase_for_event(event_name, payload)
+}
+
+/// Decodes an event payload. Agent replies are emitted as Rust strings, so the
+/// payload is a JSON string literal; anything that is not valid JSON string
+/// falls back to the raw payload.
+fn decode_tts_payload(raw: &str) -> String {
+    serde_json::from_str::<String>(raw).unwrap_or_else(|_| raw.to_string())
+}
+
+/// A fixed, content-free name for a speech error, safe to log.
+fn tts_error_kind(error: &managers::tts::TtsError) -> &'static str {
+    use managers::tts::TtsError;
+    match error {
+        TtsError::Empty => "empty",
+        TtsError::Recording => "recording",
+        TtsError::CancelFailed => "cancel-failed",
+        TtsError::Backend(_) => "backend",
+        TtsError::Unsupported => "unsupported",
+    }
+}
+
+/// Registers backend listeners that speak the four speakable app events.
+/// Speech is decoupled from the features that emit these events, so any
+/// feature that emits one is spoken without an inline call.
+fn register_tts_listeners(app: &AppHandle, tts: Arc<managers::tts::TtsManager>) {
+    for event_name in TTS_EVENTS {
+        let app_for_event = app.clone();
+        let tts_for_event = Arc::clone(&tts);
+        app.listen(event_name, move |event| {
+            let settings = get_settings(&app_for_event);
+            let payload = decode_tts_payload(event.payload());
+            let Some(phrase) = tts_phrase_to_speak(settings.tts_enabled, event_name, &payload)
+            else {
+                return;
+            };
+            let voice = settings.tts_voice.clone();
+            let rate = settings.tts_rate_wpm;
+            let tts_for_speech = Arc::clone(&tts_for_event);
+            // speak() may block briefly while a previous utterance is killed,
+            // so keep the event thread free.
+            std::thread::spawn(move || {
+                if let Err(error) = tts_for_speech.speak(&phrase, voice.as_deref(), Some(rate)) {
+                    // Log the error KIND only: never the spoken text or payload.
+                    match error {
+                        managers::tts::TtsError::Empty | managers::tts::TtsError::Recording => {}
+                        other => log::warn!("Spoken reply skipped: {}", tts_error_kind(&other)),
+                    }
+                }
+            });
+        });
+    }
+}
+
 fn initialize_core_logic(app_handle: &AppHandle) {
     // Note: Enigo (keyboard/mouse simulation) is NOT initialized here.
     // The frontend is responsible for calling the `initialize_enigo` command
@@ -256,6 +326,13 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(ambient_transcript);
     app_handle.manage(ambient_coordinator);
     app_handle.manage(ambient_listener.clone());
+    // Spoken replies: one shared manager, managed before any event listener
+    // that might speak. Event listeners are registered in `register_tts_listeners`.
+    let tts_manager = Arc::new(managers::tts::TtsManager::new(
+        managers::tts::default_backend(),
+    ));
+    app_handle.manage(tts_manager.clone());
+    register_tts_listeners(app_handle, tts_manager);
     let startup_settings = get_settings(app_handle);
     if startup_settings.wake_word_enabled {
         wakeword_listener.start();
@@ -760,6 +837,11 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_agent_bridge_enabled_setting,
             shortcut::change_agent_bridge_binary_path_setting,
             shortcut::change_voice_media_controls_setting,
+            shortcut::change_tts_enabled_setting,
+            shortcut::change_tts_voice_setting,
+            shortcut::change_tts_rate_setting,
+            shortcut::tts_speak_test,
+            shortcut::tts_stop,
             shortcut::change_post_process_base_url_setting,
             shortcut::change_post_process_api_key_setting,
             shortcut::change_post_process_model_setting,
@@ -1230,4 +1312,56 @@ pub fn run(cli_args: CliArgs) {
         }
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tts_listener_tests {
+    use super::{decode_tts_payload, tts_phrase_to_speak};
+
+    #[test]
+    fn disabled_setting_never_speaks() {
+        assert_eq!(
+            tts_phrase_to_speak(false, "agent-bridge-reply", "hello"),
+            None
+        );
+        assert_eq!(
+            tts_phrase_to_speak(false, "voice-command-executed", "x"),
+            None
+        );
+    }
+
+    #[test]
+    fn enabled_agent_reply_speaks_its_text() {
+        assert_eq!(
+            tts_phrase_to_speak(true, "agent-bridge-reply", "It is sunny."),
+            Some("It is sunny.".to_string())
+        );
+    }
+
+    #[test]
+    fn command_outcomes_speak_fixed_phrases_not_payloads() {
+        assert_eq!(
+            tts_phrase_to_speak(true, "voice-command-executed", "open /secret"),
+            Some(crate::managers::tts::DONE_PHRASE.to_string())
+        );
+        assert_eq!(
+            tts_phrase_to_speak(true, "voice-command-error", "stack trace"),
+            Some(crate::managers::tts::ERROR_PHRASE.to_string())
+        );
+    }
+
+    #[test]
+    fn unknown_event_is_never_spoken() {
+        assert_eq!(tts_phrase_to_speak(true, "model-state-changed", "x"), None);
+    }
+
+    #[test]
+    fn json_string_payload_is_decoded() {
+        assert_eq!(decode_tts_payload("\"hi \\\"there\\\"\""), "hi \"there\"");
+    }
+
+    #[test]
+    fn non_json_payload_falls_back_to_raw_text() {
+        assert_eq!(decode_tts_payload("plain text"), "plain text");
+    }
 }

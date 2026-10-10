@@ -17,6 +17,7 @@ use log::{debug, error, info, warn};
 use serde::Serialize;
 use specta::Type;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -918,6 +919,99 @@ pub fn change_word_correction_threshold_setting(
     Ok(())
 }
 
+/// Normalizes a voice name submitted from the settings UI.
+///
+/// Blank or missing input means "system default" (`Ok(None)`). A non-blank
+/// name is trimmed and must pass [`crate::managers::tts::sanitize_voice`];
+/// anything else is rejected so an unsafe value is never persisted.
+pub fn normalize_tts_voice(voice: Option<String>) -> Result<Option<String>, String> {
+    let Some(raw) = voice else {
+        return Ok(None);
+    };
+    if raw.trim().is_empty() {
+        return Ok(None);
+    }
+    crate::managers::tts::sanitize_voice(&raw)
+        .map(Some)
+        .ok_or_else(|| "Invalid voice name".to_string())
+}
+
+/// Maps a speech error to a short, content-free message for the UI. Speech
+/// text and backend output are never included.
+pub fn tts_error_message(error: &crate::managers::tts::TtsError) -> String {
+    use crate::managers::tts::TtsError;
+    match error {
+        TtsError::Empty => "Nothing to speak".to_string(),
+        TtsError::Recording => "Cannot speak while recording".to_string(),
+        TtsError::CancelFailed => "Previous speech could not be stopped".to_string(),
+        TtsError::Unsupported => "Spoken replies are not supported on this platform".to_string(),
+        TtsError::Backend(_) => "Speech output failed".to_string(),
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_enabled = enabled;
+    settings::write_settings(&app, settings);
+    if !enabled {
+        if let Some(tts) = app.try_state::<Arc<crate::managers::tts::TtsManager>>() {
+            tts.stop();
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_voice_setting(app: AppHandle, voice: Option<String>) -> Result<(), String> {
+    let voice = normalize_tts_voice(voice)?;
+    let mut settings = settings::get_settings(&app);
+    settings.tts_voice = voice;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_rate_setting(app: AppHandle, rate: u32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_rate_wpm = crate::managers::tts::clamp_rate(rate);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Speaks a short test phrase with the saved voice and rate. Works even when
+/// spoken replies are disabled so the user can audition a voice first. The
+/// text is never logged.
+#[tauri::command]
+#[specta::specta]
+pub fn tts_speak_test(app: AppHandle, text: String) -> Result<(), String> {
+    let tts = app
+        .try_state::<Arc<crate::managers::tts::TtsManager>>()
+        .ok_or_else(|| "Spoken replies are not available".to_string())?;
+    let settings = settings::get_settings(&app);
+    tts.speak(
+        &text,
+        settings.tts_voice.as_deref(),
+        Some(settings.tts_rate_wpm),
+    )
+    .map_err(|error| tts_error_message(&error))
+}
+
+/// Stops any spoken output that is currently playing.
+#[tauri::command]
+#[specta::specta]
+pub fn tts_stop(app: AppHandle) -> Result<(), String> {
+    if let Some(tts) = app.try_state::<Arc<crate::managers::tts::TtsManager>>() {
+        if !tts.stop() {
+            return Err("Speech could not be stopped".to_string());
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_extra_recording_buffer_setting(app: AppHandle, ms: u64) -> Result<(), String> {
@@ -1742,5 +1836,56 @@ mod tests {
         assert!(normalize_agent_bridge_binary_path(Some(too_long)).is_err());
         let multibyte = "\u{e9}".repeat(MAX_AGENT_BINARY_PATH_CHARS);
         assert!(normalize_agent_bridge_binary_path(Some(multibyte)).is_ok(), "counted in chars, not bytes");
+    }
+}
+
+#[cfg(test)]
+mod tts_command_tests {
+    use super::{normalize_tts_voice, tts_error_message};
+    use crate::managers::tts::TtsError;
+
+    #[test]
+    fn missing_or_blank_voice_means_system_default() {
+        assert_eq!(normalize_tts_voice(None), Ok(None));
+        assert_eq!(normalize_tts_voice(Some(String::new())), Ok(None));
+        assert_eq!(normalize_tts_voice(Some("   ".to_string())), Ok(None));
+    }
+
+    #[test]
+    fn valid_voice_is_stored_trimmed() {
+        assert_eq!(
+            normalize_tts_voice(Some("  Samantha (Enhanced) ".to_string())),
+            Ok(Some("Samantha (Enhanced)".to_string()))
+        );
+    }
+
+    #[test]
+    fn unsafe_voice_names_are_rejected() {
+        for bad in [
+            "-v".to_string(),
+            "Samantha; rm -rf".to_string(),
+            "Voice/../x".to_string(),
+            "a\nb".to_string(),
+            "x".repeat(65),
+        ] {
+            assert_eq!(
+                normalize_tts_voice(Some(bad.clone())),
+                Err("Invalid voice name".to_string()),
+                "accepted unsafe voice {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn speech_errors_map_to_content_free_messages() {
+        let backend = TtsError::Backend("secret path /tmp/x".to_string());
+        let message = tts_error_message(&backend);
+        assert_eq!(message, "Speech output failed");
+        assert!(!message.contains("secret"));
+        assert_eq!(tts_error_message(&TtsError::Empty), "Nothing to speak");
+        assert_eq!(
+            tts_error_message(&TtsError::Recording),
+            "Cannot speak while recording"
+        );
     }
 }

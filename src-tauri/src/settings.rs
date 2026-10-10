@@ -476,6 +476,15 @@ pub struct AppSettings {
     pub agent_bridge_prompt_flag: String,
     #[serde(default = "default_agent_bridge_timeout_secs")]
     pub agent_bridge_timeout_secs: u64,
+    /// Speak agent replies and a generic confirmation/failure phrase aloud.
+    /// Opt-in: spoken output audibly exposes agent reply content.
+    #[serde(default)]
+    pub tts_enabled: bool,
+    /// Optional macOS voice name (validated against a strict allowlist).
+    #[serde(default)]
+    pub tts_voice: Option<String>,
+    #[serde(default = "default_tts_rate_wpm")]
+    pub tts_rate_wpm: u32,
     #[serde(default)]
     pub wake_word_enabled: bool,
     #[serde(default = "default_wake_word_model_name")]
@@ -589,6 +598,10 @@ fn default_agent_bridge_prompt_flag() -> String {
 
 fn default_agent_bridge_timeout_secs() -> u64 {
     60
+}
+
+fn default_tts_rate_wpm() -> u32 {
+    crate::managers::tts::DEFAULT_RATE_WPM
 }
 
 fn default_model() -> String {
@@ -1052,6 +1065,9 @@ pub fn get_default_settings() -> AppSettings {
         agent_bridge_binary_path: None,
         agent_bridge_prompt_flag: default_agent_bridge_prompt_flag(),
         agent_bridge_timeout_secs: default_agent_bridge_timeout_secs(),
+        tts_enabled: false,
+        tts_voice: None,
+        tts_rate_wpm: default_tts_rate_wpm(),
         wake_word_enabled: false,
         wake_word_model_name: default_wake_word_model_name(),
         wake_word_confidence_threshold: default_wake_word_confidence_threshold(),
@@ -1733,6 +1749,27 @@ mod tests {
             .remove("agent_context_enabled");
         let loaded: AppSettings = serde_json::from_value(settings).unwrap();
         assert!(!loaded.agent_context_enabled);
+    }
+
+    #[test]
+    fn tts_defaults_are_off_with_no_voice_and_180_wpm() {
+        let settings = get_default_settings();
+        assert!(!settings.tts_enabled);
+        assert_eq!(settings.tts_voice, None);
+        assert_eq!(settings.tts_rate_wpm, 180);
+    }
+
+    #[test]
+    fn tts_settings_default_when_missing_from_legacy_settings() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        let object = settings.as_object_mut().unwrap();
+        object.remove("tts_enabled");
+        object.remove("tts_voice");
+        object.remove("tts_rate_wpm");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.tts_enabled);
+        assert_eq!(loaded.tts_voice, None);
+        assert_eq!(loaded.tts_rate_wpm, 180);
     }
 
     #[test]

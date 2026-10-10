@@ -8,6 +8,7 @@ use crate::audio_toolkit::{
 };
 use crate::helpers::clamshell;
 use crate::managers::transcription::StreamRouter;
+use crate::managers::tts::TtsManager;
 use crate::settings::{get_settings, write_settings, AppSettings, VadBackend};
 use crate::utils;
 use log::{debug, error, info, trace, warn};
@@ -769,6 +770,10 @@ impl AudioRecordingManager {
             if *self.is_recording.lock().unwrap() {
                 let _ = rec.stop();
                 *self.is_recording.lock().unwrap() = false;
+                // The capture that could have picked up speech is gone.
+                if let Some(tts) = self.tts_manager() {
+                    tts.note_recording_stopped();
+                }
             }
             let _ = rec.close();
         }
@@ -817,6 +822,13 @@ impl AudioRecordingManager {
         );
     }
 
+    /// The shared spoken-replies manager, if it has been registered in state.
+    fn tts_manager(&self) -> Option<Arc<TtsManager>> {
+        self.app_handle
+            .try_state::<Arc<TtsManager>>()
+            .map(|state| state.inner().clone())
+    }
+
     pub fn try_start_recording(
         &self,
         binding_id: &str,
@@ -825,6 +837,18 @@ impl AudioRecordingManager {
         let mut state = self.state.lock().unwrap();
 
         if let RecordingState::Idle = *state {
+            // Silence any spoken reply BEFORE the microphone can pick it up.
+            // Every failure return below must release this hold again.
+            let tts = self.tts_manager();
+            if let Some(tts) = tts.as_ref() {
+                tts.note_recording_started();
+            }
+            let release_tts = || {
+                if let Some(tts) = tts.as_ref() {
+                    tts.note_recording_stopped();
+                }
+            };
+
             // Cancel any pending lazy close (no-op in always-on mode, where
             // closes are never scheduled).
             self.close_generation.fetch_add(1, Ordering::SeqCst);
@@ -836,6 +860,7 @@ impl AudioRecordingManager {
             if let Err(e) = self.start_microphone_stream() {
                 let msg = format!("{e}");
                 error!("Failed to open microphone stream: {msg}");
+                release_tts();
                 return Err(msg);
             }
 
@@ -856,9 +881,13 @@ impl AudioRecordingManager {
                             generation,
                         });
                     }
-                    Err(error) => return Err(format!("Failed to start recorder: {error}")),
+                    Err(error) => {
+                        release_tts();
+                        return Err(format!("Failed to start recorder: {error}"));
+                    }
                 }
             }
+            release_tts();
             Err("Recorder not available".to_string())
         } else {
             Err("Already recording".to_string())
@@ -1032,6 +1061,10 @@ impl AudioRecordingManager {
 
                 *self.is_recording.lock().unwrap() = false;
                 self.set_state(&mut self.state.lock().unwrap(), RecordingState::Idle);
+                // The mic is closed: speech may resume.
+                if let Some(tts) = self.tts_manager() {
+                    tts.note_recording_stopped();
+                }
 
                 // In on-demand mode, close the mic (lazily if the setting is enabled)
                 if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
@@ -1086,6 +1119,10 @@ impl AudioRecordingManager {
                 }
 
                 *self.is_recording.lock().unwrap() = false;
+                // The mic is closed: speech may resume.
+                if let Some(tts) = self.tts_manager() {
+                    tts.note_recording_stopped();
+                }
 
                 // In on-demand mode, close the mic (lazily if the setting is enabled)
                 if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
