@@ -51,12 +51,164 @@ export interface HistorySearchController<T extends { id: number }> {
   setQuery: (query: string) => void;
   loadMore: () => Promise<void>;
   onHistoryUpdated: () => void;
+  /**
+   * Applies a pure mapper to the entries currently shown (list OR search
+   * results) and emits one state. Used for optimistic edits (toggle saved,
+   * delete) and incremental live updates. Does NOT invalidate in-flight
+   * requests and is a no-op after `dispose`.
+   */
+  patchEntries: (mapper: (entries: T[]) => T[]) => void;
   dispose: () => void;
   getState: () => HistorySearchState<T>;
 }
 
+function errorMessage(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  if (typeof value === "string") return value;
+  return String(value);
+}
+
 export function createHistorySearchController<T extends { id: number }>(
-  _deps: HistorySearchDeps<T>,
+  deps: HistorySearchDeps<T>,
 ): HistorySearchController<T> {
-  throw new Error("F5: not implemented");
+  const debounceMs = deps.debounceMs ?? 250;
+  let state: HistorySearchState<T> = {
+    mode: "list",
+    entries: [],
+    loading: false,
+    error: null,
+    hasMore: false,
+    query: "",
+  };
+  let generation = 0;
+  let disposed = false;
+  let pendingTimer: { handle: unknown } | null = null;
+
+  const isCurrent = (gen: number): boolean => !disposed && gen === generation;
+
+  const update = (patch: Partial<HistorySearchState<T>>): void => {
+    if (disposed) return;
+    state = { ...state, ...patch };
+    deps.onState(state);
+  };
+
+  const clearPendingTimer = (): void => {
+    if (pendingTimer !== null) {
+      deps.clearTimer(pendingTimer.handle);
+      pendingTimer = null;
+    }
+  };
+
+  const runSearch = async (query: string, gen: number): Promise<void> => {
+    try {
+      const results = await deps.search(query);
+      if (isCurrent(gen)) {
+        update({ entries: results, loading: false, error: null });
+      }
+    } catch (error) {
+      if (isCurrent(gen)) {
+        update({ error: errorMessage(error), entries: [], loading: false });
+      }
+    }
+  };
+
+  const refresh = async (): Promise<void> => {
+    const gen = ++generation;
+    clearPendingTimer();
+    update({ mode: "list", query: "", loading: true, error: null });
+    try {
+      const page = await deps.fetchPage(null);
+      if (isCurrent(gen)) {
+        update({
+          entries: page.entries,
+          hasMore: page.hasMore,
+          loading: false,
+          error: null,
+        });
+      }
+    } catch (error) {
+      if (isCurrent(gen)) {
+        update({ error: errorMessage(error), loading: false });
+      }
+    }
+  };
+
+  const setQuery = (raw: string): void => {
+    const gen = ++generation;
+    clearPendingTimer();
+    const query = raw.trim();
+    if (query === "") {
+      // Same as refresh(); fire-and-forget so the caller never awaits it.
+      void refresh();
+      return;
+    }
+    update({ mode: "search", query, loading: true, error: null });
+    const handle = deps.setTimer(() => {
+      if (disposed || gen !== generation) return;
+      pendingTimer = null;
+      void runSearch(query, gen);
+    }, debounceMs);
+    pendingTimer = { handle };
+  };
+
+  const loadMore = async (): Promise<void> => {
+    if (disposed || state.mode !== "list" || !state.hasMore || state.loading) {
+      return;
+    }
+    // Captures the current generation without bumping it, so any later
+    // setQuery/refresh/dispose makes this page response stale.
+    const gen = generation;
+    const last = state.entries[state.entries.length - 1];
+    const cursor = last === undefined ? null : last.id;
+    update({ loading: true });
+    try {
+      const page = await deps.fetchPage(cursor);
+      if (isCurrent(gen)) {
+        update({
+          entries: [...state.entries, ...page.entries],
+          hasMore: page.hasMore,
+          loading: false,
+        });
+      }
+    } catch (error) {
+      if (isCurrent(gen)) {
+        update({ error: errorMessage(error), loading: false });
+      }
+    }
+  };
+
+  const onHistoryUpdated = (): void => {
+    if (disposed) return;
+    if (state.mode === "search" && state.query !== "") {
+      const gen = ++generation;
+      clearPendingTimer();
+      update({ loading: true });
+      void runSearch(state.query, gen);
+      return;
+    }
+    void refresh();
+  };
+
+  // Does not bump `generation`: optimistic edits and live patches must not
+  // invalidate an in-flight search or page. `update` already no-ops after
+  // dispose.
+  const patchEntries = (mapper: (entries: T[]) => T[]): void => {
+    update({ entries: mapper(state.entries) });
+  };
+
+  const dispose = (): void => {
+    disposed = true;
+    generation += 1;
+    clearPendingTimer();
+  };
+
+  return {
+    refresh,
+    setQuery,
+    loadMore,
+    onHistoryUpdated,
+    patchEntries,
+    dispose,
+    getState: () => state,
+  };
 }

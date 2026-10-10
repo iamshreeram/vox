@@ -394,6 +394,63 @@ const scenarios: Record<string, () => Promise<void>> = {
     captured(); // a timer that raced the clear
     assert.equal(h.searchCalls.length, 0, "no search after dispose");
   },
+
+  async "patchEntries applies a pure mapper to the current list entries and emits"() {
+    const h = harness();
+    await loaded(h, [3, 2, 1], true);
+    const emitted = h.states.length;
+    h.controller.patchEntries((prev) => prev.filter((e) => e.id !== 2));
+    const state = h.controller.getState();
+    assert.deepEqual(state.entries, entries(3, 1));
+    assert.equal(state.hasMore, true, "other state untouched");
+    assert.equal(state.loading, false);
+    assert.equal(state.mode, "list");
+    assert.equal(h.states.length, emitted + 1, "exactly one state emitted");
+    assert.deepEqual(h.last().entries, entries(3, 1));
+  },
+
+  async "patchEntries also patches search results"() {
+    const h = harness();
+    h.controller.setQuery("x");
+    h.fireTimers();
+    h.searchCalls[0].d.resolve(entries(5, 4));
+    await flush();
+    h.controller.patchEntries((prev) => [{ id: 9 }, ...prev]);
+    const state = h.controller.getState();
+    assert.deepEqual(state.entries, entries(9, 5, 4));
+    assert.equal(state.mode, "search");
+    assert.equal(state.query, "x");
+  },
+
+  async "loadMore uses the last PATCHED entry as its cursor"() {
+    const h = harness();
+    await loaded(h, [3, 2], true);
+    h.controller.patchEntries((prev) => prev.filter((e) => e.id !== 2));
+    const more = h.controller.loadMore();
+    assert.equal(h.pageCalls[1].cursor, 3);
+    h.pageCalls[1].d.resolve({ entries: entries(1), hasMore: false });
+    await more;
+    assert.deepEqual(h.controller.getState().entries, entries(3, 1));
+  },
+
+  async "patchEntries does not invalidate an in-flight search"() {
+    const h = harness();
+    h.controller.setQuery("x");
+    h.fireTimers(); // search in flight
+    h.controller.patchEntries((prev) => prev);
+    h.searchCalls[0].d.resolve(entries(7));
+    await flush();
+    assert.deepEqual(h.controller.getState().entries, entries(7), "result still applied");
+  },
+
+  async "patchEntries after dispose is silent"() {
+    const h = harness();
+    await loaded(h, [2, 1], false);
+    h.controller.dispose();
+    const before = h.states.length;
+    h.controller.patchEntries((prev) => prev.slice(1));
+    assert.equal(h.states.length, before);
+  },
 };
 
 let failed = 0;

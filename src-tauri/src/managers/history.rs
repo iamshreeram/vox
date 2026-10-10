@@ -656,13 +656,23 @@ pub(crate) const DEFAULT_SEARCH_LIMIT: usize = 50;
 
 /// Escapes `\`, `%` and `_` so user text is matched literally by a
 /// `LIKE ... ESCAPE '\'` clause.
-pub(crate) fn escape_like(_query: &str) -> String {
-    todo!("F5: implement")
+pub(crate) fn escape_like(query: &str) -> String {
+    let mut escaped = String::with_capacity(query.len());
+    for ch in query.chars() {
+        if matches!(ch, '\\' | '%' | '_') {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
 }
 
 /// `None` -> [`DEFAULT_SEARCH_LIMIT`]; otherwise clamped to `1..=MAX_SEARCH_LIMIT`.
-pub(crate) fn clamp_search_limit(_limit: Option<usize>) -> usize {
-    todo!("F5: implement")
+pub(crate) fn clamp_search_limit(limit: Option<usize>) -> usize {
+    match limit {
+        None => DEFAULT_SEARCH_LIMIT,
+        Some(n) => n.clamp(1, MAX_SEARCH_LIMIT),
+    }
 }
 
 impl HistoryManager {
@@ -672,15 +682,34 @@ impl HistoryManager {
     /// an empty list. Parameterized; user text is never interpolated into SQL.
     /// A database failure is an `Err`, distinct from "no matches" (`Ok(vec![])`).
     pub(crate) fn search_entries_with_conn(
-        _conn: &Connection,
-        _query: &str,
-        _limit: usize,
+        conn: &Connection,
+        query: &str,
+        limit: usize,
     ) -> Result<Vec<HistoryEntry>> {
-        todo!("F5: implement")
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let pattern = format!("%{}%", escape_like(trimmed));
+        let mut stmt = conn.prepare(
+            r"SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested
+             FROM transcription_history
+             WHERE transcription_text LIKE ?1 ESCAPE '\'
+                OR COALESCE(post_processed_text, '') LIKE ?1 ESCAPE '\'
+                OR title LIKE ?1 ESCAPE '\'
+             ORDER BY id DESC
+             LIMIT ?2",
+        )?;
+        let entries = stmt
+            .query_map(params![pattern, limit as i64], Self::map_history_entry)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(entries)
     }
 
-    pub fn search_entries(&self, _query: &str, _limit: Option<usize>) -> Result<Vec<HistoryEntry>> {
-        todo!("F5: implement")
+    pub fn search_entries(&self, query: &str, limit: Option<usize>) -> Result<Vec<HistoryEntry>> {
+        let conn = self.get_connection()?;
+        Self::search_entries_with_conn(&conn, query, clamp_search_limit(limit))
     }
 }
 
