@@ -475,6 +475,10 @@ pub struct AppSettings {
     pub wake_word_confidence_threshold: f32,
     #[serde(default = "default_wake_word_cooldown_ms")]
     pub wake_word_cooldown_ms: u32,
+    /// User-defined spoken phrase -> open URL / folder / app. Validated when
+    /// saved (`set_voice_shortcuts`) and again at match time.
+    #[serde(default)]
+    pub voice_shortcuts: Vec<crate::managers::voice_shortcuts::VoiceShortcut>,
     /// How long (ms) of sustained mic silence after a wake-word-triggered
     /// recording auto-finishes it (transcribe + route, same as pressing
     /// the hotkey again) -- without this, a locked wake-word session waits
@@ -1041,6 +1045,7 @@ pub fn get_default_settings() -> AppSettings {
         wake_word_model_name: default_wake_word_model_name(),
         wake_word_confidence_threshold: default_wake_word_confidence_threshold(),
         wake_word_cooldown_ms: default_wake_word_cooldown_ms(),
+        voice_shortcuts: Vec::new(),
         wake_word_silence_timeout_ms: default_wake_word_silence_timeout_ms(),
         recording_retention_period: default_recording_retention_period(),
         paste_method: PasteMethod::default(),
@@ -1658,6 +1663,41 @@ mod tests {
     #[test]
     fn memory_is_disabled_by_default() {
         assert!(!get_default_settings().memory_enabled);
+    }
+
+    #[test]
+    fn voice_shortcuts_default_empty_and_default_when_missing_from_legacy_settings() {
+        assert!(get_default_settings().voice_shortcuts.is_empty());
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings.as_object_mut().unwrap().remove("voice_shortcuts");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(loaded.voice_shortcuts.is_empty());
+    }
+
+    #[test]
+    fn voice_shortcuts_round_trip_through_json() {
+        use crate::managers::voice_shortcuts::{VoiceShortcut, VoiceShortcutAction};
+        let mut settings = get_default_settings();
+        settings.voice_shortcuts = vec![VoiceShortcut {
+            phrase: "open work".into(),
+            action: VoiceShortcutAction::OpenUrl {
+                url: "https://example.com".into(),
+            },
+        }];
+        let json = serde_json::to_value(&settings).unwrap();
+        assert_eq!(json["voice_shortcuts"][0]["action"]["type"], "open_url");
+        let loaded: AppSettings = serde_json::from_value(json).unwrap();
+        assert_eq!(loaded.voice_shortcuts, settings.voice_shortcuts);
+    }
+
+    #[test]
+    fn malformed_voice_shortcuts_are_salvaged_without_losing_other_settings() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings["voice_shortcuts"] = serde_json::json!([{ "phrase": 5, "action": "nonsense" }]);
+        settings["history_limit"] = serde_json::json!(77);
+        let salvaged = salvage_settings(&settings);
+        assert!(salvaged.voice_shortcuts.is_empty());
+        assert_eq!(salvaged.history_limit, 77);
     }
 
     #[test]

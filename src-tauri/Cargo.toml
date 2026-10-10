@@ -67,6 +67,7 @@ strsim = "0.11.0"
 natural = "0.5.0"
 regex = "1"
 plist = "1"
+url = "2"
 # Text-based language ID (filler-word removal fallback); isolang bridges the
 # ISO 639-1 codes in model metadata to whatlang's 639-3 codes.
 whatlang = "0.16"

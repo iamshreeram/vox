@@ -9,6 +9,8 @@ use crate::managers::memory::MemoryManager;
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
+use crate::managers::voice_common::HookEvent;
+use crate::managers::voice_shortcuts::{run_shortcut_hook, ShortcutOpener};
 use crate::settings::{get_settings, AppSettings, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID};
 use crate::shortcut;
 use crate::tray::{set_tray_state, TrayIconState};
@@ -20,6 +22,7 @@ use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Manager;
@@ -131,6 +134,32 @@ fn decide_memory_fact(memory_enabled: bool, transcript: &str) -> Option<String> 
         return None;
     }
     MemoryManager::extract_fact(transcript)
+}
+
+/// Adapts the Tauri opener to the `ShortcutOpener` used by voice shortcuts.
+struct AppShortcutOpener<'a>(&'a AppHandle);
+
+impl ShortcutOpener for AppShortcutOpener<'_> {
+    fn open_url(&self, url: &str) -> Result<(), String> {
+        self.0
+            .opener()
+            .open_url(url.to_string(), None::<String>)
+            .map_err(|e| format!("Failed to open the URL: {e}"))
+    }
+
+    fn open_path(&self, path: &Path) -> Result<(), String> {
+        self.0
+            .opener()
+            .open_path(path.to_string_lossy().to_string(), None::<String>)
+            .map_err(|e| format!("Failed to open the folder: {e}"))
+    }
+
+    fn open_app(&self, app_path: &Path) -> Result<(), String> {
+        self.0
+            .opener()
+            .open_path(app_path.to_string_lossy().to_string(), None::<String>)
+            .map_err(|e| format!("Failed to open the app: {e}"))
+    }
 }
 
 /// Performs a matched voice command via the OS opener (never arbitrary
@@ -807,7 +836,35 @@ impl ShortcutAction for TranscribeAction {
                             let hook_settings = get_settings(&ah);
                             let mut skip_paste_for_command = false;
 
-                            if hook_settings.voice_commands_enabled {
+                            // Custom voice shortcuts run first. A matched shortcut
+                            // consumes the utterance (even if it failed), so the
+                            // built-in router and agent escalation are skipped.
+                            let shortcut_hook = {
+                                let router = ah.state::<Arc<CommandRouter>>();
+                                let home = std::env::var_os("HOME").map(PathBuf::from);
+                                let opener = AppShortcutOpener(&ah);
+                                run_shortcut_hook(
+                                    hook_settings.voice_commands_enabled,
+                                    &hook_settings.voice_shortcuts,
+                                    &transcription,
+                                    &router,
+                                    home.as_deref(),
+                                    &opener,
+                                )
+                            };
+                            if let Some(hook) = shortcut_hook {
+                                match hook.event {
+                                    HookEvent::Executed(description) => {
+                                        info!("Voice shortcut executed: {description}");
+                                        let _ = ah.emit("voice-command-executed", description);
+                                    }
+                                    HookEvent::Error(message) => {
+                                        error!("Voice shortcut failed: {message}");
+                                        let _ = ah.emit("voice-command-error", message);
+                                    }
+                                }
+                                skip_paste_for_command = hook.outcome.skip_paste;
+                            } else if hook_settings.voice_commands_enabled {
                                 let router = ah.state::<Arc<CommandRouter>>();
                                 match router.route(&transcription) {
                                     RouteDecision::Matched { action } => {

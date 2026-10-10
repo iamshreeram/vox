@@ -10,5 +10,7 @@ pub mod model;
 pub mod model_capabilities;
 pub mod safety_policy;
 pub mod transcription;
+pub mod voice_common;
+pub mod voice_shortcuts;
 pub mod wakeword;
 pub mod wakeword_listener;
