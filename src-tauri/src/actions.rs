@@ -9,7 +9,7 @@ use crate::managers::conversation::{
 };
 use crate::managers::history::HistoryManager;
 use crate::managers::media_control::{
-    decide_media_command, run_media_hook, MediaHookResult, OsascriptRunner, ScriptRunner,
+    run_media_hook, MediaHookResult, OsascriptRunner, ScriptRunner,
 };
 use crate::managers::memory::MemoryManager;
 use crate::managers::model::ModelManager;
@@ -128,6 +128,7 @@ fn decide_voice_command(
 /// Whether a media-hook result means the utterance was consumed: a matched
 /// media command (success or failure) is never pasted and never escalated to
 /// the router or agent bridge. `None` means it was not a media command.
+#[cfg_attr(not(test), allow(dead_code))]
 fn media_hook_consumes_utterance(result: Option<&MediaHookResult>) -> bool {
     result.is_some_and(|result| result.outcome.skip_paste)
 }
@@ -162,14 +163,39 @@ pub(crate) struct UtteranceHookResult {
 /// `voice_media_controls_enabled`. Blocking (media can take seconds): call
 /// from a blocking thread.
 pub(crate) fn run_utterance_hooks(
-    _settings: &AppSettings,
-    _transcript: &str,
-    _router: &CommandRouter,
-    _home: Option<&Path>,
-    _opener: &dyn ShortcutOpener,
-    _media_runner: &dyn ScriptRunner,
+    settings: &AppSettings,
+    transcript: &str,
+    router: &CommandRouter,
+    home: Option<&Path>,
+    opener: &dyn ShortcutOpener,
+    media_runner: &dyn ScriptRunner,
 ) -> Option<UtteranceHookResult> {
-    todo!("integration: implement")
+    if let Some(shortcut) = run_shortcut_hook(
+        settings.voice_commands_enabled,
+        &settings.voice_shortcuts,
+        transcript,
+        router,
+        home,
+        opener,
+    ) {
+        return Some(UtteranceHookResult {
+            source: HookSource::Shortcut,
+            outcome: shortcut.outcome,
+            event: shortcut.event,
+        });
+    }
+
+    run_media_hook(
+        settings.voice_media_controls_enabled,
+        settings.voice_commands_enabled,
+        transcript,
+        media_runner,
+    )
+    .map(|media| UtteranceHookResult {
+        source: HookSource::Media,
+        outcome: media.outcome,
+        event: media.event,
+    })
 }
 
 fn should_escalate_to_agent_bridge(
@@ -242,9 +268,9 @@ fn decide_memory_fact(memory_enabled: bool, transcript: &str) -> Option<String> 
 }
 
 /// Adapts the Tauri opener to the `ShortcutOpener` used by voice shortcuts.
-struct AppShortcutOpener<'a>(&'a AppHandle);
+struct AppShortcutOpener(AppHandle);
 
-impl ShortcutOpener for AppShortcutOpener<'_> {
+impl ShortcutOpener for AppShortcutOpener {
     fn open_url(&self, url: &str) -> Result<(), String> {
         self.0
             .opener()
@@ -947,84 +973,49 @@ impl ShortcutAction for TranscribeAction {
                             // -> agent bridge (only on a genuine router NoMatch).
                             let mut hook_consumed = false;
 
-                            let shortcut_hook = {
-                                let router = ah.state::<Arc<CommandRouter>>();
-                                let home = std::env::var_os("HOME").map(PathBuf::from);
-                                let opener = AppShortcutOpener(&ah);
-                                run_shortcut_hook(
-                                    hook_settings.voice_commands_enabled,
-                                    &hook_settings.voice_shortcuts,
-                                    &transcription,
-                                    &router,
-                                    home.as_deref(),
-                                    &opener,
-                                )
-                            };
-                            if let Some(hook) = shortcut_hook {
-                                match hook.event {
-                                    HookEvent::Executed(description) => {
-                                        info!("Voice shortcut executed: {description}");
-                                        let _ = ah.emit("voice-command-executed", description);
-                                    }
-                                    HookEvent::Error(message) => {
-                                        error!("Voice shortcut failed: {message}");
-                                        let _ = ah.emit("voice-command-error", message);
-                                    }
-                                }
-                                skip_paste_for_command = hook.outcome.skip_paste;
-                                hook_consumed = true;
-                            }
-
-                            // Media controls. The cheap pure gate avoids spawning a
-                            // thread for ordinary dictation; the osascript call
-                            // itself (up to 5s) runs on a blocking thread so the
-                            // async runtime stays free.
-                            if !hook_consumed {
-                                let media_result = if decide_media_command(
-                                    hook_settings.voice_media_controls_enabled,
-                                    hook_settings.voice_commands_enabled,
-                                    &transcription,
-                                )
-                                .is_some()
-                                {
-                                    let media_text = transcription.clone();
-                                    match tauri::async_runtime::spawn_blocking(move || {
-                                        run_media_hook(true, true, &media_text, &OsascriptRunner)
-                                    })
-                                    .await
-                                    {
-                                        Ok(result) => result,
-                                        Err(join_err) => {
-                                            // The utterance matched a media command, so it
-                                            // is still consumed even if the run crashed.
-                                            error!("Media control task failed: {join_err}");
-                                            Some(MediaHookResult {
-                                                outcome: VoiceHookOutcome::HANDLED,
-                                                event: HookEvent::Error(
-                                                    "Media control failed unexpectedly.".to_string(),
-                                                ),
-                                            })
+                            // Pre-router hooks (custom shortcut, then media control)
+                            // can block for seconds, so they run on one blocking
+                            // thread. Skipped entirely when voice commands are off.
+                            if hook_settings.voice_commands_enabled {
+                                let handle = ah.clone();
+                                let settings = hook_settings.clone();
+                                let text = transcription.clone();
+                                let hook_join = tauri::async_runtime::spawn_blocking(move || {
+                                    let router = handle.state::<Arc<CommandRouter>>();
+                                    let home = std::env::var_os("HOME").map(PathBuf::from);
+                                    let opener = AppShortcutOpener(handle.clone());
+                                    run_utterance_hooks(
+                                        &settings,
+                                        &text,
+                                        &router,
+                                        home.as_deref(),
+                                        &opener,
+                                        &OsascriptRunner,
+                                    )
+                                })
+                                .await;
+                                match hook_join {
+                                    Ok(Some(hook)) => {
+                                        debug!("Voice hook consumed utterance: {:?}", hook.source);
+                                        match hook.event {
+                                            HookEvent::Executed(description) => {
+                                                info!("Voice hook executed: {description}");
+                                                let _ =
+                                                    ah.emit("voice-command-executed", description);
+                                            }
+                                            HookEvent::Error(message) => {
+                                                error!("Voice hook failed: {message}");
+                                                let _ = ah.emit("voice-command-error", message);
+                                            }
                                         }
+                                        skip_paste_for_command = hook.outcome.skip_paste;
+                                        hook_consumed = true;
                                     }
-                                } else {
-                                    None
-                                };
-                                if let Some(result) = media_result.as_ref() {
-                                    match &result.event {
-                                        HookEvent::Executed(description) => {
-                                            info!("Media control executed: {description}");
-                                            let _ = ah
-                                                .emit("voice-command-executed", description.clone());
-                                        }
-                                        HookEvent::Error(message) => {
-                                            error!("Failed to run media control: {message}");
-                                            let _ = ah.emit("voice-command-error", message.clone());
-                                        }
+                                    Ok(None) => {}
+                                    Err(join_err) => {
+                                        // Not consumed: the user's dictation is preserved.
+                                        error!("Voice hook task failed: {join_err}");
                                     }
-                                }
-                                if media_hook_consumes_utterance(media_result.as_ref()) {
-                                    skip_paste_for_command = true;
-                                    hook_consumed = true;
                                 }
                             }
 
@@ -1041,6 +1032,10 @@ impl ShortcutAction for TranscribeAction {
                                             }
                                             Err(err) => {
                                                 error!("Failed to execute voice command: {err}");
+                                                let _ = ah.emit(
+                                                    "voice-command-error",
+                                                    "Voice command failed.".to_string(),
+                                                );
                                             }
                                         }
                                     }
@@ -1617,7 +1612,9 @@ mod tests {
         use crate::managers::command_router::{AppDiscovery, CommandRouter, HomeDirProvider};
         use crate::managers::media_control::{MediaError, ScriptRunner};
         use crate::managers::voice_common::HookEvent;
-        use crate::managers::voice_shortcuts::{ShortcutOpener, VoiceShortcut, VoiceShortcutAction};
+        use crate::managers::voice_shortcuts::{
+            ShortcutOpener, VoiceShortcut, VoiceShortcutAction,
+        };
         use crate::settings::{get_default_settings, AppSettings};
         use std::path::{Path, PathBuf};
         use std::sync::Mutex;
@@ -1724,17 +1721,29 @@ mod tests {
 
         #[test]
         fn custom_shortcut_wins_over_media_for_the_same_phrase() {
-            let s = settings(true, true, vec![url_shortcut("pause", "https://example.com/p")]);
+            let s = settings(
+                true,
+                true,
+                vec![url_shortcut("pause", "https://example.com/p")],
+            );
             let (opener, runner) = (Opener::default(), Runner::ok());
             let result = run(&s, "pause", &opener, &runner).expect("consumed");
             assert_eq!(result.source, HookSource::Shortcut);
             assert_eq!(opener.count(), 1);
-            assert_eq!(runner.count(), 0, "media must not run once a shortcut matched");
+            assert_eq!(
+                runner.count(),
+                0,
+                "media must not run once a shortcut matched"
+            );
         }
 
         #[test]
         fn media_runs_when_no_shortcut_matches() {
-            let s = settings(true, true, vec![url_shortcut("open docs", "https://example.com/d")]);
+            let s = settings(
+                true,
+                true,
+                vec![url_shortcut("open docs", "https://example.com/d")],
+            );
             let (opener, runner) = (Opener::default(), Runner::ok());
             let result = run(&s, "pause", &opener, &runner).expect("consumed");
             assert_eq!(result.source, HookSource::Media);
@@ -1746,9 +1755,21 @@ mod tests {
 
         #[test]
         fn ordinary_dictation_matches_nothing_and_touches_nothing() {
-            let s = settings(true, true, vec![url_shortcut("open docs", "https://example.com/d")]);
+            let s = settings(
+                true,
+                true,
+                vec![url_shortcut("open docs", "https://example.com/d")],
+            );
             let (opener, runner) = (Opener::default(), Runner::ok());
-            assert_eq!(run(&s, "please write me a short email to the team", &opener, &runner), None);
+            assert_eq!(
+                run(
+                    &s,
+                    "please write me a short email to the team",
+                    &opener,
+                    &runner
+                ),
+                None
+            );
             assert_eq!(run(&s, "", &opener, &runner), None);
             assert_eq!(opener.count(), 0);
             assert_eq!(runner.count(), 0);
@@ -1756,7 +1777,11 @@ mod tests {
 
         #[test]
         fn voice_commands_off_disables_both_hooks() {
-            let s = settings(false, true, vec![url_shortcut("pause", "https://example.com/p")]);
+            let s = settings(
+                false,
+                true,
+                vec![url_shortcut("pause", "https://example.com/p")],
+            );
             let (opener, runner) = (Opener::default(), Runner::ok());
             assert_eq!(run(&s, "pause", &opener, &runner), None);
             assert_eq!(run(&s, "volume 40", &opener, &runner), None);
@@ -1766,9 +1791,17 @@ mod tests {
 
         #[test]
         fn media_off_leaves_media_phrases_alone_but_shortcuts_still_work() {
-            let s = settings(true, false, vec![url_shortcut("open docs", "https://example.com/d")]);
+            let s = settings(
+                true,
+                false,
+                vec![url_shortcut("open docs", "https://example.com/d")],
+            );
             let (opener, runner) = (Opener::default(), Runner::ok());
-            assert_eq!(run(&s, "pause", &opener, &runner), None, "falls through to dictation/router");
+            assert_eq!(
+                run(&s, "pause", &opener, &runner),
+                None,
+                "falls through to dictation/router"
+            );
             let result = run(&s, "open docs", &opener, &runner).expect("shortcut still works");
             assert_eq!(result.source, HookSource::Shortcut);
             assert_eq!(runner.count(), 0);
@@ -1776,9 +1809,20 @@ mod tests {
 
         #[test]
         fn failed_shortcut_still_consumes_and_never_falls_through_to_media() {
-            let s = settings(true, true, vec![url_shortcut("pause", "https://example.com/p")]);
-            let (opener, runner) = (Opener { fail: true, ..Opener::default() }, Runner::ok());
-            let result = run(&s, "pause", &opener, &runner).expect("consumed even though it failed");
+            let s = settings(
+                true,
+                true,
+                vec![url_shortcut("pause", "https://example.com/p")],
+            );
+            let (opener, runner) = (
+                Opener {
+                    fail: true,
+                    ..Opener::default()
+                },
+                Runner::ok(),
+            );
+            let result =
+                run(&s, "pause", &opener, &runner).expect("consumed even though it failed");
             assert_eq!(result.source, HookSource::Shortcut);
             assert!(matches!(result.event, HookEvent::Error(_)));
             assert!(result.outcome.skip_paste);
@@ -1790,7 +1834,8 @@ mod tests {
         fn failed_media_command_still_consumes_the_utterance() {
             let s = settings(true, true, Vec::new());
             let (opener, runner) = (Opener::default(), Runner::failing());
-            let result = run(&s, "next track", &opener, &runner).expect("consumed even though it failed");
+            let result =
+                run(&s, "next track", &opener, &runner).expect("consumed even though it failed");
             assert_eq!(result.source, HookSource::Media);
             assert!(matches!(result.event, HookEvent::Error(_)));
             assert!(result.outcome.skip_paste);
