@@ -310,6 +310,10 @@
         "label": "Voice Commands",
         "description": "Lets phrases like \"open Safari\" or \"open Downloads\" open the real app/folder instead of being pasted as text. Only recognized, deterministic commands run \u2014 anything else falls back to normal dictation."
       },
+      "voiceMediaControls": {
+        "label": "Media Controls",
+        "description": "Phrases like \"pause\", \"next track\" or \"volume 40\" control Spotify or Music and the system volume instead of being pasted. Only exact whole phrases are matched, but a standalone dictated \"pause\", \"skip\" or \"mute\" will be treated as a command while this is on. Requires Voice Commands. macOS may ask you to allow Automation the first time."
+      },
       "agentBridge": {
         "label": "Agent Bridge",
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",

@@ -1109,6 +1109,25 @@ pub fn change_experimental_enabled_setting(app: AppHandle, enabled: bool) -> Res
     Ok(())
 }
 
+/// Persists the `voice_media_controls_enabled` setting (opt-in media control
+/// phrases such as "pause" or "volume 40"; only effective while Voice
+/// Commands is on).
+#[tauri::command]
+#[specta::specta]
+pub fn change_voice_media_controls_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.voice_media_controls_enabled = enabled;
+    settings::write_settings(&app, settings);
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "voice_media_controls_enabled",
+            "value": enabled
+        }),
+    );
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_post_process_base_url_setting(
