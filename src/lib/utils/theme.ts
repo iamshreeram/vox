@@ -18,10 +18,10 @@ import { commands, type Theme } from "@/bindings";
 
 export const THEME_STORAGE_KEY = "handy.theme";
 
-export const THEME_OPTIONS: Theme[] = ["system", "light", "dark"];
+export const THEME_OPTIONS: Theme[] = ["system", "light", "dark", "aurora"];
 
 const isTheme = (value: unknown): value is Theme =>
-  value === "system" || value === "light" || value === "dark";
+  value === "system" || value === "light" || value === "dark" || value === "aurora";
 
 /** Apply a theme to the document root and remember it for the next launch. */
 export const applyTheme = (theme: Theme): void => {

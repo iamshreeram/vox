@@ -635,15 +635,7 @@ pub fn change_sound_theme_setting(app: AppHandle, theme: String) -> Result<(), S
 #[specta::specta]
 pub fn change_theme_setting(app: AppHandle, theme: String) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    let parsed = match theme.as_str() {
-        "system" => Theme::System,
-        "light" => Theme::Light,
-        "dark" => Theme::Dark,
-        other => {
-            warn!("Invalid theme '{}', defaulting to system", other);
-            Theme::System
-        }
-    };
+    let parsed = parse_theme_setting(&theme);
     settings.theme = parsed;
     settings::write_settings(&app, settings);
     #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -652,6 +644,22 @@ pub fn change_theme_setting(app: AppHandle, theme: String) -> Result<(), String>
     // live — they set `data-theme` on their own document and can't see this one.
     let _ = app.emit("theme-changed", parsed);
     Ok(())
+}
+
+/// Pure parser for the `theme` setting string -> `Theme`. Extracted from
+/// `change_theme_setting` so the mapping (including the fallback-to-System
+/// behavior for an unrecognized value) is unit-testable without an `AppHandle`.
+fn parse_theme_setting(theme: &str) -> Theme {
+    match theme {
+        "system" => Theme::System,
+        "light" => Theme::Light,
+        "dark" => Theme::Dark,
+        "aurora" => Theme::Aurora,
+        other => {
+            warn!("Invalid theme '{}', defaulting to system", other);
+            Theme::System
+        }
+    }
 }
 
 /// Applies the appearance setting to the native window chrome (title bar), which
@@ -665,15 +673,27 @@ pub fn change_theme_setting(app: AppHandle, theme: String) -> Result<(), String>
 /// its window theming is backend-dependent and unreliable.
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 pub fn apply_window_theme(app: &AppHandle, theme: Theme) {
-    let window_theme = match theme {
-        Theme::System => None,
-        Theme::Light => Some(tauri::Theme::Light),
-        Theme::Dark => Some(tauri::Theme::Dark),
-    };
+    let window_theme = window_theme_for(theme);
     if let Some(window) = app.get_webview_window("main") {
         if let Err(e) = window.set_theme(window_theme) {
             warn!("Failed to apply window theme: {}", e);
         }
+    }
+}
+
+/// Pure mapping from the app's `Theme` setting to the native window chrome
+/// theme. Extracted from `apply_window_theme` so it's unit-testable without an
+/// `AppHandle`/real window. `System` clears the override (native chrome follows
+/// the OS); `Aurora` is a dark-based palette (see theme.css) so it forces the
+/// matching native chrome rather than leaving it to follow the OS, same as
+/// `Dark`.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn window_theme_for(theme: Theme) -> Option<tauri::Theme> {
+    match theme {
+        Theme::System => None,
+        Theme::Light => Some(tauri::Theme::Light),
+        Theme::Dark => Some(tauri::Theme::Dark),
+        Theme::Aurora => Some(tauri::Theme::Dark),
     }
 }
 
@@ -1465,8 +1485,34 @@ pub async fn get_available_accelerators() -> crate::managers::transcription::Ava
 
 #[cfg(test)]
 mod tests {
+    use super::parse_theme_setting;
+    use crate::settings::Theme;
     use handy_keys::Hotkey;
     use tauri_plugin_global_shortcut::Shortcut;
+
+    #[test]
+    fn parse_theme_setting_recognizes_all_four_values() {
+        assert_eq!(parse_theme_setting("system"), Theme::System);
+        assert_eq!(parse_theme_setting("light"), Theme::Light);
+        assert_eq!(parse_theme_setting("dark"), Theme::Dark);
+        assert_eq!(parse_theme_setting("aurora"), Theme::Aurora);
+    }
+
+    #[test]
+    fn parse_theme_setting_falls_back_to_system_for_unknown_value() {
+        assert_eq!(parse_theme_setting("not-a-real-theme"), Theme::System);
+        assert_eq!(parse_theme_setting(""), Theme::System);
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    #[test]
+    fn window_theme_for_maps_aurora_to_native_dark_chrome() {
+        use super::window_theme_for;
+        assert_eq!(window_theme_for(Theme::System), None);
+        assert_eq!(window_theme_for(Theme::Light), Some(tauri::Theme::Light));
+        assert_eq!(window_theme_for(Theme::Dark), Some(tauri::Theme::Dark));
+        assert_eq!(window_theme_for(Theme::Aurora), Some(tauri::Theme::Dark));
+    }
 
     #[test]
     fn compound_shortcut_keys_parse_on_both_backends() {

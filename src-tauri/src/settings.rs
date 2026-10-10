@@ -287,13 +287,17 @@ impl SoundTheme {
 }
 
 /// UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
-/// and `Dark` force one of the two palettes Vox already ships.
+/// and `Dark` force one of the two palettes Vox already ships. `Aurora` is a
+/// third, non-adaptive accent palette (teal/violet on deep slate) a user can
+/// opt into explicitly -- it never changes what `System`/`Light`/`Dark` look
+/// like and is not anyone's default.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Theme {
     System,
     Light,
     Dark,
+    Aurora,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]

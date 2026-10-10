@@ -1268,7 +1268,7 @@ export type StreamWorkKind = "transcribing" | "polishing"
  * UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
  * and `Dark` force one of the two palettes Vox already ships.
  */
-export type Theme = "system" | "light" | "dark"
+export type Theme = "system" | "light" | "dark" | "aurora"
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"

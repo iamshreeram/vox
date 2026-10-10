@@ -19,6 +19,20 @@
   --dark-color-logo-primary: #f4c430;
   --dark-color-logo-stroke: #fff3c4;
 
+  /* "Aurora" -- an opt-in, non-adaptive third palette (not a light/dark pair;
+     it's one deliberate look, same idea as the tray's existing Linux-only
+     "Colored" icon set). Deep slate-blue base with a teal/violet accent pair,
+     complementary to the warm-gold brand accent above rather than replacing
+     it elsewhere. Contrast checked against its own background: teal
+     #2dd4bf on #161a23 and off-white text on #161a23 both clear WCAG AA for
+     normal text. */
+  --aurora-color-text: #f3f5f7;
+  --aurora-color-background: #161a23;
+  --aurora-color-logo-primary: #2dd4bf;
+  --aurora-color-logo-stroke: #a78bfa;
+  --aurora-color-warning: #fbbf24;
+  --aurora-color-error: #f87171;
+
   /* Semantic status colors. First used by SecureInputWarning; intended to
      replace the ad-hoc yellow-500/red-500 usages (e.g. ui/Alert.tsx) over
      time so status styling is themeable from one place. */
@@ -79,4 +93,13 @@
   --color-logo-stroke: var(--dark-color-logo-stroke);
   --color-warning: var(--dark-color-warning);
   --color-error: var(--dark-color-error);
+}
+
+:root[data-theme="aurora"] {
+  --color-text: var(--aurora-color-text);
+  --color-background: var(--aurora-color-background);
+  --color-logo-primary: var(--aurora-color-logo-primary);
+  --color-logo-stroke: var(--aurora-color-logo-stroke);
+  --color-warning: var(--aurora-color-warning);
+  --color-error: var(--aurora-color-error);
 }

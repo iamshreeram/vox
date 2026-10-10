@@ -104,6 +104,17 @@
   --s-hair: var(--dark-s-hair);
 }
 
+/* Aurora reuses the dark neutrals -- it's a dark-based palette (see
+   theme.css); --s-surface/--s-accent already pick up its own
+   --color-background/--color-logo-primary values for free. */
+:root[data-theme="aurora"] {
+  --s-accent-soft: var(--dark-s-accent-soft);
+  --s-muted: var(--dark-s-muted);
+  --s-faint: var(--dark-s-faint);
+  --s-border: var(--dark-s-border);
+  --s-hair: var(--dark-s-hair);
+}
+
 /* ============================================================
    Unified overlay stage — one fixed, transparent container shared by the compact
    pill and the Live panel (both render the same `.scard` base). The card is
