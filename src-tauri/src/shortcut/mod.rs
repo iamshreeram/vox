@@ -1228,6 +1228,43 @@ pub fn change_voice_media_controls_setting(app: AppHandle, enabled: bool) -> Res
     Ok(())
 }
 
+/// Persists the `agent_context_enabled` setting. Turning it off also clears the
+/// in-memory conversation log so re-enabling cannot resurrect old turns.
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_context_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.agent_context_enabled = enabled;
+    settings::write_settings(&app, settings);
+    if !enabled {
+        if let Some(log) =
+            app.try_state::<std::sync::Arc<crate::managers::conversation::ConversationLog>>()
+        {
+            log.clear();
+        }
+    }
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "agent_context_enabled",
+            "value": enabled
+        }),
+    );
+    Ok(())
+}
+
+/// Clears the in-memory agent conversation history.
+#[tauri::command]
+#[specta::specta]
+pub fn agent_clear_conversation(app: AppHandle) -> Result<(), String> {
+    if let Some(log) =
+        app.try_state::<std::sync::Arc<crate::managers::conversation::ConversationLog>>()
+    {
+        log.clear();
+    }
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_post_process_base_url_setting(

@@ -226,6 +226,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
     let memory_manager =
         Arc::new(MemoryManager::new(app_handle).expect("Failed to initialize memory manager"));
+    let conversation_log = Arc::new(managers::conversation::ConversationLog::new());
     let command_router = Arc::new(CommandRouter::new(new_app_discovery()));
     let wakeword_listener = Arc::new(WakeWordListener::new(app_handle.clone()));
     let ambient_transcript = Arc::new(RollingTranscript::new(90_000));
@@ -249,6 +250,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
     app_handle.manage(memory_manager.clone());
+    app_handle.manage(conversation_log);
     app_handle.manage(command_router.clone());
     app_handle.manage(wakeword_listener.clone());
     app_handle.manage(ambient_transcript);
@@ -852,6 +854,8 @@ pub fn run(cli_args: CliArgs) {
             commands::memory::memory_list_all,
             commands::memory::memory_forget,
             commands::memory::memory_set_enabled,
+            shortcut::change_agent_context_setting,
+            shortcut::agent_clear_conversation,
             commands::ambient::ambient_set_enabled,
             commands::ambient::ambient_clear,
             commands::wakeword::wakeword_set_enabled,

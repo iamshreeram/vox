@@ -12,6 +12,7 @@ import { VoiceCommandsToggle } from "../VoiceCommandsToggle";
 import { VoiceShortcutsEditor } from "../VoiceShortcutsEditor";
 import { VoiceMediaControlsToggle } from "../VoiceMediaControlsToggle";
 import { AgentBridgeToggle } from "../AgentBridgeToggle";
+import { AgentContextToggle } from "../AgentContextToggle";
 import { AgentBridgeBinaryPathField } from "../AgentBridgeBinaryPathField";
 import { ListeningModeSection } from "../ListeningModeSection";
 import { useSettings } from "../../../hooks/useSettings";
@@ -39,6 +40,7 @@ export const ExperimentalSettings: React.FC = () => {
         <VoiceShortcutsEditor descriptionMode="tooltip" grouped={true} />
         <VoiceMediaControlsToggle descriptionMode="tooltip" grouped={true} />
         <AgentBridgeToggle descriptionMode="tooltip" grouped={true} />
+        <AgentContextToggle descriptionMode="tooltip" grouped={true} />
         {agentBridgeEnabled && (
           <AgentBridgeBinaryPathField
             descriptionMode="tooltip"

@@ -3,6 +3,7 @@ pub mod ambient;
 pub mod ambient_listener;
 pub mod audio;
 pub mod command_router;
+pub mod conversation;
 pub mod gguf_meta;
 pub mod history;
 pub mod media_control;

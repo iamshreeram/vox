@@ -202,6 +202,13 @@ const settingUpdaters: {
       throw new Error(result.error);
     }
   },
+  agent_context_enabled: async (value) => {
+    const result = await commands.changeAgentContextSetting(value as boolean);
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
   filler_word_removal_enabled: (value) =>
     commands.changeFillerWordRemovalEnabledSetting(value as boolean),
   chinese_script: (value) =>
