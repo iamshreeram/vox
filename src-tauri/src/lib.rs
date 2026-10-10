@@ -368,6 +368,16 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "copy_last_transcript" => {
                 tray::copy_last_transcript(app);
             }
+            "listening_mode:hotkey" => {
+                let _ = commands::wakeword::wakeword_set_enabled(app.clone(), false);
+                let _ = commands::ambient::ambient_set_enabled(app.clone(), false);
+            }
+            "listening_mode:wake_word" => {
+                let _ = commands::wakeword::wakeword_set_enabled(app.clone(), true);
+            }
+            "listening_mode:ambient" => {
+                let _ = commands::ambient::ambient_set_enabled(app.clone(), true);
+            }
             "unload_model" => {
                 let transcription_manager = app.state::<Arc<TranscriptionManager>>();
                 if !transcription_manager.is_model_loaded() {

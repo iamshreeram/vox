@@ -1078,6 +1078,14 @@ pub fn change_experimental_enabled_setting(app: AppHandle, enabled: bool) -> Res
     let mut settings = settings::get_settings(&app);
     settings.experimental_enabled = enabled;
     settings::write_settings(&app, settings);
+    tray::update_tray_menu(&app);
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "experimental_enabled",
+            "value": enabled
+        }),
+    );
     Ok(())
 }
 

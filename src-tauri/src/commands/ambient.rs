@@ -4,7 +4,10 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 pub const AMBIENT_ADDRESSED_EVENT: &str = "ambient://addressed";
 
-fn update_ambient_mode_enabled(settings: &mut crate::settings::AppSettings, enabled: bool) {
+pub(crate) fn update_ambient_mode_enabled(
+    settings: &mut crate::settings::AppSettings,
+    enabled: bool,
+) {
     if enabled {
         crate::managers::ambient::coordinator::enabling_ambient_mode_disables_wake_word(settings);
     } else {
@@ -26,6 +29,14 @@ pub fn ambient_set_enabled(app: AppHandle, enabled: bool) -> Result<(), String> 
     } else {
         listener.stop();
     }
+    crate::tray::update_tray_menu(&app);
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "ambient_mode_enabled",
+            "value": enabled
+        }),
+    );
     Ok(())
 }
 

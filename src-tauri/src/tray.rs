@@ -63,6 +63,9 @@ struct MenuInputs {
     downloaded_models: Vec<(String, String)>,
     locale: String,
     update_checks_enabled: bool,
+    wake_word_enabled: bool,
+    ambient_mode_enabled: bool,
+    experimental_enabled: bool,
 }
 
 /// Complete description of what the tray should look like.
@@ -334,6 +337,9 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             downloaded_models,
             locale: settings.app_language,
             update_checks_enabled: settings.update_checks_enabled,
+            wake_word_enabled: settings.wake_word_enabled,
+            ambient_mode_enabled: settings.ambient_mode_enabled,
+            experimental_enabled: settings.experimental_enabled,
         },
     }
 }
@@ -481,6 +487,41 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         None
     };
 
+    let listening_mode_submenu =
+        if let Some((hotkey, wake_word, ambient)) = listening_mode_checked_states(inputs) {
+            let submenu =
+                Submenu::with_id(app, "listening_mode_submenu", &strings.listening_mode, true)?;
+            for (id, label, checked) in [
+                (
+                    "listening_mode:hotkey",
+                    strings.listening_mode_hotkey_only.as_str(),
+                    hotkey,
+                ),
+                (
+                    "listening_mode:wake_word",
+                    strings.listening_mode_wake_word.as_str(),
+                    wake_word,
+                ),
+                (
+                    "listening_mode:ambient",
+                    strings.listening_mode_ambient.as_str(),
+                    ambient,
+                ),
+            ] {
+                submenu.append(&CheckMenuItem::with_id(
+                    app,
+                    id,
+                    label,
+                    true,
+                    checked,
+                    None::<&str>,
+                )?)?;
+            }
+            Some(submenu)
+        } else {
+            None
+        };
+
     // Platform-specific accelerators
     #[cfg(target_os = "macos")]
     let (settings_accelerator, quit_accelerator) = (Some("Cmd+,"), Some("Cmd+Q"));
@@ -574,6 +615,14 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         )?
     };
 
+    // The listening-mode group is present only when experimental features are
+    // enabled. Insert it before settings in either menu layout.
+    if let Some(submenu) = &listening_mode_submenu {
+        let insert_at = if inputs.busy { 6 } else { 7 };
+        menu.insert(submenu, insert_at)?;
+        menu.insert(&separator()?, insert_at + 1)?;
+    }
+
     // When update checks are forced off (e.g. HANDY_DISABLE_UPDATER, set by
     // the Nix package), the item is dropped from the menu rather than shown
     // disabled — it can never do anything in that case, and a disabled item
@@ -594,6 +643,16 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     }
 
     Ok((menu, tooltip))
+}
+
+fn listening_mode_checked_states(inputs: &MenuInputs) -> Option<(bool, bool, bool)> {
+    if !inputs.experimental_enabled {
+        return None;
+    }
+    let ambient = inputs.ambient_mode_enabled;
+    let wake_word = inputs.wake_word_enabled && !ambient;
+    let hotkey = !ambient && !inputs.wake_word_enabled;
+    Some((hotkey, wake_word, ambient))
 }
 
 fn last_transcript_text(entry: &HistoryEntry) -> &str {
@@ -670,7 +729,10 @@ pub fn copy_last_transcript(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{last_transcript_text, load_tray_icon, MenuInputs, TrayDesired, TrayIconState};
+    use super::{
+        last_transcript_text, listening_mode_checked_states, load_tray_icon, MenuInputs,
+        TrayDesired, TrayIconState,
+    };
     use crate::managers::history::HistoryEntry;
 
     fn build_entry(transcription: &str, post_processed: Option<&str>) -> HistoryEntry {
@@ -696,6 +758,78 @@ mod tests {
             downloaded_models: vec![("small".to_string(), "Small".to_string())],
             locale: "en".to_string(),
             update_checks_enabled: true,
+            wake_word_enabled: false,
+            ambient_mode_enabled: false,
+            experimental_enabled: true,
+        }
+    }
+
+    #[test]
+    fn listening_mode_submenu_is_experimental_gated_and_checks_one_mode() {
+        let mut menu_inputs = inputs(false);
+        menu_inputs.experimental_enabled = false;
+        assert_eq!(listening_mode_checked_states(&menu_inputs), None);
+
+        menu_inputs.experimental_enabled = true;
+        assert_eq!(
+            listening_mode_checked_states(&menu_inputs),
+            Some((true, false, false))
+        );
+
+        menu_inputs.wake_word_enabled = true;
+        assert_eq!(
+            listening_mode_checked_states(&menu_inputs),
+            Some((false, true, false))
+        );
+
+        menu_inputs.wake_word_enabled = false;
+        menu_inputs.ambient_mode_enabled = true;
+        assert_eq!(
+            listening_mode_checked_states(&menu_inputs),
+            Some((false, false, true))
+        );
+    }
+
+    #[test]
+    fn all_listening_mode_transitions_produce_exact_setting_pairs() {
+        use crate::commands::ambient::update_ambient_mode_enabled;
+        use crate::commands::wakeword::update_wake_word_enabled;
+        use crate::settings::get_default_settings;
+
+        let initial_states = [
+            ("hotkey", false, false),
+            ("wake_word", true, false),
+            ("ambient", false, true),
+        ];
+        let clicked_modes = ["hotkey", "wake_word", "ambient"];
+
+        for (initial_name, initial_wake, initial_ambient) in initial_states {
+            for clicked in clicked_modes {
+                let mut settings = get_default_settings();
+                settings.wake_word_enabled = initial_wake;
+                settings.ambient_mode_enabled = initial_ambient;
+                match clicked {
+                    "hotkey" => {
+                        update_wake_word_enabled(&mut settings, false);
+                        update_ambient_mode_enabled(&mut settings, false);
+                    }
+                    "wake_word" => update_wake_word_enabled(&mut settings, true),
+                    "ambient" => update_ambient_mode_enabled(&mut settings, true),
+                    _ => unreachable!(),
+                }
+
+                let expected = match clicked {
+                    "hotkey" => (false, false),
+                    "wake_word" => (true, false),
+                    "ambient" => (false, true),
+                    _ => unreachable!(),
+                };
+                assert_eq!(
+                    (settings.wake_word_enabled, settings.ambient_mode_enabled),
+                    expected,
+                    "initial {initial_name} state after clicking {clicked}"
+                );
+            }
         }
     }
 
