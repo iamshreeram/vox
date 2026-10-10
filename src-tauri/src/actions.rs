@@ -4,6 +4,9 @@ use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, S
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::command_router::{CommandAction, CommandRouter, RouteDecision};
+use crate::managers::conversation::{
+    build_agent_prompt, should_append_exchange, ConversationLog, Ticket,
+};
 use crate::managers::history::HistoryManager;
 use crate::managers::memory::MemoryManager;
 use crate::managers::model::ModelManager;
@@ -122,6 +125,58 @@ fn should_escalate_to_agent_bridge(
     agent_bridge_enabled: bool,
 ) -> bool {
     voice_commands_enabled && agent_bridge_enabled && matches!(route, RouteDecision::NoMatch)
+}
+
+/// Monotonic milliseconds since the first call. Conversation-log expiry uses
+/// this so wall-clock jumps cannot expire or resurrect context.
+fn monotonic_ms() -> u64 {
+    static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    let start = START.get_or_init(Instant::now);
+    u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+/// Builds the prompt for an agent request. When context is disabled the
+/// transcript is returned unchanged and `recall` is not called. When enabled,
+/// a [`Ticket`] is allocated for the exchange; `recall` runs only when
+/// `memory_enabled` is set.
+fn prepare_agent_prompt(
+    context_enabled: bool,
+    memory_enabled: bool,
+    transcript: &str,
+    recall: &dyn Fn(&str) -> Vec<String>,
+    log: &ConversationLog,
+    now_ms: u64,
+) -> (String, Option<Ticket>) {
+    if !context_enabled {
+        return (transcript.to_string(), None);
+    }
+    let ticket = log.begin();
+    let facts = if memory_enabled {
+        recall(transcript)
+    } else {
+        Vec::new()
+    };
+    let turns = log.recent(now_ms);
+    (build_agent_prompt(transcript, &facts, &turns), Some(ticket))
+}
+
+/// Records a finished exchange (original transcript and reply) only when the
+/// ticket is present, no clear happened since dispatch, and context is still
+/// enabled. Returns whether it was recorded.
+fn finish_agent_exchange(
+    ticket: Option<Ticket>,
+    log: &ConversationLog,
+    context_enabled_now: bool,
+    transcript: &str,
+    reply: &str,
+    now_ms: u64,
+) -> bool {
+    match ticket {
+        Some(ticket) if should_append_exchange(ticket.epoch, log.epoch(), context_enabled_now) => {
+            log.record(ticket, transcript, reply, now_ms)
+        }
+        _ => false,
+    }
 }
 
 /// Gate for the memory-capture hook (`memory_enabled` setting, default
@@ -832,7 +887,31 @@ impl ShortcutAction for TranscribeAction {
                                     {
                                         let app = ah.clone();
                                         let settings = hook_settings.clone();
-                                        let prompt = transcription.clone();
+                                        let log =
+                                            ah.state::<Arc<ConversationLog>>().inner().clone();
+                                        let memory =
+                                            ah.state::<Arc<MemoryManager>>().inner().clone();
+                                        let now_ms = monotonic_ms();
+                                        let recall = move |query: &str| -> Vec<String> {
+                                            memory
+                                                .recall(query, 5)
+                                                .map(|facts| {
+                                                    facts
+                                                        .into_iter()
+                                                        .map(|fact| fact.text)
+                                                        .collect()
+                                                })
+                                                .unwrap_or_default()
+                                        };
+                                        let (prompt, ticket) = prepare_agent_prompt(
+                                            hook_settings.agent_context_enabled,
+                                            hook_settings.memory_enabled,
+                                            &transcription,
+                                            &recall,
+                                            &log,
+                                            now_ms,
+                                        );
+                                        let prompt_transcript = transcription.clone();
                                         tauri::async_runtime::spawn(async move {
                                             let worker = crate::managers::agent_bridge::CliAgentWorker::from_settings(
                                                 settings.agent_bridge_binary_path.clone(),
@@ -855,7 +934,16 @@ impl ShortcutAction for TranscribeAction {
                                             };
                                             match result {
                                                 Ok(reply) => {
-                                                    let _ = app.emit("agent-bridge-reply", reply);
+                                                    let _ = app
+                                                        .emit("agent-bridge-reply", reply.clone());
+                                                    finish_agent_exchange(
+                                                        ticket,
+                                                        &log,
+                                                        get_settings(&app).agent_context_enabled,
+                                                        &prompt_transcript,
+                                                        &reply,
+                                                        monotonic_ms(),
+                                                    );
                                                 }
                                                 Err(message) => {
                                                     let _ = app.emit("agent-bridge-error", message);
@@ -1039,14 +1127,15 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_unless_cancelled, decide_memory_fact, decide_voice_command,
-        is_blank_transcription, should_escalate_to_agent_bridge, should_use_streaming_overlay,
-        strip_think_block,
+        complete_unless_cancelled, decide_memory_fact, decide_voice_command, finish_agent_exchange,
+        is_blank_transcription, prepare_agent_prompt, should_escalate_to_agent_bridge,
+        should_use_streaming_overlay, strip_think_block,
     };
     use crate::managers::command_router::{
         AppDiscovery, CommandAction, CommandRouter, HomeDirProvider, NullAppDiscovery,
         RouteDecision,
     };
+    use crate::managers::conversation::ConversationLog;
     use crate::settings::OverlayStyle;
     use std::future;
     use std::path::PathBuf;
@@ -1230,5 +1319,105 @@ mod tests {
             decide_memory_fact(true, "remember that I prefer tea"),
             Some("I prefer tea".to_string())
         );
+    }
+
+    fn turn(user: &str, assistant: &str) -> (String, String) {
+        (user.to_string(), assistant.to_string())
+    }
+
+    #[test]
+    fn agent_context_disabled_returns_transcript_and_never_recalls() {
+        let log = ConversationLog::new();
+        let calls = std::cell::Cell::new(0usize);
+        let recall = |_: &str| {
+            calls.set(calls.get() + 1);
+            vec!["fact".to_string()]
+        };
+        let (prompt, ticket) = prepare_agent_prompt(false, true, "hello", &recall, &log, 0);
+        assert_eq!(prompt, "hello");
+        assert!(ticket.is_none());
+        assert_eq!(calls.get(), 0, "recall must not run when context is off");
+        assert_eq!(log.len(), 0);
+    }
+
+    #[test]
+    fn agent_context_enabled_without_memory_sends_turns_but_no_facts() {
+        let log = ConversationLog::new();
+        let first = log.begin();
+        assert!(log.record(first, "q1", "a1", 0));
+        let calls = std::cell::Cell::new(0usize);
+        let recall = |_: &str| {
+            calls.set(calls.get() + 1);
+            vec!["fact".to_string()]
+        };
+        let (prompt, ticket) = prepare_agent_prompt(true, false, "now", &recall, &log, 1);
+        assert!(ticket.is_some());
+        assert_eq!(calls.get(), 0, "recall must not run when memory is off");
+        assert!(!prompt.contains("[Remembered facts]"));
+        assert_eq!(
+            prompt,
+            "[Recent conversation]\nUser: q1\nAssistant: a1\n\n[Current request]\nnow"
+        );
+    }
+
+    #[test]
+    fn agent_context_enabled_with_memory_renders_recalled_facts() {
+        let log = ConversationLog::new();
+        let recall = |query: &str| {
+            assert_eq!(query, "what do I drink");
+            vec!["I prefer tea".to_string()]
+        };
+        let (prompt, ticket) =
+            prepare_agent_prompt(true, true, "what do I drink", &recall, &log, 0);
+        assert!(ticket.is_some());
+        assert_eq!(
+            prompt,
+            "[Remembered facts]\n- I prefer tea\n\n[Current request]\nwhat do I drink"
+        );
+    }
+
+    #[test]
+    fn agent_context_empty_recall_adds_no_facts_section() {
+        let log = ConversationLog::new();
+        let recall = |_: &str| Vec::<String>::new();
+        let (prompt, _) = prepare_agent_prompt(true, true, "go", &recall, &log, 0);
+        assert_eq!(prompt, "go");
+    }
+
+    #[test]
+    fn agent_context_finish_keeps_chronological_order_by_dispatch() {
+        let log = ConversationLog::new();
+        let recall = |_: &str| Vec::<String>::new();
+        let (_, first) = prepare_agent_prompt(true, false, "q1", &recall, &log, 0);
+        let (_, second) = prepare_agent_prompt(true, false, "q2", &recall, &log, 0);
+        assert!(finish_agent_exchange(second, &log, true, "q2", "a2", 10));
+        assert!(finish_agent_exchange(first, &log, true, "q1", "a1", 20));
+        assert_eq!(log.recent(30), vec![turn("q1", "a1"), turn("q2", "a2")]);
+    }
+
+    #[test]
+    fn agent_context_finish_after_clear_records_nothing() {
+        let log = ConversationLog::new();
+        let recall = |_: &str| Vec::<String>::new();
+        let (_, ticket) = prepare_agent_prompt(true, false, "q", &recall, &log, 0);
+        log.clear();
+        assert!(!finish_agent_exchange(ticket, &log, true, "q", "a", 5));
+        assert_eq!(log.len(), 0);
+    }
+
+    #[test]
+    fn agent_context_finish_when_disabled_now_records_nothing() {
+        let log = ConversationLog::new();
+        let recall = |_: &str| Vec::<String>::new();
+        let (_, ticket) = prepare_agent_prompt(true, false, "q", &recall, &log, 0);
+        assert!(!finish_agent_exchange(ticket, &log, false, "q", "a", 5));
+        assert_eq!(log.len(), 0);
+    }
+
+    #[test]
+    fn agent_context_finish_without_ticket_records_nothing() {
+        let log = ConversationLog::new();
+        assert!(!finish_agent_exchange(None, &log, true, "q", "a", 5));
+        assert_eq!(log.len(), 0);
     }
 }

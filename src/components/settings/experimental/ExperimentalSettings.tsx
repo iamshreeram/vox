@@ -10,6 +10,7 @@ import { MemoryToggle } from "../MemoryToggle";
 import { MemoryFactsList } from "../MemoryFactsList";
 import { VoiceCommandsToggle } from "../VoiceCommandsToggle";
 import { AgentBridgeToggle } from "../AgentBridgeToggle";
+import { AgentContextToggle } from "../AgentContextToggle";
 import { AgentBridgeBinaryPathField } from "../AgentBridgeBinaryPathField";
 import { ListeningModeSection } from "../ListeningModeSection";
 import { useSettings } from "../../../hooks/useSettings";
@@ -35,6 +36,7 @@ export const ExperimentalSettings: React.FC = () => {
         {memoryEnabled && <MemoryFactsList />}
         <VoiceCommandsToggle descriptionMode="tooltip" grouped={true} />
         <AgentBridgeToggle descriptionMode="tooltip" grouped={true} />
+        <AgentContextToggle descriptionMode="tooltip" grouped={true} />
         {agentBridgeEnabled && (
           <AgentBridgeBinaryPathField
             descriptionMode="tooltip"

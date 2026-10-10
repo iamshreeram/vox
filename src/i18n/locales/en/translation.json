@@ -317,6 +317,13 @@
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
+      "agentContext": {
+        "title": "Conversation Context",
+        "description": "When on, your last few exchanges with the agent and any remembered facts are sent to the agent along with each request. The conversation is kept in memory only, and is cleared when you turn this off or restart Vox. A remembered fact or reply containing text that looks like instructions could influence the agent.",
+        "clearButton": "Clear conversation history",
+        "clearedToast": "Conversation history cleared.",
+        "clearFailedToast": "Could not clear the conversation history."
+      },
       "lazyStreamClose": {
         "label": "Keep Mic Open Between Transcriptions",
         "description": "Keeps the microphone stream open for 30 seconds after recording stops, reducing latency for back-to-back transcriptions. May degrade Bluetooth audio quality while active."
