@@ -1,6 +1,6 @@
 use crate::actions::process_transcription_output;
 use crate::managers::{
-    history::{HistoryManager, PaginatedHistory},
+    history::{HistoryEntry, HistoryManager, PaginatedHistory},
     transcription::TranscriptionManager,
 };
 use std::sync::Arc;
@@ -17,6 +17,21 @@ pub async fn get_history_entries(
     history_manager
         .get_history_entries(cursor, limit)
         .await
+        .map_err(|e| e.to_string())
+}
+
+/// Searches transcription, post-processed text and title. Matching is
+/// ASCII-case-insensitive (SQLite `LIKE`); results are newest first.
+#[tauri::command]
+#[specta::specta]
+pub async fn search_history_entries(
+    _app: AppHandle,
+    history_manager: State<'_, Arc<HistoryManager>>,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<HistoryEntry>, String> {
+    history_manager
+        .search_entries(&query, limit)
         .map_err(|e| e.to_string())
 }
 

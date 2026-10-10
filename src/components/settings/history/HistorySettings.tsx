@@ -11,9 +11,15 @@ import {
   type HistoryUpdatePayload,
 } from "@/bindings";
 import { useOsType } from "@/hooks/useOsType";
+import {
+  createHistorySearchController,
+  type HistorySearchController,
+  type HistorySearchState,
+} from "@/lib/utils/historySearchController";
 import { formatDateTime } from "@/utils/dateFormat";
 import { AudioPlayer, AudioPlayerGroup } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
+import { Input } from "../../ui/Input";
 import { copyToClipboard } from "./clipboard";
 
 const IconButton: React.FC<{
@@ -60,85 +66,67 @@ const OpenRecordingsButton: React.FC<OpenRecordingsButtonProps> = ({
   </Button>
 );
 
+const INITIAL_STATE: HistorySearchState<HistoryEntry> = {
+  mode: "list",
+  entries: [],
+  loading: true,
+  error: null,
+  hasMore: false,
+  query: "",
+};
+
 export const HistorySettings: React.FC = () => {
   const { t } = useTranslation();
   const osType = useOsType();
-  const [entries, setEntries] = useState<HistoryEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [hasMore, setHasMore] = useState(true);
+  const [state, setState] =
+    useState<HistorySearchState<HistoryEntry>>(INITIAL_STATE);
+  // Local input text: the controller's `query` is trimmed, which would strip
+  // the trailing space of a multi-word search while the user is typing it.
+  const [searchInput, setSearchInput] = useState("");
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const entriesRef = useRef<HistoryEntry[]>([]);
-  const loadingRef = useRef(false);
+  const controllerRef = useRef<HistorySearchController<HistoryEntry> | null>(
+    null,
+  );
 
-  // Keep ref in sync for use in IntersectionObserver callback
+  // The controller is created in the mount effect rather than lazily in
+  // render: `dispose()` is permanent, and React StrictMode runs
+  // mount -> unmount -> remount, so the remount needs a fresh controller.
   useEffect(() => {
-    entriesRef.current = entries;
-  }, [entries]);
-
-  const loadPage = useCallback(async (cursor?: number) => {
-    const isFirstPage = cursor === undefined;
-    if (!isFirstPage && loadingRef.current) return;
-    loadingRef.current = true;
-
-    if (isFirstPage) setLoading(true);
-
-    try {
-      const result = await commands.getHistoryEntries(
-        cursor ?? null,
-        PAGE_SIZE,
-      );
-      if (result.status === "ok") {
-        const { entries: newEntries, has_more } = result.data;
-        setEntries((prev) =>
-          isFirstPage ? newEntries : [...prev, ...newEntries],
-        );
-        setHasMore(has_more);
-      }
-    } catch (error) {
-      console.error("Failed to load history entries:", error);
-    } finally {
-      setLoading(false);
-      loadingRef.current = false;
-    }
-  }, []);
-
-  // Initial load
-  useEffect(() => {
-    loadPage();
-  }, [loadPage]);
-
-  // Infinite scroll via IntersectionObserver
-  useEffect(() => {
-    if (loading) return;
-
-    const sentinel = sentinelRef.current;
-    if (!sentinel || !hasMore) return;
-
-    const observer = new IntersectionObserver(
-      (observerEntries) => {
-        const first = observerEntries[0];
-        if (first.isIntersecting) {
-          const lastEntry = entriesRef.current[entriesRef.current.length - 1];
-          if (lastEntry) {
-            loadPage(lastEntry.id);
-          }
+    const controller = createHistorySearchController<HistoryEntry>({
+      search: async (query) => {
+        const result = await commands.searchHistoryEntries(query, null);
+        if (result.status !== "ok") {
+          throw new Error(String(result.error));
         }
+        return result.data;
       },
-      { threshold: 0 },
-    );
+      fetchPage: async (cursor) => {
+        const result = await commands.getHistoryEntries(cursor, PAGE_SIZE);
+        if (result.status !== "ok") {
+          throw new Error(String(result.error));
+        }
+        return {
+          entries: result.data.entries,
+          hasMore: result.data.has_more,
+        };
+      },
+      onState: setState,
+      setTimer: (callback, ms) => window.setTimeout(callback, ms),
+      clearTimer: (handle) => window.clearTimeout(handle as number),
+    });
+    controllerRef.current = controller;
+    void controller.refresh();
 
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [loading, hasMore, loadPage]);
-
-  // Listen for new entries added from the transcription pipeline
-  useEffect(() => {
+    // Listen for entries added/updated from the transcription pipeline.
     const unlisten = events.historyUpdatePayload.listen((event) => {
       const payload: HistoryUpdatePayload = event.payload;
-      if (payload.action === "added") {
-        setEntries((prev) => [payload.entry, ...prev]);
+      if (controller.getState().mode === "search") {
+        // Search results are not patched incrementally; re-run the search.
+        controller.onHistoryUpdated();
+      } else if (payload.action === "added") {
+        controller.patchEntries((prev) => [payload.entry, ...prev]);
       } else if (payload.action === "updated") {
-        setEntries((prev) =>
+        controller.patchEntries((prev) =>
           prev.map((e) => (e.id === payload.entry.id ? payload.entry : e)),
         );
       }
@@ -147,29 +135,60 @@ export const HistorySettings: React.FC = () => {
     });
 
     return () => {
+      controller.dispose();
+      controllerRef.current = null;
       unlisten.then((fn) => fn());
     };
   }, []);
 
-  const toggleSaved = async (id: number) => {
-    // Optimistic update
-    setEntries((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, saved: !e.saved } : e)),
+  const hasEntries = state.entries.length > 0;
+  const canLoadMore = state.mode === "list" && state.hasMore && !state.loading;
+
+  // Infinite scroll via IntersectionObserver
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!canLoadMore || !hasEntries || !sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (observerEntries) => {
+        const first = observerEntries[0];
+        if (first.isIntersecting) {
+          void controllerRef.current?.loadMore();
+        }
+      },
+      { threshold: 0 },
     );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [canLoadMore, hasEntries]);
+
+  const reloadList = () => {
+    setSearchInput("");
+    void controllerRef.current?.refresh();
+  };
+
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchInput(event.target.value);
+    controllerRef.current?.setQuery(event.target.value);
+  };
+
+  const toggleSaved = async (id: number) => {
+    const flipSaved = (prev: HistoryEntry[]) =>
+      prev.map((e) => (e.id === id ? { ...e, saved: !e.saved } : e));
+
+    // Optimistic update
+    controllerRef.current?.patchEntries(flipSaved);
     try {
       const result = await commands.toggleHistoryEntrySaved(id);
       if (result.status !== "ok") {
         // Revert on failure
-        setEntries((prev) =>
-          prev.map((e) => (e.id === id ? { ...e, saved: !e.saved } : e)),
-        );
+        controllerRef.current?.patchEntries(flipSaved);
       }
     } catch (error) {
       console.error("Failed to toggle saved status:", error);
       // Revert on failure
-      setEntries((prev) =>
-        prev.map((e) => (e.id === id ? { ...e, saved: !e.saved } : e)),
-      );
+      controllerRef.current?.patchEntries(flipSaved);
     }
   };
 
@@ -196,16 +215,18 @@ export const HistorySettings: React.FC = () => {
 
   const deleteAudioEntry = async (id: number) => {
     // Optimistically remove
-    setEntries((prev) => prev.filter((e) => e.id !== id));
+    controllerRef.current?.patchEntries((prev) =>
+      prev.filter((e) => e.id !== id),
+    );
     try {
       const result = await commands.deleteHistoryEntry(id);
       if (result.status !== "ok") {
         // Reload on failure
-        loadPage();
+        reloadList();
       }
     } catch (error) {
       console.error("Failed to delete entry:", error);
-      loadPage();
+      reloadList();
     }
   };
 
@@ -229,24 +250,40 @@ export const HistorySettings: React.FC = () => {
 
   let content: React.ReactNode;
 
-  if (loading) {
+  if (state.loading) {
     content = (
       <div className="px-4 py-3 text-center text-text/60">
         {t("settings.history.loading")}
       </div>
     );
-  } else if (entries.length === 0) {
+  } else if (state.error && !hasEntries) {
+    content = (
+      <div role="alert" className="px-4 py-3 text-center text-red-500">
+        {t("settings.history.searchError")}
+      </div>
+    );
+  } else if (!hasEntries) {
     content = (
       <div className="px-4 py-3 text-center text-text/60">
-        {t("settings.history.empty")}
+        {state.mode === "search"
+          ? t("settings.history.noResults")
+          : t("settings.history.empty")}
       </div>
     );
   } else {
     content = (
       <>
+        {state.error && (
+          <div
+            role="alert"
+            className="px-4 py-3 text-center text-red-500 border-b border-mid-gray/20"
+          >
+            {t("settings.history.searchError")}
+          </div>
+        )}
         <AudioPlayerGroup>
           <div className="divide-y divide-mid-gray/20">
-            {entries.map((entry) => (
+            {state.entries.map((entry) => (
               <HistoryEntryComponent
                 key={entry.id}
                 entry={entry}
@@ -277,6 +314,16 @@ export const HistorySettings: React.FC = () => {
           <OpenRecordingsButton
             onClick={openRecordingsFolder}
             label={t("settings.history.openFolder")}
+          />
+        </div>
+        <div className="px-4">
+          <Input
+            type="search"
+            value={searchInput}
+            onChange={handleSearchChange}
+            placeholder={t("settings.history.searchPlaceholder")}
+            aria-label={t("settings.history.searchLabel")}
+            className="w-full"
           />
         </div>
         <div className="bg-background border border-mid-gray/20 rounded-lg overflow-visible">
