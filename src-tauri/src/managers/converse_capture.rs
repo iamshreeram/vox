@@ -4,10 +4,6 @@
 //! No tauri types: hardware is behind ports. Contract: DESIGN.md 3.4 and the
 //! AMENDMENTS section (Revision 4).
 
-// Not referenced by production code until the runtime wiring (S5b) lands;
-// remove this allow when `converse_runtime` constructs the worker.
-#![allow(dead_code)]
-
 use crate::managers::converse::{ListenFailure, ListenOutcome};
 use crate::managers::converse_audio::{EndpointConfig, EndpointEvent, Endpointer};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -103,6 +99,9 @@ enum Command {
         cfg: EndpointConfig,
         reply: oneshot::Sender<ListenOutcome>,
     },
+    // Constructed by push_levels, which the audio level hook will call once
+    // audio.rs forwards levels (not yet wired).
+    #[allow(dead_code)]
     Levels {
         listen_id: u64,
         now_ms: u64,
@@ -262,17 +261,21 @@ impl Worker {
         None
     }
 
-    /// One `start()` attempt for `p`. The capture flag is raised only once
-    /// start() has succeeded, so a foreign (Busy) recording never marks us active.
+    /// One `start()` attempt for `p`. Amendment A1: the capture flag is raised
+    /// BEFORE `start()` so a dictation start that checks it after this point is
+    /// refused (a start that already passed its check loses harmlessly at the
+    /// recorder, which only starts from Idle). Every non-success path lowers it
+    /// again, so a foreign (Busy) recording never leaves us marked active.
     fn attempt(&mut self, p: Pending) {
+        self.capture_active.store(true, Ordering::SeqCst);
         match self.port.start() {
             Ok(()) => {
                 if self.floor.load(Ordering::SeqCst) >= p.id {
                     // Cancelled while start() was blocked: release it now.
                     self.port.cancel();
+                    self.set_inactive();
                     let _ = p.reply.send(ListenOutcome::Aborted);
                 } else {
-                    self.capture_active.store(true, Ordering::SeqCst);
                     self.state = State::Recording(Recording {
                         id: p.id,
                         reply: p.reply,
@@ -458,6 +461,8 @@ impl CaptureHandle {
     /// Called from the audio callback thread: NON-BLOCKING (`try_send` on a
     /// bounded channel); a no-op unless a listen is armed; never stops,
     /// transcribes or waits.
+    // Not called yet: audio.rs does not forward levels to the capture hook.
+    #[allow(dead_code)]
     pub fn push_levels(&self, now_ms: u64, levels: &[f32]) {
         let listen_id = self.inner.armed.load(Ordering::SeqCst);
         if listen_id == 0 {
@@ -472,6 +477,8 @@ impl CaptureHandle {
     }
 
     /// Cancel every listen (current and future ids) of this worker.
+    // Not called yet by the session finalizer path.
+    #[allow(dead_code)]
     pub fn cancel_all(&self) {
         self.inner.cancel_upto(u64::MAX);
     }
@@ -1116,6 +1123,31 @@ mod tests {
         gate_tx.send(()).unwrap();
         let _ = jh.join();
         drop(rt);
+        h.shutdown();
+    }
+
+    #[tokio::test]
+    async fn capture_flag_is_claimed_before_start_returns_and_released_on_failure() {
+        // A1: the flag must already be up while start() is still blocked.
+        let port = FakePort::new();
+        let (gate_tx, gate_rx) = mpsc::channel();
+        *port.start_gate.lock().unwrap() = Some(gate_rx);
+        port.set_default(Err(StartError::NoMicrophone));
+        let tr = FakeTranscriber::new();
+        let h = spawn(&port, &tr);
+        let h2 = h.clone();
+        let task = tokio::spawn(async move { h2.listen(cfg()).await });
+        wait_for("start entered", || port.starts.load(Ordering::SeqCst) == 1).await;
+        assert!(
+            h.capture_active(),
+            "claim must be visible while start() is blocked"
+        );
+        gate_tx.send(()).unwrap();
+        assert_eq!(
+            task.await.unwrap(),
+            ListenOutcome::Failed(ListenFailure::NoMicrophone)
+        );
+        assert!(!h.capture_active(), "a failed start must release the claim");
         h.shutdown();
     }
 }

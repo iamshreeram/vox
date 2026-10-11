@@ -327,12 +327,10 @@ fn execute_command_action(app: &AppHandle, action: &CommandAction) -> Result<Str
 
 /// Routes a phrase to a command. A trait so the restricted-tier tests can
 /// inject routes the real router cannot produce (for example a non-http URL).
-#[allow(dead_code)] // wired by S5b
 pub(crate) trait PhraseRouter {
     fn route_phrase(&self, text: &str) -> RouteDecision;
 }
 
-#[allow(dead_code)] // wired by S5b
 impl PhraseRouter for CommandRouter {
     fn route_phrase(&self, text: &str) -> RouteDecision {
         self.route(text)
@@ -341,16 +339,13 @@ impl PhraseRouter for CommandRouter {
 
 /// Executes a matched command action. A trait so tests can observe execution
 /// without an `AppHandle`.
-#[allow(dead_code)] // wired by S5b
 pub(crate) trait ActionExecutor {
     fn execute_action(&self, action: &CommandAction) -> Result<String, String>;
 }
 
 /// Production executor: the same OS-opener path as the existing router branch.
-#[allow(dead_code)] // wired by S5b
 struct AppActionExecutor<'a>(&'a AppHandle);
 
-#[allow(dead_code)] // wired by S5b
 impl ActionExecutor for AppActionExecutor<'_> {
     fn execute_action(&self, action: &CommandAction) -> Result<String, String> {
         execute_command_action(self.0, action)
@@ -358,13 +353,11 @@ impl ActionExecutor for AppActionExecutor<'_> {
 }
 
 /// Exact-tier hooks (user shortcut, then media) for a phrase the USER said.
-#[allow(dead_code)] // wired by S5b
 pub(crate) trait UtteranceHooks {
     fn consult(&self, phrase: &str) -> Option<UtteranceHookResult>;
 }
 
 /// Production exact-tier hooks: delegates to `run_utterance_hooks`.
-#[allow(dead_code)] // wired by S5b
 struct SettingsUtteranceHooks<'a> {
     settings: &'a AppSettings,
     router: &'a CommandRouter,
@@ -373,7 +366,6 @@ struct SettingsUtteranceHooks<'a> {
     runner: &'a dyn ScriptRunner,
 }
 
-#[allow(dead_code)] // wired by S5b
 impl UtteranceHooks for SettingsUtteranceHooks<'_> {
     fn consult(&self, phrase: &str) -> Option<UtteranceHookResult> {
         run_utterance_hooks(
@@ -389,20 +381,17 @@ impl UtteranceHooks for SettingsUtteranceHooks<'_> {
 
 /// Restricted-tier media hook for a phrase the MODEL proposed. User shortcuts
 /// are deliberately absent from this trait.
-#[allow(dead_code)] // wired by S5b
 pub(crate) trait MediaHook {
     fn consult(&self, phrase: &str) -> Option<MediaHookResult>;
 }
 
 /// Production media hook: delegates to `run_media_hook` (same gates as the
 /// user path: voice commands AND media controls must both be on).
-#[allow(dead_code)] // wired by S5b
 struct SettingsMediaHook<'a> {
     settings: &'a AppSettings,
     runner: &'a dyn ScriptRunner,
 }
 
-#[allow(dead_code)] // wired by S5b
 impl MediaHook for SettingsMediaHook<'_> {
     fn consult(&self, phrase: &str) -> Option<MediaHookResult> {
         run_media_hook(
@@ -417,7 +406,6 @@ impl MediaHook for SettingsMediaHook<'_> {
 /// Maps a consumed hook event to an outcome. The confirmation is the same
 /// fixed phrase the TTS listener speaks for `voice-command-executed`
 /// (`managers::tts::phrase_for_event`); no event is emitted here.
-#[allow(dead_code)] // wired by S5b
 fn hook_event_outcome(event: HookEvent) -> PhraseOutcome {
     match event {
         HookEvent::Executed(_) => {
@@ -428,7 +416,6 @@ fn hook_event_outcome(event: HookEvent) -> PhraseOutcome {
 }
 
 /// Maps an action execution result to an outcome (same phrase as above).
-#[allow(dead_code)] // wired by S5b
 fn action_result_outcome(result: Result<String, String>) -> PhraseOutcome {
     match result {
         Ok(_) => PhraseOutcome::Done(crate::managers::tts::DONE_PHRASE.to_string()),
@@ -439,7 +426,6 @@ fn action_result_outcome(result: Result<String, String>) -> PhraseOutcome {
 /// Exact tier for what the USER said. Voice commands off => `NoMatch` with
 /// nothing executed. Otherwise: user shortcut hook, media hook, then the
 /// built-in router (unchanged policy). Emits no events and never logs the phrase.
-#[allow(dead_code)] // wired by S5b
 pub(crate) fn user_phrase_core(
     phrase: &str,
     voice_commands_enabled: bool,
@@ -464,7 +450,6 @@ pub(crate) fn user_phrase_core(
 /// The router's decision is filtered by `restrict_model_action`: a matched
 /// action that is rejected (OpenPath, non-http(s) URL) is `Refused` and is
 /// never executed. Emits no events and never logs the phrase.
-#[allow(dead_code)] // wired by S5b
 pub(crate) fn model_command_core(
     phrase: &str,
     voice_commands_enabled: bool,
@@ -489,7 +474,6 @@ pub(crate) fn model_command_core(
 }
 
 /// Production wrapper for `user_phrase_core`. Blocking (media can take seconds).
-#[allow(dead_code)] // wired by S5b
 pub(crate) fn run_user_phrase_blocking(
     app: &AppHandle,
     settings: &AppSettings,
@@ -516,7 +500,6 @@ pub(crate) fn run_user_phrase_blocking(
 }
 
 /// Production wrapper for `model_command_core`. Blocking (media can take seconds).
-#[allow(dead_code)] // wired by S5b
 pub(crate) fn run_model_command_blocking(
     app: &AppHandle,
     settings: &AppSettings,
@@ -1492,6 +1475,18 @@ impl ShortcutAction for TestAction {
     }
 }
 
+/// Conversation session toggle: pressing the converse binding starts a
+/// session, or stops the running one. Release does nothing.
+struct ConverseAction;
+
+impl ShortcutAction for ConverseAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        crate::commands::converse::toggle_conversation(app);
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+}
+
 // Static Action Map
 pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::new(|| {
     let mut map = HashMap::new();
@@ -1512,6 +1507,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "test".to_string(),
         Arc::new(TestAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "converse".to_string(),
+        Arc::new(ConverseAction) as Arc<dyn ShortcutAction>,
     );
     map
 });

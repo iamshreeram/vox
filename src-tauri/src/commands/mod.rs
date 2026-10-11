@@ -1,6 +1,7 @@
 pub mod agent_bridge;
 pub mod ambient;
 pub mod audio;
+pub mod converse;
 pub mod history;
 pub mod memory;
 pub mod models;

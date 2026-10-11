@@ -344,6 +344,9 @@ fn create_audio_recorder(
                     &app_handle,
                     &levels,
                 );
+                // Conversation sessions: non-blocking forward to the capture
+                // worker (a no-op unless a session is listening).
+                crate::managers::converse_hooks::on_levels(&levels);
             }
         })
         .with_audio_callback({
@@ -1112,14 +1115,12 @@ impl AudioRecordingManager {
     /// The check and the cancel happen under the same state-lock acquisition,
     /// so a recording owned by another binding is never disturbed.
     /// Returns true only when this call cancelled a recording.
-    // wired by S5b
-    #[allow(dead_code)]
     pub fn cancel_recording_if_binding(&self, binding: &str) -> bool {
         self.cancel_recording_inner(Some(binding))
     }
 
     /// Active binding id, or None unless a recording is in progress.
-    // wired by S5b
+    // Not called yet: the session uses cancel_recording_if_binding only.
     #[allow(dead_code)]
     pub fn recording_binding(&self) -> Option<String> {
         let state = self.state.lock().unwrap();
@@ -1183,6 +1184,8 @@ impl AudioRecordingManager {
 }
 
 /// Active binding id of a recording state; None unless `Recording`.
+// Only used by recording_binding, which has no caller yet.
+#[allow(dead_code)]
 fn active_binding(state: &RecordingState) -> Option<String> {
     match state {
         RecordingState::Recording { binding_id } => Some(binding_id.clone()),

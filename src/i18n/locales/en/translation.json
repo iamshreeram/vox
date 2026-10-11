@@ -4,6 +4,7 @@
     "checkUpdates": "Check for Updates...",
     "updateAvailable": "Update available",
     "copyLastTranscript": "Copy Last Transcript",
+    "converse": "Start or stop conversation",
     "unloadModel": "Unload Model",
     "model": "Model",
     "quit": "Quit",

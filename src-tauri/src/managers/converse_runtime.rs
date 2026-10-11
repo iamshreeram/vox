@@ -5,10 +5,13 @@
 //! the AMENDMENTS section (Revision 4).
 
 use crate::managers::converse::{
-    Brain, Deps, Ears, Hands, Mouth, Reporter, SessionConfig, SessionEnd, SessionRegistry,
-    SessionState,
+    run_session, Brain, Deps, Ears, Hands, Mouth, RegistryState, Reporter, SessionConfig,
+    SessionEnd, SessionRegistry, SessionState,
 };
 use crate::managers::converse_capture::CaptureHandle;
+use crate::managers::converse_hooks;
+use futures_util::FutureExt;
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
 pub const ALREADY_RUNNING: &str = "A conversation is already running.";
@@ -43,24 +46,53 @@ pub enum ConverseStatus {
     Stopping,
 }
 
-pub fn end_label(_end: SessionEnd) -> &'static str {
-    todo!("S5b")
+pub fn end_label(end: SessionEnd) -> &'static str {
+    match end {
+        SessionEnd::UserEnded => "user_ended",
+        SessionEnd::Idle => "idle",
+        SessionEnd::Cancelled => "cancelled",
+        SessionEnd::NotConfigured => "not_configured",
+        SessionEnd::AudioUnavailable => "audio_unavailable",
+        SessionEnd::SpeechStuck => "speech_stuck",
+        SessionEnd::TurnLimit => "turn_limit",
+    }
 }
 
-pub fn state_label(_state: SessionState) -> &'static str {
-    todo!("S5b")
+pub fn state_label(state: SessionState) -> &'static str {
+    match state {
+        SessionState::Listening => "listening",
+        SessionState::Thinking => "thinking",
+        SessionState::Speaking => "speaking",
+        SessionState::Acting => "acting",
+        SessionState::Idle => "idle",
+    }
+}
+
+/// Forwards every session state except `Idle` (the final idle is emitted only
+/// by the finalizer).
+struct ForwardReporter {
+    platform: Arc<dyn Platform>,
+}
+
+impl Reporter for ForwardReporter {
+    fn state(&self, state: SessionState) {
+        if state != SessionState::Idle {
+            self.platform.on_state(state_label(state), None);
+        }
+    }
 }
 
 pub struct ConverseController {
-    #[allow(dead_code)]
     platform: Arc<dyn Platform>,
-    #[allow(dead_code)]
     registry: Arc<SessionRegistry>,
 }
 
 impl ConverseController {
-    pub fn new(_platform: Arc<dyn Platform>) -> Self {
-        todo!("S5b")
+    pub fn new(platform: Arc<dyn Platform>) -> Self {
+        ConverseController {
+            platform,
+            registry: Arc::new(SessionRegistry::new()),
+        }
     }
 
     /// Start a session. Order: `platform.preflight()` (Err => return it, the
@@ -79,22 +111,68 @@ impl ConverseController {
     /// While running, the session's `Reporter` forwards every state except
     /// `Idle` (the final idle is emitted only by the finalizer, exactly once).
     pub fn start(&self) -> Result<u64, String> {
-        todo!("S5b")
+        self.platform.preflight()?;
+        let (id, cancel) = self
+            .registry
+            .try_begin()
+            .ok_or_else(|| ALREADY_RUNNING.to_string())?;
+        converse_hooks::set_session_active(true);
+        let capture = self.platform.capture();
+        converse_hooks::install_capture(Some(capture.clone()));
+        let parts = self.platform.parts(&capture);
+
+        let platform = self.platform.clone();
+        let registry = self.registry.clone();
+        tauri::async_runtime::spawn(async move {
+            let end = {
+                let SessionParts {
+                    ears,
+                    mouth,
+                    hands,
+                    brain,
+                    cfg,
+                } = parts;
+                let reporter = ForwardReporter {
+                    platform: platform.clone(),
+                };
+                let deps = Deps {
+                    ears: ears.as_ref(),
+                    mouth: mouth.as_ref(),
+                    hands: hands.as_ref(),
+                    brain: brain.as_ref(),
+                    reporter: &reporter,
+                };
+                FutureExt::catch_unwind(AssertUnwindSafe(run_session(&deps, &cfg, cancel)))
+                    .await
+                    .unwrap_or(SessionEnd::Cancelled)
+            };
+            // Finalizer: exact order, always runs.
+            let _ = tauri::async_runtime::spawn_blocking(move || capture.shutdown()).await;
+            converse_hooks::install_capture(None);
+            converse_hooks::set_session_active(false);
+            platform.on_state("idle", Some(end_label(end)));
+            registry.finish(id);
+        });
+        Ok(id)
     }
 
     /// Request the session to end. True if a Running session was asked to
     /// stop; false when idle or already stopping. Idempotent.
     pub fn stop(&self) -> bool {
-        todo!("S5b")
+        self.registry.request_stop()
     }
 
     /// True for Running and Stopping (draining).
     pub fn is_active(&self) -> bool {
-        todo!("S5b")
+        self.registry.is_active()
     }
 
     pub fn status(&self) -> ConverseStatus {
-        todo!("S5b")
+        match self.registry.state() {
+            RegistryState::Idle => ConverseStatus::Idle,
+            RegistryState::Running(_) => ConverseStatus::Running,
+            RegistryState::Draining(_) => ConverseStatus::Stopping,
+        }
     }
 }
 

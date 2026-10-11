@@ -193,8 +193,6 @@ fn paste_via_clipboard(
 
 /// Parses the output of the System Events frontmost-bundle AppleScript.
 /// Empty output or `missing value` (no frontmost process) yields None.
-// wired by S5b
-#[allow(dead_code)]
 pub fn parse_frontmost_output(output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() || trimmed == "missing value" {
@@ -206,12 +204,8 @@ pub fn parse_frontmost_output(output: &str) -> Option<String> {
 
 /// Frontmost-app probe for the focus guard. macOS asks System Events via
 /// osascript; other platforms have no probe and always report None.
-// wired by S5b
-#[allow(dead_code)]
 pub struct OsascriptFrontmostProbe;
 
-// wired by S5b
-#[allow(dead_code)]
 impl crate::managers::converse_audio::FrontmostProbe for OsascriptFrontmostProbe {
     fn frontmost_bundle(&self) -> Option<String> {
         #[cfg(target_os = "macos")]
@@ -237,8 +231,6 @@ impl crate::managers::converse_audio::FrontmostProbe for OsascriptFrontmostProbe
 /// Never Direct typing, never the reliable-paste path, never a trailing space or
 /// newline, never auto-submit. The focus guard refuses multi-line text into a
 /// terminal or an unknown frontmost app and aborts if focus changes before the chord.
-// wired by S5b
-#[allow(dead_code)]
 pub fn paste_generated(text: &str, app_handle: &AppHandle) -> Result<(), String> {
     use crate::managers::converse_audio::{generated_paste_options, guarded_paste};
 

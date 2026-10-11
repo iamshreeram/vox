@@ -137,8 +137,6 @@ impl Default for SessionConfig {
 
 impl SessionConfig {
     /// Session settings from the user's AppSettings (clamped; DESIGN 3.3).
-    /// Not called until the S5 runtime wires the session up.
-    #[allow(dead_code)]
     pub fn from_settings(s: &crate::settings::AppSettings) -> SessionConfig {
         SessionConfig {
             max_idle_turns: s.converse_max_idle_turns.clamp(1, 5),
@@ -152,8 +150,6 @@ impl SessionConfig {
 }
 
 /// Endpointing config from the user's silence setting, clamped 600..=4000 ms.
-/// Not called until the S5 runtime wires the session up.
-#[allow(dead_code)]
 pub fn endpoint_config(
     s: &crate::settings::AppSettings,
 ) -> crate::managers::converse_audio::EndpointConfig {

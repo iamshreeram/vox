@@ -12,6 +12,7 @@ pub mod converse_capture;
 pub mod converse_hooks;
 pub mod converse_local;
 pub mod converse_plan;
+pub mod converse_platform;
 pub mod converse_runtime;
 pub mod emotion;
 pub mod gguf_meta;
