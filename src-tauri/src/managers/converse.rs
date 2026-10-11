@@ -677,6 +677,7 @@ mod tests {
                 .filter_map(|e| e.strip_prefix("say:").map(|s| s.to_string()))
                 .collect()
         }
+        #[allow(dead_code)] // test helper kept for ordering assertions
         fn index_of(&self, exact: &str) -> Option<usize> {
             self.all().iter().position(|e| e == exact)
         }
