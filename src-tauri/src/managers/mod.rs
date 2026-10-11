@@ -15,6 +15,7 @@ pub mod model;
 pub mod model_capabilities;
 pub mod safety_policy;
 pub mod source_update;
+pub mod speech_backends;
 pub mod speech_compose;
 pub mod transcription;
 pub mod tts;
