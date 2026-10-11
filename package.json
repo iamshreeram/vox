@@ -16,6 +16,7 @@
     "format:backend": "cd src-tauri && cargo fmt",
     "test:keyboard": "bun src/lib/utils/keyboard.test.ts",
     "test:source-update": "bun src/components/update-checker/sourceUpdateState.test.ts",
+    "test:theme": "bun src/styles/theme.test.ts",
     "test:scripts": "bash scripts/test-update-lock.sh && bash scripts/test-update-macos.sh && bash scripts/test-install-macos.sh",
     "test:workflow-permissions": "bun scripts/check-workflow-permissions.test.ts",
     "test:playwright": "playwright test",
