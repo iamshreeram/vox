@@ -6,7 +6,7 @@ name: "Main Branch Build"
 
 on:
   push:
-    branches: [main, fix/ci-multiplatform-build] # TEMP-VERIFY: remove before merge
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
