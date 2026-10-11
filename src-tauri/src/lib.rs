@@ -40,6 +40,7 @@ use managers::command_router::CommandRouter;
 use managers::history::HistoryManager;
 use managers::memory::MemoryManager;
 use managers::model::ModelManager;
+use managers::source_update::SourceUpdateRuntime;
 use managers::transcription::TranscriptionManager;
 use managers::wakeword_listener::WakeWordListener;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -326,6 +327,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(ambient_transcript);
     app_handle.manage(ambient_coordinator);
     app_handle.manage(ambient_listener.clone());
+    app_handle.manage(SourceUpdateRuntime::new());
     // Spoken replies: one shared manager, managed before any event listener
     // that might speak. Event listeners are registered in `register_tts_listeners`.
     let tts_manager = Arc::new(managers::tts::TtsManager::new(
@@ -339,6 +341,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     } else if startup_settings.ambient_mode_enabled {
         ambient_listener.start();
     }
+    // Background "new version available" checks. Only this normal startup path
+    // reaches here; the headless CLI path returns earlier in `setup`.
+    managers::source_update::spawn_scheduler(app_handle.clone());
     app_handle.manage(tray::TrayState::new());
 
     // Note: Shortcuts are NOT initialized here.
@@ -435,6 +440,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             }
             "secure_input_warning" => {
                 // Full explanation lives in the settings-window banner
+                show_main_window(app);
+            }
+            "update_available" => {
+                // Only opens the window; installing is an explicit action there.
                 show_main_window(app);
             }
             "check_updates" => {
@@ -882,6 +891,11 @@ pub fn run(cli_args: CliArgs) {
             commands::agent_bridge::agent_invoke,
             commands::is_portable,
             commands::is_update_checks_locked,
+            commands::source_update::get_update_mode,
+            commands::source_update::check_source_update,
+            commands::source_update::get_cached_source_update,
+            commands::source_update::get_source_update_install_blocker,
+            commands::source_update::start_source_update,
             commands::get_app_dir_path,
             commands::get_app_settings,
             commands::get_default_settings,

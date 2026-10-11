@@ -196,7 +196,7 @@ scenario_success_new_origin_commit() {
   advance_origin
   run_update
   check "exit 0 (got $RUN_RC; output: $(tr '\n' ' ' <"$RUN_OUT"))" [ "$RUN_RC" -eq 0 ]
-  check "tauri build invoked with unsigned config" log_has "tauri-build --config $CONFIG_REL"
+  check "tauri build invoked with unsigned config" log_has "tauri-build --bundles app --config $CONFIG_REL"
   check "VOX_BUILD_COMMIT equals new origin HEAD" log_has "VOX_BUILD_COMMIT=$ORIGIN_NEW_SHA"
   check "VOX_BUILD_BRANCH=main" log_has "VOX_BUILD_BRANCH=main"
   check "VOX_SOURCE_UPDATES=1" log_has "VOX_SOURCE_UPDATES=1"
@@ -321,7 +321,7 @@ scenario_already_up_to_date_builds() {
   export VOX_UPDATE_ALLOW_ORIGIN="$ORIGIN"
   run_update
   check "exit 0 when up to date (got $RUN_RC; output: $(tr '\n' ' ' <"$RUN_OUT"))" [ "$RUN_RC" -eq 0 ]
-  check "tauri build ran" log_has "tauri-build --config $CONFIG_REL"
+  check "tauri build ran" log_has "tauri-build --bundles app --config $CONFIG_REL"
   check "install ran" log_has "install-ran $BUNDLE_REL"
 }
 

@@ -11,11 +11,15 @@
 //! Terminal window that runs the same update script, so the build runs
 //! outside Vox's own process tree (the installer stops and restarts Vox).
 
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::path::Path;
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::future::Future;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tauri::{AppHandle, Emitter, Manager};
 
 /// `owner/repo` this build tracks.
 pub const REPO_SLUG: &str = "iamshreeram/vox";
@@ -584,6 +588,384 @@ impl LaunchGuard {
         let mut last = self.last.lock().unwrap_or_else(|e| e.into_inner());
         *last = None;
     }
+}
+
+// ---- runtime: build metadata, network, install facts, orchestration --------
+
+/// Full commit this build was made from (`unknown` for a non-git build).
+const BUILD_COMMIT: &str = env!("VOX_BUILD_COMMIT");
+/// Branch this build was made from (`unknown` when not known).
+const BUILD_BRANCH: &str = env!("VOX_BUILD_BRANCH");
+/// `1` only when the build was made with the explicit opt-in.
+const SOURCE_UPDATES_FLAG: &str = env!("VOX_SOURCE_UPDATES");
+/// Root of the checkout the build came from.
+const SOURCE_DIR: &str = env!("VOX_SOURCE_DIR");
+
+/// Byte cap for the newest-commits response.
+const COMMITS_MAX_BYTES: usize = 2 * 1024 * 1024;
+/// Byte cap for the compare response.
+const COMPARE_MAX_BYTES: usize = 5 * 1024 * 1024;
+const FETCH_TIMEOUT: Duration = Duration::from_secs(15);
+/// Manual checks within this window of a good check reuse the cached result.
+const DEBOUNCE: Duration = Duration::from_secs(10);
+/// Minimum gap between two update launches (double-click protection).
+const LAUNCH_WINDOW: Duration = Duration::from_secs(5 * 60);
+const SCHEDULER_START_DELAY: Duration = Duration::from_secs(20);
+const SCHEDULER_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+/// Tauri event carrying `Option<SourceUpdateInfo>` (`null` when cleared).
+const STATUS_EVENT: &str = "source-update-status";
+const NOT_AVAILABLE: &str = "Rebuild updates are not available for this build.";
+const CHECKS_DISABLED: &str = "Update checks are disabled.";
+const NOT_READY: &str = "Update checks are not ready yet.";
+const LAUNCH_BUSY: &str = "An update was just started; check the Terminal window.";
+const LAUNCH_FAILED: &str = "Could not open Terminal.";
+
+/// Which update flow the footer should use for this running build.
+pub fn current_mode() -> SourceUpdateMode {
+    update_mode(
+        SOURCE_UPDATES_FLAG == "1",
+        cfg!(target_os = "macos"),
+        BUILD_COMMIT,
+        BUILD_BRANCH,
+    )
+}
+
+/// GET `url` and return `(status, body)` without interpreting the status.
+///
+/// The body is read incrementally and the call fails with [`UpdateCheckError::TooLarge`]
+/// as soon as more than `max_bytes` arrive. Transport failures (including the
+/// timeout) become [`UpdateCheckError::Network`]; the UI never shows that text.
+pub async fn fetch_text(
+    url: &str,
+    max_bytes: usize,
+    timeout: Duration,
+) -> Result<(u16, String), UpdateCheckError> {
+    let network = |e: reqwest::Error| UpdateCheckError::Network(e.to_string());
+    let client = reqwest::Client::builder()
+        .timeout(timeout)
+        .user_agent(format!("vox-update-check/{}", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(network)?;
+    let mut response = client
+        .get(url)
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(network)?;
+    let status = response.status().as_u16();
+    let mut body: Vec<u8> = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(network)? {
+        if body.len().saturating_add(chunk.len()) > max_bytes {
+            return Err(UpdateCheckError::TooLarge);
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok((status, String::from_utf8_lossy(&body).into_owned()))
+}
+
+/// The injectable orchestration: `fetch(url, max_bytes)` returns `(status, body)`.
+///
+/// Makes one request for the newest commits. If the build commit is in that
+/// window the answer is decided locally; otherwise one compare request decides.
+pub async fn check_with<F, Fut>(
+    build_sha: &str,
+    mut fetch: F,
+) -> Result<SourceUpdateInfo, UpdateCheckError>
+where
+    F: FnMut(String, usize) -> Fut,
+    Fut: Future<Output = Result<(u16, String), UpdateCheckError>>,
+{
+    let (status, body) = fetch(commits_api_url(), COMMITS_MAX_BYTES).await?;
+    if let Some(err) = classify_status(status) {
+        return Err(err);
+    }
+    let commits = parse_commits_response(&body)?;
+    match evaluate_window(build_sha, &commits)? {
+        WindowEvaluation::Resolved(info) => Ok(info),
+        WindowEvaluation::NotInWindow {
+            latest_sha,
+            changes,
+        } => {
+            let url = compare_api_url(build_sha).ok_or(UpdateCheckError::BadBuildCommit)?;
+            let (status, body) = fetch(url, COMPARE_MAX_BYTES).await?;
+            let compare = match status {
+                200 => parse_compare_response(&body),
+                404 => Err(UpdateCheckError::Http(404)),
+                other => {
+                    return Err(classify_status(other).unwrap_or(UpdateCheckError::Http(other)));
+                }
+            };
+            resolve_compare(build_sha, &latest_sha, changes, compare)
+        }
+    }
+}
+
+/// Gather the facts [`install_blocker`] judges. Blocking (runs git); call it
+/// from `spawn_blocking`.
+pub fn gather_install_facts(checks_disabled: bool) -> InstallFacts {
+    let source = Path::new(SOURCE_DIR);
+    let lock = update_lock_path();
+    let lock_exists = Path::new(&lock).exists();
+    InstallFacts {
+        is_macos: cfg!(target_os = "macos"),
+        checks_disabled,
+        source_dir_exists: source.is_dir(),
+        script_exists: source.join("scripts").join("update-macos.sh").is_file(),
+        origin_url: git_origin_url(source),
+        branch: git_current_branch(source),
+        tracked_changes: git_tracked_changes(source),
+        update_lock: lock_exists.then_some(lock),
+    }
+}
+
+/// Managed state for the source-update feature.
+pub struct SourceUpdateRuntime {
+    cached: Mutex<Option<SourceUpdateInfo>>,
+    last_ok: Mutex<Option<Instant>>,
+    /// Serializes checks so two callers never run the network path at once.
+    check_lock: tokio::sync::Mutex<()>,
+    /// Bumped by [`clear`]; an in-flight check started before a bump is discarded.
+    generation: AtomicU64,
+    guard: LaunchGuard,
+}
+
+impl SourceUpdateRuntime {
+    /// Empty runtime with the standard launch window.
+    pub fn new() -> Self {
+        Self {
+            cached: Mutex::new(None),
+            last_ok: Mutex::new(None),
+            check_lock: tokio::sync::Mutex::new(()),
+            generation: AtomicU64::new(0),
+            guard: LaunchGuard::new(LAUNCH_WINDOW),
+        }
+    }
+}
+
+impl Default for SourceUpdateRuntime {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Poison-tolerant lock: a panicked holder never leaves the feature wedged.
+fn lock_state<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Whether update checks are on for this run (persisted setting, minus the
+/// `HANDY_DISABLE_UPDATER` override).
+pub fn effective_checks_enabled(app: &AppHandle) -> bool {
+    let settings = crate::settings::get_settings(app);
+    crate::settings::update_checks_effectively_enabled(&settings)
+}
+
+/// A finished check may be stored only while checks are still enabled and no
+/// [`clear`] happened after it started.
+pub fn should_commit(enabled: bool, started_gen: u64, current_gen: u64) -> bool {
+    enabled && started_gen == current_gen
+}
+
+/// Run a check, publish the result (cache, event, tray) and return it.
+///
+/// `automatic` skips the manual-check debounce. Errors are user-presentable.
+pub async fn check_and_publish(
+    app: &AppHandle,
+    automatic: bool,
+) -> Result<SourceUpdateInfo, String> {
+    if current_mode() != SourceUpdateMode::Source {
+        return Err(NOT_AVAILABLE.to_string());
+    }
+    if !effective_checks_enabled(app) {
+        return Err(CHECKS_DISABLED.to_string());
+    }
+    let Some(runtime) = app.try_state::<SourceUpdateRuntime>() else {
+        return Err(NOT_READY.to_string());
+    };
+
+    let _permit = runtime.check_lock.lock().await;
+
+    if !automatic {
+        let recent = lock_state(&runtime.last_ok).is_some_and(|t| t.elapsed() < DEBOUNCE);
+        let cached = lock_state(&runtime.cached).clone();
+        if let (true, Some(info)) = (recent, cached) {
+            return Ok(info);
+        }
+    }
+
+    let generation = runtime.generation.load(Ordering::SeqCst);
+    let mut info = check_with(BUILD_COMMIT, |url: String, max: usize| async move {
+        fetch_text(&url, max, FETCH_TIMEOUT).await
+    })
+    .await
+    .map_err(|e| e.user_message())?;
+
+    let checks_disabled = !effective_checks_enabled(app);
+    if info.state == SourceUpdateState::Available {
+        let facts = tokio::task::spawn_blocking(move || gather_install_facts(checks_disabled))
+            .await
+            .map_err(|_| "Could not read the checkout's state.".to_string())?;
+        let blocker = install_blocker(&facts);
+        info.can_install = blocker.is_none();
+        info.install_blocker = blocker;
+    } else {
+        info.can_install = false;
+        info.install_blocker = None;
+    }
+
+    let current_gen = runtime.generation.load(Ordering::SeqCst);
+    if !should_commit(effective_checks_enabled(app), generation, current_gen) {
+        return Err("Update checks were disabled.".to_string());
+    }
+
+    *lock_state(&runtime.cached) = Some(info.clone());
+    *lock_state(&runtime.last_ok) = Some(Instant::now());
+    let _ = app.emit(STATUS_EVENT, Some(info.clone()));
+    crate::tray::update_tray_menu(app);
+    Ok(info)
+}
+
+/// Forget the cached result and invalidate any check still in flight.
+pub fn clear(app: &AppHandle) {
+    if let Some(runtime) = app.try_state::<SourceUpdateRuntime>() {
+        runtime.generation.fetch_add(1, Ordering::SeqCst);
+        *lock_state(&runtime.cached) = None;
+        *lock_state(&runtime.last_ok) = None;
+    }
+    let _ = app.emit(STATUS_EVENT, Option::<SourceUpdateInfo>::None);
+    crate::tray::update_tray_menu(app);
+}
+
+/// The last published result, if any.
+pub fn cached(app: &AppHandle) -> Option<SourceUpdateInfo> {
+    app.try_state::<SourceUpdateRuntime>()
+        .and_then(|runtime| lock_state(&runtime.cached).clone())
+}
+
+/// `true` when the cached result says an update is available.
+pub fn update_available(app: &AppHandle) -> bool {
+    cached(app).is_some_and(|info| info.state == SourceUpdateState::Available)
+}
+
+/// Fresh install facts judged now; `None` means an install may start.
+pub async fn install_blocker_now(app: &AppHandle) -> Option<String> {
+    if current_mode() != SourceUpdateMode::Source {
+        return Some(NOT_AVAILABLE.to_string());
+    }
+    let checks_disabled = !effective_checks_enabled(app);
+    match tokio::task::spawn_blocking(move || gather_install_facts(checks_disabled)).await {
+        Ok(facts) => install_blocker(&facts),
+        Err(_) => Some("Could not read the checkout's state.".to_string()),
+    }
+}
+
+/// Open Terminal running the update script. Returns once Terminal accepted the file.
+pub async fn start_update(app: &AppHandle) -> Result<(), String> {
+    if current_mode() != SourceUpdateMode::Source {
+        return Err(NOT_AVAILABLE.to_string());
+    }
+    if !effective_checks_enabled(app) {
+        return Err(CHECKS_DISABLED.to_string());
+    }
+    if let Some(blocker) = install_blocker_now(app).await {
+        return Err(blocker);
+    }
+    let Some(runtime) = app.try_state::<SourceUpdateRuntime>() else {
+        return Err(NOT_READY.to_string());
+    };
+    if !runtime.guard.try_acquire(Instant::now()) {
+        return Err(LAUNCH_BUSY.to_string());
+    }
+
+    let script = match build_update_script(SOURCE_DIR) {
+        Ok(script) => script,
+        Err(_) => {
+            runtime.guard.release();
+            return Err("The checkout path cannot be used safely.".to_string());
+        }
+    };
+    let path = match create_script_file(&std::env::temp_dir(), &script) {
+        Ok(path) => path,
+        Err(err) => {
+            warn!("could not write the update script: {err}");
+            runtime.guard.release();
+            return Err(LAUNCH_FAILED.to_string());
+        }
+    };
+
+    let opened = tokio::process::Command::new("/usr/bin/open")
+        .arg("-a")
+        .arg("Terminal")
+        .arg(&path)
+        .status()
+        .await;
+    if matches!(opened, Ok(status) if status.success()) {
+        info!("Source update launched in Terminal");
+        Ok(())
+    } else {
+        let _ = std::fs::remove_file(&path);
+        runtime.guard.release();
+        Err(LAUNCH_FAILED.to_string())
+    }
+}
+
+static SCRIPT_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Write `contents` to a new, unpredictably named `.command` file in `dir`
+/// (owner-only on unix) and return its path. Never overwrites an existing file.
+pub fn create_script_file(dir: &Path, contents: &str) -> std::io::Result<PathBuf> {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let counter = SCRIPT_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let name = format!(
+        "vox-update-{}-{nanos}-{counter}.command",
+        std::process::id()
+    );
+    let path = dir.join(name);
+    create_new_file(&path, contents)?;
+    Ok(path)
+}
+
+/// Create `path` exclusively (fails with `AlreadyExists` if it is present),
+/// write `contents`, and remove the file again if the write fails.
+pub fn create_new_file(path: &Path, contents: &str) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o700);
+    }
+    let mut file = options.open(path)?;
+    let written = file
+        .write_all(contents.as_bytes())
+        .and_then(|()| file.sync_all());
+    if let Err(err) = written {
+        drop(file);
+        let _ = std::fs::remove_file(path);
+        return Err(err);
+    }
+    Ok(())
+}
+
+/// Background checker: first run after a short delay, then every six hours,
+/// only in Source mode with checks enabled.
+pub fn spawn_scheduler(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(SCHEDULER_START_DELAY).await;
+        loop {
+            if current_mode() == SourceUpdateMode::Source && effective_checks_enabled(&app) {
+                if let Err(e) = check_and_publish(&app, true).await {
+                    warn!("source update check failed: {e}");
+                }
+            }
+            tokio::time::sleep(SCHEDULER_INTERVAL).await;
+        }
+    });
 }
 
 #[cfg(test)]
@@ -1451,5 +1833,374 @@ mod tests {
         let t0 = Instant::now();
         assert!(guard.try_acquire(t0));
         assert!(guard.try_acquire(t0));
+    }
+}
+
+#[cfg(test)]
+mod orchestration_tests {
+    use super::*;
+    use std::collections::VecDeque;
+    use std::sync::Arc;
+
+    type Canned = Result<(u16, String), UpdateCheckError>;
+
+    fn full(n: u32) -> String {
+        format!("{:040x}", 0xdef0_0000_u128 + n as u128)
+    }
+
+    /// Newest-first commit list body; subjects are `subject-<n>`.
+    fn commits_body(shas: &[u32]) -> String {
+        let items: Vec<String> = shas
+            .iter()
+            .map(|n| {
+                format!(
+                    r#"{{"sha":"{}","commit":{{"message":"subject-{n}\n\nbody"}}}}"#,
+                    full(*n)
+                )
+            })
+            .collect();
+        format!("[{}]", items.join(","))
+    }
+
+    type RequestLog = Arc<Mutex<Vec<(String, usize)>>>;
+
+    /// Fetch double that answers from a queue and records every request.
+    fn canned_fetch(
+        responses: Vec<Canned>,
+    ) -> (
+        impl FnMut(String, usize) -> std::future::Ready<Canned>,
+        RequestLog,
+    ) {
+        let log: RequestLog = Arc::new(Mutex::new(Vec::new()));
+        let log_inner = Arc::clone(&log);
+        let mut queue: VecDeque<Canned> = responses.into();
+        let fetch = move |url: String, max: usize| {
+            log_inner.lock().expect("request log").push((url, max));
+            let next = queue
+                .pop_front()
+                .unwrap_or_else(|| Err(UpdateCheckError::Network("no canned response".into())));
+            std::future::ready(next)
+        };
+        (fetch, log)
+    }
+
+    fn ok(body: String) -> Canned {
+        Ok((200, body))
+    }
+
+    #[tokio::test]
+    async fn up_to_date_when_build_is_newest_and_makes_one_request() {
+        let (fetch, log) = canned_fetch(vec![ok(commits_body(&[1, 2]))]);
+        let info = check_with(&full(1), fetch).await.expect("check ok");
+        assert_eq!(info.state, SourceUpdateState::UpToDate);
+        assert_eq!(info.behind_by, 0);
+        assert_eq!(log.lock().expect("log").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn behind_by_two_lists_changes_newest_first_with_one_request() {
+        let (fetch, log) = canned_fetch(vec![ok(commits_body(&[0, 1, 2, 3]))]);
+        let info = check_with(&full(2), fetch).await.expect("check ok");
+        assert_eq!(info.state, SourceUpdateState::Available);
+        assert_eq!(info.behind_by, 2);
+        assert_eq!(info.changes, vec!["subject-0", "subject-1"]);
+        assert_eq!(log.lock().expect("log").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn build_outside_window_uses_compare_ahead_count_with_two_requests() {
+        let build = full(999);
+        let (fetch, log) = canned_fetch(vec![
+            ok(commits_body(&[0, 1, 2])),
+            ok(r#"{"status":"ahead","ahead_by":7}"#.to_string()),
+        ]);
+        let info = check_with(&build, fetch).await.expect("check ok");
+        assert_eq!(info.state, SourceUpdateState::Available);
+        assert_eq!(info.behind_by, 7);
+        assert_eq!(info.changes, vec!["subject-0", "subject-1", "subject-2"]);
+        let requests = log.lock().expect("log");
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[1].0, compare_api_url(&build).expect("full sha"));
+    }
+
+    #[tokio::test]
+    async fn compare_404_means_untracked() {
+        let (fetch, _log) =
+            canned_fetch(vec![ok(commits_body(&[0, 1])), Ok((404, "{}".to_string()))]);
+        let info = check_with(&full(999), fetch).await.expect("check ok");
+        assert_eq!(info.state, SourceUpdateState::Untracked);
+        assert!(info.note.is_some());
+    }
+
+    #[tokio::test]
+    async fn compare_500_is_an_http_error() {
+        let (fetch, _log) = canned_fetch(vec![
+            ok(commits_body(&[0, 1])),
+            Ok((500, "boom".to_string())),
+        ]);
+        let err = check_with(&full(999), fetch)
+            .await
+            .expect_err("should fail");
+        assert_eq!(err, UpdateCheckError::Http(500));
+    }
+
+    #[tokio::test]
+    async fn commits_403_is_rate_limited() {
+        let (fetch, _log) = canned_fetch(vec![Ok((403, "{}".to_string()))]);
+        let err = check_with(&full(1), fetch).await.expect_err("should fail");
+        assert_eq!(err, UpdateCheckError::RateLimited);
+    }
+
+    #[tokio::test]
+    async fn malformed_commits_body_is_malformed() {
+        let (fetch, _log) = canned_fetch(vec![ok("not json".to_string())]);
+        let err = check_with(&full(1), fetch).await.expect_err("should fail");
+        assert!(matches!(err, UpdateCheckError::Malformed(_)), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn empty_commit_array_is_empty_history() {
+        let (fetch, _log) = canned_fetch(vec![ok("[]".to_string())]);
+        let err = check_with(&full(1), fetch).await.expect_err("should fail");
+        assert_eq!(err, UpdateCheckError::EmptyHistory);
+    }
+
+    #[tokio::test]
+    async fn invalid_build_sha_is_bad_build_commit() {
+        // The commits request happens first; the SHA is validated after parsing.
+        let (fetch, _log) = canned_fetch(vec![ok(commits_body(&[0, 1]))]);
+        let err = check_with("not-a-sha", fetch)
+            .await
+            .expect_err("should fail");
+        assert_eq!(err, UpdateCheckError::BadBuildCommit);
+    }
+
+    #[tokio::test]
+    async fn compare_response_too_large_propagates() {
+        let (fetch, _log) = canned_fetch(vec![
+            ok(commits_body(&[0, 1])),
+            Err(UpdateCheckError::TooLarge),
+        ]);
+        let err = check_with(&full(999), fetch)
+            .await
+            .expect_err("should fail");
+        assert_eq!(err, UpdateCheckError::TooLarge);
+    }
+}
+
+#[cfg(test)]
+mod io_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    /// Accept one connection, read the request head, then either answer with
+    /// `response` or (when `hold` is set) keep the socket open without replying.
+    async fn serve_once(response: Vec<u8>, hold: bool) -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        tokio::spawn(async move {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let mut head = Vec::new();
+            let mut chunk = [0u8; 1024];
+            while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                match socket.read(&mut chunk).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => head.extend_from_slice(&chunk[..n]),
+                }
+            }
+            if hold {
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                return;
+            }
+            let _ = socket.write_all(&response).await;
+            let _ = socket.shutdown().await;
+        });
+        port
+    }
+
+    fn http_response(status_line: &str, body: &str) -> Vec<u8> {
+        format!(
+            "HTTP/1.1 {status_line}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .into_bytes()
+    }
+
+    #[tokio::test]
+    async fn fetch_text_returns_status_and_small_body() {
+        let port = serve_once(http_response("200 OK", "hello"), false).await;
+        let url = format!("http://127.0.0.1:{port}/x");
+        let got = fetch_text(&url, 1024, Duration::from_secs(5))
+            .await
+            .expect("fetch ok");
+        assert_eq!(got, (200, "hello".to_string()));
+    }
+
+    #[tokio::test]
+    async fn fetch_text_passes_non_200_status_through() {
+        let port = serve_once(http_response("404 Not Found", "not found"), false).await;
+        let url = format!("http://127.0.0.1:{port}/x");
+        let got = fetch_text(&url, 1024, Duration::from_secs(5))
+            .await
+            .expect("fetch ok");
+        assert_eq!(got, (404, "not found".to_string()));
+    }
+
+    #[tokio::test]
+    async fn fetch_text_rejects_bodies_over_the_cap() {
+        let body = "a".repeat(100);
+        let port = serve_once(http_response("200 OK", &body), false).await;
+        let url = format!("http://127.0.0.1:{port}/x");
+        let err = fetch_text(&url, 10, Duration::from_secs(5))
+            .await
+            .expect_err("should be too large");
+        assert_eq!(err, UpdateCheckError::TooLarge);
+    }
+
+    #[tokio::test]
+    async fn fetch_text_times_out_as_network_error() {
+        let port = serve_once(Vec::new(), true).await;
+        let url = format!("http://127.0.0.1:{port}/x");
+        let err = fetch_text(&url, 1024, Duration::from_millis(200))
+            .await
+            .expect_err("should time out");
+        assert!(matches!(err, UpdateCheckError::Network(_)), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn fetch_text_closed_port_is_network_error() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        drop(listener);
+        let url = format!("http://127.0.0.1:{port}/x");
+        let err = fetch_text(&url, 1024, Duration::from_secs(5))
+            .await
+            .expect_err("should fail to connect");
+        assert!(matches!(err, UpdateCheckError::Network(_)), "{err:?}");
+    }
+
+    #[test]
+    fn create_script_file_writes_exact_contents() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = create_script_file(dir.path(), "#!/bin/bash\necho hi\n").expect("create");
+        assert!(path.is_file());
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read"),
+            "#!/bin/bash\necho hi\n"
+        );
+        assert_eq!(path.extension().and_then(|e| e.to_str()), Some("command"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_script_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = create_script_file(dir.path(), "x").expect("create");
+        let mode = std::fs::metadata(&path).expect("meta").permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
+    }
+
+    #[test]
+    fn create_script_file_returns_a_fresh_path_each_call() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let first = create_script_file(dir.path(), "a").expect("first");
+        let second = create_script_file(dir.path(), "b").expect("second");
+        assert_ne!(first, second);
+        assert_eq!(std::fs::read_to_string(&first).expect("read"), "a");
+        assert_eq!(std::fs::read_to_string(&second).expect("read"), "b");
+    }
+
+    #[test]
+    fn create_new_file_never_overwrites_an_existing_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("taken.command");
+        std::fs::write(&path, "keep me").expect("seed");
+        let err = create_new_file(&path, "replacement").expect_err("must not overwrite");
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read_to_string(&path).expect("read"), "keep me");
+    }
+
+    #[test]
+    fn should_commit_truth_table() {
+        for enabled in [false, true] {
+            for started in [0u64, 1] {
+                for current in [0u64, 1] {
+                    let expected = enabled && started == current;
+                    assert_eq!(
+                        should_commit(enabled, started, current),
+                        expected,
+                        "enabled={enabled} started={started} current={current}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn current_mode_is_plugin_in_a_default_build() {
+        // VOX_SOURCE_UPDATES is only embedded as 1 by scripts/update-macos.sh.
+        assert_eq!(current_mode(), SourceUpdateMode::Plugin);
+    }
+
+    #[test]
+    fn embedded_commit_is_unknown_or_a_full_sha() {
+        assert!(
+            BUILD_COMMIT == "unknown" || is_full_sha(BUILD_COMMIT),
+            "unexpected embedded commit: {BUILD_COMMIT}"
+        );
+        assert!(!SOURCE_DIR.is_empty());
+    }
+}
+
+/// Network sanity checks against the real GitHub API. Ignored by default (they
+/// need internet access and use the unauthenticated rate limit); run with
+/// `cargo test --lib --offline live_github -- --ignored`.
+#[cfg(test)]
+mod live_github {
+    use super::*;
+
+    async fn real_fetch(url: String, max: usize) -> Result<(u16, String), UpdateCheckError> {
+        fetch_text(&url, max, Duration::from_secs(20)).await
+    }
+
+    #[tokio::test]
+    #[ignore = "uses the network"]
+    async fn a_build_a_few_commits_behind_is_reported_as_available() {
+        // dc6896f was the head of main before the CI fix landed.
+        let info = check_with("dc6896fcc19d74af70d15202ed3dad43a63a6da9", real_fetch)
+            .await
+            .expect("live check");
+        assert_eq!(info.state, SourceUpdateState::Available, "{info:?}");
+        assert!(info.behind_by >= 1, "{info:?}");
+        assert!(!info.changes.is_empty() && info.changes.len() <= MAX_CHANGES);
+        assert!(info
+            .compare_url
+            .starts_with("https://github.com/iamshreeram/vox/compare/"));
+    }
+
+    #[tokio::test]
+    #[ignore = "uses the network"]
+    async fn a_build_older_than_the_window_goes_through_the_compare_api() {
+        // The repository's root commit is far outside the newest-100 window.
+        let info = check_with("cdb307e2120bb7d7a7af2589262dcf133eaaa0ec", real_fetch)
+            .await
+            .expect("live check");
+        assert_eq!(info.state, SourceUpdateState::Available, "{info:?}");
+        assert!(info.behind_by > COMMIT_WINDOW as u32, "{info:?}");
+        assert_eq!(info.changes.len(), MAX_CHANGES);
+    }
+
+    #[tokio::test]
+    #[ignore = "uses the network"]
+    async fn a_commit_github_does_not_know_is_untracked() {
+        let info = check_with("0123456789abcdef0123456789abcdef01234567", real_fetch)
+            .await
+            .expect("live check");
+        assert_eq!(info.state, SourceUpdateState::Untracked, "{info:?}");
+        assert!(info.note.is_some());
     }
 }
