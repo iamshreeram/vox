@@ -207,7 +207,7 @@ fn new_app_discovery() -> Box<dyn managers::command_router::AppDiscovery> {
 /// The app events that may be spoken aloud. Command-outcome events are
 /// included so their fixed phrases are spoken; their payloads never are.
 const TTS_EVENTS: [&str; 4] = [
-    "agent-bridge-reply",
+    "agent-bridge-exchange",
     "agent-bridge-error",
     "voice-command-executed",
     "voice-command-error",
@@ -248,6 +248,38 @@ fn tts_error_kind(error: &managers::tts::TtsError) -> &'static str {
 /// feature that emits one is spoken without an inline call.
 fn register_tts_listeners(app: &AppHandle, tts: Arc<managers::tts::TtsManager>) {
     for event_name in TTS_EVENTS {
+        if event_name == "agent-bridge-exchange" {
+            let app_for_exchange = app.clone();
+            let tts_for_exchange = Arc::clone(&tts);
+            app.listen(event_name, move |event| {
+                let Some(exchange) = managers::speech_pipeline::parse_exchange(event.payload())
+                else {
+                    return;
+                };
+                let app_for_run = app_for_exchange.clone();
+                let tts_for_run = Arc::clone(&tts_for_exchange);
+                tauri::async_runtime::spawn(async move {
+                    let load_app = app_for_run.clone();
+                    let load = move || get_settings(&load_app);
+                    let status_app = app_for_run.clone();
+                    let status = move |outcome: &'static str| {
+                        let _ = status_app.emit(
+                            "speech-composer-status",
+                            serde_json::json!({ "outcome": outcome }),
+                        );
+                    };
+                    managers::speech_pipeline::run_exchange(
+                        &tts_for_run,
+                        &load,
+                        &managers::speech_pipeline::RealComposer,
+                        &status,
+                        exchange,
+                    )
+                    .await;
+                });
+            });
+            continue;
+        }
         let app_for_event = app.clone();
         let tts_for_event = Arc::clone(&tts);
         app.listen(event_name, move |event| {
@@ -946,6 +978,9 @@ pub fn run(cli_args: CliArgs) {
             commands::history::retry_history_entry_transcription,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
+            commands::tts_composer::change_tts_composer_settings,
+            commands::tts_composer::list_tts_composer_providers,
+            commands::tts_composer::preview_speech_composer,
             commands::memory::memory_remember,
             commands::memory::memory_recall,
             commands::memory::memory_list_all,

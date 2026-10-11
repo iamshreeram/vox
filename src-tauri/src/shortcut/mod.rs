@@ -967,10 +967,11 @@ pub fn change_tts_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), S
     let mut settings = settings::get_settings(&app);
     settings.tts_enabled = enabled;
     settings::write_settings(&app, settings);
-    if !enabled {
-        if let Some(tts) = app.try_state::<Arc<crate::managers::tts::TtsManager>>() {
+    if let Some(tts) = app.try_state::<Arc<crate::managers::tts::TtsManager>>() {
+        if !enabled {
             tts.stop();
         }
+        tts.invalidate();
     }
     Ok(())
 }
