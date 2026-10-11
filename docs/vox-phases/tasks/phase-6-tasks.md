@@ -21,6 +21,7 @@ change (ask the Validator which commit), not guess.
 **Depends on:** nothing. **Blocks:** A2, A3, A4, A6.
 
 **Files touched:**
+
 - `src-tauri/src/managers/ambient/mod.rs` (new)
 - `src-tauri/src/managers/ambient/transcript.rs` (new, skeleton only)
 - `src-tauri/src/managers/ambient/engagement.rs` (new, skeleton only)
@@ -30,6 +31,7 @@ change (ask the Validator which commit), not guess.
 - `src-tauri/src/settings.rs` (add 3 fields + defaults)
 
 **Implement:**
+
 - `TranscriptSegment`, `RollingTranscript` (struct shape only, methods
   can `unimplemented!()`), `Engagement` enum, `EngagementJudge` (struct
   shape only), `EchoSuppressor` (struct shape only) — exactly as typed in
@@ -39,6 +41,7 @@ change (ask the Validator which commit), not guess.
   (default `90_000`).
 
 **Tests (write first):**
+
 - T18: fresh settings → `ambient_mode_enabled == false`,
   `ambient_wake_name == "Vox"`, `ambient_window_ms == 90_000`.
 - (new) legacy-settings-missing-field test mirroring the existing
@@ -63,6 +66,7 @@ is always caller-supplied, never read from the wall clock internally
 `ambient_window_ms`, per vox's own `_expire()`-on-both-sides design.
 
 **Tests (write first):**
+
 - T1: add 3 segments at t=0, t=1000, t=2000ms →
   `recent_segments(now_ms=2000, None)` returns all 3, oldest first.
 - T2: add a segment at t=0, then another at t=100_000 (past the 90s
@@ -101,12 +105,13 @@ draft of this spec got this wrong and the corrected version matters.
 
 **Tests (write first — all from the phase doc, already corrected against
 vox's real behavior):**
+
 - T7: wake names `["vox"]`, window `["Vox, what time is it"]` →
   `Addressed { extracted_request: "what time is it" }`.
 - T8: wake names `["vox"]`, window `["vox what time is it"]` (no comma,
   lowercase) → `Addressed { extracted_request: "what time is it" }`.
 - T9: wake names `["vox"]`, window `["I was telling Vox about the
-  project"]` → `NotAddressed` (first word is "I", not a wake name).
+project"]` → `NotAddressed` (first word is "I", not a wake name).
 - T10: wake names `["vox"]`, window `["Vox is a good name for this"]` →
   `Addressed { extracted_request: "is a good name for this" }` — this
   IS addressed per vox's real heuristic, do not "fix" it to be smarter.
@@ -147,6 +152,7 @@ buildable).
 
 **Tests (write first, new — no T-numbers in the phase doc for this
 piece):**
+
 - (new) given a fake "is TTS currently speaking" signal reporting `true`,
   a segment added during that window is tagged/flagged as
   `during_tts: true` (reuses the `TranscriptSegment.during_tts` field
@@ -185,6 +191,7 @@ how most "pick one mode" settings behave elsewhere in this app). Confirm
 this choice with the Validator before implementing if there's any doubt.
 
 **Tests (write first):**
+
 - T16: `wake_word_enabled = true`, `ambient_mode_enabled = false`, then
   attempt to set `ambient_mode_enabled = true` → defined behavior occurs
   (per whichever resolution was chosen); assert BOTH settings' final
@@ -212,11 +219,13 @@ Build the IPC surface against fakes/stubs — unblocks A8 (Settings UI)
 early, same reasoning as Phase 5's W6.
 
 **Files touched:**
+
 - `src-tauri/src/commands/ambient.rs` (new)
 - `src-tauri/src/commands/mod.rs` (register it)
 - `src-tauri/src/lib.rs` (register commands in `generate_handler!`)
 
 **Implement:**
+
 - `ambient_set_enabled(enabled: bool) -> Result<(), String>` (goes
   through A5's shared mutual-exclusion validation once A5 lands; for this
   task in isolation, a direct settings write is fine as a placeholder —
@@ -228,6 +237,7 @@ early, same reasoning as Phase 5's W6.
   when the coordinator detects an addressed utterance.
 
 **Tests (write first):**
+
 - (new) `ambient_set_enabled(true)`/`(false)` round-trips through
   settings, mirroring `memory_set_enabled`'s test style.
 - (new) `ambient_clear()` actually empties a `RollingTranscript` fixture.
@@ -247,11 +257,13 @@ Not in the original phase doc (explicitly deferred there) — added because
 Ram wants a working, demoable feature.
 
 **Files touched:**
+
 - `src-tauri/src/actions.rs` or a new small coordinator-wiring module
   (flag file-size concerns to the Validator, same note as W7)
 - `src-tauri/src/lib.rs` (register ambient coordinator as managed state)
 
 **Implement:**
+
 - When `ambient_mode_enabled` is true, continuously run VAD-segmented
   transcription (reuse the existing `TranscriptionManager`/VAD pipeline —
   do not build a second transcription path) and feed each finished
@@ -270,8 +282,9 @@ Ram wants a working, demoable feature.
 
 **Tests (write first, as unit-testable as possible; a live-mic manual
 smoke test is also required, documented in the report):**
+
 - (new) a pure decision function `fn should_run_ambient_capture(settings:
-  &AppSettings) -> bool` mirroring the Phase 1/2/5 gating pattern.
+&AppSettings) -> bool` mirroring the Phase 1/2/5 gating pattern.
 - (new) given a fixed sequence of fake transcribed segments fed through
   the full pipeline (RollingTranscript -> EchoSuppressor -> EngagementJudge),
   an "addressed" segment produces exactly one `ambient://addressed` emission
@@ -295,6 +308,7 @@ exclusion UX (see `ui-wiring-tasks.md` U1 for how they get composed
 together).
 
 **Files touched:**
+
 - `src/components/settings/AmbientModeToggle.tsx` (new, mirror
   `MemoryToggle.tsx`)
 - `src/components/settings/index.ts` (export it)

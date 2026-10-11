@@ -35,6 +35,7 @@ Activate `test-driven-development` and `using-git-worktrees` before coding. Foll
 ## STEP 1: Orient
 
 Read:
+
 1. `docs/vox-phases/README.md`
 2. `docs/vox-phases/STATUS.md`
 3. `docs/vox-phases/WORKTREE-CONVENTION.md`
@@ -61,6 +62,7 @@ Follow `WORKTREE-CONVENTION.md`. Use `.worktrees/phase-<N>-<slug>/`. Run setup a
 ## STEP 5: TDD implementation
 
 For each test case in the phase doc, in order:
+
 1. Write one test and run it.
 2. Confirm it fails for the expected missing behavior, not a test/compile mistake.
 3. Implement the minimum production code.

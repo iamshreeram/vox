@@ -8,8 +8,8 @@ interface AgentBridgeToggleProps {
   grouped?: boolean;
 }
 
-export const AgentBridgeToggle: React.FC<AgentBridgeToggleProps> =
-  React.memo(({ descriptionMode = "tooltip", grouped = false }) => {
+export const AgentBridgeToggle: React.FC<AgentBridgeToggleProps> = React.memo(
+  ({ descriptionMode = "tooltip", grouped = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
 
@@ -27,4 +27,5 @@ export const AgentBridgeToggle: React.FC<AgentBridgeToggleProps> =
         tooltipPosition="bottom"
       />
     );
-  });
+  },
+);

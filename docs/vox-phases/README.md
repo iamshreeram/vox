@@ -36,21 +36,21 @@ Phases 1-5 and 7 can be developed independently. Phase 6 depends on Phase 5 and 
 
 ## Phase documents
 
-| File                        | Purpose                                                     |
-| --------------------------- | ----------------------------------------------------------- |
-| `STATUS.md`                 | Phase ownership and review state.                           |
-| `WORKTREE-CONVENTION.md`    | Worktree names and setup/teardown.                          |
-| `PHASE-1-memory.md`         | SQLite memory facts, extraction, deduplication, and recall. |
-| `PHASE-2-command-router.md` | Deterministic app/path routing and safety confirmation.     |
-| `PHASE-3-agent-bridge.md`   | Generic, user-configured subprocess bridge.                 |
-| `PHASE-4-tts.md`            | Native macOS speech output.                                 |
-| `PHASE-5-wakeword.md`       | Opt-in wake-word detection.                                 |
-| `PHASE-6-ambient-mode.md`   | RAM-only rolling transcript and engagement decision.        |
-| `PHASE-7-vision-ocr.md`     | Opt-in, observation-only screen OCR.                        |
-| `PHASE-5-6-TASK-QUEUE.md`   | Multi-agent fan-out task breakdown for Phases 5+6 (read this before picking up any Phase 5/6 task). |
-| `tasks/phase-5-tasks.md`    | Phase 5 task cards (files, tests, acceptance criteria per task). |
-| `tasks/phase-6-tasks.md`    | Phase 6 task cards. |
-| `tasks/ui-wiring-tasks.md`  | Cross-cutting Settings UI task cards shared by Phases 5 and 6. |
+| File                                 | Purpose                                                                                                                                               |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `STATUS.md`                          | Phase ownership and review state.                                                                                                                     |
+| `WORKTREE-CONVENTION.md`             | Worktree names and setup/teardown.                                                                                                                    |
+| `PHASE-1-memory.md`                  | SQLite memory facts, extraction, deduplication, and recall.                                                                                           |
+| `PHASE-2-command-router.md`          | Deterministic app/path routing and safety confirmation.                                                                                               |
+| `PHASE-3-agent-bridge.md`            | Generic, user-configured subprocess bridge.                                                                                                           |
+| `PHASE-4-tts.md`                     | Native macOS speech output.                                                                                                                           |
+| `PHASE-5-wakeword.md`                | Opt-in wake-word detection.                                                                                                                           |
+| `PHASE-6-ambient-mode.md`            | RAM-only rolling transcript and engagement decision.                                                                                                  |
+| `PHASE-7-vision-ocr.md`              | Opt-in, observation-only screen OCR.                                                                                                                  |
+| `PHASE-5-6-TASK-QUEUE.md`            | Multi-agent fan-out task breakdown for Phases 5+6 (read this before picking up any Phase 5/6 task).                                                   |
+| `tasks/phase-5-tasks.md`             | Phase 5 task cards (files, tests, acceptance criteria per task).                                                                                      |
+| `tasks/phase-6-tasks.md`             | Phase 6 task cards.                                                                                                                                   |
+| `tasks/ui-wiring-tasks.md`           | Cross-cutting Settings UI task cards shared by Phases 5 and 6.                                                                                        |
 | `BACKLOG-voice-command-expansion.md` | Ideas backlog for "transcript into action" follow-ups beyond Phase 2 -- not a claimed phase, see the file itself before promoting anything out of it. |
 
 ## Starting a phase

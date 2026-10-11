@@ -5,6 +5,7 @@ Parent plan: `../PHASE-5-6-TASK-QUEUE.md`. Spec of record: `../PHASE-5-wakeword.
 marked "(new)").
 
 General rules for every task below:
+
 - Work only inside the listed "Files touched." If you need to touch
   anything else, stop and report back to the Validator instead of
   guessing.
@@ -27,11 +28,13 @@ Create the shape everything else builds against, with no real detection
 logic yet.
 
 **Files touched:**
+
 - `src-tauri/src/managers/wakeword.rs` (new)
 - `src-tauri/src/managers/mod.rs` (add `pub mod wakeword;`)
 - `src-tauri/src/settings.rs` (add 3 fields + defaults)
 
 **Implement:**
+
 - `WakeWordDetection { model_name: String, confidence: f32, timestamp_ms: u64 }`
 - `WakeWordEngine` trait exactly as specified in the phase doc §3
   (`process_frame`, `reset`, `pause`, `resume`) — method bodies can
@@ -46,6 +49,7 @@ logic yet.
   `wake_word_confidence_threshold: f32` (default `0.5`).
 
 **Tests (write first):**
+
 - T12: `wake_word_enabled = false` → a feature-flag-check function (even
   a trivial `fn wakeword_enabled(settings: &AppSettings) -> bool`) returns
   `false`, and document that this is what later tasks must gate on.
@@ -75,9 +79,11 @@ stubs out (returns a fixed dummy confidence), so the framing logic is
 fully testable in isolation before W4 wires in the real model.
 
 **Files touched:**
+
 - `src-tauri/src/managers/wakeword.rs` only.
 
 **Implement:**
+
 - Internal accumulation buffer: accept arbitrary-sized `&[f32]` chunks,
   accumulate until exactly 1280 samples (80ms @ 16kHz) are available,
   then hand that window to an injected classifier function/trait.
@@ -89,6 +95,7 @@ fully testable in isolation before W4 wires in the real model.
 - `reset()` clears the accumulation buffer.
 
 **Tests (write first):**
+
 - T4: empty slice → no panic, no classification attempt, returns `None`.
 - T5: a slice of `f32::NAN`/`f32::INFINITY` → no panic; if a detection
   somehow still returns, assert `!confidence.is_nan()`.
@@ -121,6 +128,7 @@ NOT bundled; they download on first use and cache locally, matching the
 existing STT model manager's pattern.
 
 **Files touched:**
+
 - `src-tauri/src/managers/wakeword.rs` (add a download/cache submodule or
   function set — follow the existing split style of
   `managers/model.rs` + `managers/model/download.rs` if that reuse is
@@ -130,6 +138,7 @@ existing STT model manager's pattern.
   mechanism).
 
 **Implement:**
+
 - A function to resolve the wake-word model directory under the app's
   data dir (reuse `crate::portable::app_data_dir`, matching how
   `MemoryManager`/`ModelManager` do it).
@@ -140,6 +149,7 @@ existing STT model manager's pattern.
 
 **Tests (write first, using a fake HTTP layer / local fixture files —
 never hit the real network in `cargo test`):**
+
 - (new) Fresh cache dir, model not present → download function is
   invoked, file ends up at the expected path.
 - (new) Model already present at the expected path → download function is
@@ -173,6 +183,7 @@ own interface stays `f32` throughout, per the phase doc's explicit
 guidance).
 
 **Files touched:**
+
 - `src-tauri/src/managers/wakeword.rs` only (replace W2's stub classifier
   with the real one; the buffering logic from W2 should not need to
   change).
@@ -182,13 +193,14 @@ Python vox repo — match its framing/hop size and normalization exactly,
 per the phase doc's own instruction not to reinvent this from scratch.
 
 **Tests (write first):**
+
 - T1: synthetic wake-word audio (generate via macOS `say` command the
   same way vox's own `test_openwakeword_engine_real.py` does, or a
   bundled fixture WAV) fed frame-by-frame → at least one `process_frame`
   call returns `Some(detection)` with `confidence >= threshold`.
 - T2: 10 seconds of all-zero (silence) frames → no detection ever.
 - T3: 10 seconds of synthesized unrelated speech (`say "the quick brown
-  fox"`) → no detection (or, if the placeholder model genuinely false-
+fox"`) → no detection (or, if the placeholder model genuinely false-
   positives on this exact phrase, swap the fixture phrase and document
   the limitation rather than weakening the assertion — per the phase
   doc's own instruction).
@@ -222,6 +234,7 @@ When paused, `process_frame` should short-circuit to `None` without
 running the classifier (cheap no-op, not just ignoring the result).
 
 **Tests (write first):**
+
 - (new) Fresh engine, `pause()` called, then `process_frame` fed genuine
   wake-word-shaped audio (or, if run before W4 lands, the W2 stub
   classifier spy) → no detection, and the classifier/spy was never
@@ -248,12 +261,14 @@ Build the IPC surface against `NullWakeWordEngine`/a fake — this does not
 need W4's real model to be useful, and unblocks W8 (Settings UI) early.
 
 **Files touched:**
+
 - `src-tauri/src/commands/wakeword.rs` (new)
 - `src-tauri/src/commands/mod.rs` (register the new module)
 - `src-tauri/src/lib.rs` (register the Tauri command(s) in
   `generate_handler!`, mirror how `commands/memory.rs` was registered)
 
 **Implement:**
+
 - `wakeword_set_enabled(enabled: bool) -> Result<(), String>` — writes
   the `wake_word_enabled` setting (mirror `memory_set_enabled`'s shape
   exactly).
@@ -264,6 +279,7 @@ need W4's real model to be useful, and unblocks W8 (Settings UI) early.
   live mic loop doesn't exist until W7.
 
 **Tests (write first):**
+
 - (new) `wakeword_set_enabled(true)` then reading settings back shows
   `wake_word_enabled == true` (mirror the existing
   `enabling_memory_updates_the_setting`-style test in `commands/memory.rs`).
@@ -294,6 +310,7 @@ there) — it's here because Ram wants a genuinely working, demoable
 feature, not inert library code.
 
 **Files touched:**
+
 - `src-tauri/src/actions.rs` (or a new small coordinator module if
   `actions.rs` is getting too large — flag to the Validator if so, per
   this repo's 600-line file-size guidance)
@@ -304,6 +321,7 @@ feature, not inert library code.
   before adding new settings fields here)
 
 **Implement:**
+
 - When `wake_word_enabled` is true, open a continuous low-rate mic stream
   feeding 1280-sample frames to the engine (reuse the existing
   `AudioRecordingManager`/cpal plumbing — do not invent a second audio
@@ -326,8 +344,9 @@ feature, not inert library code.
 — the live-mic-loop wiring itself will need a manual smoke test too,
 documented in the task's final report, same spirit as the phase doc's
 own `_real`-suffixed tests):**
+
 - (new) a pure decision function `fn should_feed_wakeword_frame(settings:
-  &AppSettings, is_recording: bool, is_speaking: bool) -> bool` (mirrors
+&AppSettings, is_recording: bool, is_speaking: bool) -> bool` (mirrors
   the `decide_voice_command`/`decide_memory_fact` pattern already
   established in `actions.rs` from the Phase 1/2 wiring) — unit tested
   directly: disabled setting → false always; enabled + currently
@@ -352,6 +371,7 @@ fake/manually-triggered event for development); should be finalized
 (real end-to-end test) only after W7 lands.
 
 **Files touched:**
+
 - `src/components/settings/WakeWordToggle.tsx` (new, mirror
   `MemoryToggle.tsx`'s structure exactly)
 - `src/components/settings/index.ts` (export it)
@@ -360,7 +380,7 @@ fake/manually-triggered event for development); should be finalized
 - `src/i18n/locales/en/translation.json` (add the new label/description
   keys under `settings.advanced`)
 - `src/App.tsx` (add a `listen<WakeWordDetection>("wakeword://detected",
-  ...)` toast handler, mirroring the existing `memory-remembered`/
+...)` toast handler, mirroring the existing `memory-remembered`/
   `voice-command-executed` handlers added in the prior session)
 
 **Implement:** a toggle bound to `wake_word_enabled`, plus a toast on

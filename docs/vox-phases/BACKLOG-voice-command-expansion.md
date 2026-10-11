@@ -20,13 +20,13 @@ re-discovers or re-implements what's already here.
   against real installed apps and standard folders, and is already wired
   into the post-transcription hook in `actions.rs` — including for
   wake-word-triggered transcriptions, since `WakeWordListener::
-  handle_detection` calls the same `send_transcription_input()` path as
+handle_detection` calls the same `send_transcription_input()` path as
   hotkey dictation.
 - Gated by the `voice_commands_enabled` setting (Settings → Advanced →
   Experimental group → "Voice Commands"), default off.
 - Leaving the dictated/transcribed text on the system clipboard instead of
   only auto-pasting it is also already built: `ClipboardHandling::
-  CopyToClipboard` (Settings → Advanced → Output group → "Clipboard
+CopyToClipboard` (Settings → Advanced → Output group → "Clipboard
   Handling"), default `DontModify`. No new code needed for either of
   these — they just need to be enabled.
 - **`CommandAction::OpenUrl` is now wired up** (was "built but not wired"
@@ -43,11 +43,11 @@ re-discovers or re-implements what's already here.
 
 ## Built but not wired up yet (exists in code, inert)
 
-| Item | Where | What's missing |
-| --- | --- | --- |
-| `SafetyPolicy` | `managers/safety_policy.rs` | Fully built and tested (`delete`/`send`/`push`/`deploy`/`rm `/`format`/`uninstall` keyword gate, whole-word matching, configurable list), but `#![allow(dead_code)]` — nothing destructive exists yet for it to gate. Needs an actual confirm/cancel UI flow (toast with Confirm/Cancel, or a voice "yes"/"cancel" follow-up with a timeout-to-deny) once any consequential action ships. |
-| App alias matching via `CFBundleDisplayName`/`CFBundleName` | `command_router.rs` module docs, documented gap | Only indexes by `.app` folder stem today, so e.g. "VS Code" won't match `Visual Studio Code.app` (whose bundle display name is "Code"). Needs an Info.plist-parsing crate. |
-| Curated STT-mishearing phrase allowlist (vox's "tier 1" YAML table — e.g. "eater" → iTerm) | documented gap in `command_router.rs` | Not ported yet; would reduce false `NoMatch`es for commonly-misheard app names. |
+| Item                                                                                       | Where                                           | What's missing                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SafetyPolicy`                                                                             | `managers/safety_policy.rs`                     | Fully built and tested (`delete`/`send`/`push`/`deploy`/`rm `/`format`/`uninstall` keyword gate, whole-word matching, configurable list), but `#![allow(dead_code)]` — nothing destructive exists yet for it to gate. Needs an actual confirm/cancel UI flow (toast with Confirm/Cancel, or a voice "yes"/"cancel" follow-up with a timeout-to-deny) once any consequential action ships. |
+| App alias matching via `CFBundleDisplayName`/`CFBundleName`                                | `command_router.rs` module docs, documented gap | Only indexes by `.app` folder stem today, so e.g. "VS Code" won't match `Visual Studio Code.app` (whose bundle display name is "Code"). Needs an Info.plist-parsing crate.                                                                                                                                                                                                                |
+| Curated STT-mishearing phrase allowlist (vox's "tier 1" YAML table — e.g. "eater" → iTerm) | documented gap in `command_router.rs`           | Not ported yet; would reduce false `NoMatch`es for commonly-misheard app names.                                                                                                                                                                                                                                                                                                           |
 
 ## Not started anywhere — needs real scoping
 

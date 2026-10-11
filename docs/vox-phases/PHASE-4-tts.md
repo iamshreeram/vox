@@ -100,8 +100,8 @@ pub tts_rate: f32,            // default: 200.0 (NSSpeechSynthesizer's
 - `tts_stop() -> Result<(), String>`
 - `tts_is_speaking() -> Result<bool, String>`
 - `tts_list_voices() -> Result<Vec<VoiceInfo>, String>` (id + display name
-  + language code, from `NSSpeechSynthesizer.availableVoices()` plus
-  `NSSpeechSynthesizer.attributesForVoice:` for the display name/locale)
+  - language code, from `NSSpeechSynthesizer.availableVoices()` plus
+    `NSSpeechSynthesizer.attributesForVoice:` for the display name/locale)
 
 ## 4. Functional requirements
 
@@ -150,18 +150,18 @@ contract tests and real-engine tests.
 
 ### State machine / contract tests (run in normal `cargo test`, macOS CI)
 
-| #   | Given                                                                                             | Expect                                                                                                                                                                            |
-| --- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| T1  | Fresh `TtsEngine`, never spoken                                                                   | `is_speaking() == false`                                                                                                                                                          |
-| T2  | `speak("")`                                                                                       | Returns `Err(TtsError::EmptyText)`, `is_speaking()` stays `false`                                                                                                                 |
-| T3  | `speak("hello")` on a background thread, poll `is_speaking()` shortly after starting              | `true` while in progress                                                                                                                                                          |
-| T4  | After the utterance naturally finishes (short text, wait with a generous timeout)                 | `is_speaking()` returns to `false`, and the `speak()` call returns `Ok(())`                                                                                                       |
-| T5  | `speak("a very long paragraph...")` on a background thread, then call `stop()` almost immediately | `speak()` returns (success or an explicit "interrupted" signal - define which in code and assert it) well before the natural completion time, and `is_speaking()` becomes `false` |
-| T6  | `stop()` called when nothing is speaking                                                          | No-op, no panic, no error                                                                                                                                                         |
-| T7  | Two sequential `speak()` calls from the same thread, one after the other completes                | Both complete successfully, no overlap (hard to assert overlap directly without audio capture - at minimum assert both return `Ok(())` and `is_speaking()` is `false` after both) |
-| T8  | `tts_voice_id` set to `"definitely-not-a-real-voice-id"`                                          | `speak()` still succeeds (falls back to default voice per FR5), does not error                                                                                                    |
-| T8a | `tts_voice_id` set to a real voice id, then `speak()` called                                       | The configured voice is applied to the synthesizer before the first utterance (ports vox's `test_voice_is_applied_on_first_use`) -- assert via a fake synthesizer recording the `setVoice:` call, same technique vox's test uses |
-| T9  | `tts_list_voices()` on a macOS machine                                                            | Returns a non-empty list; every entry has a non-empty `id` and non-empty `language` code                                                                                          |
+| #   | Given                                                                                             | Expect                                                                                                                                                                                                                           |
+| --- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T1  | Fresh `TtsEngine`, never spoken                                                                   | `is_speaking() == false`                                                                                                                                                                                                         |
+| T2  | `speak("")`                                                                                       | Returns `Err(TtsError::EmptyText)`, `is_speaking()` stays `false`                                                                                                                                                                |
+| T3  | `speak("hello")` on a background thread, poll `is_speaking()` shortly after starting              | `true` while in progress                                                                                                                                                                                                         |
+| T4  | After the utterance naturally finishes (short text, wait with a generous timeout)                 | `is_speaking()` returns to `false`, and the `speak()` call returns `Ok(())`                                                                                                                                                      |
+| T5  | `speak("a very long paragraph...")` on a background thread, then call `stop()` almost immediately | `speak()` returns (success or an explicit "interrupted" signal - define which in code and assert it) well before the natural completion time, and `is_speaking()` becomes `false`                                                |
+| T6  | `stop()` called when nothing is speaking                                                          | No-op, no panic, no error                                                                                                                                                                                                        |
+| T7  | Two sequential `speak()` calls from the same thread, one after the other completes                | Both complete successfully, no overlap (hard to assert overlap directly without audio capture - at minimum assert both return `Ok(())` and `is_speaking()` is `false` after both)                                                |
+| T8  | `tts_voice_id` set to `"definitely-not-a-real-voice-id"`                                          | `speak()` still succeeds (falls back to default voice per FR5), does not error                                                                                                                                                   |
+| T8a | `tts_voice_id` set to a real voice id, then `speak()` called                                      | The configured voice is applied to the synthesizer before the first utterance (ports vox's `test_voice_is_applied_on_first_use`) -- assert via a fake synthesizer recording the `setVoice:` call, same technique vox's test uses |
+| T9  | `tts_list_voices()` on a macOS machine                                                            | Returns a non-empty list; every entry has a non-empty `id` and non-empty `language` code                                                                                                                                         |
 
 ### Settings gate
 

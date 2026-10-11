@@ -17,7 +17,13 @@ export const WakeWordToggle: React.FC<WakeWordToggleProps> = React.memo(
     const ambientModeEnabled = getSetting("ambient_mode_enabled") ?? false;
 
     return (
-      <div title={ambientModeEnabled ? t("settings.advanced.wakeWord.disabledByAmbientMode") : undefined}>
+      <div
+        title={
+          ambientModeEnabled
+            ? t("settings.advanced.wakeWord.disabledByAmbientMode")
+            : undefined
+        }
+      >
         <ToggleSwitch
           checked={wakeWordEnabled}
           onChange={(enabled) => updateSetting("wake_word_enabled", enabled)}
