@@ -165,7 +165,9 @@ const scenarios: Record<string, () => void> = {
       findPermissionEscalations([
         caller("    permissions: write-all"),
         callee(
-          P("      contents: write\n      id-token: write\n      packages: write"),
+          P(
+            "      contents: write\n      id-token: write\n      packages: write",
+          ),
         ),
       ]),
       [],
@@ -205,7 +207,10 @@ const scenarios: Record<string, () => void> = {
 
   "a callee that declares no permissions requests nothing"() {
     assert.deepEqual(
-      findPermissionEscalations([caller(P("      contents: read")), callee("")]),
+      findPermissionEscalations([
+        caller(P("      contents: read")),
+        callee(""),
+      ]),
       [],
     );
     assert.deepEqual(
@@ -316,7 +321,10 @@ jobs:
   "workflows that call nothing produce no findings"() {
     assert.deepEqual(
       findPermissionEscalations([
-        wf("plain.yml", "name: p\non: push\njobs:\n  j:\n    runs-on: x\n    steps: []\n"),
+        wf(
+          "plain.yml",
+          "name: p\non: push\njobs:\n  j:\n    runs-on: x\n    steps: []\n",
+        ),
       ]),
       [],
     );
