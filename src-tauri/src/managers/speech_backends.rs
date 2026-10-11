@@ -9,6 +9,7 @@
 
 use crate::managers::composer_config::{
     command_ack_matches, composer_provider_supported, settings_from_app, TtsComposerMode,
+    TtsComposerSettings,
 };
 use crate::managers::composer_rules as rules;
 use crate::managers::speech_compose::{
@@ -25,7 +26,7 @@ pub const MAX_MODEL_BODY_BYTES: usize = 256 * 1024;
 
 /// The whole-call deadline from settings, re-clamped at use.
 pub fn effective_deadline(settings: &AppSettings) -> Duration {
-    todo!()
+    Duration::from_secs(rules::clamp_timeout(settings.tts_composer_timeout_secs))
 }
 
 /// Run `argv` (no shell, stdin null) and return its stdout as lossy UTF-8.
@@ -39,8 +40,166 @@ pub fn effective_deadline(settings: &AppSettings) -> Duration {
 /// only for at most 1 s; disarm the guard right after the reap (no await
 /// between). Errors: spawn failure/non-zero exit => Backend; deadline =>
 /// Timeout; stdout overflow => OutputTooLarge (killpg immediately).
+#[cfg(unix)]
 pub async fn run_command(argv: &[String], deadline: Duration) -> Result<String, ComposeError> {
-    todo!()
+    use std::process::Stdio;
+    let Some((program, args)) = argv.split_first() else {
+        return Err(ComposeError::Backend);
+    };
+    let mut cmd = tokio::process::Command::new(program);
+    cmd.args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .process_group(0);
+    let mut child = cmd.spawn().map_err(|_| ComposeError::Backend)?;
+    let pgid = child
+        .id()
+        .and_then(|pid| i32::try_from(pid).ok())
+        .unwrap_or(0);
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    // The guard owns the child from here on: on any early exit its Drop kills
+    // the whole process group before the child is dropped.
+    let mut guard = ProcGroup {
+        pgid,
+        child: Some(child),
+        armed: true,
+    };
+    let Some(stdout) = stdout else {
+        return Err(ComposeError::Backend);
+    };
+    let drain = stderr.map(|e| StderrDrain(tauri::async_runtime::spawn(drain_discard(e))));
+    let g = &mut guard;
+    let body = async move {
+        let read = read_capped(stdout, pgid).await;
+        // Stdout is finished: stop draining stderr, kill stragglers, then reap.
+        drop(drain);
+        kill_group(pgid);
+        let status = reap(g.child.as_mut()).await;
+        if status.is_some() {
+            g.armed = false;
+        }
+        let bytes = match read {
+            Ok(bytes) => bytes,
+            Err(e) => return Err(e),
+        };
+        match status {
+            Some(s) if s.success() => Ok(String::from_utf8_lossy(&bytes).into_owned()),
+            _ => Err(ComposeError::Backend),
+        }
+    };
+    let outcome = tokio::time::timeout(deadline, body).await;
+    match outcome {
+        Ok(result) => result,
+        Err(_) => {
+            kill_group(guard.pgid);
+            if reap(guard.child.as_mut()).await.is_some() {
+                guard.armed = false;
+            }
+            Err(ComposeError::Timeout)
+        }
+    }
+}
+
+#[cfg(not(unix))]
+pub async fn run_command(argv: &[String], deadline: Duration) -> Result<String, ComposeError> {
+    let _ = (argv, deadline);
+    Err(ComposeError::NotConfigured)
+}
+
+/// Child-process guard. Owns the child; Drop SIGKILLs the process group while
+/// armed, and runs BEFORE the child field is dropped.
+#[cfg(unix)]
+struct ProcGroup {
+    pgid: i32,
+    child: Option<tokio::process::Child>,
+    armed: bool,
+}
+
+#[cfg(unix)]
+impl Drop for ProcGroup {
+    fn drop(&mut self) {
+        if self.armed {
+            kill_group(self.pgid);
+        }
+    }
+}
+
+/// Aborts the stderr drain task when dropped.
+#[cfg(unix)]
+struct StderrDrain(tauri::async_runtime::JoinHandle<()>);
+
+#[cfg(unix)]
+impl Drop for StderrDrain {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+#[cfg(unix)]
+const REAP_WAIT: Duration = Duration::from_secs(1);
+
+/// SIGKILL a process group. Ignores the result; pgid 0 is never signalled.
+#[cfg(unix)]
+fn kill_group(pgid: i32) {
+    if pgid > 0 {
+        // SAFETY: killpg only delivers a signal to the group; the result is ignored.
+        unsafe {
+            libc::killpg(pgid, libc::SIGKILL);
+        }
+    }
+}
+
+/// Wait for the child for at most REAP_WAIT. Only called after the pipes are
+/// finished. None = not reaped.
+#[cfg(unix)]
+async fn reap(child: Option<&mut tokio::process::Child>) -> Option<std::process::ExitStatus> {
+    let child = child?;
+    match tokio::time::timeout(REAP_WAIT, child.wait()).await {
+        Ok(Ok(status)) => Some(status),
+        _ => None,
+    }
+}
+
+/// Read stdout keeping at most MAX_COMMAND_STDOUT_BYTES. One byte past the cap
+/// kills the group immediately and returns OutputTooLarge.
+#[cfg(unix)]
+async fn read_capped(
+    mut out: tokio::process::ChildStdout,
+    pgid: i32,
+) -> Result<Vec<u8>, ComposeError> {
+    use tokio::io::AsyncReadExt;
+    let mut kept: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        let n = out
+            .read(&mut chunk)
+            .await
+            .map_err(|_| ComposeError::Backend)?;
+        if n == 0 {
+            return Ok(kept);
+        }
+        if kept.len() + n > MAX_COMMAND_STDOUT_BYTES {
+            kill_group(pgid);
+            return Err(ComposeError::OutputTooLarge);
+        }
+        kept.extend_from_slice(&chunk[..n]);
+    }
+}
+
+/// Discard stderr until EOF so the child never blocks on a full pipe.
+#[cfg(unix)]
+async fn drain_discard(mut err: tokio::process::ChildStderr) {
+    use tokio::io::AsyncReadExt;
+    let mut sink = [0u8; 8192];
+    loop {
+        match err.read(&mut sink).await {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+    }
 }
 
 pub struct ModelCall<'a> {
@@ -65,7 +224,88 @@ pub struct ModelCall<'a> {
 /// envelope => Backend. The whole call is bounded by `deadline` (Timeout).
 /// Dropping the future cancels the request.
 pub async fn call_model(call: &ModelCall<'_>, deadline: Duration) -> Result<String, ComposeError> {
-    todo!()
+    let headers = crate::llm_client::build_headers(call.provider, call.api_key)
+        .map_err(|_| ComposeError::Backend)?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| ComposeError::Backend)?;
+    let url = format!(
+        "{}/chat/completions",
+        call.provider.base_url.trim().trim_end_matches('/')
+    );
+    let body = request_body(call);
+    let outcome = tokio::time::timeout(deadline, exchange(&client, &url, headers, &body)).await;
+    match outcome {
+        Ok(result) => result,
+        Err(_) => Err(ComposeError::Timeout),
+    }
+}
+
+fn request_body(call: &ModelCall<'_>) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": call.model,
+        "messages": [
+            {"role": "system", "content": call.system},
+            {"role": "user", "content": call.user}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 220,
+        "stream": false,
+    });
+    if call.provider.supports_structured_output {
+        if let Some(obj) = body.as_object_mut() {
+            obj.insert(
+                "response_format".to_string(),
+                serde_json::json!({"type": "json_object"}),
+            );
+        }
+    }
+    body
+}
+
+/// Send the request and read a capped body. Never logs or returns body text.
+async fn exchange(
+    client: &reqwest::Client,
+    url: &str,
+    headers: reqwest::header::HeaderMap,
+    body: &serde_json::Value,
+) -> Result<String, ComposeError> {
+    let mut response = client
+        .post(url)
+        .headers(headers)
+        .json(body)
+        .send()
+        .await
+        .map_err(|_| ComposeError::Backend)?;
+    if !response.status().is_success() {
+        return Err(ComposeError::Backend);
+    }
+    let mut bytes: Vec<u8> = Vec::new();
+    loop {
+        let next = response.chunk().await.map_err(|_| ComposeError::Backend)?;
+        let Some(chunk) = next else {
+            break;
+        };
+        if bytes.len() + chunk.len() > MAX_MODEL_BODY_BYTES {
+            return Err(ComposeError::OutputTooLarge);
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    parse_envelope(&bytes)
+}
+
+fn parse_envelope(bytes: &[u8]) -> Result<String, ComposeError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|_| ComposeError::Backend)?;
+    value
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .map(str::to_owned)
+        .ok_or(ComposeError::Backend)
 }
 
 /// Compose with the deadline from settings (`effective_deadline`).
@@ -73,7 +313,7 @@ pub async fn compose(
     settings: &AppSettings,
     req: ComposeRequest,
 ) -> Result<Composed, ComposeError> {
-    todo!()
+    compose_with_deadline(settings, req, effective_deadline(settings)).await
 }
 
 /// Order of checks: Off => NotConfigured. Model => provider must exist in
@@ -93,7 +333,84 @@ pub async fn compose_with_deadline(
     req: ComposeRequest,
     deadline: Duration,
 ) -> Result<Composed, ComposeError> {
-    todo!()
+    let result = compose_inner(settings, req, deadline).await;
+    match &result {
+        Ok(_) => log::debug!("speech composer outcome: ok"),
+        Err(err) => log::debug!("speech composer outcome: {}", err.outcome()),
+    }
+    result
+}
+
+async fn compose_inner(
+    settings: &AppSettings,
+    req: ComposeRequest,
+    deadline: Duration,
+) -> Result<Composed, ComposeError> {
+    let s = settings_from_app(settings);
+    let req = if s.send_user_utterance {
+        req
+    } else {
+        ComposeRequest {
+            user_utterance: None,
+            ..req
+        }
+    };
+    match s.mode {
+        TtsComposerMode::Off => Err(ComposeError::NotConfigured),
+        TtsComposerMode::Model => compose_model(settings, &s, &req, deadline).await,
+        TtsComposerMode::Command => compose_command(&s, &req, deadline).await,
+    }
+}
+
+async fn compose_model(
+    settings: &AppSettings,
+    s: &TtsComposerSettings,
+    req: &ComposeRequest,
+    deadline: Duration,
+) -> Result<Composed, ComposeError> {
+    let provider = settings
+        .post_process_providers
+        .iter()
+        .find(|p| p.id == s.provider_id)
+        .ok_or(ComposeError::NotConfigured)?;
+    if !composer_provider_supported(provider) || s.model.trim().is_empty() {
+        return Err(ComposeError::NotConfigured);
+    }
+    let api_key = settings
+        .post_process_api_keys
+        .get(&provider.id)
+        .cloned()
+        .unwrap_or_default();
+    let (system, user) = build_prompts(req);
+    let call = ModelCall {
+        provider,
+        api_key: &api_key,
+        model: &s.model,
+        system: &system,
+        user: &user,
+    };
+    let raw = call_model(&call, deadline).await?;
+    parse_composer_output(&raw, &format!("{system}\n\n{user}"))
+}
+
+async fn compose_command(
+    s: &TtsComposerSettings,
+    req: &ComposeRequest,
+    deadline: Duration,
+) -> Result<Composed, ComposeError> {
+    if !cfg!(unix) {
+        return Err(ComposeError::NotConfigured);
+    }
+    if s.command_path.trim().is_empty() {
+        return Err(ComposeError::NotConfigured);
+    }
+    let prompt = command_prompt(req);
+    let argv = command_argv(&s.command_path, &s.command_args, &s.prompt_flag, &prompt)?;
+    if !command_ack_matches(s) {
+        return Err(ComposeError::NeedsAcknowledgement);
+    }
+    let raw = run_command(&argv, deadline).await?;
+    parse_composer_output(&raw, &prompt)
 }
 
 #[cfg(all(test, unix))]
@@ -468,13 +785,25 @@ mod tests {
         let s = script(
             &d,
             "hang.sh",
-            &format!("sleep 30 &\necho $! > '{}'\nwait", pidfile.display()),
+            &format!(
+                "[ \"$1\" = warm ] && exit 0\nsleep 30 &\necho $! > '{}'\nwait",
+                pidfile.display()
+            ),
+        );
+        // Warm-up: the first exec of a freshly written script can take seconds
+        // under load on macOS; pay that cost before the timed run.
+        assert_eq!(
+            block_on(run_command(
+                &argv_of(&s, &["warm"]),
+                Duration::from_secs(60)
+            )),
+            Ok(String::new())
         );
         let start = Instant::now();
-        let r = block_on(run_command(&argv_of(&s, &[]), Duration::from_secs(1)));
+        let r = block_on(run_command(&argv_of(&s, &[]), Duration::from_secs(3)));
         assert_eq!(r, Err(ComposeError::Timeout));
         assert!(
-            start.elapsed() < Duration::from_millis(2500),
+            start.elapsed() < Duration::from_millis(4500),
             "deadline + 1.5 s at most"
         );
         let pid = wait_for_file(&pidfile, Duration::from_secs(2)).expect("grandchild pid file");
@@ -519,16 +848,28 @@ mod tests {
             ),
         );
         let argv = argv_of(&s, &[]);
-        let r = block_on(async {
-            tokio::time::timeout(
-                Duration::from_millis(800),
-                run_command(&argv, Duration::from_secs(30)),
+        // Wait until both pid files exist (the first exec of a fresh script can
+        // be slow on macOS), then drop the in-flight future by letting the
+        // waiter win the race.
+        let waiter = async {
+            let start = Instant::now();
+            while start.elapsed() < Duration::from_secs(20)
+                && !(read_pid(&leader).is_some() && read_pid(&grand).is_some())
+            {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        };
+        let first_done_was_the_waiter = block_on(async {
+            let run = Box::pin(run_command(&argv, Duration::from_secs(60)));
+            let wait = Box::pin(waiter);
+            matches!(
+                futures_util::future::select(run, wait).await,
+                futures_util::future::Either::Right(_)
             )
-            .await
         });
         assert!(
-            r.is_err(),
-            "the outer timeout must fire and drop the future"
+            first_done_was_the_waiter,
+            "the command must still be running when the waiter finishes"
         );
         let l = wait_for_file(&leader, Duration::from_secs(2)).expect("leader pid");
         let g = wait_for_file(&grand, Duration::from_secs(2)).expect("grandchild pid");
