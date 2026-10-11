@@ -6,14 +6,19 @@
 
 #![allow(dead_code)]
 
+use crate::managers::composer_config::{TtsComposerFallback, TtsComposerMode};
+use crate::managers::composer_rules::clamp_timeout;
 use crate::managers::emotion::Emotion;
-use crate::managers::speech_compose::{ComposeError, ComposeRequest, Composed};
-use crate::managers::tts::TtsManager;
+use crate::managers::speech_compose::{fallback_notice, ComposeError, ComposeRequest, Composed};
+use crate::managers::tts::{phrase_for_event, wait_superseded, TtsError, TtsManager};
 use crate::settings::AppSettings;
+use futures_util::future::{select, Either};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::future::Future;
 use std::pin::Pin;
+
+const SUPERSEDED_MSG: &str = "Replaced by newer speech";
 
 /// The fixed sample used by the Preview action (never the user's data).
 pub const PREVIEW_SAMPLE: &str =
@@ -30,7 +35,13 @@ pub struct Exchange {
 /// (not JSON, missing/non-string reply) => None. Never panics. Extra fields
 /// are ignored; a non-string utterance is treated as None.
 pub fn parse_exchange(payload: &str) -> Option<Exchange> {
-    todo!()
+    let value: serde_json::Value = serde_json::from_str(payload).ok()?;
+    let reply = value.get("reply")?.as_str()?.to_string();
+    let utterance = value
+        .get("utterance")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    Some(Exchange { reply, utterance })
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
@@ -51,7 +62,50 @@ pub struct RealComposer;
 
 impl Composer for RealComposer {
     fn compose<'a>(&'a self, settings: &'a AppSettings, req: ComposeRequest) -> ComposeFuture<'a> {
-        todo!()
+        Box::pin(async move { crate::managers::speech_backends::compose(settings, req).await })
+    }
+}
+
+/// Race one composition against supersession of `epoch`. `None` means the
+/// epoch was superseded first; the composer future is dropped in that case.
+async fn compose_until_superseded(
+    tts: &TtsManager,
+    settings: &AppSettings,
+    composer: &dyn Composer,
+    req: ComposeRequest,
+    epoch: u64,
+) -> Option<Result<Composed, ComposeError>> {
+    let composing = composer.compose(settings, req);
+    let superseded = Box::pin(wait_superseded(tts.epoch_receiver(), epoch));
+    match select(composing, superseded).await {
+        Either::Left((result, _)) => Some(result),
+        Either::Right(((), _)) => None,
+    }
+}
+
+/// Preview error text for a composition failure (exact strings, see
+/// `run_preview`).
+fn preview_error_message(err: ComposeError, settings: &AppSettings) -> String {
+    let model_missing = settings.tts_composer_mode == TtsComposerMode::Model
+        && settings.tts_composer_model.trim().is_empty();
+    match err {
+        ComposeError::Timeout => format!(
+            "Timed out after {}s",
+            clamp_timeout(settings.tts_composer_timeout_secs)
+        ),
+        ComposeError::Unparseable | ComposeError::Empty => {
+            "The model returned nothing usable".to_string()
+        }
+        ComposeError::NeedsAcknowledgement => "Command needs acknowledgement".to_string(),
+        ComposeError::NotConfigured | ComposeError::BadConfig => {
+            if model_missing {
+                "Pick a model first".to_string()
+            } else {
+                "Not configured".to_string()
+            }
+        }
+        ComposeError::Backend => "The model or command failed".to_string(),
+        ComposeError::OutputTooLarge => "The output was too large".to_string(),
     }
 }
 
@@ -82,7 +136,81 @@ pub async fn run_exchange(
     status: &(dyn Fn(&'static str) + Sync),
     exchange: Exchange,
 ) {
-    todo!()
+    let epoch = match tts.begin_utterance() {
+        Ok(epoch) => epoch,
+        Err(_) => return,
+    };
+    let settings = load_settings();
+    if !tts.is_current(epoch) {
+        return;
+    }
+    if !settings.tts_enabled {
+        return;
+    }
+    let voice = settings.tts_voice.as_deref();
+    let rate = Some(settings.tts_rate_wpm);
+
+    if settings.tts_composer_mode == TtsComposerMode::Off {
+        if let Some(text) = phrase_for_event("agent-bridge-reply", &exchange.reply) {
+            let _ = tts.speak_styled_if_current(epoch, &text, voice, rate, Emotion::Neutral);
+        }
+        return;
+    }
+
+    let req = ComposeRequest {
+        reply: exchange.reply.clone(),
+        user_utterance: if settings.tts_composer_send_user_utterance {
+            exchange.utterance.clone()
+        } else {
+            None
+        },
+        style: settings.tts_composer_style.clone(),
+    };
+
+    let composed = match compose_until_superseded(tts, &settings, composer, req, epoch).await {
+        Some(result) => result,
+        None => {
+            log::debug!("agent exchange outcome: superseded");
+            status("superseded");
+            return;
+        }
+    };
+
+    let outcome = match composed {
+        Ok(composed) => {
+            match tts.speak_styled_if_current(
+                epoch,
+                &composed.speech,
+                voice,
+                rate,
+                composed.emotion,
+            ) {
+                Ok(()) => "ok",
+                Err(TtsError::Superseded | TtsError::Recording) => "superseded",
+                Err(_) => "backend_error",
+            }
+        }
+        Err(err) => {
+            let outcome = err.outcome();
+            let fallback_text = match settings.tts_composer_fallback {
+                TtsComposerFallback::ShortNotice => Some(fallback_notice()),
+                TtsComposerFallback::Verbatim => Some(exchange.reply.as_str()),
+                TtsComposerFallback::Silent => None,
+            };
+            match fallback_text {
+                None => outcome,
+                Some(text) => {
+                    match tts.speak_styled_if_current(epoch, text, voice, rate, Emotion::Neutral) {
+                        Ok(()) => outcome,
+                        Err(TtsError::Superseded | TtsError::Recording) => "superseded",
+                        Err(_) => "backend_error",
+                    }
+                }
+            }
+        }
+    };
+    log::debug!("agent exchange outcome: {outcome}");
+    status(outcome);
 }
 
 /// Preview: compose the fixed sample with the CURRENT configuration (even if
@@ -102,7 +230,43 @@ pub async fn run_preview(
     load_settings: &(dyn Fn() -> AppSettings + Sync),
     composer: &dyn Composer,
 ) -> Result<ComposerPreview, String> {
-    todo!()
+    let epoch = tts
+        .begin_utterance()
+        .map_err(|_| "Recording in progress".to_string())?;
+    let settings = load_settings();
+    if !tts.is_current(epoch) {
+        return Err(SUPERSEDED_MSG.to_string());
+    }
+    if settings.tts_composer_mode == TtsComposerMode::Off {
+        return Err("Choose a mode first".to_string());
+    }
+
+    let req = ComposeRequest {
+        reply: PREVIEW_SAMPLE.to_string(),
+        user_utterance: None,
+        style: settings.tts_composer_style.clone(),
+    };
+    let composed = match compose_until_superseded(tts, &settings, composer, req, epoch).await {
+        None => return Err(SUPERSEDED_MSG.to_string()),
+        Some(Err(err)) => return Err(preview_error_message(err, &settings)),
+        Some(Ok(composed)) => composed,
+    };
+
+    if settings.tts_enabled {
+        let voice = settings.tts_voice.as_deref();
+        let rate = Some(settings.tts_rate_wpm);
+        match tts.speak_styled_if_current(epoch, &composed.speech, voice, rate, composed.emotion) {
+            Ok(()) => {}
+            Err(TtsError::Superseded) => return Err(SUPERSEDED_MSG.to_string()),
+            Err(TtsError::Recording) => return Err("Recording in progress".to_string()),
+            Err(e) => return Err(crate::shortcut::tts_error_message(&e)),
+        }
+    }
+
+    Ok(ComposerPreview {
+        speech: composed.speech,
+        emotion: composed.emotion,
+    })
 }
 
 #[cfg(test)]
