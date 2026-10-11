@@ -186,6 +186,10 @@
           "transcribe_with_post_process": {
             "name": "Post-Processing Hotkey",
             "description": "Optional: A dedicated hotkey that always applies AI post-processing to your transcription."
+          },
+          "converse": {
+            "name": "Conversation Shortcut",
+            "description": "The keyboard shortcut to start or stop a hands-free conversation."
           }
         },
         "errors": {
@@ -933,5 +937,49 @@
     "learnMore": "How to fix",
     "recorderBlocked": "Can't record shortcuts right now — macOS Secure Input is blocking key events. Resolve the Secure Input warning first.",
     "dismiss": "Dismiss"
+  },
+  "converse": {
+    "state": {
+      "listening": "Listening",
+      "thinking": "Thinking",
+      "speaking": "Speaking",
+      "acting": "Acting",
+      "idle": "Idle"
+    },
+    "end": {
+      "user_ended": "You ended the conversation.",
+      "idle": "Stopped after no speech for several turns.",
+      "cancelled": "Cancelled.",
+      "not_configured": "Spoken replies are not set up. Turn on spoken replies and choose a reply backend.",
+      "audio_unavailable": "The microphone is unavailable.",
+      "speech_stuck": "Speech output got stuck, so the conversation stopped.",
+      "turn_limit": "Stopped at the turn limit."
+    },
+    "section": {
+      "title": "Conversation",
+      "description": "Hands-free conversation: Vox listens, answers aloud, and keeps a short memory of this session.",
+      "startButton": "Start conversation",
+      "stopButton": "Stop conversation",
+      "stateLabel": "Status:",
+      "endLabel": "Last session ended:",
+      "errors": {
+        "unknown": "Something went wrong with the conversation."
+      },
+      "silenceLabel": "Silence before a turn ends",
+      "silenceDescription": "How long Vox waits in silence before it treats your turn as finished.",
+      "silenceUnit": "ms",
+      "idleTurnsLabel": "Silent turns before stopping",
+      "idleTurnsDescription": "Vox stops the conversation after this many turns in a row with no speech.",
+      "idleTurnsUnit": "turns",
+      "contextTurnsLabel": "Turns kept in context",
+      "contextTurnsDescription": "How many recent exchanges are sent to the reply backend. Older turns are dropped and the memory expires with the session.",
+      "contextTurnsUnit": "turns",
+      "valueFormat": "{{value}} {{unit}}",
+      "shortcutLabel": "Conversation shortcut",
+      "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
+      "shortcutNone": "Not set",
+      "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
+      "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    }
   }
 }

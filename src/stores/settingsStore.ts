@@ -228,6 +228,12 @@ const settingUpdaters: {
   tts_enabled: (value) => commands.changeTtsEnabledSetting(value as boolean),
   tts_voice: (value) => commands.changeTtsVoiceSetting(value as string | null),
   tts_rate_wpm: (value) => commands.changeTtsRateSetting(value as number),
+  converse_silence_ms: (value) =>
+    commands.changeConverseSilenceMsSetting(value as number),
+  converse_max_idle_turns: (value) =>
+    commands.changeConverseMaxIdleTurnsSetting(value as number),
+  converse_context_turns: (value) =>
+    commands.changeConverseContextTurnsSetting(value as number),
 };
 
 export const useSettingsStore = create<SettingsStore>()(
