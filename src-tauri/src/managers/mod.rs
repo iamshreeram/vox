@@ -3,6 +3,7 @@ pub mod ambient;
 pub mod ambient_listener;
 pub mod audio;
 pub mod command_router;
+pub mod composer_config;
 pub mod composer_rules;
 pub mod conversation;
 pub mod emotion;
