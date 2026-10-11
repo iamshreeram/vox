@@ -852,6 +852,17 @@ pub fn change_update_checks_setting(app: AppHandle, enabled: bool) -> Result<(),
         }),
     );
 
+    if enabled {
+        // Check right away instead of waiting for the next scheduled run.
+        let app2 = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = crate::managers::source_update::check_and_publish(&app2, true).await;
+        });
+    } else {
+        // Turning checks off hides any cached "update available" immediately.
+        crate::managers::source_update::clear(&app);
+    }
+
     Ok(())
 }
 

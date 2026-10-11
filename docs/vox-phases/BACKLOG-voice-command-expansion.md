@@ -90,3 +90,29 @@ CopyToClipboard` (Settings → Advanced → Output group → "Clipboard
    media/system/window control, once there's a second and third
    deterministic action category to justify the abstraction (YAGNI: one
    category — app/folder open — doesn't yet justify a plugin framework).
+
+## Deferred (low priority)
+
+These are known gaps that were consciously postponed. None blocks daily use
+on the primary macOS install.
+
+- **Spoken replies (TTS) on Windows and Linux.** Text-to-speech currently
+  works on macOS only (it shells out to `/usr/bin/say`). Windows and Linux need their own
+  speech backend behind the same `TtsManager` interface (for example SAPI /
+  WinRT on Windows and speech-dispatcher on Linux), plus the matching
+  per-platform voice list in settings. Until then the feature should stay
+  hidden or clearly marked macOS-only on those platforms.
+- **Translation and code-quality cleanup.**
+  - `bun run check:translations` already fails on `main` for every non-English
+    locale (0 of 25 pass): many keys added by recent features exist only in
+    `src/i18n/locales/en/translation.json`. The source-update feature adds a
+    few more English-only keys (`footer.sourceUpdate.*`, `tray.updateAvailable`).
+    A single pass should backfill all locales and make the check green so it
+    can become a required CI gate.
+  - `managers::agent_bridge` tests that spawn shell scripts under a 2-second
+    timeout are flaky when the whole suite runs under load; they pass in
+    isolation. Give them a more generous or injected clock.
+- **Source-update follow-ups** (see `docs/updating.md`): signed and notarized
+  releases with the Tauri updater manifest (replaces rebuilding from source),
+  native OS notifications for a new version, and the equivalent local-rebuild
+  flow for Windows and Linux.

@@ -4,6 +4,7 @@ pub mod audio;
 pub mod history;
 pub mod memory;
 pub mod models;
+pub mod source_update;
 pub mod transcription;
 pub mod voice_shortcuts;
 pub mod wakeword;
