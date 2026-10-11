@@ -142,6 +142,13 @@ if [ "$1" = "run" ] && [ "$2" = "tauri" ] && [ "$3" = "build" ]; then
   echo "tauri-build $*" >>"$STUB_LOG"
   echo "env VOX_BUILD_COMMIT=$VOX_BUILD_COMMIT VOX_BUILD_BRANCH=$VOX_BUILD_BRANCH VOX_SOURCE_UPDATES=$VOX_SOURCE_UPDATES VOX_SOURCE_UPDATE=$VOX_SOURCE_UPDATE" >>"$STUB_LOG"
   if [ "${FAKE_BUILD_FAIL:-0}" = "1" ]; then exit 1; fi
+  if [ "${FAKE_BUILD_FAIL_PARTIAL:-0}" = "1" ]; then
+    # A build that bundles and THEN fails (e.g. a signing step): the bundle
+    # exists, so only the build's exit status can stop the install.
+    mkdir -p src-tauri/target/release/bundle/macos/Vox.app
+    echo partial >src-tauri/target/release/bundle/macos/Vox.app/dummy
+    exit 1
+  fi
   mkdir -p src-tauri/target/release/bundle/macos/Vox.app
   echo dummy >src-tauri/target/release/bundle/macos/Vox.app/dummy
   exit 0
@@ -204,6 +211,17 @@ scenario_success_new_origin_commit() {
   check "local HEAD equals origin HEAD" \
     [ "$(git -C "$CHECKOUT" rev-parse HEAD)" = "$ORIGIN_NEW_SHA" ]
   check "lock dir absent afterwards" [ ! -e "$(lock_path)" ]
+}
+
+scenario_build_fails_after_bundling() {
+  setup_env "$1" || fail "sandbox setup failed"
+  export VOX_UPDATE_ALLOW_ORIGIN="$ORIGIN"
+  export FAKE_BUILD_FAIL_PARTIAL=1
+  run_update
+  check "exit non-zero when the build fails after producing a bundle (got $RUN_RC)" [ "$RUN_RC" -ne 0 ]
+  check "the partial bundle exists, so only the exit status can stop the install" [ -d "$CHECKOUT/$BUNDLE_REL" ]
+  check "install NOT run after a failed build that left a bundle" bash -c '! { [ -f "$1" ] && grep -F -q -- "install-ran" "$1"; }' _ "$STUB_LOG"
+  check "lock released" [ ! -e "$(lock_path)" ]
 }
 
 scenario_build_fails_stale_bundle_removed() {
@@ -492,6 +510,7 @@ run_scenario() {
 
 run_scenario "(1) success: new origin commit builds, installs, HEAD==origin, lock released" scenario_success_new_origin_commit
 run_scenario "(2) build fails: stale bundle removed, no install, lock released" scenario_build_fails_stale_bundle_removed
+run_scenario "(2b) build bundles then fails: exit status alone stops the install" scenario_build_fails_after_bundling
 run_scenario "(3) diverged history refused with fast-forward message, no merge commit" scenario_diverged_refused_ff_only
 run_scenario "(4) tracked modification refused before build, edit preserved" scenario_tracked_modification_refused
 run_scenario "(5) only untracked file present: proceeds (exit 0)" scenario_untracked_only_proceeds

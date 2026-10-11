@@ -778,8 +778,7 @@
         "blockerUnknown": "Could not verify that the checkout is ready to update.",
         "updateNow": "Update now",
         "updating": "Starting...",
-        "notNow": "Not now",
-        "startedHint": "Update started. Follow the progress in the Terminal window."
+        "notNow": "Not now"
       }
     }
   },
