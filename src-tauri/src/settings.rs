@@ -485,6 +485,30 @@ pub struct AppSettings {
     pub tts_voice: Option<String>,
     #[serde(default = "default_tts_rate_wpm")]
     pub tts_rate_wpm: u32,
+    /// Speech composer (spoken-reply summarizer). See docs/spoken-replies.md.
+    #[serde(default)]
+    pub tts_composer_mode: crate::managers::composer_config::TtsComposerMode,
+    #[serde(default = "default_tts_composer_provider_id")]
+    pub tts_composer_provider_id: String,
+    #[serde(default)]
+    pub tts_composer_model: String,
+    #[serde(default)]
+    pub tts_composer_command_path: String,
+    #[serde(default)]
+    pub tts_composer_command_args: String,
+    #[serde(default = "default_tts_composer_prompt_flag")]
+    pub tts_composer_prompt_flag: String,
+    /// The exact normalized (path, args, flag) tuple the user acknowledged.
+    #[serde(default)]
+    pub tts_composer_command_ack: String,
+    #[serde(default = "default_tts_composer_timeout_secs")]
+    pub tts_composer_timeout_secs: u64,
+    #[serde(default = "default_tts_composer_style")]
+    pub tts_composer_style: String,
+    #[serde(default = "default_tts_composer_true")]
+    pub tts_composer_send_user_utterance: bool,
+    #[serde(default)]
+    pub tts_composer_fallback: crate::managers::composer_config::TtsComposerFallback,
     #[serde(default)]
     pub wake_word_enabled: bool,
     #[serde(default = "default_wake_word_model_name")]
@@ -602,6 +626,26 @@ fn default_agent_bridge_timeout_secs() -> u64 {
 
 fn default_tts_rate_wpm() -> u32 {
     crate::managers::tts::DEFAULT_RATE_WPM
+}
+
+fn default_tts_composer_provider_id() -> String {
+    "custom".to_string()
+}
+
+fn default_tts_composer_prompt_flag() -> String {
+    crate::managers::composer_rules::DEFAULT_PROMPT_FLAG.to_string()
+}
+
+fn default_tts_composer_timeout_secs() -> u64 {
+    crate::managers::composer_rules::TIMEOUT_DEFAULT_SECS
+}
+
+fn default_tts_composer_style() -> String {
+    crate::managers::composer_rules::DEFAULT_STYLE.to_string()
+}
+
+fn default_tts_composer_true() -> bool {
+    true
 }
 
 fn default_model() -> String {
@@ -1068,6 +1112,17 @@ pub fn get_default_settings() -> AppSettings {
         tts_enabled: false,
         tts_voice: None,
         tts_rate_wpm: default_tts_rate_wpm(),
+        tts_composer_mode: Default::default(),
+        tts_composer_provider_id: default_tts_composer_provider_id(),
+        tts_composer_model: String::new(),
+        tts_composer_command_path: String::new(),
+        tts_composer_command_args: String::new(),
+        tts_composer_prompt_flag: default_tts_composer_prompt_flag(),
+        tts_composer_command_ack: String::new(),
+        tts_composer_timeout_secs: default_tts_composer_timeout_secs(),
+        tts_composer_style: default_tts_composer_style(),
+        tts_composer_send_user_utterance: default_tts_composer_true(),
+        tts_composer_fallback: Default::default(),
         wake_word_enabled: false,
         wake_word_model_name: default_wake_word_model_name(),
         wake_word_confidence_threshold: default_wake_word_confidence_threshold(),

@@ -7,6 +7,7 @@ import { SettingContainer } from "../ui/SettingContainer";
 import { Slider } from "../ui/Slider";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
+import { SpokenReplyStyle } from "./SpokenReplyStyle";
 
 interface TtsSettingsProps {
   descriptionMode?: "inline" | "tooltip";
@@ -113,6 +114,7 @@ export const TtsSettings: React.FC<TtsSettingsProps> = React.memo(
             </Button>
           </div>
         </SettingContainer>
+        <SpokenReplyStyle descriptionMode={descriptionMode} grouped={grouped} />
       </>
     );
   },

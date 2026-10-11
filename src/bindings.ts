@@ -1111,6 +1111,36 @@ async changeTtsRateSetting(rate: number) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Persist FIRST, then invalidate pending speech so any in-flight exchange
+ * is cancelled and the next one sees the new settings.
+ */
+async changeTtsComposerSettings(patch: TtsComposerSettingsPatch) : Promise<Result<TtsComposerSettings, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_composer_settings", { patch }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Providers the composer can use (the UI shows each endpoint).
+ */
+async listTtsComposerProviders() : Promise<ComposerProviderInfo[]> {
+    return await TAURI_INVOKE("list_tts_composer_providers");
+},
+/**
+ * Compose a fixed sample with the CURRENT configuration and speak it when
+ * spoken replies are enabled.
+ */
+async previewSpeechComposer() : Promise<Result<ComposerPreview, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("preview_speech_composer") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async ttsSpeakTest(text: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("tts_speak_test", { text }) };
@@ -1237,6 +1267,14 @@ agent_context_enabled?: boolean;
 tts_enabled?: boolean;
 tts_voice?: string | null;
 tts_rate_wpm?: number;
+/**
+ * Speech composer (spoken-reply summarizer). See docs/spoken-replies.md.
+ */
+tts_composer_mode?: TtsComposerMode; tts_composer_provider_id?: string; tts_composer_model?: string; tts_composer_command_path?: string; tts_composer_command_args?: string; tts_composer_prompt_flag?: string;
+/**
+ * The exact normalized (path, args, flag) tuple the user acknowledged.
+ */
+tts_composer_command_ack?: string; tts_composer_timeout_secs?: number; tts_composer_style?: string; tts_composer_send_user_utterance?: boolean; tts_composer_fallback?: TtsComposerFallback;
 }
 export type VoiceShortcut = { phrase: string; action: VoiceShortcutAction }
 export type VoiceShortcutAction = { type: "open_url"; url: string } | { type: "open_path"; path: string } | { type: "open_app"; name: string }
@@ -1262,6 +1300,47 @@ export type EngineType =
  * the file, so this one variant covers the whole transcribe-cpp family.
  */
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere"
+export type ComposerPreview = { speech: string; emotion: Emotion }
+export type ComposerProviderInfo = { id: string; label: string; base_url: string }
+export type Emotion = "neutral" | "cheerful" | "excited" | "calm" | "concerned" | "apologetic" | "serious"
+export type TtsComposerFallback = 
+/**
+ * Speak a fixed short sentence when composition fails.
+ */
+"short_notice" | 
+/**
+ * Speak the (capped) reply verbatim when composition fails.
+ */
+"verbatim" | 
+/**
+ * Say nothing when composition fails.
+ */
+"silent"
+export type TtsComposerMode = 
+/**
+ * Legacy behavior: speak the reply text as-is.
+ */
+"off" | 
+/**
+ * Ask an OpenAI-compatible provider already configured in settings.
+ */
+"model" | 
+/**
+ * Run a user-configured local command.
+ */
+"command"
+export type TtsComposerSettings = { mode: TtsComposerMode; provider_id: string; model: string; command_path: string; command_args: string; prompt_flag: string; command_ack: string; timeout_secs: number; style: string; send_user_utterance: boolean; fallback: TtsComposerFallback }
+/**
+ * Partial update. `None` = untouched. For strings `Some("")` CLEARS (for
+ * `prompt_flag` it resets to the default `-p`; for `provider_id` an empty
+ * string is invalid).
+ */
+export type TtsComposerSettingsPatch = { mode: TtsComposerMode | null; provider_id: string | null; model: string | null; command_path: string | null; command_args: string | null; prompt_flag: string | null; timeout_secs: number | null; style: string | null; send_user_utterance: boolean | null; fallback: TtsComposerFallback | null; 
+/**
+ * Honored ONLY when the same patch also supplies command_path,
+ * command_args and prompt_flag.
+ */
+acknowledge_command: boolean | null }
 export type Fact = { id: number; text: string; source_transcript: string; created_at: number }
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
