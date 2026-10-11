@@ -27,11 +27,40 @@ pub struct Prosody {
 impl Emotion {
     /// Trims, case-insensitive; unknown or empty => Neutral.
     pub fn from_label(label: &str) -> Emotion {
-        todo!()
+        let label = label.trim();
+        if label.eq_ignore_ascii_case("neutral") {
+            Emotion::Neutral
+        } else if label.eq_ignore_ascii_case("cheerful") {
+            Emotion::Cheerful
+        } else if label.eq_ignore_ascii_case("excited") {
+            Emotion::Excited
+        } else if label.eq_ignore_ascii_case("calm") {
+            Emotion::Calm
+        } else if label.eq_ignore_ascii_case("concerned") {
+            Emotion::Concerned
+        } else if label.eq_ignore_ascii_case("apologetic") {
+            Emotion::Apologetic
+        } else if label.eq_ignore_ascii_case("serious") {
+            Emotion::Serious
+        } else {
+            Emotion::Neutral
+        }
     }
 
     pub fn prosody(self) -> Prosody {
-        todo!()
+        let (rate_mult, pitch_delta): (f32, i8) = match self {
+            Emotion::Neutral => (1.00, 0),
+            Emotion::Cheerful => (1.08, 6),
+            Emotion::Excited => (1.15, 8),
+            Emotion::Calm => (0.92, -3),
+            Emotion::Concerned => (0.95, -4),
+            Emotion::Apologetic => (0.90, -5),
+            Emotion::Serious => (0.95, -6),
+        };
+        Prosody {
+            rate_mult,
+            pitch_delta,
+        }
     }
 }
 
@@ -39,13 +68,23 @@ impl Emotion {
 /// `Some(clamp_rate(round(base.unwrap_or(180) as f32 * rate_mult) as u32))`:
 /// multiply, round (f32::round), THEN clamp to the engine range.
 pub fn effective_rate(base: Option<u32>, emotion: Emotion) -> Option<u32> {
-    todo!()
+    if emotion == Emotion::Neutral {
+        return base;
+    }
+    let rate_mult = emotion.prosody().rate_mult;
+    let raw = base.unwrap_or(crate::managers::tts::DEFAULT_RATE_WPM) as f32 * rate_mult;
+    Some(crate::managers::tts::clamp_rate(raw.round() as u32))
 }
 
 /// `None` when the pitch delta is 0; otherwise `"[[pbas +N]] "` or
 /// `"[[pbas -N]] "` (explicit sign, trailing space).
 pub fn pitch_prefix(emotion: Emotion) -> Option<String> {
-    todo!()
+    let delta = emotion.prosody().pitch_delta;
+    if delta == 0 {
+        None
+    } else {
+        Some(format!("[[pbas {:+}]] ", delta))
+    }
 }
 
 #[cfg(test)]
@@ -76,7 +115,15 @@ mod tests {
 
     #[test]
     fn from_label_unknown_or_empty_is_neutral() {
-        for s in ["", "   ", "angry", "cheerful!", "chee rful", "\u{1f600}", "calm\0"] {
+        for s in [
+            "",
+            "   ",
+            "angry",
+            "cheerful!",
+            "chee rful",
+            "\u{1f600}",
+            "calm\0",
+        ] {
             assert_eq!(Emotion::from_label(s), Emotion::Neutral, "{s:?}");
         }
     }
@@ -126,14 +173,24 @@ mod tests {
         assert_eq!(effective_rate(Some(400), Emotion::Excited), Some(400)); // 460 -> 400
         assert_eq!(effective_rate(Some(80), Emotion::Calm), Some(80)); // 73.6 -> 74 -> 80
         assert_eq!(effective_rate(Some(80), Emotion::Apologetic), Some(80)); // 72 -> 80
-        assert_eq!(effective_rate(Some(1_000_000), Emotion::Cheerful), Some(400));
+        assert_eq!(
+            effective_rate(Some(1_000_000), Emotion::Cheerful),
+            Some(400)
+        );
         assert_eq!(effective_rate(Some(0), Emotion::Cheerful), Some(80));
     }
 
     #[test]
     fn every_non_neutral_rate_stays_in_engine_range() {
         for e in ALL.into_iter().filter(|e| *e != Emotion::Neutral) {
-            for base in [None, Some(0), Some(80), Some(180), Some(400), Some(u32::MAX / 4)] {
+            for base in [
+                None,
+                Some(0),
+                Some(80),
+                Some(180),
+                Some(400),
+                Some(u32::MAX / 4),
+            ] {
                 let r = effective_rate(base, e).unwrap();
                 assert!((80..=400).contains(&r), "{e:?} {base:?} -> {r}");
             }
@@ -143,17 +200,35 @@ mod tests {
     #[test]
     fn pitch_prefix_has_explicit_sign_and_none_for_neutral() {
         assert_eq!(pitch_prefix(Emotion::Neutral), None);
-        assert_eq!(pitch_prefix(Emotion::Cheerful).as_deref(), Some("[[pbas +6]] "));
-        assert_eq!(pitch_prefix(Emotion::Excited).as_deref(), Some("[[pbas +8]] "));
+        assert_eq!(
+            pitch_prefix(Emotion::Cheerful).as_deref(),
+            Some("[[pbas +6]] ")
+        );
+        assert_eq!(
+            pitch_prefix(Emotion::Excited).as_deref(),
+            Some("[[pbas +8]] ")
+        );
         assert_eq!(pitch_prefix(Emotion::Calm).as_deref(), Some("[[pbas -3]] "));
-        assert_eq!(pitch_prefix(Emotion::Concerned).as_deref(), Some("[[pbas -4]] "));
-        assert_eq!(pitch_prefix(Emotion::Apologetic).as_deref(), Some("[[pbas -5]] "));
-        assert_eq!(pitch_prefix(Emotion::Serious).as_deref(), Some("[[pbas -6]] "));
+        assert_eq!(
+            pitch_prefix(Emotion::Concerned).as_deref(),
+            Some("[[pbas -4]] ")
+        );
+        assert_eq!(
+            pitch_prefix(Emotion::Apologetic).as_deref(),
+            Some("[[pbas -5]] ")
+        );
+        assert_eq!(
+            pitch_prefix(Emotion::Serious).as_deref(),
+            Some("[[pbas -6]] ")
+        );
     }
 
     #[test]
     fn serde_uses_snake_case_labels() {
-        assert_eq!(serde_json::to_string(&Emotion::Apologetic).unwrap(), "\"apologetic\"");
+        assert_eq!(
+            serde_json::to_string(&Emotion::Apologetic).unwrap(),
+            "\"apologetic\""
+        );
         let e: Emotion = serde_json::from_str("\"cheerful\"").unwrap();
         assert_eq!(e, Emotion::Cheerful);
     }
