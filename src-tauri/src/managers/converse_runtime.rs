@@ -15,6 +15,7 @@ use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
 pub const ALREADY_RUNNING: &str = "A conversation is already running.";
+pub const START_FAILED: &str = "Could not start the conversation.";
 
 /// Everything one session needs, built fresh per session.
 pub struct SessionParts {
@@ -117,9 +118,27 @@ impl ConverseController {
             .try_begin()
             .ok_or_else(|| ALREADY_RUNNING.to_string())?;
         converse_hooks::set_session_active(true);
-        let capture = self.platform.capture();
-        converse_hooks::install_capture(Some(capture.clone()));
-        let parts = self.platform.parts(&capture);
+        // Build the capture worker and collaborators. A panic here must undo
+        // the whole start, so nothing is left claimed.
+        let mut created: Option<CaptureHandle> = None;
+        let built = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let capture = self.platform.capture();
+            created = Some(capture.clone());
+            converse_hooks::install_capture(Some(capture.clone()));
+            (capture.clone(), self.platform.parts(&capture))
+        }));
+        let (capture, parts) = match built {
+            Ok(pair) => pair,
+            Err(_) => {
+                if let Some(capture) = created {
+                    capture.shutdown();
+                }
+                converse_hooks::install_capture(None);
+                converse_hooks::set_session_active(false);
+                self.registry.finish(id);
+                return Err(START_FAILED.to_string());
+            }
+        };
 
         let platform = self.platform.clone();
         let registry = self.registry.clone();
@@ -285,6 +304,7 @@ mod tests {
         port: Arc<IdlePort>,
         mouth_log: Arc<Mutex<Vec<String>>>,
         captures_made: AtomicUsize,
+        panic_in_parts: AtomicBool,
     }
     impl FakePlatform {
         fn new(mode: Mode) -> Arc<Self> {
@@ -299,6 +319,7 @@ mod tests {
                 }),
                 mouth_log: Arc::new(Mutex::new(vec![])),
                 captures_made: AtomicUsize::new(0),
+                panic_in_parts: AtomicBool::new(false),
             })
         }
     }
@@ -321,6 +342,9 @@ mod tests {
             )
         }
         fn parts(&self, capture: &CaptureHandle) -> SessionParts {
+            if self.panic_in_parts.load(Ordering::SeqCst) {
+                panic!("parts exploded");
+            }
             let ears: Box<dyn Ears> = match self.mode {
                 Mode::Listening => Box::new(CaptureEars(capture.clone())),
                 Mode::Panicking => Box::new(PanicEars),
@@ -554,6 +578,36 @@ mod tests {
             1,
             "losers must not spawn workers"
         );
+        c.stop();
+        wait_until("drain", || !c.is_active());
+        reset_hooks();
+    }
+
+    #[test]
+    fn a_panic_while_building_the_session_undoes_the_start_completely() {
+        let _g = lock();
+        reset_hooks();
+        let p = FakePlatform::new(Mode::Listening);
+        p.panic_in_parts.store(true, Ordering::SeqCst);
+        let c = ConverseController::new(p.clone());
+        assert_eq!(c.start(), Err(START_FAILED.to_string()));
+        assert!(!c.is_active(), "registry must be released");
+        assert_eq!(c.status(), ConverseStatus::Idle);
+        assert!(
+            !converse_hooks::session_active(),
+            "session flag must be undone"
+        );
+        assert!(!converse_hooks::capture_active());
+        assert_eq!(
+            p.captures_made.load(Ordering::SeqCst),
+            1,
+            "the worker was created ..."
+        );
+        assert!(!p.port.active.load(Ordering::SeqCst));
+        assert!(p.events.lock().unwrap().is_empty(), "no session ever ran");
+        // ... and the controller is fully reusable afterwards
+        p.panic_in_parts.store(false, Ordering::SeqCst);
+        assert!(c.start().is_ok());
         c.stop();
         wait_until("drain", || !c.is_active());
         reset_hooks();

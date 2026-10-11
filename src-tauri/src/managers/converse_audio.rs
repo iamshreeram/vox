@@ -115,6 +115,8 @@ impl Endpointer {
         event
     }
 
+    /// Only the tests read this; production decides end-of-speech via `poll`.
+    #[cfg(test)]
     pub fn had_speech(&self) -> bool {
         self.speech_started
     }

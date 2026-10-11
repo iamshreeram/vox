@@ -294,17 +294,28 @@ impl Hands for RealHands {
     fn paste_generated(&self, text: &str) -> Result<(), String> {
         // Same main-thread hop the dictation path uses for `utils::paste`.
         let (tx, rx) = std::sync::mpsc::channel();
+        // Set when the caller gives up waiting, so a closure still queued on
+        // the main thread does not paste later.
+        let abandoned = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let abandoned_on_main = abandoned.clone();
         let app = self.app.clone();
         let app_for_paste = self.app.clone();
         let text = text.to_string();
         app.run_on_main_thread(move || {
-            let result = crate::clipboard::paste_generated(&text, &app_for_paste);
+            let result = if abandoned_on_main.load(std::sync::atomic::Ordering::SeqCst) {
+                Err("paste abandoned".to_string())
+            } else {
+                crate::clipboard::paste_generated(&text, &app_for_paste)
+            };
             let _ = tx.send(result);
         })
         .map_err(|_| "paste failed".to_string())?;
         match rx.recv_timeout(Duration::from_secs(10)) {
             Ok(result) => result,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err("paste timed out".to_string()),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                abandoned.store(true, std::sync::atomic::Ordering::SeqCst);
+                Err("paste timed out".to_string())
+            }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err("paste failed".to_string()),
         }
     }

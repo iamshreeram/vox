@@ -50,6 +50,8 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
       end: null,
     });
     const [busy, setBusy] = useState(false);
+    // True while the session is draining; cleared only by the final idle event.
+    const [stopping, setStopping] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const converseBinding = getSetting("bindings")?.converse;
@@ -63,6 +65,9 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
           const parsed = parseConverseState(event.payload);
           setState(parsed);
           setActive(isSessionActive(parsed.state));
+          if (parsed.state === "idle") {
+            setStopping(false);
+          }
         });
         const errorUnlisten = await listen<unknown>(
           CONVERSE_ERROR_EVENT,
@@ -87,6 +92,12 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
         (status) => {
           if (!cancelled) {
             setActive(status === "running" || status === "stopping");
+            if (status === "running") {
+              setState({ state: "listening", end: null });
+            }
+            if (status === "stopping") {
+              setStopping(true);
+            }
           }
         },
         () => {
@@ -101,6 +112,7 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
     }, [t]);
 
     const action = buttonAction(active, busy);
+    const buttonDisabled = action === "disabled" || stopping;
 
     const handleClick = async () => {
       if (action === "disabled") return;
@@ -117,6 +129,8 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
         } else {
           const stopped = await commands.converseStop();
           if (stopped) {
+            setStopping(true);
+          } else {
             setActive(false);
           }
         }
@@ -173,7 +187,7 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
               variant={active ? "danger" : "primary"}
               size="md"
               onClick={() => void handleClick()}
-              disabled={action === "disabled"}
+              disabled={buttonDisabled}
             >
               {active
                 ? t("converse.section.stopButton")

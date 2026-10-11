@@ -1120,8 +1120,6 @@ impl AudioRecordingManager {
     }
 
     /// Active binding id, or None unless a recording is in progress.
-    // Not called yet: the session uses cancel_recording_if_binding only.
-    #[allow(dead_code)]
     pub fn recording_binding(&self) -> Option<String> {
         let state = self.state.lock().unwrap();
         active_binding(&state)
@@ -1184,8 +1182,6 @@ impl AudioRecordingManager {
 }
 
 /// Active binding id of a recording state; None unless `Recording`.
-// Only used by recording_binding, which has no caller yet.
-#[allow(dead_code)]
 fn active_binding(state: &RecordingState) -> Option<String> {
     match state {
         RecordingState::Recording { binding_id } => Some(binding_id.clone()),

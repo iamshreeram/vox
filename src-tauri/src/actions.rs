@@ -820,6 +820,13 @@ impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
         if dictation_start_blocked() {
             log::debug!("dictation start ignored: conversation owns the microphone");
+            let _ = app.emit(
+                "recording-error",
+                RecordingErrorEvent {
+                    error_type: "conversation_active".to_string(),
+                    detail: None,
+                },
+            );
             return;
         }
         let start_time = Instant::now();
