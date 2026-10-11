@@ -87,7 +87,27 @@ pub enum UpdateCheckError {
 impl UpdateCheckError {
     /// Short, user-presentable sentence.
     pub fn user_message(&self) -> String {
-        todo!()
+        match self {
+            Self::RateLimited => {
+                "GitHub's rate limit was reached. Try again in a few minutes.".to_string()
+            }
+            Self::Network(_) => {
+                "Could not reach GitHub to check for updates. Check your connection.".to_string()
+            }
+            Self::Http(status) => format!(
+                "GitHub returned an unexpected response (HTTP {status}) while checking for updates."
+            ),
+            Self::Malformed(_) => {
+                "GitHub returned a response Vox could not read while checking for updates."
+                    .to_string()
+            }
+            Self::EmptyHistory => "GitHub returned no commits for main.".to_string(),
+            Self::BadBuildCommit => {
+                "This build does not record a valid source commit, so updates cannot be checked."
+                    .to_string()
+            }
+            Self::TooLarge => "The update is too large to check automatically.".to_string(),
+        }
     }
 }
 
@@ -116,80 +136,258 @@ pub enum CompareStatus {
     Diverged,
 }
 
-pub fn is_full_sha(_s: &str) -> bool {
-    todo!()
+pub fn is_full_sha(s: &str) -> bool {
+    s.len() == 40 && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-pub fn short_sha(_s: &str) -> String {
-    todo!()
+pub fn short_sha(s: &str) -> String {
+    s.chars().take(7).collect::<String>().to_lowercase()
 }
 
 pub fn commits_api_url() -> String {
-    todo!()
+    format!("https://api.github.com/repos/{REPO_SLUG}/commits?sha=main&per_page={COMMIT_WINDOW}")
 }
 
 /// `None` unless `build_sha` is a full 40-hex SHA.
-pub fn compare_api_url(_build_sha: &str) -> Option<String> {
-    todo!()
+pub fn compare_api_url(build_sha: &str) -> Option<String> {
+    if !is_full_sha(build_sha) {
+        return None;
+    }
+    Some(format!(
+        "https://api.github.com/repos/{REPO_SLUG}/compare/{build_sha}...main?per_page=1"
+    ))
 }
 
 /// `None` unless both are full SHAs.
-pub fn compare_page_url(_build_sha: &str, _latest_sha: &str) -> Option<String> {
-    todo!()
+pub fn compare_page_url(build_sha: &str, latest_sha: &str) -> Option<String> {
+    if !is_full_sha(build_sha) || !is_full_sha(latest_sha) {
+        return None;
+    }
+    Some(format!(
+        "https://github.com/{REPO_SLUG}/compare/{build_sha}...{latest_sha}"
+    ))
 }
 
 /// `None` for 200, otherwise the error to report.
-pub fn classify_status(_status: u16) -> Option<UpdateCheckError> {
-    todo!()
+pub fn classify_status(status: u16) -> Option<UpdateCheckError> {
+    match status {
+        200 => None,
+        403 | 429 => Some(UpdateCheckError::RateLimited),
+        other => Some(UpdateCheckError::Http(other)),
+    }
 }
 
 /// First line of `msg`, trimmed; if longer than `max_chars` characters it is
 /// cut to `max_chars - 1` characters plus `…` (never splits a character).
-pub fn first_line_truncated(_msg: &str, _max_chars: usize) -> String {
-    todo!()
+pub fn first_line_truncated(msg: &str, max_chars: usize) -> String {
+    let first = msg.split('\n').next().unwrap_or("");
+    let first = first.strip_suffix('\r').unwrap_or(first);
+    let line = first.trim();
+    if line.chars().count() <= max_chars {
+        return line.to_string();
+    }
+    if max_chars == 0 {
+        return String::new();
+    }
+    let mut out: String = line.chars().take(max_chars - 1).collect();
+    out.push('…');
+    out
 }
 
-pub fn parse_commits_response(_body: &str) -> Result<Vec<RemoteCommit>, UpdateCheckError> {
-    todo!()
+fn malformed(reason: &str) -> UpdateCheckError {
+    UpdateCheckError::Malformed(reason.to_string())
 }
 
-pub fn parse_compare_response(_body: &str) -> Result<CompareStatus, UpdateCheckError> {
-    todo!()
+pub fn parse_commits_response(body: &str) -> Result<Vec<RemoteCommit>, UpdateCheckError> {
+    let value: serde_json::Value =
+        serde_json::from_str(body).map_err(|_| malformed("body is not JSON"))?;
+    let items = value
+        .as_array()
+        .ok_or_else(|| malformed("body is not an array"))?;
+    items
+        .iter()
+        .map(|item| {
+            let sha = item
+                .get("sha")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| malformed("commit has no sha"))?;
+            if !is_full_sha(sha) {
+                return Err(malformed("commit sha is not a full SHA"));
+            }
+            let message = item
+                .get("commit")
+                .and_then(|c| c.get("message"))
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| malformed("commit has no message"))?;
+            let subject = first_line_truncated(message, MAX_SUBJECT_CHARS);
+            let subject = if subject.is_empty() {
+                "(no message)".to_string()
+            } else {
+                subject
+            };
+            Ok(RemoteCommit {
+                sha: sha.to_string(),
+                subject,
+            })
+        })
+        .collect()
+}
+
+pub fn parse_compare_response(body: &str) -> Result<CompareStatus, UpdateCheckError> {
+    let value: serde_json::Value =
+        serde_json::from_str(body).map_err(|_| malformed("body is not JSON"))?;
+    let status = value
+        .get("status")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| malformed("compare response has no status"))?;
+    match status {
+        "ahead" => {
+            let ahead_by = value
+                .get("ahead_by")
+                .and_then(|v| v.as_u64())
+                .and_then(|n| u32::try_from(n).ok())
+                .ok_or_else(|| malformed("ahead_by is not a valid count"))?;
+            Ok(CompareStatus::Ahead { ahead_by })
+        }
+        "identical" => Ok(CompareStatus::Identical),
+        "behind" => Ok(CompareStatus::Behind),
+        "diverged" => Ok(CompareStatus::Diverged),
+        _ => Err(malformed("unknown compare status")),
+    }
 }
 
 /// `remote` is newest-first, as GitHub returns it.
 pub fn evaluate_window(
-    _build_sha: &str,
-    _remote: &[RemoteCommit],
+    build_sha: &str,
+    remote: &[RemoteCommit],
 ) -> Result<WindowEvaluation, UpdateCheckError> {
-    todo!()
+    if !is_full_sha(build_sha) {
+        return Err(UpdateCheckError::BadBuildCommit);
+    }
+    let Some(latest) = remote.first() else {
+        return Err(UpdateCheckError::EmptyHistory);
+    };
+    let Some(index) = remote
+        .iter()
+        .position(|c| c.sha.eq_ignore_ascii_case(build_sha))
+    else {
+        return Ok(WindowEvaluation::NotInWindow {
+            latest_sha: latest.sha.clone(),
+            changes: subjects(remote),
+        });
+    };
+    let compare_url = compare_page_url(build_sha, &latest.sha).unwrap_or_default();
+    if index == 0 {
+        return Ok(WindowEvaluation::Resolved(SourceUpdateInfo {
+            state: SourceUpdateState::UpToDate,
+            current_commit: short_sha(build_sha),
+            latest_commit: short_sha(&latest.sha),
+            behind_by: 0,
+            changes: Vec::new(),
+            compare_url,
+            note: None,
+            can_install: false,
+            install_blocker: None,
+        }));
+    }
+    Ok(WindowEvaluation::Resolved(SourceUpdateInfo {
+        state: SourceUpdateState::Available,
+        current_commit: short_sha(build_sha),
+        latest_commit: short_sha(&latest.sha),
+        behind_by: u32::try_from(index).unwrap_or(u32::MAX),
+        changes: subjects(&remote[..index]),
+        compare_url,
+        note: None,
+        can_install: false,
+        install_blocker: None,
+    }))
+}
+
+/// Newest-first subjects, capped at [`MAX_CHANGES`].
+fn subjects(commits: &[RemoteCommit]) -> Vec<String> {
+    commits
+        .iter()
+        .take(MAX_CHANGES)
+        .map(|c| c.subject.clone())
+        .collect()
 }
 
 /// Finish a [`WindowEvaluation::NotInWindow`] using the compare API result.
 /// `Err(Http(404))` means GitHub does not know the build commit.
 pub fn resolve_compare(
-    _build_sha: &str,
-    _latest_sha: &str,
-    _changes: Vec<String>,
-    _compare: Result<CompareStatus, UpdateCheckError>,
+    build_sha: &str,
+    latest_sha: &str,
+    changes: Vec<String>,
+    compare: Result<CompareStatus, UpdateCheckError>,
 ) -> Result<SourceUpdateInfo, UpdateCheckError> {
-    todo!()
+    let current_commit = short_sha(build_sha);
+    let latest_commit = short_sha(latest_sha);
+    let compare_url = compare_page_url(build_sha, latest_sha).unwrap_or_default();
+    let untracked = |note: &str| SourceUpdateInfo {
+        state: SourceUpdateState::Untracked,
+        current_commit: current_commit.clone(),
+        latest_commit: latest_commit.clone(),
+        behind_by: 0,
+        changes: Vec::new(),
+        compare_url: compare_url.clone(),
+        note: Some(note.to_string()),
+        can_install: false,
+        install_blocker: None,
+    };
+    match compare {
+        Ok(CompareStatus::Ahead { ahead_by }) => Ok(SourceUpdateInfo {
+            state: SourceUpdateState::Available,
+            current_commit: current_commit.clone(),
+            latest_commit: latest_commit.clone(),
+            behind_by: ahead_by,
+            changes,
+            compare_url: compare_url.clone(),
+            note: None,
+            can_install: false,
+            install_blocker: None,
+        }),
+        Ok(CompareStatus::Identical | CompareStatus::Behind) => Ok(SourceUpdateInfo {
+            state: SourceUpdateState::UpToDate,
+            current_commit: current_commit.clone(),
+            latest_commit: latest_commit.clone(),
+            behind_by: 0,
+            changes: Vec::new(),
+            compare_url: compare_url.clone(),
+            note: None,
+            can_install: false,
+            install_blocker: None,
+        }),
+        Ok(CompareStatus::Diverged) => Ok(untracked(
+            "This build's history has diverged from main, so it cannot be updated automatically.",
+        )),
+        Err(UpdateCheckError::Http(404)) => Ok(untracked(
+            "GitHub does not know this build's commit (history may have been rewritten), so updates cannot be tracked.",
+        )),
+        Err(other) => Err(other),
+    }
 }
 
 /// Source mode requires the explicit opt-in, macOS, a full commit SHA and the
 /// `main` branch; everything else keeps the existing plugin flow.
-pub fn update_mode(
-    _opted_in: bool,
-    _is_macos: bool,
-    _commit: &str,
-    _branch: &str,
-) -> SourceUpdateMode {
-    todo!()
+pub fn update_mode(opted_in: bool, is_macos: bool, commit: &str, branch: &str) -> SourceUpdateMode {
+    if opted_in && is_macos && is_full_sha(commit) && branch == "main" {
+        SourceUpdateMode::Source
+    } else {
+        SourceUpdateMode::Plugin
+    }
 }
 
 /// Exact-membership check of the `origin` URL.
-pub fn origin_matches(_url: &str) -> bool {
-    todo!()
+pub fn origin_matches(url: &str) -> bool {
+    const ORIGIN_URLS: [&str; 6] = [
+        "https://github.com/iamshreeram/vox",
+        "https://github.com/iamshreeram/vox.git",
+        "git@github.com:iamshreeram/vox",
+        "git@github.com:iamshreeram/vox.git",
+        "ssh://git@github.com/iamshreeram/vox",
+        "ssh://git@github.com/iamshreeram/vox.git",
+    ];
+    ORIGIN_URLS.contains(&url)
 }
 
 /// Facts gathered by IO, judged by the pure [`install_blocker`].
@@ -209,23 +407,94 @@ pub struct InstallFacts {
 
 /// First reason an install cannot start, in a fixed priority order; `None`
 /// when everything is fine.
-pub fn install_blocker(_facts: &InstallFacts) -> Option<String> {
-    todo!()
+pub fn install_blocker(facts: &InstallFacts) -> Option<String> {
+    if !facts.is_macos {
+        return Some("Rebuild updates are only available on macOS.".to_string());
+    }
+    if facts.checks_disabled {
+        return Some("Update checks are disabled.".to_string());
+    }
+    if !facts.source_dir_exists {
+        return Some("The source checkout this build came from no longer exists.".to_string());
+    }
+    if !facts.script_exists {
+        return Some("scripts/update-macos.sh is missing from the checkout.".to_string());
+    }
+    if !facts.origin_url.as_deref().is_some_and(origin_matches) {
+        return Some("The checkout's origin remote is not github.com/iamshreeram/vox.".to_string());
+    }
+    match facts.branch.as_deref() {
+        Some("main") => {}
+        Some(branch) => {
+            return Some(format!(
+                "The checkout is on branch '{branch}'; switch it to 'main' to update."
+            ));
+        }
+        None => {
+            return Some(
+                "Could not determine the checkout's branch (detached HEAD?); switch it to 'main'."
+                    .to_string(),
+            );
+        }
+    }
+    match facts.tracked_changes {
+        Some(false) => {}
+        Some(true) => {
+            return Some("The checkout has uncommitted changes to tracked files.".to_string());
+        }
+        None => {
+            return Some("Could not read the checkout's working tree state.".to_string());
+        }
+    }
+    facts.update_lock.as_ref().map(|path| {
+        format!(
+            "A previous update still holds its lock at {path}. If no update is running, remove it with: rm -rf {path}"
+        )
+    })
 }
 
-pub fn git_origin_url(_dir: &Path) -> Option<String> {
-    todo!()
+/// Runs `git -C <dir> <args>` without prompts or optional index locks.
+/// `None` when git cannot be started or exits unsuccessfully.
+fn run_git(dir: &Path, args: &[&str]) -> Option<std::process::Output> {
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+}
+
+pub fn git_origin_url(dir: &Path) -> Option<String> {
+    let out = run_git(dir, &["remote", "get-url", "origin"])?;
+    let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if url.is_empty() {
+        None
+    } else {
+        Some(url)
+    }
 }
 
 /// `None` for a detached HEAD or when git fails.
-pub fn git_current_branch(_dir: &Path) -> Option<String> {
-    todo!()
+pub fn git_current_branch(dir: &Path) -> Option<String> {
+    let out = run_git(dir, &["branch", "--show-current"])?;
+    let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if branch.is_empty() {
+        None
+    } else {
+        Some(branch)
+    }
 }
 
 /// Uncommitted changes to TRACKED files only (untracked files are ignored,
 /// matching the update script). `None` when git fails.
-pub fn git_tracked_changes(_dir: &Path) -> Option<bool> {
-    todo!()
+pub fn git_tracked_changes(dir: &Path) -> Option<bool> {
+    run_git(dir, &["status", "--porcelain", "--untracked-files=no"])
+        .map(|out| !out.stdout.is_empty())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -234,19 +503,53 @@ pub enum ScriptError {
 }
 
 /// POSIX single-quote escaping (`'` becomes `'\''`). Rejects NUL, CR and LF.
-pub fn shell_single_quote(_s: &str) -> Result<String, ScriptError> {
-    todo!()
+pub fn shell_single_quote(s: &str) -> Result<String, ScriptError> {
+    if s.contains(['\0', '\n', '\r']) {
+        return Err(ScriptError::UnsafePath);
+    }
+    Ok(format!("'{}'", s.replace('\'', "'\\''")))
 }
 
 /// Bash text opened in Terminal to run the update.
-pub fn build_update_script(_source_dir: &str) -> Result<String, ScriptError> {
-    todo!()
+pub fn build_update_script(source_dir: &str) -> Result<String, ScriptError> {
+    const PLACEHOLDER: &str = "__VOX_SOURCE_DIR__";
+    const TEMPLATE: &str = r#"#!/bin/bash
+# Generated by Vox: runs the local update script in this Terminal window.
+export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+rm -f -- "$0"
+cd __VOX_SOURCE_DIR__ || { echo "Cannot enter the Vox checkout directory."; read -r -p "Press Enter to close..." _; exit 1; }
+echo "== Updating Vox =="
+VOX_SOURCE_UPDATE=1 ./scripts/update-macos.sh
+status=$?
+echo
+if [ "$status" -eq 0 ]; then
+  echo "Vox update finished."
+else
+  echo "Vox update failed (exit $status)."
+  echo "Recovery: re-run ./scripts/update-macos.sh from the checkout. If Vox is missing from /Applications, run ./scripts/install-macos.sh <path to the built Vox.app>."
+fi
+read -r -p "Press Enter to close this window..." _
+exit "$status"
+"#;
+    let quoted = shell_single_quote(source_dir)?;
+    Ok(TEMPLATE.replacen(PLACEHOLDER, &quoted, 1))
 }
 
 /// `${TMPDIR:-/tmp}/vox-update.lock`, the directory `update-macos.sh` holds
 /// while an update runs.
 pub fn update_lock_path() -> String {
-    todo!()
+    let base = match std::env::var("TMPDIR") {
+        Ok(dir) if !dir.is_empty() => {
+            let trimmed = dir.trim_end_matches('/');
+            if trimmed.is_empty() {
+                "/tmp".to_string()
+            } else {
+                trimmed.to_string()
+            }
+        }
+        _ => "/tmp".to_string(),
+    };
+    format!("{base}/vox-update.lock")
 }
 
 /// Double-click protection for launching an update. This is only UX; the real
@@ -265,14 +568,21 @@ impl LaunchGuard {
     }
 
     /// `true` if a launch may proceed now (and reserves it).
-    pub fn try_acquire(&self, _now: Instant) -> bool {
-        let _ = (&self.window, &self.last);
-        todo!()
+    pub fn try_acquire(&self, now: Instant) -> bool {
+        let mut last = self.last.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(previous) = *last {
+            if now.saturating_duration_since(previous) < self.window {
+                return false;
+            }
+        }
+        *last = Some(now);
+        true
     }
 
     /// Drop the reservation (e.g. opening Terminal failed).
     pub fn release(&self) {
-        todo!()
+        let mut last = self.last.lock().unwrap_or_else(|e| e.into_inner());
+        *last = None;
     }
 }
 
