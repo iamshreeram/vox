@@ -552,6 +552,31 @@ async isPortable() : Promise<boolean> {
 async isUpdateChecksLocked() : Promise<boolean> {
     return await TAURI_INVOKE("is_update_checks_locked");
 },
+async getUpdateMode() : Promise<SourceUpdateMode> {
+    return await TAURI_INVOKE("get_update_mode");
+},
+async checkSourceUpdate() : Promise<Result<SourceUpdateInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("check_source_update") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getCachedSourceUpdate() : Promise<SourceUpdateInfo | null> {
+    return await TAURI_INVOKE("get_cached_source_update");
+},
+async getSourceUpdateInstallBlocker() : Promise<string | null> {
+    return await TAURI_INVOKE("get_source_update_install_blocker");
+},
+async startSourceUpdate() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_source_update") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getAppDirPath() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_app_dir_path") };
@@ -1353,6 +1378,9 @@ export type ShortcutActivation =
 "hold_or_toggle"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+export type SourceUpdateInfo = { state: SourceUpdateState; current_commit: string; latest_commit: string; behind_by: number; changes: string[]; compare_url: string; note: string | null; can_install: boolean; install_blocker: string | null }
+export type SourceUpdateMode = "source" | "plugin"
+export type SourceUpdateState = "up_to_date" | "available" | "untracked"
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */
