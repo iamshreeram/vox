@@ -25,7 +25,7 @@ function settings(
     command_args: "",
     prompt_flag: "-p",
     command_ack: "",
-    timeout_secs: 30,
+    timeout_secs: 45,
     style: "warm, upbeat and concise",
     send_user_utterance: true,
     fallback: "short_notice",

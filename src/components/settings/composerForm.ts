@@ -166,7 +166,7 @@ export function composerFromApp(app: ComposerAppFields): TtsComposerSettings {
     command_args: app.tts_composer_command_args ?? "",
     prompt_flag: app.tts_composer_prompt_flag ?? DEFAULT_PROMPT_FLAG,
     command_ack: app.tts_composer_command_ack ?? "",
-    timeout_secs: app.tts_composer_timeout_secs ?? 30,
+    timeout_secs: app.tts_composer_timeout_secs ?? 45,
     style: app.tts_composer_style ?? "warm, upbeat and concise",
     send_user_utterance: app.tts_composer_send_user_utterance ?? true,
     fallback: app.tts_composer_fallback ?? "short_notice",
