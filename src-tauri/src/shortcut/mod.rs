@@ -957,6 +957,7 @@ pub fn tts_error_message(error: &crate::managers::tts::TtsError) -> String {
         TtsError::CancelFailed => "Previous speech could not be stopped".to_string(),
         TtsError::Unsupported => "Spoken replies are not supported on this platform".to_string(),
         TtsError::Backend(_) => "Speech output failed".to_string(),
+        TtsError::Superseded => "Replaced by newer speech".to_string(),
     }
 }
 
@@ -1910,6 +1911,10 @@ mod tts_command_tests {
         assert_eq!(message, "Speech output failed");
         assert!(!message.contains("secret"));
         assert_eq!(tts_error_message(&TtsError::Empty), "Nothing to speak");
+        assert_eq!(
+            tts_error_message(&TtsError::Superseded),
+            "Replaced by newer speech"
+        );
         assert_eq!(
             tts_error_message(&TtsError::Recording),
             "Cannot speak while recording"

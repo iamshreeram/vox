@@ -239,6 +239,7 @@ fn tts_error_kind(error: &managers::tts::TtsError) -> &'static str {
         TtsError::CancelFailed => "cancel-failed",
         TtsError::Backend(_) => "backend",
         TtsError::Unsupported => "unsupported",
+        TtsError::Superseded => "superseded",
     }
 }
 
@@ -1377,5 +1378,18 @@ mod tts_listener_tests {
     #[test]
     fn non_json_payload_falls_back_to_raw_text() {
         assert_eq!(decode_tts_payload("plain text"), "plain text");
+    }
+}
+
+#[cfg(test)]
+mod tts_error_kind_tests {
+    use super::tts_error_kind;
+    use crate::managers::tts::TtsError;
+
+    #[test]
+    fn error_kinds_are_fixed_content_free_names() {
+        assert_eq!(tts_error_kind(&TtsError::Superseded), "superseded");
+        assert_eq!(tts_error_kind(&TtsError::Recording), "recording");
+        assert_eq!(tts_error_kind(&TtsError::Backend("secret".into())), "backend");
     }
 }
