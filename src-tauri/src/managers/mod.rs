@@ -13,6 +13,7 @@ pub mod memory;
 pub mod model;
 pub mod model_capabilities;
 pub mod safety_policy;
+pub mod speech_compose;
 pub mod source_update;
 pub mod transcription;
 pub mod tts;
