@@ -513,6 +513,7 @@ jobs:
           "$tools_dir/linuxdeploy-${arch}.AppImage" --appimage-extract-and-run --version
 
       - name: Build with Tauri
+        if: ${{ !(contains(inputs.platform, 'macos') && !inputs.sign-binaries) }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -550,19 +551,31 @@ jobs:
           # release builds keep them.
           args: ${{ inputs.build-args }}${{ !inputs.sign-binaries && ' --config src-tauri/tauri.ci-unsigned.conf.json' || '' }}
 
-      # TEMP-DIAG (remove before merge): surface the failing tauri output as a
-      # public annotation, since Actions logs need authentication to read.
-      - name: TEMP-DIAG capture macOS tauri failure
-        if: failure() && contains(inputs.platform, 'macos')
+      # Unsigned macOS verification builds (no release upload, no signing) run
+      # `tauri build` directly so a failure can be inspected: Actions logs need
+      # authentication, so the tail of each failed attempt is surfaced as a
+      # public annotation. The DMG bundling step (bundle_dmg.sh) is known to
+      # fail on a fresh runner and pass on a second attempt, so retry once.
+      - name: Build with Tauri (unsigned macOS verification build)
+        if: ${{ contains(inputs.platform, 'macos') && !inputs.sign-binaries }}
         shell: bash
+        env:
+          NO_COLOR: "1"
+          CARGO_TERM_COLOR: never
         run: |
           set +e
-          bun tauri build ${{ inputs.build-args }} --config src-tauri/tauri.ci-unsigned.conf.json > diag.log 2>&1
-          code=$?
-          enc() { python3 -c 'import sys; print(sys.stdin.read().replace("%","%25").replace("\r","").replace("\n","%0A"))'; }
-          echo "::error title=DIAG tail exit=$code::$(tail -n 45 diag.log | cut -c1-300 | enc)"
-          echo "::error title=DIAG errors::$(grep -n -i -E 'error|failed|panic|denied|not found|hdiutil|bundle_dmg|codesign|notar' diag.log | tail -n 25 | cut -c1-300 | enc)"
-          exit 0
+          enc() { python3 -c 'import re,sys; t=re.sub(r"\x1b\[[0-9;]*[A-Za-z]","",sys.stdin.read()); print(t.replace("%","%25").replace("\r","").replace("\n","%0A"))'; }
+          code=1
+          for attempt in 1 2; do
+            bun tauri build ${{ inputs.build-args }} --config src-tauri/tauri.ci-unsigned.conf.json 2>&1 | tee "tauri-build-$attempt.log"
+            code=${PIPESTATUS[0]}
+            if [ "$code" -eq 0 ]; then
+              [ "$attempt" -gt 1 ] && echo "::warning title=tauri build needed a retry::attempt 1 failed, attempt $attempt succeeded"
+              break
+            fi
+            echo "::warning title=tauri build attempt $attempt failed (exit $code)::$(tail -n 40 "tauri-build-$attempt.log" | cut -c1-240 | enc)"
+          done
+          exit "$code"
 
       # tauri-action uploads release assets before returning. All AppImage
       # filtering therefore happens inside linuxdeploy above; this verifies the
