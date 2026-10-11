@@ -17,6 +17,7 @@ pub mod safety_policy;
 pub mod source_update;
 pub mod speech_backends;
 pub mod speech_compose;
+pub mod speech_pipeline;
 pub mod transcription;
 pub mod tts;
 pub mod voice_common;
