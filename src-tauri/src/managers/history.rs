@@ -801,7 +801,12 @@ mod tests {
 
     // ---------- F5: search ----------
 
-    fn insert_titled(conn: &Connection, title: &str, text: &str, post_processed: Option<&str>) -> i64 {
+    fn insert_titled(
+        conn: &Connection,
+        title: &str,
+        text: &str,
+        post_processed: Option<&str>,
+    ) -> i64 {
         conn.execute(
             "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested)
              VALUES ('f.wav', 1, 0, ?1, ?2, ?3, NULL, 0)",
@@ -812,7 +817,10 @@ mod tests {
     }
 
     fn texts(entries: &[HistoryEntry]) -> Vec<String> {
-        entries.iter().map(|e| e.transcription_text.clone()).collect()
+        entries
+            .iter()
+            .map(|e| e.transcription_text.clone())
+            .collect()
     }
 
     fn search(conn: &Connection, query: &str) -> Vec<HistoryEntry> {
@@ -849,7 +857,12 @@ mod tests {
     #[test]
     fn search_matches_post_processed_text_and_title() {
         let conn = setup_conn();
-        insert_titled(&conn, "Meeting notes", "raw words", Some("Polished Summary"));
+        insert_titled(
+            &conn,
+            "Meeting notes",
+            "raw words",
+            Some("Polished Summary"),
+        );
         insert_titled(&conn, "other", "unrelated", None);
         assert_eq!(texts(&search(&conn, "polished")), vec!["raw words"]);
         assert_eq!(texts(&search(&conn, "meeting")), vec!["raw words"]);
@@ -901,7 +914,10 @@ mod tests {
             insert_titled(&conn, "t", &format!("common {i}"), None);
         }
         let all = HistoryManager::search_entries_with_conn(&conn, "common", 50).unwrap();
-        assert_eq!(texts(&all), vec!["common 4", "common 3", "common 2", "common 1", "common 0"]);
+        assert_eq!(
+            texts(&all),
+            vec!["common 4", "common 3", "common 2", "common 1", "common 0"]
+        );
         let two = HistoryManager::search_entries_with_conn(&conn, "common", 2).unwrap();
         assert_eq!(texts(&two), vec!["common 4", "common 3"]);
     }
@@ -910,7 +926,11 @@ mod tests {
     fn sql_injection_text_is_just_text() {
         let conn = setup_conn();
         insert_titled(&conn, "t", "keep me", None);
-        let result = HistoryManager::search_entries_with_conn(&conn, "'; DROP TABLE transcription_history; --", 50);
+        let result = HistoryManager::search_entries_with_conn(
+            &conn,
+            "'; DROP TABLE transcription_history; --",
+            50,
+        );
         assert!(result.expect("ok").is_empty());
         assert_eq!(search(&conn, "keep").len(), 1, "table intact");
     }

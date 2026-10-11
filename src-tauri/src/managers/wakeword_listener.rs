@@ -562,11 +562,10 @@ mod tests {
     #[test]
     fn prepare_engine_for_fresh_listen_calls_warm_up_exactly_once() {
         let calls = Arc::new(Mutex::new(0u32));
-        let engine: Mutex<Option<Box<dyn WakeWordEngine>>> = Mutex::new(Some(Box::new(
-            SpyWarmUpEngine {
+        let engine: Mutex<Option<Box<dyn WakeWordEngine>>> =
+            Mutex::new(Some(Box::new(SpyWarmUpEngine {
                 warm_up_calls: Arc::clone(&calls),
-            },
-        )));
+            })));
         prepare_engine_for_fresh_listen(&engine);
         assert_eq!(
             *calls.lock().unwrap(),

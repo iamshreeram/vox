@@ -25,14 +25,20 @@ function walk(dir: string, out: string[] = []): string[] {
 
 const storeSource = readFileSync("src/stores/settingsStore.ts", "utf8");
 const start = storeSource.indexOf("const settingUpdaters");
-assert.ok(start >= 0, "could not find `const settingUpdaters` in settingsStore.ts");
+assert.ok(
+  start >= 0,
+  "could not find `const settingUpdaters` in settingsStore.ts",
+);
 const end = storeSource.indexOf("\n};", start);
 assert.ok(end > start, "could not find the end of the settingUpdaters object");
 const region = storeSource.slice(start, end);
 const updaterKeys = new Set(
   [...region.matchAll(/^ {2}([a-z_0-9]+):/gm)].map((m) => m[1]),
 );
-assert.ok(updaterKeys.size > 30, `parsed suspiciously few updaters: ${updaterKeys.size}`);
+assert.ok(
+  updaterKeys.size > 30,
+  `parsed suspiciously few updaters: ${updaterKeys.size}`,
+);
 
 const used = new Map<string, string[]>();
 for (const file of walk("src/components")) {

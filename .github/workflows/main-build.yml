@@ -14,8 +14,12 @@ concurrency:
 
 jobs:
   build:
+    # Must be `write`: build.yml's job requests `contents: write`, and a called
+    # workflow can never exceed its caller's token permissions -- otherwise the
+    # run fails before any job starts (`startup_failure`). Guarded by
+    # `bun run check:workflow-permissions`. Nothing is uploaded or signed here.
     permissions:
-      contents: read
+      contents: write
     strategy:
       fail-fast: false
       matrix:

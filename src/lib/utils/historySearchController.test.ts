@@ -37,8 +37,10 @@ function entries(...ids: number[]): Entry[] {
 
 function harness() {
   const searchCalls: { query: string; d: Deferred<Entry[]> }[] = [];
-  const pageCalls: { cursor: number | null; d: Deferred<HistoryPage<Entry>> }[] =
-    [];
+  const pageCalls: {
+    cursor: number | null;
+    d: Deferred<HistoryPage<Entry>>;
+  }[] = [];
   const states: HistorySearchState<Entry>[] = [];
   const timers = new Map<number, { cb: () => void; ms: number }>();
   let nextTimer = 1;
@@ -115,10 +117,18 @@ const scenarios: Record<string, () => Promise<void>> = {
     const h = harness();
     h.controller.setQuery("a");
     assert.equal(h.timers.size, 1);
-    assert.equal([...h.timers.values()][0].ms, 250, "default debounce is 250ms");
+    assert.equal(
+      [...h.timers.values()][0].ms,
+      250,
+      "default debounce is 250ms",
+    );
     h.controller.setQuery("ab");
     assert.equal(h.timers.size, 1, "previous timer was cleared");
-    assert.equal(h.searchCalls.length, 0, "nothing searched before the debounce fires");
+    assert.equal(
+      h.searchCalls.length,
+      0,
+      "nothing searched before the debounce fires",
+    );
     assert.equal(h.last().mode, "search");
     assert.equal(h.last().loading, true, "loading shows immediately");
     h.fireTimers();
@@ -144,8 +154,16 @@ const scenarios: Record<string, () => Promise<void>> = {
     h.controller.setQuery("ab"); // invalidates it immediately
     h.searchCalls[0].d.resolve(entries(1));
     await flush();
-    assert.deepEqual(h.controller.getState().entries, [], "stale results never show");
-    assert.equal(h.controller.getState().loading, true, "still waiting for 'ab'");
+    assert.deepEqual(
+      h.controller.getState().entries,
+      [],
+      "stale results never show",
+    );
+    assert.equal(
+      h.controller.getState().loading,
+      true,
+      "still waiting for 'ab'",
+    );
     h.fireTimers();
     h.searchCalls[1].d.resolve(entries(2));
     await flush();
@@ -160,7 +178,11 @@ const scenarios: Record<string, () => Promise<void>> = {
     h.controller.setQuery("ab");
     h.searchCalls[0].d.reject(new Error("old failure"));
     await flush();
-    assert.equal(h.controller.getState().error, null, "stale error never shows");
+    assert.equal(
+      h.controller.getState().error,
+      null,
+      "stale error never shows",
+    );
     h.fireTimers();
     h.searchCalls[1].d.resolve(entries(2));
     await flush();
@@ -211,7 +233,11 @@ const scenarios: Record<string, () => Promise<void>> = {
     h.controller.setQuery("");
     h.searchCalls[0].d.resolve(entries(1, 2, 3));
     await flush();
-    assert.deepEqual(h.controller.getState().entries, [], "search results not shown in list mode");
+    assert.deepEqual(
+      h.controller.getState().entries,
+      [],
+      "search results not shown in list mode",
+    );
     assert.equal(h.controller.getState().mode, "list");
   },
 
@@ -225,7 +251,10 @@ const scenarios: Record<string, () => Promise<void>> = {
     await more;
     const state = h.controller.getState();
     assert.equal(state.mode, "search");
-    assert.ok(!state.entries.some((e) => e.id === 1), "late page never lands in search mode");
+    assert.ok(
+      !state.entries.some((e) => e.id === 1),
+      "late page never lands in search mode",
+    );
   },
 
   async "a pagination ERROR pending when a search starts is dropped"() {
@@ -265,7 +294,11 @@ const scenarios: Record<string, () => Promise<void>> = {
     await loaded(busy, [2, 1], true);
     void busy.controller.loadMore();
     await busy.controller.loadMore();
-    assert.equal(busy.pageCalls.length, 2, "second call while loading is ignored");
+    assert.equal(
+      busy.pageCalls.length,
+      2,
+      "second call while loading is ignored",
+    );
   },
 
   async "a current loadMore error keeps the entries and shows the error"() {
@@ -288,7 +321,11 @@ const scenarios: Record<string, () => Promise<void>> = {
     await flush();
     const pagesBefore = h.pageCalls.length;
     h.controller.onHistoryUpdated();
-    assert.equal(h.searchCalls.length, 2, "search re-ran immediately, no debounce");
+    assert.equal(
+      h.searchCalls.length,
+      2,
+      "search re-ran immediately, no debounce",
+    );
     assert.equal(h.searchCalls[1].query, "x");
     assert.equal(h.pageCalls.length, pagesBefore, "the list was not touched");
     h.searchCalls[1].d.resolve(entries(6, 5));
@@ -374,7 +411,11 @@ const scenarios: Record<string, () => Promise<void>> = {
     const before = inFlight.states.length;
     inFlight.searchCalls[0].d.resolve(entries(1));
     await flush();
-    assert.equal(inFlight.states.length, before, "no state emitted after dispose");
+    assert.equal(
+      inFlight.states.length,
+      before,
+      "no state emitted after dispose",
+    );
 
     const pageInFlight = harness();
     await loaded(pageInFlight, [2, 1], true);
@@ -440,7 +481,11 @@ const scenarios: Record<string, () => Promise<void>> = {
     h.controller.patchEntries((prev) => prev);
     h.searchCalls[0].d.resolve(entries(7));
     await flush();
-    assert.deepEqual(h.controller.getState().entries, entries(7), "result still applied");
+    assert.deepEqual(
+      h.controller.getState().entries,
+      entries(7),
+      "result still applied",
+    );
   },
 
   async "patchEntries after dispose is silent"() {
@@ -463,6 +508,10 @@ for (const [name, run] of Object.entries(scenarios)) {
   }
 }
 if (failed > 0) {
-  throw new Error(`${failed} of ${Object.keys(scenarios).length} controller scenarios failed`);
+  throw new Error(
+    `${failed} of ${Object.keys(scenarios).length} controller scenarios failed`,
+  );
 }
-console.log(`history search controller: ${Object.keys(scenarios).length} scenarios passed`);
+console.log(
+  `history search controller: ${Object.keys(scenarios).length} scenarios passed`,
+);

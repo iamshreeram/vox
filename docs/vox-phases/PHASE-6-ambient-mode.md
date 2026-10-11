@@ -69,63 +69,64 @@ impl RollingTranscript {
 ```
 
 pub enum Engagement {
-    Addressed { extracted_request: String }, // "Vox, what time is it" -> "what time is it"
-    NotAddressed,
+Addressed { extracted_request: String }, // "Vox, what time is it" -> "what time is it"
+NotAddressed,
 }
 
 pub struct EngagementJudge { pub wake_names: Vec<String> } // ["vox"] by default -- vox's own
-    // Python code defaults to ("vox", "jarvis") for its own historical
-    // dual-brand transition reasons that don't apply here; a Vec lets a
-    // future settings UI add aliases without an API change, but default
-    // to just ["vox"].
+// Python code defaults to ("vox", "jarvis") for its own historical
+// dual-brand transition reasons that don't apply here; a Vec lets a
+// future settings UI add aliases without an API change, but default
+// to just ["vox"].
 
 impl EngagementJudge {
-    /// **CORRECTED against vox's actual `src/vox/ambient/engagement.py`.**
-    /// An earlier draft of this phase invented a 3-way Addressed/
-    /// Mentioned/Unrelated split and two worked examples (T9/T10 below,
-    /// now fixed) that do not match vox's real, shipped behavior. vox's
-    /// `EngagementDecision` is binary (`addressed: bool`) -- it never
-    /// distinguishes "mentions Vox" from "totally unrelated"; both
-    /// collapse to "not addressed". The signal is PURELY POSITIONAL: does
-    /// the wake name appear as literally the first word (optionally
-    /// after "hey"/"okay"/"ok")? There is deliberately no understanding
-    /// of "Vox is a good name" (statement) vs "Vox, do X" (command) --
-    /// both start with the wake word, so vox's own heuristic treats BOTH
-    /// as addressed. This is a known, accepted limitation of vox's
-    /// design (documented in its own module docstring: "conservative by
-    /// design... an unwanted response is a worse failure than a missed
-    /// one" -- but conservative here means "err toward checking
-    /// everything that starts with the name", not the opposite).
-    ///
-    /// Port vox's exact regex: `^\s*(?:hey|okay|ok)?[\s,]*(\w+)\b[,:]?\s*(.*)$`
-    /// (case-insensitive). Group 1 is the candidate wake word; if it
-    /// doesn't match (case-insensitively) a configured `wake_names`
-    /// entry, this segment is not an address. Group 2 is the remainder/
-    /// query text.
-    ///
-    /// Operates on a WINDOW of segments (oldest first), not a single
-    /// string -- this is required to correctly handle "Hey Vox." as its
-    /// own utterance followed by a pause, then the real request in a
-    /// separate segment a moment later. Algorithm (ports vox's
-    /// `evaluate()` exactly): scan the window from NEWEST to OLDEST;
-    /// for the first segment whose text matches the address regex AND
-    /// whose captured name is a known wake name, take its remainder as
-    /// the query. If that remainder is empty (bare "Hey Vox." with
-    /// nothing after it in the same segment), join every segment AFTER
-    /// it in the window as the query instead. If no segment in the
-    /// window matches, return `NotAddressed`.
-    pub fn judge(&self, segments: &[TranscriptSegment]) -> Engagement;
+/// **CORRECTED against vox's actual `src/vox/ambient/engagement.py`.**
+/// An earlier draft of this phase invented a 3-way Addressed/
+/// Mentioned/Unrelated split and two worked examples (T9/T10 below,
+/// now fixed) that do not match vox's real, shipped behavior. vox's
+/// `EngagementDecision` is binary (`addressed: bool`) -- it never
+/// distinguishes "mentions Vox" from "totally unrelated"; both
+/// collapse to "not addressed". The signal is PURELY POSITIONAL: does
+/// the wake name appear as literally the first word (optionally
+/// after "hey"/"okay"/"ok")? There is deliberately no understanding
+/// of "Vox is a good name" (statement) vs "Vox, do X" (command) --
+/// both start with the wake word, so vox's own heuristic treats BOTH
+/// as addressed. This is a known, accepted limitation of vox's
+/// design (documented in its own module docstring: "conservative by
+/// design... an unwanted response is a worse failure than a missed
+/// one" -- but conservative here means "err toward checking
+/// everything that starts with the name", not the opposite).
+///
+/// Port vox's exact regex: `^\s*(?:hey|okay|ok)?[\s,]*(\w+)\b[,:]?\s*(.*)$`
+/// (case-insensitive). Group 1 is the candidate wake word; if it
+/// doesn't match (case-insensitively) a configured `wake_names`
+/// entry, this segment is not an address. Group 2 is the remainder/
+/// query text.
+///
+/// Operates on a WINDOW of segments (oldest first), not a single
+/// string -- this is required to correctly handle "Hey Vox." as its
+/// own utterance followed by a pause, then the real request in a
+/// separate segment a moment later. Algorithm (ports vox's
+/// `evaluate()` exactly): scan the window from NEWEST to OLDEST;
+/// for the first segment whose text matches the address regex AND
+/// whose captured name is a known wake name, take its remainder as
+/// the query. If that remainder is empty (bare "Hey Vox." with
+/// nothing after it in the same segment), join every segment AFTER
+/// it in the window as the query instead. If no segment in the
+/// window matches, return `NotAddressed`.
+pub fn judge(&self, segments: &[TranscriptSegment]) -> Engagement;
 }
 
 pub struct EchoSuppressor {
-    /// Suppresses the ambient listener's own TTS output from being
-    /// re-transcribed as if a human said it. Needs to coordinate with
-    /// Phase 4's TTS manager once both exist - for THIS phase, implement
-    /// and test it against a fake "currently speaking" signal, not a real
-    /// TTS dependency (keeps this phase buildable independent of Phase 4's
-    /// merge status).
+/// Suppresses the ambient listener's own TTS output from being
+/// re-transcribed as if a human said it. Needs to coordinate with
+/// Phase 4's TTS manager once both exist - for THIS phase, implement
+/// and test it against a fake "currently speaking" signal, not a real
+/// TTS dependency (keeps this phase buildable independent of Phase 4's
+/// merge status).
 }
-```
+
+````
 
 ### Settings addition
 
@@ -133,7 +134,7 @@ pub struct EchoSuppressor {
 pub ambient_mode_enabled: bool, // default: false; mutually exclusive with wake_word_enabled
 pub ambient_wake_name: String,  // default: "Vox"
 pub ambient_window_ms: u64,     // default: 90_000 (90s, matches vox)
-```
+````
 
 ## 4. Functional requirements
 
@@ -196,12 +197,12 @@ pub ambient_window_ms: u64,     // default: 90_000 (90s, matches vox)
 ### `RollingTranscript`
 
 | #   | Given                                                                                                              | Expect                                                                                                                       |
-| --- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| T1  | Add 3 segments at t=0, t=1000, t=2000ms                                                                            | `recent_segments(now_ms=2000, None)` returns all 3, oldest first                                                              |
-| T2  | Add a segment at t=0, then another at t=100_000 (past the 90s window)                                              | `recent_segments(now_ms=100_000, None)` no longer includes the t=0 segment (evicted by `_expire`, ported from vox exactly)     |
+| --- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| T1  | Add 3 segments at t=0, t=1000, t=2000ms                                                                            | `recent_segments(now_ms=2000, None)` returns all 3, oldest first                                                             |
+| T2  | Add a segment at t=0, then another at t=100_000 (past the 90s window)                                              | `recent_segments(now_ms=100_000, None)` no longer includes the t=0 segment (evicted by `_expire`, ported from vox exactly)   |
 | T3  | Add 1000 segments spread across a much longer time range than the window                                           | Internal storage size stays bounded (does not grow unboundedly - assert via a size/len check, not just query-time filtering) |
-| T4  | `clear()` after adding several segments                                                                             | `recent_segments` returns empty immediately after                                                                            |
-| T5  | `recent_segments` called on a brand-new, empty transcript                                                           | Returns empty, no panic                                                                                                      |
+| T4  | `clear()` after adding several segments                                                                            | `recent_segments` returns empty immediately after                                                                            |
+| T5  | `recent_segments` called on a brand-new, empty transcript                                                          | Returns empty, no panic                                                                                                      |
 | T6  | Concurrent `add_segment` from one thread and `recent_segments` reads from another, run for a short stress duration | No panic, no data race (use a loom-style or simple concurrent stress test with `std::thread`)                                |
 
 ### `EngagementJudge`
@@ -212,17 +213,17 @@ verified against vox's real regex
 several outcomes in an earlier draft of this table were wrong, most
 notably T10.
 
-| #   | Wake names    | Window (segments, oldest first)                              | Expect                                                                                                                   |
-| --- | ------------- | ---------------------------------------------------------------| ----------------------------------------------------------------------------------------------------------------------- |
-| T7  | `["vox"]`     | `["Vox, what time is it"]`                                     | `Addressed { extracted_request: "what time is it" }`                                                                     |
-| T8  | `["vox"]`     | `["vox what time is it"]` (no comma, lowercase)                | `Addressed { extracted_request: "what time is it" }` -- vox's regex has no comma requirement, confirmed from the pattern itself |
-| T9  | `["vox"]`     | `["I was telling Vox about the project"]`                      | `NotAddressed` -- first word is "I", not a wake name (mentioning Vox mid-sentence is never detected by this heuristic, by design) |
-| T10 | `["vox"]`     | `["Vox is a good name for this"]`                              | **`Addressed { extracted_request: "is a good name for this" }`** -- CORRECTED: an earlier draft expected `Mentioned` here, but vox's heuristic is purely positional (first word == wake name), so this statement-that-happens-to-start-with-the-wake-word IS treated as addressed. This is a known, accepted limitation of the ported heuristic, not a Rust-side bug -- do not "fix" it to be smarter than vox's own validated behavior without that being a deliberate, separately-tracked enhancement. |
-| T11 | `["vox"]`     | `["what's the weather like today"]`                            | `NotAddressed`                                                                                                            |
-| T12 | `["vox"]`     | `[]` (empty window)                                             | `NotAddressed`, no panic -- ports vox's empty-segments-list early return                                                 |
-| T13 | `["computer"]`| `["Computer, lights off"]`                                      | `Addressed { extracted_request: "lights off" }` - proves FR7 (no hardcoding)                                             |
-| T14 | `["vox"]`     | `["Hey Vox.", "what time is it"]` (two segments: bare address, then the real request in a separate segment after a pause) | `Addressed { extracted_request: "what time is it" }` -- ports vox's trailing-segment join (FR6): the addressed segment's own remainder is empty, so the following segment is pulled in as the query |
-| T15 | `["vox"]`     | `["VOX VOX VOX what time is it"]` (repeated)                    | `Addressed` -- regex only captures the first `\w+` as the candidate name ("VOX"), remainder is `"VOX VOX what time is it"` -- assert this exact string, don't guess a "cleaned up" version vox's regex doesn't actually produce |
+| #   | Wake names     | Window (segments, oldest first)                                                                                           | Expect                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| --- | -------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T7  | `["vox"]`      | `["Vox, what time is it"]`                                                                                                | `Addressed { extracted_request: "what time is it" }`                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| T8  | `["vox"]`      | `["vox what time is it"]` (no comma, lowercase)                                                                           | `Addressed { extracted_request: "what time is it" }` -- vox's regex has no comma requirement, confirmed from the pattern itself                                                                                                                                                                                                                                                                                                                                                                          |
+| T9  | `["vox"]`      | `["I was telling Vox about the project"]`                                                                                 | `NotAddressed` -- first word is "I", not a wake name (mentioning Vox mid-sentence is never detected by this heuristic, by design)                                                                                                                                                                                                                                                                                                                                                                        |
+| T10 | `["vox"]`      | `["Vox is a good name for this"]`                                                                                         | **`Addressed { extracted_request: "is a good name for this" }`** -- CORRECTED: an earlier draft expected `Mentioned` here, but vox's heuristic is purely positional (first word == wake name), so this statement-that-happens-to-start-with-the-wake-word IS treated as addressed. This is a known, accepted limitation of the ported heuristic, not a Rust-side bug -- do not "fix" it to be smarter than vox's own validated behavior without that being a deliberate, separately-tracked enhancement. |
+| T11 | `["vox"]`      | `["what's the weather like today"]`                                                                                       | `NotAddressed`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| T12 | `["vox"]`      | `[]` (empty window)                                                                                                       | `NotAddressed`, no panic -- ports vox's empty-segments-list early return                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| T13 | `["computer"]` | `["Computer, lights off"]`                                                                                                | `Addressed { extracted_request: "lights off" }` - proves FR7 (no hardcoding)                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| T14 | `["vox"]`      | `["Hey Vox.", "what time is it"]` (two segments: bare address, then the real request in a separate segment after a pause) | `Addressed { extracted_request: "what time is it" }` -- ports vox's trailing-segment join (FR6): the addressed segment's own remainder is empty, so the following segment is pulled in as the query                                                                                                                                                                                                                                                                                                      |
+| T15 | `["vox"]`      | `["VOX VOX VOX what time is it"]` (repeated)                                                                              | `Addressed` -- regex only captures the first `\w+` as the candidate name ("VOX"), remainder is `"VOX VOX what time is it"` -- assert this exact string, don't guess a "cleaned up" version vox's regex doesn't actually produce                                                                                                                                                                                                                                                                          |
 
 ### Mutual exclusion with wake word (FR1)
 

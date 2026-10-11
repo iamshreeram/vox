@@ -1244,7 +1244,10 @@ mod real_classifier_tests {
             let mut engine =
                 BufferingWakeWordEngine::new("hey_jarvis".to_string(), 0.5, new_classifier());
             let detections = feed_all_frames(&mut engine, truncated);
-            let max_conf = detections.iter().map(|d| d.confidence).fold(0.0_f32, f32::max);
+            let max_conf = detections
+                .iter()
+                .map(|d| d.confidence)
+                .fold(0.0_f32, f32::max);
             eprintln!(
                 "cut_frames={cut_frames} (removed {}ms leading audio) -> no-warmup: detections={} max_conf={max_conf:.4}",
                 cut_frames * 80,
@@ -1255,7 +1258,10 @@ mod real_classifier_tests {
                 BufferingWakeWordEngine::new("hey_jarvis".to_string(), 0.5, new_classifier());
             engine2.warm_up();
             let detections2 = feed_all_frames(&mut engine2, truncated);
-            let max_conf2 = detections2.iter().map(|d| d.confidence).fold(0.0_f32, f32::max);
+            let max_conf2 = detections2
+                .iter()
+                .map(|d| d.confidence)
+                .fold(0.0_f32, f32::max);
             eprintln!(
                 "  with warm_up -> detections={} max_conf={max_conf2:.4}",
                 detections2.len()

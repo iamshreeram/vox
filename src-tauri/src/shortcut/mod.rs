@@ -1792,8 +1792,14 @@ mod tests {
     #[test]
     fn agent_binary_path_none_and_blank_normalize_to_none() {
         assert_eq!(normalize_agent_bridge_binary_path(None), Ok(None));
-        assert_eq!(normalize_agent_bridge_binary_path(Some(String::new())), Ok(None));
-        assert_eq!(normalize_agent_bridge_binary_path(Some("   \t ".into())), Ok(None));
+        assert_eq!(
+            normalize_agent_bridge_binary_path(Some(String::new())),
+            Ok(None)
+        );
+        assert_eq!(
+            normalize_agent_bridge_binary_path(Some("   \t ".into())),
+            Ok(None)
+        );
     }
 
     #[test]
@@ -1820,7 +1826,14 @@ mod tests {
 
     #[test]
     fn agent_binary_path_rejects_control_characters() {
-        for bad in ["/bin/a\nb", "/bin/a\rb", "/bin/a\u{0}b", "/bin/a\tb", "/bin/a\u{7}b", "/bin/a\u{1b}[0m"] {
+        for bad in [
+            "/bin/a\nb",
+            "/bin/a\rb",
+            "/bin/a\u{0}b",
+            "/bin/a\tb",
+            "/bin/a\u{7}b",
+            "/bin/a\u{1b}[0m",
+        ] {
             assert!(
                 normalize_agent_bridge_binary_path(Some(bad.to_string())).is_err(),
                 "{bad:?} must be rejected"
@@ -1835,7 +1848,10 @@ mod tests {
         let too_long = format!("/{}", "a".repeat(MAX_AGENT_BINARY_PATH_CHARS));
         assert!(normalize_agent_bridge_binary_path(Some(too_long)).is_err());
         let multibyte = "\u{e9}".repeat(MAX_AGENT_BINARY_PATH_CHARS);
-        assert!(normalize_agent_bridge_binary_path(Some(multibyte)).is_ok(), "counted in chars, not bytes");
+        assert!(
+            normalize_agent_bridge_binary_path(Some(multibyte)).is_ok(),
+            "counted in chars, not bytes"
+        );
     }
 }
 

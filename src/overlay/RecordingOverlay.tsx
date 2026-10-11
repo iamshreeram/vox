@@ -272,7 +272,11 @@ const RecordingOverlay: React.FC = () => {
                 aria-label={t(showCopied ? "overlay.copied" : "overlay.copy")}
                 onClick={handleCopy}
               >
-                {showCopied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                {showCopied ? (
+                  <Check aria-hidden="true" />
+                ) : (
+                  <Copy aria-hidden="true" />
+                )}
               </button>
             )}
             <div className="stext-clip">
