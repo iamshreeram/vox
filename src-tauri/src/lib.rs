@@ -1390,6 +1390,9 @@ mod tts_error_kind_tests {
     fn error_kinds_are_fixed_content_free_names() {
         assert_eq!(tts_error_kind(&TtsError::Superseded), "superseded");
         assert_eq!(tts_error_kind(&TtsError::Recording), "recording");
-        assert_eq!(tts_error_kind(&TtsError::Backend("secret".into())), "backend");
+        assert_eq!(
+            tts_error_kind(&TtsError::Backend("secret".into())),
+            "backend"
+        );
     }
 }

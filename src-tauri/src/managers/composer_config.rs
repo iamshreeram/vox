@@ -99,28 +99,77 @@ pub const SUPPORTED_PROVIDER_IDS: [&str; 6] =
 
 /// Whitelisted id AND an http(s) base URL.
 pub fn composer_provider_supported(provider: &PostProcessProvider) -> bool {
-    todo!()
+    if !SUPPORTED_PROVIDER_IDS.contains(&provider.id.as_str()) {
+        return false;
+    }
+    let url = provider.base_url.trim();
+    // ASCII lowercasing keeps byte offsets, so the length checks below are exact.
+    let lower = url.to_ascii_lowercase();
+    let rest_len = if lower.starts_with("https://") {
+        url.len() - "https://".len()
+    } else if lower.starts_with("http://") {
+        url.len() - "http://".len()
+    } else {
+        return false;
+    };
+    rest_len > 0
 }
 
 /// Supported providers only (the UI shows the endpoint).
 pub fn list_composer_providers(providers: &[PostProcessProvider]) -> Vec<ComposerProviderInfo> {
-    todo!()
+    providers
+        .iter()
+        .filter(|p| composer_provider_supported(p))
+        .map(|p| ComposerProviderInfo {
+            id: p.id.clone(),
+            label: p.label.clone(),
+            base_url: p.base_url.clone(),
+        })
+        .collect()
 }
 
 /// Read the 11 flat `tts_composer_*` fields of AppSettings.
 pub fn settings_from_app(app: &AppSettings) -> TtsComposerSettings {
-    todo!()
+    TtsComposerSettings {
+        mode: app.tts_composer_mode,
+        provider_id: app.tts_composer_provider_id.clone(),
+        model: app.tts_composer_model.clone(),
+        command_path: app.tts_composer_command_path.clone(),
+        command_args: app.tts_composer_command_args.clone(),
+        prompt_flag: app.tts_composer_prompt_flag.clone(),
+        command_ack: app.tts_composer_command_ack.clone(),
+        timeout_secs: rules::clamp_timeout(app.tts_composer_timeout_secs),
+        style: app.tts_composer_style.clone(),
+        send_user_utterance: app.tts_composer_send_user_utterance,
+        fallback: app.tts_composer_fallback,
+    }
 }
 
 /// Write all 11 fields back into AppSettings.
 pub fn write_to_app(app: &mut AppSettings, s: &TtsComposerSettings) {
-    todo!()
+    app.tts_composer_mode = s.mode;
+    app.tts_composer_provider_id = s.provider_id.clone();
+    app.tts_composer_model = s.model.clone();
+    app.tts_composer_command_path = s.command_path.clone();
+    app.tts_composer_command_args = s.command_args.clone();
+    app.tts_composer_prompt_flag = s.prompt_flag.clone();
+    app.tts_composer_command_ack = s.command_ack.clone();
+    app.tts_composer_timeout_secs = rules::clamp_timeout(s.timeout_secs);
+    app.tts_composer_style = s.style.clone();
+    app.tts_composer_send_user_utterance = s.send_user_utterance;
+    app.tts_composer_fallback = s.fallback;
 }
 
 /// True iff `command_ack` is non-empty AND equals the normalized tuple of the
 /// CURRENT path/args/flag (`composer_rules::normalize_command_tuple`).
 pub fn command_ack_matches(s: &TtsComposerSettings) -> bool {
-    todo!()
+    if s.command_ack.is_empty() {
+        return false;
+    }
+    match rules::normalize_command_tuple(&s.command_path, &s.command_args, &s.prompt_flag) {
+        Ok(tuple) => tuple == s.command_ack,
+        Err(_) => false,
+    }
 }
 
 /// Validate EVERYTHING first, then return the normalized result. Any error =>
@@ -142,7 +191,82 @@ pub fn apply_patch(
     patch: &TtsComposerSettingsPatch,
     providers: &[PostProcessProvider],
 ) -> Result<TtsComposerSettings, String> {
-    todo!()
+    // Build the whole result in a copy; `current` is never mutated and an
+    // early `?` return leaves nothing applied.
+    let mut next = current.clone();
+
+    if let Some(mode) = patch.mode {
+        next.mode = mode;
+    }
+    if let Some(id) = &patch.provider_id {
+        if id.is_empty() {
+            return Err("Pick a provider".to_string());
+        }
+        let provider = providers
+            .iter()
+            .find(|p| p.id == *id)
+            .ok_or_else(|| "Provider is not configured".to_string())?;
+        if !composer_provider_supported(provider) {
+            return Err("Provider is not supported for speech composition".to_string());
+        }
+        next.provider_id = id.clone();
+    }
+    if let Some(model) = &patch.model {
+        next.model = rules::validate_model(model)?;
+    }
+    if let Some(style) = &patch.style {
+        next.style = rules::sanitize_style(style)?;
+    }
+    if let Some(path) = &patch.command_path {
+        next.command_path = if path.is_empty() {
+            String::new()
+        } else {
+            rules::validate_binary_path(path)?
+        };
+    }
+    if let Some(args) = &patch.command_args {
+        next.command_args = rules::validate_extra_args(args)?.join(" ");
+    }
+    if let Some(flag) = &patch.prompt_flag {
+        next.prompt_flag = if flag.is_empty() {
+            rules::DEFAULT_PROMPT_FLAG.to_string()
+        } else {
+            rules::validate_prompt_flag(flag)?
+        };
+    }
+    if let Some(timeout) = patch.timeout_secs {
+        next.timeout_secs = rules::clamp_timeout(timeout);
+    }
+    if let Some(send) = patch.send_user_utterance {
+        next.send_user_utterance = send;
+    }
+    if let Some(fallback) = patch.fallback {
+        next.fallback = fallback;
+    }
+
+    // Acknowledgement is bound to the tuple the same patch supplies.
+    match patch.acknowledge_command {
+        Some(true) => {
+            if patch.command_path.is_none()
+                || patch.command_args.is_none()
+                || patch.prompt_flag.is_none()
+            {
+                return Err(
+                    "Acknowledging the command needs its path, arguments and prompt flag in the same save"
+                        .to_string(),
+                );
+            }
+            next.command_ack = rules::normalize_command_tuple(
+                &next.command_path,
+                &next.command_args,
+                &next.prompt_flag,
+            )?;
+        }
+        Some(false) => next.command_ack.clear(),
+        None => {}
+    }
+
+    Ok(next)
 }
 
 #[cfg(test)]

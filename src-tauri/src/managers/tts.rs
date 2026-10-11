@@ -199,23 +199,65 @@ impl TtsManager {
         }
     }
 
+    /// Bump the epoch while the state lock is held and publish it to watchers.
+    /// Every epoch mutation goes through here. Returns the new epoch.
+    fn bump_locked(&self, st: &mut TtsState) -> u64 {
+        st.epoch = st.epoch.wrapping_add(1);
+        self.epoch_tx.send_replace(st.epoch);
+        st.epoch
+    }
+
     /// Reserve a new epoch for a speech intent. `Err(Recording)` while a
     /// recording is active (nothing is consumed). Bumps under the state lock.
     pub fn begin_utterance(&self) -> Result<u64, TtsError> {
-        todo!()
+        let mut state = lock_state(&self.inner);
+        if state.recording_active {
+            return Err(TtsError::Recording);
+        }
+        Ok(self.bump_locked(&mut state))
     }
 
     /// Bump the epoch (settings change / disable) WITHOUT killing speech.
     pub fn invalidate(&self) {
-        todo!()
+        let mut state = lock_state(&self.inner);
+        self.bump_locked(&mut state);
     }
 
     pub fn is_current(&self, epoch: u64) -> bool {
-        todo!()
+        let state = lock_state(&self.inner);
+        state.epoch == epoch
     }
 
     pub fn epoch_receiver(&self) -> watch::Receiver<u64> {
-        todo!()
+        self.epoch_tx.subscribe()
+    }
+
+    /// Cancel the previous speech (refuse with `CancelFailed` if unconfirmed),
+    /// then spawn with the emotion hint and store the handle. Caller holds the
+    /// state lock, so this is one critical section with the caller's checks.
+    fn replace_locked(
+        &self,
+        state: &mut TtsState,
+        text: &str,
+        voice: Option<&str>,
+        rate: Option<u32>,
+        emotion: Emotion,
+    ) -> Result<(), TtsError> {
+        let cancelled = match state.current.as_mut() {
+            Some(handle) => handle.kill(),
+            None => true,
+        };
+        if !cancelled {
+            return Err(TtsError::CancelFailed);
+        }
+        state.current = None;
+        match self.backend.spawn_styled(text, voice, rate, emotion) {
+            Ok(handle) => {
+                state.current = Some(handle);
+                Ok(())
+            }
+            Err(err) => Err(TtsError::Backend(err.to_string())),
+        }
     }
 
     /// Legacy path: `speak` is `speak_styled(.., Emotion::Neutral)`. Bumps the
@@ -228,7 +270,15 @@ impl TtsManager {
         rate_wpm: Option<u32>,
         emotion: Emotion,
     ) -> Result<(), TtsError> {
-        todo!()
+        let text = sanitize_speech_text(text).ok_or(TtsError::Empty)?;
+        let voice = voice.and_then(sanitize_voice);
+        let rate = rate_wpm.map(clamp_rate);
+        let mut state = lock_state(&self.inner);
+        if state.recording_active {
+            return Err(TtsError::Recording);
+        }
+        self.bump_locked(&mut state);
+        self.replace_locked(&mut state, &text, voice.as_deref(), rate, emotion)
     }
 
     /// Speak only if `epoch` is still current, atomically with the spawn
@@ -242,45 +292,35 @@ impl TtsManager {
         rate_wpm: Option<u32>,
         emotion: Emotion,
     ) -> Result<(), TtsError> {
-        todo!()
+        let text = sanitize_speech_text(text).ok_or(TtsError::Empty)?;
+        let voice = voice.and_then(sanitize_voice);
+        let rate = rate_wpm.map(clamp_rate);
+        let mut state = lock_state(&self.inner);
+        if state.epoch != epoch {
+            return Err(TtsError::Superseded);
+        }
+        if state.recording_active {
+            return Err(TtsError::Recording);
+        }
+        self.replace_locked(&mut state, &text, voice.as_deref(), rate, emotion)
     }
 
-    /// Sanitize, then under the single lock: refuse while recording; cancel the
-    /// previous speech (refuse with `CancelFailed` if unconfirmed); spawn; store.
+    /// Legacy path: `speak` is `speak_styled(.., Emotion::Neutral)`.
     pub fn speak(
         &self,
         text: &str,
         voice: Option<&str>,
         rate_wpm: Option<u32>,
     ) -> Result<(), TtsError> {
-        let text = sanitize_speech_text(text).ok_or(TtsError::Empty)?;
-        let voice = voice.and_then(sanitize_voice);
-        let rate = rate_wpm.map(clamp_rate);
-        let mut state = lock_state(&self.inner);
-        if state.recording_active {
-            return Err(TtsError::Recording);
-        }
-        let cancelled = match state.current.as_mut() {
-            Some(handle) => handle.kill(),
-            None => true,
-        };
-        if !cancelled {
-            return Err(TtsError::CancelFailed);
-        }
-        state.current = None;
-        match self.backend.spawn(&text, voice.as_deref(), rate) {
-            Ok(handle) => {
-                state.current = Some(handle);
-                Ok(())
-            }
-            Err(err) => Err(TtsError::Backend(err.to_string())),
-        }
+        self.speak_styled(text, voice, rate_wpm, Emotion::Neutral)
     }
 
     /// Kill current speech. `true` if nothing was speaking or the kill was
     /// confirmed; `false` if it could not be confirmed (handle is retained).
+    /// Always bumps the epoch first, even when nothing is playing.
     pub fn stop(&self) -> bool {
         let mut state = lock_state(&self.inner);
+        self.bump_locked(&mut state);
         let ok = match state.current.as_mut() {
             None => return true,
             Some(handle) => handle.kill(),
@@ -308,6 +348,7 @@ impl TtsManager {
     pub fn note_recording_started(&self) {
         let mut state = lock_state(&self.inner);
         state.recording_active = true;
+        self.bump_locked(&mut state);
         let ok = match state.current.as_mut() {
             None => true,
             Some(handle) => handle.kill(),
@@ -325,14 +366,26 @@ impl TtsManager {
 }
 
 /// Completes when the epoch is no longer `epoch` (or the sender is gone).
-pub async fn wait_superseded(rx: watch::Receiver<u64>, epoch: u64) {
-    todo!()
+pub async fn wait_superseded(mut rx: watch::Receiver<u64>, epoch: u64) {
+    loop {
+        // Copy the value out first so the borrow is dropped before awaiting.
+        let current = *rx.borrow();
+        if current != epoch {
+            return;
+        }
+        if rx.changed().await.is_err() {
+            return;
+        }
+    }
 }
 
 /// stdin text for `say`: the pitch prefix (if any) followed by the ALREADY
 /// SANITIZED text. The prefix is added last so text can never inject markup.
 pub fn say_stdin_text(sanitized_text: &str, emotion: Emotion) -> String {
-    todo!()
+    match pitch_prefix(emotion) {
+        Some(prefix) => format!("{prefix}{sanitized_text}"),
+        None => sanitized_text.to_string(),
+    }
 }
 
 /// argv for `say` with the emotion's rate applied via `effective_rate`.
@@ -341,7 +394,7 @@ pub fn say_args_styled(
     rate_wpm: Option<u32>,
     emotion: Emotion,
 ) -> Vec<String> {
-    todo!()
+    say_args(voice, effective_rate(rate_wpm, emotion))
 }
 
 /// A real child process wrapped as a [`SpeechHandle`], with a detached reaper
@@ -415,7 +468,17 @@ impl SpeechBackend for SayBackend {
         voice: Option<&str>,
         rate_wpm: Option<u32>,
     ) -> io::Result<Box<dyn SpeechHandle>> {
-        spawn_say(text, voice, rate_wpm)
+        spawn_say(text, voice, rate_wpm, Emotion::Neutral)
+    }
+
+    fn spawn_styled(
+        &self,
+        text: &str,
+        voice: Option<&str>,
+        rate_wpm: Option<u32>,
+        emotion: Emotion,
+    ) -> io::Result<Box<dyn SpeechHandle>> {
+        spawn_say(text, voice, rate_wpm, emotion)
     }
 }
 
@@ -490,10 +553,11 @@ fn spawn_say(
     text: &str,
     voice: Option<&str>,
     rate_wpm: Option<u32>,
+    emotion: Emotion,
 ) -> io::Result<Box<dyn SpeechHandle>> {
     let mut cmd = Command::new("/usr/bin/say");
-    cmd.args(say_args(voice, rate_wpm));
-    let handle = spawn_process_handle(&mut cmd, text)?;
+    cmd.args(say_args_styled(voice, rate_wpm, emotion));
+    let handle = spawn_process_handle(&mut cmd, &say_stdin_text(text, emotion))?;
     Ok(Box::new(handle))
 }
 
@@ -502,6 +566,7 @@ fn spawn_say(
     _text: &str,
     _voice: Option<&str>,
     _rate_wpm: Option<u32>,
+    _emotion: Emotion,
 ) -> io::Result<Box<dyn SpeechHandle>> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
