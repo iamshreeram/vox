@@ -5,6 +5,7 @@ import type {
   AppSettings as Settings,
   AudioDevice,
   ChineseScript,
+  ModelUnloadTimeout,
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
   ShortcutActivation,
@@ -170,6 +171,24 @@ const settingUpdaters: {
   theme: (value) => commands.changeThemeSetting(value as string),
   experimental_enabled: (value) =>
     commands.changeExperimentalEnabledSetting(value as boolean),
+  voice_commands_enabled: (value) =>
+    commands.changeVoiceCommandsSetting(value as boolean),
+  memory_enabled: (value) =>
+    commands.changeMemoryEnabledSetting(value as boolean),
+  agent_bridge_enabled: (value) =>
+    commands.changeAgentBridgeEnabledSetting(value as boolean),
+  agent_bridge_binary_path: async (value) => {
+    const result = await commands.changeAgentBridgeBinaryPathSetting(
+      (value as string | null) ?? null,
+    );
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
+  model_unload_timeout: (value) =>
+    commands.setModelUnloadTimeout(value as ModelUnloadTimeout),
+  voice_media_controls_enabled: (value) =>
+    commands.changeVoiceMediaControlsSetting(value as boolean),
   lazy_stream_close: (value) =>
     commands.changeLazyStreamCloseSetting(value as boolean),
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),
@@ -179,6 +198,13 @@ const settingUpdaters: {
     if (result.status === "error") {
       // Rejected switches (e.g. mid-recording) roll the dropdown back via the
       // throw below; the toast tells the user why.
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  agent_context_enabled: async (value) => {
+    const result = await commands.changeAgentContextSetting(value as boolean);
+    if (result.status === "error") {
       toast.error(result.error);
       throw new Error(result.error);
     }
@@ -199,6 +225,9 @@ const settingUpdaters: {
     commands.changeTranscribeGpuDevice(value as string | null),
   extra_recording_buffer_ms: (value) =>
     commands.changeExtraRecordingBufferSetting(value as number),
+  tts_enabled: (value) => commands.changeTtsEnabledSetting(value as boolean),
+  tts_voice: (value) => commands.changeTtsVoiceSetting(value as string | null),
+  tts_rate_wpm: (value) => commands.changeTtsRateSetting(value as number),
 };
 
 export const useSettingsStore = create<SettingsStore>()(

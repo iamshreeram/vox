@@ -7,7 +7,7 @@
     "model": "Model",
     "quit": "Quit",
     "cancel": "Cancel",
-    "secureInputWarning": "\u26a0 Shortcuts blocked by Secure Input",
+    "secureInputWarning": "⚠ Shortcuts blocked by Secure Input",
     "listeningMode": "Listening Mode",
     "listeningModeHotkeyOnly": "Hotkey Only",
     "listeningModeWakeWord": "Wake Word",
@@ -302,13 +302,39 @@
       "wakeWord": {
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
-        "detectedToast": "Wake word detected \u2014 listening...",
+        "detectedToast": "Wake word detected — listening...",
         "disabledByAmbientMode": "Turn off Ambient Mode to enable Wake Word.",
         "downloadFailedTitle": "Wake word model couldn't be downloaded"
       },
       "voiceCommands": {
         "label": "Voice Commands",
-        "description": "Lets phrases like \"open Safari\" or \"open Downloads\" open the real app/folder instead of being pasted as text. Only recognized, deterministic commands run \u2014 anything else falls back to normal dictation."
+        "description": "Lets phrases like \"open Safari\" or \"open Downloads\" open the real app/folder instead of being pasted as text. Only recognized, deterministic commands run — anything else falls back to normal dictation."
+      },
+      "voiceShortcuts": {
+        "title": "Voice Shortcuts",
+        "description": "Say a phrase exactly as written to run its action. Shortcuts work only while Voice Commands is on. Folder shortcuts open folders only, not files. App shortcuts require the app to be installed.",
+        "empty": "No shortcuts yet. Add one to map a spoken phrase to a URL, folder, or app.",
+        "phrasePlaceholder": "Phrase, e.g. open my docs",
+        "phraseLabel": "Spoken phrase",
+        "typeLabel": "Action type",
+        "targetLabel": "Target",
+        "actionType": {
+          "url": "Website",
+          "folder": "Folder",
+          "app": "App"
+        },
+        "placeholder": {
+          "url": "https://example.com",
+          "folder": "~/Documents/Projects",
+          "app": "Safari"
+        },
+        "add": "Add shortcut",
+        "remove": "Remove",
+        "save": "Save"
+      },
+      "voiceMediaControls": {
+        "label": "Media Controls",
+        "description": "Phrases like \"pause\", \"next track\" or \"volume 40\" control Spotify or Music and the system volume instead of being pasted. Only exact whole phrases are matched, but a standalone dictated \"pause\", \"skip\" or \"mute\" will be treated as a command while this is on. Requires Voice Commands. macOS may ask you to allow Automation the first time."
       },
       "agentBridge": {
         "label": "Agent Bridge",
@@ -316,6 +342,29 @@
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
         "suggestionFailedTitle": "Agent suggestion failed"
+      },
+      "agentContext": {
+        "title": "Conversation Context",
+        "description": "When on, your last few exchanges with the agent and any remembered facts are sent to the agent along with each request. The conversation is kept in memory only, and is cleared when you turn this off or restart Vox. A remembered fact or reply containing text that looks like instructions could influence the agent.",
+        "clearButton": "Clear conversation history",
+        "clearedToast": "Conversation history cleared.",
+        "clearFailedToast": "Could not clear the conversation history."
+      },
+      "tts": {
+        "groupTitle": "Spoken replies",
+        "label": "Spoken Replies",
+        "description": "Speaks agent replies and short confirmation or failure phrases aloud. Spoken output is audible to anyone nearby. Speech is paused while you are recording and never plays into your microphone on purpose.",
+        "voiceLabel": "Voice",
+        "voiceDescription": "Name of a system voice (for example \"Samantha\"). Leave empty to use the system default.",
+        "voicePlaceholder": "System default",
+        "rateLabel": "Speaking rate",
+        "rateDescription": "How fast spoken replies are read, in words per minute.",
+        "rateValue": "{{value}} wpm",
+        "testLabel": "Test voice",
+        "testDescription": "Speak a short sample with the current voice and rate.",
+        "testButton": "Test voice",
+        "stopButton": "Stop",
+        "testPhrase": "This is how spoken replies will sound."
       },
       "lazyStreamClose": {
         "label": "Keep Mic Open Between Transcriptions",
@@ -515,6 +564,10 @@
       "openFolder": "Open Recordings Folder",
       "loading": "Loading history...",
       "empty": "No transcriptions yet. Start recording to build your history!",
+      "searchPlaceholder": "Search transcriptions...",
+      "searchLabel": "Search transcriptions",
+      "noResults": "No transcriptions match your search.",
+      "searchError": "Failed to search history. Please try again.",
       "copyToClipboard": "Copy transcription to clipboard",
       "copyError": "Failed to copy transcription to clipboard.",
       "save": "Save transcription",

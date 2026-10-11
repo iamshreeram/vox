@@ -17,6 +17,7 @@ use log::{debug, error, info, warn};
 use serde::Serialize;
 use specta::Type;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -918,6 +919,99 @@ pub fn change_word_correction_threshold_setting(
     Ok(())
 }
 
+/// Normalizes a voice name submitted from the settings UI.
+///
+/// Blank or missing input means "system default" (`Ok(None)`). A non-blank
+/// name is trimmed and must pass [`crate::managers::tts::sanitize_voice`];
+/// anything else is rejected so an unsafe value is never persisted.
+pub fn normalize_tts_voice(voice: Option<String>) -> Result<Option<String>, String> {
+    let Some(raw) = voice else {
+        return Ok(None);
+    };
+    if raw.trim().is_empty() {
+        return Ok(None);
+    }
+    crate::managers::tts::sanitize_voice(&raw)
+        .map(Some)
+        .ok_or_else(|| "Invalid voice name".to_string())
+}
+
+/// Maps a speech error to a short, content-free message for the UI. Speech
+/// text and backend output are never included.
+pub fn tts_error_message(error: &crate::managers::tts::TtsError) -> String {
+    use crate::managers::tts::TtsError;
+    match error {
+        TtsError::Empty => "Nothing to speak".to_string(),
+        TtsError::Recording => "Cannot speak while recording".to_string(),
+        TtsError::CancelFailed => "Previous speech could not be stopped".to_string(),
+        TtsError::Unsupported => "Spoken replies are not supported on this platform".to_string(),
+        TtsError::Backend(_) => "Speech output failed".to_string(),
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_enabled = enabled;
+    settings::write_settings(&app, settings);
+    if !enabled {
+        if let Some(tts) = app.try_state::<Arc<crate::managers::tts::TtsManager>>() {
+            tts.stop();
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_voice_setting(app: AppHandle, voice: Option<String>) -> Result<(), String> {
+    let voice = normalize_tts_voice(voice)?;
+    let mut settings = settings::get_settings(&app);
+    settings.tts_voice = voice;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_rate_setting(app: AppHandle, rate: u32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_rate_wpm = crate::managers::tts::clamp_rate(rate);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Speaks a short test phrase with the saved voice and rate. Works even when
+/// spoken replies are disabled so the user can audition a voice first. The
+/// text is never logged.
+#[tauri::command]
+#[specta::specta]
+pub fn tts_speak_test(app: AppHandle, text: String) -> Result<(), String> {
+    let tts = app
+        .try_state::<Arc<crate::managers::tts::TtsManager>>()
+        .ok_or_else(|| "Spoken replies are not available".to_string())?;
+    let settings = settings::get_settings(&app);
+    tts.speak(
+        &text,
+        settings.tts_voice.as_deref(),
+        Some(settings.tts_rate_wpm),
+    )
+    .map_err(|error| tts_error_message(&error))
+}
+
+/// Stops any spoken output that is currently playing.
+#[tauri::command]
+#[specta::specta]
+pub fn tts_stop(app: AppHandle) -> Result<(), String> {
+    if let Some(tts) = app.try_state::<Arc<crate::managers::tts::TtsManager>>() {
+        if !tts.stop() {
+            return Err("Speech could not be stopped".to_string());
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_extra_recording_buffer_setting(app: AppHandle, ms: u64) -> Result<(), String> {
@@ -1092,6 +1186,106 @@ pub fn change_post_process_enabled_setting(app: AppHandle, enabled: bool) -> Res
     Ok(())
 }
 
+/// Maximum accepted length of the agent binary path setting.
+pub(crate) const MAX_AGENT_BINARY_PATH_CHARS: usize = 1024;
+
+/// Normalizes the agent-bridge binary path before it is persisted: trims
+/// surrounding whitespace, maps blank to `None`, and rejects control
+/// characters (including NUL and newlines) and anything longer than
+/// [`MAX_AGENT_BINARY_PATH_CHARS`] characters. Existence is NOT checked here:
+/// the user may configure the path before installing the agent, and the bridge
+/// already reports a missing binary when it is used.
+pub(crate) fn normalize_agent_bridge_binary_path(
+    input: Option<String>,
+) -> Result<Option<String>, String> {
+    let Some(raw) = input else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if trimmed.chars().any(|c| c.is_control()) {
+        return Err("Agent binary path must not contain control characters".to_string());
+    }
+    if trimmed.chars().count() > MAX_AGENT_BINARY_PATH_CHARS {
+        return Err(format!(
+            "Agent binary path must be at most {MAX_AGENT_BINARY_PATH_CHARS} characters"
+        ));
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_voice_commands_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.voice_commands_enabled = enabled;
+    settings::write_settings(&app, settings);
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "voice_commands_enabled",
+            "value": enabled
+        }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_memory_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.memory_enabled = enabled;
+    settings::write_settings(&app, settings);
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "memory_enabled",
+            "value": enabled
+        }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_bridge_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.agent_bridge_enabled = enabled;
+    settings::write_settings(&app, settings);
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "agent_bridge_enabled",
+            "value": enabled
+        }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_bridge_binary_path_setting(
+    app: AppHandle,
+    path: Option<String>,
+) -> Result<(), String> {
+    // Validate before touching settings so a rejected path leaves the stored
+    // value unchanged.
+    let normalized = normalize_agent_bridge_binary_path(path)?;
+    let mut settings = settings::get_settings(&app);
+    settings.agent_bridge_binary_path = normalized.clone();
+    settings::write_settings(&app, settings);
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "agent_bridge_binary_path",
+            "value": normalized
+        }),
+    );
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_experimental_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
@@ -1106,6 +1300,62 @@ pub fn change_experimental_enabled_setting(app: AppHandle, enabled: bool) -> Res
             "value": enabled
         }),
     );
+    Ok(())
+}
+
+/// Persists the `voice_media_controls_enabled` setting (opt-in media control
+/// phrases such as "pause" or "volume 40"; only effective while Voice
+/// Commands is on).
+#[tauri::command]
+#[specta::specta]
+pub fn change_voice_media_controls_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.voice_media_controls_enabled = enabled;
+    settings::write_settings(&app, settings);
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "voice_media_controls_enabled",
+            "value": enabled
+        }),
+    );
+    Ok(())
+}
+
+/// Persists the `agent_context_enabled` setting. Turning it off also clears the
+/// in-memory conversation log so re-enabling cannot resurrect old turns.
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_context_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.agent_context_enabled = enabled;
+    settings::write_settings(&app, settings);
+    if !enabled {
+        if let Some(log) =
+            app.try_state::<std::sync::Arc<crate::managers::conversation::ConversationLog>>()
+        {
+            log.clear();
+        }
+    }
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "agent_context_enabled",
+            "value": enabled
+        }),
+    );
+    Ok(())
+}
+
+/// Clears the in-memory agent conversation history.
+#[tauri::command]
+#[specta::specta]
+pub fn agent_clear_conversation(app: AppHandle) -> Result<(), String> {
+    if let Some(log) =
+        app.try_state::<std::sync::Arc<crate::managers::conversation::ConversationLog>>()
+    {
+        log.clear();
+    }
     Ok(())
 }
 
@@ -1493,7 +1743,9 @@ pub async fn get_available_accelerators() -> crate::managers::transcription::Ava
 
 #[cfg(test)]
 mod tests {
-    use super::parse_theme_setting;
+    use super::{
+        normalize_agent_bridge_binary_path, parse_theme_setting, MAX_AGENT_BINARY_PATH_CHARS,
+    };
     use crate::settings::Theme;
     use handy_keys::Hotkey;
     use tauri_plugin_global_shortcut::Shortcut;
@@ -1535,5 +1787,105 @@ mod tests {
             assert!(key.parse::<Shortcut>().is_ok(), "Tauri rejected {key}");
             assert!(key.parse::<Hotkey>().is_ok(), "HandyKeys rejected {key}");
         }
+    }
+
+    #[test]
+    fn agent_binary_path_none_and_blank_normalize_to_none() {
+        assert_eq!(normalize_agent_bridge_binary_path(None), Ok(None));
+        assert_eq!(normalize_agent_bridge_binary_path(Some(String::new())), Ok(None));
+        assert_eq!(normalize_agent_bridge_binary_path(Some("   \t ".into())), Ok(None));
+    }
+
+    #[test]
+    fn agent_binary_path_is_trimmed_and_otherwise_preserved() {
+        assert_eq!(
+            normalize_agent_bridge_binary_path(Some("  /usr/local/bin/agent  ".into())),
+            Ok(Some("/usr/local/bin/agent".into()))
+        );
+        assert_eq!(
+            normalize_agent_bridge_binary_path(Some("/opt/My Agent/bin/agent".into())),
+            Ok(Some("/opt/My Agent/bin/agent".into())),
+            "interior spaces are legal in paths"
+        );
+        assert_eq!(
+            normalize_agent_bridge_binary_path(Some("/opt/caf\u{e9}/agent".into())),
+            Ok(Some("/opt/caf\u{e9}/agent".into()))
+        );
+        assert_eq!(
+            normalize_agent_bridge_binary_path(Some("my-agent".into())),
+            Ok(Some("my-agent".into())),
+            "a bare command name resolved via PATH is allowed"
+        );
+    }
+
+    #[test]
+    fn agent_binary_path_rejects_control_characters() {
+        for bad in ["/bin/a\nb", "/bin/a\rb", "/bin/a\u{0}b", "/bin/a\tb", "/bin/a\u{7}b", "/bin/a\u{1b}[0m"] {
+            assert!(
+                normalize_agent_bridge_binary_path(Some(bad.to_string())).is_err(),
+                "{bad:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_binary_path_length_limit_is_in_characters() {
+        let ok = format!("/{}", "a".repeat(MAX_AGENT_BINARY_PATH_CHARS - 1));
+        assert!(normalize_agent_bridge_binary_path(Some(ok)).is_ok());
+        let too_long = format!("/{}", "a".repeat(MAX_AGENT_BINARY_PATH_CHARS));
+        assert!(normalize_agent_bridge_binary_path(Some(too_long)).is_err());
+        let multibyte = "\u{e9}".repeat(MAX_AGENT_BINARY_PATH_CHARS);
+        assert!(normalize_agent_bridge_binary_path(Some(multibyte)).is_ok(), "counted in chars, not bytes");
+    }
+}
+
+#[cfg(test)]
+mod tts_command_tests {
+    use super::{normalize_tts_voice, tts_error_message};
+    use crate::managers::tts::TtsError;
+
+    #[test]
+    fn missing_or_blank_voice_means_system_default() {
+        assert_eq!(normalize_tts_voice(None), Ok(None));
+        assert_eq!(normalize_tts_voice(Some(String::new())), Ok(None));
+        assert_eq!(normalize_tts_voice(Some("   ".to_string())), Ok(None));
+    }
+
+    #[test]
+    fn valid_voice_is_stored_trimmed() {
+        assert_eq!(
+            normalize_tts_voice(Some("  Samantha (Enhanced) ".to_string())),
+            Ok(Some("Samantha (Enhanced)".to_string()))
+        );
+    }
+
+    #[test]
+    fn unsafe_voice_names_are_rejected() {
+        for bad in [
+            "-v".to_string(),
+            "Samantha; rm -rf".to_string(),
+            "Voice/../x".to_string(),
+            "a\nb".to_string(),
+            "x".repeat(65),
+        ] {
+            assert_eq!(
+                normalize_tts_voice(Some(bad.clone())),
+                Err("Invalid voice name".to_string()),
+                "accepted unsafe voice {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn speech_errors_map_to_content_free_messages() {
+        let backend = TtsError::Backend("secret path /tmp/x".to_string());
+        let message = tts_error_message(&backend);
+        assert_eq!(message, "Speech output failed");
+        assert!(!message.contains("secret"));
+        assert_eq!(tts_error_message(&TtsError::Empty), "Nothing to speak");
+        assert_eq!(
+            tts_error_message(&TtsError::Recording),
+            "Cannot speak while recording"
+        );
     }
 }

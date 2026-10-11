@@ -180,6 +180,32 @@ mod tests {
     }
 
     #[test]
+    fn recall_never_errors_on_punctuation_or_operator_looking_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = MemoryManager::open(dir.path().join("memory.db")).unwrap();
+        manager
+            .remember("prefers tea over coffee", "source")
+            .unwrap();
+        for query in [
+            "\"",
+            "*",
+            "a OR b",
+            "tea AND",
+            "NEAR(",
+            "'; DROP TABLE facts;--",
+            "%_\\",
+            "",
+            "   ",
+            "(((",
+        ] {
+            assert!(manager.recall(query, 5).is_ok(), "query {query:?}");
+        }
+        let hits = manager.recall("tea OR (coffee)", 5).unwrap();
+        assert_eq!(hits.len(), 1, "operator-looking words are just words");
+        assert_eq!(manager.list_all().unwrap().len(), 1, "table intact");
+    }
+
+    #[test]
     fn forget_removes_stored_fact() {
         let dir = tempfile::tempdir().unwrap();
         let manager = MemoryManager::open(dir.path().join("memory.db")).unwrap();

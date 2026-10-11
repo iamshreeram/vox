@@ -4,5 +4,7 @@
 <dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>Request microphone access to transcribe audio locally</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Vox uses Apple Events to pause, skip and change the volume of your music when you ask it to.</string>
 </dict>
 </plist>

@@ -451,6 +451,11 @@ pub struct AppSettings {
     pub history_limit: usize,
     #[serde(default)]
     pub memory_enabled: bool,
+    /// Prepend remembered facts (when `memory_enabled`) and the last few
+    /// exchanges to agent-bridge prompts. Opt-in: it sends more data to the
+    /// user-configured external agent. Turning it off clears the in-memory log.
+    #[serde(default)]
+    pub agent_context_enabled: bool,
     #[serde(default)]
     pub ambient_mode_enabled: bool,
     #[serde(default = "default_ambient_wake_name")]
@@ -459,6 +464,10 @@ pub struct AppSettings {
     pub ambient_window_ms: u64,
     #[serde(default)]
     pub voice_commands_enabled: bool,
+    /// Whole-utterance media phrases ("pause", "next track", "volume 40").
+    /// Opt-in and only effective while `voice_commands_enabled` is on.
+    #[serde(default)]
+    pub voice_media_controls_enabled: bool,
     #[serde(default)]
     pub agent_bridge_enabled: bool,
     #[serde(default)]
@@ -467,6 +476,15 @@ pub struct AppSettings {
     pub agent_bridge_prompt_flag: String,
     #[serde(default = "default_agent_bridge_timeout_secs")]
     pub agent_bridge_timeout_secs: u64,
+    /// Speak agent replies and a generic confirmation/failure phrase aloud.
+    /// Opt-in: spoken output audibly exposes agent reply content.
+    #[serde(default)]
+    pub tts_enabled: bool,
+    /// Optional macOS voice name (validated against a strict allowlist).
+    #[serde(default)]
+    pub tts_voice: Option<String>,
+    #[serde(default = "default_tts_rate_wpm")]
+    pub tts_rate_wpm: u32,
     #[serde(default)]
     pub wake_word_enabled: bool,
     #[serde(default = "default_wake_word_model_name")]
@@ -475,6 +493,10 @@ pub struct AppSettings {
     pub wake_word_confidence_threshold: f32,
     #[serde(default = "default_wake_word_cooldown_ms")]
     pub wake_word_cooldown_ms: u32,
+    /// User-defined spoken phrase -> open URL / folder / app. Validated when
+    /// saved (`set_voice_shortcuts`) and again at match time.
+    #[serde(default)]
+    pub voice_shortcuts: Vec<crate::managers::voice_shortcuts::VoiceShortcut>,
     /// How long (ms) of sustained mic silence after a wake-word-triggered
     /// recording auto-finishes it (transcribe + route, same as pressing
     /// the hotkey again) -- without this, a locked wake-word session waits
@@ -576,6 +598,10 @@ fn default_agent_bridge_prompt_flag() -> String {
 
 fn default_agent_bridge_timeout_secs() -> u64 {
     60
+}
+
+fn default_tts_rate_wpm() -> u32 {
+    crate::managers::tts::DEFAULT_RATE_WPM
 }
 
 fn default_model() -> String {
@@ -1029,18 +1055,24 @@ pub fn get_default_settings() -> AppSettings {
         word_correction_threshold: default_word_correction_threshold(),
         history_limit: default_history_limit(),
         memory_enabled: false,
+        agent_context_enabled: false,
         ambient_mode_enabled: false,
         ambient_wake_name: default_ambient_wake_name(),
         ambient_window_ms: default_ambient_window_ms(),
         voice_commands_enabled: false,
+        voice_media_controls_enabled: false,
         agent_bridge_enabled: false,
         agent_bridge_binary_path: None,
         agent_bridge_prompt_flag: default_agent_bridge_prompt_flag(),
         agent_bridge_timeout_secs: default_agent_bridge_timeout_secs(),
+        tts_enabled: false,
+        tts_voice: None,
+        tts_rate_wpm: default_tts_rate_wpm(),
         wake_word_enabled: false,
         wake_word_model_name: default_wake_word_model_name(),
         wake_word_confidence_threshold: default_wake_word_confidence_threshold(),
         wake_word_cooldown_ms: default_wake_word_cooldown_ms(),
+        voice_shortcuts: Vec::new(),
         wake_word_silence_timeout_ms: default_wake_word_silence_timeout_ms(),
         recording_retention_period: default_recording_retention_period(),
         paste_method: PasteMethod::default(),
@@ -1658,6 +1690,86 @@ mod tests {
     #[test]
     fn memory_is_disabled_by_default() {
         assert!(!get_default_settings().memory_enabled);
+    }
+
+    #[test]
+    fn voice_shortcuts_default_empty_and_default_when_missing_from_legacy_settings() {
+        assert!(get_default_settings().voice_shortcuts.is_empty());
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings.as_object_mut().unwrap().remove("voice_shortcuts");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(loaded.voice_shortcuts.is_empty());
+    }
+
+    #[test]
+    fn voice_shortcuts_round_trip_through_json() {
+        use crate::managers::voice_shortcuts::{VoiceShortcut, VoiceShortcutAction};
+        let mut settings = get_default_settings();
+        settings.voice_shortcuts = vec![VoiceShortcut {
+            phrase: "open work".into(),
+            action: VoiceShortcutAction::OpenUrl {
+                url: "https://example.com".into(),
+            },
+        }];
+        let json = serde_json::to_value(&settings).unwrap();
+        assert_eq!(json["voice_shortcuts"][0]["action"]["type"], "open_url");
+        let loaded: AppSettings = serde_json::from_value(json).unwrap();
+        assert_eq!(loaded.voice_shortcuts, settings.voice_shortcuts);
+    }
+
+    #[test]
+    fn malformed_voice_shortcuts_are_salvaged_without_losing_other_settings() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings["voice_shortcuts"] = serde_json::json!([{ "phrase": 5, "action": "nonsense" }]);
+        settings["history_limit"] = serde_json::json!(77);
+        let salvaged = salvage_settings(&settings);
+        assert!(salvaged.voice_shortcuts.is_empty());
+        assert_eq!(salvaged.history_limit, 77);
+    }
+
+    #[test]
+    fn voice_media_controls_default_off_and_default_when_missing_from_legacy_settings() {
+        assert!(!get_default_settings().voice_media_controls_enabled);
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("voice_media_controls_enabled");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.voice_media_controls_enabled);
+    }
+
+    #[test]
+    fn agent_context_is_off_by_default_and_when_missing_from_legacy_settings() {
+        assert!(!get_default_settings().agent_context_enabled);
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("agent_context_enabled");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.agent_context_enabled);
+    }
+
+    #[test]
+    fn tts_defaults_are_off_with_no_voice_and_180_wpm() {
+        let settings = get_default_settings();
+        assert!(!settings.tts_enabled);
+        assert_eq!(settings.tts_voice, None);
+        assert_eq!(settings.tts_rate_wpm, 180);
+    }
+
+    #[test]
+    fn tts_settings_default_when_missing_from_legacy_settings() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        let object = settings.as_object_mut().unwrap();
+        object.remove("tts_enabled");
+        object.remove("tts_voice");
+        object.remove("tts_rate_wpm");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.tts_enabled);
+        assert_eq!(loaded.tts_voice, None);
+        assert_eq!(loaded.tts_rate_wpm, 180);
     }
 
     #[test]

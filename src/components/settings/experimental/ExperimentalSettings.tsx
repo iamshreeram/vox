@@ -9,8 +9,12 @@ import { VadBackendSelector } from "../VadBackendSelector";
 import { MemoryToggle } from "../MemoryToggle";
 import { MemoryFactsList } from "../MemoryFactsList";
 import { VoiceCommandsToggle } from "../VoiceCommandsToggle";
+import { VoiceShortcutsEditor } from "../VoiceShortcutsEditor";
+import { VoiceMediaControlsToggle } from "../VoiceMediaControlsToggle";
 import { AgentBridgeToggle } from "../AgentBridgeToggle";
+import { AgentContextToggle } from "../AgentContextToggle";
 import { AgentBridgeBinaryPathField } from "../AgentBridgeBinaryPathField";
+import { TtsSettings } from "../TtsSettings";
 import { ListeningModeSection } from "../ListeningModeSection";
 import { useSettings } from "../../../hooks/useSettings";
 
@@ -34,7 +38,10 @@ export const ExperimentalSettings: React.FC = () => {
         <MemoryToggle descriptionMode="tooltip" grouped={true} />
         {memoryEnabled && <MemoryFactsList />}
         <VoiceCommandsToggle descriptionMode="tooltip" grouped={true} />
+        <VoiceShortcutsEditor descriptionMode="tooltip" grouped={true} />
+        <VoiceMediaControlsToggle descriptionMode="tooltip" grouped={true} />
         <AgentBridgeToggle descriptionMode="tooltip" grouped={true} />
+        <AgentContextToggle descriptionMode="tooltip" grouped={true} />
         {agentBridgeEnabled && (
           <AgentBridgeBinaryPathField
             descriptionMode="tooltip"
@@ -42,6 +49,9 @@ export const ExperimentalSettings: React.FC = () => {
           />
         )}
         <ListeningModeSection />
+      </SettingsGroup>
+      <SettingsGroup title={t("settings.advanced.tts.groupTitle")}>
+        <TtsSettings descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
     </div>
   );
