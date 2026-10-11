@@ -44,6 +44,20 @@ pub fn parse_exchange(payload: &str) -> Option<Exchange> {
     Some(Exchange { reply, utterance })
 }
 
+/// Longest user utterance carried in the exchange event (characters).
+pub const MAX_EXCHANGE_UTTERANCE_CHARS: usize = 500;
+
+/// Build the internal `agent-bridge-exchange` payload. The utterance is
+/// truncated on a char boundary; an absent or blank utterance becomes `null`.
+pub fn build_exchange_payload(reply: &str, utterance: Option<&str>) -> serde_json::Value {
+    let utterance = utterance.map(str::trim).filter(|u| !u.is_empty()).map(|u| {
+        u.chars()
+            .take(MAX_EXCHANGE_UTTERANCE_CHARS)
+            .collect::<String>()
+    });
+    serde_json::json!({ "reply": reply, "utterance": utterance })
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
 pub struct ComposerPreview {
     pub speech: String,
@@ -991,5 +1005,46 @@ mod tests {
         assert_eq!(first, Err("Replaced by newer speech".to_string()));
         assert!(second.is_ok());
         assert_eq!(spoken(&log).len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod payload_tests {
+    use super::*;
+
+    #[test]
+    fn payload_round_trips_through_parse_exchange() {
+        let v = build_exchange_payload("All done", Some("what is the status"));
+        let ex = parse_exchange(&v.to_string()).unwrap();
+        assert_eq!(ex.reply, "All done");
+        assert_eq!(ex.utterance.as_deref(), Some("what is the status"));
+    }
+
+    #[test]
+    fn blank_or_missing_utterance_is_null() {
+        for u in [None, Some(""), Some("  \n ")] {
+            let v = build_exchange_payload("r", u);
+            assert!(v["utterance"].is_null());
+            assert_eq!(parse_exchange(&v.to_string()).unwrap().utterance, None);
+        }
+    }
+
+    #[test]
+    fn long_utterances_are_truncated_on_a_char_boundary() {
+        let long = "\u{1f600}".repeat(900);
+        let v = build_exchange_payload("r", Some(&long));
+        assert_eq!(
+            v["utterance"].as_str().unwrap().chars().count(),
+            MAX_EXCHANGE_UTTERANCE_CHARS
+        );
+    }
+
+    #[test]
+    fn unicode_and_quotes_survive_the_json_encoding() {
+        let v = build_exchange_payload("caf\u{e9} \"quoted\" \n line", None);
+        assert_eq!(
+            parse_exchange(&v.to_string()).unwrap().reply,
+            "caf\u{e9} \"quoted\" \n line"
+        );
     }
 }

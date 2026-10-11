@@ -1331,7 +1331,20 @@ pub fn run(cli_args: CliArgs) {
 
 #[cfg(test)]
 mod tts_listener_tests {
-    use super::{decode_tts_payload, tts_phrase_to_speak};
+    use super::{decode_tts_payload, tts_phrase_to_speak, TTS_EVENTS};
+
+    #[test]
+    fn the_listener_subscribes_to_the_exchange_event_not_the_bare_reply() {
+        assert_eq!(
+            TTS_EVENTS,
+            [
+                "agent-bridge-exchange",
+                "agent-bridge-error",
+                "voice-command-executed",
+                "voice-command-error",
+            ]
+        );
+    }
 
     #[test]
     fn disabled_setting_never_speaks() {
