@@ -543,7 +543,12 @@ jobs:
           releaseName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
           releaseId: ${{ inputs.release-id }}
           assetNamePattern: ${{ steps.patch-release-name.outputs.platform }}
-          args: ${{ inputs.build-args }}
+          # tauri.conf.json enables updater artifacts and ships an updater public
+          # key, so `tauri build` exits 1 at the very end (after bundling) when no
+          # TAURI_SIGNING_PRIVATE_KEY is available. Unsigned CI verification builds
+          # (sign-binaries: false) therefore turn updater artifacts off; signed
+          # release builds keep them.
+          args: ${{ inputs.build-args }}${{ !inputs.sign-binaries && ' --config src-tauri/tauri.ci-unsigned.conf.json' || '' }}
 
       # tauri-action uploads release assets before returning. All AppImage
       # filtering therefore happens inside linuxdeploy above; this verifies the
