@@ -140,6 +140,7 @@ fi
 if [ "$1" = "run" ] && [ "$2" = "tauri" ] && [ "$3" = "build" ]; then
   shift 3
   echo "tauri-build $*" >>"$STUB_LOG"
+  echo "rustc-seen $(rustc --version 2>&1)" >>"$STUB_LOG"
   echo "env VOX_BUILD_COMMIT=$VOX_BUILD_COMMIT VOX_BUILD_BRANCH=$VOX_BUILD_BRANCH VOX_SOURCE_UPDATES=$VOX_SOURCE_UPDATES VOX_SOURCE_UPDATE=$VOX_SOURCE_UPDATE" >>"$STUB_LOG"
   if [ "${FAKE_BUILD_FAIL:-0}" = "1" ]; then exit 1; fi
   if [ "${FAKE_BUILD_FAIL_PARTIAL:-0}" = "1" ]; then
@@ -211,6 +212,34 @@ scenario_success_new_origin_commit() {
   check "local HEAD equals origin HEAD" \
     [ "$(git -C "$CHECKOUT" rev-parse HEAD)" = "$ORIGIN_NEW_SHA" ]
   check "lock dir absent afterwards" [ ! -e "$(lock_path)" ]
+}
+
+scenario_rustup_toolchain_preferred_over_older_rustc() {
+  setup_env "$1" || fail "sandbox setup failed"
+  export VOX_UPDATE_ALLOW_ORIGIN="$ORIGIN"
+  # A shell where an OLDER rustc (think: a package-manager install) comes first on
+  # PATH, with the rustup one only under $HOME/.cargo/bin.
+  export HOME="$SB/home"
+  mkdir -p "$HOME/.cargo/bin"
+  printf '#!/bin/sh\necho "rustc 9.9.9 (fake-rustup)"\n' >"$HOME/.cargo/bin/rustc"
+  printf '#!/bin/sh\necho "rustc 1.0.0 (fake-older)"\n' >"$STUBDIR/rustc"
+  chmod +x "$HOME/.cargo/bin/rustc" "$STUBDIR/rustc"
+  run_update
+  check "exit 0 (got $RUN_RC)" [ "$RUN_RC" -eq 0 ]
+  check "the build step used the rustup toolchain" log_has "rustc-seen rustc 9.9.9 (fake-rustup)"
+  check "the older rustc was not used for the build" bash -c '! grep -F -q -- "fake-older" "$1"' _ "$STUB_LOG"
+}
+
+scenario_no_cargo_bin_dir_still_works() {
+  setup_env "$1" || fail "sandbox setup failed"
+  export VOX_UPDATE_ALLOW_ORIGIN="$ORIGIN"
+  export HOME="$SB/home"
+  mkdir -p "$HOME"
+  printf '#!/bin/sh\necho "rustc 1.0.0 (fake-older)"\n' >"$STUBDIR/rustc"
+  chmod +x "$STUBDIR/rustc"
+  run_update
+  check "exit 0 without a ~/.cargo/bin (got $RUN_RC)" [ "$RUN_RC" -eq 0 ]
+  check "falls back to whatever rustc is on PATH" log_has "rustc-seen rustc 1.0.0 (fake-older)"
 }
 
 scenario_build_fails_after_bundling() {
@@ -510,6 +539,8 @@ run_scenario() {
 
 run_scenario "(1) success: new origin commit builds, installs, HEAD==origin, lock released" scenario_success_new_origin_commit
 run_scenario "(2) build fails: stale bundle removed, no install, lock released" scenario_build_fails_stale_bundle_removed
+run_scenario "(14a) rustup toolchain wins over an older rustc earlier on PATH" scenario_rustup_toolchain_preferred_over_older_rustc
+run_scenario "(14b) no ~/.cargo/bin: still works with the PATH rustc" scenario_no_cargo_bin_dir_still_works
 run_scenario "(2b) build bundles then fails: exit status alone stops the install" scenario_build_fails_after_bundling
 run_scenario "(3) diverged history refused with fast-forward message, no merge commit" scenario_diverged_refused_ff_only
 run_scenario "(4) tracked modification refused before build, edit preserved" scenario_tracked_modification_refused

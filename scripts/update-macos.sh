@@ -15,6 +15,7 @@
 #     VOX_UPDATE_ALLOW_ORIGIN, which is meant for forks)
 #   - VOX_SOURCE_UPDATE=1 refuses unless the checked-out branch is main
 #   - only ever fast-forwards; a diverged branch is reported, never merged
+#   - prefers the rustup toolchain in ~/.cargo/bin over any older rustc on PATH
 #
 # The build uses src-tauri/tauri.ci-unsigned.conf.json, which turns updater
 # artifacts off, so a build failure is a real failure and is not masked by the
@@ -26,6 +27,14 @@
 #   ./scripts/update-macos.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+# Interactive shells can have an older package-manager rustc (e.g. Homebrew)
+# earlier on PATH than the rustup toolchain, and cargo then fails with
+# "requires rustc 1.88.0". Prefer the rustup toolchain when it is installed.
+if [ -d "$HOME/.cargo/bin" ]; then
+  PATH="$HOME/.cargo/bin:$PATH"
+  export PATH
+fi
 
 # shellcheck source=lib/update-lock.sh
 . "scripts/lib/update-lock.sh"
@@ -99,6 +108,8 @@ main() {
   AFTER_REV="$(git rev-parse --short HEAD)"
 
   # ---- 5. Keep JS deps in sync, then build the release bundle ---------------
+  echo "Rust toolchain: $(command -v rustc || echo 'rustc not found') ($(rustc --version 2>/dev/null || echo 'unknown version'))"
+
   echo "Installing JS dependencies (no-op if nothing changed)..."
   bun install
 
