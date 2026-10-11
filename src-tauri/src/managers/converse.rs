@@ -135,6 +135,33 @@ impl Default for SessionConfig {
     }
 }
 
+impl SessionConfig {
+    /// Session settings from the user's AppSettings (clamped; DESIGN 3.3).
+    /// Not called until the S5 runtime wires the session up.
+    #[allow(dead_code)]
+    pub fn from_settings(s: &crate::settings::AppSettings) -> SessionConfig {
+        SessionConfig {
+            max_idle_turns: s.converse_max_idle_turns.clamp(1, 5),
+            context_turns: usize::from(s.converse_context_turns.min(12)),
+            max_turns: 50,
+            post_speech_guard: Duration::from_millis(350),
+            quiet_wait: Duration::from_secs(2),
+            style: s.tts_composer_style.clone(),
+        }
+    }
+}
+
+/// Endpointing config from the user's silence setting, clamped 600..=4000 ms.
+/// Not called until the S5 runtime wires the session up.
+#[allow(dead_code)]
+pub fn endpoint_config(
+    s: &crate::settings::AppSettings,
+) -> crate::managers::converse_audio::EndpointConfig {
+    crate::managers::converse_audio::EndpointConfig::with_silence(u64::from(
+        s.converse_silence_ms.clamp(600, 4000),
+    ))
+}
+
 /// Run one conversation session to its end. Reports `Idle` exactly once on
 /// every exit path and calls `mouth.stop()` when the end is `Cancelled`.
 pub async fn run_session(deps: &Deps<'_>, cfg: &SessionConfig, cancel: CancelToken) -> SessionEnd {
@@ -1707,5 +1734,44 @@ mod tests {
             assert_eq!(reg.state(), RegistryState::Idle);
             assert!(reg.try_begin().is_some());
         }
+    }
+
+    // ------------------------------------------------------------------
+    // config from settings (S4)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn session_config_reads_and_clamps_the_settings() {
+        let mut s = crate::settings::get_default_settings();
+        let c = SessionConfig::from_settings(&s);
+        assert_eq!((c.max_idle_turns, c.context_turns, c.max_turns), (2, 6, 50));
+        assert_eq!(c.post_speech_guard, Duration::from_millis(350));
+        assert_eq!(c.quiet_wait, Duration::from_secs(2));
+        assert_eq!(c.style, s.tts_composer_style);
+        s.converse_max_idle_turns = 0;
+        s.converse_context_turns = 200;
+        let c = SessionConfig::from_settings(&s);
+        assert_eq!((c.max_idle_turns, c.context_turns), (1, 12));
+        s.converse_max_idle_turns = 99;
+        s.converse_context_turns = 0;
+        let c = SessionConfig::from_settings(&s);
+        assert_eq!((c.max_idle_turns, c.context_turns), (5, 0));
+    }
+
+    #[test]
+    fn endpoint_config_clamps_silence_to_600_4000_ms() {
+        let mut s = crate::settings::get_default_settings();
+        assert_eq!(endpoint_config(&s).silence_ms, 1200);
+        s.converse_silence_ms = 0;
+        assert_eq!(endpoint_config(&s).silence_ms, 600);
+        s.converse_silence_ms = 100_000;
+        assert_eq!(endpoint_config(&s).silence_ms, 4000);
+        s.converse_silence_ms = 2500;
+        let e = endpoint_config(&s);
+        assert_eq!(e.silence_ms, 2500);
+        assert_eq!(
+            (e.initial_grace_ms, e.max_utterance_ms, e.min_speech_ms),
+            (4000, 30_000, 150)
+        );
     }
 }
