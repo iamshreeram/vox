@@ -4,10 +4,18 @@
 //! No tauri types: hardware is behind ports. Contract: DESIGN.md 3.4 and the
 //! AMENDMENTS section (Revision 4).
 
+// Not referenced by production code until the runtime wiring (S5b) lands;
+// remove this allow when `converse_runtime` constructs the worker.
+#![allow(dead_code)]
+
 use crate::managers::converse::{ListenFailure, ListenOutcome};
-use crate::managers::converse_audio::EndpointConfig;
-use std::sync::Arc;
-use std::time::Duration;
+use crate::managers::converse_audio::{EndpointConfig, EndpointEvent, Endpointer};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+use tokio::sync::oneshot;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartError {
@@ -64,8 +72,99 @@ impl Default for CaptureTimings {
 /// fields freely; the public methods are the contract.
 #[derive(Clone)]
 pub struct CaptureHandle {
-    #[allow(dead_code)]
-    inner: Arc<()>,
+    inner: Arc<Inner>,
+}
+
+struct Inner {
+    tx: SyncSender<Command>,
+    /// Id of the armed listen (0 = none). Read by the audio thread.
+    armed: AtomicU64,
+    next_id: AtomicU64,
+    capture_active: Arc<AtomicBool>,
+    /// Highest cancelled listen id. Raised by the caller before the Cancel is
+    /// queued, so the worker sees it even while `start()` is blocked.
+    floor: Arc<AtomicU64>,
+    join: Mutex<Option<JoinHandle<()>>>,
+}
+
+impl Inner {
+    fn cancel_upto(&self, upto: u64) {
+        self.floor.fetch_max(upto, Ordering::SeqCst);
+        let _ = self.tx.send(Command::Cancel { upto });
+    }
+}
+
+/// Bounded queue between callers and the single worker thread.
+const QUEUE_CAPACITY: usize = 1024;
+
+enum Command {
+    Listen {
+        listen_id: u64,
+        cfg: EndpointConfig,
+        reply: oneshot::Sender<ListenOutcome>,
+    },
+    Levels {
+        listen_id: u64,
+        now_ms: u64,
+        levels: Vec<f32>,
+    },
+    Cancel {
+        upto: u64,
+    },
+    Shutdown {
+        ack: mpsc::Sender<()>,
+    },
+}
+
+/// Dropping an unsettled listen future cancels its listen id and disarms it.
+struct ListenGuard {
+    inner: Arc<Inner>,
+    id: u64,
+    settled: bool,
+}
+
+impl Drop for ListenGuard {
+    fn drop(&mut self) {
+        if !self.settled {
+            self.inner.cancel_upto(self.id);
+        }
+        let _ = self
+            .inner
+            .armed
+            .compare_exchange(self.id, 0, Ordering::SeqCst, Ordering::SeqCst);
+    }
+}
+
+struct Pending {
+    id: u64,
+    cfg: EndpointConfig,
+    reply: oneshot::Sender<ListenOutcome>,
+    busy_since: Instant,
+    next_at: Instant,
+}
+
+struct Recording {
+    id: u64,
+    reply: oneshot::Sender<ListenOutcome>,
+    started_at: Instant,
+    abs_deadline: Duration,
+    endpointer: Endpointer,
+    heard: bool,
+}
+
+enum State {
+    Idle,
+    Waiting(Pending),
+    Recording(Recording),
+}
+
+struct Worker {
+    port: Arc<dyn RecorderPort>,
+    transcriber: Arc<dyn Transcriber>,
+    timings: CaptureTimings,
+    capture_active: Arc<AtomicBool>,
+    floor: Arc<AtomicU64>,
+    state: State,
 }
 
 pub struct CaptureWorker;
@@ -73,11 +172,248 @@ pub struct CaptureWorker;
 impl CaptureWorker {
     /// Spawn the worker thread.
     pub fn spawn(
-        _port: Arc<dyn RecorderPort>,
-        _transcriber: Arc<dyn Transcriber>,
-        _timings: CaptureTimings,
+        port: Arc<dyn RecorderPort>,
+        transcriber: Arc<dyn Transcriber>,
+        timings: CaptureTimings,
     ) -> CaptureHandle {
-        todo!("S3c")
+        let (tx, rx) = mpsc::sync_channel::<Command>(QUEUE_CAPACITY);
+        let capture_active = Arc::new(AtomicBool::new(false));
+        let floor = Arc::new(AtomicU64::new(0));
+        let worker = Worker {
+            port,
+            transcriber,
+            timings,
+            capture_active: Arc::clone(&capture_active),
+            floor: Arc::clone(&floor),
+            state: State::Idle,
+        };
+        // If the thread cannot be spawned, `rx` is dropped with the closure, so
+        // every later command sees a closed channel and listens resolve Aborted.
+        let join = std::thread::Builder::new()
+            .name("converse-capture".into())
+            .spawn(move || worker.run(rx))
+            .ok();
+        CaptureHandle {
+            inner: Arc::new(Inner {
+                tx,
+                armed: AtomicU64::new(0),
+                next_id: AtomicU64::new(0),
+                capture_active,
+                floor,
+                join: Mutex::new(join),
+            }),
+        }
+    }
+}
+
+impl Worker {
+    fn run(mut self, rx: mpsc::Receiver<Command>) {
+        let ack = loop {
+            match rx.recv_timeout(self.timings.tick) {
+                Ok(cmd) => {
+                    if let Some(ack) = self.handle(cmd) {
+                        break Some(ack);
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => break None,
+            }
+            self.poll();
+        };
+        self.drop_state();
+        self.set_inactive();
+        if let Some(ack) = ack {
+            let _ = ack.send(());
+        }
+    }
+
+    /// Returns the shutdown ack when the loop must exit.
+    fn handle(&mut self, cmd: Command) -> Option<mpsc::Sender<()>> {
+        match cmd {
+            Command::Listen {
+                listen_id,
+                cfg,
+                reply,
+            } => {
+                if listen_id <= self.floor.load(Ordering::SeqCst) {
+                    let _ = reply.send(ListenOutcome::Aborted);
+                } else {
+                    self.drop_state();
+                    let now = Instant::now();
+                    self.attempt(Pending {
+                        id: listen_id,
+                        cfg,
+                        reply,
+                        busy_since: now,
+                        next_at: now,
+                    });
+                }
+            }
+            Command::Levels {
+                listen_id,
+                now_ms,
+                levels,
+            } => self.on_levels(listen_id, now_ms, &levels),
+            Command::Cancel { upto } => {
+                self.cancel_upto(upto);
+            }
+            Command::Shutdown { ack } => return Some(ack),
+        }
+        None
+    }
+
+    /// One `start()` attempt for `p`. The capture flag is raised only once
+    /// start() has succeeded, so a foreign (Busy) recording never marks us active.
+    fn attempt(&mut self, p: Pending) {
+        match self.port.start() {
+            Ok(()) => {
+                if self.floor.load(Ordering::SeqCst) >= p.id {
+                    // Cancelled while start() was blocked: release it now.
+                    self.port.cancel();
+                    let _ = p.reply.send(ListenOutcome::Aborted);
+                } else {
+                    self.capture_active.store(true, Ordering::SeqCst);
+                    self.state = State::Recording(Recording {
+                        id: p.id,
+                        reply: p.reply,
+                        started_at: Instant::now(),
+                        abs_deadline: Duration::from_millis(
+                            p.cfg
+                                .initial_grace_ms
+                                .saturating_add(p.cfg.max_utterance_ms),
+                        ) + self.timings.abs_slack,
+                        endpointer: Endpointer::new(p.cfg),
+                        heard: false,
+                    });
+                }
+            }
+            Err(StartError::Busy) => {
+                self.set_inactive();
+                if p.busy_since.elapsed() >= self.timings.busy_deadline {
+                    let _ = p.reply.send(ListenOutcome::Failed(ListenFailure::Busy));
+                } else {
+                    let next_at = Instant::now() + self.timings.busy_retry;
+                    self.state = State::Waiting(Pending { next_at, ..p });
+                }
+            }
+            Err(StartError::NoMicrophone) => {
+                self.set_inactive();
+                let _ = p
+                    .reply
+                    .send(ListenOutcome::Failed(ListenFailure::NoMicrophone));
+            }
+            Err(StartError::Permission) => {
+                self.set_inactive();
+                let _ = p
+                    .reply
+                    .send(ListenOutcome::Failed(ListenFailure::Permission));
+            }
+            Err(StartError::Other) => {
+                self.set_inactive();
+                let _ = p.reply.send(ListenOutcome::Failed(ListenFailure::Other));
+            }
+        }
+    }
+
+    /// Timer work: busy retries and the readiness / absolute watchdogs.
+    fn poll(&mut self) {
+        match std::mem::replace(&mut self.state, State::Idle) {
+            State::Idle => {}
+            State::Waiting(p) => {
+                if p.busy_since.elapsed() >= self.timings.busy_deadline {
+                    let _ = p.reply.send(ListenOutcome::Failed(ListenFailure::Busy));
+                } else if Instant::now() >= p.next_at {
+                    self.attempt(p);
+                } else {
+                    self.state = State::Waiting(p);
+                }
+            }
+            State::Recording(r) => {
+                let elapsed = r.started_at.elapsed();
+                if !r.heard && elapsed >= self.timings.readiness_deadline {
+                    self.end_with_cancel(r, ListenOutcome::Failed(ListenFailure::NoMicrophone));
+                } else if elapsed >= r.abs_deadline {
+                    self.end_with_cancel(r, ListenOutcome::Failed(ListenFailure::Other));
+                } else {
+                    self.state = State::Recording(r);
+                }
+            }
+        }
+    }
+
+    fn on_levels(&mut self, listen_id: u64, now_ms: u64, levels: &[f32]) {
+        match std::mem::replace(&mut self.state, State::Idle) {
+            State::Recording(mut r) if r.id == listen_id => {
+                r.heard = true;
+                match r.endpointer.feed(now_ms, levels) {
+                    None => self.state = State::Recording(r),
+                    Some(EndpointEvent::NoSpeech) => {
+                        self.end_with_cancel(r, ListenOutcome::NoSpeech)
+                    }
+                    Some(EndpointEvent::MaxLength) => {
+                        self.end_with_cancel(r, ListenOutcome::TooLong)
+                    }
+                    Some(EndpointEvent::SpeechEnded) => self.finish_speech(r),
+                }
+            }
+            other => self.state = other,
+        }
+    }
+
+    fn finish_speech(&mut self, r: Recording) {
+        let samples = self.port.stop();
+        self.set_inactive();
+        let outcome = match samples {
+            None => ListenOutcome::Aborted,
+            Some(samples) => self.transcribe(samples),
+        };
+        let _ = r.reply.send(outcome);
+    }
+
+    fn transcribe(&self, samples: Vec<f32>) -> ListenOutcome {
+        match self.transcriber.transcribe(samples) {
+            Ok(text) => {
+                let trimmed = text.trim();
+                if trimmed.is_empty() {
+                    ListenOutcome::NoSpeech
+                } else {
+                    ListenOutcome::Utterance(trimmed.to_owned())
+                }
+            }
+            Err(_) => ListenOutcome::Failed(ListenFailure::ModelUnavailable),
+        }
+    }
+
+    fn cancel_upto(&mut self, upto: u64) {
+        match std::mem::replace(&mut self.state, State::Idle) {
+            State::Waiting(p) if p.id <= upto => {
+                let _ = p.reply.send(ListenOutcome::Aborted);
+            }
+            State::Recording(r) if r.id <= upto => self.end_with_cancel(r, ListenOutcome::Aborted),
+            other => self.state = other,
+        }
+    }
+
+    /// Ends whatever is pending or recording, used on shutdown and new listens.
+    fn drop_state(&mut self) {
+        match std::mem::replace(&mut self.state, State::Idle) {
+            State::Idle => {}
+            State::Waiting(p) => {
+                let _ = p.reply.send(ListenOutcome::Aborted);
+            }
+            State::Recording(r) => self.end_with_cancel(r, ListenOutcome::Aborted),
+        }
+    }
+
+    /// Cancels the recording this worker started and answers its listen.
+    fn end_with_cancel(&mut self, r: Recording, outcome: ListenOutcome) {
+        self.port.cancel();
+        self.set_inactive();
+        let _ = r.reply.send(outcome);
+    }
+
+    fn set_inactive(&self) {
+        self.capture_active.store(false, Ordering::SeqCst);
     }
 }
 
@@ -87,32 +423,87 @@ impl CaptureHandle {
     /// Dropping the returned future (e.g. the session loop's cancel race)
     /// cancels that listen id (a drop guard), so a recording can never leak.
     /// A worker that is already gone => `Aborted`.
-    pub async fn listen(&self, _cfg: EndpointConfig) -> ListenOutcome {
-        todo!("S3c")
+    pub async fn listen(&self, cfg: EndpointConfig) -> ListenOutcome {
+        let inner = Arc::clone(&self.inner);
+        let id = inner.next_id.fetch_add(1, Ordering::SeqCst) + 1;
+        inner.armed.store(id, Ordering::SeqCst);
+        let mut guard = ListenGuard {
+            inner: Arc::clone(&inner),
+            id,
+            settled: false,
+        };
+        let (reply_tx, reply_rx) = oneshot::channel();
+        if inner
+            .tx
+            .send(Command::Listen {
+                listen_id: id,
+                cfg,
+                reply: reply_tx,
+            })
+            .is_err()
+        {
+            // Worker already gone: nothing to cancel.
+            guard.settled = true;
+            return ListenOutcome::Aborted;
+        }
+        match reply_rx.await {
+            Ok(outcome) => {
+                guard.settled = true;
+                outcome
+            }
+            Err(_) => ListenOutcome::Aborted,
+        }
     }
 
     /// Called from the audio callback thread: NON-BLOCKING (`try_send` on a
     /// bounded channel); a no-op unless a listen is armed; never stops,
     /// transcribes or waits.
-    pub fn push_levels(&self, _now_ms: u64, _levels: &[f32]) {
-        todo!("S3c")
+    pub fn push_levels(&self, now_ms: u64, levels: &[f32]) {
+        let listen_id = self.inner.armed.load(Ordering::SeqCst);
+        if listen_id == 0 {
+            return;
+        }
+        // Never blocks: a full queue drops the sample.
+        let _ = self.inner.tx.try_send(Command::Levels {
+            listen_id,
+            now_ms,
+            levels: levels.to_vec(),
+        });
     }
 
     /// Cancel every listen (current and future ids) of this worker.
     pub fn cancel_all(&self) {
-        todo!("S3c")
+        self.inner.cancel_upto(u64::MAX);
     }
 
     /// True while the worker owns the recorder (between a successful
     /// `start()` and the end of that recording).
     pub fn capture_active(&self) -> bool {
-        todo!("S3c")
+        self.inner.capture_active.load(Ordering::SeqCst)
     }
 
     /// Cancel any active recording, answer any pending listen with `Aborted`,
     /// stop the thread and JOIN it. Blocking. Idempotent.
     pub fn shutdown(&self) {
-        todo!("S3c")
+        let (ack_tx, ack_rx) = mpsc::channel();
+        if self
+            .inner
+            .tx
+            .send(Command::Shutdown { ack: ack_tx })
+            .is_ok()
+        {
+            // Err means the worker dropped the message while exiting: also fine.
+            let _ = ack_rx.recv();
+        }
+        let join = self
+            .inner
+            .join
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(handle) = join {
+            let _ = handle.join();
+        }
     }
 }
 

@@ -55,19 +55,68 @@ pub enum EndpointEvent {
 /// * `NoSpeech`: speech not started and `initial_grace_ms` elapsed since t0;
 /// * `MaxLength`: `max_utterance_ms` elapsed since t0.
 pub struct Endpointer {
-    #[allow(dead_code)]
     cfg: EndpointConfig,
+    /// Timestamp of the first feed; the clock origin for grace and max length.
+    t0: Option<u64>,
+    /// Timestamp of the first loud feed of the current loud run (reset by a
+    /// silent feed while speech has not started).
+    run_start: Option<u64>,
+    /// Timestamp of the most recent loud feed.
+    last_loud: u64,
+    speech_started: bool,
+    /// Set once an event has fired; every later feed returns `None`.
+    finished: bool,
 }
 
 impl Endpointer {
     pub fn new(cfg: EndpointConfig) -> Self {
-        Endpointer { cfg }
+        Endpointer {
+            cfg,
+            t0: None,
+            run_start: None,
+            last_loud: 0,
+            speech_started: false,
+            finished: false,
+        }
     }
-    pub fn feed(&mut self, _now_ms: u64, _levels: &[f32]) -> Option<EndpointEvent> {
-        todo!("S3b")
+
+    pub fn feed(&mut self, now_ms: u64, levels: &[f32]) -> Option<EndpointEvent> {
+        if self.finished {
+            return None;
+        }
+        let t0 = *self.t0.get_or_insert(now_ms);
+        let loud = levels.iter().any(|&level| level > self.cfg.floor);
+
+        if loud {
+            let start = *self.run_start.get_or_insert(now_ms);
+            self.last_loud = now_ms;
+            if !self.speech_started && now_ms.saturating_sub(start) >= self.cfg.min_speech_ms {
+                self.speech_started = true;
+            }
+        } else if !self.speech_started {
+            self.run_start = None;
+        }
+
+        let event = if self.speech_started
+            && now_ms.saturating_sub(self.last_loud) >= self.cfg.silence_ms
+        {
+            Some(EndpointEvent::SpeechEnded)
+        } else if !self.speech_started && now_ms.saturating_sub(t0) >= self.cfg.initial_grace_ms {
+            Some(EndpointEvent::NoSpeech)
+        } else if now_ms.saturating_sub(t0) >= self.cfg.max_utterance_ms {
+            Some(EndpointEvent::MaxLength)
+        } else {
+            None
+        };
+
+        if event.is_some() {
+            self.finished = true;
+        }
+        event
     }
+
     pub fn had_speech(&self) -> bool {
-        todo!("S3b")
+        self.speech_started
     }
 }
 
@@ -91,12 +140,24 @@ pub enum WaitOutcome {
 /// `Interrupted` (checked FIRST), not speaking => `Done`, deadline passed =>
 /// `TimedOut`; otherwise sleep `poll`.
 pub async fn wait_for_speech_end(
-    _probe: &dyn SpeechProbe,
-    _epoch: u64,
-    _deadline: Duration,
-    _poll: Duration,
+    probe: &dyn SpeechProbe,
+    epoch: u64,
+    deadline: Duration,
+    poll: Duration,
 ) -> WaitOutcome {
-    todo!("S3b")
+    let started = std::time::Instant::now();
+    loop {
+        if !probe.is_current(epoch) {
+            return WaitOutcome::Interrupted;
+        }
+        if !probe.is_speaking() {
+            return WaitOutcome::Done;
+        }
+        if started.elapsed() >= deadline {
+            return WaitOutcome::TimedOut;
+        }
+        tokio::time::sleep(poll).await;
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -104,14 +165,33 @@ pub async fn wait_for_speech_end(
 // ---------------------------------------------------------------------
 
 /// Terminal-like frontmost app (case-insensitive exact bundle id match).
-pub fn is_terminal_like(_bundle_id: &str) -> bool {
-    todo!("S3b")
+pub fn is_terminal_like(bundle_id: &str) -> bool {
+    const TERMINALS: [&str; 9] = [
+        "com.apple.Terminal",
+        "com.googlecode.iterm2",
+        "dev.warp.Warp-Stable",
+        "com.mitchellh.ghostty",
+        "net.kovidgoyal.kitty",
+        "org.alacritty",
+        "io.alacritty",
+        "com.github.wez.wezterm",
+        "co.zeit.hyper",
+    ];
+    TERMINALS
+        .iter()
+        .any(|known| bundle_id.eq_ignore_ascii_case(known))
 }
 
 /// Multi-line text (any `\n` or `\r`) is refused when the frontmost app is
 /// terminal-like OR unknown (`None`). Single-line text is always allowed.
-pub fn paste_allowed(_text: &str, _frontmost: Option<&str>) -> bool {
-    todo!("S3b")
+pub fn paste_allowed(text: &str, frontmost: Option<&str>) -> bool {
+    if !text.contains(['\n', '\r']) {
+        return true;
+    }
+    match frontmost {
+        None => false,
+        Some(bundle_id) => !is_terminal_like(bundle_id),
+    }
 }
 
 pub trait FrontmostProbe: Send + Sync {
@@ -127,11 +207,30 @@ pub trait FrontmostProbe: Send + Sync {
 /// 3. if `do_paste` returned `Ok` without ever calling `pre_chord`, return
 ///    `Err` (contract violation detector).
 pub fn guarded_paste(
-    _probe: &dyn FrontmostProbe,
-    _text: &str,
-    _do_paste: &mut dyn FnMut(&mut dyn FnMut() -> bool) -> Result<(), String>,
+    probe: &dyn FrontmostProbe,
+    text: &str,
+    do_paste: &mut dyn FnMut(&mut dyn FnMut() -> bool) -> Result<(), String>,
 ) -> Result<(), String> {
-    todo!("S3b")
+    const REFUSED: &str = "paste refused: frontmost app is not safe for this text";
+    const GUARD_SKIPPED: &str = "paste aborted: focus guard was not consulted";
+
+    let first = probe.frontmost_bundle();
+    if !paste_allowed(text, first.as_deref()) {
+        return Err(REFUSED.to_string());
+    }
+
+    let guard_consulted = std::cell::Cell::new(false);
+    let mut pre_chord = || {
+        guard_consulted.set(true);
+        let now = probe.frontmost_bundle();
+        now == first && paste_allowed(text, now.as_deref())
+    };
+
+    match do_paste(&mut pre_chord) {
+        Err(err) => Err(err),
+        Ok(()) if guard_consulted.get() => Ok(()),
+        Ok(()) => Err(GUARD_SKIPPED.to_string()),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,7 +243,11 @@ pub struct PasteOptions {
 /// Options for model-generated or dictated session text: never submit,
 /// always clipboard (never Direct typing), never a trailing newline.
 pub fn generated_paste_options() -> PasteOptions {
-    todo!("S3b")
+    PasteOptions {
+        auto_submit: false,
+        force_clipboard: true,
+        append_trailing_newline: false,
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -154,8 +257,28 @@ pub fn generated_paste_options() -> PasteOptions {
 /// Only `OpenApp` and `OpenUrl` with an http/https scheme (case-insensitive,
 /// no leading whitespace, non-empty remainder) pass. Everything else,
 /// including `OpenPath` and `NoMatch`, is `None`.
-pub fn restrict_model_action(_decision: &RouteDecision) -> Option<CommandAction> {
-    todo!("S3b")
+pub fn restrict_model_action(decision: &RouteDecision) -> Option<CommandAction> {
+    match decision {
+        RouteDecision::Matched { action } => match action {
+            CommandAction::OpenApp { .. } => Some(action.clone()),
+            CommandAction::OpenUrl { url } if web_remainder(url).is_some() => Some(action.clone()),
+            CommandAction::OpenUrl { .. } | CommandAction::OpenPath { .. } => None,
+        },
+        RouteDecision::NoMatch => None,
+    }
+}
+
+/// The part after an `http://` or `https://` prefix (matched
+/// case-insensitively, no trimming), if that remainder is non-empty.
+fn web_remainder(url: &str) -> Option<&str> {
+    for scheme in ["https://", "http://"] {
+        if let Some(head) = url.get(..scheme.len()) {
+            if head.eq_ignore_ascii_case(scheme) {
+                return url.get(scheme.len()..).filter(|rest| !rest.is_empty());
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]

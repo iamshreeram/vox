@@ -14,9 +14,123 @@ pub enum LocalIntent {
     None,
 }
 
+/// Whole-utterance end phrases (compared on word keys).
+const END_PHRASES: &[&[&str]] = &[
+    &["stop"],
+    &["stop", "listening"],
+    &["stop", "conversation"],
+    &["end", "conversation"],
+    &["goodbye"],
+    &["good", "bye"],
+    &["bye"],
+    &["thats", "all"],
+    &["that", "is", "all"],
+    &["were", "done"],
+    &["we", "are", "done"],
+    &["im", "done"],
+    &["i", "am", "done"],
+    &["never", "mind"],
+    &["nevermind"],
+    &["exit"],
+];
+
+/// Dictation prefixes, ordered longest first so the longest match wins.
+const DICTATE_PREFIXES: &[&[&str]] = &[
+    &["write", "this", "down"],
+    &["write", "down"],
+    &["type", "this"],
+    &["type", "out"],
+    &["paste", "this"],
+    &["dictate"],
+    &["paste"],
+];
+
+/// One whitespace-delimited word with a non-empty key.
+struct Word {
+    /// Byte offset just past the end of this word in the original text.
+    end: usize,
+    key: String,
+}
+
+/// Word key: lowercase, with ASCII punctuation and apostrophes (incl. U+2019) removed.
+fn word_key(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| !c.is_ascii_punctuation() && *c != '\u{2019}')
+        .flat_map(|c| c.to_lowercase())
+        .collect()
+}
+
+/// Split on Unicode whitespace, keeping byte offsets. Words whose key is empty are skipped.
+fn tokenize(text: &str) -> Vec<Word> {
+    let mut words = Vec::new();
+    let mut push = |start: usize, end: usize| {
+        if let Some(raw) = text.get(start..end) {
+            let key = word_key(raw);
+            if !key.is_empty() {
+                words.push(Word { end, key });
+            }
+        }
+    };
+    let mut start: Option<usize> = None;
+    for (i, c) in text.char_indices() {
+        if c.is_whitespace() {
+            if let Some(s) = start.take() {
+                push(s, i);
+            }
+        } else if start.is_none() {
+            start = Some(i);
+        }
+    }
+    if let Some(s) = start {
+        push(s, text.len());
+    }
+    words
+}
+
+/// If the leading keys equal `pattern`, return the end offset of the last matched word.
+fn match_prefix(words: &[Word], pattern: &[&str]) -> Option<usize> {
+    let mut end = None;
+    let mut matched = 0usize;
+    for (word, expected) in words.iter().zip(pattern) {
+        if word.key != *expected {
+            return None;
+        }
+        end = Some(word.end);
+        matched += 1;
+    }
+    if !pattern.is_empty() && matched == pattern.len() {
+        end
+    } else {
+        None
+    }
+}
+
 /// Classify one utterance. See DESIGN.md 3.1 for the exact word model.
-pub fn classify_local(_text: &str) -> LocalIntent {
-    todo!("S1")
+pub fn classify_local(text: &str) -> LocalIntent {
+    let words = tokenize(text);
+
+    if END_PHRASES
+        .iter()
+        .any(|phrase| words.len() == phrase.len() && match_prefix(&words, phrase).is_some())
+    {
+        return LocalIntent::End;
+    }
+
+    for pattern in DICTATE_PREFIXES {
+        if let Some(end) = match_prefix(&words, pattern) {
+            let rest = text.get(end..).unwrap_or("");
+            let remainder = rest.trim_start_matches(|c: char| {
+                c.is_whitespace() || matches!(c, ':' | ',' | '-' | '.')
+            });
+            return if remainder.is_empty() {
+                LocalIntent::None
+            } else {
+                LocalIntent::Dictate(remainder.to_string())
+            };
+        }
+    }
+
+    LocalIntent::None
 }
 
 #[cfg(test)]

@@ -2,8 +2,12 @@
 //! listen. Pure and trait-generic (no tauri types); all hardware sits behind
 //! the traits below. Contract: DESIGN.md section 3.3 (Revision 4).
 
-use crate::managers::converse_plan::{PlanError, PlanInput, TurnPlan};
+use crate::managers::converse_local::{classify_local, LocalIntent};
+use crate::managers::converse_plan::{
+    PlanError, PlanInput, PlanKind, TurnPlan, MAX_UTTERANCE_CHARS,
+};
 use crate::managers::emotion::Emotion;
+use futures_util::future::Either;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Mutex;
@@ -133,12 +137,395 @@ impl Default for SessionConfig {
 
 /// Run one conversation session to its end. Reports `Idle` exactly once on
 /// every exit path and calls `mouth.stop()` when the end is `Cancelled`.
-pub async fn run_session(
-    _deps: &Deps<'_>,
-    _cfg: &SessionConfig,
-    _cancel: CancelToken,
-) -> SessionEnd {
-    todo!("S3")
+pub async fn run_session(deps: &Deps<'_>, cfg: &SessionConfig, cancel: CancelToken) -> SessionEnd {
+    let mut cancel = cancel;
+    let end = run_turns(deps, cfg, &mut cancel).await;
+    if end == SessionEnd::Cancelled {
+        deps.mouth.stop();
+    }
+    deps.reporter.state(SessionState::Idle);
+    end
+}
+
+// Fixed spoken messages. The loop never speaks text taken from an error.
+const MSG_TOO_LONG: &str = "That was too long for me. Please say it in parts.";
+const MSG_MIC: &str = "I can't use the microphone right now.";
+const MSG_STOP_LISTENING: &str = "I'll stop listening now.";
+const MSG_OKAY: &str = "Okay.";
+const MSG_PASTE_FAILED: &str = "I couldn't paste that.";
+const MSG_FAILED: &str = "That didn't work.";
+const MSG_REFUSED: &str = "I can't do that.";
+const MSG_NO_MATCH_COMMAND: &str = "I can't do that yet.";
+const MSG_NOT_CONFIGURED: &str = "Set up a reply backend in the speech settings first.";
+const MSG_PLAN_FAILED: &str = "Sorry, I couldn't work that out.";
+const MSG_DONE: &str = "Done.";
+
+const HISTORY_SIDE_MAX_CHARS: usize = 600;
+const STILL_SPEAKING_RETRY: Duration = Duration::from_secs(1);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpeakResult {
+    /// Speech finished (Done, Interrupted or Failed) and the settle steps ran.
+    Spoken,
+    Cancelled,
+    /// Speech still running after the retry; the mic must not reopen.
+    Stuck,
+}
+
+fn is_cancelled(cancel: &CancelToken) -> bool {
+    *cancel.borrow()
+}
+
+/// Completes when the token reads `true`. A closed channel never cancels.
+async fn wait_cancelled(cancel: &mut CancelToken) {
+    let closed = cancel.wait_for(|cancelled| *cancelled).await.is_err();
+    if closed {
+        std::future::pending::<()>().await;
+    }
+}
+
+/// Races `fut` against cancellation. Cancellation is checked first and again
+/// after the future completes, so a cancel that is ready at the same instant
+/// wins: `None` means cancelled and the result must not be used.
+async fn race<F: Future>(cancel: &mut CancelToken, fut: F) -> Option<F::Output> {
+    if is_cancelled(cancel) {
+        return None;
+    }
+    let finished = {
+        let fut = std::pin::pin!(fut);
+        let cancelled = std::pin::pin!(wait_cancelled(cancel));
+        match futures_util::future::select(fut, cancelled).await {
+            Either::Left((output, _rest)) => Some(output),
+            Either::Right((_, _rest)) => None,
+        }
+    };
+    if is_cancelled(cancel) {
+        None
+    } else {
+        finished
+    }
+}
+
+fn speech_to_end(result: SpeakResult) -> Option<SessionEnd> {
+    match result {
+        SpeakResult::Spoken => None,
+        SpeakResult::Cancelled => Some(SessionEnd::Cancelled),
+        SpeakResult::Stuck => Some(SessionEnd::SpeechStuck),
+    }
+}
+
+/// The end for a say that should end the session with `then` when it worked.
+fn after_speech(result: SpeakResult, then: SessionEnd) -> SessionEnd {
+    speech_to_end(result).unwrap_or(then)
+}
+
+async fn speak_or_end(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    text: &str,
+    emotion: Emotion,
+) -> Option<SessionEnd> {
+    speech_to_end(speak(deps, cfg, cancel, text, emotion).await)
+}
+
+/// Speaks one line. Reports Speaking first, races the say against cancel and
+/// then settles (wait for quiet, optional guard).
+async fn speak(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    text: &str,
+    emotion: Emotion,
+) -> SpeakResult {
+    if text.trim().is_empty() {
+        return SpeakResult::Spoken;
+    }
+    deps.reporter.state(SessionState::Speaking);
+    if is_cancelled(cancel) {
+        return SpeakResult::Cancelled;
+    }
+    if race(cancel, deps.mouth.say(text, emotion)).await.is_none() {
+        return SpeakResult::Cancelled;
+    }
+    settle(deps, cfg, cancel).await
+}
+
+/// After any say: wait until quiet. If still speaking, stop once and wait
+/// once more; still speaking => Stuck. On quiet, sleep the post-speech guard.
+async fn settle(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToken) -> SpeakResult {
+    let quiet = match race(cancel, deps.mouth.wait_quiet(cfg.quiet_wait)).await {
+        Some(outcome) => outcome,
+        None => return SpeakResult::Cancelled,
+    };
+    if quiet == QuietOutcome::StillSpeaking {
+        deps.mouth.stop();
+        match race(cancel, deps.mouth.wait_quiet(STILL_SPEAKING_RETRY)).await {
+            None => return SpeakResult::Cancelled,
+            Some(QuietOutcome::StillSpeaking) => return SpeakResult::Stuck,
+            Some(QuietOutcome::Quiet) => {}
+        }
+    }
+    if !cfg.post_speech_guard.is_zero()
+        && race(cancel, tokio::time::sleep(cfg.post_speech_guard))
+            .await
+            .is_none()
+    {
+        return SpeakResult::Cancelled;
+    }
+    SpeakResult::Spoken
+}
+
+fn truncate_chars(text: &str, max: usize) -> String {
+    text.chars().take(max).collect()
+}
+
+fn push_history(history: &mut Vec<(String, String)>, utterance: &str, summary: &str, keep: usize) {
+    history.push((
+        truncate_chars(utterance, HISTORY_SIDE_MAX_CHARS),
+        truncate_chars(summary, HISTORY_SIDE_MAX_CHARS),
+    ));
+    let excess = history.len().saturating_sub(keep);
+    history.drain(..excess);
+}
+
+/// Converts an optional end into a `Result` so `?` can propagate it.
+fn into_result(end: Option<SessionEnd>) -> Result<(), SessionEnd> {
+    match end {
+        None => Ok(()),
+        Some(end) => Err(end),
+    }
+}
+
+/// Restricted tier for a model-proposed command. `Ok(Some(summary))` when the
+/// command executed (the summary goes into history); `Ok(None)` when a fixed
+/// message was spoken instead; `Err(end)` when the session must end.
+async fn run_command_plan(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    plan: &TurnPlan,
+) -> Result<Option<String>, SessionEnd> {
+    let Some(command) = plan.command.as_deref() else {
+        into_result(speak_or_end(deps, cfg, cancel, MSG_NO_MATCH_COMMAND, Emotion::Neutral).await)?;
+        return Ok(None);
+    };
+    if is_cancelled(cancel) {
+        return Err(SessionEnd::Cancelled);
+    }
+    let fixed = match deps.hands.run_model_command(command).await {
+        PhraseOutcome::Done(message) => {
+            let spoken = if plan.speech.is_empty() {
+                message
+            } else {
+                plan.speech.clone()
+            };
+            into_result(speak_or_end(deps, cfg, cancel, &spoken, plan.emotion).await)?;
+            return Ok(Some(plan.speech.clone()));
+        }
+        PhraseOutcome::NoMatch => MSG_NO_MATCH_COMMAND,
+        PhraseOutcome::Refused => MSG_REFUSED,
+        PhraseOutcome::Failed => MSG_FAILED,
+    };
+    into_result(speak_or_end(deps, cfg, cancel, fixed, Emotion::Neutral).await)?;
+    Ok(None)
+}
+
+/// The turn loop. Returns the end; the wrapper reports Idle and stops.
+async fn run_turns(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToken) -> SessionEnd {
+    let mut history: Vec<(String, String)> = Vec::new();
+    let mut last_draft: Option<String> = None;
+    let mut idle_turns: u32 = 0;
+    let mut turns: usize = 0;
+
+    loop {
+        if is_cancelled(cancel) {
+            return SessionEnd::Cancelled;
+        }
+        if turns >= cfg.max_turns {
+            return SessionEnd::TurnLimit;
+        }
+        turns += 1;
+
+        deps.reporter.state(SessionState::Listening);
+        let heard = match race(cancel, deps.ears.listen()).await {
+            None => return SessionEnd::Cancelled,
+            Some(outcome) => outcome,
+        };
+        let utterance = match heard {
+            ListenOutcome::Aborted => return SessionEnd::Cancelled,
+            ListenOutcome::Failed(_) => {
+                return after_speech(
+                    speak(deps, cfg, cancel, MSG_MIC, Emotion::Neutral).await,
+                    SessionEnd::AudioUnavailable,
+                );
+            }
+            ListenOutcome::TooLong => {
+                idle_turns = 0;
+                if let Some(end) =
+                    speak_or_end(deps, cfg, cancel, MSG_TOO_LONG, Emotion::Neutral).await
+                {
+                    return end;
+                }
+                continue;
+            }
+            ListenOutcome::NoSpeech => String::new(),
+            ListenOutcome::Utterance(text) => text,
+        };
+
+        if utterance.trim().is_empty() {
+            idle_turns += 1;
+            if idle_turns >= u32::from(cfg.max_idle_turns) {
+                return after_speech(
+                    speak(deps, cfg, cancel, MSG_STOP_LISTENING, Emotion::Neutral).await,
+                    SessionEnd::Idle,
+                );
+            }
+            continue;
+        }
+        idle_turns = 0;
+
+        if utterance.chars().count() > MAX_UTTERANCE_CHARS {
+            if let Some(end) = speak_or_end(deps, cfg, cancel, MSG_TOO_LONG, Emotion::Neutral).await
+            {
+                return end;
+            }
+            continue;
+        }
+
+        // Local tier: end phrases and explicit dictation.
+        match classify_local(&utterance) {
+            LocalIntent::End => {
+                return after_speech(
+                    speak(deps, cfg, cancel, MSG_OKAY, Emotion::Neutral).await,
+                    SessionEnd::UserEnded,
+                );
+            }
+            LocalIntent::Dictate(text) => {
+                if is_cancelled(cancel) {
+                    return SessionEnd::Cancelled;
+                }
+                if deps.hands.paste_generated(&text).is_err() {
+                    if let Some(end) =
+                        speak_or_end(deps, cfg, cancel, MSG_PASTE_FAILED, Emotion::Neutral).await
+                    {
+                        return end;
+                    }
+                }
+                continue;
+            }
+            LocalIntent::None => {}
+        }
+
+        // Exact tier: what the user said (shortcuts, media, router).
+        deps.reporter.state(SessionState::Acting);
+        if is_cancelled(cancel) {
+            return SessionEnd::Cancelled;
+        }
+        let fixed = match deps.hands.run_user_phrase(&utterance).await {
+            PhraseOutcome::NoMatch => None,
+            PhraseOutcome::Done(message) => Some(message),
+            PhraseOutcome::Failed => Some(MSG_FAILED.to_string()),
+            PhraseOutcome::Refused => Some(MSG_REFUSED.to_string()),
+        };
+        if let Some(message) = fixed {
+            if let Some(end) = speak_or_end(deps, cfg, cancel, &message, Emotion::Neutral).await {
+                return end;
+            }
+            continue;
+        }
+
+        // Brain tier. The plan is dropped if cancel wins the race.
+        deps.reporter.state(SessionState::Thinking);
+        let start = history.len().saturating_sub(cfg.context_turns);
+        let planned = race(
+            cancel,
+            deps.brain.plan(PlanInput {
+                utterance: &utterance,
+                history: &history[start..],
+                last_draft: last_draft.as_deref(),
+                style: &cfg.style,
+            }),
+        )
+        .await;
+        let plan = match planned {
+            None => return SessionEnd::Cancelled,
+            Some(Ok(plan)) => plan,
+            Some(Err(PlanError::NotConfigured)) => {
+                return after_speech(
+                    speak(deps, cfg, cancel, MSG_NOT_CONFIGURED, Emotion::Neutral).await,
+                    SessionEnd::NotConfigured,
+                );
+            }
+            Some(Err(PlanError::Superseded)) => continue,
+            Some(Err(_)) => {
+                if let Some(end) =
+                    speak_or_end(deps, cfg, cancel, MSG_PLAN_FAILED, Emotion::Neutral).await
+                {
+                    return end;
+                }
+                continue;
+            }
+        };
+
+        // Execute. Cancel is checked before each effect.
+        let summary: String = match plan.kind {
+            PlanKind::End => {
+                return after_speech(
+                    speak(deps, cfg, cancel, &plan.speech, plan.emotion).await,
+                    SessionEnd::UserEnded,
+                );
+            }
+            PlanKind::Answer | PlanKind::Clarify => {
+                if let Some(end) = speak_or_end(deps, cfg, cancel, &plan.speech, plan.emotion).await
+                {
+                    return end;
+                }
+                plan.speech.clone()
+            }
+            PlanKind::Paste => {
+                let Some(pasted) = plan.paste_text.clone() else {
+                    if let Some(end) =
+                        speak_or_end(deps, cfg, cancel, MSG_PASTE_FAILED, Emotion::Neutral).await
+                    {
+                        return end;
+                    }
+                    continue;
+                };
+                if is_cancelled(cancel) {
+                    return SessionEnd::Cancelled;
+                }
+                if deps.hands.paste_generated(&pasted).is_err() {
+                    if let Some(end) =
+                        speak_or_end(deps, cfg, cancel, MSG_PASTE_FAILED, Emotion::Neutral).await
+                    {
+                        return end;
+                    }
+                    continue;
+                }
+                last_draft = Some(pasted);
+                let spoken = if plan.speech.is_empty() {
+                    MSG_DONE.to_string()
+                } else {
+                    plan.speech.clone()
+                };
+                if let Some(end) = speak_or_end(deps, cfg, cancel, &spoken, plan.emotion).await {
+                    return end;
+                }
+                format!("{spoken} (pasted text)")
+            }
+            PlanKind::Command => match run_command_plan(deps, cfg, cancel, &plan).await {
+                Ok(Some(summary)) => summary,
+                Ok(None) => continue,
+                Err(end) => return end,
+            },
+        };
+
+        push_history(&mut history, &utterance, &summary, cfg.context_turns);
+        if cfg.context_turns == 0 {
+            last_draft = None;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -179,23 +566,58 @@ impl SessionRegistry {
     }
     /// Only from Idle: becomes Running(id) and returns the cancel receiver.
     pub fn try_begin(&self) -> Option<(u64, CancelToken)> {
-        todo!("S3")
+        let mut inner = self.lock();
+        if inner.state != RegistryState::Idle {
+            return None;
+        }
+        let id = inner.next_id;
+        inner.next_id = inner.next_id.saturating_add(1);
+        let (tx, rx) = tokio::sync::watch::channel(false);
+        inner.cancel_tx = Some(tx);
+        inner.state = RegistryState::Running(id);
+        Some((id, rx))
     }
     /// Running -> Draining and send cancel (use `send_replace`: `send` drops the
     /// value when no receiver is alive). False when Idle or already Draining.
     pub fn request_stop(&self) -> bool {
-        todo!("S3")
+        let mut inner = self.lock();
+        match inner.state {
+            RegistryState::Running(id) => {
+                inner.state = RegistryState::Draining(id);
+                if let Some(tx) = inner.cancel_tx.as_ref() {
+                    tx.send_replace(true);
+                }
+                true
+            }
+            RegistryState::Idle | RegistryState::Draining(_) => false,
+        }
     }
     /// Frees the registry only when `id` matches the current session.
-    pub fn finish(&self, _id: u64) -> bool {
-        todo!("S3")
+    pub fn finish(&self, id: u64) -> bool {
+        let mut inner = self.lock();
+        let matches = matches!(
+            inner.state,
+            RegistryState::Running(current) | RegistryState::Draining(current) if current == id
+        );
+        if matches {
+            inner.state = RegistryState::Idle;
+            inner.cancel_tx = None;
+        }
+        matches
     }
     /// True for Running and Draining.
     pub fn is_active(&self) -> bool {
-        todo!("S3")
+        self.state() != RegistryState::Idle
     }
     pub fn state(&self) -> RegistryState {
-        todo!("S3")
+        self.lock().state
+    }
+
+    /// Never panics on a poisoned mutex: the inner state is still valid.
+    fn lock(&self) -> std::sync::MutexGuard<'_, RegistryInner> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 

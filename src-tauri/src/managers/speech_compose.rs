@@ -187,7 +187,7 @@ pub fn command_argv(
 }
 
 /// Removes ANSI CSI, OSC and lone-ESC sequences. Hand-written state machine.
-fn strip_ansi(raw: &str) -> String {
+pub(crate) fn strip_ansi(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
     let mut it = raw.chars();
     while let Some(c) = it.next() {
@@ -222,7 +222,7 @@ fn strip_ansi(raw: &str) -> String {
 }
 
 /// Drops every line whose first non-space characters are a code fence.
-fn strip_fence_lines(text: &str) -> String {
+pub(crate) fn strip_fence_lines(text: &str) -> String {
     text.lines()
         .filter(|line| !line.trim_start().starts_with("```"))
         .collect::<Vec<_>>()
@@ -230,7 +230,7 @@ fn strip_fence_lines(text: &str) -> String {
 }
 
 /// Whitespace runs become one space; leading and trailing whitespace is removed.
-fn normalize_ws(text: &str) -> String {
+pub(crate) fn normalize_ws(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -335,7 +335,7 @@ fn scan_candidate(bytes: &[u8], start: usize) -> Option<usize> {
 
 /// Strips control characters except newline and tab, then neutralizes the
 /// delimiter markers, after truncating to `max_chars` characters.
-fn clean_data(text: &str, max_chars: usize) -> String {
+pub(crate) fn clean_data(text: &str, max_chars: usize) -> String {
     let kept: String = text
         .chars()
         .filter(|c| *c == '\n' || *c == '\t' || !c.is_control())
