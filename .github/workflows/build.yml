@@ -550,6 +550,20 @@ jobs:
           # release builds keep them.
           args: ${{ inputs.build-args }}${{ !inputs.sign-binaries && ' --config src-tauri/tauri.ci-unsigned.conf.json' || '' }}
 
+      # TEMP-DIAG (remove before merge): surface the failing tauri output as a
+      # public annotation, since Actions logs need authentication to read.
+      - name: TEMP-DIAG capture macOS tauri failure
+        if: failure() && contains(inputs.platform, 'macos')
+        shell: bash
+        run: |
+          set +e
+          bun tauri build ${{ inputs.build-args }} --config src-tauri/tauri.ci-unsigned.conf.json > diag.log 2>&1
+          code=$?
+          enc() { python3 -c 'import sys; print(sys.stdin.read().replace("%","%25").replace("\r","").replace("\n","%0A"))'; }
+          echo "::error title=DIAG tail exit=$code::$(tail -n 45 diag.log | cut -c1-300 | enc)"
+          echo "::error title=DIAG errors::$(grep -n -i -E 'error|failed|panic|denied|not found|hdiutil|bundle_dmg|codesign|notar' diag.log | tail -n 25 | cut -c1-300 | enc)"
+          exit 0
+
       # tauri-action uploads release assets before returning. All AppImage
       # filtering therefore happens inside linuxdeploy above; this verifies the
       # exact artifact Tauri signed and uploaded.
