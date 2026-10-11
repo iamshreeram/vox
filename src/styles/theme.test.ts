@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const css = readFileSync(join(import.meta.dir, "theme.css"), "utf8");
+const css = readFileSync(
+  fileURLToPath(new URL("./theme.css", import.meta.url)),
+  "utf8",
+);
 
 /** Declarations inside the `:root[data-theme="<name>"] { ... }` block. */
 function themeBlock(name: string): string {
