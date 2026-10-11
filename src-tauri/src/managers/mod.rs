@@ -9,6 +9,7 @@ pub mod conversation;
 pub mod converse;
 pub mod converse_audio;
 pub mod converse_capture;
+pub mod converse_hooks;
 pub mod converse_local;
 pub mod converse_plan;
 pub mod emotion;
