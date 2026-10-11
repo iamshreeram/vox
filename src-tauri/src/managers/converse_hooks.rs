@@ -15,6 +15,11 @@ static SESSION_ACTIVE: AtomicBool = AtomicBool::new(false);
 static CAPTURE: Mutex<Option<CaptureHandle>> = Mutex::new(None);
 static EPOCH: OnceLock<Instant> = OnceLock::new();
 
+/// Test-only switch so other modules can exercise code that branches on
+/// `capture_active()` without spawning a worker. Serialize with `TEST_LOCK`.
+#[cfg(test)]
+pub(crate) static FORCE_CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
+
 fn now_ms() -> u64 {
     EPOCH.get_or_init(Instant::now).elapsed().as_millis() as u64
 }
@@ -39,6 +44,10 @@ pub fn install_capture(handle: Option<CaptureHandle>) {
 /// True only while the installed capture worker owns the recorder.
 /// False when nothing is installed.
 pub fn capture_active() -> bool {
+    #[cfg(test)]
+    if FORCE_CAPTURE_ACTIVE.load(Ordering::SeqCst) {
+        return true;
+    }
     let handle = {
         let guard = CAPTURE.lock().unwrap_or_else(|e| e.into_inner());
         guard.clone()

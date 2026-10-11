@@ -2412,3 +2412,21 @@ mod phrase_tier_tests {
         assert!(exec.calls.borrow().is_empty());
     }
 }
+
+#[cfg(test)]
+mod dictation_guard_tests {
+    use super::*;
+    use crate::managers::converse_hooks::{FORCE_CAPTURE_ACTIVE, TEST_LOCK};
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn dictation_start_is_blocked_only_while_a_conversation_captures() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        FORCE_CAPTURE_ACTIVE.store(false, Ordering::SeqCst);
+        assert!(!dictation_start_blocked());
+        FORCE_CAPTURE_ACTIVE.store(true, Ordering::SeqCst);
+        assert!(dictation_start_blocked());
+        FORCE_CAPTURE_ACTIVE.store(false, Ordering::SeqCst);
+        assert!(!dictation_start_blocked());
+    }
+}
