@@ -207,7 +207,7 @@ fn new_app_discovery() -> Box<dyn managers::command_router::AppDiscovery> {
 /// The app events that may be spoken aloud. Command-outcome events are
 /// included so their fixed phrases are spoken; their payloads never are.
 const TTS_EVENTS: [&str; 4] = [
-    "agent-bridge-reply",
+    "agent-bridge-exchange",
     "agent-bridge-error",
     "voice-command-executed",
     "voice-command-error",
@@ -239,6 +239,7 @@ fn tts_error_kind(error: &managers::tts::TtsError) -> &'static str {
         TtsError::CancelFailed => "cancel-failed",
         TtsError::Backend(_) => "backend",
         TtsError::Unsupported => "unsupported",
+        TtsError::Superseded => "superseded",
     }
 }
 
@@ -247,6 +248,38 @@ fn tts_error_kind(error: &managers::tts::TtsError) -> &'static str {
 /// feature that emits one is spoken without an inline call.
 fn register_tts_listeners(app: &AppHandle, tts: Arc<managers::tts::TtsManager>) {
     for event_name in TTS_EVENTS {
+        if event_name == "agent-bridge-exchange" {
+            let app_for_exchange = app.clone();
+            let tts_for_exchange = Arc::clone(&tts);
+            app.listen(event_name, move |event| {
+                let Some(exchange) = managers::speech_pipeline::parse_exchange(event.payload())
+                else {
+                    return;
+                };
+                let app_for_run = app_for_exchange.clone();
+                let tts_for_run = Arc::clone(&tts_for_exchange);
+                tauri::async_runtime::spawn(async move {
+                    let load_app = app_for_run.clone();
+                    let load = move || get_settings(&load_app);
+                    let status_app = app_for_run.clone();
+                    let status = move |outcome: &'static str| {
+                        let _ = status_app.emit(
+                            "speech-composer-status",
+                            serde_json::json!({ "outcome": outcome }),
+                        );
+                    };
+                    managers::speech_pipeline::run_exchange(
+                        &tts_for_run,
+                        &load,
+                        &managers::speech_pipeline::RealComposer,
+                        &status,
+                        exchange,
+                    )
+                    .await;
+                });
+            });
+            continue;
+        }
         let app_for_event = app.clone();
         let tts_for_event = Arc::clone(&tts);
         app.listen(event_name, move |event| {
@@ -945,6 +978,9 @@ pub fn run(cli_args: CliArgs) {
             commands::history::retry_history_entry_transcription,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
+            commands::tts_composer::change_tts_composer_settings,
+            commands::tts_composer::list_tts_composer_providers,
+            commands::tts_composer::preview_speech_composer,
             commands::memory::memory_remember,
             commands::memory::memory_recall,
             commands::memory::memory_list_all,
@@ -1330,7 +1366,20 @@ pub fn run(cli_args: CliArgs) {
 
 #[cfg(test)]
 mod tts_listener_tests {
-    use super::{decode_tts_payload, tts_phrase_to_speak};
+    use super::{decode_tts_payload, tts_phrase_to_speak, TTS_EVENTS};
+
+    #[test]
+    fn the_listener_subscribes_to_the_exchange_event_not_the_bare_reply() {
+        assert_eq!(
+            TTS_EVENTS,
+            [
+                "agent-bridge-exchange",
+                "agent-bridge-error",
+                "voice-command-executed",
+                "voice-command-error",
+            ]
+        );
+    }
 
     #[test]
     fn disabled_setting_never_speaks() {
@@ -1377,5 +1426,21 @@ mod tts_listener_tests {
     #[test]
     fn non_json_payload_falls_back_to_raw_text() {
         assert_eq!(decode_tts_payload("plain text"), "plain text");
+    }
+}
+
+#[cfg(test)]
+mod tts_error_kind_tests {
+    use super::tts_error_kind;
+    use crate::managers::tts::TtsError;
+
+    #[test]
+    fn error_kinds_are_fixed_content_free_names() {
+        assert_eq!(tts_error_kind(&TtsError::Superseded), "superseded");
+        assert_eq!(tts_error_kind(&TtsError::Recording), "recording");
+        assert_eq!(
+            tts_error_kind(&TtsError::Backend("secret".into())),
+            "backend"
+        );
     }
 }

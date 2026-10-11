@@ -957,6 +957,7 @@ pub fn tts_error_message(error: &crate::managers::tts::TtsError) -> String {
         TtsError::CancelFailed => "Previous speech could not be stopped".to_string(),
         TtsError::Unsupported => "Spoken replies are not supported on this platform".to_string(),
         TtsError::Backend(_) => "Speech output failed".to_string(),
+        TtsError::Superseded => "Replaced by newer speech".to_string(),
     }
 }
 
@@ -966,10 +967,11 @@ pub fn change_tts_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), S
     let mut settings = settings::get_settings(&app);
     settings.tts_enabled = enabled;
     settings::write_settings(&app, settings);
-    if !enabled {
-        if let Some(tts) = app.try_state::<Arc<crate::managers::tts::TtsManager>>() {
+    if let Some(tts) = app.try_state::<Arc<crate::managers::tts::TtsManager>>() {
+        if !enabled {
             tts.stop();
         }
+        tts.invalidate();
     }
     Ok(())
 }
@@ -1910,6 +1912,10 @@ mod tts_command_tests {
         assert_eq!(message, "Speech output failed");
         assert!(!message.contains("secret"));
         assert_eq!(tts_error_message(&TtsError::Empty), "Nothing to speak");
+        assert_eq!(
+            tts_error_message(&TtsError::Superseded),
+            "Replaced by newer speech"
+        );
         assert_eq!(
             tts_error_message(&TtsError::Recording),
             "Cannot speak while recording"

@@ -1097,6 +1097,13 @@ impl ShortcutAction for TranscribeAction {
                                                 Ok(reply) => {
                                                     let _ = app
                                                         .emit("agent-bridge-reply", reply.clone());
+                                                    let _ = app.emit(
+                                                        "agent-bridge-exchange",
+                                                        crate::managers::speech_pipeline::build_exchange_payload(
+                                                            &reply,
+                                                            Some(prompt_transcript.as_str()),
+                                                        ),
+                                                    );
                                                     finish_agent_exchange(
                                                         ticket,
                                                         &log,

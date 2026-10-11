@@ -116,3 +116,22 @@ on the primary macOS install.
   releases with the Tauri updater manifest (replaces rebuilding from source),
   native OS notifications for a new version, and the equivalent local-rebuild
   flow for Windows and Linux.
+- **Pluggable speech engine, including a local neural voice (Branch B).**
+  Speech is still the system voice only (`/usr/bin/say` on macOS). Put speech
+  behind a backend interface and add a local neural voice as a second engine,
+  selectable in settings. The composer's emotion mapping should go through the
+  same interface so each engine can map emotion to its own controls.
+- **Post-processing client logs raw error bodies (privacy fix, separate from
+  the composer).** The existing post-processing client logs the raw response
+  body of 400 and 422 errors at INFO. Those bodies can echo back prompt or
+  reply text. Log only the status and a short, redacted summary, and move any
+  full body to DEBUG at most. Keep this as its own change.
+- **Streaming sentence-level speech.** Start speaking the first complete
+  sentence while later sentences are still being composed, instead of waiting
+  for the whole reply. This needs the composer to work per sentence and needs
+  the "superseded" handling to cover queued sentences.
+- **Keep listening after speaking, with conversation context (Branch C).**
+  After Vox finishes speaking, listen for a follow-up without a wake word,
+  and keep the recent turns as context for the composer. This needs the real
+  speaking state wired into the ambient echo guard (the speaking-state stub in
+  the ambient listener) so Vox does not hear itself.

@@ -28,11 +28,13 @@
 
 #![allow(dead_code)]
 
+use crate::managers::emotion::{effective_rate, pitch_prefix, Emotion};
 use std::io::{self, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
+use tokio::sync::watch;
 
 pub const MAX_SPEECH_CHARS: usize = 2000;
 pub const MIN_RATE_WPM: u32 = 80;
@@ -55,6 +57,8 @@ pub enum TtsError {
     CancelFailed,
     Backend(String),
     Unsupported,
+    /// A newer speech intent (or a stop/recording/config change) replaced this one.
+    Superseded,
 }
 
 pub trait SpeechHandle: Send {
@@ -72,6 +76,18 @@ pub trait SpeechBackend: Send + Sync {
         voice: Option<&str>,
         rate_wpm: Option<u32>,
     ) -> io::Result<Box<dyn SpeechHandle>>;
+
+    /// Like [`SpeechBackend::spawn`] with an emotion hint. The default ignores
+    /// the emotion so existing backends keep working unchanged.
+    fn spawn_styled(
+        &self,
+        text: &str,
+        voice: Option<&str>,
+        rate_wpm: Option<u32>,
+        _emotion: Emotion,
+    ) -> io::Result<Box<dyn SpeechHandle>> {
+        self.spawn(text, voice, rate_wpm)
+    }
 }
 
 /// Removes control characters (newlines/tabs become a single space so word
@@ -159,11 +175,15 @@ pub fn phrase_for_event(event_name: &str, payload: &str) -> Option<String> {
 pub struct TtsManager {
     inner: Arc<Mutex<TtsState>>,
     backend: Box<dyn SpeechBackend>,
+    epoch_tx: watch::Sender<u64>,
 }
 
 struct TtsState {
     current: Option<Box<dyn SpeechHandle>>,
     recording_active: bool,
+    /// Bumped (under the state mutex) by every event that supersedes older
+    /// pending speech intents. See `begin_utterance`.
+    epoch: u64,
 }
 
 impl TtsManager {
@@ -172,26 +192,57 @@ impl TtsManager {
             inner: Arc::new(Mutex::new(TtsState {
                 current: None,
                 recording_active: false,
+                epoch: 0,
             })),
             backend,
+            epoch_tx: watch::channel(0u64).0,
         }
     }
 
-    /// Sanitize, then under the single lock: refuse while recording; cancel the
-    /// previous speech (refuse with `CancelFailed` if unconfirmed); spawn; store.
-    pub fn speak(
-        &self,
-        text: &str,
-        voice: Option<&str>,
-        rate_wpm: Option<u32>,
-    ) -> Result<(), TtsError> {
-        let text = sanitize_speech_text(text).ok_or(TtsError::Empty)?;
-        let voice = voice.and_then(sanitize_voice);
-        let rate = rate_wpm.map(clamp_rate);
+    /// Bump the epoch while the state lock is held and publish it to watchers.
+    /// Every epoch mutation goes through here. Returns the new epoch.
+    fn bump_locked(&self, st: &mut TtsState) -> u64 {
+        st.epoch = st.epoch.wrapping_add(1);
+        self.epoch_tx.send_replace(st.epoch);
+        st.epoch
+    }
+
+    /// Reserve a new epoch for a speech intent. `Err(Recording)` while a
+    /// recording is active (nothing is consumed). Bumps under the state lock.
+    pub fn begin_utterance(&self) -> Result<u64, TtsError> {
         let mut state = lock_state(&self.inner);
         if state.recording_active {
             return Err(TtsError::Recording);
         }
+        Ok(self.bump_locked(&mut state))
+    }
+
+    /// Bump the epoch (settings change / disable) WITHOUT killing speech.
+    pub fn invalidate(&self) {
+        let mut state = lock_state(&self.inner);
+        self.bump_locked(&mut state);
+    }
+
+    pub fn is_current(&self, epoch: u64) -> bool {
+        let state = lock_state(&self.inner);
+        state.epoch == epoch
+    }
+
+    pub fn epoch_receiver(&self) -> watch::Receiver<u64> {
+        self.epoch_tx.subscribe()
+    }
+
+    /// Cancel the previous speech (refuse with `CancelFailed` if unconfirmed),
+    /// then spawn with the emotion hint and store the handle. Caller holds the
+    /// state lock, so this is one critical section with the caller's checks.
+    fn replace_locked(
+        &self,
+        state: &mut TtsState,
+        text: &str,
+        voice: Option<&str>,
+        rate: Option<u32>,
+        emotion: Emotion,
+    ) -> Result<(), TtsError> {
         let cancelled = match state.current.as_mut() {
             Some(handle) => handle.kill(),
             None => true,
@@ -200,7 +251,7 @@ impl TtsManager {
             return Err(TtsError::CancelFailed);
         }
         state.current = None;
-        match self.backend.spawn(&text, voice.as_deref(), rate) {
+        match self.backend.spawn_styled(text, voice, rate, emotion) {
             Ok(handle) => {
                 state.current = Some(handle);
                 Ok(())
@@ -209,10 +260,67 @@ impl TtsManager {
         }
     }
 
+    /// Legacy path: `speak` is `speak_styled(.., Emotion::Neutral)`. Bumps the
+    /// epoch ONLY when it will attempt a spawn (after the Empty and Recording
+    /// checks pass), so the latest speech intent wins.
+    pub fn speak_styled(
+        &self,
+        text: &str,
+        voice: Option<&str>,
+        rate_wpm: Option<u32>,
+        emotion: Emotion,
+    ) -> Result<(), TtsError> {
+        let text = sanitize_speech_text(text).ok_or(TtsError::Empty)?;
+        let voice = voice.and_then(sanitize_voice);
+        let rate = rate_wpm.map(clamp_rate);
+        let mut state = lock_state(&self.inner);
+        if state.recording_active {
+            return Err(TtsError::Recording);
+        }
+        self.bump_locked(&mut state);
+        self.replace_locked(&mut state, &text, voice.as_deref(), rate, emotion)
+    }
+
+    /// Speak only if `epoch` is still current, atomically with the spawn
+    /// (same critical section). Refused with `Superseded` WITHOUT touching the
+    /// backend otherwise. Consumes no epoch.
+    pub fn speak_styled_if_current(
+        &self,
+        epoch: u64,
+        text: &str,
+        voice: Option<&str>,
+        rate_wpm: Option<u32>,
+        emotion: Emotion,
+    ) -> Result<(), TtsError> {
+        let text = sanitize_speech_text(text).ok_or(TtsError::Empty)?;
+        let voice = voice.and_then(sanitize_voice);
+        let rate = rate_wpm.map(clamp_rate);
+        let mut state = lock_state(&self.inner);
+        if state.epoch != epoch {
+            return Err(TtsError::Superseded);
+        }
+        if state.recording_active {
+            return Err(TtsError::Recording);
+        }
+        self.replace_locked(&mut state, &text, voice.as_deref(), rate, emotion)
+    }
+
+    /// Legacy path: `speak` is `speak_styled(.., Emotion::Neutral)`.
+    pub fn speak(
+        &self,
+        text: &str,
+        voice: Option<&str>,
+        rate_wpm: Option<u32>,
+    ) -> Result<(), TtsError> {
+        self.speak_styled(text, voice, rate_wpm, Emotion::Neutral)
+    }
+
     /// Kill current speech. `true` if nothing was speaking or the kill was
     /// confirmed; `false` if it could not be confirmed (handle is retained).
+    /// Always bumps the epoch first, even when nothing is playing.
     pub fn stop(&self) -> bool {
         let mut state = lock_state(&self.inner);
+        self.bump_locked(&mut state);
         let ok = match state.current.as_mut() {
             None => return true,
             Some(handle) => handle.kill(),
@@ -240,6 +348,7 @@ impl TtsManager {
     pub fn note_recording_started(&self) {
         let mut state = lock_state(&self.inner);
         state.recording_active = true;
+        self.bump_locked(&mut state);
         let ok = match state.current.as_mut() {
             None => true,
             Some(handle) => handle.kill(),
@@ -254,6 +363,38 @@ impl TtsManager {
         let mut state = lock_state(&self.inner);
         state.recording_active = false;
     }
+}
+
+/// Completes when the epoch is no longer `epoch` (or the sender is gone).
+pub async fn wait_superseded(mut rx: watch::Receiver<u64>, epoch: u64) {
+    loop {
+        // Copy the value out first so the borrow is dropped before awaiting.
+        let current = *rx.borrow();
+        if current != epoch {
+            return;
+        }
+        if rx.changed().await.is_err() {
+            return;
+        }
+    }
+}
+
+/// stdin text for `say`: the pitch prefix (if any) followed by the ALREADY
+/// SANITIZED text. The prefix is added last so text can never inject markup.
+pub fn say_stdin_text(sanitized_text: &str, emotion: Emotion) -> String {
+    match pitch_prefix(emotion) {
+        Some(prefix) => format!("{prefix}{sanitized_text}"),
+        None => sanitized_text.to_string(),
+    }
+}
+
+/// argv for `say` with the emotion's rate applied via `effective_rate`.
+pub fn say_args_styled(
+    voice: Option<&str>,
+    rate_wpm: Option<u32>,
+    emotion: Emotion,
+) -> Vec<String> {
+    say_args(voice, effective_rate(rate_wpm, emotion))
 }
 
 /// A real child process wrapped as a [`SpeechHandle`], with a detached reaper
@@ -327,7 +468,17 @@ impl SpeechBackend for SayBackend {
         voice: Option<&str>,
         rate_wpm: Option<u32>,
     ) -> io::Result<Box<dyn SpeechHandle>> {
-        spawn_say(text, voice, rate_wpm)
+        spawn_say(text, voice, rate_wpm, Emotion::Neutral)
+    }
+
+    fn spawn_styled(
+        &self,
+        text: &str,
+        voice: Option<&str>,
+        rate_wpm: Option<u32>,
+        emotion: Emotion,
+    ) -> io::Result<Box<dyn SpeechHandle>> {
+        spawn_say(text, voice, rate_wpm, emotion)
     }
 }
 
@@ -402,10 +553,11 @@ fn spawn_say(
     text: &str,
     voice: Option<&str>,
     rate_wpm: Option<u32>,
+    emotion: Emotion,
 ) -> io::Result<Box<dyn SpeechHandle>> {
     let mut cmd = Command::new("/usr/bin/say");
-    cmd.args(say_args(voice, rate_wpm));
-    let handle = spawn_process_handle(&mut cmd, text)?;
+    cmd.args(say_args_styled(voice, rate_wpm, emotion));
+    let handle = spawn_process_handle(&mut cmd, &say_stdin_text(text, emotion))?;
     Ok(Box::new(handle))
 }
 
@@ -414,6 +566,7 @@ fn spawn_say(
     _text: &str,
     _voice: Option<&str>,
     _rate_wpm: Option<u32>,
+    _emotion: Emotion,
 ) -> io::Result<Box<dyn SpeechHandle>> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
@@ -1025,5 +1178,505 @@ mod tests {
             let mut cmd = Command::new("/definitely/not/a/program");
             assert!(spawn_process_handle(&mut cmd, "hi").is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod epoch_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct Spawned {
+        text: String,
+        voice: Option<String>,
+        rate: Option<u32>,
+        emotion: Emotion,
+    }
+
+    struct Log {
+        spawns: Mutex<Vec<Spawned>>,
+        kills: AtomicUsize,
+        kill_ok: AtomicBool,
+    }
+    impl Log {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                spawns: Mutex::new(vec![]),
+                kills: AtomicUsize::new(0),
+                kill_ok: AtomicBool::new(true),
+            })
+        }
+        fn spawned(&self) -> Vec<Spawned> {
+            self.spawns.lock().unwrap().clone()
+        }
+        fn count(&self) -> usize {
+            self.spawned().len()
+        }
+    }
+
+    /// Overrides spawn_styled (records the emotion); plain spawn = Neutral.
+    struct RecBackend(Arc<Log>);
+    struct RecHandle {
+        log: Arc<Log>,
+        alive: bool,
+    }
+    impl SpeechBackend for RecBackend {
+        fn spawn(
+            &self,
+            text: &str,
+            voice: Option<&str>,
+            rate: Option<u32>,
+        ) -> io::Result<Box<dyn SpeechHandle>> {
+            self.spawn_styled(text, voice, rate, Emotion::Neutral)
+        }
+        fn spawn_styled(
+            &self,
+            text: &str,
+            voice: Option<&str>,
+            rate: Option<u32>,
+            emotion: Emotion,
+        ) -> io::Result<Box<dyn SpeechHandle>> {
+            self.0.spawns.lock().unwrap().push(Spawned {
+                text: text.into(),
+                voice: voice.map(str::to_string),
+                rate,
+                emotion,
+            });
+            Ok(Box::new(RecHandle {
+                log: self.0.clone(),
+                alive: true,
+            }))
+        }
+    }
+    impl SpeechHandle for RecHandle {
+        fn kill(&mut self) -> bool {
+            if !self.alive {
+                return true;
+            }
+            if self.log.kill_ok.load(Ordering::SeqCst) {
+                self.alive = false;
+                self.log.kills.fetch_add(1, Ordering::SeqCst);
+                true
+            } else {
+                false
+            }
+        }
+        fn is_running(&mut self) -> bool {
+            self.alive
+        }
+    }
+
+    /// Implements ONLY `spawn`: spawn_styled must fall back to it.
+    struct PlainBackend(Arc<Log>);
+    impl SpeechBackend for PlainBackend {
+        fn spawn(
+            &self,
+            text: &str,
+            voice: Option<&str>,
+            rate: Option<u32>,
+        ) -> io::Result<Box<dyn SpeechHandle>> {
+            self.0.spawns.lock().unwrap().push(Spawned {
+                text: text.into(),
+                voice: voice.map(str::to_string),
+                rate,
+                emotion: Emotion::Neutral,
+            });
+            Ok(Box::new(RecHandle {
+                log: self.0.clone(),
+                alive: true,
+            }))
+        }
+    }
+
+    fn mgr() -> (TtsManager, Arc<Log>) {
+        let log = Log::new();
+        (TtsManager::new(Box::new(RecBackend(log.clone()))), log)
+    }
+
+    fn latest(rx: &tokio::sync::watch::Receiver<u64>) -> u64 {
+        *rx.borrow()
+    }
+
+    // ---- begin / is_current / speak_styled_if_current ----
+
+    #[test]
+    fn begin_then_speak_if_current_spawns_exactly_once() {
+        let (m, log) = mgr();
+        let e = m.begin_utterance().unwrap();
+        assert!(m.is_current(e));
+        m.speak_styled_if_current(e, "hello", None, None, Emotion::Neutral)
+            .unwrap();
+        assert_eq!(log.count(), 1);
+        assert_eq!(log.spawned()[0].text, "hello");
+    }
+
+    #[test]
+    fn epochs_increase_and_a_newer_begin_supersedes_the_older() {
+        let (m, log) = mgr();
+        let a = m.begin_utterance().unwrap();
+        let b = m.begin_utterance().unwrap();
+        assert!(b > a);
+        assert!(!m.is_current(a));
+        assert!(m.is_current(b));
+        assert_eq!(
+            m.speak_styled_if_current(a, "old", None, None, Emotion::Neutral),
+            Err(TtsError::Superseded)
+        );
+        assert_eq!(
+            log.count(),
+            0,
+            "a superseded call never reaches the backend"
+        );
+        m.speak_styled_if_current(b, "new", None, None, Emotion::Neutral)
+            .unwrap();
+        assert_eq!(log.count(), 1);
+        assert_eq!(log.spawned()[0].text, "new");
+    }
+
+    #[test]
+    fn recording_started_after_begin_refuses_the_pending_speech() {
+        let (m, log) = mgr();
+        let e = m.begin_utterance().unwrap();
+        m.note_recording_started();
+        assert!(!m.is_current(e));
+        assert_eq!(
+            m.speak_styled_if_current(e, "late", None, None, Emotion::Neutral),
+            Err(TtsError::Superseded)
+        );
+        assert_eq!(log.count(), 0);
+    }
+
+    #[test]
+    fn a_fixed_phrase_spoken_after_begin_supersedes_the_pending_composition() {
+        let (m, log) = mgr();
+        let e = m.begin_utterance().unwrap();
+        m.speak("Done.", None, None).unwrap();
+        assert_eq!(log.count(), 1);
+        assert_eq!(
+            m.speak_styled_if_current(e, "composed", None, None, Emotion::Neutral),
+            Err(TtsError::Superseded)
+        );
+        assert_eq!(log.count(), 1, "the composed text never spoke");
+    }
+
+    #[test]
+    fn begin_during_recording_is_refused_and_consumes_nothing() {
+        let (m, _log) = mgr();
+        m.note_recording_started();
+        let rx = m.epoch_receiver();
+        let before = latest(&rx);
+        assert_eq!(m.begin_utterance(), Err(TtsError::Recording));
+        assert_eq!(latest(&rx), before);
+        m.note_recording_stopped();
+        assert!(m.begin_utterance().is_ok());
+    }
+
+    #[test]
+    fn speak_if_current_during_recording_after_a_valid_begin_is_refused() {
+        // begin() succeeded, then recording started and stopped: the epoch was
+        // bumped by the recording start, so the pending speech is refused.
+        let (m, log) = mgr();
+        let e = m.begin_utterance().unwrap();
+        m.note_recording_started();
+        m.note_recording_stopped();
+        assert_eq!(
+            m.speak_styled_if_current(e, "x", None, None, Emotion::Neutral),
+            Err(TtsError::Superseded)
+        );
+        assert_eq!(log.count(), 0);
+    }
+
+    #[test]
+    fn stop_and_invalidate_and_recording_start_bump_but_recording_stop_does_not() {
+        let (m, _log) = mgr();
+        let e = m.begin_utterance().unwrap();
+        m.invalidate();
+        assert!(!m.is_current(e));
+        let e = m.begin_utterance().unwrap();
+        assert!(m.stop());
+        assert!(!m.is_current(e));
+        let e = m.begin_utterance().unwrap();
+        m.note_recording_started();
+        assert!(!m.is_current(e));
+        let e = m.epoch_receiver();
+        let cur = latest(&e);
+        m.note_recording_stopped();
+        assert_eq!(latest(&e), cur, "note_recording_stopped must not bump");
+        assert!(m.is_current(cur));
+    }
+
+    #[test]
+    fn invalidate_does_not_kill_current_speech() {
+        let (m, log) = mgr();
+        let e = m.begin_utterance().unwrap();
+        m.speak_styled_if_current(e, "talking", None, None, Emotion::Neutral)
+            .unwrap();
+        m.invalidate();
+        assert!(m.is_speaking());
+        assert_eq!(log.kills.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn stop_kills_current_speech_as_before() {
+        let (m, log) = mgr();
+        let e = m.begin_utterance().unwrap();
+        m.speak_styled_if_current(e, "talking", None, None, Emotion::Neutral)
+            .unwrap();
+        assert!(m.stop());
+        assert!(!m.is_speaking());
+        assert_eq!(log.kills.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn speak_if_current_consumes_no_epoch_and_replaces_prior_speech() {
+        let (m, log) = mgr();
+        let e = m.begin_utterance().unwrap();
+        m.speak_styled_if_current(e, "one", None, None, Emotion::Neutral)
+            .unwrap();
+        assert!(m.is_current(e), "speaking must not consume the epoch");
+        m.speak_styled_if_current(e, "two", None, None, Emotion::Calm)
+            .unwrap();
+        assert_eq!(log.count(), 2);
+        assert_eq!(log.kills.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn speak_if_current_empty_text_is_empty_and_keeps_the_epoch() {
+        let (m, log) = mgr();
+        let e = m.begin_utterance().unwrap();
+        assert_eq!(
+            m.speak_styled_if_current(e, "  \n ", None, None, Emotion::Neutral),
+            Err(TtsError::Empty)
+        );
+        assert!(m.is_current(e));
+        assert_eq!(log.count(), 0);
+    }
+
+    #[test]
+    fn speak_if_current_refuses_when_the_previous_speech_cannot_be_stopped() {
+        let (m, log) = mgr();
+        let e = m.begin_utterance().unwrap();
+        m.speak_styled_if_current(e, "one", None, None, Emotion::Neutral)
+            .unwrap();
+        log.kill_ok.store(false, Ordering::SeqCst);
+        assert_eq!(
+            m.speak_styled_if_current(e, "two", None, None, Emotion::Neutral),
+            Err(TtsError::CancelFailed)
+        );
+        assert_eq!(log.count(), 1);
+    }
+
+    // ---- legacy speak: epoch rules ----
+
+    #[test]
+    fn legacy_speak_bumps_only_when_it_will_attempt_a_spawn() {
+        let (m, log) = mgr();
+        let e = m.begin_utterance().unwrap();
+        assert_eq!(m.speak("   ", None, None), Err(TtsError::Empty));
+        assert!(m.is_current(e), "empty text consumes no epoch");
+        m.speak("hi", None, None).unwrap();
+        assert!(!m.is_current(e), "a real speak supersedes older intents");
+        assert_eq!(log.count(), 1);
+    }
+
+    #[test]
+    fn legacy_speak_during_recording_consumes_no_epoch() {
+        let (m, log) = mgr();
+        m.note_recording_started();
+        let rx = m.epoch_receiver();
+        let before = latest(&rx);
+        assert_eq!(m.speak("hi", None, None), Err(TtsError::Recording));
+        assert_eq!(latest(&rx), before);
+        assert_eq!(log.count(), 0);
+    }
+
+    #[test]
+    fn speak_styled_passes_emotion_and_sanitized_text_to_the_backend() {
+        let (m, log) = mgr();
+        m.speak_styled(
+            "[[rate 999]] hello",
+            Some("Samantha"),
+            Some(200),
+            Emotion::Cheerful,
+        )
+        .unwrap();
+        let s = log.spawned();
+        assert_eq!(s.len(), 1);
+        assert_eq!(s[0].emotion, Emotion::Cheerful);
+        assert_eq!(s[0].text, "rate 999 hello");
+        assert_eq!(s[0].voice.as_deref(), Some("Samantha"));
+        assert_eq!(s[0].rate, Some(200));
+        m.speak("again", None, None).unwrap();
+        assert_eq!(log.spawned()[1].emotion, Emotion::Neutral);
+    }
+
+    #[test]
+    fn a_backend_that_only_implements_spawn_still_works_with_emotions() {
+        let log = Log::new();
+        let m = TtsManager::new(Box::new(PlainBackend(log.clone())));
+        m.speak_styled("hello", None, None, Emotion::Excited)
+            .unwrap();
+        assert_eq!(log.count(), 1);
+        assert_eq!(log.spawned()[0].text, "hello");
+    }
+
+    // ---- watch receiver / wait_superseded ----
+
+    #[test]
+    fn receiver_observes_the_latest_epoch_value() {
+        let (m, _log) = mgr();
+        let rx = m.epoch_receiver();
+        let a = m.begin_utterance().unwrap();
+        m.invalidate();
+        m.invalidate();
+        let latest_value = latest(&rx);
+        assert!(latest_value > a);
+        assert!(m.is_current(latest_value));
+    }
+
+    #[test]
+    fn wait_superseded_completes_immediately_when_already_superseded() {
+        let (m, _log) = mgr();
+        let e = m.begin_utterance().unwrap();
+        m.invalidate();
+        let rx = m.epoch_receiver();
+        tauri::async_runtime::block_on(async {
+            tokio::time::timeout(Duration::from_secs(2), wait_superseded(rx, e))
+                .await
+                .expect("must complete");
+        });
+    }
+
+    #[test]
+    fn wait_superseded_completes_when_a_bump_arrives_later_and_not_before() {
+        let (m, _log) = mgr();
+        let m = Arc::new(m);
+        let e = m.begin_utterance().unwrap();
+        let rx = m.epoch_receiver();
+        let m2 = m.clone();
+        let bumper = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(150));
+            m2.invalidate();
+        });
+        let started = Instant::now();
+        tauri::async_runtime::block_on(async {
+            tokio::time::timeout(Duration::from_secs(5), wait_superseded(rx, e))
+                .await
+                .expect("must complete");
+        });
+        assert!(started.elapsed() >= Duration::from_millis(100));
+        bumper.join().unwrap();
+    }
+
+    #[test]
+    fn wait_superseded_stays_pending_while_the_epoch_is_current() {
+        let (m, _log) = mgr();
+        let e = m.begin_utterance().unwrap();
+        let rx = m.epoch_receiver();
+        let r = tauri::async_runtime::block_on(async {
+            tokio::time::timeout(Duration::from_millis(200), wait_superseded(rx, e)).await
+        });
+        assert!(r.is_err(), "must still be pending");
+    }
+
+    // ---- concurrency ----
+
+    #[test]
+    fn concurrent_begin_and_speak_never_double_spawns_for_one_epoch() {
+        let (m, log) = mgr();
+        let m = Arc::new(m);
+        let oks = Arc::new(AtomicUsize::new(0));
+        let mut handles = vec![];
+        for i in 0..8 {
+            let m = m.clone();
+            let oks = oks.clone();
+            handles.push(thread::spawn(move || {
+                if let Ok(e) = m.begin_utterance() {
+                    thread::sleep(Duration::from_millis(5));
+                    if m.speak_styled_if_current(e, &format!("t{i}"), None, None, Emotion::Neutral)
+                        .is_ok()
+                    {
+                        oks.fetch_add(1, Ordering::SeqCst);
+                    }
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(log.count(), oks.load(Ordering::SeqCst));
+        assert!(log.count() >= 1, "the globally last begin always wins");
+        assert!(log.count() <= 8);
+    }
+
+    // ---- SayBackend input (pure) ----
+
+    #[test]
+    fn say_stdin_text_adds_the_pitch_prefix_after_the_text_is_final() {
+        assert_eq!(say_stdin_text("hello", Emotion::Neutral), "hello");
+        assert_eq!(
+            say_stdin_text("hello", Emotion::Cheerful),
+            "[[pbas +6]] hello"
+        );
+        assert_eq!(
+            say_stdin_text("hello", Emotion::Serious),
+            "[[pbas -6]] hello"
+        );
+    }
+
+    #[test]
+    fn say_args_styled_applies_the_emotion_rate_and_keeps_neutral_legacy() {
+        assert_eq!(
+            say_args_styled(None, None, Emotion::Neutral),
+            say_args(None, None)
+        );
+        assert_eq!(
+            say_args_styled(Some("Samantha"), Some(200), Emotion::Neutral),
+            say_args(Some("Samantha"), Some(200))
+        );
+        assert_eq!(
+            say_args_styled(None, Some(200), Emotion::Cheerful),
+            say_args(None, Some(216))
+        );
+        assert_eq!(
+            say_args_styled(None, None, Emotion::Calm),
+            say_args(None, Some(166))
+        );
+        assert_eq!(
+            say_args_styled(Some("bad;voice"), Some(400), Emotion::Excited),
+            say_args(None, Some(400))
+        );
+    }
+
+    #[test]
+    fn only_our_own_prefix_can_contain_double_brackets_on_stdin() {
+        let sanitized = sanitize_speech_text("[[rate 999]] [[pbas +99]] hi").unwrap();
+        let stdin = say_stdin_text(&sanitized, Emotion::Excited);
+        assert_eq!(stdin.matches("[[").count(), 1);
+        assert!(stdin.starts_with("[[pbas +8]] "));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "macOS smoke: runs the real `say` writing to a temp file"]
+    fn real_say_accepts_the_pitch_prefix() {
+        use std::process::{Command, Stdio};
+        let out = std::env::temp_dir().join("vox-say-smoke.aiff");
+        let mut child = Command::new("/usr/bin/say")
+            .args(["-o", out.to_str().unwrap(), "-f", "-"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(say_stdin_text("Smoke test.", Emotion::Cheerful).as_bytes())
+            .unwrap();
+        assert!(child.wait().unwrap().success());
+        assert!(std::fs::metadata(&out).unwrap().len() > 0);
+        let _ = std::fs::remove_file(&out);
     }
 }

@@ -6,6 +6,7 @@ pub mod memory;
 pub mod models;
 pub mod source_update;
 pub mod transcription;
+pub mod tts_composer;
 pub mod voice_shortcuts;
 pub mod wakeword;
 
