@@ -552,30 +552,17 @@ jobs:
           args: ${{ inputs.build-args }}${{ !inputs.sign-binaries && ' --config src-tauri/tauri.ci-unsigned.conf.json' || '' }}
 
       # Unsigned macOS verification builds (no release upload, no signing) run
-      # `tauri build` directly so a failure can be inspected: Actions logs need
-      # authentication, so the tail of each failed attempt is surfaced as a
-      # public annotation. The DMG bundling step (bundle_dmg.sh) is known to
-      # fail on a fresh runner and pass on a second attempt, so retry once.
+      # `tauri build` directly. The tauri-action step above exports every
+      # APPLE_* variable as an EMPTY string when sign-binaries is false, and
+      # `tauri build` treats a variable that is present but empty as set:
+      # APPLE_CERTIFICATE='' makes it attempt a keychain import and exit 1
+      # ("failed to import keychain certificate"). Leaving the variables unset
+      # makes it fall back to ad-hoc signing, which is what a verification
+      # build wants. Signed builds still go through tauri-action unchanged.
       - name: Build with Tauri (unsigned macOS verification build)
         if: ${{ contains(inputs.platform, 'macos') && !inputs.sign-binaries }}
         shell: bash
-        env:
-          NO_COLOR: "1"
-          CARGO_TERM_COLOR: never
-        run: |
-          set +e
-          enc() { python3 -c 'import re,sys; t=re.sub(r"\x1b\[[0-9;]*[A-Za-z]","",sys.stdin.read()); print(t.replace("%","%25").replace("\r","").replace("\n","%0A"))'; }
-          code=1
-          for attempt in 1 2; do
-            bun tauri build ${{ inputs.build-args }} --config src-tauri/tauri.ci-unsigned.conf.json 2>&1 | tee "tauri-build-$attempt.log"
-            code=${PIPESTATUS[0]}
-            if [ "$code" -eq 0 ]; then
-              [ "$attempt" -gt 1 ] && echo "::warning title=tauri build needed a retry::attempt 1 failed, attempt $attempt succeeded"
-              break
-            fi
-            echo "::warning title=tauri build attempt $attempt failed (exit $code)::$(tail -n 40 "tauri-build-$attempt.log" | cut -c1-240 | enc)"
-          done
-          exit "$code"
+        run: bun tauri build ${{ inputs.build-args }} --config src-tauri/tauri.ci-unsigned.conf.json
 
       # tauri-action uploads release assets before returning. All AppImage
       # filtering therefore happens inside linuxdeploy above; this verifies the
