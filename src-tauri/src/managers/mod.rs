@@ -5,6 +5,7 @@ pub mod audio;
 pub mod command_router;
 pub mod composer_rules;
 pub mod conversation;
+pub mod emotion;
 pub mod gguf_meta;
 pub mod history;
 pub mod media_control;
