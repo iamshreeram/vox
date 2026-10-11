@@ -1266,4 +1266,41 @@ mod tests {
             assert!(!logs.contains(needle), "log must not contain {needle}");
         }
     }
+
+    /// Live check against a real command-line agent. Run manually:
+    /// `VOX_LIVE_AGENT_BIN=/abs/path VOX_LIVE_AGENT_ARGS="--no-tools -m fast" \
+    ///  [VOX_LIVE_SPEAK=1] cargo test --lib --offline live_command -- --ignored --nocapture`
+    #[test]
+    #[ignore = "live: needs VOX_LIVE_AGENT_BIN (absolute path) and optional VOX_LIVE_AGENT_ARGS"]
+    fn live_command_compose_against_a_real_agent_cli() {
+        let bin = std::env::var("VOX_LIVE_AGENT_BIN").expect("set VOX_LIVE_AGENT_BIN");
+        let args = std::env::var("VOX_LIVE_AGENT_ARGS").unwrap_or_default();
+        let settings = command_settings(Path::new(&bin), &args, true);
+        let started = Instant::now();
+        let out = block_on(compose_with_deadline(
+            &settings,
+            req("Build finished. 412 tests passed and 3 failed: auth refresh, db pool timeout, nav snapshot. Coverage is 81.2 percent. Full log at /var/log/ci/run-9921.txt"),
+            Duration::from_secs(90),
+        ))
+        .expect("live composition failed");
+        println!(
+            "LIVE took={:?} emotion={:?} speech={:?}",
+            started.elapsed(),
+            out.emotion,
+            out.speech
+        );
+        assert!(!out.speech.is_empty());
+        assert!(out.speech.chars().count() <= 400);
+        if std::env::var("VOX_LIVE_SPEAK").ok().as_deref() == Some("1") {
+            let tts =
+                crate::managers::tts::TtsManager::new(crate::managers::tts::default_backend());
+            tts.speak_styled(&out.speech, None, Some(180), out.emotion)
+                .expect("speak");
+            let t = Instant::now();
+            while tts.is_speaking() && t.elapsed() < Duration::from_secs(45) {
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            println!("LIVE spoke for {:?}", t.elapsed());
+        }
+    }
 }

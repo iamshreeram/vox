@@ -320,7 +320,7 @@ mod tests {
         assert_eq!(d.command_args, "");
         assert_eq!(d.prompt_flag, "-p");
         assert_eq!(d.command_ack, "");
-        assert_eq!(d.timeout_secs, 30);
+        assert_eq!(d.timeout_secs, 45);
         assert_eq!(d.style, "warm, upbeat and concise");
         assert!(d.send_user_utterance);
         assert_eq!(d.fallback, TtsComposerFallback::ShortNotice);

@@ -124,10 +124,11 @@ fn preview_error_message(err: ComposeError, settings: &AppSettings) -> String {
 }
 
 /// Speak one agent exchange. ADMISSION (DESIGN 0.1), in this exact order:
-/// 1. `tts.begin_utterance()`; Err => return silently (no status).
-/// 2. `load_settings()` (AFTER the reservation).
-/// 3. `tts.is_current(epoch)`; false => return silently (a writer invalidated).
-/// 4. `settings.tts_enabled == false` => return silently.
+/// (1) `tts.begin_utterance()`; Err => return silently (no status).
+/// (2) `load_settings()` (AFTER the reservation).
+/// (3) `tts.is_current(epoch)`; false => return silently (a writer invalidated).
+/// (4) `settings.tts_enabled == false` => return silently.
+///
 /// Mode Off => speak `phrase_for_event("agent-bridge-reply", reply)` through
 /// `speak_styled_if_current(epoch, .., Neutral)`; no composer call, NO status.
 /// Mode Model/Command => build `ComposeRequest{reply, utterance (only when
@@ -909,7 +910,7 @@ mod tests {
             (
                 ComposeError::Timeout,
                 TtsComposerMode::Command,
-                "Timed out after 30s",
+                "Timed out after 45s",
             ),
             (
                 ComposeError::Unparseable,

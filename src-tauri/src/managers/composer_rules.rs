@@ -15,7 +15,7 @@ pub const MAX_PROMPT_FLAG_CHARS: usize = 18;
 pub const DEFAULT_PROMPT_FLAG: &str = "-p";
 pub const TIMEOUT_MIN_SECS: u64 = 2;
 pub const TIMEOUT_MAX_SECS: u64 = 60;
-pub const TIMEOUT_DEFAULT_SECS: u64 = 30;
+pub const TIMEOUT_DEFAULT_SECS: u64 = 45;
 pub const DEFAULT_STYLE: &str = "warm, upbeat and concise";
 
 /// Clamp a timeout to the supported range (applied on write AND at use).
@@ -138,7 +138,7 @@ mod tests {
         assert_eq!(clamp_timeout(60), 60);
         assert_eq!(clamp_timeout(61), 60);
         assert_eq!(clamp_timeout(u64::MAX), 60);
-        assert_eq!(clamp_timeout(TIMEOUT_DEFAULT_SECS), 30);
+        assert_eq!(clamp_timeout(TIMEOUT_DEFAULT_SECS), 45);
     }
 
     #[test]
