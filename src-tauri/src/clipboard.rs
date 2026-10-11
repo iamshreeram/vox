@@ -41,6 +41,7 @@ fn write_text_to_clipboard(app_handle: &AppHandle, text: &str) -> Result<(), Str
         .map_err(|e| format!("Failed to write to clipboard: {}", e))
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn finish_clipboard_paste(
     paste_result: Result<(), String>,
     paste_delay_after_ms: u64,
@@ -51,6 +52,126 @@ fn finish_clipboard_paste(
     paste_result
 }
 
+/// The ordered steps of a clipboard paste. The real implementation talks to the
+/// OS; tests substitute a recording fake so the ordering can be verified.
+trait ClipboardSteps {
+    fn save(&mut self);
+    fn set(&mut self, text: &str) -> Result<(), String>;
+    fn delay_before(&mut self);
+    fn chord(&mut self) -> Result<(), String>;
+    fn delay_after(&mut self);
+    fn restore(&mut self);
+}
+
+const PASTE_ABORTED: &str = "paste aborted";
+
+/// Runs one clipboard paste: save, set(text), delay_before, pre_chord, chord,
+/// delay_after, restore. `pre_chord` is the focus guard: when it returns false
+/// the chord is never sent and the clipboard is restored immediately.
+/// A chord error still runs delay_after and restore before it is returned.
+fn run_clipboard_steps(
+    steps: &mut dyn ClipboardSteps,
+    text: &str,
+    pre_chord: &mut dyn FnMut() -> bool,
+) -> Result<(), String> {
+    steps.save();
+    if let Err(error) = steps.set(text) {
+        steps.restore();
+        return Err(error);
+    }
+    steps.delay_before();
+    if !pre_chord() {
+        steps.restore();
+        return Err(PASTE_ABORTED.into());
+    }
+    let chord_result = steps.chord();
+    steps.delay_after();
+    steps.restore();
+    chord_result
+}
+
+/// Real clipboard steps against the OS clipboard and the key injector.
+struct TauriClipboardSteps<'a> {
+    app_handle: &'a AppHandle,
+    paste_method: PasteMethod,
+    paste_delay_ms: u64,
+    paste_delay_after_ms: u64,
+    saved_text: Option<String>,
+    saved_image: Option<tauri::image::Image<'static>>,
+}
+
+impl ClipboardSteps for TauriClipboardSteps<'_> {
+    fn save(&mut self) {
+        let clipboard = self.app_handle.clipboard();
+        self.saved_text = clipboard.read_text().ok().filter(|t| !t.is_empty());
+        // Only probe for an image when there is no text to restore. Text is by far the
+        // common case, and reading an image decodes the full bitmap, so this keeps the
+        // text path exactly as cheap as it was before.
+        self.saved_image = if self.saved_text.is_none() {
+            clipboard.read_image().ok().map(|image| image.to_owned())
+        } else {
+            None
+        };
+    }
+
+    fn set(&mut self, text: &str) -> Result<(), String> {
+        write_text_to_clipboard(self.app_handle, text)
+    }
+
+    fn delay_before(&mut self) {
+        std::thread::sleep(Duration::from_millis(self.paste_delay_ms));
+    }
+
+    fn chord(&mut self) -> Result<(), String> {
+        send_paste_chord(self.app_handle, &self.paste_method)
+    }
+
+    fn delay_after(&mut self) {
+        std::thread::sleep(Duration::from_millis(self.paste_delay_after_ms));
+    }
+
+    fn restore(&mut self) {
+        let clipboard = self.app_handle.clipboard();
+        // Restore original clipboard content even when key injection failed.
+        // Text takes priority so this path stays identical to the previous behavior;
+        // an image is only restored when the clipboard held no text at all, which is
+        // the case that used to silently wipe screenshots.
+        if let Some(clipboard_content) = self.saved_text.take() {
+            let _ = write_text_to_clipboard(self.app_handle, &clipboard_content);
+        } else if let Some(image) = self.saved_image.take() {
+            info!("Restoring image to clipboard");
+            let _ = clipboard.write_image(&image);
+        } else {
+            // Nothing was there to begin with — don't leave the transcription behind.
+            let _ = clipboard.clear();
+        }
+    }
+}
+
+/// Sends the configured paste key combo: native Linux tool first, then enigo.
+fn send_paste_chord(app_handle: &AppHandle, paste_method: &PasteMethod) -> Result<(), String> {
+    // Send paste key combo
+    #[cfg(target_os = "linux")]
+    let key_combo_sent = try_send_key_combo_linux(paste_method)?;
+
+    #[cfg(not(target_os = "linux"))]
+    let key_combo_sent = false;
+
+    // Fall back to enigo if no native tool handled it
+    if !key_combo_sent {
+        with_enigo(app_handle, |enigo| match paste_method {
+            // The legacy path cannot detect a mistimed chord, so it keeps the
+            // conservative 100ms modifier hold.
+            PasteMethod::CtrlV => input::send_paste_ctrl_v(enigo, 100),
+            PasteMethod::CtrlShiftV => input::send_paste_ctrl_shift_v(enigo, 100),
+            PasteMethod::ShiftInsert => input::send_paste_shift_insert(enigo, 100),
+            _ => Err("Invalid paste method for clipboard paste".into()),
+        })?;
+    }
+
+    Ok(())
+}
+
 /// Pastes text using the clipboard: saves current content, writes text, sends paste keystroke, restores clipboard.
 fn paste_via_clipboard(
     text: &str,
@@ -59,62 +180,97 @@ fn paste_via_clipboard(
     paste_delay_ms: u64,
     paste_delay_after_ms: u64,
 ) -> Result<(), String> {
-    let clipboard = app_handle.clipboard();
-    let saved_text = clipboard.read_text().ok().filter(|t| !t.is_empty());
-    // Only probe for an image when there is no text to restore. Text is by far the
-    // common case, and reading an image decodes the full bitmap, so this keeps the
-    // text path exactly as cheap as it was before.
-    let saved_image = if saved_text.is_none() {
-        clipboard.read_image().ok().map(|image| image.to_owned())
-    } else {
-        None
+    let mut steps = TauriClipboardSteps {
+        app_handle,
+        paste_method: *paste_method,
+        paste_delay_ms,
+        paste_delay_after_ms,
+        saved_text: None,
+        saved_image: None,
     };
+    run_clipboard_steps(&mut steps, text, &mut || true)
+}
 
-    // Write text to clipboard first
-    write_text_to_clipboard(app_handle, text)?;
+/// Parses the output of the System Events frontmost-bundle AppleScript.
+/// Empty output or `missing value` (no frontmost process) yields None.
+// wired by S5b
+#[allow(dead_code)]
+pub fn parse_frontmost_output(output: &str) -> Option<String> {
+    let trimmed = output.trim();
+    if trimmed.is_empty() || trimmed == "missing value" {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
 
-    std::thread::sleep(Duration::from_millis(paste_delay_ms));
+/// Frontmost-app probe for the focus guard. macOS asks System Events via
+/// osascript; other platforms have no probe and always report None.
+// wired by S5b
+#[allow(dead_code)]
+pub struct OsascriptFrontmostProbe;
 
-    // Capture key injection errors so the original clipboard is restored before
-    // propagating them to the caller.
-    let paste_result = (|| -> Result<(), String> {
-        // Send paste key combo
-        #[cfg(target_os = "linux")]
-        let key_combo_sent = try_send_key_combo_linux(paste_method)?;
-
-        #[cfg(not(target_os = "linux"))]
-        let key_combo_sent = false;
-
-        // Fall back to enigo if no native tool handled it
-        if !key_combo_sent {
-            with_enigo(app_handle, |enigo| match paste_method {
-                // The legacy path cannot detect a mistimed chord, so it keeps the
-                // conservative 100ms modifier hold.
-                PasteMethod::CtrlV => input::send_paste_ctrl_v(enigo, 100),
-                PasteMethod::CtrlShiftV => input::send_paste_ctrl_shift_v(enigo, 100),
-                PasteMethod::ShiftInsert => input::send_paste_shift_insert(enigo, 100),
-                _ => Err("Invalid paste method for clipboard paste".into()),
-            })?;
+// wired by S5b
+#[allow(dead_code)]
+impl crate::managers::converse_audio::FrontmostProbe for OsascriptFrontmostProbe {
+    fn frontmost_bundle(&self) -> Option<String> {
+        #[cfg(target_os = "macos")]
+        {
+            let output = Command::new("osascript")
+                .arg("-e")
+                .arg("tell application \"System Events\" to get bundle identifier of first application process whose frontmost is true")
+                .output()
+                .ok()?;
+            if !output.status.success() {
+                return None;
+            }
+            parse_frontmost_output(&String::from_utf8_lossy(&output.stdout))
         }
-
-        Ok(())
-    })();
-
-    finish_clipboard_paste(paste_result, paste_delay_after_ms, || {
-        // Restore original clipboard content even when key injection failed.
-        // Text takes priority so this path stays identical to the previous behavior;
-        // an image is only restored when the clipboard held no text at all, which is
-        // the case that used to silently wipe screenshots.
-        if let Some(clipboard_content) = saved_text {
-            let _ = write_text_to_clipboard(app_handle, &clipboard_content);
-        } else if let Some(image) = saved_image {
-            info!("Restoring image to clipboard");
-            let _ = clipboard.write_image(&image);
-        } else {
-            // Nothing was there to begin with — don't leave the transcription behind.
-            let _ = clipboard.clear();
+        #[cfg(not(target_os = "macos"))]
+        {
+            None
         }
-    })
+    }
+}
+
+/// Pastes model-generated or dictated session text through the clipboard only.
+/// Never Direct typing, never the reliable-paste path, never a trailing space or
+/// newline, never auto-submit. The focus guard refuses multi-line text into a
+/// terminal or an unknown frontmost app and aborts if focus changes before the chord.
+// wired by S5b
+#[allow(dead_code)]
+pub fn paste_generated(text: &str, app_handle: &AppHandle) -> Result<(), String> {
+    use crate::managers::converse_audio::{generated_paste_options, guarded_paste};
+
+    let options = generated_paste_options();
+    debug_assert!(!options.auto_submit && options.force_clipboard);
+    debug_assert!(!options.append_trailing_newline);
+
+    let settings = get_settings(app_handle);
+    // Generated text always uses a clipboard chord. Direct, script and no-paste
+    // settings fall back to the default chord rather than typing.
+    let paste_method = match settings.paste_method {
+        method @ (PasteMethod::CtrlV | PasteMethod::CtrlShiftV | PasteMethod::ShiftInsert) => {
+            method
+        }
+        PasteMethod::None | PasteMethod::Direct | PasteMethod::ExternalScript => PasteMethod::CtrlV,
+    };
+    let paste_delay_ms = settings.paste_delay_ms;
+    let paste_delay_after_ms = settings.paste_delay_after_ms;
+
+    let probe = OsascriptFrontmostProbe;
+    let mut do_paste = |pre_chord: &mut dyn FnMut() -> bool| -> Result<(), String> {
+        let mut steps = TauriClipboardSteps {
+            app_handle,
+            paste_method,
+            paste_delay_ms,
+            paste_delay_after_ms,
+            saved_text: None,
+            saved_image: None,
+        };
+        run_clipboard_steps(&mut steps, text, pre_chord)
+    };
+    guarded_paste(&probe, text, &mut do_paste)
 }
 
 /// Attempts to send a key combination using Linux-native tools.
@@ -973,6 +1129,124 @@ e.g. 28:1 28:0 means pressing on the Enter button on a standard US keyboard.
 
         assert_eq!(result.unwrap_err(), "input failed");
         assert!(restored.get());
+    }
+
+    #[test]
+    fn parse_frontmost_output_trims_a_bundle_id_with_trailing_newline() {
+        assert_eq!(
+            parse_frontmost_output("com.apple.Notes\n").as_deref(),
+            Some("com.apple.Notes")
+        );
+    }
+
+    #[test]
+    fn parse_frontmost_output_treats_empty_as_unknown() {
+        assert_eq!(parse_frontmost_output(""), None);
+    }
+
+    #[test]
+    fn parse_frontmost_output_treats_whitespace_as_unknown() {
+        assert_eq!(parse_frontmost_output("   \n\t"), None);
+    }
+
+    #[test]
+    fn parse_frontmost_output_treats_missing_value_as_unknown() {
+        assert_eq!(parse_frontmost_output("missing value"), None);
+        assert_eq!(parse_frontmost_output("missing value\n"), None);
+    }
+
+    /// Records every step in order. Each field can be armed to fail or to
+    /// report pre_chord as false is handled by the caller closure.
+    #[derive(Default)]
+    struct RecordingSteps {
+        calls: Vec<&'static str>,
+        set_error: Option<String>,
+        chord_error: Option<String>,
+    }
+
+    impl ClipboardSteps for RecordingSteps {
+        fn save(&mut self) {
+            self.calls.push("save");
+        }
+        fn set(&mut self, _text: &str) -> Result<(), String> {
+            self.calls.push("set");
+            match &self.set_error {
+                Some(e) => Err(e.clone()),
+                None => Ok(()),
+            }
+        }
+        fn delay_before(&mut self) {
+            self.calls.push("delay_before");
+        }
+        fn chord(&mut self) -> Result<(), String> {
+            self.calls.push("chord");
+            match &self.chord_error {
+                Some(e) => Err(e.clone()),
+                None => Ok(()),
+            }
+        }
+        fn delay_after(&mut self) {
+            self.calls.push("delay_after");
+        }
+        fn restore(&mut self) {
+            self.calls.push("restore");
+        }
+    }
+
+    #[test]
+    fn clipboard_steps_run_in_order_on_success() {
+        let mut steps = RecordingSteps::default();
+        let mut guard_calls = 0;
+        let result = run_clipboard_steps(&mut steps, "hello", &mut || {
+            guard_calls += 1;
+            true
+        });
+        assert!(result.is_ok());
+        assert_eq!(guard_calls, 1);
+        assert_eq!(
+            steps.calls,
+            [
+                "save",
+                "set",
+                "delay_before",
+                "chord",
+                "delay_after",
+                "restore"
+            ]
+        );
+    }
+
+    #[test]
+    fn pre_chord_false_skips_the_chord_and_restores() {
+        let mut steps = RecordingSteps::default();
+        let result = run_clipboard_steps(&mut steps, "hello", &mut || false);
+        assert_eq!(result.unwrap_err(), PASTE_ABORTED);
+        assert_eq!(steps.calls, ["save", "set", "delay_before", "restore"]);
+        assert!(!steps.calls.contains(&"chord"));
+    }
+
+    #[test]
+    fn chord_error_still_restores_and_is_propagated() {
+        let mut steps = RecordingSteps {
+            chord_error: Some("chord failed".into()),
+            ..Default::default()
+        };
+        let result = run_clipboard_steps(&mut steps, "hello", &mut || true);
+        assert_eq!(result.unwrap_err(), "chord failed");
+        assert_eq!(steps.calls.last(), Some(&"restore"));
+        assert!(steps.calls.contains(&"restore"));
+    }
+
+    #[test]
+    fn set_error_returns_err_and_restores_without_chord() {
+        let mut steps = RecordingSteps {
+            set_error: Some("set failed".into()),
+            ..Default::default()
+        };
+        let result = run_clipboard_steps(&mut steps, "hello", &mut || true);
+        assert_eq!(result.unwrap_err(), "set failed");
+        assert!(steps.calls.contains(&"restore"));
+        assert!(!steps.calls.contains(&"chord"));
     }
 
     #[cfg(unix)]

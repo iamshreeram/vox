@@ -1105,9 +1105,48 @@ impl AudioRecordingManager {
 
     /// Cancel any ongoing recording without returning audio samples
     pub fn cancel_recording(&self) {
-        self.invalidate_recording_readiness();
-        self.cancel_generation.fetch_add(1, Ordering::AcqRel);
-        let mut state = self.state.lock().unwrap();
+        self.cancel_recording_inner(None);
+    }
+
+    /// Cancel the recording only if the ACTIVE binding is `binding`.
+    /// The check and the cancel happen under the same state-lock acquisition,
+    /// so a recording owned by another binding is never disturbed.
+    /// Returns true only when this call cancelled a recording.
+    // wired by S5b
+    #[allow(dead_code)]
+    pub fn cancel_recording_if_binding(&self, binding: &str) -> bool {
+        self.cancel_recording_inner(Some(binding))
+    }
+
+    /// Active binding id, or None unless a recording is in progress.
+    // wired by S5b
+    #[allow(dead_code)]
+    pub fn recording_binding(&self) -> Option<String> {
+        let state = self.state.lock().unwrap();
+        active_binding(&state)
+    }
+
+    /// `only_binding == None` is the unscoped `cancel_recording` path and keeps
+    /// its original ordering (readiness and cancel_generation bumped before the
+    /// state lock). `Some(b)` takes the lock first and bumps the counters only
+    /// after the active binding matched, so a foreign recording is untouched.
+    fn cancel_recording_inner(&self, only_binding: Option<&str>) -> bool {
+        let mut state;
+        match only_binding {
+            None => {
+                self.invalidate_recording_readiness();
+                self.cancel_generation.fetch_add(1, Ordering::AcqRel);
+                state = self.state.lock().unwrap();
+            }
+            Some(binding) => {
+                state = self.state.lock().unwrap();
+                if !binding_cancel_allowed(&state, binding) {
+                    return false;
+                }
+                self.invalidate_recording_readiness();
+                self.cancel_generation.fetch_add(1, Ordering::AcqRel);
+            }
+        }
 
         match *state {
             RecordingState::Recording { .. } => {
@@ -1132,11 +1171,70 @@ impl AudioRecordingManager {
                         self.stop_microphone_stream();
                     }
                 }
+                true
             }
             RecordingState::Stopping => {
                 debug!("Cancellation requested while recording is stopping");
+                false
             }
-            RecordingState::Idle => {}
+            RecordingState::Idle => false,
         }
+    }
+}
+
+/// Active binding id of a recording state; None unless `Recording`.
+fn active_binding(state: &RecordingState) -> Option<String> {
+    match state {
+        RecordingState::Recording { binding_id } => Some(binding_id.clone()),
+        RecordingState::Idle | RecordingState::Stopping => None,
+    }
+}
+
+/// A binding-scoped cancel is allowed only while `binding` is the active recording.
+fn binding_cancel_allowed(state: &RecordingState, binding: &str) -> bool {
+    matches!(state, RecordingState::Recording { binding_id } if binding_id == binding)
+}
+
+#[cfg(test)]
+mod binding_cancel_tests {
+    use super::*;
+
+    #[test]
+    fn binding_cancel_is_refused_when_idle() {
+        assert!(!binding_cancel_allowed(&RecordingState::Idle, "converse"));
+    }
+
+    #[test]
+    fn binding_cancel_is_refused_while_stopping() {
+        assert!(!binding_cancel_allowed(
+            &RecordingState::Stopping,
+            "converse"
+        ));
+    }
+
+    #[test]
+    fn binding_cancel_is_refused_for_a_foreign_binding() {
+        let state = RecordingState::Recording {
+            binding_id: "transcribe".to_string(),
+        };
+        assert!(!binding_cancel_allowed(&state, "converse"));
+    }
+
+    #[test]
+    fn binding_cancel_is_allowed_for_the_active_binding() {
+        let state = RecordingState::Recording {
+            binding_id: "converse".to_string(),
+        };
+        assert!(binding_cancel_allowed(&state, "converse"));
+    }
+
+    #[test]
+    fn active_binding_is_reported_only_while_recording() {
+        assert_eq!(active_binding(&RecordingState::Idle), None);
+        assert_eq!(active_binding(&RecordingState::Stopping), None);
+        let state = RecordingState::Recording {
+            binding_id: "converse".to_string(),
+        };
+        assert_eq!(active_binding(&state).as_deref(), Some("converse"));
     }
 }

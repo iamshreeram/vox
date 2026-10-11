@@ -7,6 +7,8 @@ use crate::managers::command_router::{CommandAction, CommandRouter, RouteDecisio
 use crate::managers::conversation::{
     build_agent_prompt, should_append_exchange, ConversationLog, Ticket,
 };
+use crate::managers::converse::PhraseOutcome;
+use crate::managers::converse_audio::restrict_model_action;
 use crate::managers::history::HistoryManager;
 use crate::managers::media_control::{
     run_media_hook, MediaHookResult, OsascriptRunner, ScriptRunner,
@@ -323,6 +325,218 @@ fn execute_command_action(app: &AppHandle, action: &CommandAction) -> Result<Str
     }
 }
 
+/// Routes a phrase to a command. A trait so the restricted-tier tests can
+/// inject routes the real router cannot produce (for example a non-http URL).
+#[allow(dead_code)] // wired by S5b
+pub(crate) trait PhraseRouter {
+    fn route_phrase(&self, text: &str) -> RouteDecision;
+}
+
+#[allow(dead_code)] // wired by S5b
+impl PhraseRouter for CommandRouter {
+    fn route_phrase(&self, text: &str) -> RouteDecision {
+        self.route(text)
+    }
+}
+
+/// Executes a matched command action. A trait so tests can observe execution
+/// without an `AppHandle`.
+#[allow(dead_code)] // wired by S5b
+pub(crate) trait ActionExecutor {
+    fn execute_action(&self, action: &CommandAction) -> Result<String, String>;
+}
+
+/// Production executor: the same OS-opener path as the existing router branch.
+#[allow(dead_code)] // wired by S5b
+struct AppActionExecutor<'a>(&'a AppHandle);
+
+#[allow(dead_code)] // wired by S5b
+impl ActionExecutor for AppActionExecutor<'_> {
+    fn execute_action(&self, action: &CommandAction) -> Result<String, String> {
+        execute_command_action(self.0, action)
+    }
+}
+
+/// Exact-tier hooks (user shortcut, then media) for a phrase the USER said.
+#[allow(dead_code)] // wired by S5b
+pub(crate) trait UtteranceHooks {
+    fn consult(&self, phrase: &str) -> Option<UtteranceHookResult>;
+}
+
+/// Production exact-tier hooks: delegates to `run_utterance_hooks`.
+#[allow(dead_code)] // wired by S5b
+struct SettingsUtteranceHooks<'a> {
+    settings: &'a AppSettings,
+    router: &'a CommandRouter,
+    home: Option<&'a Path>,
+    opener: &'a dyn ShortcutOpener,
+    runner: &'a dyn ScriptRunner,
+}
+
+#[allow(dead_code)] // wired by S5b
+impl UtteranceHooks for SettingsUtteranceHooks<'_> {
+    fn consult(&self, phrase: &str) -> Option<UtteranceHookResult> {
+        run_utterance_hooks(
+            self.settings,
+            phrase,
+            self.router,
+            self.home,
+            self.opener,
+            self.runner,
+        )
+    }
+}
+
+/// Restricted-tier media hook for a phrase the MODEL proposed. User shortcuts
+/// are deliberately absent from this trait.
+#[allow(dead_code)] // wired by S5b
+pub(crate) trait MediaHook {
+    fn consult(&self, phrase: &str) -> Option<MediaHookResult>;
+}
+
+/// Production media hook: delegates to `run_media_hook` (same gates as the
+/// user path: voice commands AND media controls must both be on).
+#[allow(dead_code)] // wired by S5b
+struct SettingsMediaHook<'a> {
+    settings: &'a AppSettings,
+    runner: &'a dyn ScriptRunner,
+}
+
+#[allow(dead_code)] // wired by S5b
+impl MediaHook for SettingsMediaHook<'_> {
+    fn consult(&self, phrase: &str) -> Option<MediaHookResult> {
+        run_media_hook(
+            self.settings.voice_media_controls_enabled,
+            self.settings.voice_commands_enabled,
+            phrase,
+            self.runner,
+        )
+    }
+}
+
+/// Maps a consumed hook event to an outcome. The confirmation is the same
+/// fixed phrase the TTS listener speaks for `voice-command-executed`
+/// (`managers::tts::phrase_for_event`); no event is emitted here.
+#[allow(dead_code)] // wired by S5b
+fn hook_event_outcome(event: HookEvent) -> PhraseOutcome {
+    match event {
+        HookEvent::Executed(_) => {
+            PhraseOutcome::Done(crate::managers::tts::DONE_PHRASE.to_string())
+        }
+        HookEvent::Error(_) => PhraseOutcome::Failed,
+    }
+}
+
+/// Maps an action execution result to an outcome (same phrase as above).
+#[allow(dead_code)] // wired by S5b
+fn action_result_outcome(result: Result<String, String>) -> PhraseOutcome {
+    match result {
+        Ok(_) => PhraseOutcome::Done(crate::managers::tts::DONE_PHRASE.to_string()),
+        Err(_) => PhraseOutcome::Failed,
+    }
+}
+
+/// Exact tier for what the USER said. Voice commands off => `NoMatch` with
+/// nothing executed. Otherwise: user shortcut hook, media hook, then the
+/// built-in router (unchanged policy). Emits no events and never logs the phrase.
+#[allow(dead_code)] // wired by S5b
+pub(crate) fn user_phrase_core(
+    phrase: &str,
+    voice_commands_enabled: bool,
+    hooks: &dyn UtteranceHooks,
+    router: &dyn PhraseRouter,
+    exec: &dyn ActionExecutor,
+) -> PhraseOutcome {
+    if !voice_commands_enabled {
+        return PhraseOutcome::NoMatch;
+    }
+    if let Some(hook) = hooks.consult(phrase) {
+        return hook_event_outcome(hook.event);
+    }
+    match router.route_phrase(phrase) {
+        RouteDecision::NoMatch => PhraseOutcome::NoMatch,
+        RouteDecision::Matched { action } => action_result_outcome(exec.execute_action(&action)),
+    }
+}
+
+/// RESTRICTED tier for a command the MODEL proposed. Voice commands off =>
+/// `NoMatch`. Media hook only (no user shortcuts exist in this function).
+/// The router's decision is filtered by `restrict_model_action`: a matched
+/// action that is rejected (OpenPath, non-http(s) URL) is `Refused` and is
+/// never executed. Emits no events and never logs the phrase.
+#[allow(dead_code)] // wired by S5b
+pub(crate) fn model_command_core(
+    phrase: &str,
+    voice_commands_enabled: bool,
+    media: &dyn MediaHook,
+    router: &dyn PhraseRouter,
+    exec: &dyn ActionExecutor,
+) -> PhraseOutcome {
+    if !voice_commands_enabled {
+        return PhraseOutcome::NoMatch;
+    }
+    if let Some(hook) = media.consult(phrase) {
+        return hook_event_outcome(hook.event);
+    }
+    let decision = router.route_phrase(phrase);
+    if matches!(decision, RouteDecision::NoMatch) {
+        return PhraseOutcome::NoMatch;
+    }
+    match restrict_model_action(&decision) {
+        Some(action) => action_result_outcome(exec.execute_action(&action)),
+        None => PhraseOutcome::Refused,
+    }
+}
+
+/// Production wrapper for `user_phrase_core`. Blocking (media can take seconds).
+#[allow(dead_code)] // wired by S5b
+pub(crate) fn run_user_phrase_blocking(
+    app: &AppHandle,
+    settings: &AppSettings,
+    phrase: &str,
+) -> PhraseOutcome {
+    let router_state = app.state::<Arc<CommandRouter>>();
+    let router: &CommandRouter = &router_state;
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let opener = AppShortcutOpener(app.clone());
+    let hooks = SettingsUtteranceHooks {
+        settings,
+        router,
+        home: home.as_deref(),
+        opener: &opener,
+        runner: &OsascriptRunner,
+    };
+    user_phrase_core(
+        phrase,
+        settings.voice_commands_enabled,
+        &hooks,
+        router,
+        &AppActionExecutor(app),
+    )
+}
+
+/// Production wrapper for `model_command_core`. Blocking (media can take seconds).
+#[allow(dead_code)] // wired by S5b
+pub(crate) fn run_model_command_blocking(
+    app: &AppHandle,
+    settings: &AppSettings,
+    phrase: &str,
+) -> PhraseOutcome {
+    let router_state = app.state::<Arc<CommandRouter>>();
+    let router: &CommandRouter = &router_state;
+    let media = SettingsMediaHook {
+        settings,
+        runner: &OsascriptRunner,
+    };
+    model_command_core(
+        phrase,
+        settings.voice_commands_enabled,
+        &media,
+        router,
+        &AppActionExecutor(app),
+    )
+}
+
 async fn complete_unless_cancelled<F, C>(operation: F, is_cancelled: C) -> Option<F::Output>
 where
     F: Future,
@@ -613,8 +827,18 @@ pub(crate) async fn process_transcription_output(
     }
 }
 
+/// True while a conversation session owns the microphone; dictation must not
+/// start then (DESIGN.md section 2).
+fn dictation_start_blocked() -> bool {
+    crate::managers::converse_hooks::capture_active()
+}
+
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
+        if dictation_start_blocked() {
+            log::debug!("dictation start ignored: conversation owns the microphone");
+            return;
+        }
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
 
@@ -1859,5 +2083,333 @@ mod tests {
                 other => panic!("expected an error event, got {other:?}"),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod phrase_tier_tests {
+    use super::{
+        model_command_core, user_phrase_core, ActionExecutor, MediaHook, PhraseRouter,
+        UtteranceHooks,
+    };
+    use super::{HookSource, MediaHookResult, UtteranceHookResult};
+    use crate::managers::command_router::{
+        AppDiscovery, CommandAction, CommandRouter, HomeDirProvider, RouteDecision,
+    };
+    use crate::managers::converse::PhraseOutcome;
+    use crate::managers::tts::DONE_PHRASE;
+    use crate::managers::voice_common::{HookEvent, VoiceHookOutcome};
+    use std::cell::{Cell, RefCell};
+    use std::path::PathBuf;
+
+    struct FakeDiscovery(Vec<PathBuf>);
+    impl AppDiscovery for FakeDiscovery {
+        fn scan_installed_apps(&self) -> Vec<PathBuf> {
+            self.0.clone()
+        }
+    }
+
+    struct NoHome;
+    impl HomeDirProvider for NoHome {
+        fn home_dir(&self) -> Option<PathBuf> {
+            None
+        }
+    }
+
+    fn real_router() -> CommandRouter {
+        CommandRouter::with_home(
+            Box::new(FakeDiscovery(vec![PathBuf::from(
+                "/Applications/iTerm.app",
+            )])),
+            Box::new(NoHome),
+        )
+    }
+
+    /// Router that returns a fixed decision and counts calls.
+    struct FixedRouter {
+        decision: RouteDecision,
+        calls: Cell<u32>,
+    }
+    impl FixedRouter {
+        fn new(decision: RouteDecision) -> Self {
+            Self {
+                decision,
+                calls: Cell::new(0),
+            }
+        }
+    }
+    impl PhraseRouter for FixedRouter {
+        fn route_phrase(&self, _text: &str) -> RouteDecision {
+            self.calls.set(self.calls.get() + 1);
+            self.decision.clone()
+        }
+    }
+
+    /// Records every executed action; fails when `fail` is set.
+    #[derive(Default)]
+    struct FakeExec {
+        calls: RefCell<Vec<CommandAction>>,
+        fail: bool,
+    }
+    impl ActionExecutor for FakeExec {
+        fn execute_action(&self, action: &CommandAction) -> Result<String, String> {
+            self.calls.borrow_mut().push(action.clone());
+            if self.fail {
+                Err("opener failed".into())
+            } else {
+                Ok("ok".into())
+            }
+        }
+    }
+
+    /// User exact-tier hooks: canned result, counts consultations.
+    struct FakeUserHooks {
+        result: Option<UtteranceHookResult>,
+        calls: Cell<u32>,
+    }
+    impl FakeUserHooks {
+        fn new(result: Option<UtteranceHookResult>) -> Self {
+            Self {
+                result,
+                calls: Cell::new(0),
+            }
+        }
+    }
+    impl UtteranceHooks for FakeUserHooks {
+        fn consult(&self, _phrase: &str) -> Option<UtteranceHookResult> {
+            self.calls.set(self.calls.get() + 1);
+            self.result.clone()
+        }
+    }
+
+    /// Restricted media hook: canned result, counts consultations.
+    struct FakeMedia {
+        result: Option<MediaHookResult>,
+        calls: Cell<u32>,
+    }
+    impl FakeMedia {
+        fn new(result: Option<MediaHookResult>) -> Self {
+            Self {
+                result,
+                calls: Cell::new(0),
+            }
+        }
+    }
+    impl MediaHook for FakeMedia {
+        fn consult(&self, _phrase: &str) -> Option<MediaHookResult> {
+            self.calls.set(self.calls.get() + 1);
+            self.result.clone()
+        }
+    }
+
+    fn media_done() -> MediaHookResult {
+        MediaHookResult {
+            outcome: VoiceHookOutcome::HANDLED,
+            event: HookEvent::Executed("Paused music".into()),
+        }
+    }
+
+    fn shortcut_done() -> UtteranceHookResult {
+        UtteranceHookResult {
+            source: HookSource::Shortcut,
+            outcome: VoiceHookOutcome::HANDLED,
+            event: HookEvent::Executed("Opened site".into()),
+        }
+    }
+
+    fn open_app(name: &str) -> CommandAction {
+        CommandAction::OpenApp {
+            name: name.into(),
+            resolved_path: PathBuf::from(format!("/Applications/{name}.app")),
+        }
+    }
+
+    fn done() -> PhraseOutcome {
+        PhraseOutcome::Done(DONE_PHRASE.to_string())
+    }
+
+    #[test]
+    fn user_phrase_disabled_voice_commands_is_nomatch_and_executes_nothing() {
+        let hooks = FakeUserHooks::new(Some(shortcut_done()));
+        let router = FixedRouter::new(RouteDecision::Matched {
+            action: open_app("iTerm"),
+        });
+        let exec = FakeExec::default();
+        let outcome = user_phrase_core("open iterm", false, &hooks, &router, &exec);
+        assert_eq!(outcome, PhraseOutcome::NoMatch);
+        assert!(exec.calls.borrow().is_empty());
+        assert_eq!(hooks.calls.get(), 0);
+        assert_eq!(router.calls.get(), 0);
+    }
+
+    #[test]
+    fn user_phrase_shortcut_hit_is_done() {
+        let hooks = FakeUserHooks::new(Some(shortcut_done()));
+        let router = FixedRouter::new(RouteDecision::NoMatch);
+        let exec = FakeExec::default();
+        let outcome = user_phrase_core("my site", true, &hooks, &router, &exec);
+        assert_eq!(outcome, done());
+        assert!(exec.calls.borrow().is_empty());
+        assert_eq!(router.calls.get(), 0);
+    }
+
+    #[test]
+    fn user_phrase_media_hit_is_done() {
+        let hooks = FakeUserHooks::new(Some(UtteranceHookResult {
+            source: HookSource::Media,
+            outcome: VoiceHookOutcome::HANDLED,
+            event: HookEvent::Executed("Paused music".into()),
+        }));
+        let router = FixedRouter::new(RouteDecision::NoMatch);
+        let exec = FakeExec::default();
+        assert_eq!(
+            user_phrase_core("pause", true, &hooks, &router, &exec),
+            done()
+        );
+        assert!(exec.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn user_phrase_router_open_app_executes_and_is_done() {
+        let hooks = FakeUserHooks::new(None);
+        let router = real_router();
+        let exec = FakeExec::default();
+        let outcome = user_phrase_core("open iterm", true, &hooks, &router, &exec);
+        assert_eq!(outcome, done());
+        assert_eq!(exec.calls.borrow().as_slice(), &[open_app("iTerm")]);
+    }
+
+    #[test]
+    fn user_phrase_executor_error_is_failed() {
+        let hooks = FakeUserHooks::new(None);
+        let router = real_router();
+        let exec = FakeExec {
+            fail: true,
+            ..FakeExec::default()
+        };
+        let outcome = user_phrase_core("open iterm", true, &hooks, &router, &exec);
+        assert_eq!(outcome, PhraseOutcome::Failed);
+        assert_eq!(exec.calls.borrow().len(), 1);
+    }
+
+    #[test]
+    fn user_phrase_no_match_is_nomatch() {
+        let hooks = FakeUserHooks::new(None);
+        let router = real_router();
+        let exec = FakeExec::default();
+        let outcome = user_phrase_core("what is the weather", true, &hooks, &router, &exec);
+        assert_eq!(outcome, PhraseOutcome::NoMatch);
+        assert!(exec.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn model_command_disabled_voice_commands_is_nomatch() {
+        let media = FakeMedia::new(Some(media_done()));
+        let router = FixedRouter::new(RouteDecision::Matched {
+            action: open_app("iTerm"),
+        });
+        let exec = FakeExec::default();
+        let outcome = model_command_core("open iterm", false, &media, &router, &exec);
+        assert_eq!(outcome, PhraseOutcome::NoMatch);
+        assert!(exec.calls.borrow().is_empty());
+        assert_eq!(media.calls.get(), 0);
+        assert_eq!(router.calls.get(), 0);
+    }
+
+    #[test]
+    fn model_command_never_consults_user_shortcuts() {
+        // The restricted core takes no user-hook parameter at all, so user
+        // shortcuts cannot be consulted. The phrase a user shortcut would
+        // match is routed only through the media hook and the router.
+        let media = FakeMedia::new(None);
+        let router = FixedRouter::new(RouteDecision::NoMatch);
+        let exec = FakeExec::default();
+        let outcome = model_command_core("my site", true, &media, &router, &exec);
+        assert_eq!(outcome, PhraseOutcome::NoMatch);
+        assert_eq!(media.calls.get(), 1);
+        assert_eq!(router.calls.get(), 1);
+        assert!(exec.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn model_command_refuses_open_path_and_never_executes_it() {
+        let media = FakeMedia::new(None);
+        let router = FixedRouter::new(RouteDecision::Matched {
+            action: CommandAction::OpenPath {
+                path: PathBuf::from("/Users/someone/Documents"),
+            },
+        });
+        let exec = FakeExec::default();
+        let outcome = model_command_core("open documents", true, &media, &router, &exec);
+        assert_eq!(outcome, PhraseOutcome::Refused);
+        assert!(exec.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn model_command_refuses_non_http_urls_and_never_executes_them() {
+        for url in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "ftp://example.com/x",
+            "https://",
+        ] {
+            let media = FakeMedia::new(None);
+            let router = FixedRouter::new(RouteDecision::Matched {
+                action: CommandAction::OpenUrl { url: url.into() },
+            });
+            let exec = FakeExec::default();
+            let outcome = model_command_core("open site", true, &media, &router, &exec);
+            assert_eq!(outcome, PhraseOutcome::Refused, "url {url}");
+            assert!(exec.calls.borrow().is_empty(), "url {url}");
+        }
+    }
+
+    #[test]
+    fn model_command_allows_open_app_and_https_url() {
+        let media = FakeMedia::new(None);
+        let router = real_router();
+        let exec = FakeExec::default();
+        assert_eq!(
+            model_command_core("open iterm", true, &media, &router, &exec),
+            done()
+        );
+        assert_eq!(exec.calls.borrow().as_slice(), &[open_app("iTerm")]);
+
+        let router = FixedRouter::new(RouteDecision::Matched {
+            action: CommandAction::OpenUrl {
+                url: "https://example.com".into(),
+            },
+        });
+        let exec = FakeExec::default();
+        assert_eq!(
+            model_command_core("open example", true, &media, &router, &exec),
+            done()
+        );
+        assert_eq!(exec.calls.borrow().len(), 1);
+    }
+
+    #[test]
+    fn model_command_media_hit_is_done() {
+        let media = FakeMedia::new(Some(media_done()));
+        let router = FixedRouter::new(RouteDecision::NoMatch);
+        let exec = FakeExec::default();
+        assert_eq!(
+            model_command_core("pause", true, &media, &router, &exec),
+            done()
+        );
+        assert_eq!(router.calls.get(), 0);
+        assert!(exec.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn model_command_no_match_is_nomatch() {
+        let media = FakeMedia::new(None);
+        let router = FixedRouter::new(RouteDecision::NoMatch);
+        let exec = FakeExec::default();
+        assert_eq!(
+            model_command_core("what is the weather", true, &media, &router, &exec),
+            PhraseOutcome::NoMatch
+        );
+        assert!(exec.calls.borrow().is_empty());
     }
 }
