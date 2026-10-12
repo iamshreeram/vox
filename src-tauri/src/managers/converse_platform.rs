@@ -56,7 +56,13 @@ pub fn preflight_check(settings: &AppSettings) -> Result<(), String> {
     if !settings.tts_enabled {
         return Err("Turn on spoken replies in the speech settings first.".to_string());
     }
-    if settings_from_app(settings).mode == TtsComposerMode::Off {
+    if settings.exp_rt_enabled {
+        crate::managers::realtime_config::preflight_realtime(settings).map_err(str::to_string)?;
+    }
+    // The direct endpoint is itself the reply backend, so the composer is not required.
+    let direct =
+        crate::managers::realtime_config::RealtimeConfig::from_settings(settings).direct_endpoint;
+    if !direct && settings_from_app(settings).mode == TtsComposerMode::Off {
         return Err("Set up a reply backend in the speech settings first.".to_string());
     }
     if settings.wake_word_enabled || settings.ambient_mode_enabled {
@@ -393,6 +399,7 @@ impl Platform for RealPlatform {
 
     fn parts(&self, capture: &CaptureHandle) -> SessionParts {
         let settings = get_settings(&self.app);
+        crate::managers::realtime_complete::spawn_prewarm(&settings);
         let tts = self.app.state::<Arc<TtsManager>>().inner().clone();
         SessionParts {
             ears: Box::new(RealEars {

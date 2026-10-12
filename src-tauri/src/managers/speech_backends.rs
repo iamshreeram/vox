@@ -425,6 +425,15 @@ pub async fn complete(
     combined: &str,
     deadline: Duration,
 ) -> Result<String, ComposeError> {
+    if let Some(result) =
+        crate::managers::realtime_complete::try_complete(settings, system, combined, deadline).await
+    {
+        match &result {
+            Ok(_) => log::debug!("converse backend outcome: ok"),
+            Err(err) => log::debug!("converse backend outcome: {}", err.outcome()),
+        }
+        return result;
+    }
     let result = complete_inner(settings, system, combined, deadline).await;
     match &result {
         Ok(_) => log::debug!("converse backend outcome: ok"),
@@ -434,7 +443,7 @@ pub async fn complete(
 }
 
 /// The user part of `combined` after removing the `system + "\n\n"` prefix.
-fn user_part<'a>(system: &str, combined: &'a str) -> &'a str {
+pub(crate) fn user_part<'a>(system: &str, combined: &'a str) -> &'a str {
     if system.is_empty() {
         return combined;
     }

@@ -13,10 +13,6 @@
 //! * Deadlines are absolute from the start of the request.
 //! * Credentials are never logged. Only static strings are logged.
 
-// Nothing outside this module calls into it yet (the conversation feature is wired in
-// later). Remove this allow once a production caller exists.
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
