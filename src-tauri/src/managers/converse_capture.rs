@@ -93,6 +93,10 @@ impl Inner {
 /// Bounded queue between callers and the single worker thread.
 const QUEUE_CAPACITY: usize = 1024;
 
+/// A VAD speech frame keeps speech "active" for this long. Speech frames
+/// arrive about every 30 ms, so this is more than 4 frames of slack.
+const SPEECH_GAP_MS: u64 = 150;
+
 enum Command {
     Listen {
         listen_id: u64,
@@ -108,8 +112,6 @@ enum Command {
         levels: Vec<f32>,
     },
     /// One VAD-kept (speech) audio frame was seen for `listen_id`.
-    // Constructed by push_speech, called once audio.rs forwards VAD frames.
-    #[allow(dead_code)]
     Speech {
         listen_id: u64,
         now_ms: u64,
@@ -156,6 +158,10 @@ struct Recording {
     abs_deadline: Duration,
     endpointer: Endpointer,
     heard: bool,
+    /// Latest VAD speech frame time for this listen (None until one arrives).
+    last_speech_ms: Option<u64>,
+    /// Number of VAD speech frames accepted for this listen (diagnostic).
+    speech_frames: u32,
 }
 
 enum State {
@@ -260,8 +266,7 @@ impl Worker {
                 now_ms,
                 levels,
             } => self.on_levels(listen_id, now_ms, &levels),
-            // RED-PHASE STUB: the worker does not use speech activity yet.
-            Command::Speech { .. } => {}
+            Command::Speech { listen_id, now_ms } => self.on_speech(listen_id, now_ms),
             Command::Cancel { upto } => {
                 self.cancel_upto(upto);
             }
@@ -296,6 +301,8 @@ impl Worker {
                         ) + self.timings.abs_slack,
                         endpointer: Endpointer::new(p.cfg),
                         heard: false,
+                        last_speech_ms: None,
+                        speech_frames: 0,
                     });
                 }
             }
@@ -353,11 +360,31 @@ impl Worker {
         }
     }
 
-    fn on_levels(&mut self, listen_id: u64, now_ms: u64, levels: &[f32]) {
+    /// Records one VAD speech frame. Only the recording with this listen id
+    /// accepts it; speech for any other (or no) listen is ignored.
+    fn on_speech(&mut self, listen_id: u64, now_ms: u64) {
+        if let State::Recording(r) = &mut self.state {
+            if r.id == listen_id {
+                r.last_speech_ms = Some(match r.last_speech_ms {
+                    Some(prev) => prev.max(now_ms),
+                    None => now_ms,
+                });
+                r.speech_frames = r.speech_frames.saturating_add(1);
+            }
+        }
+    }
+
+    /// The endpointer is driven by VAD speech activity, not by level values:
+    /// room tone on the visualizer scale is always above the level floor, so
+    /// level-driven endpointing never detects the end of speech.
+    fn on_levels(&mut self, listen_id: u64, now_ms: u64, _levels: &[f32]) {
         match std::mem::replace(&mut self.state, State::Idle) {
             State::Recording(mut r) if r.id == listen_id => {
                 r.heard = true;
-                match r.endpointer.feed(now_ms, levels) {
+                let speech_active = r
+                    .last_speech_ms
+                    .is_some_and(|t| now_ms.saturating_sub(t) <= SPEECH_GAP_MS);
+                match r.endpointer.feed_activity(now_ms, speech_active) {
                     None => self.state = State::Recording(r),
                     Some(EndpointEvent::NoSpeech) => {
                         self.end_with_cancel(r, ListenOutcome::NoSpeech)
@@ -379,6 +406,7 @@ impl Worker {
             None => ListenOutcome::Aborted,
             Some(samples) => self.transcribe(samples),
         };
+        log_listen_end("speech_ended", &r);
         let _ = r.reply.send(outcome);
     }
 
@@ -421,12 +449,35 @@ impl Worker {
     fn end_with_cancel(&mut self, r: Recording, outcome: ListenOutcome) {
         self.port.cancel();
         self.set_inactive();
+        log_listen_end(end_reason(&outcome), &r);
         let _ = r.reply.send(outcome);
     }
 
     fn set_inactive(&self) {
         self.capture_active.store(false, Ordering::SeqCst);
     }
+}
+
+/// Short, fixed reason for the end of a listen (diagnostic log only).
+fn end_reason(outcome: &ListenOutcome) -> &'static str {
+    match outcome {
+        ListenOutcome::Utterance(_) => "speech_ended",
+        ListenOutcome::NoSpeech => "no_speech",
+        ListenOutcome::TooLong => "too_long",
+        ListenOutcome::Aborted => "aborted",
+        ListenOutcome::Failed(_) => "failed",
+    }
+}
+
+/// F4 diagnostic: one numeric/enum-only line per ended listen. Never audio,
+/// text, device names, ids or paths.
+fn log_listen_end(reason: &str, r: &Recording) {
+    log::info!(
+        "converse capture ended: reason={} dur_ms={} speech_frames={}",
+        reason,
+        r.started_at.elapsed().as_millis(),
+        r.speech_frames
+    );
 }
 
 impl CaptureHandle {
@@ -487,7 +538,6 @@ impl CaptureHandle {
 
     /// Called from the audio callback thread for each frame the VAD kept as
     /// speech: NON-BLOCKING, a no-op unless a listen is armed.
-    #[allow(dead_code)]
     pub fn push_speech(&self, now_ms: u64) {
         let listen_id = self.inner.armed.load(Ordering::SeqCst);
         if listen_id == 0 {
@@ -678,6 +728,7 @@ mod tests {
     fn speak_then_silence(h: &CaptureHandle) {
         let mut t = 0u64;
         while t < 400 {
+            h.push_speech(t);
             h.push_levels(t, LOUD);
             t += 50;
         }
@@ -797,6 +848,7 @@ mod tests {
         wait_for("recording", || port.is_active()).await;
         let mut t = 0u64;
         while t <= 600 {
+            h.push_speech(t);
             h.push_levels(t, LOUD);
             t += 50;
         }
@@ -837,6 +889,7 @@ mod tests {
             ListenOutcome::Utterance("hello world".into())
         );
         for t in 0..20u64 {
+            h.push_speech(2000 + t * 50);
             h.push_levels(2000 + t * 50, LOUD);
         }
         tokio::time::sleep(Duration::from_millis(30)).await;
@@ -876,16 +929,21 @@ mod tests {
     /// SPEECH_GAP_MS (150) + silence_ms (300) + one levels period (50), so the
     /// utterance MUST complete within that bound (design C3).
     async fn drive_speech_then_gap(send_speech: &dyn Fn(u64), h: &CaptureHandle) {
-        let mut t = 0u64;
-        while t <= 890 {
-            if t < 400 && t % 30 == 0 {
-                send_speech(t);
+        // (time, kind): kind 0 = VAD speech frame, 1 = levels tick. Sorted, so a
+        // speech frame at the same instant is delivered before the levels tick.
+        let mut events: Vec<(u64, u8)> = (0..400u64)
+            .step_by(30)
+            .map(|t| (t, 0u8))
+            .chain((0..=890u64).step_by(50).map(|t| (t, 1u8)))
+            .collect();
+        events.sort();
+        for (i, (t, kind)) in events.iter().enumerate() {
+            if *kind == 0 {
+                send_speech(*t);
+            } else {
+                h.push_levels(*t, AMBIENT);
             }
-            if t % 50 == 0 {
-                h.push_levels(t, AMBIENT);
-            }
-            t += 10;
-            if t % 100 == 0 {
+            if i % 10 == 9 {
                 tokio::time::sleep(Duration::from_millis(1)).await;
             }
         }
@@ -906,9 +964,11 @@ mod tests {
         let (task, _id) = start_listen(&h, &port).await;
         // Past max_utterance_ms (5000): level-driven code reports TooLong here.
         let mut t = 0u64;
+        let mut n = 0u32;
         while t <= 5600 {
             h.push_levels(t, AMBIENT);
-            if t % 500 == 0 {
+            n += 1;
+            if n % 10 == 9 {
                 tokio::time::sleep(Duration::from_millis(2)).await;
             }
             t += 50;

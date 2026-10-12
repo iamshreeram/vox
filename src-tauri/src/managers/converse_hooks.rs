@@ -73,7 +73,6 @@ pub fn on_levels(levels: &[f32]) {
 
 /// Audio-callback entry: one frame the VAD kept as speech. NON-BLOCKING; a
 /// no-op when nothing is installed or no listen is armed.
-#[allow(dead_code)]
 pub fn on_speech_frame() {
     let handle = {
         let guard = CAPTURE.lock().unwrap_or_else(|e| e.into_inner());
@@ -192,6 +191,7 @@ mod tests {
         assert!(port.active.load(Ordering::SeqCst));
         // levels flow through the hook (loud then quiet) and end the utterance
         for _ in 0..30 {
+            on_speech_frame();
             on_levels(&[0.6, 0.3]);
             tokio::time::sleep(Duration::from_millis(10)).await;
         }

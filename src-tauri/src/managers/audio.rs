@@ -352,6 +352,7 @@ fn create_audio_recorder(
         .with_audio_callback({
             let router = stream_router;
             move |frame| {
+                crate::managers::converse_hooks::on_speech_frame();
                 router.feed(frame);
             }
         });

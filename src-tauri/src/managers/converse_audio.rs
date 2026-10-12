@@ -86,6 +86,7 @@ impl Endpointer {
 
     /// Level-based entry point (tests and level-only callers): a feed is loud
     /// when any level exceeds the configured floor.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn feed(&mut self, now_ms: u64, levels: &[f32]) -> Option<EndpointEvent> {
         self.feed_activity(now_ms, levels.iter().any(|&level| level > self.cfg.floor))
     }
