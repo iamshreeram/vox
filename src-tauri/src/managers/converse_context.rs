@@ -52,8 +52,13 @@ pub enum CommandNote {
 /// Remove U+27E6 / U+27E7 and turn every line break / control whitespace into a single space
 /// (`\n`, `\r`, `\t` become ' '); everything else is untouched. Idempotent.
 pub fn neutralize(s: &str) -> String {
-    let _ = s;
-    todo!("WP-context")
+    s.chars()
+        .filter_map(|c| match c {
+            OPEN | CLOSE => None,
+            '\n' | '\r' | '\t' => Some(' '),
+            other => Some(other),
+        })
+        .collect()
 }
 
 /// Build one note. `runtime` fields (e.g. `chars`, `action_executed`) are never shortened;
@@ -62,48 +67,101 @@ pub fn neutralize(s: &str) -> String {
 /// Field order in the JSON: `event` first, then runtime fields in the given order, then the
 /// untrusted fields in the given order.
 pub fn note(event: &str, runtime: &[(&str, Value)], untrusted: &[(&str, &str)]) -> String {
-    let _ = (event, runtime, untrusted);
-    todo!("WP-context")
+    let mut fields: Vec<(String, String)> = untrusted
+        .iter()
+        .map(|(name, text)| (format!("untrusted_{name}"), cap_chars(text, PRECAP_CHARS)))
+        .collect();
+    loop {
+        let candidate = wrap_json(&render(event, runtime, &fields));
+        if candidate.chars().count() <= NOTE_BUDGET {
+            return candidate;
+        }
+        // Longest non-empty untrusted string (first one wins ties).
+        let mut longest: Option<(usize, usize)> = None;
+        for (i, (_, text)) in fields.iter().enumerate() {
+            let len = text.chars().count();
+            let better = match longest {
+                None => len > 0,
+                Some((_, best)) => len > best,
+            };
+            if better {
+                longest = Some((i, len));
+            }
+        }
+        match longest {
+            None => return event_only_note(event),
+            Some((i, len)) => {
+                let cut = (len / 4).max(1);
+                if let Some((_, text)) = fields.get_mut(i) {
+                    *text = shrink_to(text, len - cut);
+                }
+            }
+        }
+    }
 }
 
 /// event `pasted`: runtime `chars` = char count of the ORIGINAL text; untrusted `text` capped at
 /// `PASTE_TEXT_MAX`.
 pub fn note_paste(pasted: &str) -> String {
-    let _ = pasted;
-    todo!("WP-context")
+    let original_chars = pasted.chars().count();
+    let text = cap_chars(pasted, PASTE_TEXT_MAX);
+    note(
+        "pasted",
+        &[("chars", Value::from(original_chars))],
+        &[("text", text.as_str())],
+    )
 }
 
 /// event `paste_failed`, no fields.
 pub fn note_paste_failed() -> String {
-    todo!("WP-context")
+    note("paste_failed", &[], &[])
 }
 
 /// `Done(msg)` => event `ran_action` with untrusted `command` (cap `COMMAND_MAX`) and untrusted
 /// `result` (cap `RESULT_MAX`; the key is omitted when `msg` is empty). `Failed` => `action_failed`,
 /// `Refused` => `action_refused`, `NoMatch` => `action_not_found`, each with untrusted `command`.
 pub fn note_command(command: &str, outcome: &CommandNote) -> String {
-    let _ = (command, outcome);
-    todo!("WP-context")
+    let command = cap_chars(command, COMMAND_MAX);
+    match outcome {
+        CommandNote::Done(message) if message.is_empty() => {
+            note("ran_action", &[], &[("command", command.as_str())])
+        }
+        CommandNote::Done(message) => {
+            let result = cap_chars(message, RESULT_MAX);
+            note(
+                "ran_action",
+                &[],
+                &[("command", command.as_str()), ("result", result.as_str())],
+            )
+        }
+        CommandNote::Failed => note("action_failed", &[], &[("command", command.as_str())]),
+        CommandNote::Refused => note("action_refused", &[], &[("command", command.as_str())]),
+        CommandNote::NoMatch => note("action_not_found", &[], &[("command", command.as_str())]),
+    }
 }
 
 /// event `interrupted`, no fields.
 pub fn note_interrupted() -> String {
-    todo!("WP-context")
+    note("interrupted", &[], &[])
 }
 
 /// event `delivery_failed`, no fields.
 pub fn note_delivery_failed() -> String {
-    todo!("WP-context")
+    note("delivery_failed", &[], &[])
 }
 
 /// event `reply_incomplete`, runtime `action_executed` = false.
 pub fn note_incomplete() -> String {
-    todo!("WP-context")
+    note(
+        "reply_incomplete",
+        &[("action_executed", Value::Bool(false))],
+        &[],
+    )
 }
 
 /// event `failed`, runtime `action_executed` = false.
 pub fn note_failed() -> String {
-    todo!("WP-context")
+    note("failed", &[("action_executed", Value::Bool(false))], &[])
 }
 
 /// `text + " " + note` when it fits in `max` chars; otherwise the TEXT is shortened (ending in
@@ -112,15 +170,111 @@ pub fn note_failed() -> String {
 /// where `<event>` is parsed from the note's JSON (`unknown` if it cannot be parsed); the text is
 /// dropped in that case. The result is never longer than `max` chars (for `max` >= 30).
 pub fn with_cap(text: &str, note: &str, max: usize) -> String {
-    let _ = (text, note, max);
-    todo!("WP-context")
+    let note_len = note.chars().count();
+    if note_len > max {
+        let fallback = event_only_note(&event_of(note));
+        return if fallback.chars().count() > max {
+            event_only_note("unknown")
+        } else {
+            fallback
+        };
+    }
+    if text.is_empty() {
+        return note.to_string();
+    }
+    if text.chars().count() + 1 + note_len <= max {
+        return format!("{text} {note}");
+    }
+    // Room left for the text part (including its ellipsis) before the separating space.
+    let avail = max.saturating_sub(note_len + 1);
+    if avail == 0 {
+        return note.to_string();
+    }
+    let mut part: String = text.chars().take(avail - 1).collect();
+    part.push(ELLIPSIS);
+    format!("{part} {note}")
 }
 
 /// `with_cap(&neutralize(text), note, SIDE_MAX)`: the one call the loop uses to build an
 /// assistant-side history string.
 pub fn compose(text: &str, note: &str) -> String {
-    let _ = (text, note);
-    todo!("WP-context")
+    with_cap(&neutralize(text), note, SIDE_MAX)
+}
+
+// ---- private helpers ----
+
+const PREFIX: &str = "\u{27E6}note ";
+const ELLIPSIS: char = '\u{2026}';
+/// Every untrusted string is pre-capped to this many chars before the budget loop.
+const PRECAP_CHARS: usize = 400;
+
+/// First `max` chars of `s`, with `…` appended when anything was cut.
+fn cap_chars(s: &str, max: usize) -> String {
+    let mut it = s.chars();
+    let mut out: String = it.by_ref().take(max).collect();
+    if it.next().is_some() {
+        out.push(ELLIPSIS);
+    }
+    out
+}
+
+/// Shorten `s` to `target` chars ending in `…` (or to "" when `target` is 0).
+fn shrink_to(s: &str, target: usize) -> String {
+    if target == 0 {
+        return String::new();
+    }
+    let mut out: String = s.chars().take(target - 1).collect();
+    out.push(ELLIPSIS);
+    out
+}
+
+fn json_str(s: &str) -> String {
+    serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())
+}
+
+fn json_value(v: &Value) -> String {
+    serde_json::to_string(v).unwrap_or_else(|_| "null".to_string())
+}
+
+/// Build the JSON object text by hand so the field order is exactly as documented.
+fn render(event: &str, runtime: &[(&str, Value)], fields: &[(String, String)]) -> String {
+    let mut out = String::from("{\"event\":");
+    out.push_str(&json_str(event));
+    for (key, value) in runtime {
+        out.push(',');
+        out.push_str(&json_str(key));
+        out.push(':');
+        out.push_str(&json_value(value));
+    }
+    for (key, text) in fields {
+        out.push(',');
+        out.push_str(&json_str(key));
+        out.push(':');
+        out.push_str(&json_str(text));
+    }
+    out.push('}');
+    out
+}
+
+/// Escape literal markers inside the serialized JSON, then wrap it as one note.
+fn wrap_json(json: &str) -> String {
+    let escaped = json.replace(OPEN, r"\u27e6").replace(CLOSE, r"\u27e7");
+    format!("{PREFIX}{escaped}{CLOSE}")
+}
+
+/// Fallback note carrying only the event name.
+fn event_only_note(event: &str) -> String {
+    wrap_json(&format!("{{\"event\":{}}}", json_str(event)))
+}
+
+/// Event name of a note, read from its JSON; `unknown` when it cannot be parsed.
+fn event_of(note: &str) -> String {
+    let inner = note.strip_prefix(PREFIX).unwrap_or(note);
+    let inner = inner.strip_suffix(CLOSE).unwrap_or(inner);
+    serde_json::from_str::<Value>(inner)
+        .ok()
+        .and_then(|v| v.get("event").and_then(Value::as_str).map(str::to_string))
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 #[cfg(test)]
