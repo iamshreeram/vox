@@ -369,3 +369,78 @@ async fn legacy_configuration_returns_none_without_network() {
     assert_eq!(try_complete(&s, "S", "S\n\nu", Duration::from_secs(2)).await, None);
     assert_eq!(srv.conns.load(Ordering::SeqCst), 0);
 }
+
+// ---- login-shell proxy probe (validator findings: fish syntax, pipe held by a grandchild) ----
+
+#[cfg(unix)]
+fn stub_shell(name: &str, body: &str) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("vox-probe-{}-{name}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("shell");
+    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path.to_string_lossy().to_string()
+}
+
+#[cfg(unix)]
+#[test]
+fn probe_parses_the_proxy_from_env_output_without_posix_only_syntax() {
+    // The probe must run a shell-neutral command (`env`), never `${A:-$b}` (fish rejects it).
+    let sh = stub_shell(
+        "env",
+        r#"if [ "$1" != "-lc" ] || [ "$2" != "env" ]; then echo "unexpected args: $*" >&2; exit 127; fi
+printf 'PATH=/usr/bin\nhttps_proxy=http://lower.example:8080\nHOME=/tmp\n'"#,
+    );
+    assert_eq!(probe_shell(&sh, Duration::from_secs(2)).as_deref(), Some("http://lower.example:8080"));
+}
+
+#[cfg(unix)]
+#[test]
+fn probe_prefers_upper_case_and_ignores_empty_values() {
+    let sh = stub_shell(
+        "upper",
+        "printf 'https_proxy=http://lower.example:1\\nHTTPS_PROXY=http://upper.example:2\\n'",
+    );
+    assert_eq!(probe_shell(&sh, Duration::from_secs(2)).as_deref(), Some("http://upper.example:2"));
+    let sh = stub_shell("empty", "printf 'HTTPS_PROXY=\\nhttps_proxy=\\nOTHER=x\\n'");
+    assert_eq!(probe_shell(&sh, Duration::from_secs(2)), None);
+    let sh = stub_shell("none", "printf 'PATH=/usr/bin\\n'");
+    assert_eq!(probe_shell(&sh, Duration::from_secs(2)), None);
+}
+
+#[cfg(unix)]
+#[test]
+fn probe_survives_a_failing_or_missing_shell() {
+    let sh = stub_shell("fail", "exit 3");
+    assert_eq!(probe_shell(&sh, Duration::from_secs(2)), None);
+    assert_eq!(probe_shell("/definitely/not/a/shell", Duration::from_secs(2)), None);
+}
+
+#[cfg(unix)]
+#[test]
+fn probe_is_bounded_when_a_background_process_holds_the_pipe() {
+    // The shell prints the proxy, exits, but a grandchild keeps stdout open for 30 s.
+    let sh = stub_shell("grandchild", "(sleep 30 &)\nprintf 'HTTPS_PROXY=http://held.example:3\\n'");
+    let t0 = Instant::now();
+    let got = probe_shell(&sh, Duration::from_millis(800));
+    assert!(t0.elapsed() < Duration::from_secs(3), "probe took {:?}", t0.elapsed());
+    assert_eq!(got.as_deref(), Some("http://held.example:3"), "a line seen before the budget still counts");
+}
+
+#[cfg(unix)]
+#[test]
+fn probe_is_bounded_when_the_shell_hangs() {
+    let sh = stub_shell("hang", "sleep 30");
+    let t0 = Instant::now();
+    assert_eq!(probe_shell(&sh, Duration::from_millis(500)), None);
+    assert!(t0.elapsed() < Duration::from_secs(3), "probe took {:?}", t0.elapsed());
+}
+
+#[cfg(unix)]
+#[test]
+fn probe_never_returns_a_value_longer_than_the_url_cap() {
+    let long = "x".repeat(5000);
+    let sh = stub_shell("long", &format!("printf 'HTTPS_PROXY=http://{long}\\n'"));
+    assert_eq!(probe_shell(&sh, Duration::from_secs(2)), None);
+}

@@ -208,9 +208,8 @@ pub fn spawn_prewarm(settings: &AppSettings) {
     });
 }
 
-/// macOS/unix only, once per process, cached: asks the user's login shell for its proxy
-/// (`$SHELL -lc 'printf %s "${HTTPS_PROXY:-$https_proxy}"'`), 2 s timeout, returns the
-/// trimmed output when non-empty. Elsewhere returns None. Never logs the value.
+/// macOS/unix only, once per process, cached: asks the user's login shell for its proxy via
+/// `probe_shell($SHELL or /bin/zsh, 2 s)`. Elsewhere returns None. Never logs the value.
 pub fn login_shell_probe() -> Option<String> {
     static CACHE: OnceLock<Option<String>> = OnceLock::new();
     CACHE.get_or_init(probe_login_shell_once).clone()
@@ -272,6 +271,16 @@ fn probe_login_shell_once() -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+/// Runs `{shell} -lc env` (shell-neutral: no `${A:-$b}`, which fish rejects) and returns the
+/// first non-empty `HTTPS_PROXY` (preferred) or `https_proxy` value seen within `budget`.
+/// Lines are consumed incrementally on a helper thread so a background process that keeps
+/// the pipe open cannot block past `budget`; the child is killed when the budget expires.
+/// Values longer than `MAX_URL_CHARS` are ignored. Never logs.
+#[cfg(unix)]
+fn probe_shell(_shell: &str, _budget: Duration) -> Option<String> {
+    todo!("WP-probe")
 }
 
 #[cfg(not(unix))]
