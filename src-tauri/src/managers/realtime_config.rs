@@ -1,7 +1,5 @@
 //! Pure logic for the Experimental "Realtime conversation" group (design R9).
 //!
-//! SKELETON: bodies are `todo!()`; tests in `realtime_config_tests.rs` are the spec.
-//!
 //! * `RealtimeConfig::from_settings` resolves EFFECTIVE flags: every sub-flag is false
 //!   unless the master `exp_rt_enabled` is on; `early_speech` additionally needs
 //!   `stream_reply`; `manual_proxy` is Some only when the manual proxy toggle is on AND the

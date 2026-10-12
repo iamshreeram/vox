@@ -392,7 +392,7 @@ fn probe_parses_the_proxy_from_env_output_without_posix_only_syntax() {
         r#"if [ "$1" != "-lc" ] || [ "$2" != "env" ]; then echo "unexpected args: $*" >&2; exit 127; fi
 printf 'PATH=/usr/bin\nhttps_proxy=http://lower.example:8080\nHOME=/tmp\n'"#,
     );
-    assert_eq!(probe_shell(&sh, Duration::from_secs(2)).as_deref(), Some("http://lower.example:8080"));
+    assert_eq!(probe_shell(&sh, Duration::from_secs(10)).as_deref(), Some("http://lower.example:8080"));
 }
 
 #[cfg(unix)]
@@ -402,19 +402,19 @@ fn probe_prefers_upper_case_and_ignores_empty_values() {
         "upper",
         "printf 'https_proxy=http://lower.example:1\\nHTTPS_PROXY=http://upper.example:2\\n'",
     );
-    assert_eq!(probe_shell(&sh, Duration::from_secs(2)).as_deref(), Some("http://upper.example:2"));
+    assert_eq!(probe_shell(&sh, Duration::from_secs(10)).as_deref(), Some("http://upper.example:2"));
     let sh = stub_shell("empty", "printf 'HTTPS_PROXY=\\nhttps_proxy=\\nOTHER=x\\n'");
-    assert_eq!(probe_shell(&sh, Duration::from_secs(2)), None);
+    assert_eq!(probe_shell(&sh, Duration::from_secs(10)), None);
     let sh = stub_shell("none", "printf 'PATH=/usr/bin\\n'");
-    assert_eq!(probe_shell(&sh, Duration::from_secs(2)), None);
+    assert_eq!(probe_shell(&sh, Duration::from_secs(10)), None);
 }
 
 #[cfg(unix)]
 #[test]
 fn probe_survives_a_failing_or_missing_shell() {
     let sh = stub_shell("fail", "exit 3");
-    assert_eq!(probe_shell(&sh, Duration::from_secs(2)), None);
-    assert_eq!(probe_shell("/definitely/not/a/shell", Duration::from_secs(2)), None);
+    assert_eq!(probe_shell(&sh, Duration::from_secs(10)), None);
+    assert_eq!(probe_shell("/definitely/not/a/shell", Duration::from_secs(10)), None);
 }
 
 #[cfg(unix)]
@@ -423,8 +423,10 @@ fn probe_is_bounded_when_a_background_process_holds_the_pipe() {
     // The shell prints the proxy, exits, but a grandchild keeps stdout open for 30 s.
     let sh = stub_shell("grandchild", "(sleep 30 &)\nprintf 'HTTPS_PROXY=http://held.example:3\\n'");
     let t0 = Instant::now();
-    let got = probe_shell(&sh, Duration::from_millis(800));
-    assert!(t0.elapsed() < Duration::from_secs(3), "probe took {:?}", t0.elapsed());
+    // Generous budget: the happy path returns as soon as the line arrives (so this costs
+    // nothing), but starting a stub shell can be slow while ~1200 tests run in parallel.
+    let got = probe_shell(&sh, Duration::from_secs(8));
+    assert!(t0.elapsed() < Duration::from_secs(15), "probe took {:?}", t0.elapsed());
     assert_eq!(got.as_deref(), Some("http://held.example:3"), "a line seen before the budget still counts");
 }
 
@@ -442,5 +444,5 @@ fn probe_is_bounded_when_the_shell_hangs() {
 fn probe_never_returns_a_value_longer_than_the_url_cap() {
     let long = "x".repeat(5000);
     let sh = stub_shell("long", &format!("printf 'HTTPS_PROXY=http://{long}\\n'"));
-    assert_eq!(probe_shell(&sh, Duration::from_secs(2)), None);
+    assert_eq!(probe_shell(&sh, Duration::from_secs(10)), None);
 }

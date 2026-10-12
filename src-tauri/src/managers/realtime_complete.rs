@@ -1,7 +1,5 @@
 //! Routing of conversation planner calls onto the streaming transport (design R9, stage 1).
 //!
-//! SKELETON: bodies are `todo!("WP-route")`; tests in `realtime_complete_tests.rs` are the spec.
-//!
 //! Routes (decided from settings only):
 //! * master `exp_rt_enabled` OFF            => legacy path (`Ok(None)`), nothing changes.
 //! * master on + `exp_rt_direct_endpoint`   => Anthropic-style endpoint from the Experimental
@@ -15,7 +13,7 @@
 
 use std::fmt;
 use std::sync::OnceLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::managers::composer_config::{
     composer_provider_supported, settings_from_app, TtsComposerMode,
@@ -32,6 +30,8 @@ use crate::settings::AppSettings;
 pub const PLANNER_MAX_TOKENS: u32 = 1500;
 /// First-text deadline (absolute, from request start).
 pub const FIRST_TEXT_DEADLINE: Duration = Duration::from_secs(20);
+/// Upper bound on proxy resolution on the request path and in the prewarm task.
+const PROXY_RESOLVE_BUDGET: Duration = Duration::from_secs(3);
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Prepared {
@@ -156,8 +156,23 @@ pub async fn try_complete(
             return Some(Err(err));
         }
     };
+    let started = Instant::now();
     let cfg = RealtimeConfig::from_settings(settings);
-    let proxy = resolve_proxy_mode(cfg.manual_proxy, cfg.auto_proxy).await;
+    let proxy = resolve_proxy_mode(
+        cfg.manual_proxy,
+        cfg.auto_proxy,
+        PROXY_RESOLVE_BUDGET.min(deadline),
+    )
+    .await;
+    // Proxy resolution counts against the overall deadline.
+    let remaining = deadline.saturating_sub(started.elapsed());
+    if remaining.is_zero() {
+        log::debug!(
+            "converse realtime outcome: {}",
+            ComposeError::Timeout.outcome()
+        );
+        return Some(Err(ComposeError::Timeout));
+    }
     let user = user_part(system, combined);
     let call = StreamCall {
         protocol: prepared.protocol,
@@ -171,8 +186,8 @@ pub async fn try_complete(
         completion_tokens_field: prepared.completion_tokens_field,
     };
     let opts = StreamOpts {
-        overall: deadline,
-        first_text: FIRST_TEXT_DEADLINE.min(deadline),
+        overall: remaining,
+        first_text: FIRST_TEXT_DEADLINE.min(remaining),
         proxy,
     };
     let mut on_text = |_: &str| {};
@@ -184,15 +199,19 @@ pub async fn try_complete(
     Some(result)
 }
 
-/// Proxy resolution off the async workers: the login-shell probe may block for up to 2 s
-/// (only when no environment proxy exists, and only once per process).
-async fn resolve_proxy_mode(manual: Option<String>, auto: bool) -> ProxyMode {
-    tauri::async_runtime::spawn_blocking(move || {
+/// Proxy resolution off the async workers, bounded by `budget`. The login-shell probe may
+/// block for up to 2 s (only when no environment proxy exists, and only once per process).
+/// On timeout the caller gets `SystemDefault`; the blocking task is detached and keeps
+/// running so the once-per-process cache still gets filled.
+async fn resolve_proxy_mode(manual: Option<String>, auto: bool, budget: Duration) -> ProxyMode {
+    let task = tauri::async_runtime::spawn_blocking(move || {
         let env = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
         llm_stream::resolve_proxy(manual.as_deref(), auto, &env, &login_shell_probe)
-    })
-    .await
-    .unwrap_or(ProxyMode::SystemDefault)
+    });
+    match tokio::time::timeout(budget, task).await {
+        Ok(Ok(mode)) => mode,
+        _ => ProxyMode::SystemDefault,
+    }
 }
 
 /// Fire-and-forget pre-connect (spawns on the tauri async runtime) when `prewarm_target`
@@ -203,7 +222,8 @@ pub fn spawn_prewarm(settings: &AppSettings) {
     };
     let cfg = RealtimeConfig::from_settings(settings);
     tauri::async_runtime::spawn(async move {
-        let proxy = resolve_proxy_mode(cfg.manual_proxy, cfg.auto_proxy).await;
+        let proxy =
+            resolve_proxy_mode(cfg.manual_proxy, cfg.auto_proxy, PROXY_RESOLVE_BUDGET).await;
         llm_stream::prewarm(&base, &proxy).await;
     });
 }
@@ -217,60 +237,11 @@ pub fn login_shell_probe() -> Option<String> {
 
 #[cfg(unix)]
 fn probe_login_shell_once() -> Option<String> {
-    use std::io::Read;
-    use std::process::{Command, Stdio};
-    use std::time::Instant;
-
-    const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
-    const POLL_INTERVAL: Duration = Duration::from_millis(20);
-    const MAX_OUTPUT: u64 = 4096;
-
     let shell = std::env::var("SHELL")
         .ok()
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "/bin/zsh".to_string());
-    let mut child = Command::new(shell)
-        .args(["-lc", r#"printf %s "${HTTPS_PROXY:-$https_proxy}""#])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
-    let deadline = Instant::now() + PROBE_TIMEOUT;
-    let succeeded = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status.success(),
-            Ok(None) => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return None;
-                }
-                std::thread::sleep(POLL_INTERVAL);
-            }
-            Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-        }
-    };
-    if !succeeded {
-        return None;
-    }
-    let mut out = String::new();
-    child
-        .stdout
-        .take()?
-        .take(MAX_OUTPUT)
-        .read_to_string(&mut out)
-        .ok()?;
-    let trimmed = out.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
+    probe_shell(&shell, Duration::from_secs(2))
 }
 
 /// Runs `{shell} -lc env` (shell-neutral: no `${A:-$b}`, which fish rejects) and returns the
@@ -279,8 +250,122 @@ fn probe_login_shell_once() -> Option<String> {
 /// the pipe open cannot block past `budget`; the child is killed when the budget expires.
 /// Values longer than `MAX_URL_CHARS` are ignored. Never logs.
 #[cfg(unix)]
-fn probe_shell(_shell: &str, _budget: Duration) -> Option<String> {
-    todo!("WP-probe")
+fn probe_shell(shell: &str, budget: Duration) -> Option<String> {
+    use std::io::{BufRead, BufReader, Read};
+    use std::os::unix::process::CommandExt;
+    use std::process::{Command, Stdio};
+    use std::sync::mpsc::{self, RecvTimeoutError};
+
+    /// Longest line considered; longer lines are discarded.
+    const MAX_LINE: usize = 8192;
+
+    let mut child = Command::new(shell)
+        .args(["-lc", "env"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .process_group(0)
+        .spawn()
+        .ok()?;
+    let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    };
+
+    let (tx, rx) = mpsc::channel::<String>();
+    // Detached: exits at EOF, or when the child group is killed below, or when `rx` is dropped.
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        loop {
+            let mut line = Vec::new();
+            let limit = (MAX_LINE + 1) as u64;
+            match reader.by_ref().take(limit).read_until(b'\n', &mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+            if line.last() != Some(&b'\n') && line.len() as u64 >= limit {
+                // Overlong line: discard through its newline.
+                if !discard_through_newline(&mut reader) {
+                    break;
+                }
+                continue;
+            }
+            if line.len() > MAX_LINE {
+                continue;
+            }
+            let text = String::from_utf8_lossy(&line);
+            let text = text.trim_end_matches(['\r', '\n']).to_string();
+            if tx.send(text).is_err() {
+                break;
+            }
+        }
+    });
+
+    let deadline = Instant::now() + budget;
+    let mut upper: Option<String> = None;
+    let mut lower: Option<String> = None;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let line = match rx.recv_timeout(remaining) {
+            Ok(line) => line,
+            Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => break,
+        };
+        if let Some(v) = line.strip_prefix("HTTPS_PROXY=") {
+            if upper.is_none() {
+                upper = accept_probe_value(v);
+            }
+            if upper.is_some() {
+                break;
+            }
+        } else if let Some(v) = line.strip_prefix("https_proxy=") {
+            if lower.is_none() {
+                lower = accept_probe_value(v);
+            }
+        }
+    }
+
+    // Kill the whole group while the leader is still unreaped (its pgid stays reserved),
+    // then reap it on every path so no zombie is left.
+    if let Ok(pid) = libc::pid_t::try_from(child.id()) {
+        // SAFETY: plain signal delivery to our own child's process group; no memory is touched.
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+
+    upper.or(lower)
+}
+
+/// Drops a trimmed, non-empty value that exceeds the URL cap. Never logs the value.
+#[cfg(unix)]
+fn accept_probe_value(raw: &str) -> Option<String> {
+    let v = raw.trim();
+    if v.is_empty() || v.chars().count() > crate::managers::realtime_config::MAX_URL_CHARS {
+        None
+    } else {
+        Some(v.to_string())
+    }
+}
+
+/// Reads and drops bytes up to and including the next newline. False on EOF or error.
+#[cfg(unix)]
+fn discard_through_newline<R: std::io::BufRead>(reader: &mut R) -> bool {
+    loop {
+        let (found_newline, used) = match reader.fill_buf() {
+            Ok(buf) if !buf.is_empty() => match buf.iter().position(|&b| b == b'\n') {
+                Some(i) => (true, i + 1),
+                None => (false, buf.len()),
+            },
+            _ => return false,
+        };
+        reader.consume(used);
+        if found_newline {
+            return true;
+        }
+    }
 }
 
 #[cfg(not(unix))]
