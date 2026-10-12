@@ -2,6 +2,11 @@
 //! listen. Pure and trait-generic (no tauri types); all hardware sits behind
 //! the traits below. Contract: DESIGN.md section 3.3 (Revision 4).
 
+use crate::managers::converse_ack::choose;
+use crate::managers::converse_context::{
+    compose, neutralize, note_command, note_delivery_failed, note_failed, note_incomplete,
+    note_interrupted, note_paste, note_paste_failed, CommandNote,
+};
 use crate::managers::converse_local::{classify_local, LocalIntent};
 use crate::managers::converse_plan::{
     PlanError, PlanInput, PlanKind, TurnPlan, MAX_UTTERANCE_CHARS,
@@ -160,6 +165,9 @@ pub struct SessionConfig {
     pub ack_after: Option<Duration>,
     /// Realtime: log per-turn latency numbers (never any text). Default false.
     pub timing_log: bool,
+    /// Choose the acknowledgement from the utterance (`converse_ack`) instead of the static
+    /// `MSG_ACK` / `ack_after` pair. Only meaningful when `ack_after` is `Some`. Default false.
+    pub smart_ack: bool,
 }
 
 impl Default for SessionConfig {
@@ -174,6 +182,7 @@ impl Default for SessionConfig {
             early_speech: false,
             ack_after: None,
             timing_log: false,
+            smart_ack: false,
         }
     }
 }
@@ -196,6 +205,7 @@ impl SessionConfig {
                 None
             },
             timing_log: rt.timing_log,
+            smart_ack: rt.ack,
         }
     }
 }
@@ -242,7 +252,7 @@ const STILL_SPEAKING_RETRY: Duration = Duration::from_secs(1);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SpeakResult {
     /// Speech finished (Done, Interrupted or Failed) and the settle steps ran.
-    Spoken,
+    Spoken(SayOutcome),
     Cancelled,
     /// Speech still running after the retry; the mic must not reopen.
     Stuck,
@@ -284,7 +294,7 @@ async fn race<F: Future>(cancel: &mut CancelToken, fut: F) -> Option<F::Output> 
 
 fn speech_to_end(result: SpeakResult) -> Option<SessionEnd> {
     match result {
-        SpeakResult::Spoken => None,
+        SpeakResult::Spoken(_) => None,
         SpeakResult::Cancelled => Some(SessionEnd::Cancelled),
         SpeakResult::Stuck => Some(SessionEnd::SpeechStuck),
     }
@@ -305,6 +315,22 @@ async fn speak_or_end(
     speech_to_end(speak(deps, cfg, cancel, text, emotion).await)
 }
 
+/// Speaks one line and reports how the delivery went (`Done` / `Interrupted` / `Failed`) in
+/// addition to the settle result. Only Cancelled and Stuck end the session.
+async fn speak_outcome(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    text: &str,
+    emotion: Emotion,
+) -> Result<SayOutcome, SessionEnd> {
+    match speak(deps, cfg, cancel, text, emotion).await {
+        SpeakResult::Spoken(outcome) => Ok(outcome),
+        SpeakResult::Cancelled => Err(SessionEnd::Cancelled),
+        SpeakResult::Stuck => Err(SessionEnd::SpeechStuck),
+    }
+}
+
 /// Speaks one line. Reports Speaking first, races the say against cancel and
 /// then settles (wait for quiet, optional guard).
 async fn speak(
@@ -315,21 +341,26 @@ async fn speak(
     emotion: Emotion,
 ) -> SpeakResult {
     if text.trim().is_empty() {
-        return SpeakResult::Spoken;
+        return SpeakResult::Spoken(SayOutcome::Done);
     }
     deps.reporter.state(SessionState::Speaking);
     if is_cancelled(cancel) {
         return SpeakResult::Cancelled;
     }
-    if race(cancel, deps.mouth.say(text, emotion)).await.is_none() {
+    let Some(outcome) = race(cancel, deps.mouth.say(text, emotion)).await else {
         return SpeakResult::Cancelled;
-    }
-    settle(deps, cfg, cancel).await
+    };
+    settle(deps, cfg, cancel, outcome).await
 }
 
 /// After any say: wait until quiet. If still speaking, stop once and wait
 /// once more; still speaking => Stuck. On quiet, sleep the post-speech guard.
-async fn settle(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToken) -> SpeakResult {
+async fn settle(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    outcome: SayOutcome,
+) -> SpeakResult {
     let quiet = match race(cancel, deps.mouth.wait_quiet(cfg.quiet_wait)).await {
         Some(outcome) => outcome,
         None => return SpeakResult::Cancelled,
@@ -349,20 +380,66 @@ async fn settle(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToken) 
     {
         return SpeakResult::Cancelled;
     }
-    SpeakResult::Spoken
+    SpeakResult::Spoken(outcome)
 }
 
 fn truncate_chars(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
 }
 
+/// Appends one turn. The user side is neutralized; the summary is already composed (a note is
+/// kept whole by `compose`), so the cap below only trims plain text.
 fn push_history(history: &mut Vec<(String, String)>, utterance: &str, summary: &str, keep: usize) {
     history.push((
-        truncate_chars(utterance, HISTORY_SIDE_MAX_CHARS),
+        truncate_chars(&neutralize(utterance), HISTORY_SIDE_MAX_CHARS),
         truncate_chars(summary, HISTORY_SIDE_MAX_CHARS),
     ));
     let excess = history.len().saturating_sub(keep);
     history.drain(..excess);
+}
+
+/// History side of a recorded failure (nothing was delivered this turn).
+fn failed_summary() -> String {
+    compose("", &note_failed())
+}
+
+/// History side of a paste that did not reach the active window.
+fn paste_failed_summary() -> String {
+    compose("", &note_paste_failed())
+}
+
+/// History side of a plan failure: nothing was queued, so the turn failed outright; otherwise the
+/// queued prefix is kept and marked incomplete.
+fn failure_summary(spoken: &[String]) -> String {
+    if spoken.is_empty() {
+        failed_summary()
+    } else {
+        compose(&spoken.join(" "), &note_incomplete())
+    }
+}
+
+/// History side of an answer or clarify: the speech as delivered, with a note when delivery was
+/// interrupted or failed.
+fn answer_summary(speech: &str, outcome: SayOutcome) -> String {
+    match outcome {
+        SayOutcome::Done => neutralize(speech),
+        SayOutcome::Interrupted => compose(speech, &note_interrupted()),
+        SayOutcome::Failed => compose(speech, &note_delivery_failed()),
+    }
+}
+
+/// A failed turn is recorded once: skip it when the newest entry is already a failure for the
+/// same full utterance.
+fn is_repeated_failure(
+    history: &[(String, String)],
+    last_failed: Option<&str>,
+    utterance: &str,
+    summary: &str,
+) -> bool {
+    let failed = failed_summary();
+    summary == failed
+        && last_failed == Some(utterance)
+        && history.last().is_some_and(|(_, side)| *side == failed)
 }
 
 /// Converts an optional end into a `Result` so `?` can propagate it.
@@ -373,9 +450,10 @@ fn into_result(end: Option<SessionEnd>) -> Result<(), SessionEnd> {
     }
 }
 
-/// Restricted tier for a model-proposed command. `Ok(Some(summary))` when the
-/// command executed (the summary goes into history); `Ok(None)` when a fixed
-/// message was spoken instead; `Err(end)` when the session must end.
+/// Restricted tier for a model-proposed command. `Ok(Some(summary))` is the history side of a
+/// command that was answered (executed or refused or failed, with a fixed message spoken);
+/// `Ok(None)` when no command was given (fixed message, nothing recorded); `Err(end)` when the
+/// session must end.
 async fn run_command_plan(
     deps: &Deps<'_>,
     cfg: &SessionConfig,
@@ -389,22 +467,24 @@ async fn run_command_plan(
     if is_cancelled(cancel) {
         return Err(SessionEnd::Cancelled);
     }
-    let fixed = match deps.hands.run_model_command(command).await {
+    let (fixed, outcome) = match deps.hands.run_model_command(command).await {
         PhraseOutcome::Done(message) => {
+            // The effect is recorded even if the confirmation speech fails.
+            let note = note_command(command, &CommandNote::Done(message.clone()));
             let spoken = if plan.speech.is_empty() {
                 message
             } else {
                 plan.speech.clone()
             };
-            into_result(speak_or_end(deps, cfg, cancel, &spoken, plan.emotion).await)?;
-            return Ok(Some(plan.speech.clone()));
+            speak_outcome(deps, cfg, cancel, &spoken, plan.emotion).await?;
+            return Ok(Some(compose(&plan.speech, &note)));
         }
-        PhraseOutcome::NoMatch => MSG_NO_MATCH_COMMAND,
-        PhraseOutcome::Refused => MSG_REFUSED,
-        PhraseOutcome::Failed => MSG_FAILED,
+        PhraseOutcome::NoMatch => (MSG_NO_MATCH_COMMAND, CommandNote::NoMatch),
+        PhraseOutcome::Refused => (MSG_REFUSED, CommandNote::Refused),
+        PhraseOutcome::Failed => (MSG_FAILED, CommandNote::Failed),
     };
     into_result(speak_or_end(deps, cfg, cancel, fixed, Emotion::Neutral).await)?;
-    Ok(None)
+    Ok(Some(compose("", &note_command(command, &outcome))))
 }
 
 /// Shared state of one streamed brain turn (see `stream_plan`).
@@ -415,7 +495,8 @@ struct Early {
     spoken: Vec<String>,
     /// The queue refused a push: the user or the system took the speaker. Stay silent.
     dead: bool,
-    ack_pushed: bool,
+    /// The acknowledgement queued this turn, if any (never part of `spoken`).
+    ack: Option<&'static str>,
     speaking_reported: bool,
     first_text: Option<Instant>,
     first_speech: Option<Instant>,
@@ -467,14 +548,46 @@ fn on_delta(
     }
 }
 
+/// Session state carried from turn to turn.
+#[derive(Default)]
+struct Carry {
+    last_draft: Option<String>,
+    /// The acknowledgement last queued (smart acknowledgement avoids repeating it).
+    last_ack: Option<&'static str>,
+    /// Full utterance of the last recorded `failed` entry (see `record_turn`).
+    last_failed: Option<String>,
+}
+
+/// The acknowledgement for a turn: its delay and text. `None` when acknowledgements are off.
+/// `ack_after` is the enable flag; with `smart_ack` the text and delay come from `converse_ack`.
+fn ack_for(
+    cfg: &SessionConfig,
+    utterance: &str,
+    has_draft: bool,
+    last_ack: Option<&'static str>,
+) -> Option<(Duration, &'static str)> {
+    let after = cfg.ack_after?;
+    if cfg.smart_ack {
+        let ack = choose(utterance, has_draft, last_ack);
+        Some((ack.after, ack.text))
+    } else {
+        Some((after, MSG_ACK))
+    }
+}
+
 /// The acknowledgement: queued once, only while nothing has been spoken yet.
-fn push_ack(queue: &dyn SpeechQueue, early: &Mutex<Early>, reporter: &dyn Reporter) {
+fn push_ack(
+    queue: &dyn SpeechQueue,
+    early: &Mutex<Early>,
+    reporter: &dyn Reporter,
+    text: &'static str,
+) {
     let mut early = lock_early(early);
-    if early.dead || !early.spoken.is_empty() || early.ack_pushed {
+    if early.dead || !early.spoken.is_empty() || early.ack.is_some() {
         return;
     }
-    if queue.push(MSG_ACK, Emotion::Neutral) {
-        early.ack_pushed = true;
+    if queue.push(text, Emotion::Neutral) {
+        early.ack = Some(text);
         mark_speaking(&mut early, reporter);
     } else {
         early.dead = true;
@@ -489,15 +602,16 @@ async fn stream_plan(
     cfg: &SessionConfig,
     queue: &dyn SpeechQueue,
     early: &Mutex<Early>,
+    ack: Option<(Duration, &'static str)>,
     input: PlanInput<'_>,
 ) -> Result<TurnPlan, PlanError> {
     let mut on_text = |delta: &str| on_delta(early, cfg, queue, deps.reporter, delta);
     let mut plan = deps.brain.plan_streaming(input, &mut on_text);
-    if let Some(after) = cfg.ack_after {
+    if let Some((after, text)) = ack {
         let timer = std::pin::pin!(tokio::time::sleep(after));
         match select(&mut plan, timer).await {
             Either::Left((result, _timer)) => return result,
-            Either::Right((_elapsed, _plan)) => push_ack(queue, early, deps.reporter),
+            Either::Right((_elapsed, _plan)) => push_ack(queue, early, deps.reporter, text),
         }
     }
     plan.await
@@ -512,7 +626,7 @@ async fn streamed_outcome(
     queue: &dyn SpeechQueue,
     early: &mut Early,
     plan: TurnPlan,
-    last_draft: &mut Option<String>,
+    carry: &mut Carry,
 ) -> Result<Option<String>, SessionEnd> {
     if early.dead {
         queue.abort();
@@ -522,14 +636,14 @@ async fn streamed_outcome(
         Reconcile::Abort => {
             queue.abort();
             into_result(speak_or_end(deps, cfg, cancel, MSG_PLAN_FAILED, Emotion::Neutral).await)?;
-            return Ok(None);
+            return Ok(Some(failure_summary(&early.spoken)));
         }
         Reconcile::Legacy => {
             // Only an already-pushed acknowledgement is replaced by the legacy say.
-            if early.ack_pushed {
+            if early.ack.is_some() {
                 queue.abort();
             }
-            return execute_plan(deps, cfg, cancel, plan, last_draft).await;
+            return execute_plan(deps, cfg, cancel, plan, carry).await;
         }
         Reconcile::Remainder { text } => text,
     };
@@ -540,26 +654,28 @@ async fn streamed_outcome(
             return Ok(None);
         }
     }
-    if race(cancel, queue.finish()).await.is_none() {
+    let Some(outcome) = race(cancel, queue.finish()).await else {
         queue.abort();
         return Err(SessionEnd::Cancelled);
-    }
-    let result = settle(deps, cfg, cancel).await;
+    };
+    let result = settle(deps, cfg, cancel, outcome).await;
     if matches!(plan.kind, PlanKind::End) {
         return Err(after_speech(result, SessionEnd::UserEnded));
     }
     if let Some(end) = speech_to_end(result) {
         return Err(end);
     }
-    Ok(Some(plan.speech.clone()))
+    Ok(Some(answer_summary(&plan.speech, outcome)))
 }
 
-/// A plan request that failed or was superseded. `Ok(None)` = continue the loop.
+/// A plan request that failed or was superseded. `Ok(Some(summary))` records the failure in
+/// history (`spoken` is the queued prefix of this turn); `Ok(None)` = continue without recording.
 async fn plan_failed(
     deps: &Deps<'_>,
     cfg: &SessionConfig,
     cancel: &mut CancelToken,
     err: PlanError,
+    spoken: &[String],
 ) -> Result<Option<String>, SessionEnd> {
     match err {
         PlanError::NotConfigured => Err(after_speech(
@@ -569,7 +685,7 @@ async fn plan_failed(
         PlanError::Superseded => Ok(None),
         _ => {
             into_result(speak_or_end(deps, cfg, cancel, MSG_PLAN_FAILED, Emotion::Neutral).await)?;
-            Ok(None)
+            Ok(Some(failure_summary(spoken)))
         }
     }
 }
@@ -603,14 +719,14 @@ async fn brain_turn(
     cancel: &mut CancelToken,
     utterance: &str,
     history: &[(String, String)],
-    last_draft: &mut Option<String>,
+    carry: &mut Carry,
 ) -> Result<Option<String>, SessionEnd> {
     let tier_start = Instant::now();
     let start = history.len().saturating_sub(cfg.context_turns);
     let input = PlanInput {
         utterance,
         history: history.get(start..).unwrap_or_default(),
-        last_draft: last_draft.as_deref(),
+        last_draft: carry.last_draft.as_deref(),
         style: &cfg.style,
     };
     let queue = if cfg.early_speech || cfg.ack_after.is_some() {
@@ -621,40 +737,39 @@ async fn brain_turn(
     let Some(queue) = queue else {
         return match race(cancel, deps.brain.plan(input)).await {
             None => Err(SessionEnd::Cancelled),
-            Some(Ok(plan)) => execute_plan(deps, cfg, cancel, plan, last_draft).await,
-            Some(Err(err)) => plan_failed(deps, cfg, cancel, err).await,
+            Some(Ok(plan)) => execute_plan(deps, cfg, cancel, plan, carry).await,
+            Some(Err(err)) => plan_failed(deps, cfg, cancel, err, &[]).await,
         };
     };
+    let ack = ack_for(cfg, utterance, carry.last_draft.is_some(), carry.last_ack);
     let early = Mutex::new(Early::default());
     let planned = race(
         cancel,
-        stream_plan(deps, cfg, queue.as_ref(), &early, input),
+        stream_plan(deps, cfg, queue.as_ref(), &early, ack, input),
     )
     .await;
     let plan_at = Instant::now();
     let mut early = take_early(early);
+    carry.last_ack = early.ack.or(carry.last_ack);
     let turn = match planned {
         None => {
             queue.abort();
             Err(SessionEnd::Cancelled)
         }
         Some(Ok(plan)) => {
-            streamed_outcome(
-                deps,
-                cfg,
-                cancel,
-                queue.as_ref(),
-                &mut early,
-                plan,
-                last_draft,
-            )
-            .await
+            streamed_outcome(deps, cfg, cancel, queue.as_ref(), &mut early, plan, carry).await
         }
         Some(Err(err)) => {
-            if !early.spoken.is_empty() || early.ack_pushed || early.dead {
+            if !early.spoken.is_empty() || early.ack.is_some() || early.dead {
                 queue.abort();
             }
-            plan_failed(deps, cfg, cancel, err).await
+            // A dead queue means the user or system took the speaker: nothing is recorded.
+            let turn = plan_failed(deps, cfg, cancel, err, &early.spoken).await;
+            if early.dead {
+                turn.map(|_| None)
+            } else {
+                turn
+            }
         }
     };
     log_timing(cfg, tier_start, &early, plan_at);
@@ -668,7 +783,7 @@ async fn execute_plan(
     cfg: &SessionConfig,
     cancel: &mut CancelToken,
     plan: TurnPlan,
-    last_draft: &mut Option<String>,
+    carry: &mut Carry,
 ) -> Result<Option<String>, SessionEnd> {
     // Cancel is checked before each effect.
     let summary: String = match plan.kind {
@@ -679,15 +794,15 @@ async fn execute_plan(
             ));
         }
         PlanKind::Answer | PlanKind::Clarify => {
-            into_result(speak_or_end(deps, cfg, cancel, &plan.speech, plan.emotion).await)?;
-            plan.speech.clone()
+            let outcome = speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?;
+            answer_summary(&plan.speech, outcome)
         }
         PlanKind::Paste => {
             let Some(pasted) = plan.paste_text.clone() else {
                 into_result(
                     speak_or_end(deps, cfg, cancel, MSG_PASTE_FAILED, Emotion::Neutral).await,
                 )?;
-                return Ok(None);
+                return Ok(Some(paste_failed_summary()));
             };
             if is_cancelled(cancel) {
                 return Err(SessionEnd::Cancelled);
@@ -696,16 +811,18 @@ async fn execute_plan(
                 into_result(
                     speak_or_end(deps, cfg, cancel, MSG_PASTE_FAILED, Emotion::Neutral).await,
                 )?;
-                return Ok(None);
+                return Ok(Some(paste_failed_summary()));
             }
-            *last_draft = Some(pasted);
+            // The paste reached the window: the effect is recorded even if the confirmation fails.
+            let note = note_paste(&pasted);
+            carry.last_draft = Some(pasted);
             let spoken = if plan.speech.is_empty() {
                 MSG_DONE.to_string()
             } else {
                 plan.speech.clone()
             };
-            into_result(speak_or_end(deps, cfg, cancel, &spoken, plan.emotion).await)?;
-            format!("{spoken} (pasted text)")
+            speak_outcome(deps, cfg, cancel, &spoken, plan.emotion).await?;
+            compose(&spoken, &note)
         }
         PlanKind::Command => match run_command_plan(deps, cfg, cancel, &plan).await? {
             Some(summary) => summary,
@@ -718,7 +835,7 @@ async fn execute_plan(
 /// The turn loop. Returns the end; the wrapper reports Idle and stops.
 async fn run_turns(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToken) -> SessionEnd {
     let mut history: Vec<(String, String)> = Vec::new();
-    let mut last_draft: Option<String> = None;
+    let mut carry = Carry::default();
     let mut idle_turns: u32 = 0;
     let mut turns: usize = 0;
 
@@ -821,17 +938,36 @@ async fn run_turns(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToke
 
         // Brain tier. The plan is dropped if cancel wins the race.
         deps.reporter.state(SessionState::Thinking);
-        let summary =
-            match brain_turn(deps, cfg, cancel, &utterance, &history, &mut last_draft).await {
-                Ok(Some(summary)) => summary,
-                Ok(None) => continue,
-                Err(end) => return end,
-            };
+        let summary = match brain_turn(deps, cfg, cancel, &utterance, &history, &mut carry).await {
+            Ok(Some(summary)) => summary,
+            Ok(None) => continue,
+            Err(end) => return end,
+        };
 
-        push_history(&mut history, &utterance, &summary, cfg.context_turns);
-        if cfg.context_turns == 0 {
-            last_draft = None;
-        }
+        record_turn(&mut history, &mut carry, cfg, &utterance, &summary);
+    }
+}
+
+/// Appends a turn to history (failure records are deduplicated on the full utterance) and keeps
+/// `last_draft` in step with `context_turns == 0`.
+fn record_turn(
+    history: &mut Vec<(String, String)>,
+    carry: &mut Carry,
+    cfg: &SessionConfig,
+    utterance: &str,
+    summary: &str,
+) {
+    let repeated = is_repeated_failure(history, carry.last_failed.as_deref(), utterance, summary);
+    if !repeated {
+        push_history(history, utterance, summary, cfg.context_turns);
+    }
+    carry.last_failed = if summary == failed_summary() {
+        Some(utterance.to_string())
+    } else {
+        None
+    };
+    if cfg.context_turns == 0 {
+        carry.last_draft = None;
     }
 }
 
@@ -1487,7 +1623,9 @@ mod tests {
             r.log.says(),
             vec!["Set up a reply backend in the speech settings first."]
         );
-        // other errors: apologise, keep going, nothing recorded
+        // other errors: apologise, keep going; deliberate spec change (DESIGN Revision 3, critic
+        // C2): the failed turn is recorded as a structured `failed` note so a retry such as
+        // "no, the other one" still sees the failed request.
         for e in [
             PlanError::Timeout,
             PlanError::Backend,
@@ -1502,9 +1640,16 @@ mod tests {
             assert_eq!(run(&r, &cfg()).await, SessionEnd::Cancelled);
             assert_eq!(r.log.says()[0], "Sorry, I couldn't work that out.");
             let h = r.brain.histories.lock().unwrap().clone();
-            assert!(
-                h[1].is_empty(),
-                "failed turn must not enter history ({e:?})"
+            assert_eq!(
+                h[1],
+                vec![(
+                    "hi".to_string(),
+                    crate::managers::converse_context::compose(
+                        "",
+                        &crate::managers::converse_context::note_failed()
+                    )
+                )],
+                "failed turn is recorded as a failure note ({e:?})"
             );
         }
         // Superseded: silent continue
@@ -1537,7 +1682,15 @@ mod tests {
         assert_eq!(d[0], None);
         assert_eq!(d[1].as_deref(), Some("Dear Sam, thank you so much."));
         let h = r.brain.histories.lock().unwrap().clone();
-        assert_eq!(h[1][0].1, "Pasted. (pasted text)");
+        // deliberate spec change (DESIGN Revision 3, Design A): the history now carries a
+        // structured runtime note instead of the vague "(pasted text)" marker.
+        assert_eq!(
+            h[1][0].1,
+            crate::managers::converse_context::compose(
+                "Pasted.",
+                &crate::managers::converse_context::note_paste("Dear Sam, thank you so much.")
+            )
+        );
     }
 
     #[tokio::test]
@@ -2060,3 +2213,11 @@ mod tests {
 #[cfg(test)]
 #[path = "converse_stream_loop_tests.rs"]
 mod stream_loop_tests;
+
+#[cfg(test)]
+#[path = "converse_context_loop_tests.rs"]
+mod context_loop_tests;
+
+#[cfg(test)]
+#[path = "converse_ack_loop_tests.rs"]
+mod ack_loop_tests;

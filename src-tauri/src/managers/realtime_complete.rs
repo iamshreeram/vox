@@ -393,3 +393,7 @@ mod tests;
 #[cfg(test)]
 #[path = "realtime_complete_stream_tests.rs"]
 mod stream_tests;
+
+#[cfg(test)]
+#[path = "realtime_live_tests.rs"]
+mod live_tests;
