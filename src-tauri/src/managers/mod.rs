@@ -22,6 +22,7 @@ pub mod media_control;
 pub mod memory;
 pub mod model;
 pub mod model_capabilities;
+pub mod realtime_complete;
 pub mod realtime_config;
 pub mod safety_policy;
 pub mod source_update;
