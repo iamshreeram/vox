@@ -406,7 +406,7 @@ impl Worker {
             None => ListenOutcome::Aborted,
             Some(samples) => self.transcribe(samples),
         };
-        log_listen_end("speech_ended", &r);
+        log_listen_end(end_reason(&outcome), &r);
         let _ = r.reply.send(outcome);
     }
 

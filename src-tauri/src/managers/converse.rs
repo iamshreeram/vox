@@ -235,7 +235,8 @@ pub async fn run_session(deps: &Deps<'_>, cfg: &SessionConfig, cancel: CancelTok
 const MSG_TOO_LONG: &str = "That was too long for me. Please say it in parts.";
 /// Spoken once when the capture reports `TooLong` twice in a row (the
 /// endpointer cannot find the end of speech).
-const MSG_CANT_HEAR: &str = "I can't tell when you stop talking, so I'm ending this. Please check the microphone and try again.";
+const MSG_CANT_HEAR: &str =
+    "I can't tell when you stop talking, so I'm ending this. Please try again somewhere quieter.";
 const MSG_MIC: &str = "I can't use the microphone right now.";
 const MSG_STOP_LISTENING: &str = "I'll stop listening now.";
 const MSG_OKAY: &str = "Okay.";
