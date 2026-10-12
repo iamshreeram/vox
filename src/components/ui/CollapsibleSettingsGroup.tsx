@@ -42,7 +42,7 @@ export const CollapsibleSettingsGroup: React.FC<
           <span className="settings-card-title block text-xs font-medium text-mid-gray uppercase tracking-wide">
             {title}
           </span>
-          {description && (
+          {description && open && (
             <span className="block text-xs text-mid-gray mt-1">
               {description}
             </span>
