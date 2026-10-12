@@ -13,11 +13,15 @@ use specta::Type;
 
 use crate::settings::AppSettings;
 
-pub const MSG_ENDPOINT_MISSING: &str = "Enter the endpoint address in the experimental realtime settings first.";
+pub const MSG_ENDPOINT_MISSING: &str =
+    "Enter the endpoint address in the experimental realtime settings first.";
 pub const MSG_ENDPOINT_INVALID: &str = "The realtime endpoint address is not valid.";
-pub const MSG_ENDPOINT_NEEDS_HTTPS: &str = "The realtime endpoint must use https when a token is set.";
-pub const MSG_MODEL_MISSING: &str = "Enter the model name in the experimental realtime settings first.";
-pub const MSG_TOKEN_MISSING: &str = "Enter the access token in the experimental realtime settings first.";
+pub const MSG_ENDPOINT_NEEDS_HTTPS: &str =
+    "The realtime endpoint must use https when a token is set.";
+pub const MSG_MODEL_MISSING: &str =
+    "Enter the model name in the experimental realtime settings first.";
+pub const MSG_TOKEN_MISSING: &str =
+    "Enter the access token in the experimental realtime settings first.";
 pub const MSG_PROXY_INVALID: &str = "The realtime proxy address is not valid.";
 
 pub const MAX_URL_CHARS: usize = 2048;
@@ -85,7 +89,11 @@ pub fn apply_exp_rt_bool(_s: &mut AppSettings, _key: ExpRtBool, _value: bool) {
 /// `llm_stream::validate_endpoint(value, true)`; a non-empty proxy must pass
 /// `llm_stream::is_valid_proxy_url`. Empty clears the field. On Err the settings are
 /// unchanged and the message is static (never echoes the value).
-pub fn apply_exp_rt_text(_s: &mut AppSettings, _key: ExpRtText, _value: &str) -> Result<(), &'static str> {
+pub fn apply_exp_rt_text(
+    _s: &mut AppSettings,
+    _key: ExpRtText,
+    _value: &str,
+) -> Result<(), &'static str> {
     todo!("WP-settings")
 }
 

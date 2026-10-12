@@ -837,6 +837,93 @@
           "details": "Vox's local speech-to-text is built on transcribe.cpp and ggml. Thanks to the amazing work by Georgi Gerganov and contributors."
         }
       }
+    },
+    "experimental": {
+      "realtime": {
+        "title": "Realtime conversation",
+        "intro": "Experimental. Every behaviour below is off until you turn it on. Nothing is sent to a remote endpoint unless you enable \"Use my own endpoint\".",
+        "enabled": {
+          "label": "Enable realtime conversation",
+          "description": "Turns on the realtime conversation behaviour. When off, the conversation works exactly as before."
+        },
+        "speakReplies": {
+          "label": "Speak replies aloud",
+          "description": "Speaks the conversation's replies out loud. This is the same setting as Spoken Replies."
+        },
+        "directEndpoint": {
+          "label": "Use my own endpoint",
+          "description": "Send replies to the endpoint you enter below instead of the speech composer settings."
+        },
+        "endpoint": {
+          "label": "Endpoint address",
+          "description": "Base address of an Anthropic-style API. Must use https unless it is localhost.",
+          "placeholder": "https://api.example.com"
+        },
+        "model": {
+          "label": "Model name",
+          "description": "Name of the model to ask.",
+          "placeholder": "model-name"
+        },
+        "token": {
+          "label": "Access token",
+          "description": "Pasted by you and stored in Vox settings. It is never shown here and never written to logs.",
+          "placeholder": "Paste token",
+          "set": "Token set ({{count}} characters)",
+          "none": "No token set",
+          "clear": "Clear token"
+        },
+        "status": {
+          "off": "Off: turn on the realtime conversation and your own endpoint to use it.",
+          "ok": "Ready: the endpoint, model and token are set.",
+          "missing_endpoint": "Enter an endpoint address.",
+          "missing_model": "Enter a model name.",
+          "missing_token": "Enter an access token.",
+          "invalid_endpoint": "The endpoint address is not valid.",
+          "needs_https": "The endpoint must use https unless it is localhost."
+        },
+        "errors": {
+          "invalid": "This value is not valid.",
+          "needs_https": "Use https for this address (plain http is allowed only for localhost).",
+          "too_long": "This value is too long."
+        },
+        "streamReply": {
+          "label": "Stream replies",
+          "description": "Show and speak the reply as it is generated instead of waiting for the whole answer."
+        },
+        "earlySpeech": {
+          "label": "Speak while the reply streams",
+          "description": "Start speaking sentences before the reply finishes. Needs Stream replies."
+        },
+        "fastVoice": {
+          "label": "Fast voice engine",
+          "description": "Use a resident system voice for lower speaking delay (macOS)."
+        },
+        "ack": {
+          "label": "Spoken acknowledgement",
+          "description": "Say a short \"One moment\" when the reply is slow."
+        },
+        "prewarm": {
+          "label": "Pre-connect",
+          "description": "Open the connection to the endpoint before your first question."
+        },
+        "autoProxy": {
+          "label": "Auto-detect proxy",
+          "description": "Use the proxy from your environment or login shell when Vox is started from Finder."
+        },
+        "proxy": {
+          "label": "Use a manual proxy",
+          "description": "Route realtime requests through the proxy address below."
+        },
+        "proxyUrl": {
+          "label": "Proxy address",
+          "description": "http or https address of the proxy, with a host and port.",
+          "placeholder": "http://proxy.example.com:8080"
+        },
+        "timingLog": {
+          "label": "Timing log",
+          "description": "Log per-turn latency numbers only. No text or tokens are logged."
+        }
+      }
     }
   },
   "footer": {

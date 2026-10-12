@@ -5,6 +5,7 @@ pub mod converse;
 pub mod history;
 pub mod memory;
 pub mod models;
+pub mod realtime;
 pub mod source_update;
 pub mod transcription;
 pub mod tts_composer;

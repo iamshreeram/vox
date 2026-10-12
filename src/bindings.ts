@@ -895,6 +895,22 @@ async converseStop() : Promise<boolean> {
 async converseStatus() : Promise<string> {
     return await TAURI_INVOKE("converse_status");
 },
+async changeExpRtBoolSetting(key: ExpRtBool, value: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_exp_rt_bool_setting", { key, value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeExpRtTextSetting(key: ExpRtText, value: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_exp_rt_text_setting", { key, value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getMicrophoneChannels(deviceName: string) : Promise<Result<number, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_microphone_channels", { deviceName }) };
@@ -1314,7 +1330,15 @@ tts_composer_mode?: TtsComposerMode; tts_composer_provider_id?: string; tts_comp
  */
 tts_composer_command_ack?: string; tts_composer_timeout_secs?: number; tts_composer_style?: string; tts_composer_send_user_utterance?: boolean; tts_composer_fallback?: TtsComposerFallback;
 converse_silence_ms?: number; converse_max_idle_turns?: number; converse_context_turns?: number;
+exp_rt_enabled?: boolean; exp_rt_direct_endpoint?: boolean; exp_rt_endpoint_url?: string; exp_rt_model?: string; exp_rt_token?: SecretString; exp_rt_stream_reply?: boolean; exp_rt_early_speech?: boolean; exp_rt_fast_voice?: boolean; exp_rt_ack?: boolean; exp_rt_prewarm?: boolean; exp_rt_auto_proxy?: boolean; exp_rt_proxy_enabled?: boolean; exp_rt_proxy_url?: string; exp_rt_timing_log?: boolean;
 }
+export type ExpRtBool = "enabled" | "direct_endpoint" | "stream_reply" | "early_speech" | "fast_voice" | "ack" | "prewarm" | "auto_proxy" | "proxy_enabled" | "timing_log"
+export type ExpRtText = "endpoint_url" | "model" | "token" | "proxy_url"
+/**
+ * A single secret value (API token). Serialized as a plain string so it persists,
+ * but `Debug` never prints it.
+ */
+export type SecretString = string
 export type VoiceShortcut = { phrase: string; action: VoiceShortcutAction }
 export type VoiceShortcutAction = { type: "open_url"; url: string } | { type: "open_path"; path: string } | { type: "open_app"; name: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean }

@@ -1009,6 +1009,8 @@ pub fn run(cli_args: CliArgs) {
             commands::converse::converse_start,
             commands::converse::converse_stop,
             commands::converse::converse_status,
+            commands::realtime::change_exp_rt_bool_setting,
+            commands::realtime::change_exp_rt_text_setting,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![

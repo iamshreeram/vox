@@ -40,8 +40,16 @@ fn defaults_are_opt_in() {
 fn old_stores_without_the_fields_load_with_defaults() {
     let mut v = serde_json::to_value(get_default_settings()).unwrap();
     let obj = v.as_object_mut().unwrap();
-    let keys: Vec<String> = obj.keys().filter(|k| k.starts_with("exp_rt_")).cloned().collect();
-    assert_eq!(keys.len(), 14, "all 14 experimental fields are serialized: {keys:?}");
+    let keys: Vec<String> = obj
+        .keys()
+        .filter(|k| k.starts_with("exp_rt_"))
+        .cloned()
+        .collect();
+    assert_eq!(
+        keys.len(),
+        14,
+        "all 14 experimental fields are serialized: {keys:?}"
+    );
     for k in &keys {
         obj.remove(k);
     }
@@ -55,11 +63,17 @@ fn token_round_trips_but_debug_never_prints_it() {
     let mut s = get_default_settings();
     s.exp_rt_token = "super-secret-token-value".into();
     let v = serde_json::to_value(&s).unwrap();
-    assert_eq!(v["exp_rt_token"], "super-secret-token-value", "must persist as a plain string");
+    assert_eq!(
+        v["exp_rt_token"], "super-secret-token-value",
+        "must persist as a plain string"
+    );
     let back: AppSettings = serde_json::from_value(v).unwrap();
     assert_eq!(back.exp_rt_token.as_str(), "super-secret-token-value");
     let dbg = format!("{s:?}");
-    assert!(!dbg.contains("super-secret-token-value"), "Debug leaked the token");
+    assert!(
+        !dbg.contains("super-secret-token-value"),
+        "Debug leaked the token"
+    );
     assert!(dbg.contains("[REDACTED]"));
 }
 
@@ -97,7 +111,9 @@ fn master_on_reflects_each_toggle() {
     s.exp_rt_ack = true;
     s.exp_rt_timing_log = true;
     let c = RealtimeConfig::from_settings(&s);
-    assert!(c.enabled && c.stream_reply && c.early_speech && c.fast_voice && c.prewarm && c.auto_proxy);
+    assert!(
+        c.enabled && c.stream_reply && c.early_speech && c.fast_voice && c.prewarm && c.auto_proxy
+    );
     assert!(c.ack && c.timing_log);
     assert!(!c.direct_endpoint);
     s.exp_rt_prewarm = false;
@@ -122,7 +138,11 @@ fn early_speech_needs_streaming() {
 fn manual_proxy_needs_its_toggle_a_valid_url_and_the_master() {
     let mut s = on();
     s.exp_rt_proxy_url = "http://proxy.example:8080".into();
-    assert_eq!(RealtimeConfig::from_settings(&s).manual_proxy, None, "toggle off");
+    assert_eq!(
+        RealtimeConfig::from_settings(&s).manual_proxy,
+        None,
+        "toggle off"
+    );
     s.exp_rt_proxy_enabled = true;
     assert_eq!(
         RealtimeConfig::from_settings(&s).manual_proxy.as_deref(),
@@ -135,9 +155,17 @@ fn manual_proxy_needs_its_toggle_a_valid_url_and_the_master() {
         "trimmed"
     );
     s.exp_rt_proxy_url = "garbage".into();
-    assert_eq!(RealtimeConfig::from_settings(&s).manual_proxy, None, "invalid");
+    assert_eq!(
+        RealtimeConfig::from_settings(&s).manual_proxy,
+        None,
+        "invalid"
+    );
     s.exp_rt_proxy_url = "".into();
-    assert_eq!(RealtimeConfig::from_settings(&s).manual_proxy, None, "empty");
+    assert_eq!(
+        RealtimeConfig::from_settings(&s).manual_proxy,
+        None,
+        "empty"
+    );
 }
 
 // ---- preflight_realtime ---------------------------------------------------------
@@ -148,7 +176,11 @@ fn preflight_is_silent_when_off_or_not_direct() {
     let mut s = get_default_settings();
     s.exp_rt_direct_endpoint = true; // master off => nothing checked
     assert_eq!(preflight_realtime(&s), Ok(()));
-    assert_eq!(preflight_realtime(&on()), Ok(()), "master on but direct endpoint off");
+    assert_eq!(
+        preflight_realtime(&on()),
+        Ok(()),
+        "master on but direct endpoint off"
+    );
 }
 
 #[test]
@@ -175,7 +207,11 @@ fn preflight_direct_endpoint_messages_and_order() {
 fn preflight_checks_an_enabled_manual_proxy_only() {
     let mut s = direct_ready();
     s.exp_rt_proxy_url = "garbage".into();
-    assert_eq!(preflight_realtime(&s), Ok(()), "proxy toggle off => not checked");
+    assert_eq!(
+        preflight_realtime(&s),
+        Ok(()),
+        "proxy toggle off => not checked"
+    );
     s.exp_rt_proxy_enabled = true;
     assert_eq!(preflight_realtime(&s), Err(MSG_PROXY_INVALID));
     s.exp_rt_proxy_url = "http://proxy.example:3128".into();
@@ -219,7 +255,11 @@ fn every_bool_key_maps_to_its_own_field() {
         apply_exp_rt_bool(&mut s, *key, false);
         assert!(!get(&s), "{key:?} off");
         // restore and make sure nothing else moved
-        apply_exp_rt_bool(&mut s, *key, before[table.iter().position(|(k, _)| k == key).unwrap()]);
+        apply_exp_rt_bool(
+            &mut s,
+            *key,
+            before[table.iter().position(|(k, _)| k == key).unwrap()],
+        );
         let after: Vec<bool> = table.iter().map(|(_, g)| g(&s)).collect();
         assert_eq!(before, after, "{key:?} must touch only its own field");
     }
@@ -232,7 +272,12 @@ fn text_setters_trim_and_store() {
     let mut s = get_default_settings();
     apply_exp_rt_text(&mut s, ExpRtText::Model, "  some-model  ").unwrap();
     assert_eq!(s.exp_rt_model, "some-model");
-    apply_exp_rt_text(&mut s, ExpRtText::EndpointUrl, " https://gw.example.com/anthropic/ ").unwrap();
+    apply_exp_rt_text(
+        &mut s,
+        ExpRtText::EndpointUrl,
+        " https://gw.example.com/anthropic/ ",
+    )
+    .unwrap();
     assert_eq!(s.exp_rt_endpoint_url, "https://gw.example.com/anthropic");
     apply_exp_rt_text(&mut s, ExpRtText::Token, "  abc.def-123  ").unwrap();
     assert_eq!(s.exp_rt_token.as_str(), "abc.def-123");
@@ -244,7 +289,12 @@ fn text_setters_trim_and_store() {
 fn empty_clears_each_field() {
     let mut s = direct_ready();
     s.exp_rt_proxy_url = "http://p.example:1".into();
-    for k in [ExpRtText::EndpointUrl, ExpRtText::Model, ExpRtText::Token, ExpRtText::ProxyUrl] {
+    for k in [
+        ExpRtText::EndpointUrl,
+        ExpRtText::Model,
+        ExpRtText::Token,
+        ExpRtText::ProxyUrl,
+    ] {
         apply_exp_rt_text(&mut s, k, "   ").unwrap();
     }
     assert_eq!(s.exp_rt_endpoint_url, "");
@@ -302,6 +352,11 @@ fn invalid_text_is_rejected_and_leaves_settings_unchanged() {
 #[test]
 fn loopback_http_endpoint_is_accepted() {
     let mut s = get_default_settings();
-    apply_exp_rt_text(&mut s, ExpRtText::EndpointUrl, "http://127.0.0.1:8080/anthropic").unwrap();
+    apply_exp_rt_text(
+        &mut s,
+        ExpRtText::EndpointUrl,
+        "http://127.0.0.1:8080/anthropic",
+    )
+    .unwrap();
     assert_eq!(s.exp_rt_endpoint_url, "http://127.0.0.1:8080/anthropic");
 }

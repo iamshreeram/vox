@@ -377,7 +377,11 @@ pub(crate) struct SecretString(String);
 
 impl fmt::Debug for SecretString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(if self.0.is_empty() { "\"\"" } else { "[REDACTED]" })
+        f.write_str(if self.0.is_empty() {
+            "\"\""
+        } else {
+            "[REDACTED]"
+        })
     }
 }
 

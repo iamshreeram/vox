@@ -16,6 +16,7 @@ import { AgentContextToggle } from "../AgentContextToggle";
 import { AgentBridgeBinaryPathField } from "../AgentBridgeBinaryPathField";
 import { TtsSettings } from "../TtsSettings";
 import { ListeningModeSection } from "../ListeningModeSection";
+import { RealtimeSection } from "../RealtimeSection";
 import { useSettings } from "../../../hooks/useSettings";
 
 export const ExperimentalSettings: React.FC = () => {
@@ -52,6 +53,9 @@ export const ExperimentalSettings: React.FC = () => {
       </SettingsGroup>
       <SettingsGroup title={t("settings.advanced.tts.groupTitle")}>
         <TtsSettings descriptionMode="tooltip" grouped={true} />
+      </SettingsGroup>
+      <SettingsGroup title={t("settings.experimental.realtime.title")}>
+        <RealtimeSection descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
     </div>
   );
