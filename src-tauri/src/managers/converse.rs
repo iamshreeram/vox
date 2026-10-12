@@ -10,7 +10,7 @@ use crate::managers::emotion::Emotion;
 use futures_util::future::Either;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -85,6 +85,25 @@ pub trait Mouth: Send + Sync {
     fn say<'a>(&'a self, text: &'a str, emotion: Emotion) -> BoxFuture<'a, SayOutcome>;
     fn wait_quiet(&self, max: Duration) -> BoxFuture<'_, QuietOutcome>;
     fn stop(&self);
+    /// Opens a speech queue for ONE turn (early speech / acknowledgement), or `None` when the
+    /// mouth cannot queue (legacy `say` mouths) or speech is unavailable right now.
+    /// Default: `None`.
+    fn open_queue(&self) -> Option<Arc<dyn SpeechQueue>> {
+        None
+    }
+}
+
+/// One turn's queued speech (see `converse_queue::TtsQueueSession`).
+pub trait SpeechQueue: Send + Sync {
+    /// Appends a sentence without waiting. `false` = refused (the session is dead: it was
+    /// superseded, a recording started, speech was stopped, or the speaker failed). Empty text
+    /// is a harmless `true`.
+    fn push(&self, text: &str, emotion: Emotion) -> bool;
+    /// Stops this session's speech (never a newer owner's) and kills the session.
+    fn abort(&self);
+    /// Resolves when everything queued has been spoken (`Done`), the session was superseded
+    /// (`Interrupted`) or the speaker did not finish in time (`Failed`).
+    fn finish(&self) -> BoxFuture<'_, SayOutcome>;
 }
 
 pub trait Hands: Send + Sync {
@@ -98,6 +117,18 @@ pub trait Hands: Send + Sync {
 
 pub trait Brain: Send + Sync {
     fn plan<'a>(&'a self, input: PlanInput<'a>) -> BoxFuture<'a, Result<TurnPlan, PlanError>>;
+
+    /// Like `plan`, additionally reporting every raw text delta of the model reply to
+    /// `on_text` as it arrives (the callback must be quick and non-blocking). The default
+    /// ignores `on_text` and calls `plan`, so non-streaming brains keep working.
+    fn plan_streaming<'a>(
+        &'a self,
+        input: PlanInput<'a>,
+        on_text: &'a mut (dyn FnMut(&str) + Send),
+    ) -> BoxFuture<'a, Result<TurnPlan, PlanError>> {
+        let _ = on_text;
+        self.plan(input)
+    }
 }
 
 pub trait Reporter: Send + Sync {
@@ -120,6 +151,14 @@ pub struct SessionConfig {
     pub post_speech_guard: Duration,
     pub quiet_wait: Duration,
     pub style: String,
+    /// Realtime: speak completed sentences while the reply is still streaming (needs a mouth
+    /// whose `open_queue` returns a queue). Default false.
+    pub early_speech: bool,
+    /// Realtime: if no speech was queued this long after the brain request started, queue
+    /// `MSG_ACK` once. `None` disables. Default None.
+    pub ack_after: Option<Duration>,
+    /// Realtime: log per-turn latency numbers (never any text). Default false.
+    pub timing_log: bool,
 }
 
 impl Default for SessionConfig {
@@ -131,6 +170,9 @@ impl Default for SessionConfig {
             post_speech_guard: Duration::from_millis(350),
             quiet_wait: Duration::from_secs(2),
             style: String::new(),
+            early_speech: false,
+            ack_after: None,
+            timing_log: false,
         }
     }
 }
@@ -145,6 +187,9 @@ impl SessionConfig {
             post_speech_guard: Duration::from_millis(350),
             quiet_wait: Duration::from_secs(2),
             style: s.tts_composer_style.clone(),
+            early_speech: false,
+            ack_after: None,
+            timing_log: false,
         }
     }
 }
@@ -182,6 +227,8 @@ const MSG_NO_MATCH_COMMAND: &str = "I can't do that yet.";
 const MSG_NOT_CONFIGURED: &str = "Set up a reply backend in the speech settings first.";
 const MSG_PLAN_FAILED: &str = "Sorry, I couldn't work that out.";
 const MSG_DONE: &str = "Done.";
+/// Queued once when the brain is slow (`SessionConfig::ack_after`).
+const MSG_ACK: &str = "One moment.";
 
 const HISTORY_SIDE_MAX_CHARS: usize = 600;
 const STILL_SPEAKING_RETRY: Duration = Duration::from_secs(1);
@@ -1772,3 +1819,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "converse_stream_loop_tests.rs"]
+mod stream_loop_tests;

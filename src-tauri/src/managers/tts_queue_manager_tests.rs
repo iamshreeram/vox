@@ -177,3 +177,39 @@ fn concurrent_queued_speech_from_many_threads_is_complete_and_panic_free() {
     assert_eq!(f.spoken_texts().len(), 80);
     assert_eq!(f.stop_calls(), 0);
 }
+
+#[test]
+fn stop_if_current_stops_only_for_the_matching_epoch() {
+    let (m, f) = mgr_q();
+    let e = m.begin_utterance().unwrap();
+    q(&m, e, "One.").unwrap();
+    f.set_speaking(true);
+    assert!(m.stop_if_current(e));
+    assert_eq!(f.stop_calls(), 1);
+    assert!(!m.is_current(e), "stop bumps the epoch like stop()");
+    assert!(!m.is_speaking());
+}
+
+#[test]
+fn stop_if_current_with_a_stale_epoch_is_a_no_op_that_reports_true() {
+    let (m, f) = mgr_q();
+    let old = m.begin_utterance().unwrap();
+    let new = m.begin_utterance().unwrap();
+    q(&m, new, "Theirs.").unwrap();
+    f.set_speaking(true);
+    assert!(m.stop_if_current(old));
+    assert_eq!(f.stop_calls(), 0);
+    assert!(m.is_current(new));
+    assert!(m.is_speaking());
+}
+
+#[test]
+fn stop_if_current_reports_false_when_the_kill_is_unconfirmed() {
+    let (m, f) = mgr_q();
+    let e = m.begin_utterance().unwrap();
+    q(&m, e, "One.").unwrap();
+    f.set_speaking(true);
+    f.set_stop_result(StopOutcome::Failed);
+    assert!(!m.stop_if_current(e));
+    assert!(m.is_speaking());
+}

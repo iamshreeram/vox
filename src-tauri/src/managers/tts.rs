@@ -282,6 +282,14 @@ impl TtsManager {
         }
     }
 
+    /// Stops speech ONLY if `epoch` is still current: same effect and return value as
+    /// [`TtsManager::stop`] (bumps the epoch, kills, `false` only when the kill could not be
+    /// confirmed). A stale epoch changes nothing and returns `true` (someone else owns the
+    /// speaker now).
+    pub fn stop_if_current(&self, _epoch: u64) -> bool {
+        todo!("WP-session")
+    }
+
     /// True when the backend can queue sentences (resident speaker).
     pub fn queue_capable(&self) -> bool {
         self.backend.supports_queue()
