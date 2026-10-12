@@ -1542,7 +1542,15 @@ mod tests {
         assert_eq!(d[0], None);
         assert_eq!(d[1].as_deref(), Some("Dear Sam, thank you so much."));
         let h = r.brain.histories.lock().unwrap().clone();
-        assert_eq!(h[1][0].1, "Pasted. (pasted text)");
+        // deliberate spec change (DESIGN Revision 3, Design A): the history now carries a
+        // structured runtime note instead of the vague "(pasted text)" marker.
+        assert_eq!(
+            h[1][0].1,
+            crate::managers::converse_context::compose(
+                "Pasted.",
+                &crate::managers::converse_context::note_paste("Dear Sam, thank you so much.")
+            )
+        );
     }
 
     #[tokio::test]
@@ -2065,3 +2073,11 @@ mod tests {
 #[cfg(test)]
 #[path = "converse_stream_loop_tests.rs"]
 mod stream_loop_tests;
+
+#[cfg(test)]
+#[path = "converse_context_loop_tests.rs"]
+mod context_loop_tests;
+
+#[cfg(test)]
+#[path = "converse_ack_loop_tests.rs"]
+mod ack_loop_tests;
