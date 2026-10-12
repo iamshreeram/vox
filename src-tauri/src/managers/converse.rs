@@ -160,6 +160,9 @@ pub struct SessionConfig {
     pub ack_after: Option<Duration>,
     /// Realtime: log per-turn latency numbers (never any text). Default false.
     pub timing_log: bool,
+    /// Choose the acknowledgement from the utterance (`converse_ack`) instead of the static
+    /// `MSG_ACK` / `ack_after` pair. Only meaningful when `ack_after` is `Some`. Default false.
+    pub smart_ack: bool,
 }
 
 impl Default for SessionConfig {
@@ -174,6 +177,7 @@ impl Default for SessionConfig {
             early_speech: false,
             ack_after: None,
             timing_log: false,
+            smart_ack: false,
         }
     }
 }
@@ -196,6 +200,7 @@ impl SessionConfig {
                 None
             },
             timing_log: rt.timing_log,
+            smart_ack: false, // WP-ack: = rt.ack
         }
     }
 }
