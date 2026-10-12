@@ -78,12 +78,18 @@ impl<S: Synth> SpeakerCore<S> {
         }
     }
 
-    /// Returns the core to idle (nothing enqueued, no stop failure outstanding).
+    /// Returns the core to idle (nothing enqueued, no stop failure outstanding). On a
+    /// busy -> idle transition the synth is reset exactly once, so a burst never reuses the
+    /// synthesizer that played it. Idle -> idle is a no-op.
     fn go_idle(&mut self) {
+        let was_busy = self.busy;
         self.busy = false;
         self.pending = 0;
         self.stuck = false;
         self.started_seen = false;
+        if was_busy {
+            self.synth.reset();
+        }
     }
 
     /// Clears a `Stuck` condition once the synth is genuinely quiet.

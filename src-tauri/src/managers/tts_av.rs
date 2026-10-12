@@ -28,9 +28,14 @@ extern "C" {}
 
 /// `AVSpeechBoundaryImmediate`.
 const AV_BOUNDARY_IMMEDIATE: isize = 0;
-/// Bound on waiting for an asynchronous stop to take effect.
-const STOP_CONFIRM: Duration = Duration::from_millis(200);
-const STOP_POLL: Duration = Duration::from_millis(10);
+/// Total bound for a stop to take effect (measured: S2 quiets a start-window stop in 58-70 ms).
+const STOP_CONFIRM: Duration = Duration::from_millis(250);
+/// How often the stop is re-issued while the synthesizer is still starting or speaking.
+const STOP_REISSUE: Duration = Duration::from_millis(25);
+/// How often `isSpeaking` is checked between stop re-issues.
+const STOP_CHECK: Duration = Duration::from_millis(5);
+/// Extra quiet confirmation after `isSpeaking` first reads false.
+const STOP_SETTLE: Duration = Duration::from_millis(30);
 const DEFAULT_LANGUAGE: &str = "en-US";
 
 /// Maps a words-per-minute rate onto the `AVSpeechUtterance` rate scale.
@@ -79,7 +84,8 @@ fn create_synth() -> Option<Retained<AnyObject>> {
 
 /// A resident `AVSpeechSynthesizer` driven through dynamic messaging.
 pub struct AvSynth {
-    synth: Retained<AnyObject>,
+    /// The current burst's synthesizer; `None` when idle (dropped after a stop or reset).
+    synth: Option<Retained<AnyObject>>,
     volume: f32,
 }
 
@@ -101,14 +107,22 @@ impl AvSynth {
             return None;
         }
         let volume = volume.clamp(0.0, 1.0);
-        let synth = create_synth()?;
-        Some(Self { synth, volume })
+        // Probe availability once; the first burst creates its own synthesizer lazily.
+        let probe = create_synth()?;
+        drop(probe);
+        Some(Self {
+            synth: None,
+            volume,
+        })
     }
 
     fn speaking(&self) -> bool {
-        // SAFETY: `isSpeaking` is a read-only BOOL property (selector presence checked in
-        // `create_synth`).
-        unsafe { msg_send![&*self.synth, isSpeaking] }
+        match self.synth.as_deref() {
+            // SAFETY: `isSpeaking` is a read-only BOOL property (selector presence checked in
+            // `create_synth`) on a live synthesizer owned by this value.
+            Some(synth) => unsafe { msg_send![synth, isSpeaking] },
+            None => false,
+        }
     }
 }
 
@@ -152,6 +166,14 @@ fn voice_for(name: Option<&str>) -> Option<Retained<AnyObject>> {
 
 impl Synth for AvSynth {
     fn speak(&mut self, text: &str, voice: Option<&str>, rate_wpm: Option<u32>, pitch: f32) {
+        // One fresh synthesizer per speaking burst: create it lazily here, never reuse a
+        // stopped one (see `reset`/`stop_immediate`).
+        if self.synth.is_none() {
+            self.synth = create_synth();
+        }
+        let Some(synth) = self.synth.as_deref() else {
+            return;
+        };
         let Some(utt_cls) = AnyClass::get(c"AVSpeechUtterance") else {
             return;
         };
@@ -165,7 +187,7 @@ impl Synth for AvSynth {
             && responds(&utterance, sel!(setPitchMultiplier:))
             && responds(&utterance, sel!(setVolume:))
             && responds(&utterance, sel!(setVoice:))
-            && responds(&self.synth, sel!(speakUtterance:)))
+            && responds(synth, sel!(speakUtterance:)))
         {
             return;
         }
@@ -180,7 +202,7 @@ impl Synth for AvSynth {
             if let Some(voice) = voice {
                 let _: () = msg_send![&*utterance, setVoice: &*voice];
             }
-            let _: () = msg_send![&*self.synth, speakUtterance: &*utterance];
+            let _: () = msg_send![synth, speakUtterance: &*utterance];
         }
     }
 
@@ -189,38 +211,58 @@ impl Synth for AvSynth {
     }
 
     fn stop_immediate(&mut self) -> StopOutcome {
-        let mut was = self.speaking();
-        // Always send the stop, even when nothing is audible yet: an utterance may have been
-        // queued and not yet started (the start window) and must still be cancelled.
-        // SAFETY: `stopSpeakingAtBoundary:` (presence checked in `create_synth`) takes an
-        // NSInteger boundary; the immediate boundary cancels all queued speech.
-        let _stopped: bool =
-            unsafe { msg_send![&*self.synth, stopSpeakingAtBoundary: AV_BOUNDARY_IMMEDIATE] };
-        // The stop is asynchronous: poll the OLD synthesizer until it is quiet, bounded.
-        let deadline = Instant::now() + STOP_CONFIRM;
+        let Some(synth) = self.synth.as_deref() else {
+            return StopOutcome::AlreadyIdle;
+        };
+        // Speaking before the stop counts too, so read it first.
+        // SAFETY: `isSpeaking` on the live synthesizer held in `self.synth` (see above).
+        let mut seen_speaking: bool = unsafe { msg_send![synth, isSpeaking] };
+        // Why re-issue: a single stop issued before the engine has begun is ignored, so the
+        // synth keeps speaking (measured: one stop never went quiet, 10/10 rounds). Re-issuing
+        // the stop every 25 ms quiets it in 58-70 ms (10/10 rounds). Speech may have been
+        // queued and not yet started (the start window), so the stop is always sent.
+        let start = Instant::now();
+        let mut last_stop: Option<Instant> = None;
         loop {
-            if !self.speaking() {
-                break;
+            if last_stop.is_none_or(|t| t.elapsed() >= STOP_REISSUE) {
+                // SAFETY: `stopSpeakingAtBoundary:` (presence checked in `create_synth`) takes
+                // an NSInteger boundary; the immediate boundary cancels all queued speech.
+                let _stopped: bool =
+                    unsafe { msg_send![synth, stopSpeakingAtBoundary: AV_BOUNDARY_IMMEDIATE] };
+                last_stop = Some(Instant::now());
             }
-            was = true;
-            if Instant::now() >= deadline {
-                // Still speaking: keep this synthesizer, do not start a second one.
+            // SAFETY: `isSpeaking` on the live synthesizer held in `self.synth` (see above).
+            let speaking: bool = unsafe { msg_send![synth, isSpeaking] };
+            if speaking {
+                seen_speaking = true;
+            } else {
+                // Quiet: confirm it stays quiet for one settle window before accepting it.
+                thread::sleep(STOP_SETTLE);
+                // SAFETY: as above.
+                let again: bool = unsafe { msg_send![synth, isSpeaking] };
+                if !again {
+                    break;
+                }
+                seen_speaking = true;
+            }
+            if start.elapsed() >= STOP_CONFIRM {
+                // Still speaking after the bound: keep this synthesizer and report the failure.
                 return StopOutcome::Failed;
             }
-            thread::sleep(STOP_POLL);
+            thread::sleep(STOP_CHECK);
         }
-        // Why replace instead of reuse: a resident synthesizer does not restart after a stop
-        // unless the run loop is pumped, while a freshly created one starts immediately. The
-        // old synthesizer is dropped here.
-        match create_synth() {
-            Some(fresh) => self.synth = fresh,
-            None => return StopOutcome::Failed,
-        }
-        if was {
+        // Quiet and confirmed: drop this burst's synthesizer. Reusing a stopped one does not
+        // restart reliably, so the next burst gets a fresh one.
+        self.synth = None;
+        if seen_speaking {
             StopOutcome::Stopped
         } else {
             StopOutcome::AlreadyIdle
         }
+    }
+
+    fn reset(&mut self) {
+        self.synth = None;
     }
 }
 
@@ -281,6 +323,9 @@ mod tests {
         }
         fn stop_immediate(&mut self) -> StopOutcome {
             self.inner.stop_immediate()
+        }
+        fn reset(&mut self) {
+            self.inner.reset();
         }
     }
 
@@ -426,6 +471,8 @@ mod tests {
                     "round {round}: stop"
                 );
                 assert!(!core.poll(Instant::now()), "round {round}: idle after stop");
+                // Only speech AFTER the stop counts as a leak: clear the flag set before it.
+                seen.store(false, Ordering::SeqCst);
                 assert_quiet_for(&mut core, &seen, Duration::from_millis(500));
 
                 seen.store(false, Ordering::SeqCst);
