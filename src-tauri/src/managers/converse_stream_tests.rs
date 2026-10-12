@@ -184,7 +184,10 @@ fn prose_or_code_fences_before_the_object_disable_it() {
 fn duplicate_speech_or_kind_disables_but_keeps_what_was_already_released() {
     let src = r#"{"kind":"answer","speech":"First long sentence here. Second long sentence. Third","speech":"Other. Words here that are long enough. y"}"#;
     let (out, s) = run(&[src]);
-    assert_eq!(texts(&out), vec!["First long sentence here."]);
+    // both sentences were complete (followed by whitespace) before the duplicate key arrived,
+    // so they were legitimately released; the final `reconcile` prefix check is what guards
+    // against a contradicting final plan.
+    assert_eq!(texts(&out), vec!["First long sentence here.", "Second long sentence."]);
     assert!(s.is_disabled());
     let dup_kind = r#"{"kind":"answer","kind":"command","speech":"Long sentence number one. Long sentence number two. x"}"#;
     let (out, s) = run(&[dup_kind]);

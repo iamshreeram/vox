@@ -286,8 +286,20 @@ impl TtsManager {
     /// [`TtsManager::stop`] (bumps the epoch, kills, `false` only when the kill could not be
     /// confirmed). A stale epoch changes nothing and returns `true` (someone else owns the
     /// speaker now).
-    pub fn stop_if_current(&self, _epoch: u64) -> bool {
-        todo!("WP-session")
+    pub fn stop_if_current(&self, epoch: u64) -> bool {
+        let mut state = lock_state(&self.inner);
+        if state.epoch != epoch {
+            return true;
+        }
+        self.bump_locked(&mut state);
+        let ok = match state.current.as_mut() {
+            None => return true,
+            Some(handle) => handle.kill(),
+        };
+        if ok {
+            state.current = None;
+        }
+        ok
     }
 
     /// True when the backend can queue sentences (resident speaker).
