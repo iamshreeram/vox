@@ -67,6 +67,11 @@ pub trait SpeechHandle: Send {
     /// process had already exited).
     fn kill(&mut self) -> bool;
     fn is_running(&mut self) -> bool;
+    /// True for a handle onto a resident, queue-capable speaker (see `tts_queue`): further
+    /// sentences can be appended without replacing it. Default: false.
+    fn queue_capable(&self) -> bool {
+        false
+    }
 }
 
 pub trait SpeechBackend: Send + Sync {
@@ -87,6 +92,23 @@ pub trait SpeechBackend: Send + Sync {
         _emotion: Emotion,
     ) -> io::Result<Box<dyn SpeechHandle>> {
         self.spawn(text, voice, rate_wpm)
+    }
+
+    /// True when `enqueue_styled` appends to a resident queue instead of replacing speech.
+    fn supports_queue(&self) -> bool {
+        false
+    }
+
+    /// Appends one utterance to the backend's resident queue (no replacement). The returned
+    /// handle refers to the shared queue. Default: unsupported.
+    fn enqueue_styled(
+        &self,
+        _text: &str,
+        _voice: Option<&str>,
+        _rate_wpm: Option<u32>,
+        _emotion: Emotion,
+    ) -> io::Result<Box<dyn SpeechHandle>> {
+        Err(io::Error::from(io::ErrorKind::Unsupported))
     }
 }
 
@@ -258,6 +280,30 @@ impl TtsManager {
             }
             Err(err) => Err(TtsError::Backend(err.to_string())),
         }
+    }
+
+    /// True when the backend can queue sentences (resident speaker).
+    pub fn queue_capable(&self) -> bool {
+        todo!("WP-queue")
+    }
+
+    /// Appends `text` to the resident speaker's queue ONLY if `epoch` is still current,
+    /// atomically (same critical section). Order of checks: sanitize (`Empty`), epoch
+    /// (`Superseded`), recording (`Recording`), backend support (`Unsupported`). Never kills
+    /// earlier queued speech; keeps the existing live queue handle as `current` (a new
+    /// handle is stored only when `current` is absent or no longer running; a non-queue
+    /// `current` is replaced exactly like `speak_styled_if_current`). A backend refusal
+    /// because a previous stop failed maps to `CancelFailed`; other backend errors to
+    /// `Backend`. Consumes no epoch.
+    pub fn speak_queued_if_current(
+        &self,
+        _epoch: u64,
+        _text: &str,
+        _voice: Option<&str>,
+        _rate_wpm: Option<u32>,
+        _emotion: Emotion,
+    ) -> Result<(), TtsError> {
+        todo!("WP-queue")
     }
 
     /// Legacy path: `speak` is `speak_styled(.., Emotion::Neutral)`. Bumps the
@@ -1680,3 +1726,7 @@ mod epoch_tests {
         let _ = std::fs::remove_file(&out);
     }
 }
+
+#[cfg(test)]
+#[path = "tts_queue_manager_tests.rs"]
+mod queue_manager_tests;

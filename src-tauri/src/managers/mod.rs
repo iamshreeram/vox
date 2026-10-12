@@ -31,6 +31,7 @@ pub mod speech_compose;
 pub mod speech_pipeline;
 pub mod transcription;
 pub mod tts;
+pub mod tts_queue;
 pub mod voice_common;
 pub mod voice_shortcuts;
 pub mod wakeword;
