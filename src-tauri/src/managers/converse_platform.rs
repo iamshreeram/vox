@@ -38,15 +38,12 @@ use tauri::{AppHandle, Emitter, Manager};
 /// Binding id this session records under (the only binding it ever starts).
 const CONVERSE_BINDING: &str = "converse";
 
-/// VAD policy for a conversation listen. RED-PHASE STUB: still follows the
-/// dictation setting; the design (F2) requires `Offline` in every case, since
-/// end-of-speech detection depends on the VAD dropping non-speech frames.
-fn conversation_vad_policy(vad_enabled: bool) -> VadPolicy {
-    if vad_enabled {
-        VadPolicy::Offline
-    } else {
-        VadPolicy::Disabled
-    }
+/// VAD policy for a conversation listen. Always `Offline`: a conversation
+/// listen always needs the VAD to drop non-speech frames, because end-of-speech
+/// is detected from the VAD-kept frames. The dictation vad setting does not
+/// apply here.
+fn conversation_vad_policy(_vad_enabled: bool) -> VadPolicy {
+    VadPolicy::Offline
 }
 /// Tauri event carrying `ConverseStateEvent`.
 pub const CONVERSE_STATE_EVENT: &str = "converse-state";

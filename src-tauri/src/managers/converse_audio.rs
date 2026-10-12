@@ -44,10 +44,14 @@ pub enum EndpointEvent {
 
 /// Decides when an utterance is over from a stream of level buckets.
 ///
-/// Rules (evaluated on every `feed`, in this order, until one event fires;
-/// after an event every later `feed` returns `None`):
-/// * the first `feed` fixes t0 (readiness-based clock);
-/// * a feed with any level > floor is "loud", otherwise (or empty) "silent";
+/// Production signal: the VAD speech decision, fed via `feed_activity`
+/// (a feed is "loud" when `speech_active` is true). `feed` stays for
+/// level-based callers and tests: it is `feed_activity` of "any level > floor".
+///
+/// Rules (evaluated on every feed, in this order, until one event fires;
+/// after an event every later feed returns `None`):
+/// * the first feed fixes t0 (readiness-based clock);
+/// * a loud feed is "loud", otherwise "silent";
 ///   speech has started once loud feeds have been continuous for at least
 ///   `min_speech_ms` (a silent feed before that resets the run);
 /// * `SpeechEnded`: speech started and `silence_ms` elapsed since the last
@@ -80,12 +84,20 @@ impl Endpointer {
         }
     }
 
+    /// Level-based entry point (tests and level-only callers): a feed is loud
+    /// when any level exceeds the configured floor.
     pub fn feed(&mut self, now_ms: u64, levels: &[f32]) -> Option<EndpointEvent> {
+        self.feed_activity(now_ms, levels.iter().any(|&level| level > self.cfg.floor))
+    }
+
+    /// Production entry point: `speech_active` is the VAD speech decision for
+    /// this feed. Same state machine as `feed`.
+    pub fn feed_activity(&mut self, now_ms: u64, speech_active: bool) -> Option<EndpointEvent> {
         if self.finished {
             return None;
         }
         let t0 = *self.t0.get_or_insert(now_ms);
-        let loud = levels.iter().any(|&level| level > self.cfg.floor);
+        let loud = speech_active;
 
         if loud {
             let start = *self.run_start.get_or_insert(now_ms);
@@ -113,13 +125,6 @@ impl Endpointer {
             self.finished = true;
         }
         event
-    }
-
-    /// RED-PHASE STUB (design rev 2, F1): the real state machine moves here;
-    /// `feed` will become a thin wrapper over this.
-    #[allow(dead_code)]
-    pub fn feed_activity(&mut self, _now_ms: u64, _speech_active: bool) -> Option<EndpointEvent> {
-        None
     }
 
     /// Only the tests read this; production decides end-of-speech via `poll`.

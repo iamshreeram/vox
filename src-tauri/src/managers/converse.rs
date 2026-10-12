@@ -234,8 +234,7 @@ pub async fn run_session(deps: &Deps<'_>, cfg: &SessionConfig, cancel: CancelTok
 // Fixed spoken messages. The loop never speaks text taken from an error.
 const MSG_TOO_LONG: &str = "That was too long for me. Please say it in parts.";
 /// Spoken once when the capture reports `TooLong` twice in a row (the
-/// endpointer cannot find the end of speech). RED-PHASE: not used yet.
-#[allow(dead_code)]
+/// endpointer cannot find the end of speech).
 const MSG_CANT_HEAR: &str = "I can't tell when you stop talking, so I'm ending this. Please check the microphone and try again.";
 const MSG_MIC: &str = "I can't use the microphone right now.";
 const MSG_STOP_LISTENING: &str = "I'll stop listening now.";
@@ -841,6 +840,7 @@ async fn run_turns(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToke
     let mut history: Vec<(String, String)> = Vec::new();
     let mut carry = Carry::default();
     let mut idle_turns: u32 = 0;
+    let mut consecutive_too_long: u32 = 0;
     let mut turns: usize = 0;
 
     loop {
@@ -867,6 +867,13 @@ async fn run_turns(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToke
             }
             ListenOutcome::TooLong => {
                 idle_turns = 0;
+                consecutive_too_long += 1;
+                if consecutive_too_long >= 2 {
+                    return after_speech(
+                        speak(deps, cfg, cancel, MSG_CANT_HEAR, Emotion::Neutral).await,
+                        SessionEnd::AudioUnavailable,
+                    );
+                }
                 if let Some(end) =
                     speak_or_end(deps, cfg, cancel, MSG_TOO_LONG, Emotion::Neutral).await
                 {
@@ -877,6 +884,8 @@ async fn run_turns(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToke
             ListenOutcome::NoSpeech => String::new(),
             ListenOutcome::Utterance(text) => text,
         };
+        // Any capture that did not report TooLong breaks the streak.
+        consecutive_too_long = 0;
 
         if utterance.trim().is_empty() {
             idle_turns += 1;
