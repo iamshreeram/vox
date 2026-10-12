@@ -290,3 +290,46 @@ fn contradicting_or_non_speech_finals_abort_after_early_speech() {
     }
     assert_eq!(reconcile(&plan(PlanKind::Answer, ""), &early), Reconcile::Abort);
 }
+
+// ---- never panics on arbitrary input (deterministic fuzz) -------------------------------
+
+#[test]
+fn arbitrary_input_split_anywhere_never_panics_and_respects_the_cap() {
+    // xorshift64*: deterministic, no dependencies
+    let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut next = move || {
+        state ^= state >> 12;
+        state ^= state << 25;
+        state ^= state >> 27;
+        state.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    };
+    let atoms: &[&str] = &[
+        "{", "}", "\"", "\\", "\\u", "\\ud83d", "\\ude00", "\\u00e9", "\\uZZZZ", "\\n", "\\q", ":", ",",
+        "kind", "answer", "clarify", "speech", "emotion", "calm", " ", "\n", ".", "!", "?", "…", "3.5",
+        "Hello there my friend", "é", "", "\u{0}", "\u{7}", "[[slnc 5]]", "[", "]", "null", "true", "12.5", "{\"a\":1}",
+    ];
+    for round in 0..1500 {
+        let mut doc = String::new();
+        if next() % 2 == 0 {
+            doc.push_str(r#"{"kind":"answer","speech":""#);
+        }
+        for _ in 0..(next() % 60) {
+            doc.push_str(atoms[(next() % atoms.len() as u64) as usize]);
+        }
+        let chars: Vec<char> = doc.chars().collect();
+        let mut s = PlanStreamer::new();
+        let mut total = 0usize;
+        let mut i = 0usize;
+        while i < chars.len() {
+            let n = 1 + (next() % 9) as usize;
+            let end = (i + n).min(chars.len());
+            let piece: String = chars[i..end].iter().collect();
+            for e in s.push(&piece) {
+                assert!(!e.text.is_empty(), "round {round}");
+                total += e.text.chars().count() + 1;
+            }
+            i = end;
+        }
+        assert!(total <= MAX_EARLY_CHARS + 1, "round {round}: total {total}");
+    }
+}

@@ -29,7 +29,9 @@ extern "C" {}
 /// `AVSpeechBoundaryImmediate`.
 const AV_BOUNDARY_IMMEDIATE: isize = 0;
 /// Total bound for a stop to take effect (measured: S2 quiets a start-window stop in 58-70 ms).
-const STOP_CONFIRM: Duration = Duration::from_millis(250);
+// Measured: re-issued stops quiet the synthesizer in 58-212 ms (cold first stop is the slow case);
+// 400 ms keeps a safe margin before reporting `Failed` (a false "stuck" is worse than a longer wait).
+const STOP_CONFIRM: Duration = Duration::from_millis(400);
 /// How often the stop is re-issued while the synthesizer is still starting or speaking.
 const STOP_REISSUE: Duration = Duration::from_millis(25);
 /// How often `isSpeaking` is checked between stop re-issues.
