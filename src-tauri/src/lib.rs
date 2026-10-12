@@ -363,10 +363,32 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(SourceUpdateRuntime::new());
     // Spoken replies: one shared manager, managed before any event listener
     // that might speak. Event listeners are registered in `register_tts_listeners`.
+    #[cfg(target_os = "macos")]
+    let tts_manager = {
+        let settings_handle = app_handle.clone();
+        let pick_fast: Arc<dyn Fn() -> bool + Send + Sync> = Arc::new(move || {
+            managers::realtime_config::RealtimeConfig::from_settings(&get_settings(
+                &settings_handle,
+            ))
+            .fast_voice
+        });
+        Arc::new(managers::tts::TtsManager::new(
+            managers::tts_av::default_backend_with(pick_fast),
+        ))
+    };
+    #[cfg(not(target_os = "macos"))]
     let tts_manager = Arc::new(managers::tts::TtsManager::new(
         managers::tts::default_backend(),
     ));
     app_handle.manage(tts_manager.clone());
+    // Conversation sessions: one controller, built with the app-backed platform.
+    app_handle.manage(Arc::new(
+        managers::converse_runtime::ConverseController::new(Arc::new(
+            managers::converse_platform::RealPlatform {
+                app: app_handle.clone(),
+            },
+        )),
+    ));
     register_tts_listeners(app_handle, tts_manager);
     let startup_settings = get_settings(app_handle);
     if startup_settings.wake_word_enabled {
@@ -488,6 +510,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             }
             "copy_last_transcript" => {
                 tray::copy_last_transcript(app);
+            }
+            "converse" => {
+                commands::converse::toggle_conversation(app);
             }
             "listening_mode:hotkey" => {
                 let _ = commands::wakeword::wakeword_set_enabled(app.clone(), false);
@@ -992,6 +1017,14 @@ pub fn run(cli_args: CliArgs) {
             commands::ambient::ambient_clear,
             commands::wakeword::wakeword_set_enabled,
             commands::voice_shortcuts::set_voice_shortcuts,
+            commands::converse::change_converse_silence_ms_setting,
+            commands::converse::change_converse_max_idle_turns_setting,
+            commands::converse::change_converse_context_turns_setting,
+            commands::converse::converse_start,
+            commands::converse::converse_stop,
+            commands::converse::converse_status,
+            commands::realtime::change_exp_rt_bool_setting,
+            commands::realtime::change_exp_rt_text_setting,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![
@@ -1001,7 +1034,8 @@ pub fn run(cli_args: CliArgs) {
         ])
         .typ::<settings::AppSettings>()
         .typ::<managers::wakeword::WakeWordDetection>()
-        .typ::<commands::ambient::AmbientAddressedPayload>();
+        .typ::<commands::ambient::AmbientAddressedPayload>()
+        .typ::<managers::converse_platform::ConverseStateEvent>();
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
     // Dev convenience only (regenerates bindings.ts while running `cargo

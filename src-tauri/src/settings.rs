@@ -369,6 +369,43 @@ impl std::ops::DerefMut for SecretMap {
     }
 }
 
+/// A single secret value (API token). Serialized as a plain string so it persists,
+/// but `Debug` never prints it.
+#[derive(Clone, Default, Serialize, Deserialize, Type)]
+#[serde(transparent)]
+pub(crate) struct SecretString(String);
+
+impl fmt::Debug for SecretString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(if self.0.is_empty() {
+            "\"\""
+        } else {
+            "[REDACTED]"
+        })
+    }
+}
+
+impl SecretString {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl From<String> for SecretString {
+    fn from(v: String) -> Self {
+        SecretString(v)
+    }
+}
+
+impl From<&str> for SecretString {
+    fn from(v: &str) -> Self {
+        SecretString(v.to_string())
+    }
+}
+
 /* still handy for composing the initial JSON in the store ------------- */
 /// The container-level `serde(default)` (backed by the `Default` impl below)
 /// guarantees every field — including ones added in the future — falls back to
@@ -614,6 +651,48 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    /// Silence that ends a conversation utterance (clamped 600..=4000 when used).
+    #[serde(default = "default_converse_silence_ms")]
+    pub converse_silence_ms: u32,
+    /// Idle turns before a conversation ends (clamped 1..=5 when used).
+    #[serde(default = "default_converse_max_idle_turns")]
+    pub converse_max_idle_turns: u8,
+    /// Prior turns sent as context (clamped 0..=12 when used).
+    #[serde(default = "default_converse_context_turns")]
+    pub converse_context_turns: u8,
+    // ---- Experimental: realtime conversation (design R9). All toggles; the master
+    // switch gates every sub-toggle. Absent in old stores => these defaults.
+    /// MASTER switch. Off => the conversation behaves exactly as before.
+    #[serde(default)]
+    pub exp_rt_enabled: bool,
+    /// Use the Anthropic-style endpoint below for replies instead of the speech composer.
+    #[serde(default)]
+    pub exp_rt_direct_endpoint: bool,
+    #[serde(default)]
+    pub exp_rt_endpoint_url: String,
+    #[serde(default)]
+    pub exp_rt_model: String,
+    /// Entered manually in the UI; never logged.
+    #[serde(default)]
+    pub exp_rt_token: SecretString,
+    #[serde(default = "default_exp_rt_true")]
+    pub exp_rt_stream_reply: bool,
+    #[serde(default = "default_exp_rt_true")]
+    pub exp_rt_early_speech: bool,
+    #[serde(default = "default_exp_rt_true")]
+    pub exp_rt_fast_voice: bool,
+    #[serde(default)]
+    pub exp_rt_ack: bool,
+    #[serde(default = "default_exp_rt_true")]
+    pub exp_rt_prewarm: bool,
+    #[serde(default = "default_exp_rt_true")]
+    pub exp_rt_auto_proxy: bool,
+    #[serde(default)]
+    pub exp_rt_proxy_enabled: bool,
+    #[serde(default)]
+    pub exp_rt_proxy_url: String,
+    #[serde(default)]
+    pub exp_rt_timing_log: bool,
 }
 
 fn default_agent_bridge_prompt_flag() -> String {
@@ -645,6 +724,22 @@ fn default_tts_composer_style() -> String {
 }
 
 fn default_tts_composer_true() -> bool {
+    true
+}
+
+fn default_converse_silence_ms() -> u32 {
+    1200
+}
+
+fn default_converse_max_idle_turns() -> u8 {
+    2
+}
+
+fn default_converse_context_turns() -> u8 {
+    6
+}
+
+fn default_exp_rt_true() -> bool {
     true
 }
 
@@ -1068,6 +1163,20 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: "escape".to_string(),
         },
     );
+    #[cfg(target_os = "macos")]
+    let default_converse_shortcut = "control+option+c";
+    #[cfg(not(target_os = "macos"))]
+    let default_converse_shortcut = "ctrl+alt+c";
+    bindings.insert(
+        "converse".to_string(),
+        ShortcutBinding {
+            id: "converse".to_string(),
+            name: "Start or stop conversation".to_string(),
+            description: "Starts or stops a hands-free spoken conversation.".to_string(),
+            default_binding: default_converse_shortcut.to_string(),
+            current_binding: default_converse_shortcut.to_string(),
+        },
+    );
 
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
@@ -1164,7 +1273,38 @@ pub fn get_default_settings() -> AppSettings {
         vad_enabled: default_vad_enabled(),
         vad_backend: VadBackend::default(),
         overlay_style: default_overlay_style(),
+        converse_silence_ms: default_converse_silence_ms(),
+        converse_max_idle_turns: default_converse_max_idle_turns(),
+        converse_context_turns: default_converse_context_turns(),
+        exp_rt_enabled: false,
+        exp_rt_direct_endpoint: false,
+        exp_rt_endpoint_url: String::new(),
+        exp_rt_model: String::new(),
+        exp_rt_token: SecretString::default(),
+        exp_rt_stream_reply: true,
+        exp_rt_early_speech: true,
+        exp_rt_fast_voice: true,
+        exp_rt_ack: false,
+        exp_rt_prewarm: true,
+        exp_rt_auto_proxy: true,
+        exp_rt_proxy_enabled: false,
+        exp_rt_proxy_url: String::new(),
+        exp_rt_timing_log: false,
     }
+}
+
+/// Adds any default binding that `settings` lacks (e.g. bindings introduced
+/// after the store was written). Returns true if anything was inserted.
+fn merge_missing_default_bindings(settings: &mut AppSettings) -> bool {
+    let mut inserted = false;
+    for (key, value) in get_default_settings().bindings {
+        if let std::collections::hash_map::Entry::Vacant(entry) = settings.bindings.entry(key) {
+            debug!("Adding missing binding: {}", entry.key());
+            entry.insert(value);
+            inserted = true;
+        }
+    }
+    inserted
 }
 
 impl Default for AppSettings {
@@ -1227,12 +1367,8 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         }
 
         // Merge in any bindings added since this store was written.
-        for (key, value) in get_default_settings().bindings {
-            if let std::collections::hash_map::Entry::Vacant(entry) = settings.bindings.entry(key) {
-                debug!("Adding missing binding: {}", entry.key());
-                entry.insert(value);
-                updated = true;
-            }
+        if merge_missing_default_bindings(&mut settings) {
+            updated = true;
         }
 
         if updated {
@@ -2150,5 +2286,58 @@ mod tests {
         let out = format!("{:?}", map);
         assert!(!out.contains("secret"));
         assert!(out.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn converse_defaults_and_binding() {
+        let s = get_default_settings();
+        assert_eq!(s.converse_silence_ms, 1200);
+        assert_eq!(s.converse_max_idle_turns, 2);
+        assert_eq!(s.converse_context_turns, 6);
+        let b = s
+            .bindings
+            .get("converse")
+            .expect("converse binding in defaults");
+        assert_eq!(b.id, "converse");
+        #[cfg(target_os = "macos")]
+        let expected = "control+option+c";
+        #[cfg(not(target_os = "macos"))]
+        let expected = "ctrl+alt+c";
+        assert_eq!(b.default_binding, expected);
+        assert_eq!(b.current_binding, expected);
+        assert!(!b.name.is_empty() && !b.description.is_empty());
+    }
+
+    #[test]
+    fn legacy_settings_without_converse_fields_still_load_with_defaults() {
+        let mut v = serde_json::to_value(get_default_settings()).unwrap();
+        let obj = v.as_object_mut().unwrap();
+        obj.remove("converse_silence_ms");
+        obj.remove("converse_max_idle_turns");
+        obj.remove("converse_context_turns");
+        obj.get_mut("bindings")
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("converse");
+        let s: AppSettings = serde_json::from_value(v).expect("legacy store must deserialize");
+        assert_eq!(s.converse_silence_ms, 1200);
+        assert_eq!(s.converse_max_idle_turns, 2);
+        assert_eq!(s.converse_context_turns, 6);
+        assert!(
+            !s.bindings.contains_key("converse"),
+            "serde alone does not invent bindings"
+        );
+        // the existing defaults merge (used at load time) adds the new binding
+        let mut merged = s;
+        assert!(
+            merge_missing_default_bindings(&mut merged),
+            "reports that it added something"
+        );
+        assert!(merged.bindings.contains_key("converse"));
+        assert!(
+            !merge_missing_default_bindings(&mut merged),
+            "second merge is a no-op"
+        );
     }
 }

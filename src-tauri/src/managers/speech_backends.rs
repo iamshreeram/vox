@@ -413,6 +413,139 @@ async fn compose_command(
     parse_composer_output(&raw, &prompt)
 }
 
+/// Raw (unparsed) text for the conversation planner (DESIGN 3.5). Uses the same
+/// provider/command configuration as `compose`, but returns the model message
+/// or command stdout verbatim. Ignores `tts_composer_send_user_utterance`: a
+/// conversation inherently sends what the user said (the UI discloses it).
+/// `combined` is `system + "\n\n" + user` (a bare user part is also accepted).
+/// Logs only the outcome string.
+pub async fn complete(
+    settings: &AppSettings,
+    system: &str,
+    combined: &str,
+    deadline: Duration,
+) -> Result<String, ComposeError> {
+    let mut noop = |_: &str| {};
+    complete_streaming(settings, system, combined, deadline, &mut noop).await
+}
+
+/// Like `complete`, additionally reporting every raw text delta to `on_text` when the
+/// streaming realtime route answers. The legacy path never calls `on_text`.
+pub async fn complete_streaming(
+    settings: &AppSettings,
+    system: &str,
+    combined: &str,
+    deadline: Duration,
+    on_text: &mut (dyn FnMut(&str) + Send),
+) -> Result<String, ComposeError> {
+    if let Some(result) = crate::managers::realtime_complete::try_complete_streaming(
+        settings, system, combined, deadline, on_text,
+    )
+    .await
+    {
+        match &result {
+            Ok(_) => log::debug!("converse backend outcome: ok"),
+            Err(err) => log::debug!("converse backend outcome: {}", err.outcome()),
+        }
+        return result;
+    }
+    let result = complete_inner(settings, system, combined, deadline).await;
+    match &result {
+        Ok(_) => log::debug!("converse backend outcome: ok"),
+        Err(err) => log::debug!("converse backend outcome: {}", err.outcome()),
+    }
+    result
+}
+
+/// The user part of `combined` after removing the `system + "\n\n"` prefix.
+pub(crate) fn user_part<'a>(system: &str, combined: &'a str) -> &'a str {
+    if system.is_empty() {
+        return combined;
+    }
+    combined
+        .strip_prefix(system)
+        .and_then(|rest| rest.strip_prefix("\n\n"))
+        .unwrap_or(combined)
+}
+
+/// The full prompt text for a command: `combined` as-is when it already
+/// carries the system prefix, otherwise `system + "\n\n" + combined`.
+fn joined_prompt(system: &str, combined: &str) -> String {
+    let prefixed = system.is_empty()
+        || combined
+            .strip_prefix(system)
+            .is_some_and(|rest| rest.starts_with("\n\n"));
+    if prefixed {
+        combined.to_string()
+    } else {
+        format!("{system}\n\n{combined}")
+    }
+}
+
+async fn complete_inner(
+    settings: &AppSettings,
+    system: &str,
+    combined: &str,
+    deadline: Duration,
+) -> Result<String, ComposeError> {
+    let s = settings_from_app(settings);
+    match s.mode {
+        TtsComposerMode::Off => Err(ComposeError::NotConfigured),
+        TtsComposerMode::Model => complete_model(settings, &s, system, combined, deadline).await,
+        TtsComposerMode::Command => complete_command(&s, system, combined, deadline).await,
+    }
+}
+
+async fn complete_model(
+    settings: &AppSettings,
+    s: &TtsComposerSettings,
+    system: &str,
+    combined: &str,
+    deadline: Duration,
+) -> Result<String, ComposeError> {
+    let provider = settings
+        .post_process_providers
+        .iter()
+        .find(|p| p.id == s.provider_id)
+        .ok_or(ComposeError::NotConfigured)?;
+    if !composer_provider_supported(provider) || s.model.trim().is_empty() {
+        return Err(ComposeError::NotConfigured);
+    }
+    let api_key = settings
+        .post_process_api_keys
+        .get(&provider.id)
+        .cloned()
+        .unwrap_or_default();
+    let call = ModelCall {
+        provider,
+        api_key: &api_key,
+        model: &s.model,
+        system,
+        user: user_part(system, combined),
+    };
+    call_model(&call, deadline).await
+}
+
+async fn complete_command(
+    s: &TtsComposerSettings,
+    system: &str,
+    combined: &str,
+    deadline: Duration,
+) -> Result<String, ComposeError> {
+    if !cfg!(unix) {
+        return Err(ComposeError::NotConfigured);
+    }
+    if s.command_path.trim().is_empty() {
+        return Err(ComposeError::NotConfigured);
+    }
+    let prompt = joined_prompt(system, combined);
+    let argv = command_argv(&s.command_path, &s.command_args, &s.prompt_flag, &prompt)?;
+    if !command_ack_matches(s) {
+        return Err(ComposeError::NeedsAcknowledgement);
+    }
+    run_command(&argv, deadline).await
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
@@ -1302,5 +1435,126 @@ mod tests {
             }
             println!("LIVE spoke for {:?}", t.elapsed());
         }
+    }
+
+    // =====================================================================
+    // complete() -- raw text for the conversation planner (S4)
+    // =====================================================================
+
+    #[test]
+    fn complete_command_passes_system_and_user_as_one_prompt_and_returns_raw_stdout() {
+        let d = tmp_dir();
+        // argv with empty args: [-p, <prompt>]; echo the prompt back verbatim.
+        let s = script(&d, "echo.sh", r#"printf '%s' "$2""#);
+        let settings = command_settings(&s, "", true);
+        let out = block_on(complete(
+            &settings,
+            "SYS-MARK",
+            "USER-MARK",
+            Duration::from_secs(10),
+        ))
+        .unwrap();
+        assert_eq!(out, "SYS-MARK\n\nUSER-MARK");
+    }
+
+    #[test]
+    fn complete_command_returns_unparsed_output_including_noise() {
+        let d = tmp_dir();
+        let s = script(
+            &d,
+            "noisy.sh",
+            r#"printf 'banner\n{"kind":"answer","speech":"hi"}\nfooter\n'"#,
+        );
+        let settings = command_settings(&s, "", true);
+        let out = block_on(complete(&settings, "S", "U", Duration::from_secs(10))).unwrap();
+        assert!(out.contains(r#"{"kind":"answer","speech":"hi"}"#));
+        assert!(out.contains("banner"));
+    }
+
+    #[test]
+    fn complete_command_requires_acknowledgement_and_never_spawns_without_it() {
+        let d = tmp_dir();
+        let marker = d.join("ran.txt");
+        let s = script(
+            &d,
+            "mark.sh",
+            &format!("touch {}\nprintf x", marker.display()),
+        );
+        let settings = command_settings(&s, "", false);
+        let r = block_on(complete(&settings, "S", "U", Duration::from_secs(10)));
+        assert_eq!(r, Err(ComposeError::NeedsAcknowledgement));
+        assert!(
+            !marker.exists(),
+            "an unacknowledged command must not be spawned"
+        );
+    }
+
+    #[test]
+    fn complete_off_and_empty_config_are_not_configured() {
+        let off = get_default_settings();
+        assert_eq!(
+            block_on(complete(&off, "S", "U", Duration::from_secs(1))),
+            Err(ComposeError::NotConfigured)
+        );
+        let mut empty_cmd = get_default_settings();
+        let mut c = TtsComposerSettings::default();
+        c.mode = TtsComposerMode::Command;
+        write_to_app(&mut empty_cmd, &c);
+        assert_eq!(
+            block_on(complete(&empty_cmd, "S", "U", Duration::from_secs(1))),
+            Err(ComposeError::NotConfigured)
+        );
+        let no_model = model_settings(None, "  ", "k");
+        assert_eq!(
+            block_on(complete(&no_model, "S", "U", Duration::from_secs(1))),
+            Err(ComposeError::NotConfigured)
+        );
+    }
+
+    #[test]
+    fn complete_command_times_out_within_the_deadline() {
+        let d = tmp_dir();
+        let s = script(&d, "slow.sh", "sleep 5\nprintf late");
+        let settings = command_settings(&s, "", true);
+        let started = Instant::now();
+        let r = block_on(complete(&settings, "S", "U", Duration::from_millis(300)));
+        assert_eq!(r, Err(ComposeError::Timeout));
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[test]
+    fn complete_model_sends_the_given_prompts_and_returns_the_message_content() {
+        let fake = serve(Behavior::Respond(ok_envelope(
+            r#"{"kind":"answer","speech":"Sure."}"#,
+        )));
+        let settings = model_settings(Some(fake.addr), "tiny-model", "KEY-7");
+        let out = block_on(complete(
+            &settings,
+            "SYS-MARK",
+            "USER-MARK",
+            Duration::from_secs(10),
+        ))
+        .unwrap();
+        assert_eq!(out, r#"{"kind":"answer","speech":"Sure."}"#);
+        let text = fake.requests.lock().unwrap()[0].clone();
+        assert!(text.contains("SYS-MARK") && text.contains("USER-MARK"));
+        assert!(text.contains("tiny-model"));
+        assert!(text
+            .to_ascii_lowercase()
+            .contains("authorization: bearer key-7"));
+    }
+
+    #[test]
+    fn complete_model_http_errors_are_backend_errors() {
+        let fake = serve(Behavior::Respond(http(
+            "500 Internal Server Error",
+            &[],
+            b"boom SECRET-BODY",
+        )));
+        let settings = model_settings(Some(fake.addr), "tiny-model", "k");
+        assert_eq!(
+            block_on(complete(&settings, "S", "U", Duration::from_secs(10))),
+            Err(ComposeError::Backend)
+        );
     }
 }

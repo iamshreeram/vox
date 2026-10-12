@@ -8,6 +8,7 @@ import { Slider } from "../ui/Slider";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
 import { SpokenReplyStyle } from "./SpokenReplyStyle";
+import { ConversationSection } from "./ConversationSection";
 
 interface TtsSettingsProps {
   descriptionMode?: "inline" | "tooltip";
@@ -115,6 +116,10 @@ export const TtsSettings: React.FC<TtsSettingsProps> = React.memo(
           </div>
         </SettingContainer>
         <SpokenReplyStyle descriptionMode={descriptionMode} grouped={grouped} />
+        <ConversationSection
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+        />
       </>
     );
   },

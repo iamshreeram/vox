@@ -166,6 +166,8 @@ function App() {
         toast.error(t("errors.noInputDeviceTitle"), {
           description: t("errors.noInputDevice"),
         });
+      } else if (error_type === "conversation_active") {
+        toast.error(t("errors.conversationActive"));
       } else {
         toast.error(
           t("errors.recordingFailed", { error: detail ?? "Unknown error" }),

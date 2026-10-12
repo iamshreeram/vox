@@ -67,6 +67,11 @@ pub trait SpeechHandle: Send {
     /// process had already exited).
     fn kill(&mut self) -> bool;
     fn is_running(&mut self) -> bool;
+    /// True for a handle onto a resident, queue-capable speaker (see `tts_queue`): further
+    /// sentences can be appended without replacing it. Default: false.
+    fn queue_capable(&self) -> bool {
+        false
+    }
 }
 
 pub trait SpeechBackend: Send + Sync {
@@ -87,6 +92,23 @@ pub trait SpeechBackend: Send + Sync {
         _emotion: Emotion,
     ) -> io::Result<Box<dyn SpeechHandle>> {
         self.spawn(text, voice, rate_wpm)
+    }
+
+    /// True when `enqueue_styled` appends to a resident queue instead of replacing speech.
+    fn supports_queue(&self) -> bool {
+        false
+    }
+
+    /// Appends one utterance to the backend's resident queue (no replacement). The returned
+    /// handle refers to the shared queue. Default: unsupported.
+    fn enqueue_styled(
+        &self,
+        _text: &str,
+        _voice: Option<&str>,
+        _rate_wpm: Option<u32>,
+        _emotion: Emotion,
+    ) -> io::Result<Box<dyn SpeechHandle>> {
+        Err(io::Error::from(io::ErrorKind::Unsupported))
     }
 }
 
@@ -256,6 +278,97 @@ impl TtsManager {
                 state.current = Some(handle);
                 Ok(())
             }
+            Err(err) => Err(TtsError::Backend(err.to_string())),
+        }
+    }
+
+    /// Stops speech ONLY if `epoch` is still current: same effect and return value as
+    /// [`TtsManager::stop`] (bumps the epoch, kills, `false` only when the kill could not be
+    /// confirmed). A stale epoch changes nothing and returns `true` (someone else owns the
+    /// speaker now).
+    pub fn stop_if_current(&self, epoch: u64) -> bool {
+        let mut state = lock_state(&self.inner);
+        if state.epoch != epoch {
+            return true;
+        }
+        self.bump_locked(&mut state);
+        let ok = match state.current.as_mut() {
+            None => return true,
+            Some(handle) => handle.kill(),
+        };
+        if ok {
+            state.current = None;
+        }
+        ok
+    }
+
+    /// True when the backend can queue sentences (resident speaker).
+    pub fn queue_capable(&self) -> bool {
+        self.backend.supports_queue()
+    }
+
+    /// Appends `text` to the resident speaker's queue ONLY if `epoch` is still current,
+    /// atomically (same critical section). Order of checks: sanitize (`Empty`), epoch
+    /// (`Superseded`), recording (`Recording`), backend support (`Unsupported`). Never kills
+    /// earlier queued speech; keeps the existing live queue handle as `current` (a new
+    /// handle is stored only when `current` is absent or no longer running; a non-queue
+    /// `current` is replaced exactly like `speak_styled_if_current`). A backend refusal
+    /// because a previous stop failed maps to `CancelFailed`; other backend errors to
+    /// `Backend`. Consumes no epoch.
+    pub fn speak_queued_if_current(
+        &self,
+        epoch: u64,
+        text: &str,
+        voice: Option<&str>,
+        rate_wpm: Option<u32>,
+        emotion: Emotion,
+    ) -> Result<(), TtsError> {
+        let text = sanitize_speech_text(text).ok_or(TtsError::Empty)?;
+        let voice = voice.and_then(sanitize_voice);
+        let rate = rate_wpm.map(clamp_rate);
+        let mut state = lock_state(&self.inner);
+        if state.epoch != epoch {
+            return Err(TtsError::Superseded);
+        }
+        if state.recording_active {
+            return Err(TtsError::Recording);
+        }
+        if !self.backend.supports_queue() {
+            return Err(TtsError::Unsupported);
+        }
+        let live_queue = match state.current.as_mut() {
+            Some(handle) => handle.queue_capable() && handle.is_running(),
+            None => false,
+        };
+        if live_queue {
+            // Append to the live queue; the existing handle stays `current`.
+            return match self
+                .backend
+                .enqueue_styled(&text, voice.as_deref(), rate, emotion)
+            {
+                Ok(_handle) => Ok(()),
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => Err(TtsError::CancelFailed),
+                Err(err) => Err(TtsError::Backend(err.to_string())),
+            };
+        }
+        // No live queue: replace any non-queue or finished handle exactly like a normal speak.
+        let cancelled = match state.current.as_mut() {
+            Some(handle) => handle.kill(),
+            None => true,
+        };
+        if !cancelled {
+            return Err(TtsError::CancelFailed);
+        }
+        state.current = None;
+        match self
+            .backend
+            .enqueue_styled(&text, voice.as_deref(), rate, emotion)
+        {
+            Ok(handle) => {
+                state.current = Some(handle);
+                Ok(())
+            }
+            Err(err) if err.kind() == io::ErrorKind::WouldBlock => Err(TtsError::CancelFailed),
             Err(err) => Err(TtsError::Backend(err.to_string())),
         }
     }
@@ -1680,3 +1793,7 @@ mod epoch_tests {
         let _ = std::fs::remove_file(&out);
     }
 }
+
+#[cfg(test)]
+#[path = "tts_queue_manager_tests.rs"]
+mod queue_manager_tests;

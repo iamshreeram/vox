@@ -18,6 +18,8 @@
     "test:source-update": "bun src/components/update-checker/sourceUpdateState.test.ts",
     "test:theme": "bun src/styles/theme.test.ts",
     "test:composer-form": "bun src/components/settings/composerForm.test.ts",
+    "test:converse-form": "bun src/components/settings/converseForm.test.ts",
+    "test:realtime-form": "bun src/components/settings/realtimeForm.test.ts",
     "test:scripts": "bash scripts/test-update-lock.sh && bash scripts/test-update-macos.sh && bash scripts/test-install-macos.sh",
     "test:workflow-permissions": "bun scripts/check-workflow-permissions.test.ts",
     "test:playwright": "playwright test",

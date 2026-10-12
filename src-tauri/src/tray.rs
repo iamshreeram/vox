@@ -555,6 +555,10 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         true,
         None::<&str>,
     )?;
+    // Conversation toggle. The key is English-only in the locale files, so
+    // other locales fall back to the English label (see localized_or_english).
+    let converse_label = localized_or_english(&strings.converse, &english_converse());
+    let converse_i = MenuItem::with_id(app, "converse", &converse_label, true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app, "quit", &strings.quit, true, quit_accelerator)?;
     let separator = || PredefinedMenuItem::separator(app);
 
@@ -586,6 +590,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
                 &cancel_i,
                 &separator()?,
                 &copy_last_transcript_i,
+                &converse_i,
                 &separator()?,
                 &settings_i,
                 &check_updates_i,
@@ -624,6 +629,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
                 &version_i,
                 &separator()?,
                 &copy_last_transcript_i,
+                &converse_i,
                 &separator()?,
                 &model_submenu,
                 &unload_model_i,
@@ -639,7 +645,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     // The listening-mode group is present only when experimental features are
     // enabled. Insert it before settings in either menu layout.
     if let Some(submenu) = &listening_mode_submenu {
-        let insert_at = if inputs.busy { 6 } else { 7 };
+        let insert_at = if inputs.busy { 7 } else { 8 };
         menu.insert(submenu, insert_at)?;
         menu.insert(&separator()?, insert_at + 1)?;
     }
@@ -693,6 +699,14 @@ fn localized_or_english(localized: &str, english_fallback: &str) -> String {
     } else {
         "Update available".to_string()
     }
+}
+
+/// English conversation label from the generated translations.
+fn english_converse() -> String {
+    crate::tray_i18n::TRANSLATIONS
+        .get("en")
+        .map(|strings| strings.converse.clone())
+        .unwrap_or_default()
 }
 
 /// English "Update available" label from the generated translations.

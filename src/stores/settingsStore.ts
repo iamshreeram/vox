@@ -228,6 +228,40 @@ const settingUpdaters: {
   tts_enabled: (value) => commands.changeTtsEnabledSetting(value as boolean),
   tts_voice: (value) => commands.changeTtsVoiceSetting(value as string | null),
   tts_rate_wpm: (value) => commands.changeTtsRateSetting(value as number),
+  converse_silence_ms: (value) =>
+    commands.changeConverseSilenceMsSetting(value as number),
+  converse_max_idle_turns: (value) =>
+    commands.changeConverseMaxIdleTurnsSetting(value as number),
+  converse_context_turns: (value) =>
+    commands.changeConverseContextTurnsSetting(value as number),
+  exp_rt_enabled: (value) =>
+    commands.changeExpRtBoolSetting("enabled", value as boolean),
+  exp_rt_direct_endpoint: (value) =>
+    commands.changeExpRtBoolSetting("direct_endpoint", value as boolean),
+  exp_rt_stream_reply: (value) =>
+    commands.changeExpRtBoolSetting("stream_reply", value as boolean),
+  exp_rt_early_speech: (value) =>
+    commands.changeExpRtBoolSetting("early_speech", value as boolean),
+  exp_rt_fast_voice: (value) =>
+    commands.changeExpRtBoolSetting("fast_voice", value as boolean),
+  exp_rt_ack: (value) =>
+    commands.changeExpRtBoolSetting("ack", value as boolean),
+  exp_rt_prewarm: (value) =>
+    commands.changeExpRtBoolSetting("prewarm", value as boolean),
+  exp_rt_auto_proxy: (value) =>
+    commands.changeExpRtBoolSetting("auto_proxy", value as boolean),
+  exp_rt_proxy_enabled: (value) =>
+    commands.changeExpRtBoolSetting("proxy_enabled", value as boolean),
+  exp_rt_timing_log: (value) =>
+    commands.changeExpRtBoolSetting("timing_log", value as boolean),
+  exp_rt_endpoint_url: (value) =>
+    commands.changeExpRtTextSetting("endpoint_url", value as string),
+  exp_rt_model: (value) =>
+    commands.changeExpRtTextSetting("model", value as string),
+  exp_rt_token: (value) =>
+    commands.changeExpRtTextSetting("token", value as string),
+  exp_rt_proxy_url: (value) =>
+    commands.changeExpRtTextSetting("proxy_url", value as string),
 };
 
 export const useSettingsStore = create<SettingsStore>()(
