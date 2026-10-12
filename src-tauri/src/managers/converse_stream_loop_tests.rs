@@ -297,9 +297,9 @@ fn three_json() -> String {
 #[tokio::test]
 async fn disabled_early_speech_uses_the_legacy_say_path_and_never_opens_a_queue() {
     let r = rig(&["hi"], vec![Turn { deltas: vec![], final_delay: 0, plan: Ok(plan(PlanKind::Answer, "Hello there.")) }], RigOpts::default());
-    let _ = run(&r, &cfg(false, Some(10))).await;
+    let _ = run(&r, &cfg(false, None)).await;
     assert!(has(&r.log, "say:Hello there."));
-    assert_eq!(r.mouth.opens.load(Ordering::SeqCst), 0);
+    assert_eq!(r.mouth.opens.load(Ordering::SeqCst), 0, "neither early speech nor ack => no queue");
     assert_eq!(r.brain.streaming_calls.load(Ordering::SeqCst), 0);
     assert_eq!(r.brain.plain_calls.load(Ordering::SeqCst), 1);
 }
@@ -563,6 +563,37 @@ async fn an_acknowledgement_never_counts_as_spoken_answer_text() {
     assert!(has(&r.log, "push:One moment."));
     assert!(has(&r.log, "push:Here is your answer."));
     assert!(!has(&r.log, "abort"));
+}
+
+#[tokio::test]
+async fn ack_alone_works_without_early_speech_and_streams_no_sentences() {
+    let r = rig(
+        &["hi"],
+        vec![Turn {
+            deltas: vec![(300, three_json())],
+            final_delay: 0,
+            plan: Ok(plan(PlanKind::Answer, THREE)),
+        }],
+        RigOpts::default(),
+    );
+    let _ = run(&r, &cfg(false, Some(50))).await;
+    let log = log_of(&r.log);
+    let pushes: Vec<&str> = log.iter().map(String::as_str).filter(|e| e.starts_with("push:")).collect();
+    assert_eq!(pushes, vec!["push:One moment.", &format!("push:{THREE}")[..]], "{log:?}");
+    assert!(!has(&r.log, "abort"));
+}
+
+#[tokio::test]
+async fn ack_alone_with_a_fast_brain_uses_the_legacy_say() {
+    let r = rig(
+        &["hi"],
+        vec![Turn { deltas: vec![], final_delay: 0, plan: Ok(plan(PlanKind::Answer, "Quick answer here.")) }],
+        RigOpts::default(),
+    );
+    let _ = run(&r, &cfg(false, Some(400))).await;
+    assert_eq!(count_prefix(&r.log, "push:One moment."), 0);
+    // no ack was needed: either path may speak the answer, but exactly once
+    assert_eq!(count_prefix(&r.log, "say:Quick answer here.") + count_prefix(&r.log, "push:Quick answer here."), 1);
 }
 
 #[tokio::test]
