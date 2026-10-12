@@ -12,9 +12,11 @@ import {
   shouldShowTooltip,
 } from "./settingsGroupContext";
 
+const PROBE_TEXT = "probe-child";
+
 const Probe: React.FC = () => {
   const { density, visible } = useContext(SettingsGroupContext);
-  return <i data-probe={`${density}:${visible}`}>probe-child</i>;
+  return <i data-probe={`${density}:${visible}`}>{PROBE_TEXT}</i>;
 };
 
 const render = (defaultOpen: boolean): string =>

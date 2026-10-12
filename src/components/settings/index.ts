@@ -40,7 +40,6 @@ export { MemoryToggle } from "./MemoryToggle";
 export { AgentContextToggle } from "./AgentContextToggle";
 export { WakeWordToggle } from "./WakeWordToggle";
 export { AmbientModeToggle } from "./AmbientModeToggle";
-export { ListeningModeSection } from "./ListeningModeSection";
 export { MemoryFactsList } from "./MemoryFactsList";
 export { VoiceCommandsToggle } from "./VoiceCommandsToggle";
 export { VoiceMediaControlsToggle } from "./VoiceMediaControlsToggle";

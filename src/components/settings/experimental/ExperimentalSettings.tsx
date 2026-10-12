@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { SettingsGroup } from "../../ui/SettingsGroup";
+import { CollapsibleSettingsGroup } from "../../ui/CollapsibleSettingsGroup";
 import { PostProcessingToggle } from "../PostProcessingToggle";
 import { KeyboardImplementationSelector } from "../debug/KeyboardImplementationSelector";
 import { AccelerationSelector } from "../AccelerationSelector";
@@ -15,48 +15,94 @@ import { AgentBridgeToggle } from "../AgentBridgeToggle";
 import { AgentContextToggle } from "../AgentContextToggle";
 import { AgentBridgeBinaryPathField } from "../AgentBridgeBinaryPathField";
 import { TtsSettings } from "../TtsSettings";
-import { ListeningModeSection } from "../ListeningModeSection";
 import { RealtimeSection } from "../RealtimeSection";
+import { WakeWordToggle } from "../WakeWordToggle";
+import { AmbientModeToggle } from "../AmbientModeToggle";
 import { useSettings } from "../../../hooks/useSettings";
+import {
+  ControlId,
+  EXPERIMENTAL_GROUPS,
+  visibleControls,
+} from "./experimentalLayout";
 
 export const ExperimentalSettings: React.FC = () => {
   const { t } = useTranslation();
   const { getSetting } = useSettings();
   const memoryEnabled = getSetting("memory_enabled") || false;
   const agentBridgeEnabled = getSetting("agent_bridge_enabled") || false;
+  const flags = { memoryEnabled, agentBridgeEnabled };
+
+  const RENDER: Record<ControlId, () => React.ReactNode> = {
+    postProcessing: () => (
+      <PostProcessingToggle descriptionMode="tooltip" grouped={true} />
+    ),
+    keyboardImplementation: () => (
+      <KeyboardImplementationSelector
+        descriptionMode="tooltip"
+        grouped={true}
+      />
+    ),
+    acceleration: () => (
+      <AccelerationSelector descriptionMode="tooltip" grouped={true} />
+    ),
+    lazyStreamClose: () => (
+      <LazyStreamClose descriptionMode="tooltip" grouped={true} />
+    ),
+    vadBackend: () => (
+      <VadBackendSelector descriptionMode="tooltip" grouped={true} />
+    ),
+    voiceCommands: () => (
+      <VoiceCommandsToggle descriptionMode="tooltip" grouped={true} />
+    ),
+    voiceShortcuts: () => (
+      <VoiceShortcutsEditor descriptionMode="tooltip" grouped={true} />
+    ),
+    voiceMediaControls: () => (
+      <VoiceMediaControlsToggle descriptionMode="tooltip" grouped={true} />
+    ),
+    wakeWord: () => <WakeWordToggle descriptionMode="tooltip" grouped={true} />,
+    ambientMode: () => (
+      <AmbientModeToggle descriptionMode="tooltip" grouped={true} />
+    ),
+    memoryToggle: () => (
+      <MemoryToggle descriptionMode="tooltip" grouped={true} />
+    ),
+    memoryFacts: () => <MemoryFactsList />,
+    agentBridge: () => (
+      <AgentBridgeToggle descriptionMode="tooltip" grouped={true} />
+    ),
+    agentContext: () => (
+      <AgentContextToggle descriptionMode="tooltip" grouped={true} />
+    ),
+    agentBridgeBinaryPath: () => (
+      <AgentBridgeBinaryPathField descriptionMode="tooltip" grouped={true} />
+    ),
+    tts: () => <TtsSettings descriptionMode="tooltip" grouped={true} />,
+    realtime: () => (
+      <RealtimeSection descriptionMode="tooltip" grouped={true} />
+    ),
+  };
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
-      <SettingsGroup title={t("settings.advanced.groups.experimental")}>
-        <PostProcessingToggle descriptionMode="tooltip" grouped={true} />
-        <KeyboardImplementationSelector
-          descriptionMode="tooltip"
-          grouped={true}
-        />
-        <AccelerationSelector descriptionMode="tooltip" grouped={true} />
-        <LazyStreamClose descriptionMode="tooltip" grouped={true} />
-        <VadBackendSelector descriptionMode="tooltip" grouped={true} />
-        <MemoryToggle descriptionMode="tooltip" grouped={true} />
-        {memoryEnabled && <MemoryFactsList />}
-        <VoiceCommandsToggle descriptionMode="tooltip" grouped={true} />
-        <VoiceShortcutsEditor descriptionMode="tooltip" grouped={true} />
-        <VoiceMediaControlsToggle descriptionMode="tooltip" grouped={true} />
-        <AgentBridgeToggle descriptionMode="tooltip" grouped={true} />
-        <AgentContextToggle descriptionMode="tooltip" grouped={true} />
-        {agentBridgeEnabled && (
-          <AgentBridgeBinaryPathField
-            descriptionMode="tooltip"
-            grouped={true}
-          />
-        )}
-        <ListeningModeSection />
-      </SettingsGroup>
-      <SettingsGroup title={t("settings.advanced.tts.groupTitle")}>
-        <TtsSettings descriptionMode="tooltip" grouped={true} />
-      </SettingsGroup>
-      <SettingsGroup title={t("settings.experimental.realtime.title")}>
-        <RealtimeSection descriptionMode="tooltip" grouped={true} />
-      </SettingsGroup>
+    <div className="max-w-3xl w-full mx-auto space-y-3">
+      <h2 className="px-1 text-xs font-medium text-mid-gray uppercase tracking-wide">
+        {t("settings.advanced.groups.experimental")}
+      </h2>
+      {EXPERIMENTAL_GROUPS.map((group) => (
+        <CollapsibleSettingsGroup
+          key={group.id}
+          id={group.id}
+          title={t(group.titleKey)}
+          description={
+            group.descriptionKey ? t(group.descriptionKey) : undefined
+          }
+          defaultOpen={group.defaultOpen}
+        >
+          {visibleControls(group, flags).map((id) => (
+            <React.Fragment key={id}>{RENDER[id]()}</React.Fragment>
+          ))}
+        </CollapsibleSettingsGroup>
+      ))}
     </div>
   );
 };
