@@ -416,7 +416,12 @@ async fn a_final_plan_that_contradicts_early_speech_aborts_and_executes_nothing(
     assert_eq!(count_prefix(&r.log, "model:"), 0, "no command may run");
     assert!(has(&r.log, &format!("say:{MSG_PLAN_FAILED}")));
     let h = r.brain.histories.lock().unwrap().clone();
-    assert!(h[1].is_empty(), "an aborted turn leaves no history entry");
+    // deliberate spec change (DESIGN Revision 3, critic C2): an aborted turn after early speech
+    // records the spoken prefix with an incomplete-reply note (never a false "no reply").
+    assert_eq!(h[1].len(), 1, "{:?}", h[1]);
+    assert_eq!(h[1][0].0, "hi");
+    assert!(h[1][0].1.ends_with(&crate::managers::converse_context::note_incomplete()), "{:?}", h[1][0].1);
+    assert!(!h[1][0].1.contains("\"event\":\"failed\""), "{:?}", h[1][0].1);
 }
 
 #[tokio::test]
