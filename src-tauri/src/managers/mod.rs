@@ -17,6 +17,7 @@ pub mod converse_runtime;
 pub mod emotion;
 pub mod gguf_meta;
 pub mod history;
+pub mod llm_stream;
 pub mod media_control;
 pub mod memory;
 pub mod model;
