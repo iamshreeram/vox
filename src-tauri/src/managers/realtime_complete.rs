@@ -148,6 +148,20 @@ pub async fn try_complete(
     combined: &str,
     deadline: Duration,
 ) -> Option<Result<String, ComposeError>> {
+    let mut noop = |_: &str| {};
+    try_complete_streaming(settings, system, combined, deadline, &mut noop).await
+}
+
+/// Same as `try_complete`, additionally passing every raw text delta of the reply to
+/// `on_text` as it arrives (never called on the legacy `None` path or on a configuration
+/// error). The callback must be quick and non-blocking.
+pub async fn try_complete_streaming(
+    settings: &AppSettings,
+    system: &str,
+    combined: &str,
+    deadline: Duration,
+    on_text: &mut (dyn FnMut(&str) + Send),
+) -> Option<Result<String, ComposeError>> {
     let prepared = match prepare(settings) {
         Ok(None) => return None,
         Ok(Some(prepared)) => prepared,
@@ -190,8 +204,7 @@ pub async fn try_complete(
         first_text: FIRST_TEXT_DEADLINE.min(remaining),
         proxy,
     };
-    let mut on_text = |_: &str| {};
-    let result = llm_stream::stream_completion(&call, &opts, &mut on_text).await;
+    let result = llm_stream::stream_completion(&call, &opts, on_text).await;
     match &result {
         Ok(_) => log::debug!("converse realtime outcome: ok"),
         Err(err) => log::debug!("converse realtime outcome: {}", err.outcome()),
@@ -376,3 +389,7 @@ fn probe_login_shell_once() -> Option<String> {
 #[cfg(test)]
 #[path = "realtime_complete_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "realtime_complete_stream_tests.rs"]
+mod stream_tests;

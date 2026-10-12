@@ -319,7 +319,7 @@ async fn a_mouth_without_a_queue_falls_back_to_the_legacy_path() {
 #[tokio::test]
 async fn sentences_are_spoken_while_the_reply_streams_then_the_remainder_follows() {
     let r = rig(
-        &["hi", "bye"],
+        &["hi", "what about tomorrow"],
         vec![
             streamed(&three_json(), 7, 2, 40, Ok(plan(PlanKind::Answer, THREE))),
             end_turn(),
@@ -394,7 +394,7 @@ async fn clarify_turns_are_spoken_like_answers() {
 
 #[tokio::test]
 async fn an_end_plan_is_spoken_through_the_queue_and_ends_the_session() {
-    let r = rig(&["stop"], vec![end_turn()], RigOpts::default());
+    let r = rig(&["wrap up the session please"], vec![end_turn()], RigOpts::default());
     let end = run(&r, &cfg(true, None)).await;
     assert_eq!(end, SessionEnd::UserEnded);
     assert!(has(&r.log, "push:Goodbye."));
@@ -407,7 +407,7 @@ async fn a_final_plan_that_contradicts_early_speech_aborts_and_executes_nothing(
     // streams an "answer" sentence, then the final plan turns out to be a command
     let cmd = TurnPlan { command: Some("delete everything".into()), ..plan(PlanKind::Command, "Opening.") };
     let r = rig(
-        &["hi", "bye"],
+        &["hi", "what about tomorrow"],
         vec![streamed(&three_json(), 8, 1, 5, Ok(cmd)), end_turn()],
         RigOpts::default(),
     );
@@ -422,7 +422,7 @@ async fn a_final_plan_that_contradicts_early_speech_aborts_and_executes_nothing(
 #[tokio::test]
 async fn final_speech_that_does_not_extend_the_spoken_prefix_aborts() {
     let r = rig(
-        &["hi", "bye"],
+        &["hi", "what about tomorrow"],
         vec![
             streamed(&three_json(), 8, 1, 5, Ok(plan(PlanKind::Answer, "Something entirely different now."))),
             end_turn(),
@@ -438,7 +438,7 @@ async fn final_speech_that_does_not_extend_the_spoken_prefix_aborts() {
 #[tokio::test]
 async fn a_plan_error_after_early_speech_stops_the_speech_and_apologizes() {
     let r = rig(
-        &["hi", "bye"],
+        &["hi", "what about tomorrow"],
         vec![streamed(&three_json(), 8, 1, 5, Err(PlanError::Backend)), end_turn()],
         RigOpts::default(),
     );
@@ -467,7 +467,7 @@ async fn action_plans_without_early_speech_use_the_legacy_path() {
 #[tokio::test]
 async fn a_refused_push_ends_the_turns_speech_without_further_pushes_or_say() {
     let r = rig(
-        &["hi", "bye"],
+        &["hi", "what about tomorrow"],
         vec![streamed(&three_json(), 8, 1, 5, Ok(plan(PlanKind::Answer, THREE))), end_turn()],
         RigOpts { accept_limit: Some(1), ..Default::default() },
     );
@@ -482,7 +482,7 @@ async fn a_refused_push_ends_the_turns_speech_without_further_pushes_or_say() {
 #[tokio::test]
 async fn an_interrupted_finish_returns_to_listening_without_a_fallback_say() {
     let r = rig(
-        &["hi", "bye"],
+        &["hi", "what about tomorrow"],
         vec![streamed(&three_json(), 8, 1, 5, Ok(plan(PlanKind::Answer, THREE))), end_turn()],
         RigOpts { finish_outcome: SayOutcome::Interrupted, ..Default::default() },
     );

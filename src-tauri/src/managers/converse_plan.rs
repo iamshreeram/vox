@@ -150,6 +150,7 @@ fn build_system(style: &str) -> String {
     let mut system = [
         "You are Vox, a voice assistant. Reply with ONLY one JSON object, with no markdown, no code fence and no other text.\n",
         "Use this shape: {\"kind\": \"answer|paste|command|clarify|end\", \"speech\": \"...\", \"emotion\": \"neutral|cheerful|excited|calm|concerned|apologetic|serious\", \"paste_text\": \"...\", \"command\": \"...\"}\n",
+        "Write the JSON keys in this order: kind, emotion, speech, then any others.\n",
         "Include paste_text only when kind is paste, and command only when kind is command.\n",
         "Kinds:\n",
         "- answer: answer the user's question or continue the chat. Put the reply in speech.\n",

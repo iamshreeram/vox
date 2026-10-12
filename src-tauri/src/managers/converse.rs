@@ -6,12 +6,13 @@ use crate::managers::converse_local::{classify_local, LocalIntent};
 use crate::managers::converse_plan::{
     PlanError, PlanInput, PlanKind, TurnPlan, MAX_UTTERANCE_CHARS,
 };
+use crate::managers::converse_stream::{reconcile, PlanStreamer, Reconcile};
 use crate::managers::emotion::Emotion;
-use futures_util::future::Either;
+use futures_util::future::{select, Either};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// `true` means the session was cancelled.
@@ -180,6 +181,7 @@ impl Default for SessionConfig {
 impl SessionConfig {
     /// Session settings from the user's AppSettings (clamped; DESIGN 3.3).
     pub fn from_settings(s: &crate::settings::AppSettings) -> SessionConfig {
+        let rt = crate::managers::realtime_config::RealtimeConfig::from_settings(s);
         SessionConfig {
             max_idle_turns: s.converse_max_idle_turns.clamp(1, 5),
             context_turns: usize::from(s.converse_context_turns.min(12)),
@@ -187,9 +189,13 @@ impl SessionConfig {
             post_speech_guard: Duration::from_millis(350),
             quiet_wait: Duration::from_secs(2),
             style: s.tts_composer_style.clone(),
-            early_speech: false,
-            ack_after: None,
-            timing_log: false,
+            early_speech: rt.early_speech,
+            ack_after: if rt.ack {
+                Some(Duration::from_millis(1200))
+            } else {
+                None
+            },
+            timing_log: rt.timing_log,
         }
     }
 }
@@ -401,6 +407,314 @@ async fn run_command_plan(
     Ok(None)
 }
 
+/// Shared state of one streamed brain turn (see `stream_plan`).
+#[derive(Default)]
+struct Early {
+    streamer: PlanStreamer,
+    /// Sentences already queued: canonical, in order, never the acknowledgement.
+    spoken: Vec<String>,
+    /// The queue refused a push: the user or the system took the speaker. Stay silent.
+    dead: bool,
+    ack_pushed: bool,
+    speaking_reported: bool,
+    first_text: Option<Instant>,
+    first_speech: Option<Instant>,
+}
+
+fn lock_early(early: &Mutex<Early>) -> std::sync::MutexGuard<'_, Early> {
+    early
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn take_early(early: Mutex<Early>) -> Early {
+    early
+        .into_inner()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Reports Speaking once per turn and records the first speech time.
+fn mark_speaking(early: &mut Early, reporter: &dyn Reporter) {
+    if !early.speaking_reported {
+        early.speaking_reported = true;
+        reporter.state(SessionState::Speaking);
+    }
+    early.first_speech.get_or_insert_with(Instant::now);
+}
+
+/// One streamed text delta from the brain: release completed sentences to the queue.
+/// Runs inside the brain callback, so it only takes the lock and pushes.
+fn on_delta(
+    early: &Mutex<Early>,
+    cfg: &SessionConfig,
+    queue: &dyn SpeechQueue,
+    reporter: &dyn Reporter,
+    delta: &str,
+) {
+    let mut early = lock_early(early);
+    early.first_text.get_or_insert_with(Instant::now);
+    if !cfg.early_speech || early.dead {
+        return;
+    }
+    for sentence in early.streamer.push(delta) {
+        if queue.push(&sentence.text, sentence.emotion) {
+            early.spoken.push(sentence.text);
+            mark_speaking(&mut early, reporter);
+        } else {
+            early.dead = true;
+            break;
+        }
+    }
+}
+
+/// The acknowledgement: queued once, only while nothing has been spoken yet.
+fn push_ack(queue: &dyn SpeechQueue, early: &Mutex<Early>, reporter: &dyn Reporter) {
+    let mut early = lock_early(early);
+    if early.dead || !early.spoken.is_empty() || early.ack_pushed {
+        return;
+    }
+    if queue.push(MSG_ACK, Emotion::Neutral) {
+        early.ack_pushed = true;
+        mark_speaking(&mut early, reporter);
+    } else {
+        early.dead = true;
+    }
+}
+
+/// The streamed brain request. Text deltas feed `early`; if the brain is still silent
+/// `ack_after` into the request, the acknowledgement is queued once and the same request
+/// keeps running.
+async fn stream_plan(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    queue: &dyn SpeechQueue,
+    early: &Mutex<Early>,
+    input: PlanInput<'_>,
+) -> Result<TurnPlan, PlanError> {
+    let mut on_text = |delta: &str| on_delta(early, cfg, queue, deps.reporter, delta);
+    let mut plan = deps.brain.plan_streaming(input, &mut on_text);
+    if let Some(after) = cfg.ack_after {
+        let timer = std::pin::pin!(tokio::time::sleep(after));
+        match select(&mut plan, timer).await {
+            Either::Left((result, _timer)) => return result,
+            Either::Right((_elapsed, _plan)) => push_ack(queue, early, deps.reporter),
+        }
+    }
+    plan.await
+}
+
+/// Turns a streamed plan into the turn's outcome: `Ok(Some(summary))` to record history,
+/// `Ok(None)` to continue silently, `Err(end)` to end the session.
+async fn streamed_outcome(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    queue: &dyn SpeechQueue,
+    early: &mut Early,
+    plan: TurnPlan,
+    last_draft: &mut Option<String>,
+) -> Result<Option<String>, SessionEnd> {
+    if early.dead {
+        queue.abort();
+        return Ok(None);
+    }
+    let text = match reconcile(&plan, &early.spoken) {
+        Reconcile::Abort => {
+            queue.abort();
+            into_result(speak_or_end(deps, cfg, cancel, MSG_PLAN_FAILED, Emotion::Neutral).await)?;
+            return Ok(None);
+        }
+        Reconcile::Legacy => {
+            // Only an already-pushed acknowledgement is replaced by the legacy say.
+            if early.ack_pushed {
+                queue.abort();
+            }
+            return execute_plan(deps, cfg, cancel, plan, last_draft).await;
+        }
+        Reconcile::Remainder { text } => text,
+    };
+    if !text.is_empty() {
+        mark_speaking(early, deps.reporter);
+        if !queue.push(&text, plan.emotion) {
+            queue.abort();
+            return Ok(None);
+        }
+    }
+    if race(cancel, queue.finish()).await.is_none() {
+        queue.abort();
+        return Err(SessionEnd::Cancelled);
+    }
+    let result = settle(deps, cfg, cancel).await;
+    if matches!(plan.kind, PlanKind::End) {
+        return Err(after_speech(result, SessionEnd::UserEnded));
+    }
+    if let Some(end) = speech_to_end(result) {
+        return Err(end);
+    }
+    Ok(Some(plan.speech.clone()))
+}
+
+/// A plan request that failed or was superseded. `Ok(None)` = continue the loop.
+async fn plan_failed(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    err: PlanError,
+) -> Result<Option<String>, SessionEnd> {
+    match err {
+        PlanError::NotConfigured => Err(after_speech(
+            speak(deps, cfg, cancel, MSG_NOT_CONFIGURED, Emotion::Neutral).await,
+            SessionEnd::NotConfigured,
+        )),
+        PlanError::Superseded => Ok(None),
+        _ => {
+            into_result(speak_or_end(deps, cfg, cancel, MSG_PLAN_FAILED, Emotion::Neutral).await)?;
+            Ok(None)
+        }
+    }
+}
+
+fn ms_since(base: Instant, at: Option<Instant>) -> String {
+    match at {
+        Some(at) => at.saturating_duration_since(base).as_millis().to_string(),
+        None => "-".to_string(),
+    }
+}
+
+/// One latency line per streamed turn. Never logs any text.
+fn log_timing(cfg: &SessionConfig, tier_start: Instant, early: &Early, plan_at: Instant) {
+    if !cfg.timing_log {
+        return;
+    }
+    log::info!(
+        "converse timing: first_text_ms={} first_speech_ms={} plan_ms={} total_ms={}",
+        ms_since(tier_start, early.first_text),
+        ms_since(tier_start, early.first_speech),
+        ms_since(tier_start, Some(plan_at)),
+        ms_since(tier_start, Some(Instant::now())),
+    );
+}
+
+/// Brain tier: plan the turn and carry it out. Streams (early speech / acknowledgement)
+/// when the mouth opens a queue; otherwise the legacy one-shot path.
+async fn brain_turn(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    utterance: &str,
+    history: &[(String, String)],
+    last_draft: &mut Option<String>,
+) -> Result<Option<String>, SessionEnd> {
+    let tier_start = Instant::now();
+    let start = history.len().saturating_sub(cfg.context_turns);
+    let input = PlanInput {
+        utterance,
+        history: history.get(start..).unwrap_or_default(),
+        last_draft: last_draft.as_deref(),
+        style: &cfg.style,
+    };
+    let queue = if cfg.early_speech || cfg.ack_after.is_some() {
+        deps.mouth.open_queue()
+    } else {
+        None
+    };
+    let Some(queue) = queue else {
+        return match race(cancel, deps.brain.plan(input)).await {
+            None => Err(SessionEnd::Cancelled),
+            Some(Ok(plan)) => execute_plan(deps, cfg, cancel, plan, last_draft).await,
+            Some(Err(err)) => plan_failed(deps, cfg, cancel, err).await,
+        };
+    };
+    let early = Mutex::new(Early::default());
+    let planned = race(
+        cancel,
+        stream_plan(deps, cfg, queue.as_ref(), &early, input),
+    )
+    .await;
+    let plan_at = Instant::now();
+    let mut early = take_early(early);
+    let turn = match planned {
+        None => {
+            queue.abort();
+            Err(SessionEnd::Cancelled)
+        }
+        Some(Ok(plan)) => {
+            streamed_outcome(
+                deps,
+                cfg,
+                cancel,
+                queue.as_ref(),
+                &mut early,
+                plan,
+                last_draft,
+            )
+            .await
+        }
+        Some(Err(err)) => {
+            if !early.spoken.is_empty() || early.ack_pushed || early.dead {
+                queue.abort();
+            }
+            plan_failed(deps, cfg, cancel, err).await
+        }
+    };
+    log_timing(cfg, tier_start, &early, plan_at);
+    turn
+}
+
+/// Executes a final plan with the one-shot `Mouth::say` speech. `Ok(None)` = continue the
+/// loop without recording history.
+async fn execute_plan(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    plan: TurnPlan,
+    last_draft: &mut Option<String>,
+) -> Result<Option<String>, SessionEnd> {
+    // Cancel is checked before each effect.
+    let summary: String = match plan.kind {
+        PlanKind::End => {
+            return Err(after_speech(
+                speak(deps, cfg, cancel, &plan.speech, plan.emotion).await,
+                SessionEnd::UserEnded,
+            ));
+        }
+        PlanKind::Answer | PlanKind::Clarify => {
+            into_result(speak_or_end(deps, cfg, cancel, &plan.speech, plan.emotion).await)?;
+            plan.speech.clone()
+        }
+        PlanKind::Paste => {
+            let Some(pasted) = plan.paste_text.clone() else {
+                into_result(
+                    speak_or_end(deps, cfg, cancel, MSG_PASTE_FAILED, Emotion::Neutral).await,
+                )?;
+                return Ok(None);
+            };
+            if is_cancelled(cancel) {
+                return Err(SessionEnd::Cancelled);
+            }
+            if deps.hands.paste_generated(&pasted).is_err() {
+                into_result(
+                    speak_or_end(deps, cfg, cancel, MSG_PASTE_FAILED, Emotion::Neutral).await,
+                )?;
+                return Ok(None);
+            }
+            *last_draft = Some(pasted);
+            let spoken = if plan.speech.is_empty() {
+                MSG_DONE.to_string()
+            } else {
+                plan.speech.clone()
+            };
+            into_result(speak_or_end(deps, cfg, cancel, &spoken, plan.emotion).await)?;
+            format!("{spoken} (pasted text)")
+        }
+        PlanKind::Command => match run_command_plan(deps, cfg, cancel, &plan).await? {
+            Some(summary) => summary,
+            None => return Ok(None),
+        },
+    };
+    Ok(Some(summary))
+}
+
 /// The turn loop. Returns the end; the wrapper reports Idle and stops.
 async fn run_turns(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToken) -> SessionEnd {
     let mut history: Vec<(String, String)> = Vec::new();
@@ -507,89 +821,12 @@ async fn run_turns(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToke
 
         // Brain tier. The plan is dropped if cancel wins the race.
         deps.reporter.state(SessionState::Thinking);
-        let start = history.len().saturating_sub(cfg.context_turns);
-        let planned = race(
-            cancel,
-            deps.brain.plan(PlanInput {
-                utterance: &utterance,
-                history: &history[start..],
-                last_draft: last_draft.as_deref(),
-                style: &cfg.style,
-            }),
-        )
-        .await;
-        let plan = match planned {
-            None => return SessionEnd::Cancelled,
-            Some(Ok(plan)) => plan,
-            Some(Err(PlanError::NotConfigured)) => {
-                return after_speech(
-                    speak(deps, cfg, cancel, MSG_NOT_CONFIGURED, Emotion::Neutral).await,
-                    SessionEnd::NotConfigured,
-                );
-            }
-            Some(Err(PlanError::Superseded)) => continue,
-            Some(Err(_)) => {
-                if let Some(end) =
-                    speak_or_end(deps, cfg, cancel, MSG_PLAN_FAILED, Emotion::Neutral).await
-                {
-                    return end;
-                }
-                continue;
-            }
-        };
-
-        // Execute. Cancel is checked before each effect.
-        let summary: String = match plan.kind {
-            PlanKind::End => {
-                return after_speech(
-                    speak(deps, cfg, cancel, &plan.speech, plan.emotion).await,
-                    SessionEnd::UserEnded,
-                );
-            }
-            PlanKind::Answer | PlanKind::Clarify => {
-                if let Some(end) = speak_or_end(deps, cfg, cancel, &plan.speech, plan.emotion).await
-                {
-                    return end;
-                }
-                plan.speech.clone()
-            }
-            PlanKind::Paste => {
-                let Some(pasted) = plan.paste_text.clone() else {
-                    if let Some(end) =
-                        speak_or_end(deps, cfg, cancel, MSG_PASTE_FAILED, Emotion::Neutral).await
-                    {
-                        return end;
-                    }
-                    continue;
-                };
-                if is_cancelled(cancel) {
-                    return SessionEnd::Cancelled;
-                }
-                if deps.hands.paste_generated(&pasted).is_err() {
-                    if let Some(end) =
-                        speak_or_end(deps, cfg, cancel, MSG_PASTE_FAILED, Emotion::Neutral).await
-                    {
-                        return end;
-                    }
-                    continue;
-                }
-                last_draft = Some(pasted);
-                let spoken = if plan.speech.is_empty() {
-                    MSG_DONE.to_string()
-                } else {
-                    plan.speech.clone()
-                };
-                if let Some(end) = speak_or_end(deps, cfg, cancel, &spoken, plan.emotion).await {
-                    return end;
-                }
-                format!("{spoken} (pasted text)")
-            }
-            PlanKind::Command => match run_command_plan(deps, cfg, cancel, &plan).await {
+        let summary =
+            match brain_turn(deps, cfg, cancel, &utterance, &history, &mut last_draft).await {
                 Ok(Some(summary)) => summary,
                 Ok(None) => continue,
                 Err(end) => return end,
-            },
-        };
+            };
 
         push_history(&mut history, &utterance, &summary, cfg.context_turns);
         if cfg.context_turns == 0 {

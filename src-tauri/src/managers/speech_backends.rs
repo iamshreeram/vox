@@ -425,8 +425,23 @@ pub async fn complete(
     combined: &str,
     deadline: Duration,
 ) -> Result<String, ComposeError> {
-    if let Some(result) =
-        crate::managers::realtime_complete::try_complete(settings, system, combined, deadline).await
+    let mut noop = |_: &str| {};
+    complete_streaming(settings, system, combined, deadline, &mut noop).await
+}
+
+/// Like `complete`, additionally reporting every raw text delta to `on_text` when the
+/// streaming realtime route answers. The legacy path never calls `on_text`.
+pub async fn complete_streaming(
+    settings: &AppSettings,
+    system: &str,
+    combined: &str,
+    deadline: Duration,
+    on_text: &mut (dyn FnMut(&str) + Send),
+) -> Result<String, ComposeError> {
+    if let Some(result) = crate::managers::realtime_complete::try_complete_streaming(
+        settings, system, combined, deadline, on_text,
+    )
+    .await
     {
         match &result {
             Ok(_) => log::debug!("converse backend outcome: ok"),

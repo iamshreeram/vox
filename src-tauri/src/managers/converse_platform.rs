@@ -11,7 +11,7 @@ use crate::managers::audio::AudioRecordingManager;
 use crate::managers::composer_config::{settings_from_app, TtsComposerMode};
 use crate::managers::converse::{
     endpoint_config, BoxFuture, Brain, Ears, Hands, ListenOutcome, Mouth, PhraseOutcome,
-    QuietOutcome, SayOutcome, SessionConfig,
+    QuietOutcome, SayOutcome, SessionConfig, SpeechQueue,
 };
 use crate::managers::converse_audio::{wait_for_speech_end, SpeechProbe, WaitOutcome};
 use crate::managers::converse_capture::{
@@ -21,10 +21,11 @@ use crate::managers::converse_capture::{
 use crate::managers::converse_plan::{
     build_plan_prompt, parse_plan, PlanError, PlanInput, TurnPlan,
 };
+use crate::managers::converse_queue::TtsQueueSession;
 use crate::managers::converse_runtime::{Platform, SessionParts};
 use crate::managers::emotion::Emotion;
 use crate::managers::model::ModelManager;
-use crate::managers::speech_backends::{complete, effective_deadline};
+use crate::managers::speech_backends::{complete, complete_streaming, effective_deadline};
 use crate::managers::speech_compose::ComposeError;
 use crate::managers::transcription::TranscriptionManager;
 use crate::managers::tts::{TtsError, TtsManager};
@@ -225,6 +226,19 @@ struct RealMouth {
 }
 
 impl RealMouth {
+    /// Opens a queue session with the voice and rate `say_inner` uses; `None` when speech is
+    /// off or the session cannot open right now.
+    fn open_queue_inner(&self) -> Option<Arc<dyn SpeechQueue>> {
+        let settings = get_settings(&self.app);
+        if !settings.tts_enabled {
+            return None;
+        }
+        let voice = settings.tts_voice.clone();
+        let rate = Some(settings.tts_rate_wpm);
+        let session = TtsQueueSession::open(self.tts.clone(), voice, rate)?;
+        Some(session)
+    }
+
     async fn say_inner(&self, text: &str, emotion: Emotion) -> SayOutcome {
         let settings = get_settings(&self.app);
         if !settings.tts_enabled {
@@ -281,6 +295,10 @@ impl RealMouth {
 impl Mouth for RealMouth {
     fn say<'a>(&'a self, text: &'a str, emotion: Emotion) -> BoxFuture<'a, SayOutcome> {
         Box::pin(async move { self.say_inner(text, emotion).await })
+    }
+
+    fn open_queue(&self) -> Option<Arc<dyn SpeechQueue>> {
+        self.open_queue_inner()
     }
 
     fn wait_quiet(&self, max: Duration) -> BoxFuture<'_, QuietOutcome> {
@@ -366,6 +384,28 @@ impl Brain for RealBrain {
             let raw = complete(&settings, &prompt.system, &prompt.combined, deadline)
                 .await
                 .map_err(map_compose_error)?;
+            parse_plan(&raw, &prompt.combined)
+        })
+    }
+
+    fn plan_streaming<'a>(
+        &'a self,
+        input: PlanInput<'a>,
+        on_text: &'a mut (dyn FnMut(&str) + Send),
+    ) -> BoxFuture<'a, Result<TurnPlan, PlanError>> {
+        Box::pin(async move {
+            let settings = get_settings(&self.app);
+            let deadline = effective_deadline(&settings);
+            let prompt = build_plan_prompt(&input);
+            let raw = complete_streaming(
+                &settings,
+                &prompt.system,
+                &prompt.combined,
+                deadline,
+                on_text,
+            )
+            .await
+            .map_err(map_compose_error)?;
             parse_plan(&raw, &prompt.combined)
         })
     }
