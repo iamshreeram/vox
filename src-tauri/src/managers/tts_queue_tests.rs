@@ -11,6 +11,7 @@ pub(crate) struct FakeState {
     pub stop_calls: usize,
     pub stop_result: Option<StopOutcome>, // None => Stopped
     pub is_speaking_calls: usize,
+    pub reset_calls: usize,
 }
 
 #[derive(Clone, Default)]
@@ -25,6 +26,9 @@ impl Fake {
     }
     pub fn stop_calls(&self) -> usize {
         self.0.lock().unwrap().stop_calls
+    }
+    pub fn reset_calls(&self) -> usize {
+        self.0.lock().unwrap().reset_calls
     }
     pub fn set_stop_result(&self, r: StopOutcome) {
         self.0.lock().unwrap().stop_result = Some(r);
@@ -43,6 +47,9 @@ impl Synth for Fake {
         let mut s = self.0.lock().unwrap();
         s.is_speaking_calls += 1;
         s.speaking
+    }
+    fn reset(&mut self) {
+        self.0.lock().unwrap().reset_calls += 1;
     }
     fn stop_immediate(&mut self) -> StopOutcome {
         let mut s = self.0.lock().unwrap();
@@ -227,6 +234,72 @@ fn pitch_mapping_is_bounded_and_neutral_is_identity() {
         let p = pitch_for(e);
         assert!((0.5..=2.0).contains(&p), "{e:?} -> {p}");
     }
+}
+
+// ---- reset hook: one fresh synthesizer per speaking burst ----------------------------------
+
+#[test]
+fn reset_is_called_exactly_once_when_a_burst_ends_naturally() {
+    let (mut c, f, t0) = core();
+    c.enqueue("One.", None, None, 1.0, t0).unwrap();
+    c.enqueue("Two.", None, None, 1.0, t0).unwrap();
+    assert_eq!(f.reset_calls(), 0, "never reset while busy or when enqueuing more");
+    f.set_speaking(true);
+    assert!(c.poll(ms(t0, 100)));
+    assert_eq!(f.reset_calls(), 0);
+    f.set_speaking(false);
+    assert!(!c.poll(ms(t0, 200)));
+    assert_eq!(f.reset_calls(), 1);
+    assert!(!c.poll(ms(t0, 300)), "polling an idle core does not reset again");
+    assert_eq!(f.reset_calls(), 1);
+}
+
+#[test]
+fn reset_is_called_when_the_start_watchdog_expires() {
+    let (mut c, f, t0) = core();
+    c.enqueue("Hi.", None, None, 1.0, t0).unwrap();
+    assert!(!c.poll(t0 + START_TIMEOUT + Duration::from_millis(1)));
+    assert_eq!(f.reset_calls(), 1);
+}
+
+#[test]
+fn reset_follows_a_confirmed_stop_but_not_a_failed_one() {
+    let (mut c, f, t0) = core();
+    c.enqueue("One.", None, None, 1.0, t0).unwrap();
+    f.set_speaking(true);
+    assert_eq!(c.stop(ms(t0, 10)), StopOutcome::Stopped);
+    assert_eq!(f.reset_calls(), 1);
+
+    // failed stop: no reset while the synth may still be speaking ...
+    c.enqueue("Two.", None, None, 1.0, ms(t0, 20)).unwrap();
+    f.set_speaking(true);
+    f.set_stop_result(StopOutcome::Failed);
+    assert_eq!(c.stop(ms(t0, 30)), StopOutcome::Failed);
+    assert_eq!(f.reset_calls(), 1);
+    // ... and exactly one reset once it has genuinely gone quiet
+    f.set_speaking(false);
+    assert!(!c.poll(ms(t0, 400)));
+    assert_eq!(f.reset_calls(), 2);
+}
+
+#[test]
+fn stopping_an_idle_quiet_core_does_not_reset() {
+    let (mut c, f, t0) = core();
+    assert_eq!(c.stop(t0), StopOutcome::AlreadyIdle);
+    assert_eq!(f.reset_calls(), 0);
+}
+
+#[test]
+fn stop_inside_the_start_window_resets_and_the_next_burst_starts_clean() {
+    let (mut c, f, t0) = core();
+    c.enqueue("One.", None, None, 1.0, t0).unwrap();
+    // synth never reported speaking: stop right away (start window)
+    assert_ne!(c.stop(ms(t0, 5)), StopOutcome::Failed);
+    assert_eq!(f.stop_calls(), 1, "busy core always asks the synth to stop, even if it is not speaking yet");
+    assert_eq!(f.reset_calls(), 1);
+    c.enqueue("Two.", None, None, 1.0, ms(t0, 10)).unwrap();
+    f.set_speaking(true);
+    assert!(c.poll(ms(t0, 50)));
 }
 
 // ---- QueueHandle / QueueBackend ---------------------------------------------------------

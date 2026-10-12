@@ -284,7 +284,7 @@ impl TtsManager {
 
     /// True when the backend can queue sentences (resident speaker).
     pub fn queue_capable(&self) -> bool {
-        todo!("WP-queue")
+        self.backend.supports_queue()
     }
 
     /// Appends `text` to the resident speaker's queue ONLY if `epoch` is still current,
@@ -297,13 +297,60 @@ impl TtsManager {
     /// `Backend`. Consumes no epoch.
     pub fn speak_queued_if_current(
         &self,
-        _epoch: u64,
-        _text: &str,
-        _voice: Option<&str>,
-        _rate_wpm: Option<u32>,
-        _emotion: Emotion,
+        epoch: u64,
+        text: &str,
+        voice: Option<&str>,
+        rate_wpm: Option<u32>,
+        emotion: Emotion,
     ) -> Result<(), TtsError> {
-        todo!("WP-queue")
+        let text = sanitize_speech_text(text).ok_or(TtsError::Empty)?;
+        let voice = voice.and_then(sanitize_voice);
+        let rate = rate_wpm.map(clamp_rate);
+        let mut state = lock_state(&self.inner);
+        if state.epoch != epoch {
+            return Err(TtsError::Superseded);
+        }
+        if state.recording_active {
+            return Err(TtsError::Recording);
+        }
+        if !self.backend.supports_queue() {
+            return Err(TtsError::Unsupported);
+        }
+        let live_queue = match state.current.as_mut() {
+            Some(handle) => handle.queue_capable() && handle.is_running(),
+            None => false,
+        };
+        if live_queue {
+            // Append to the live queue; the existing handle stays `current`.
+            return match self
+                .backend
+                .enqueue_styled(&text, voice.as_deref(), rate, emotion)
+            {
+                Ok(_handle) => Ok(()),
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => Err(TtsError::CancelFailed),
+                Err(err) => Err(TtsError::Backend(err.to_string())),
+            };
+        }
+        // No live queue: replace any non-queue or finished handle exactly like a normal speak.
+        let cancelled = match state.current.as_mut() {
+            Some(handle) => handle.kill(),
+            None => true,
+        };
+        if !cancelled {
+            return Err(TtsError::CancelFailed);
+        }
+        state.current = None;
+        match self
+            .backend
+            .enqueue_styled(&text, voice.as_deref(), rate, emotion)
+        {
+            Ok(handle) => {
+                state.current = Some(handle);
+                Ok(())
+            }
+            Err(err) if err.kind() == io::ErrorKind::WouldBlock => Err(TtsError::CancelFailed),
+            Err(err) => Err(TtsError::Backend(err.to_string())),
+        }
     }
 
     /// Legacy path: `speak` is `speak_styled(.., Emotion::Neutral)`. Bumps the

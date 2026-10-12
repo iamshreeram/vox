@@ -363,6 +363,20 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(SourceUpdateRuntime::new());
     // Spoken replies: one shared manager, managed before any event listener
     // that might speak. Event listeners are registered in `register_tts_listeners`.
+    #[cfg(target_os = "macos")]
+    let tts_manager = {
+        let settings_handle = app_handle.clone();
+        let pick_fast: Arc<dyn Fn() -> bool + Send + Sync> = Arc::new(move || {
+            managers::realtime_config::RealtimeConfig::from_settings(&get_settings(
+                &settings_handle,
+            ))
+            .fast_voice
+        });
+        Arc::new(managers::tts::TtsManager::new(
+            managers::tts_av::default_backend_with(pick_fast),
+        ))
+    };
+    #[cfg(not(target_os = "macos"))]
     let tts_manager = Arc::new(managers::tts::TtsManager::new(
         managers::tts::default_backend(),
     ));

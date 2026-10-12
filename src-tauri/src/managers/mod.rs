@@ -32,6 +32,8 @@ pub mod speech_pipeline;
 pub mod transcription;
 pub mod tts;
 pub mod tts_queue;
+#[cfg(target_os = "macos")]
+pub mod tts_av;
 pub mod voice_common;
 pub mod voice_shortcuts;
 pub mod wakeword;
