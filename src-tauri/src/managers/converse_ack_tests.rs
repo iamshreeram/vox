@@ -42,6 +42,7 @@ fn actions_skip_leading_fillers() {
         "I want you to find my notes",
         "now close this window",
         "Launch the terminal",
+        "decrease the volume",
     ] {
         assert_eq!(kind(u, false), AckKind::Action, "{u}");
         assert_eq!(kind(u, true), AckKind::Action, "{u} (draft present)");
@@ -77,13 +78,19 @@ fn revise_needs_a_draft_and_an_imperative_form() {
         assert_eq!(kind(u, true), AckKind::Revise, "{u} with a draft");
     }
     // without a draft there is nothing to revise: never promise it
-    assert_eq!(kind("make it shorter and more casual", false), AckKind::Other);
+    assert_eq!(
+        kind("make it shorter and more casual", false),
+        AckKind::Other
+    );
     assert_eq!(kind("rewrite that more formally", false), AckKind::Other);
     assert_eq!(kind("fix the typo", false), AckKind::Other);
     // "make" without a pronoun target, "formal"/"shorter" only mentioned
     assert_eq!(kind("make a sandwich", true), AckKind::Other);
     assert_eq!(kind("that sounds too formal", true), AckKind::Other);
-    assert_eq!(kind("a shorter version would be nice", true), AckKind::Other);
+    assert_eq!(
+        kind("a shorter version would be nice", true),
+        AckKind::Other
+    );
 }
 
 #[test]
@@ -136,9 +143,18 @@ fn delays_per_kind() {
     assert_eq!(after_for(AckKind::Action), Duration::from_millis(600));
     assert_eq!(after_for(AckKind::Question), Duration::from_millis(1500));
     assert_eq!(after_for(AckKind::Other), Duration::from_millis(1000));
-    assert_eq!(choose("open safari", false, None).after, Duration::from_millis(600));
-    assert_eq!(choose("why is the sky blue", false, None).after, Duration::from_millis(1500));
-    assert_eq!(choose("hello there", false, None).after, Duration::from_millis(1000));
+    assert_eq!(
+        choose("open safari", false, None).after,
+        Duration::from_millis(600)
+    );
+    assert_eq!(
+        choose("why is the sky blue", false, None).after,
+        Duration::from_millis(1500)
+    );
+    assert_eq!(
+        choose("hello there", false, None).after,
+        Duration::from_millis(1000)
+    );
 }
 
 #[test]
@@ -161,14 +177,29 @@ fn text_comes_from_the_pool_of_the_classified_kind() {
 fn choice_is_deterministic_and_follows_the_length_rule() {
     // "open a" = 6 chars -> idx 0; "open ab" = 7 chars -> idx 1 (pool of 2)
     assert_eq!(choose("open a", false, None).text, "On it.");
-    assert_eq!(choose("open ab", false, None).text, "Okay, working on that.");
-    assert_eq!(choose("open ab", false, None), choose("open ab", false, None));
+    assert_eq!(
+        choose("open ab", false, None).text,
+        "Okay, working on that."
+    );
+    assert_eq!(
+        choose("open ab", false, None),
+        choose("open ab", false, None)
+    );
     // equal to `last` => next entry (wraps)
-    assert_eq!(choose("open a", false, Some("On it.")).text, "Okay, working on that.");
-    assert_eq!(choose("open ab", false, Some("Okay, working on that.")).text, "On it.");
+    assert_eq!(
+        choose("open a", false, Some("On it.")).text,
+        "Okay, working on that."
+    );
+    assert_eq!(
+        choose("open ab", false, Some("Okay, working on that.")).text,
+        "On it."
+    );
     // question pool of 3: "why x" = 5 chars -> idx 2
     assert_eq!(choose("why x", false, None).text, "Let me check.");
-    assert_eq!(choose("why x", false, Some("Let me check.")).text, "Let me think.");
+    assert_eq!(
+        choose("why x", false, Some("Let me check.")).text,
+        "Let me think."
+    );
 }
 
 #[test]

@@ -542,4 +542,159 @@ fn al10_from_settings_enables_smart_ack_only_with_master_and_ack() {
     assert!(c.ack_after.is_none(), "master off => no ack_after");
 }
 
+/// AL11: a Draft acknowledgement is spoken, then the final plan is a paste: the queue is aborted
+/// after the acknowledgement and before the paste, the paste happens once, "Done." is spoken via
+/// `say`, and the next turn's history records the paste note.
+#[tokio::test]
+async fn al11_ack_then_paste_plan_aborts_the_queue_pastes_and_records_the_pasted_note() {
+    use crate::managers::converse_context::{compose, note_paste};
+    let pasted = "Hi team, the release is delayed.";
+    let paste = TurnPlan {
+        paste_text: Some(pasted.into()),
+        ..plan(PlanKind::Paste, "Done.")
+    };
+    let r = rig(
+        &["write a short note", "thanks"],
+        vec![slow(1000, paste), end_turn()],
+    );
+    let end = run(&r, &smart(true)).await;
+    assert_eq!(end, SessionEnd::UserEnded);
+
+    let acks = ack_pushes(&r);
+    assert_eq!(acks.len(), 1, "{:?}", all_pushes(&r));
+    assert!(
+        ack::pool(AckKind::Draft).contains(&acks[0].text.as_str()),
+        "{:?} is not a draft acknowledgement",
+        acks[0].text
+    );
+
+    let log = log_of(&r.log);
+    let ack_idx = log
+        .iter()
+        .position(|x| *x == format!("push:{}", acks[0].text))
+        .expect("acknowledgement not in log");
+    let abort_idx = log
+        .iter()
+        .position(|x| x == "abort")
+        .expect("queue was not aborted");
+    let paste_idx = log
+        .iter()
+        .position(|x| x.starts_with("paste:"))
+        .expect("no paste");
+    let done_idx = log
+        .iter()
+        .position(|x| x == "say:Done.")
+        .expect("confirmation not spoken via say");
+    assert!(
+        ack_idx < abort_idx && abort_idx < paste_idx && paste_idx < done_idx,
+        "{:?}",
+        log
+    );
+    assert_eq!(count_prefix(&r.log, "paste:"), 1, "{:?}", log);
+    assert!(has(&r.log, &format!("paste:{pasted}")), "{:?}", log);
+
+    let h = r.brain.histories.lock().unwrap().clone();
+    assert_eq!(h.len(), 2);
+    assert_eq!(h[1].len(), 1, "{:?}", h[1]);
+    assert_eq!(
+        h[1][0],
+        (
+            "write a short note".to_string(),
+            compose("Done.", &note_paste(pasted))
+        )
+    );
+}
+
+/// AL12: a Draft-less action utterance acknowledged with an Action phrase, then the final plan is a
+/// command: the command runs once, the queue is aborted before it, the spoken plan speech is used,
+/// and the next turn's history records the command note with the `Done` outcome.
+#[tokio::test]
+async fn al12_ack_then_command_plan_runs_the_command_and_records_the_action_note() {
+    use crate::managers::converse_context::{compose, note_command, CommandNote};
+    /// Hands whose model-command path reports `Done("Opened Safari")`.
+    struct CmdHands {
+        log: Shared,
+    }
+    impl Hands for CmdHands {
+        fn paste_generated(&self, text: &str) -> Result<(), String> {
+            self.log.lock().unwrap().push(format!("paste:{text}"));
+            Ok(())
+        }
+        fn run_user_phrase<'a>(&'a self, _p: &'a str) -> BoxFuture<'a, PhraseOutcome> {
+            Box::pin(async { PhraseOutcome::NoMatch })
+        }
+        fn run_model_command<'a>(&'a self, p: &'a str) -> BoxFuture<'a, PhraseOutcome> {
+            self.log.lock().unwrap().push(format!("model:{p}"));
+            Box::pin(async { PhraseOutcome::Done("Opened Safari".into()) })
+        }
+    }
+
+    let cmd = "open -a Safari";
+    let speech = "Opening Safari.";
+    let command_plan = TurnPlan {
+        command: Some(cmd.into()),
+        ..plan(PlanKind::Command, speech)
+    };
+    let r = rig(
+        &["open safari", "thanks"],
+        vec![slow(1000, command_plan), end_turn()],
+    );
+    let hands = CmdHands { log: r.log.clone() };
+    let deps = Deps {
+        ears: &r.ears,
+        mouth: &r.mouth,
+        hands: &hands,
+        brain: &r.brain,
+        reporter: &r.reporter,
+    };
+    let token = r.cancel.subscribe();
+    let end = tokio::time::timeout(
+        Duration::from_secs(10),
+        run_session(&deps, &smart(true), token),
+    )
+    .await
+    .expect("run_session hung");
+    assert_eq!(end, SessionEnd::UserEnded);
+
+    let acks = ack_pushes(&r);
+    assert_eq!(acks.len(), 1, "{:?}", all_pushes(&r));
+    assert!(
+        ack::pool(AckKind::Action).contains(&acks[0].text.as_str()),
+        "{:?} is not an action acknowledgement",
+        acks[0].text
+    );
+
+    let log = log_of(&r.log);
+    let ack_idx = log
+        .iter()
+        .position(|x| *x == format!("push:{}", acks[0].text))
+        .expect("acknowledgement not in log");
+    let abort_idx = log
+        .iter()
+        .position(|x| x == "abort")
+        .expect("queue was not aborted");
+    let cmd_idx = log
+        .iter()
+        .position(|x| x.starts_with("model:"))
+        .expect("command did not run");
+    assert!(ack_idx < abort_idx && abort_idx < cmd_idx, "{:?}", log);
+    assert_eq!(count_prefix(&r.log, "model:"), 1, "{:?}", log);
+    assert!(has(&r.log, &format!("model:{cmd}")), "{:?}", log);
+    assert!(has(&r.log, &format!("say:{speech}")), "{:?}", log);
+
+    let h = r.brain.histories.lock().unwrap().clone();
+    assert_eq!(h.len(), 2);
+    assert_eq!(h[1].len(), 1, "{:?}", h[1]);
+    assert_eq!(
+        h[1][0],
+        (
+            "open safari".to_string(),
+            compose(
+                speech,
+                &note_command(cmd, &CommandNote::Done("Opened Safari".into()))
+            )
+        )
+    );
+}
+
 // ---- END ----
