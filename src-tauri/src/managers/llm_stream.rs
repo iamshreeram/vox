@@ -171,6 +171,11 @@ pub fn resolve_proxy(
     todo!("WP1")
 }
 
+/// A valid proxy URL: http(s) scheme, a host, no query and no fragment (userinfo allowed).
+pub fn is_valid_proxy_url(_url: &str) -> bool {
+    todo!("WP1")
+}
+
 #[derive(Debug, Clone)]
 pub struct StreamOpts {
     /// Absolute from the start of the request (connect included).

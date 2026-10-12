@@ -358,6 +358,16 @@ fn proxy_resolution_order() {
     assert_eq!(resolve_proxy(None, true, &no_env, &none_shell), ProxyMode::SystemDefault);
 }
 
+#[test]
+fn proxy_url_validity() {
+    for ok in ["http://p.example:8080", "https://p.example", "http://u:p@p.example:3128/", " http://p.example:1 "] {
+        assert!(is_valid_proxy_url(ok), "{ok:?}");
+    }
+    for bad in ["", "p.example:8080", "ftp://p.example", "http://", "http://p.example/?a=1", "http://p.example/#x", "garbage"] {
+        assert!(!is_valid_proxy_url(bad), "{bad:?}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Scripted fake HTTP/1.1 server (std threads; keep-alive; chunked responses)
 // ---------------------------------------------------------------------------

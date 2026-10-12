@@ -369,6 +369,39 @@ impl std::ops::DerefMut for SecretMap {
     }
 }
 
+/// A single secret value (API token). Serialized as a plain string so it persists,
+/// but `Debug` never prints it.
+#[derive(Clone, Default, Serialize, Deserialize, Type)]
+#[serde(transparent)]
+pub(crate) struct SecretString(String);
+
+impl fmt::Debug for SecretString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(if self.0.is_empty() { "\"\"" } else { "[REDACTED]" })
+    }
+}
+
+impl SecretString {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl From<String> for SecretString {
+    fn from(v: String) -> Self {
+        SecretString(v)
+    }
+}
+
+impl From<&str> for SecretString {
+    fn from(v: &str) -> Self {
+        SecretString(v.to_string())
+    }
+}
+
 /* still handy for composing the initial JSON in the store ------------- */
 /// The container-level `serde(default)` (backed by the `Default` impl below)
 /// guarantees every field — including ones added in the future — falls back to
@@ -623,6 +656,39 @@ pub struct AppSettings {
     /// Prior turns sent as context (clamped 0..=12 when used).
     #[serde(default = "default_converse_context_turns")]
     pub converse_context_turns: u8,
+    // ---- Experimental: realtime conversation (design R9). All toggles; the master
+    // switch gates every sub-toggle. Absent in old stores => these defaults.
+    /// MASTER switch. Off => the conversation behaves exactly as before.
+    #[serde(default)]
+    pub exp_rt_enabled: bool,
+    /// Use the Anthropic-style endpoint below for replies instead of the speech composer.
+    #[serde(default)]
+    pub exp_rt_direct_endpoint: bool,
+    #[serde(default)]
+    pub exp_rt_endpoint_url: String,
+    #[serde(default)]
+    pub exp_rt_model: String,
+    /// Entered manually in the UI; never logged.
+    #[serde(default)]
+    pub exp_rt_token: SecretString,
+    #[serde(default = "default_exp_rt_true")]
+    pub exp_rt_stream_reply: bool,
+    #[serde(default = "default_exp_rt_true")]
+    pub exp_rt_early_speech: bool,
+    #[serde(default = "default_exp_rt_true")]
+    pub exp_rt_fast_voice: bool,
+    #[serde(default)]
+    pub exp_rt_ack: bool,
+    #[serde(default = "default_exp_rt_true")]
+    pub exp_rt_prewarm: bool,
+    #[serde(default = "default_exp_rt_true")]
+    pub exp_rt_auto_proxy: bool,
+    #[serde(default)]
+    pub exp_rt_proxy_enabled: bool,
+    #[serde(default)]
+    pub exp_rt_proxy_url: String,
+    #[serde(default)]
+    pub exp_rt_timing_log: bool,
 }
 
 fn default_agent_bridge_prompt_flag() -> String {
@@ -667,6 +733,10 @@ fn default_converse_max_idle_turns() -> u8 {
 
 fn default_converse_context_turns() -> u8 {
     6
+}
+
+fn default_exp_rt_true() -> bool {
+    true
 }
 
 fn default_model() -> String {
@@ -1202,6 +1272,20 @@ pub fn get_default_settings() -> AppSettings {
         converse_silence_ms: default_converse_silence_ms(),
         converse_max_idle_turns: default_converse_max_idle_turns(),
         converse_context_turns: default_converse_context_turns(),
+        exp_rt_enabled: false,
+        exp_rt_direct_endpoint: false,
+        exp_rt_endpoint_url: String::new(),
+        exp_rt_model: String::new(),
+        exp_rt_token: SecretString::default(),
+        exp_rt_stream_reply: true,
+        exp_rt_early_speech: true,
+        exp_rt_fast_voice: true,
+        exp_rt_ack: false,
+        exp_rt_prewarm: true,
+        exp_rt_auto_proxy: true,
+        exp_rt_proxy_enabled: false,
+        exp_rt_proxy_url: String::new(),
+        exp_rt_timing_log: false,
     }
 }
 
