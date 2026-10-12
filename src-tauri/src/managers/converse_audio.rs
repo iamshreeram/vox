@@ -115,6 +115,13 @@ impl Endpointer {
         event
     }
 
+    /// RED-PHASE STUB (design rev 2, F1): the real state machine moves here;
+    /// `feed` will become a thin wrapper over this.
+    #[allow(dead_code)]
+    pub fn feed_activity(&mut self, _now_ms: u64, _speech_active: bool) -> Option<EndpointEvent> {
+        None
+    }
+
     /// Only the tests read this; production decides end-of-speech via `poll`.
     #[cfg(test)]
     pub fn had_speech(&self) -> bool {
@@ -317,6 +324,95 @@ mod tests {
             t += 50;
         }
         None
+    }
+
+    /// Feed a fixed VAD speech-activity flag every `step` ms over [from, to).
+    fn feed_activity_range(
+        e: &mut Endpointer,
+        from: u64,
+        to: u64,
+        step: u64,
+        active: bool,
+    ) -> Option<(u64, EndpointEvent)> {
+        let mut t = from;
+        while t < to {
+            if let Some(ev) = e.feed_activity(t, active) {
+                return Some((t, ev));
+            }
+            t += step;
+        }
+        None
+    }
+
+    // ---- VAD speech activity (design rev 2): the endpointing signal is the
+    // VAD's speech/no-speech decision, never the display-scale level values.
+
+    #[test]
+    fn room_noise_with_no_vad_speech_ends_as_no_speech_not_max_length() {
+        let mut e = ep();
+        assert_eq!(
+            feed_activity_range(&mut e, 0, 6000, 20, false),
+            Some((4000, EndpointEvent::NoSpeech))
+        );
+        assert!(!e.had_speech());
+    }
+
+    #[test]
+    fn vad_speech_then_vad_silence_ends_after_silence_ms_regardless_of_levels() {
+        let mut e = ep();
+        assert_eq!(feed_activity_range(&mut e, 0, 1000, 50, true), None);
+        assert!(e.had_speech());
+        // last active feed at 950; silence_ms = 1000 => fires at 1950
+        assert_eq!(
+            feed_activity_range(&mut e, 1000, 5000, 50, false),
+            Some((1950, EndpointEvent::SpeechEnded))
+        );
+    }
+
+    #[test]
+    fn continuous_vad_speech_reaches_max_length_only_at_30_seconds() {
+        let mut e = ep();
+        assert_eq!(
+            feed_activity_range(&mut e, 0, 40_000, 50, true),
+            Some((30_000, EndpointEvent::MaxLength))
+        );
+    }
+
+    #[test]
+    fn a_vad_blip_shorter_than_min_speech_does_not_start_speech() {
+        let mut e = ep();
+        assert_eq!(feed_activity_range(&mut e, 0, 100, 50, true), None);
+        assert_eq!(
+            feed_activity_range(&mut e, 100, 6000, 50, false),
+            Some((4000, EndpointEvent::NoSpeech))
+        );
+        assert!(!e.had_speech());
+    }
+
+    #[test]
+    fn feed_with_levels_is_exactly_feed_activity_of_any_level_above_the_floor() {
+        // (levels, repeat-count) segments, 50 ms apart; covers room tone,
+        // quiet, speech, exactly-at-floor and empty slices.
+        let segments: &[(&[f32], u32)] = &[
+            (QUIET, 20),
+            (LOUD, 10),
+            (&[], 5),
+            (QUIET, 30),
+            (&[0.77, 0.7], 120),
+            (LOUD, 700),
+        ];
+        let mut old = ep();
+        let mut new = ep();
+        let floor = EndpointConfig::with_silence(1000).floor;
+        let mut t = 0u64;
+        for (levels, n) in segments {
+            for _ in 0..*n {
+                let a = old.feed(t, levels);
+                let b = new.feed_activity(t, levels.iter().any(|&l| l > floor));
+                assert_eq!(a, b, "diverged at t={t} levels={levels:?}");
+                t += 50;
+            }
+        }
     }
 
     #[test]
