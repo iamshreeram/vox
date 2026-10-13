@@ -48,7 +48,10 @@ fn releases_completed_sentences_but_leaves_the_trailing_one_for_the_final_plan()
     let (out, s) = run(&[SAMPLE]);
     assert_eq!(
         texts(&out),
-        vec!["The weather today is sunny.", "Expect a high of 24 degrees."]
+        vec![
+            "The weather today is sunny.",
+            "Expect a high of 24 degrees."
+        ]
     );
     assert!(!s.is_disabled());
     assert_eq!(s.emotion(), Some(Emotion::Calm));
@@ -57,17 +60,26 @@ fn releases_completed_sentences_but_leaves_the_trailing_one_for_the_final_plan()
 
 #[test]
 fn any_chunking_gives_the_same_result() {
-    let expect = texts(&run(&[SAMPLE]).0).iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    let expect = texts(&run(&[SAMPLE]).0)
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
     for n in [1usize, 2, 3, 5, 7, 11, 64] {
         let got = run_split(SAMPLE, n);
-        assert_eq!(texts(&got), expect.iter().map(String::as_str).collect::<Vec<_>>(), "chunk {n}");
+        assert_eq!(
+            texts(&got),
+            expect.iter().map(String::as_str).collect::<Vec<_>>(),
+            "chunk {n}"
+        );
     }
 }
 
 #[test]
 fn a_sentence_is_released_only_when_the_following_whitespace_has_arrived() {
     let mut s = PlanStreamer::new();
-    assert!(s.push(r#"{"kind":"answer","speech":"The weather today is sunny."#).is_empty());
+    assert!(s
+        .push(r#"{"kind":"answer","speech":"The weather today is sunny."#)
+        .is_empty());
     let out = s.push(" Next");
     assert_eq!(texts(&out), vec!["The weather today is sunny."]);
 }
@@ -85,7 +97,11 @@ fn emotion_after_speech_means_neutral_for_early_sentences() {
     let (out, s) = run(&[src]);
     assert_eq!(texts(&out).len(), 2);
     assert!(out.iter().all(|e| e.emotion == Emotion::Neutral));
-    assert_eq!(s.emotion(), Some(Emotion::Cheerful), "still reported once seen");
+    assert_eq!(
+        s.emotion(),
+        Some(Emotion::Cheerful),
+        "still reported once seen"
+    );
 }
 
 #[test]
@@ -104,7 +120,10 @@ fn escapes_are_decoded_even_when_split_across_chunks() {
 #[test]
 fn short_sentences_merge_into_the_next_one() {
     let src = r#"{"kind":"answer","speech":"Yes. It is. That is correct, my friend. Tail"}"#;
-    assert_eq!(texts(&run(&[src]).0), vec!["Yes. It is. That is correct, my friend."]);
+    assert_eq!(
+        texts(&run(&[src]).0),
+        vec!["Yes. It is. That is correct, my friend."]
+    );
 }
 
 #[test]
@@ -112,7 +131,10 @@ fn a_decimal_point_is_not_a_boundary() {
     let src = r#"{"kind":"answer","speech":"The value is 3.5 meters tall today. Another long sentence here. Tail"}"#;
     assert_eq!(
         texts(&run(&[src]).0),
-        vec!["The value is 3.5 meters tall today.", "Another long sentence here."]
+        vec![
+            "The value is 3.5 meters tall today.",
+            "Another long sentence here."
+        ]
     );
 }
 
@@ -137,7 +159,8 @@ fn the_early_total_is_capped() {
     let speech = sentence.repeat(30);
     let src = format!("{{\"kind\":\"answer\",\"speech\":\"{speech}tail\"}}");
     let out = run(&[&src]).0;
-    let total: usize = out.iter().map(|e| e.text.chars().count()).sum::<usize>() + out.len().saturating_sub(1);
+    let total: usize =
+        out.iter().map(|e| e.text.chars().count()).sum::<usize>() + out.len().saturating_sub(1);
     assert!(!out.is_empty());
     assert!(total <= MAX_EARLY_CHARS, "total {total}");
 }
@@ -158,7 +181,8 @@ fn non_speech_kinds_never_release_anything() {
 
 #[test]
 fn kind_must_be_the_first_member() {
-    let src = r#"{"speech":"This is some long speech text. And another sentence. x","kind":"answer"}"#;
+    let src =
+        r#"{"speech":"This is some long speech text. And another sentence. x","kind":"answer"}"#;
     let (out, s) = run(&[src]);
     assert!(out.is_empty());
     assert!(s.is_disabled());
@@ -187,7 +211,10 @@ fn duplicate_speech_or_kind_disables_but_keeps_what_was_already_released() {
     // both sentences were complete (followed by whitespace) before the duplicate key arrived,
     // so they were legitimately released; the final `reconcile` prefix check is what guards
     // against a contradicting final plan.
-    assert_eq!(texts(&out), vec!["First long sentence here.", "Second long sentence."]);
+    assert_eq!(
+        texts(&out),
+        vec!["First long sentence here.", "Second long sentence."]
+    );
     assert!(s.is_disabled());
     let dup_kind = r#"{"kind":"answer","kind":"command","speech":"Long sentence number one. Long sentence number two. x"}"#;
     let (out, s) = run(&[dup_kind]);
@@ -197,7 +224,8 @@ fn duplicate_speech_or_kind_disables_but_keeps_what_was_already_released() {
 
 #[test]
 fn an_invalid_escape_or_a_nested_value_disables_the_streamer() {
-    let bad_escape = r#"{"kind":"answer","speech":"Long sentence number one \q. Long sentence two here. x"}"#;
+    let bad_escape =
+        r#"{"kind":"answer","speech":"Long sentence number one \q. Long sentence two here. x"}"#;
     let (out, s) = run(&[bad_escape]);
     assert!(out.is_empty());
     assert!(s.is_disabled());
@@ -213,7 +241,9 @@ fn a_disabled_streamer_is_inert_and_never_panics() {
     s.push("not json at all");
     assert!(s.is_disabled());
     for _ in 0..50 {
-        assert!(s.push("{\"kind\":\"answer\",\"speech\":\"Long sentence one. Long sentence two. x\"}").is_empty());
+        assert!(s
+            .push("{\"kind\":\"answer\",\"speech\":\"Long sentence one. Long sentence two. x\"}")
+            .is_empty());
     }
 }
 
@@ -244,36 +274,68 @@ fn spoken(v: &[&str]) -> Vec<String> {
 fn nothing_spoken_early_answers_speak_everything() {
     assert_eq!(
         reconcile(&plan(PlanKind::Answer, " Hello  there. "), &[]),
-        Reconcile::Remainder { text: "Hello there.".into() }
+        Reconcile::Remainder {
+            text: "Hello there.".into()
+        }
     );
     for k in [PlanKind::Clarify, PlanKind::End] {
-        assert!(matches!(reconcile(&plan(k, "Bye."), &[]), Reconcile::Remainder { .. }));
+        assert!(matches!(
+            reconcile(&plan(k, "Bye."), &[]),
+            Reconcile::Remainder { .. }
+        ));
     }
 }
 
 #[test]
 fn nothing_spoken_early_actions_use_the_legacy_path() {
-    assert_eq!(reconcile(&plan(PlanKind::Paste, "Done."), &[]), Reconcile::Legacy);
-    assert_eq!(reconcile(&plan(PlanKind::Command, "Opening."), &[]), Reconcile::Legacy);
+    assert_eq!(
+        reconcile(&plan(PlanKind::Paste, "Done."), &[]),
+        Reconcile::Legacy
+    );
+    assert_eq!(
+        reconcile(&plan(PlanKind::Command, "Opening."), &[]),
+        Reconcile::Legacy
+    );
 }
 
 #[test]
 fn the_remainder_is_the_final_speech_minus_the_spoken_prefix() {
-    let early = spoken(&["The weather today is sunny.", "Expect a high of 24 degrees."]);
+    let early = spoken(&[
+        "The weather today is sunny.",
+        "Expect a high of 24 degrees.",
+    ]);
     let p = plan(
         PlanKind::Answer,
         "The weather today is sunny. Expect a high of 24 degrees. Have a great day!",
     );
-    assert_eq!(reconcile(&p, &early), Reconcile::Remainder { text: "Have a great day!".into() });
-    let p2 = plan(PlanKind::Clarify, "The weather today is sunny. Expect a high of 24 degrees.");
-    assert_eq!(reconcile(&p2, &early), Reconcile::Remainder { text: String::new() });
+    assert_eq!(
+        reconcile(&p, &early),
+        Reconcile::Remainder {
+            text: "Have a great day!".into()
+        }
+    );
+    let p2 = plan(
+        PlanKind::Clarify,
+        "The weather today is sunny. Expect a high of 24 degrees.",
+    );
+    assert_eq!(
+        reconcile(&p2, &early),
+        Reconcile::Remainder {
+            text: String::new()
+        }
+    );
 }
 
 #[test]
 fn whitespace_differences_do_not_matter_but_word_boundaries_do() {
     let early = spoken(&["Hello there my friend."]);
     let ok = plan(PlanKind::Answer, "Hello   there\nmy friend.   And more.");
-    assert_eq!(reconcile(&ok, &early), Reconcile::Remainder { text: "And more.".into() });
+    assert_eq!(
+        reconcile(&ok, &early),
+        Reconcile::Remainder {
+            text: "And more.".into()
+        }
+    );
     let glued = plan(PlanKind::Answer, "Hello there my friend.And more.");
     assert_eq!(reconcile(&glued, &early), Reconcile::Abort);
 }
@@ -282,13 +344,23 @@ fn whitespace_differences_do_not_matter_but_word_boundaries_do() {
 fn contradicting_or_non_speech_finals_abort_after_early_speech() {
     let early = spoken(&["The weather today is sunny."]);
     assert_eq!(
-        reconcile(&plan(PlanKind::Answer, "Actually it is raining heavily."), &early),
+        reconcile(
+            &plan(PlanKind::Answer, "Actually it is raining heavily."),
+            &early
+        ),
         Reconcile::Abort
     );
     for k in [PlanKind::Command, PlanKind::Paste, PlanKind::End] {
-        assert_eq!(reconcile(&plan(k, "The weather today is sunny."), &early), Reconcile::Abort, "{k:?}");
+        assert_eq!(
+            reconcile(&plan(k, "The weather today is sunny."), &early),
+            Reconcile::Abort,
+            "{k:?}"
+        );
     }
-    assert_eq!(reconcile(&plan(PlanKind::Answer, ""), &early), Reconcile::Abort);
+    assert_eq!(
+        reconcile(&plan(PlanKind::Answer, ""), &early),
+        Reconcile::Abort
+    );
 }
 
 // ---- never panics on arbitrary input (deterministic fuzz) -------------------------------
@@ -304,9 +376,44 @@ fn arbitrary_input_split_anywhere_never_panics_and_respects_the_cap() {
         state.wrapping_mul(0x2545_F491_4F6C_DD1D)
     };
     let atoms: &[&str] = &[
-        "{", "}", "\"", "\\", "\\u", "\\ud83d", "\\ude00", "\\u00e9", "\\uZZZZ", "\\n", "\\q", ":", ",",
-        "kind", "answer", "clarify", "speech", "emotion", "calm", " ", "\n", ".", "!", "?", "…", "3.5",
-        "Hello there my friend", "é", "", "\u{0}", "\u{7}", "[[slnc 5]]", "[", "]", "null", "true", "12.5", "{\"a\":1}",
+        "{",
+        "}",
+        "\"",
+        "\\",
+        "\\u",
+        "\\ud83d",
+        "\\ude00",
+        "\\u00e9",
+        "\\uZZZZ",
+        "\\n",
+        "\\q",
+        ":",
+        ",",
+        "kind",
+        "answer",
+        "clarify",
+        "speech",
+        "emotion",
+        "calm",
+        " ",
+        "\n",
+        ".",
+        "!",
+        "?",
+        "…",
+        "3.5",
+        "Hello there my friend",
+        "é",
+        "",
+        "\u{0}",
+        "\u{7}",
+        "[[slnc 5]]",
+        "[",
+        "]",
+        "null",
+        "true",
+        "12.5",
+        "{\"a\":1}",
     ];
     for round in 0..1500 {
         let mut doc = String::new();

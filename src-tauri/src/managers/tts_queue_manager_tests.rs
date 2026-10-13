@@ -66,7 +66,11 @@ fn stop_kills_the_whole_queue_bumps_the_epoch_and_refuses_stale_chunks() {
     q(&m, e, "Two.").unwrap();
     f.set_speaking(true);
     assert!(m.stop());
-    assert_eq!(f.stop_calls(), 1, "one queue-wide stop, not one per sentence");
+    assert_eq!(
+        f.stop_calls(),
+        1,
+        "one queue-wide stop, not one per sentence"
+    );
     assert!(!m.is_speaking());
     assert_eq!(q(&m, e, "Three."), Err(TtsError::Superseded));
     assert_eq!(f.spoken_texts(), vec!["One.", "Two."]);
@@ -113,9 +117,13 @@ fn a_normal_speak_replaces_queued_speech() {
     q(&m, e, "One.").unwrap();
     q(&m, e, "Two.").unwrap();
     f.set_speaking(true);
-    m.speak_styled_if_current(e, "Replacement.", None, Some(180), Emotion::Neutral).unwrap();
+    m.speak_styled_if_current(e, "Replacement.", None, Some(180), Emotion::Neutral)
+        .unwrap();
     assert_eq!(f.stop_calls(), 1, "the queue was stopped once");
-    assert_eq!(f.spoken_texts().last().map(String::as_str), Some("Replacement."));
+    assert_eq!(
+        f.spoken_texts().last().map(String::as_str),
+        Some("Replacement.")
+    );
 }
 
 #[test]
@@ -146,7 +154,12 @@ fn a_backend_without_queue_support_refuses_queued_speech() {
         }
     }
     impl SpeechBackend for Plain {
-        fn spawn(&self, _t: &str, _v: Option<&str>, _r: Option<u32>) -> io::Result<Box<dyn SpeechHandle>> {
+        fn spawn(
+            &self,
+            _t: &str,
+            _v: Option<&str>,
+            _r: Option<u32>,
+        ) -> io::Result<Box<dyn SpeechHandle>> {
             Ok(Box::new(H))
         }
     }
@@ -167,7 +180,8 @@ fn concurrent_queued_speech_from_many_threads_is_complete_and_panic_free() {
         let m = m.clone();
         ts.push(std::thread::spawn(move || {
             for j in 0..10 {
-                m.speak_queued_if_current(e, &format!("t{i}-{j}"), None, None, Emotion::Neutral).unwrap();
+                m.speak_queued_if_current(e, &format!("t{i}-{j}"), None, None, Emotion::Neutral)
+                    .unwrap();
             }
         }));
     }

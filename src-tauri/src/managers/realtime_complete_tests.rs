@@ -2,9 +2,11 @@
 //! (design R9, stage 1). Do not edit to make code pass.
 
 use super::*;
-use crate::managers::converse_platform::preflight_check;
-use crate::managers::realtime_config::{MSG_ENDPOINT_NEEDS_HTTPS, MSG_PROXY_INVALID, MSG_TOKEN_MISSING};
 use crate::managers::composer_config::TtsComposerMode;
+use crate::managers::converse_platform::preflight_check;
+use crate::managers::realtime_config::{
+    MSG_ENDPOINT_NEEDS_HTTPS, MSG_PROXY_INVALID, MSG_TOKEN_MISSING,
+};
 use crate::settings::get_default_settings;
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -34,7 +36,8 @@ fn composer(model: &str) -> AppSettings {
     s.tts_composer_mode = TtsComposerMode::Model;
     s.tts_composer_provider_id = "openai".into();
     s.tts_composer_model = model.into();
-    s.post_process_api_keys.insert("openai".into(), "sk-composer".into());
+    s.post_process_api_keys
+        .insert("openai".into(), "sk-composer".into());
     s
 }
 
@@ -53,7 +56,9 @@ fn master_off_is_always_legacy() {
 
 #[test]
 fn direct_endpoint_route() {
-    let p = prepare(&direct(" https://gw.example.com/anthropic/ ")).unwrap().unwrap();
+    let p = prepare(&direct(" https://gw.example.com/anthropic/ "))
+        .unwrap()
+        .unwrap();
     assert_eq!(p.protocol, Protocol::AnthropicMessages);
     assert_eq!(p.base_url, "https://gw.example.com/anthropic");
     assert_eq!(p.api_key, "tok-123");
@@ -129,7 +134,10 @@ fn composer_route_falls_back_to_legacy_when_not_streamable() {
 #[test]
 fn prewarm_target_follows_route_and_toggle() {
     let s = direct("https://gw.example.com/anthropic");
-    assert_eq!(prewarm_target(&s).as_deref(), Some("https://gw.example.com/anthropic"));
+    assert_eq!(
+        prewarm_target(&s).as_deref(),
+        Some("https://gw.example.com/anthropic")
+    );
     let mut off = s.clone();
     off.exp_rt_prewarm = false;
     assert_eq!(prewarm_target(&off), None);
@@ -180,7 +188,10 @@ fn direct_endpoint_problems_are_reported_with_static_messages() {
     s.exp_rt_token = "".into();
     assert_eq!(preflight_check(&s), Err(MSG_TOKEN_MISSING.to_string()));
     let mut s = direct("http://gw.example.com");
-    assert_eq!(preflight_check(&s), Err(MSG_ENDPOINT_NEEDS_HTTPS.to_string()));
+    assert_eq!(
+        preflight_check(&s),
+        Err(MSG_ENDPOINT_NEEDS_HTTPS.to_string())
+    );
     s = direct("https://gw.example.com");
     s.exp_rt_proxy_enabled = true;
     s.exp_rt_proxy_url = "garbage".into();
@@ -246,7 +257,9 @@ fn mini_server(status: u16, payload: String, stall: Duration) -> Mini {
                             .lines()
                             .find_map(|l| {
                                 let (k, v) = l.split_once(':')?;
-                                k.trim().eq_ignore_ascii_case("content-length").then(|| v.trim().parse::<usize>().ok())?
+                                k.trim()
+                                    .eq_ignore_ascii_case("content-length")
+                                    .then(|| v.trim().parse::<usize>().ok())?
                             })
                             .unwrap_or(0);
                         while buf.len() < i + 4 + len {
@@ -258,9 +271,14 @@ fn mini_server(status: u16, payload: String, stall: Duration) -> Mini {
                         let mut lines = head.lines();
                         let first = lines.next().unwrap_or("").to_string();
                         let headers = lines
-                            .filter_map(|l| l.split_once(':').map(|(k, v)| (k.trim().to_lowercase(), v.trim().to_string())))
+                            .filter_map(|l| {
+                                l.split_once(':')
+                                    .map(|(k, v)| (k.trim().to_lowercase(), v.trim().to_string()))
+                            })
                             .collect();
-                        r2.lock().unwrap().push((first, headers, buf[i + 4..i + 4 + len].to_vec()));
+                        r2.lock()
+                            .unwrap()
+                            .push((first, headers, buf[i + 4..i + 4 + len].to_vec()));
                         break;
                     }
                     match st.read(&mut tmp) {
@@ -277,7 +295,11 @@ fn mini_server(status: u16, payload: String, stall: Duration) -> Mini {
             });
         }
     });
-    Mini { base: format!("http://{addr}"), conns, reqs }
+    Mini {
+        base: format!("http://{addr}"),
+        conns,
+        reqs,
+    }
 }
 
 fn anthropic_payload(text: &str) -> String {
@@ -289,14 +311,27 @@ fn anthropic_payload(text: &str) -> String {
 
 #[tokio::test]
 async fn direct_endpoint_request_carries_token_and_split_prompt() {
-    let srv = mini_server(200, anthropic_payload("{\"kind\":\"answer\"}"), Duration::ZERO);
+    let srv = mini_server(
+        200,
+        anthropic_payload("{\"kind\":\"answer\"}"),
+        Duration::ZERO,
+    );
     let s = direct(&srv.base);
-    let r = try_complete(&s, "SYSTEM RULES", "SYSTEM RULES\n\nuser said hi", Duration::from_secs(5)).await;
+    let r = try_complete(
+        &s,
+        "SYSTEM RULES",
+        "SYSTEM RULES\n\nuser said hi",
+        Duration::from_secs(5),
+    )
+    .await;
     assert_eq!(r, Some(Ok("{\"kind\":\"answer\"}".to_string())));
     let reqs = srv.reqs.lock().unwrap().clone();
     assert_eq!(reqs.len(), 1);
     assert!(reqs[0].0.starts_with("POST /v1/messages"), "{}", reqs[0].0);
-    assert!(reqs[0].1.iter().any(|(k, v)| k == "x-api-key" && v == "tok-123"));
+    assert!(reqs[0]
+        .1
+        .iter()
+        .any(|(k, v)| k == "x-api-key" && v == "tok-123"));
     let body: serde_json::Value = serde_json::from_slice(&reqs[0].2).unwrap();
     assert_eq!(body["system"], "SYSTEM RULES");
     assert_eq!(body["messages"][0]["content"], "user said hi");
@@ -308,7 +343,13 @@ async fn direct_endpoint_request_carries_token_and_split_prompt() {
 #[tokio::test]
 async fn bare_user_part_is_accepted() {
     let srv = mini_server(200, anthropic_payload("ok"), Duration::ZERO);
-    let r = try_complete(&direct(&srv.base), "SYS", "just the user part", Duration::from_secs(5)).await;
+    let r = try_complete(
+        &direct(&srv.base),
+        "SYS",
+        "just the user part",
+        Duration::from_secs(5),
+    )
+    .await;
     assert_eq!(r, Some(Ok("ok".to_string())));
     let reqs = srv.reqs.lock().unwrap().clone();
     let body: serde_json::Value = serde_json::from_slice(&reqs[0].2).unwrap();
@@ -320,7 +361,10 @@ async fn master_off_and_misconfiguration_never_touch_the_network() {
     let srv = mini_server(200, anthropic_payload("x"), Duration::ZERO);
     let mut off = direct(&srv.base);
     off.exp_rt_enabled = false;
-    assert_eq!(try_complete(&off, "S", "S\n\nu", Duration::from_secs(2)).await, None);
+    assert_eq!(
+        try_complete(&off, "S", "S\n\nu", Duration::from_secs(2)).await,
+        None
+    );
     let mut bad = direct(&srv.base);
     bad.exp_rt_token = "".into();
     assert_eq!(
@@ -338,7 +382,13 @@ async fn backend_errors_and_deadlines_surface() {
 
     let slow = mini_server(200, anthropic_payload("late"), Duration::from_secs(4));
     let t0 = Instant::now();
-    let r = try_complete(&direct(&slow.base), "S", "S\n\nu", Duration::from_millis(500)).await;
+    let r = try_complete(
+        &direct(&slow.base),
+        "S",
+        "S\n\nu",
+        Duration::from_millis(500),
+    )
+    .await;
     assert_eq!(r, Some(Err(ComposeError::Timeout)));
     assert!(t0.elapsed() < Duration::from_secs(3));
 }
@@ -357,8 +407,15 @@ async fn composer_route_streams_openai_compatible_to_the_provider() {
     let r = try_complete(&s, "S", "S\n\nu", Duration::from_secs(5)).await;
     assert_eq!(r, Some(Ok("hi".to_string())));
     let reqs = srv.reqs.lock().unwrap().clone();
-    assert!(reqs[0].0.starts_with("POST /v1/chat/completions"), "{}", reqs[0].0);
-    assert!(reqs[0].1.iter().any(|(k, v)| k == "authorization" && v == "Bearer sk-composer"));
+    assert!(
+        reqs[0].0.starts_with("POST /v1/chat/completions"),
+        "{}",
+        reqs[0].0
+    );
+    assert!(reqs[0]
+        .1
+        .iter()
+        .any(|(k, v)| k == "authorization" && v == "Bearer sk-composer"));
 }
 
 #[tokio::test]
@@ -366,7 +423,10 @@ async fn legacy_configuration_returns_none_without_network() {
     let srv = mini_server(200, anthropic_payload("x"), Duration::ZERO);
     let mut s = base_settings();
     s.exp_rt_endpoint_url = srv.base.clone();
-    assert_eq!(try_complete(&s, "S", "S\n\nu", Duration::from_secs(2)).await, None);
+    assert_eq!(
+        try_complete(&s, "S", "S\n\nu", Duration::from_secs(2)).await,
+        None
+    );
     assert_eq!(srv.conns.load(Ordering::SeqCst), 0);
 }
 
@@ -392,7 +452,10 @@ fn probe_parses_the_proxy_from_env_output_without_posix_only_syntax() {
         r#"if [ "$1" != "-lc" ] || [ "$2" != "env" ]; then echo "unexpected args: $*" >&2; exit 127; fi
 printf 'PATH=/usr/bin\nhttps_proxy=http://lower.example:8080\nHOME=/tmp\n'"#,
     );
-    assert_eq!(probe_shell(&sh, Duration::from_secs(10)).as_deref(), Some("http://lower.example:8080"));
+    assert_eq!(
+        probe_shell(&sh, Duration::from_secs(10)).as_deref(),
+        Some("http://lower.example:8080")
+    );
 }
 
 #[cfg(unix)]
@@ -402,7 +465,10 @@ fn probe_prefers_upper_case_and_ignores_empty_values() {
         "upper",
         "printf 'https_proxy=http://lower.example:1\\nHTTPS_PROXY=http://upper.example:2\\n'",
     );
-    assert_eq!(probe_shell(&sh, Duration::from_secs(10)).as_deref(), Some("http://upper.example:2"));
+    assert_eq!(
+        probe_shell(&sh, Duration::from_secs(10)).as_deref(),
+        Some("http://upper.example:2")
+    );
     let sh = stub_shell("empty", "printf 'HTTPS_PROXY=\\nhttps_proxy=\\nOTHER=x\\n'");
     assert_eq!(probe_shell(&sh, Duration::from_secs(10)), None);
     let sh = stub_shell("none", "printf 'PATH=/usr/bin\\n'");
@@ -414,20 +480,34 @@ fn probe_prefers_upper_case_and_ignores_empty_values() {
 fn probe_survives_a_failing_or_missing_shell() {
     let sh = stub_shell("fail", "exit 3");
     assert_eq!(probe_shell(&sh, Duration::from_secs(10)), None);
-    assert_eq!(probe_shell("/definitely/not/a/shell", Duration::from_secs(10)), None);
+    assert_eq!(
+        probe_shell("/definitely/not/a/shell", Duration::from_secs(10)),
+        None
+    );
 }
 
 #[cfg(unix)]
 #[test]
 fn probe_is_bounded_when_a_background_process_holds_the_pipe() {
     // The shell prints the proxy, exits, but a grandchild keeps stdout open for 30 s.
-    let sh = stub_shell("grandchild", "(sleep 30 &)\nprintf 'HTTPS_PROXY=http://held.example:3\\n'");
+    let sh = stub_shell(
+        "grandchild",
+        "(sleep 30 &)\nprintf 'HTTPS_PROXY=http://held.example:3\\n'",
+    );
     let t0 = Instant::now();
     // Generous budget: the happy path returns as soon as the line arrives (so this costs
     // nothing), but starting a stub shell can be slow while ~1200 tests run in parallel.
     let got = probe_shell(&sh, Duration::from_secs(8));
-    assert!(t0.elapsed() < Duration::from_secs(15), "probe took {:?}", t0.elapsed());
-    assert_eq!(got.as_deref(), Some("http://held.example:3"), "a line seen before the budget still counts");
+    assert!(
+        t0.elapsed() < Duration::from_secs(15),
+        "probe took {:?}",
+        t0.elapsed()
+    );
+    assert_eq!(
+        got.as_deref(),
+        Some("http://held.example:3"),
+        "a line seen before the budget still counts"
+    );
 }
 
 #[cfg(unix)]
@@ -436,7 +516,11 @@ fn probe_is_bounded_when_the_shell_hangs() {
     let sh = stub_shell("hang", "sleep 30");
     let t0 = Instant::now();
     assert_eq!(probe_shell(&sh, Duration::from_millis(500)), None);
-    assert!(t0.elapsed() < Duration::from_secs(3), "probe took {:?}", t0.elapsed());
+    assert!(
+        t0.elapsed() < Duration::from_secs(3),
+        "probe took {:?}",
+        t0.elapsed()
+    );
 }
 
 #[cfg(unix)]
