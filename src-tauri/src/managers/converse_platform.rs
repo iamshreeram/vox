@@ -18,20 +18,23 @@ use crate::managers::converse_capture::{
     CaptureHandle, CaptureTimings, CaptureWorker, RecorderPort, StartError, TranscribeFailure,
     Transcriber,
 };
+use crate::managers::converse_overlay::{OverlayDispatcher, ReadyGate};
 use crate::managers::converse_plan::{
     build_plan_prompt, parse_plan, PlanError, PlanInput, TurnPlan,
 };
 use crate::managers::converse_queue::TtsQueueSession;
-use crate::managers::converse_runtime::{Platform, SessionParts};
+use crate::managers::converse_runtime::{AdmissionGuard, Platform, SessionParts, ALREADY_RUNNING};
 use crate::managers::emotion::Emotion;
 use crate::managers::model::ModelManager;
+use crate::managers::ownership::{self, Busy, Lease, Owner};
 use crate::managers::speech_backends::{complete, complete_streaming, effective_deadline};
 use crate::managers::speech_compose::ComposeError;
 use crate::managers::transcription::TranscriptionManager;
 use crate::managers::tts::{TtsError, TtsManager};
+use crate::overlay::{RealOverlayExecutor, RealOverlaySink};
 use crate::settings::{get_settings, AppSettings};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -39,6 +42,27 @@ use tauri::{AppHandle, Emitter, Manager};
 const CONVERSE_BINDING: &str = "converse";
 /// Tauri event carrying `ConverseStateEvent`.
 pub const CONVERSE_STATE_EVENT: &str = "converse-state";
+/// Refusal when dictation owns the microphone or is still processing.
+pub const DICTATION_BUSY: &str = "Finish the current dictation before starting a conversation.";
+
+/// The lease is the admission guard the controller holds for a session.
+impl AdmissionGuard for Lease {}
+
+/// Process-wide readiness gate shared by the recorder port (arms a token per
+/// listen, invalidates on stop/cancel/start) and the ordered overlay path.
+fn ready_gate() -> &'static Arc<ReadyGate> {
+    static GATE: OnceLock<Arc<ReadyGate>> = OnceLock::new();
+    GATE.get_or_init(|| Arc::new(ReadyGate::new()))
+}
+
+/// Overlay dispatcher over the real main-thread executor and overlay sink.
+fn overlay_dispatcher(app: &AppHandle) -> OverlayDispatcher {
+    OverlayDispatcher::new(
+        Arc::new(RealOverlayExecutor::new(app.clone())),
+        Arc::new(RealOverlaySink::new(app.clone())),
+        ready_gate().clone(),
+    )
+}
 
 /// Payload of the `converse-state` event (`state` and `end` are static labels).
 #[derive(Serialize, Deserialize, Clone, Debug, specta::Type)]
@@ -127,6 +151,8 @@ struct AudioRecorderPort {
 
 impl RecorderPort for AudioRecorderPort {
     fn start(&self) -> Result<(), StartError> {
+        // A new listen supersedes any readiness still armed for the last one.
+        ready_gate().invalidate();
         let settings = get_settings(&self.app);
         // Same policy TranscribeAction::start picks for a non-streaming
         // manual recording. Streaming is never used by a session.
@@ -159,19 +185,30 @@ impl RecorderPort for AudioRecorderPort {
             }
         });
         match rm.try_start_recording(CONVERSE_BINDING, policy) {
-            // The capture worker decides readiness from its own level
-            // watchdog, so the readiness handle is not needed.
-            Ok(_readiness) => Ok(()),
+            Ok(readiness) => {
+                // Ready fires for THIS listen only, on the first real
+                // microphone samples, through the ordered overlay path.
+                let token = ready_gate().arm();
+                let dispatcher = overlay_dispatcher(&self.app);
+                std::thread::spawn(move || {
+                    if readiness.wait() {
+                        dispatcher.deliver_ready(token);
+                    }
+                });
+                Ok(())
+            }
             Err(message) => Err(classify_start_error(&message)),
         }
     }
 
     fn stop(&self) -> Option<Vec<f32>> {
+        ready_gate().invalidate();
         let rm = self.app.state::<Arc<AudioRecordingManager>>();
         rm.stop_recording(CONVERSE_BINDING, rm.cancel_generation())
     }
 
     fn cancel(&self) {
+        ready_gate().invalidate();
         let rm = self.app.state::<Arc<AudioRecordingManager>>();
         let _ = rm.cancel_recording_if_binding(CONVERSE_BINDING);
     }
@@ -421,6 +458,14 @@ pub struct RealPlatform {
 }
 
 impl Platform for RealPlatform {
+    fn admit(&self) -> Result<Box<dyn AdmissionGuard>, String> {
+        match ownership::global().try_acquire(Owner::Conversation) {
+            Ok(lease) => Ok(Box::new(lease)),
+            Err(Busy(Owner::Dictation)) => Err(DICTATION_BUSY.to_string()),
+            Err(Busy(Owner::Conversation)) => Err(ALREADY_RUNNING.to_string()),
+        }
+    }
+
     fn preflight(&self) -> Result<(), String> {
         preflight_check(&get_settings(&self.app))
     }
@@ -468,6 +513,7 @@ impl Platform for RealPlatform {
         if self.app.emit(CONVERSE_STATE_EVENT, payload).is_err() {
             log::debug!("converse: state event not delivered");
         }
+        overlay_dispatcher(&self.app).apply_state(state);
     }
 }
 

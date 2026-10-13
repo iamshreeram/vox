@@ -47,8 +47,9 @@ pub trait Platform: Send + Sync + 'static {
     fn parts(&self, capture: &CaptureHandle) -> SessionParts;
     /// Emit one `converse-state` event: `(state_label, end_label)`.
     fn on_state(&self, state: &'static str, end: Option<&'static str>);
-    /// Claim whatever exclusive resource a session needs. Default: claims
-    /// nothing. The controller does not call this yet.
+    /// Claim whatever exclusive resource a session needs (the real platform
+    /// takes the ownership lease). Called first by `start`; the returned guard
+    /// is held for the whole session. Default: claims nothing.
     fn admit(&self) -> Result<Box<dyn AdmissionGuard>, String> {
         Ok(Box::new(NoopGuard))
     }
@@ -110,22 +111,27 @@ impl ConverseController {
         }
     }
 
-    /// Start a session. Order: `platform.preflight()` (Err => return it, the
-    /// registry is untouched and no hook is set) -> `registry.try_begin()`
-    /// (None => `Err(ALREADY_RUNNING)`) -> `converse_hooks::set_session_active(true)`
-    /// -> `platform.capture()` -> `converse_hooks::install_capture(Some(..))`
-    /// -> `platform.parts()` -> spawn the session task on the tauri async
-    /// runtime. Returns the session id.
+    /// Start a session. Order: `platform.admit()` (Err => return it, nothing
+    /// else runs) -> `platform.preflight()` (Err => return it) ->
+    /// `registry.try_begin()` (None => `Err(ALREADY_RUNNING)`) ->
+    /// `converse_hooks::set_session_active(true)` -> `platform.capture()` ->
+    /// `converse_hooks::install_capture(Some(..))` -> `platform.parts()` ->
+    /// spawn the session task on the tauri async runtime. Returns the session id.
+    ///
+    /// The admission guard stays local until the spawn: every early return and
+    /// caught construction panic drops it. On success it moves into the session
+    /// task and is dropped as that task's last statement.
     ///
     /// The session task runs `run_session` under `catch_unwind` (a panic counts
     /// as `Cancelled`), then the FINALIZER runs, always, in this exact order:
     /// (1) `capture.shutdown()` on a blocking thread and awaited,
     /// (2) `install_capture(None)`, (3) `set_session_active(false)`,
     /// (4) `platform.on_state("idle", Some(end_label(end)))`,
-    /// (5) `registry.finish(id)`.
+    /// (5) `registry.finish(id)`, (6) drop the admission guard.
     /// While running, the session's `Reporter` forwards every state except
     /// `Idle` (the final idle is emitted only by the finalizer, exactly once).
     pub fn start(&self) -> Result<u64, String> {
+        let admission = self.platform.admit()?;
         self.platform.preflight()?;
         let (id, cancel) = self
             .registry
@@ -185,6 +191,9 @@ impl ConverseController {
             converse_hooks::set_session_active(false);
             platform.on_state("idle", Some(end_label(end)));
             registry.finish(id);
+            // Last: release admission only after the final idle (and so the
+            // final overlay hide) was emitted and the registry entry finished.
+            drop(admission);
         });
         Ok(id)
     }
@@ -221,7 +230,7 @@ mod tests {
     use crate::managers::converse_hooks;
     use crate::managers::converse_plan::{PlanError, PlanInput, PlanKind, TurnPlan};
     use crate::managers::emotion::Emotion;
-    use crate::managers::ownership::{Busy, Lease, Owner, OwnershipGate};
+    use crate::managers::ownership::{Busy, Owner, OwnershipGate};
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Mutex;
@@ -630,8 +639,6 @@ mod tests {
     }
 
     // ------------------- admission guard lifecycle (O7'') -------------------
-
-    impl AdmissionGuard for Lease {}
 
     /// Ears that replay scripted outcomes, then wait until cancelled.
     struct ScriptedEars(Mutex<VecDeque<ListenOutcome>>);
