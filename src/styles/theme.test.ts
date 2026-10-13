@@ -68,6 +68,101 @@ const scenarios: Record<string, () => void> = {
       );
     }
   },
+
+  // ---- vibrant accent gradient tokens (accent-a / accent-b / on-accent) ----
+  "every adaptive and named theme defines a hex accent gradient palette":
+    () => {
+      for (const name of ["light", "dark", "aurora"]) {
+        for (const part of ["accent-a", "accent-b", "on-accent"]) {
+          const v = declared(css, `--${name}-color-${part}`);
+          assert.ok(v && /^#[0-9a-fA-F]{6}$/.test(v), `${name} ${part}: ${v}`);
+        }
+      }
+    },
+  "the default :root, the dark media query and every data-theme block map the active accent tokens to the right palette":
+    () => {
+      const root = css.match(/:root\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+      const dark =
+        css.match(
+          /@media \(prefers-color-scheme: dark\)\s*\{\s*:root\s*\{([^}]*)\}/,
+        )?.[1] ?? "";
+      const blocks: Record<string, string> = {
+        light: root,
+        dark,
+        "data-light": themeBlock("light"),
+        "data-dark": themeBlock("dark"),
+        "data-aurora": themeBlock("aurora"),
+      };
+      const expectPalette: Record<string, string> = {
+        light: "light",
+        dark: "dark",
+        "data-light": "light",
+        "data-dark": "dark",
+        "data-aurora": "aurora",
+      };
+      for (const [key, block] of Object.entries(blocks)) {
+        for (const part of ["accent-a", "accent-b", "on-accent"]) {
+          assert.equal(
+            declared(block, `--color-${part}`),
+            `var(--${expectPalette[key]}-color-${part})`,
+            `${key} must map --color-${part}`,
+          );
+        }
+      }
+    },
+  "on-accent text keeps WCAG contrast >= 4.5 on both ends of every gradient":
+    () => {
+      const lum = (hex: string): number => {
+        const c = [1, 3, 5].map((i) => {
+          const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+          return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+      };
+      const ratio = (a: string, b: string): number => {
+        const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+        return (hi + 0.05) / (lo + 0.05);
+      };
+      for (const name of ["light", "dark", "aurora"]) {
+        const on = declared(css, `--${name}-color-on-accent`)!;
+        for (const end of ["accent-a", "accent-b"]) {
+          const bg = declared(css, `--${name}-color-${end}`)!;
+          assert.ok(
+            ratio(on, bg) >= 4.5,
+            `${name} ${end} contrast ${ratio(on, bg).toFixed(2)} < 4.5`,
+          );
+        }
+      }
+    },
+  "accent tokens are registered as Tailwind colors in App.css": () => {
+    const appCss = readFileSync(
+      fileURLToPath(new URL("../App.css", import.meta.url)),
+      "utf8",
+    );
+    for (const t of ["accent-a", "accent-b", "on-accent"]) {
+      assert.ok(
+        new RegExp(`--color-${t}:\\s*var\\(--color-${t}\\)`).test(appCss),
+        `@theme inline must register --color-${t}`,
+      );
+    }
+  },
+  "settings-card keeps overflow visible and its gradient strip is inert":
+    () => {
+      const appCss = readFileSync(
+        fileURLToPath(new URL("../App.css", import.meta.url)),
+        "utf8",
+      );
+      const card = appCss.match(/\.settings-card\s*\{([^}]*)\}/)?.[1] ?? "";
+      const strip =
+        appCss.match(/\.settings-card::before\s*\{([^}]*)\}/)?.[1] ?? "";
+      assert.match(card, /position:\s*relative/);
+      assert.match(card, /overflow:\s*visible/);
+      assert.match(strip, /position:\s*absolute/);
+      assert.match(strip, /height:\s*3px/);
+      assert.match(strip, /pointer-events:\s*none/);
+      assert.match(strip, /border-radius:/);
+      assert.match(appCss, /\.settings-card-title/);
+    },
 };
 
 let failed = 0;

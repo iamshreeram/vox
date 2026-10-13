@@ -839,6 +839,12 @@
       }
     },
     "experimental": {
+      "groups": {
+        "engine": "Engine & input",
+        "voiceCommands": "Voice commands",
+        "memory": "Memory",
+        "agentBridge": "Agent bridge"
+      },
       "realtime": {
         "title": "Realtime conversation",
         "intro": "Experimental. Every behaviour below is off until you turn it on. Nothing is sent to a remote endpoint unless you enable \"Use my own endpoint\".",

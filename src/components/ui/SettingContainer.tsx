@@ -1,5 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useContext, useEffect, useRef, useState } from "react";
 import { Tooltip } from "./Tooltip";
+import {
+  SettingsGroupContext,
+  groupedRowClass,
+  shouldShowTooltip,
+} from "./settingsGroupContext";
 
 interface SettingContainerProps {
   title: string;
@@ -24,6 +29,12 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
 }) => {
   const [showTooltip, setShowTooltip] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const { density, visible } = useContext(SettingsGroupContext);
+
+  // A collapsed group must not leave its tooltip open (reopening keeps it closed).
+  useEffect(() => {
+    if (!visible) setShowTooltip(false);
+  }, [visible]);
 
   // Handle click outside to close tooltip
   useEffect(() => {
@@ -48,7 +59,9 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
   };
 
   const containerClasses = grouped
-    ? "px-4 p-2"
+    ? density === "compact"
+      ? "px-3 py-1"
+      : "px-4 p-2"
     : "px-4 p-2 rounded-lg border border-mid-gray/20";
 
   if (layout === "stacked") {
@@ -90,7 +103,7 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
                   d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                 />
               </svg>
-              {showTooltip && (
+              {shouldShowTooltip(showTooltip, visible) && (
                 <Tooltip targetRef={tooltipRef} position="top">
                   <p className="text-sm text-center leading-relaxed">
                     {description}
@@ -121,7 +134,7 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
 
   // Horizontal layout (default)
   const horizontalContainerClasses = grouped
-    ? "flex items-center justify-between min-h-12 px-4 p-2"
+    ? `flex items-center justify-between ${groupedRowClass(density)}`
     : "flex items-center justify-between min-h-12 px-4 p-2 rounded-lg border border-mid-gray/20";
 
   if (descriptionMode === "tooltip") {
@@ -163,7 +176,7 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
                   d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                 />
               </svg>
-              {showTooltip && (
+              {shouldShowTooltip(showTooltip, visible) && (
                 <Tooltip targetRef={tooltipRef} position={tooltipPosition}>
                   <p className="text-sm text-center leading-relaxed">
                     {description}
