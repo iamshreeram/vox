@@ -1,7 +1,9 @@
 use crate::actions::ACTION_MAP;
 use crate::managers::audio::AudioRecordingManager;
+use crate::managers::ownership::Lease;
 use crate::settings::ShortcutActivation;
 use log::{debug, error, warn};
+use std::cell::RefCell;
 use std::sync::mpsc::{self, Sender};
 use std::sync::Arc;
 use std::thread;
@@ -222,6 +224,25 @@ struct CoordinatorState {
     last_press: Option<Instant>,
     pending_release: Option<PendingRelease>,
     pending_press: Option<PendingPress>,
+    /// The shared ownership lease of the dictation job. Held from a
+    /// successful start through processing; dropped on every return to idle.
+    lease: Option<Lease>,
+}
+
+thread_local! {
+    /// Lease handed over by `TranscribeAction::start` on the coordinator
+    /// thread; `run_effect` moves it into the state right after the start.
+    static HANDED_OVER_LEASE: RefCell<Option<Lease>> = const { RefCell::new(None) };
+}
+
+/// Hands the dictation lease from `TranscribeAction::start` to the
+/// coordinator. Must be called on the coordinator thread, inside `start`.
+pub(crate) fn hand_over_lease(lease: Lease) {
+    HANDED_OVER_LEASE.with(|slot| *slot.borrow_mut() = Some(lease));
+}
+
+fn take_handed_over_lease() -> Option<Lease> {
+    HANDED_OVER_LEASE.with(|slot| slot.borrow_mut().take())
 }
 
 impl CoordinatorState {
@@ -232,7 +253,14 @@ impl CoordinatorState {
             last_press: None,
             pending_release: None,
             pending_press: None,
+            lease: None,
         }
+    }
+
+    /// Stores the lease the start effect produced (`None` when the start was
+    /// refused). Any previously held lease is dropped.
+    fn attach_lease(&mut self, lease: Option<Lease>) {
+        self.lease = lease;
     }
 
     /// Deadline of the deferred release, if any — drives `recv_timeout`.
@@ -469,12 +497,14 @@ impl CoordinatorState {
         {
             self.stage = Stage::Idle;
             self.hold = None;
+            self.lease = None;
         }
     }
 
     fn on_processing_finished(&mut self) -> Option<Effect> {
         self.stage = Stage::Idle;
         self.hold = None;
+        self.lease = None;
         let pending = self.pending_press.take()?;
         debug!(
             "Pipeline drained; starting remembered press for '{}'",
@@ -494,6 +524,7 @@ impl CoordinatorState {
         if !started && matches!(&self.stage, Stage::Recording(id) if id == binding_id) {
             self.stage = Stage::Idle;
             self.hold = None;
+            self.lease = None;
         }
     }
 
@@ -675,6 +706,7 @@ fn run_effect(app: &AppHandle, state: &mut CoordinatorState, effect: Effect) {
             hotkey_string,
         } => {
             let started = start(app, &binding_id, &hotkey_string);
+            state.attach_lease(take_handed_over_lease());
             state.on_start_result(&binding_id, started);
         }
         Effect::Stop {
@@ -721,6 +753,7 @@ fn stop(app: &AppHandle, binding_id: &str, hotkey_string: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::managers::ownership::{Lease, Owner, OwnershipGate};
 
     #[test]
     fn start_took_effect_when_recording_with_requested_binding() {
@@ -1643,5 +1676,126 @@ mod tests {
             "held 400ms since the real key-down: must stop, not lock"
         );
         assert_eq!(state.stage, Stage::Processing);
+    }
+
+    // ---------------------------------------------------------------------
+    // Ownership lease: the dictation job holds the shared gate from its start
+    // until the coordinator returns to idle (completion, cancel or failure).
+    // ---------------------------------------------------------------------
+
+    fn dictation_lease(gate: &Arc<OwnershipGate>) -> Lease {
+        gate.try_acquire(Owner::Dictation).expect("dictation lease")
+    }
+
+    /// A toggle start whose lease was handed over by `TranscribeAction::start`.
+    fn start_with_lease(state: &mut CoordinatorState, gate: &Arc<OwnershipGate>, now: Instant) {
+        assert!(matches!(
+            state.on_input(toggle_input(true), now),
+            Some(Effect::Start { .. })
+        ));
+        state.attach_lease(Some(dictation_lease(gate)));
+        state.on_start_result(BINDING, true);
+    }
+
+    #[test]
+    fn lease_is_held_from_a_successful_start_through_processing() {
+        let gate = OwnershipGate::new();
+        let mut state = CoordinatorState::new();
+        let now = Instant::now();
+        start_with_lease(&mut state, &gate, now);
+        assert_eq!(gate.current(), Some(Owner::Dictation));
+        assert!(matches!(
+            state.on_input(toggle_input(true), now + Duration::from_millis(100)),
+            Some(Effect::Stop { .. })
+        ));
+        assert_eq!(state.stage, Stage::Processing);
+        assert_eq!(gate.current(), Some(Owner::Dictation));
+    }
+
+    #[test]
+    fn start_failure_drops_the_lease_at_once() {
+        let gate = OwnershipGate::new();
+        let mut state = CoordinatorState::new();
+        let effect = state.on_input(toggle_input(true), Instant::now());
+        assert!(matches!(effect, Some(Effect::Start { .. })));
+        state.attach_lease(Some(dictation_lease(&gate)));
+        assert_eq!(gate.current(), Some(Owner::Dictation));
+        state.on_start_result(BINDING, false);
+        assert_eq!(state.stage, Stage::Idle);
+        assert_eq!(gate.current(), None);
+    }
+
+    #[test]
+    fn processing_completion_drops_the_lease() {
+        let gate = OwnershipGate::new();
+        let mut state = CoordinatorState::new();
+        let now = Instant::now();
+        start_with_lease(&mut state, &gate, now);
+        state.on_input(toggle_input(true), now + Duration::from_millis(100));
+        assert_eq!(state.on_processing_finished(), None);
+        assert_eq!(state.stage, Stage::Idle);
+        assert_eq!(gate.current(), None);
+    }
+
+    #[test]
+    fn cancel_while_recording_drops_the_lease() {
+        let gate = OwnershipGate::new();
+        let mut state = CoordinatorState::new();
+        start_with_lease(&mut state, &gate, Instant::now());
+        state.on_cancel(true);
+        assert_eq!(state.stage, Stage::Idle);
+        assert_eq!(gate.current(), None);
+    }
+
+    #[test]
+    fn cancel_during_processing_keeps_the_lease_until_the_pipeline_finishes() {
+        let gate = OwnershipGate::new();
+        let mut state = CoordinatorState::new();
+        let now = Instant::now();
+        start_with_lease(&mut state, &gate, now);
+        state.on_input(toggle_input(true), now + Duration::from_millis(100));
+        state.on_cancel(false);
+        assert_eq!(state.stage, Stage::Processing);
+        assert_eq!(gate.current(), Some(Owner::Dictation));
+        state.on_processing_finished();
+        assert_eq!(gate.current(), None);
+    }
+
+    #[test]
+    fn remembered_press_after_drain_releases_before_it_restarts() {
+        let gate = OwnershipGate::new();
+        let mut state = CoordinatorState::new();
+        let now = Instant::now();
+        start_with_lease(&mut state, &gate, now);
+        state.on_input(toggle_input(true), now + Duration::from_millis(100));
+        assert_eq!(
+            state.on_input(toggle_input(true), now + Duration::from_millis(200)),
+            None,
+            "a press during processing is only remembered"
+        );
+        assert!(matches!(
+            state.on_processing_finished(),
+            Some(Effect::Start { .. })
+        ));
+        assert_eq!(gate.current(), None, "the restart takes a fresh lease");
+    }
+
+    #[test]
+    fn a_refused_start_never_takes_or_keeps_the_lease() {
+        let gate = OwnershipGate::new();
+        let conversation = gate
+            .try_acquire(Owner::Conversation)
+            .expect("conversation lease");
+        let mut state = CoordinatorState::new();
+        assert!(matches!(
+            state.on_input(toggle_input(true), Instant::now()),
+            Some(Effect::Start { .. })
+        ));
+        // `TranscribeAction::start` was refused: nothing is handed over.
+        state.attach_lease(None);
+        state.on_start_result(BINDING, false);
+        assert_eq!(state.stage, Stage::Idle);
+        assert_eq!(gate.current(), Some(Owner::Conversation));
+        drop(conversation);
     }
 }

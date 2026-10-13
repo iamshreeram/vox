@@ -15,6 +15,7 @@ use crate::managers::media_control::{
 };
 use crate::managers::memory::MemoryManager;
 use crate::managers::model::ModelManager;
+use crate::managers::ownership::{self, Busy, Lease, Owner, OwnershipGate};
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
 use crate::managers::voice_common::{HookEvent, VoiceHookOutcome};
@@ -810,25 +811,33 @@ pub(crate) async fn process_transcription_output(
     }
 }
 
-/// True while a conversation session owns the microphone; dictation must not
-/// start then (DESIGN.md section 2).
-fn dictation_start_blocked() -> bool {
-    crate::managers::converse_hooks::capture_active()
+/// Takes the shared ownership lease for a dictation start. A conversation
+/// session (or dictation still processing, which holds the lease until the
+/// coordinator is idle) refuses it with `Busy`.
+fn acquire_dictation_lease(gate: &Arc<OwnershipGate>) -> Result<Lease, Busy> {
+    gate.try_acquire(Owner::Dictation)
 }
 
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
-        if dictation_start_blocked() {
-            log::debug!("dictation start ignored: conversation owns the microphone");
-            let _ = app.emit(
-                "recording-error",
-                RecordingErrorEvent {
-                    error_type: "conversation_active".to_string(),
-                    detail: None,
-                },
-            );
-            return;
-        }
+        // Gate first: no overlay or recorder effect happens unless the lease is
+        // ours. The lease is handed to the coordinator, which drops it when the
+        // dictation job returns to idle.
+        let lease = match acquire_dictation_lease(ownership::global()) {
+            Ok(lease) => lease,
+            Err(busy) => {
+                log::debug!("dictation start ignored: {busy:?} owns the microphone");
+                let _ = app.emit(
+                    "recording-error",
+                    RecordingErrorEvent {
+                        error_type: "conversation_active".to_string(),
+                        detail: None,
+                    },
+                );
+                return;
+            }
+        };
+        crate::transcription_coordinator::hand_over_lease(lease);
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
 
@@ -2423,17 +2432,19 @@ mod phrase_tier_tests {
 #[cfg(test)]
 mod dictation_guard_tests {
     use super::*;
-    use crate::managers::converse_hooks::{FORCE_CAPTURE_ACTIVE, TEST_LOCK};
-    use std::sync::atomic::Ordering;
+    use crate::managers::ownership::{Busy, Owner, OwnershipGate};
 
     #[test]
-    fn dictation_start_is_blocked_only_while_a_conversation_captures() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        FORCE_CAPTURE_ACTIVE.store(false, Ordering::SeqCst);
-        assert!(!dictation_start_blocked());
-        FORCE_CAPTURE_ACTIVE.store(true, Ordering::SeqCst);
-        assert!(dictation_start_blocked());
-        FORCE_CAPTURE_ACTIVE.store(false, Ordering::SeqCst);
-        assert!(!dictation_start_blocked());
+    fn dictation_lease_is_refused_while_a_conversation_owns_the_gate() {
+        let gate = OwnershipGate::new();
+        let conversation = gate
+            .try_acquire(Owner::Conversation)
+            .expect("conversation lease");
+        assert_eq!(
+            acquire_dictation_lease(&gate).err(),
+            Some(Busy(Owner::Conversation))
+        );
+        drop(conversation);
+        assert!(acquire_dictation_lease(&gate).is_ok());
     }
 }

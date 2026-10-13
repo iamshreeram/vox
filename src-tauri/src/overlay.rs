@@ -1,4 +1,5 @@
 use crate::input;
+use crate::managers::converse_overlay::{OverlayExecutor, OverlaySink, ShowKind};
 use crate::settings;
 use crate::settings::{OverlayPosition, OverlayStyle};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -764,6 +765,94 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     // eval_script call per callback, cutting the per-callback WebKit
     // dispatch work in half.
     let _ = app_handle.emit_to("recording_overlay", "mic-level", levels);
+}
+
+/// Overlay state string for one conversation look. Listening keeps the plain
+/// recording look; the conversation never uses the streaming card.
+fn conversation_state(kind: ShowKind) -> &'static str {
+    match kind {
+        ShowKind::Listening => "recording",
+        ShowKind::Thinking => "transcribing",
+        ShowKind::Speaking => "speaking",
+        ShowKind::Acting => "processing",
+    }
+}
+
+/// Shows the overlay with one conversation look. Must run on the main thread
+/// (the ordered executor job calls it). It does not hop again: a nested hop
+/// would be queued behind work that was already queued, breaking order.
+/// No-op when `overlay_style` is `None`.
+pub fn show_conversation_overlay(app_handle: &AppHandle, kind: ShowKind) {
+    let settings = settings::get_settings(app_handle);
+    if settings.overlay_style == OverlayStyle::None {
+        return;
+    }
+    show_overlay_state_on_main(app_handle, conversation_state(kind));
+}
+
+/// Hides the overlay for a conversation. Must run on the main thread (the
+/// ordered executor job calls it), so the generation snapshot and the
+/// `hide-overlay` emit happen inside that job. Harmless when overlays are off.
+pub fn hide_conversation_overlay(app_handle: &AppHandle) {
+    hide_recording_overlay(app_handle);
+}
+
+/// Emits `recording-ready` to the overlay. Must run on the main thread, inside
+/// the ordered executor job that already checked the readiness gate.
+pub fn emit_conversation_ready(app_handle: &AppHandle) {
+    if !OVERLAY_ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    let _ = app_handle.emit_to("recording_overlay", "recording-ready", ());
+}
+
+/// Ordered main-thread executor for conversation overlay work. Each job is
+/// queued with `run_on_main_thread`, which runs jobs in FIFO order. A failed
+/// hop is logged and the job is dropped.
+pub struct RealOverlayExecutor {
+    app: AppHandle,
+}
+
+impl RealOverlayExecutor {
+    /// Builds an executor that hops onto the app's main thread.
+    pub fn new(app: AppHandle) -> Self {
+        Self { app }
+    }
+}
+
+impl OverlayExecutor for RealOverlayExecutor {
+    fn submit(&self, job: Box<dyn FnOnce() + Send>) {
+        if let Err(error) = self.app.run_on_main_thread(job) {
+            log::warn!("conversation overlay job not queued: {error}");
+        }
+    }
+}
+
+/// Overlay sink for conversation looks. Its methods run inside main-thread
+/// jobs from `RealOverlayExecutor`.
+pub struct RealOverlaySink {
+    app: AppHandle,
+}
+
+impl RealOverlaySink {
+    /// Builds a sink over the app's overlay window.
+    pub fn new(app: AppHandle) -> Self {
+        Self { app }
+    }
+}
+
+impl OverlaySink for RealOverlaySink {
+    fn show(&self, kind: ShowKind) {
+        show_conversation_overlay(&self.app, kind);
+    }
+
+    fn ready(&self) {
+        emit_conversation_ready(&self.app);
+    }
+
+    fn hide(&self) {
+        hide_conversation_overlay(&self.app);
+    }
 }
 
 #[cfg(test)]
