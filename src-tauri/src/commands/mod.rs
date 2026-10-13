@@ -16,13 +16,27 @@ use crate::settings::{
     get_settings, update_checks_forced_disabled, write_settings, AppSettings, LogLevel,
 };
 use crate::utils::cancel_current_operation;
+use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
+/// Overlay Cancel button. An active conversation session takes the press and
+/// is stopped exactly as `converse_stop` does; otherwise dictation cancel runs.
 #[tauri::command]
 #[specta::specta]
 pub fn cancel_operation(app: AppHandle) {
-    cancel_current_operation(&app);
+    let conversation_active = app
+        .state::<Arc<crate::managers::converse_runtime::ConverseController>>()
+        .is_active();
+    match crate::managers::converse_overlay::cancel_route(conversation_active) {
+        crate::managers::converse_overlay::CancelRoute::Conversation => {
+            app.state::<Arc<crate::managers::converse_runtime::ConverseController>>()
+                .stop();
+        }
+        crate::managers::converse_overlay::CancelRoute::Dictation => {
+            cancel_current_operation(&app);
+        }
+    }
 }
 
 #[tauri::command]
