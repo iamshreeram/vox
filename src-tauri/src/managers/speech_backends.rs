@@ -209,6 +209,10 @@ pub struct ModelCall<'a> {
     pub model: &'a str,
     pub system: &'a str,
     pub user: &'a str,
+    /// Completion token cap (the reply planner uses 220).
+    pub max_tokens: u32,
+    /// Send `response_format: json_object` (only when the provider supports it).
+    pub json_mode: bool,
 }
 
 /// POST `{base_url}/chat/completions` with JSON
@@ -250,10 +254,10 @@ fn request_body(call: &ModelCall<'_>) -> serde_json::Value {
             {"role": "user", "content": call.user}
         ],
         "temperature": 0.7,
-        "max_tokens": 220,
+        "max_tokens": call.max_tokens,
         "stream": false,
     });
-    if call.provider.supports_structured_output {
+    if call.json_mode && call.provider.supports_structured_output {
         if let Some(obj) = body.as_object_mut() {
             obj.insert(
                 "response_format".to_string(),
@@ -388,6 +392,8 @@ async fn compose_model(
         model: &s.model,
         system: &system,
         user: &user,
+        max_tokens: 220,
+        json_mode: provider.supports_structured_output,
     };
     let raw = call_model(&call, deadline).await?;
     parse_composer_output(&raw, &format!("{system}\n\n{user}"))
@@ -522,8 +528,65 @@ async fn complete_model(
         model: &s.model,
         system,
         user: user_part(system, combined),
+        max_tokens: 220,
+        json_mode: provider.supports_structured_output,
     };
     call_model(&call, deadline).await
+}
+
+/// Plain-text summary call for a finished conversation (DESIGN Rev 3, 3.5 (4)).
+///
+/// Routes by [`crate::managers::conversation_save::summary_route`]: the direct endpoint and the
+/// OpenAI-compatible stream route use the realtime request builder with JSON mode off and
+/// `max_tokens`; the legacy route uses the non-streaming model call with the same options.
+/// Command, off and misconfigured routes return `NotConfigured` without any network call.
+/// Returns the raw model text; `clean_summary` decides whether it is usable.
+pub async fn complete_summary(
+    settings: &AppSettings,
+    system: &str,
+    user: &str,
+    max_tokens: u32,
+    deadline: Duration,
+) -> Result<String, ComposeError> {
+    use crate::managers::conversation_save::{summary_route, SummaryRoute};
+    match summary_route(settings) {
+        SummaryRoute::NoModel => Err(ComposeError::NotConfigured),
+        SummaryRoute::DirectAnthropic | SummaryRoute::OpenAiCompatible => {
+            match crate::managers::realtime_complete::prepare(settings) {
+                Ok(Some(prepared)) => {
+                    crate::managers::realtime_complete::summary_stream(
+                        settings, &prepared, system, user, max_tokens, deadline,
+                    )
+                    .await
+                }
+                Ok(None) => Err(ComposeError::NotConfigured),
+                Err(err) => Err(err),
+            }
+        }
+        SummaryRoute::LegacyModel => {
+            let s = settings_from_app(settings);
+            let provider = settings
+                .post_process_providers
+                .iter()
+                .find(|p| p.id == s.provider_id)
+                .ok_or(ComposeError::NotConfigured)?;
+            let api_key = settings
+                .post_process_api_keys
+                .get(&provider.id)
+                .cloned()
+                .unwrap_or_default();
+            let call = ModelCall {
+                provider,
+                api_key: &api_key,
+                model: &s.model,
+                system,
+                user,
+                max_tokens,
+                json_mode: false,
+            };
+            call_model(&call, deadline).await
+        }
+    }
 }
 
 async fn complete_command(
@@ -1039,6 +1102,8 @@ mod tests {
             model: "m-1",
             system: "SYS",
             user: "USER",
+            max_tokens: 220,
+            json_mode: p.supports_structured_output,
         };
         block_on(call_model(&c, deadline))
     }
@@ -1161,6 +1226,8 @@ mod tests {
             model: "m",
             system: "S",
             user: "U",
+            max_tokens: 220,
+            json_mode: p.supports_structured_output,
         };
         let r = block_on(async {
             tokio::time::timeout(

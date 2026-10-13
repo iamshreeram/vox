@@ -212,6 +212,46 @@ pub async fn try_complete_streaming(
     Some(result)
 }
 
+/// Plain-text summary over a prepared realtime route (DESIGN Rev 3, 3.5 (4)).
+///
+/// Same transport as `try_complete_streaming` (proxy resolution, endpoint validation, the
+/// streaming request builder) with JSON mode forced off and the caller's `max_tokens`. The
+/// whole call is bounded by `deadline`. Returns the raw text; nothing is logged.
+pub async fn summary_stream(
+    settings: &AppSettings,
+    prepared: &Prepared,
+    system: &str,
+    user: &str,
+    max_tokens: u32,
+    deadline: Duration,
+) -> Result<String, ComposeError> {
+    let cfg = RealtimeConfig::from_settings(settings);
+    let proxy = resolve_proxy_mode(
+        cfg.manual_proxy,
+        cfg.auto_proxy,
+        PROXY_RESOLVE_BUDGET.min(deadline),
+    )
+    .await;
+    let call = StreamCall {
+        protocol: prepared.protocol,
+        base_url: &prepared.base_url,
+        api_key: &prepared.api_key,
+        model: &prepared.model,
+        system,
+        user,
+        max_tokens,
+        json_mode: false,
+        completion_tokens_field: prepared.completion_tokens_field,
+    };
+    let opts = StreamOpts {
+        overall: deadline,
+        first_text: FIRST_TEXT_DEADLINE.min(deadline),
+        proxy,
+    };
+    let mut noop = |_: &str| {};
+    llm_stream::stream_completion(&call, &opts, &mut noop).await
+}
+
 /// Proxy resolution off the async workers, bounded by `budget`. The login-shell probe may
 /// block for up to 2 s (only when no environment proxy exists, and only once per process).
 /// On timeout the caller gets `SystemDefault`; the blocking task is detached and keeps

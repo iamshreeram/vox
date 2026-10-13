@@ -137,8 +137,230 @@ pub trait Brain: Send + Sync {
     }
 }
 
+/// How one accepted user utterance ended (DESIGN Rev 3, 8.2). Compile-only stub.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnOutcome {
+    Answered,
+    Clarified,
+    Ended,
+    Dictated,
+    Acted,
+    Failed,
+    Interrupted,
+    Blocked,
+    NoReply,
+}
+
+/// Whether the reply text was submitted for speech (DESIGN Rev 3, 8.2). Compile-only stub.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Delivery {
+    Submitted,
+    Interrupted,
+    NotSpoken,
+}
+
+/// One transcript record per accepted user utterance (DESIGN Rev 3, 8.2). Compile-only stub.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TranscriptEvent {
+    pub user: String,
+    pub assistant: Option<String>,
+    pub outcome: TurnOutcome,
+    pub delivery: Delivery,
+    pub detail: Option<String>,
+}
+
+/// Receives transcript events for one session. Compile-only stub.
+pub trait TranscriptSink: Send + Sync {
+    fn record(&self, ev: TranscriptEvent);
+}
+
+/// Session-scoped journal of the utterance in progress: the speech handed to the mouth and the
+/// outcome the turn reached. Shared by the speech helpers and the transcript accumulator.
+#[derive(Clone, Default)]
+struct Journal(Arc<JournalState>);
+
+#[derive(Default)]
+struct JournalState {
+    submitted: Mutex<Vec<String>>,
+    outcome: Mutex<Option<(TurnOutcome, Option<String>)>>,
+}
+
+impl Journal {
+    /// Resets the journal for a newly accepted utterance.
+    fn begin(&self) {
+        lock_or_recover(&self.0.submitted).clear();
+        *lock_or_recover(&self.0.outcome) = None;
+    }
+
+    /// Records text submitted for speech (blank text is ignored).
+    fn submit(&self, text: &str) {
+        let text = text.trim();
+        if !text.is_empty() {
+            lock_or_recover(&self.0.submitted).push(text.to_string());
+        }
+    }
+
+    /// Records the outcome the turn reached, with an optional machine-generated detail.
+    fn set(&self, outcome: TurnOutcome, detail: Option<String>) {
+        *lock_or_recover(&self.0.outcome) = Some((outcome, detail));
+    }
+
+    /// Takes the submitted speech (joined, `None` if nothing) and the recorded outcome.
+    fn take(&self) -> (Option<String>, Option<(TurnOutcome, Option<String>)>) {
+        let submitted = std::mem::take(&mut *lock_or_recover(&self.0.submitted));
+        let assistant = (!submitted.is_empty()).then(|| submitted.join(" "));
+        let outcome = lock_or_recover(&self.0.outcome).take();
+        (assistant, outcome)
+    }
+}
+
+fn lock_or_recover<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// The history-independent label of a speech plan kind.
+fn speech_outcome(kind: &PlanKind) -> TurnOutcome {
+    match kind {
+        PlanKind::Clarify => TurnOutcome::Clarified,
+        PlanKind::End => TurnOutcome::Ended,
+        PlanKind::Answer | PlanKind::Paste | PlanKind::Command => TurnOutcome::Answered,
+    }
+}
+
+/// Utterance-scoped transcript accumulator (DESIGN Rev 3, 8.2). Created when an utterance is
+/// accepted for dispatch and finalized exactly once: `finish` on every normal exit, and a `Drop`
+/// fallback that emits an Interrupted event if the turn unwinds before `finish`. Independent of
+/// the model history.
+struct UtteranceLog<'a> {
+    reporter: &'a dyn Reporter,
+    user: String,
+    journal: Journal,
+    done: bool,
+}
+
+impl<'a> UtteranceLog<'a> {
+    fn new(reporter: &'a dyn Reporter, user: &str, journal: &Journal) -> Self {
+        journal.begin();
+        UtteranceLog {
+            reporter,
+            user: user.to_string(),
+            journal: journal.clone(),
+            done: false,
+        }
+    }
+
+    /// Emits the event for this utterance. `cancelled` marks a turn cut short by cancel or
+    /// barge-in: it is reported as Interrupted, never as the outcome it had reached.
+    fn finish(mut self, cancelled: bool) {
+        self.emit(cancelled);
+    }
+
+    fn emit(&mut self, cancelled: bool) {
+        if self.done {
+            return;
+        }
+        self.done = true;
+        let (assistant, recorded) = self.journal.take();
+        let delivery = match (assistant.is_some(), cancelled) {
+            (true, true) => Delivery::Interrupted,
+            (true, false) => Delivery::Submitted,
+            (false, _) => Delivery::NotSpoken,
+        };
+        let (outcome, detail) = if cancelled {
+            let detail = recorded.and_then(|(_, detail)| detail);
+            (TurnOutcome::Interrupted, detail)
+        } else {
+            match recorded {
+                Some(pair) => pair,
+                None => (TurnOutcome::NoReply, None),
+            }
+        };
+        self.reporter.transcript(TranscriptEvent {
+            user: self.user.clone(),
+            assistant,
+            outcome,
+            delivery,
+            detail,
+        });
+    }
+}
+
+impl Drop for UtteranceLog<'_> {
+    fn drop(&mut self) {
+        self.emit(true);
+    }
+}
+
+/// Mouth wrapper that journals every line handed to `say`: the session's submitted speech.
+struct JournalMouth<'m> {
+    inner: &'m dyn Mouth,
+    journal: Journal,
+}
+
+impl Mouth for JournalMouth<'_> {
+    fn say<'a>(&'a self, text: &'a str, emotion: Emotion) -> BoxFuture<'a, SayOutcome> {
+        self.journal.submit(text);
+        self.inner.say(text, emotion)
+    }
+    fn wait_quiet(&self, max: Duration) -> BoxFuture<'_, QuietOutcome> {
+        self.inner.wait_quiet(max)
+    }
+    fn stop(&self) {
+        self.inner.stop();
+    }
+    fn open_queue(&self) -> Option<Arc<dyn SpeechQueue>> {
+        self.inner.open_queue()
+    }
+}
+
+impl From<TurnOutcome> for crate::managers::conversation_record::TurnOutcomeLabel {
+    fn from(outcome: TurnOutcome) -> Self {
+        use crate::managers::conversation_record::TurnOutcomeLabel as L;
+        match outcome {
+            TurnOutcome::Answered => L::Answered,
+            TurnOutcome::Clarified => L::Clarified,
+            TurnOutcome::Ended => L::Ended,
+            TurnOutcome::Dictated => L::Dictated,
+            TurnOutcome::Acted => L::Acted,
+            TurnOutcome::Failed => L::Failed,
+            TurnOutcome::Interrupted => L::Interrupted,
+            TurnOutcome::Blocked => L::Blocked,
+            TurnOutcome::NoReply => L::NoReply,
+        }
+    }
+}
+
+impl From<Delivery> for crate::managers::conversation_record::DeliveryLabel {
+    fn from(delivery: Delivery) -> Self {
+        use crate::managers::conversation_record::DeliveryLabel as L;
+        match delivery {
+            Delivery::Submitted => L::Submitted,
+            Delivery::Interrupted => L::Interrupted,
+            Delivery::NotSpoken => L::NotSpoken,
+        }
+    }
+}
+
+impl From<SessionEnd> for crate::managers::conversation_record::EndLabel {
+    fn from(end: SessionEnd) -> Self {
+        use crate::managers::conversation_record::EndLabel as L;
+        match end {
+            SessionEnd::UserEnded => L::UserEnded,
+            SessionEnd::Idle => L::Idle,
+            SessionEnd::Cancelled => L::Cancelled,
+            SessionEnd::NotConfigured => L::NotConfigured,
+            SessionEnd::AudioUnavailable => L::AudioUnavailable,
+            SessionEnd::SpeechStuck => L::SpeechStuck,
+            SessionEnd::TurnLimit => L::TurnLimit,
+        }
+    }
+}
+
 pub trait Reporter: Send + Sync {
     fn state(&self, state: SessionState);
+
+    /// Receives one transcript event per accepted utterance. Default: ignored.
+    fn transcript(&self, _ev: TranscriptEvent) {}
 }
 
 pub struct Deps<'a> {
@@ -168,6 +390,8 @@ pub struct SessionConfig {
     /// Choose the acknowledgement from the utterance (`converse_ack`) instead of the static
     /// `MSG_ACK` / `ack_after` pair. Only meaningful when `ack_after` is `Some`. Default false.
     pub smart_ack: bool,
+    /// Vault-context boundary (DESIGN Rev 3, 3.6): no model-derived paste or command. Default false.
+    pub answer_only: bool,
 }
 
 impl Default for SessionConfig {
@@ -183,6 +407,7 @@ impl Default for SessionConfig {
             ack_after: None,
             timing_log: false,
             smart_ack: false,
+            answer_only: false,
         }
     }
 }
@@ -206,6 +431,7 @@ impl SessionConfig {
             },
             timing_log: rt.timing_log,
             smart_ack: rt.ack,
+            answer_only: crate::managers::conversation_save::answer_only_for(s),
         }
     }
 }
@@ -243,6 +469,9 @@ const MSG_NO_MATCH_COMMAND: &str = "I can't do that yet.";
 const MSG_NOT_CONFIGURED: &str = "Set up a reply backend in the speech settings first.";
 const MSG_PLAN_FAILED: &str = "Sorry, I couldn't work that out.";
 const MSG_DONE: &str = "Done.";
+/// Spoken instead of any model-proposed paste or command while vault context is on (DESIGN 3.6).
+const MSG_ANSWER_ONLY: &str =
+    "Vault context is on, so I can only answer questions. Turn it off to dictate text or open things.";
 /// Queued once when the brain is slow (`SessionConfig::ack_after`).
 const MSG_ACK: &str = "One moment.";
 
@@ -459,9 +688,11 @@ async fn run_command_plan(
     cfg: &SessionConfig,
     cancel: &mut CancelToken,
     plan: &TurnPlan,
+    journal: &Journal,
 ) -> Result<Option<String>, SessionEnd> {
     let Some(command) = plan.command.as_deref() else {
         into_result(speak_or_end(deps, cfg, cancel, MSG_NO_MATCH_COMMAND, Emotion::Neutral).await)?;
+        journal.set(TurnOutcome::Failed, None);
         return Ok(None);
     };
     if is_cancelled(cancel) {
@@ -471,6 +702,7 @@ async fn run_command_plan(
         PhraseOutcome::Done(message) => {
             // The effect is recorded even if the confirmation speech fails.
             let note = note_command(command, &CommandNote::Done(message.clone()));
+            journal.set(TurnOutcome::Acted, Some("action: command".to_string()));
             let spoken = if plan.speech.is_empty() {
                 message
             } else {
@@ -483,6 +715,7 @@ async fn run_command_plan(
         PhraseOutcome::Refused => (MSG_REFUSED, CommandNote::Refused),
         PhraseOutcome::Failed => (MSG_FAILED, CommandNote::Failed),
     };
+    journal.set(TurnOutcome::Failed, None);
     into_result(speak_or_end(deps, cfg, cancel, fixed, Emotion::Neutral).await)?;
     Ok(Some(compose("", &note_command(command, &outcome))))
 }
@@ -490,6 +723,8 @@ async fn run_command_plan(
 /// Shared state of one streamed brain turn (see `stream_plan`).
 #[derive(Default)]
 struct Early {
+    /// Transcript journal of this turn (submitted sentences are recorded here).
+    journal: Journal,
     streamer: PlanStreamer,
     /// Sentences already queued: canonical, in order, never the acknowledgement.
     spoken: Vec<String>,
@@ -530,15 +765,18 @@ fn on_delta(
     cfg: &SessionConfig,
     queue: &dyn SpeechQueue,
     reporter: &dyn Reporter,
+    cancel: &CancelToken,
     delta: &str,
 ) {
     let mut early = lock_early(early);
     early.first_text.get_or_insert_with(Instant::now);
-    if !cfg.early_speech || early.dead {
+    // After a cancel (barge-in) no further sentence may be submitted (DESIGN 8.2).
+    if !cfg.early_speech || early.dead || is_cancelled(cancel) {
         return;
     }
     for sentence in early.streamer.push(delta) {
         if queue.push(&sentence.text, sentence.emotion) {
+            early.journal.submit(&sentence.text);
             early.spoken.push(sentence.text);
             mark_speaking(&mut early, reporter);
         } else {
@@ -552,6 +790,8 @@ fn on_delta(
 #[derive(Default)]
 struct Carry {
     last_draft: Option<String>,
+    /// Transcript journal of the utterance in progress (DESIGN 8.2).
+    journal: Journal,
     /// The acknowledgement last queued (smart acknowledgement avoids repeating it).
     last_ack: Option<&'static str>,
     /// Full utterance of the last recorded `failed` entry (see `record_turn`).
@@ -603,9 +843,10 @@ async fn stream_plan(
     queue: &dyn SpeechQueue,
     early: &Mutex<Early>,
     ack: Option<(Duration, &'static str)>,
+    cancel: &CancelToken,
     input: PlanInput<'_>,
 ) -> Result<TurnPlan, PlanError> {
-    let mut on_text = |delta: &str| on_delta(early, cfg, queue, deps.reporter, delta);
+    let mut on_text = |delta: &str| on_delta(early, cfg, queue, deps.reporter, cancel, delta);
     let mut plan = deps.brain.plan_streaming(input, &mut on_text);
     if let Some((after, text)) = ack {
         let timer = std::pin::pin!(tokio::time::sleep(after));
@@ -653,6 +894,7 @@ async fn streamed_outcome(
             queue.abort();
             return Ok(None);
         }
+        carry.journal.submit(&text);
     }
     let Some(outcome) = race(cancel, queue.finish()).await else {
         queue.abort();
@@ -676,6 +918,7 @@ async fn plan_failed(
     cancel: &mut CancelToken,
     err: PlanError,
     spoken: &[String],
+    journal: &Journal,
 ) -> Result<Option<String>, SessionEnd> {
     match err {
         PlanError::NotConfigured => Err(after_speech(
@@ -684,6 +927,7 @@ async fn plan_failed(
         )),
         PlanError::Superseded => Ok(None),
         _ => {
+            journal.set(TurnOutcome::Failed, None);
             into_result(speak_or_end(deps, cfg, cancel, MSG_PLAN_FAILED, Emotion::Neutral).await)?;
             Ok(Some(failure_summary(spoken)))
         }
@@ -728,8 +972,13 @@ async fn brain_turn(
         history: history.get(start..).unwrap_or_default(),
         last_draft: carry.last_draft.as_deref(),
         style: &cfg.style,
+        vault_context: None,
     };
-    let queue = if cfg.early_speech || cfg.ack_after.is_some() {
+    let queue = if cfg.answer_only {
+        // Answer-only (DESIGN 8.1): no streamed model text may reach the mouth before a complete
+        // plan is parsed, so the streaming path is never used.
+        None
+    } else if cfg.early_speech || cfg.ack_after.is_some() {
         deps.mouth.open_queue()
     } else {
         None
@@ -738,14 +987,26 @@ async fn brain_turn(
         return match race(cancel, deps.brain.plan(input)).await {
             None => Err(SessionEnd::Cancelled),
             Some(Ok(plan)) => execute_plan(deps, cfg, cancel, plan, carry).await,
-            Some(Err(err)) => plan_failed(deps, cfg, cancel, err, &[]).await,
+            Some(Err(err)) => plan_failed(deps, cfg, cancel, err, &[], &carry.journal).await,
         };
     };
     let ack = ack_for(cfg, utterance, carry.last_draft.is_some(), carry.last_ack);
-    let early = Mutex::new(Early::default());
+    let early = Mutex::new(Early {
+        journal: carry.journal.clone(),
+        ..Early::default()
+    });
+    let stream_cancel = cancel.clone();
     let planned = race(
         cancel,
-        stream_plan(deps, cfg, queue.as_ref(), &early, ack, input),
+        stream_plan(
+            deps,
+            cfg,
+            queue.as_ref(),
+            &early,
+            ack,
+            &stream_cancel,
+            input,
+        ),
     )
     .await;
     let plan_at = Instant::now();
@@ -764,7 +1025,7 @@ async fn brain_turn(
                 queue.abort();
             }
             // A dead queue means the user or system took the speaker: nothing is recorded.
-            let turn = plan_failed(deps, cfg, cancel, err, &early.spoken).await;
+            let turn = plan_failed(deps, cfg, cancel, err, &early.spoken, &carry.journal).await;
             if early.dead {
                 turn.map(|_| None)
             } else {
@@ -786,6 +1047,12 @@ async fn execute_plan(
     carry: &mut Carry,
 ) -> Result<Option<String>, SessionEnd> {
     // Cancel is checked before each effect.
+    if cfg.answer_only && matches!(plan.kind, PlanKind::Paste | PlanKind::Command) {
+        // Answer-only boundary (DESIGN 3.6): zero paste/command calls; only the fixed refusal.
+        carry.journal.set(TurnOutcome::Blocked, None);
+        into_result(speak_or_end(deps, cfg, cancel, MSG_ANSWER_ONLY, Emotion::Neutral).await)?;
+        return Ok(Some(compose(MSG_ANSWER_ONLY, "")));
+    }
     let summary: String = match plan.kind {
         PlanKind::End => {
             return Err(after_speech(
@@ -794,6 +1061,7 @@ async fn execute_plan(
             ));
         }
         PlanKind::Answer | PlanKind::Clarify => {
+            carry.journal.set(speech_outcome(&plan.kind), None);
             let outcome = speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?;
             answer_summary(&plan.speech, outcome)
         }
@@ -815,6 +1083,10 @@ async fn execute_plan(
             }
             // The paste reached the window: the effect is recorded even if the confirmation fails.
             let note = note_paste(&pasted);
+            carry.journal.set(
+                TurnOutcome::Dictated,
+                Some(format!("dictated {} chars", pasted.chars().count())),
+            );
             carry.last_draft = Some(pasted);
             let spoken = if plan.speech.is_empty() {
                 MSG_DONE.to_string()
@@ -824,20 +1096,35 @@ async fn execute_plan(
             speak_outcome(deps, cfg, cancel, &spoken, plan.emotion).await?;
             compose(&spoken, &note)
         }
-        PlanKind::Command => match run_command_plan(deps, cfg, cancel, &plan).await? {
-            Some(summary) => summary,
-            None => return Ok(None),
-        },
+        PlanKind::Command => {
+            match run_command_plan(deps, cfg, cancel, &plan, &carry.journal).await? {
+                Some(summary) => summary,
+                None => return Ok(None),
+            }
+        }
     };
     Ok(Some(summary))
 }
 
 /// The turn loop. Returns the end; the wrapper reports Idle and stops.
-async fn run_turns(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToken) -> SessionEnd {
+async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToken) -> SessionEnd {
     let mut history: Vec<(String, String)> = Vec::new();
     let mut carry = Carry::default();
     let mut idle_turns: u32 = 0;
     let mut turns: usize = 0;
+    // Every speech line handed to the mouth is journaled for the transcript (DESIGN 8.2).
+    let tap = JournalMouth {
+        inner: outer.mouth,
+        journal: carry.journal.clone(),
+    };
+    let tapped = Deps {
+        ears: outer.ears,
+        mouth: &tap,
+        hands: outer.hands,
+        brain: outer.brain,
+        reporter: outer.reporter,
+    };
+    let deps = &tapped;
 
     loop {
         if is_cancelled(cancel) {
@@ -894,58 +1181,94 @@ async fn run_turns(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToke
             continue;
         }
 
-        // Local tier: end phrases and explicit dictation.
-        match classify_local(&utterance) {
-            LocalIntent::End => {
-                return after_speech(
-                    speak(deps, cfg, cancel, MSG_OKAY, Emotion::Neutral).await,
-                    SessionEnd::UserEnded,
-                );
-            }
-            LocalIntent::Dictate(text) => {
-                if is_cancelled(cancel) {
-                    return SessionEnd::Cancelled;
-                }
-                if deps.hands.paste_generated(&text).is_err() {
-                    if let Some(end) =
-                        speak_or_end(deps, cfg, cancel, MSG_PASTE_FAILED, Emotion::Neutral).await
-                    {
-                        return end;
-                    }
-                }
-                continue;
-            }
-            LocalIntent::None => {}
-        }
-
-        // Exact tier: what the user said (shortcuts, media, router).
-        deps.reporter.state(SessionState::Acting);
-        if is_cancelled(cancel) {
-            return SessionEnd::Cancelled;
-        }
-        let fixed = match deps.hands.run_user_phrase(&utterance).await {
-            PhraseOutcome::NoMatch => None,
-            PhraseOutcome::Done(message) => Some(message),
-            PhraseOutcome::Failed => Some(MSG_FAILED.to_string()),
-            PhraseOutcome::Refused => Some(MSG_REFUSED.to_string()),
-        };
-        if let Some(message) = fixed {
-            if let Some(end) = speak_or_end(deps, cfg, cancel, &message, Emotion::Neutral).await {
+        // Accepted for dispatch: exactly one transcript event follows (DESIGN 8.2).
+        let log = UtteranceLog::new(deps.reporter, &utterance, &carry.journal);
+        match dispatch_utterance(deps, cfg, cancel, &utterance, &history, &mut carry).await {
+            Err(end) => {
+                log.finish(end == SessionEnd::Cancelled);
                 return end;
             }
-            continue;
+            Ok(None) => log.finish(false),
+            Ok(Some(summary)) => {
+                log.finish(false);
+                record_turn(&mut history, &mut carry, cfg, &utterance, &summary);
+            }
         }
-
-        // Brain tier. The plan is dropped if cancel wins the race.
-        deps.reporter.state(SessionState::Thinking);
-        let summary = match brain_turn(deps, cfg, cancel, &utterance, &history, &mut carry).await {
-            Ok(Some(summary)) => summary,
-            Ok(None) => continue,
-            Err(end) => return end,
-        };
-
-        record_turn(&mut history, &mut carry, cfg, &utterance, &summary);
     }
+}
+
+/// Handles one accepted utterance: local tier, exact tier, then the brain. `Ok(Some(summary))`
+/// records history, `Ok(None)` continues silently, `Err(end)` ends the session.
+async fn dispatch_utterance(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    utterance: &str,
+    history: &[(String, String)],
+    carry: &mut Carry,
+) -> Result<Option<String>, SessionEnd> {
+    // Local tier: end phrases and explicit dictation.
+    match classify_local(utterance) {
+        LocalIntent::End => {
+            carry.journal.set(TurnOutcome::Ended, None);
+            return Err(after_speech(
+                speak(deps, cfg, cancel, MSG_OKAY, Emotion::Neutral).await,
+                SessionEnd::UserEnded,
+            ));
+        }
+        LocalIntent::Dictate(text) => {
+            if is_cancelled(cancel) {
+                return Err(SessionEnd::Cancelled);
+            }
+            if deps.hands.paste_generated(&text).is_err() {
+                carry.journal.set(TurnOutcome::Failed, None);
+                return match speak_or_end(deps, cfg, cancel, MSG_PASTE_FAILED, Emotion::Neutral)
+                    .await
+                {
+                    Some(end) => Err(end),
+                    None => Ok(None),
+                };
+            }
+            let chars = text.chars().count();
+            carry.journal.set(
+                TurnOutcome::Dictated,
+                Some(format!("dictated {chars} chars")),
+            );
+            return Ok(None);
+        }
+        LocalIntent::None => {}
+    }
+
+    // Exact tier: what the user said (shortcuts, media, router).
+    deps.reporter.state(SessionState::Acting);
+    if is_cancelled(cancel) {
+        return Err(SessionEnd::Cancelled);
+    }
+    let fixed = match deps.hands.run_user_phrase(utterance).await {
+        PhraseOutcome::NoMatch => None,
+        PhraseOutcome::Done(message) => {
+            carry.journal.set(TurnOutcome::Acted, None);
+            Some(message)
+        }
+        PhraseOutcome::Failed => {
+            carry.journal.set(TurnOutcome::Failed, None);
+            Some(MSG_FAILED.to_string())
+        }
+        PhraseOutcome::Refused => {
+            carry.journal.set(TurnOutcome::Failed, None);
+            Some(MSG_REFUSED.to_string())
+        }
+    };
+    if let Some(message) = fixed {
+        return match speak_or_end(deps, cfg, cancel, &message, Emotion::Neutral).await {
+            Some(end) => Err(end),
+            None => Ok(None),
+        };
+    }
+
+    // Brain tier. The plan is dropped if cancel wins the race.
+    deps.reporter.state(SessionState::Thinking);
+    brain_turn(deps, cfg, cancel, utterance, history, carry).await
 }
 
 /// Appends a turn to history (failure records are deduplicated on the full utterance) and keeps
@@ -2175,6 +2498,23 @@ mod tests {
     // ------------------------------------------------------------------
 
     #[test]
+    fn session_config_answer_only_follows_vault_context_and_path() {
+        // RED (B3a, DESIGN Rev 3, 3.6): from_settings must set answer_only = answer_only_for(s).
+        // Production still hard-codes false until B3b wires it.
+        let mut s = crate::settings::get_default_settings();
+        s.vault_context_enabled = true;
+        s.vault_path = "/tmp/vox-synthetic-vault".to_string();
+        assert!(SessionConfig::from_settings(&s).answer_only);
+
+        s.vault_path = "   ".to_string();
+        assert!(!SessionConfig::from_settings(&s).answer_only);
+
+        s.vault_path = "/tmp/vox-synthetic-vault".to_string();
+        s.vault_context_enabled = false;
+        assert!(!SessionConfig::from_settings(&s).answer_only);
+    }
+
+    #[test]
     fn session_config_reads_and_clamps_the_settings() {
         let mut s = crate::settings::get_default_settings();
         let c = SessionConfig::from_settings(&s);
@@ -2221,3 +2561,11 @@ mod context_loop_tests;
 #[cfg(test)]
 #[path = "converse_ack_loop_tests.rs"]
 mod ack_loop_tests;
+
+#[cfg(test)]
+#[path = "converse_transcript_tests.rs"]
+mod transcript_tests;
+
+#[cfg(test)]
+#[path = "converse_answer_only_tests.rs"]
+mod answer_only_tests;

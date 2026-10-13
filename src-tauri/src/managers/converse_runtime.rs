@@ -5,8 +5,8 @@
 //! the AMENDMENTS section (Revision 4).
 
 use crate::managers::converse::{
-    run_session, Brain, Deps, Ears, Hands, Mouth, RegistryState, Reporter, SessionConfig,
-    SessionEnd, SessionRegistry, SessionState,
+    run_session, BoxFuture, Brain, CancelToken, Deps, Ears, Hands, Mouth, RegistryState, Reporter,
+    SessionConfig, SessionEnd, SessionRegistry, SessionState, TranscriptEvent, TranscriptSink,
 };
 use crate::managers::converse_capture::CaptureHandle;
 use crate::managers::converse_hooks;
@@ -24,6 +24,12 @@ pub struct SessionParts {
     pub hands: Box<dyn Hands>,
     pub brain: Box<dyn Brain>,
     pub cfg: SessionConfig,
+    /// Transcript collector for this session only (DESIGN Rev 3, 3.5(1)). Default None.
+    pub transcript: Option<Arc<dyn TranscriptSink>>,
+    /// Runs in the spawned session task before listening, bounded and cancellable. Default None.
+    pub prepare: Option<BoxFuture<'static, ()>>,
+    /// Called exactly once with the session end, after the finalizer steps. Default None.
+    pub on_complete: Option<Box<dyn FnOnce(SessionEnd) + Send>>,
 }
 
 /// Holds the per-session admission (for example an ownership lease). The
@@ -88,6 +94,7 @@ pub fn state_label(state: SessionState) -> &'static str {
 /// by the finalizer).
 struct ForwardReporter {
     platform: Arc<dyn Platform>,
+    transcript: Option<Arc<dyn TranscriptSink>>,
 }
 
 impl Reporter for ForwardReporter {
@@ -95,6 +102,31 @@ impl Reporter for ForwardReporter {
         if state != SessionState::Idle {
             self.platform.on_state(state_label(state), None);
         }
+    }
+
+    fn transcript(&self, ev: TranscriptEvent) {
+        if let Some(sink) = self.transcript.as_ref() {
+            sink.record(ev);
+        }
+    }
+}
+
+/// Upper bound for the session's `prepare` step before listening starts (DESIGN 8.3 / 3.5(2)).
+const PREPARE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Runs the session's `prepare` step: bounded by `PREPARE_TIMEOUT` and abortable by cancel.
+/// Returns `false` when cancel won (the session must end Cancelled without listening).
+async fn run_prepare(prepare: Option<BoxFuture<'static, ()>>, cancel: &mut CancelToken) -> bool {
+    let Some(prepare) = prepare else {
+        return true;
+    };
+    if *cancel.borrow() {
+        return false;
+    }
+    let bounded = tokio::time::timeout(PREPARE_TIMEOUT, prepare);
+    tokio::select! {
+        _ = bounded => true,
+        _ = cancel.wait_for(|cancelled| *cancelled) => false,
     }
 }
 
@@ -163,16 +195,22 @@ impl ConverseController {
         let platform = self.platform.clone();
         let registry = self.registry.clone();
         tauri::async_runtime::spawn(async move {
+            let SessionParts {
+                ears,
+                mouth,
+                hands,
+                brain,
+                cfg,
+                transcript,
+                prepare,
+                on_complete,
+            } = parts;
+            let mut cancel = cancel;
+            // prepare + run_session share ONE caught boundary; any panic is Cancelled.
             let end = {
-                let SessionParts {
-                    ears,
-                    mouth,
-                    hands,
-                    brain,
-                    cfg,
-                } = parts;
                 let reporter = ForwardReporter {
                     platform: platform.clone(),
+                    transcript,
                 };
                 let deps = Deps {
                     ears: ears.as_ref(),
@@ -181,7 +219,14 @@ impl ConverseController {
                     brain: brain.as_ref(),
                     reporter: &reporter,
                 };
-                FutureExt::catch_unwind(AssertUnwindSafe(run_session(&deps, &cfg, cancel)))
+                let body = async {
+                    if run_prepare(prepare, &mut cancel).await {
+                        run_session(&deps, &cfg, cancel).await
+                    } else {
+                        SessionEnd::Cancelled
+                    }
+                };
+                FutureExt::catch_unwind(AssertUnwindSafe(body))
                     .await
                     .unwrap_or(SessionEnd::Cancelled)
             };
@@ -191,6 +236,13 @@ impl ConverseController {
             converse_hooks::set_session_active(false);
             platform.on_state("idle", Some(end_label(end)));
             registry.finish(id);
+            // on_complete runs after the final idle and registry finish, under its own
+            // boundary: a panic is logged with a fixed kind and never skips the steps below.
+            if let Some(on_complete) = on_complete {
+                if std::panic::catch_unwind(AssertUnwindSafe(move || on_complete(end))).is_err() {
+                    log::error!("converse on_complete panicked");
+                }
+            }
             // Last: release admission only after the final idle (and so the
             // final overlay hide) was emitted and the registry entry finished.
             drop(admission);
@@ -384,6 +436,9 @@ mod tests {
                     quiet_wait: Duration::from_millis(5),
                     ..SessionConfig::default()
                 },
+                transcript: None,
+                prepare: None,
+                on_complete: None,
             }
         }
         fn on_state(&self, state: &'static str, end: Option<&'static str>) {
@@ -739,6 +794,9 @@ mod tests {
                     quiet_wait: Duration::from_millis(5),
                     ..SessionConfig::default()
                 },
+                transcript: None,
+                prepare: None,
+                on_complete: None,
             }
         }
         fn on_state(&self, state: &'static str, end: Option<&'static str>) {
@@ -946,3 +1004,7 @@ mod tests {
         reset_hooks();
     }
 }
+
+#[cfg(test)]
+#[path = "converse_hooks_tests.rs"]
+mod hooks_tests;
