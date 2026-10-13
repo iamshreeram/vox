@@ -817,7 +817,8 @@
         "engine": "Engine & input",
         "voiceCommands": "Voice commands",
         "memory": "Memory",
-        "agentBridge": "Agent bridge"
+        "agentBridge": "Agent bridge",
+        "conversationMemory": "Conversation memory"
       },
       "realtime": {
         "title": "Realtime conversation",
@@ -903,6 +904,17 @@
           "label": "Timing log",
           "description": "Log per-turn latency numbers only. No text or tokens are logged."
         }
+      },
+      "conversationMemory": {
+        "recordsLabel": "Save conversation records",
+        "recordsDescription": "Saves a local record of your voice conversations so you can look back at them later. Off by default; nothing is saved unless you turn this on. Redaction of sensitive text is best-effort, so review what is saved. Conversation summaries are generated with the model endpoint your conversation already uses.",
+        "vaultToggleLabel": "Also save to my notes vault",
+        "vaultToggleDescription": "Also writes each saved conversation as a Markdown note in the vault folder below. Needs Save conversation records on and a vault folder set.",
+        "vaultPathLabel": "Vault folder path",
+        "vaultPathDescription": "Full path to the folder inside your notes vault where conversation notes are written. Leave empty to turn off vault saving.",
+        "contextLabel": "Use my vault notes as conversation context",
+        "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
+        "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       }
     },
     "modelSettings": {

@@ -178,6 +178,18 @@ const settingUpdaters: {
     commands.changeVoiceCommandsSetting(value as boolean),
   memory_enabled: (value) =>
     commands.changeMemoryEnabledSetting(value as boolean),
+  conversation_records_enabled: (value) =>
+    commands.changeConversationRecordsSetting(value as boolean),
+  conversation_records_to_vault: (value) =>
+    commands.changeConversationRecordsToVaultSetting(value as boolean),
+  vault_path: async (value) => {
+    const result = await commands.changeVaultPathSetting(value as string);
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
+  vault_context_enabled: (value) =>
+    commands.changeVaultContextSetting(value as boolean),
   agent_bridge_enabled: (value) =>
     commands.changeAgentBridgeEnabledSetting(value as boolean),
   agent_bridge_binary_path: async (value) => {
