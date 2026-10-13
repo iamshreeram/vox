@@ -20,13 +20,13 @@ re-discovers or re-implements what's already here.
   against real installed apps and standard folders, and is already wired
   into the post-transcription hook in `actions.rs` — including for
   wake-word-triggered transcriptions, since `WakeWordListener::
-  handle_detection` calls the same `send_transcription_input()` path as
+handle_detection` calls the same `send_transcription_input()` path as
   hotkey dictation.
 - Gated by the `voice_commands_enabled` setting (Settings → Advanced →
   Experimental group → "Voice Commands"), default off.
 - Leaving the dictated/transcribed text on the system clipboard instead of
   only auto-pasting it is also already built: `ClipboardHandling::
-  CopyToClipboard` (Settings → Advanced → Output group → "Clipboard
+CopyToClipboard` (Settings → Advanced → Output group → "Clipboard
   Handling"), default `DontModify`. No new code needed for either of
   these — they just need to be enabled.
 - **`CommandAction::OpenUrl` is now wired up** (was "built but not wired"
@@ -43,11 +43,11 @@ re-discovers or re-implements what's already here.
 
 ## Built but not wired up yet (exists in code, inert)
 
-| Item | Where | What's missing |
-| --- | --- | --- |
-| `SafetyPolicy` | `managers/safety_policy.rs` | Fully built and tested (`delete`/`send`/`push`/`deploy`/`rm `/`format`/`uninstall` keyword gate, whole-word matching, configurable list), but `#![allow(dead_code)]` — nothing destructive exists yet for it to gate. Needs an actual confirm/cancel UI flow (toast with Confirm/Cancel, or a voice "yes"/"cancel" follow-up with a timeout-to-deny) once any consequential action ships. |
-| App alias matching via `CFBundleDisplayName`/`CFBundleName` | `command_router.rs` module docs, documented gap | Only indexes by `.app` folder stem today, so e.g. "VS Code" won't match `Visual Studio Code.app` (whose bundle display name is "Code"). Needs an Info.plist-parsing crate. |
-| Curated STT-mishearing phrase allowlist (vox's "tier 1" YAML table — e.g. "eater" → iTerm) | documented gap in `command_router.rs` | Not ported yet; would reduce false `NoMatch`es for commonly-misheard app names. |
+| Item                                                                                       | Where                                           | What's missing                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SafetyPolicy`                                                                             | `managers/safety_policy.rs`                     | Fully built and tested (`delete`/`send`/`push`/`deploy`/`rm `/`format`/`uninstall` keyword gate, whole-word matching, configurable list), but `#![allow(dead_code)]` — nothing destructive exists yet for it to gate. Needs an actual confirm/cancel UI flow (toast with Confirm/Cancel, or a voice "yes"/"cancel" follow-up with a timeout-to-deny) once any consequential action ships. |
+| App alias matching via `CFBundleDisplayName`/`CFBundleName`                                | `command_router.rs` module docs, documented gap | Only indexes by `.app` folder stem today, so e.g. "VS Code" won't match `Visual Studio Code.app` (whose bundle display name is "Code"). Needs an Info.plist-parsing crate.                                                                                                                                                                                                                |
+| Curated STT-mishearing phrase allowlist (vox's "tier 1" YAML table — e.g. "eater" → iTerm) | documented gap in `command_router.rs`           | Not ported yet; would reduce false `NoMatch`es for commonly-misheard app names.                                                                                                                                                                                                                                                                                                           |
 
 ## Not started anywhere — needs real scoping
 
@@ -90,3 +90,48 @@ re-discovers or re-implements what's already here.
    media/system/window control, once there's a second and third
    deterministic action category to justify the abstraction (YAGNI: one
    category — app/folder open — doesn't yet justify a plugin framework).
+
+## Deferred (low priority)
+
+These are known gaps that were consciously postponed. None blocks daily use
+on the primary macOS install.
+
+- **Spoken replies (TTS) on Windows and Linux.** Text-to-speech currently
+  works on macOS only (it shells out to `/usr/bin/say`). Windows and Linux need their own
+  speech backend behind the same `TtsManager` interface (for example SAPI /
+  WinRT on Windows and speech-dispatcher on Linux), plus the matching
+  per-platform voice list in settings. Until then the feature should stay
+  hidden or clearly marked macOS-only on those platforms.
+- **Translation and code-quality cleanup.**
+  - `bun run check:translations` already fails on `main` for every non-English
+    locale (0 of 25 pass): many keys added by recent features exist only in
+    `src/i18n/locales/en/translation.json`. The source-update feature adds a
+    few more English-only keys (`footer.sourceUpdate.*`, `tray.updateAvailable`).
+    A single pass should backfill all locales and make the check green so it
+    can become a required CI gate.
+  - `managers::agent_bridge` tests that spawn shell scripts under a 2-second
+    timeout are flaky when the whole suite runs under load; they pass in
+    isolation. Give them a more generous or injected clock.
+- **Source-update follow-ups** (see `docs/updating.md`): signed and notarized
+  releases with the Tauri updater manifest (replaces rebuilding from source),
+  native OS notifications for a new version, and the equivalent local-rebuild
+  flow for Windows and Linux.
+- **Pluggable speech engine, including a local neural voice (Branch B).**
+  Speech is still the system voice only (`/usr/bin/say` on macOS). Put speech
+  behind a backend interface and add a local neural voice as a second engine,
+  selectable in settings. The composer's emotion mapping should go through the
+  same interface so each engine can map emotion to its own controls.
+- **Post-processing client logs raw error bodies (privacy fix, separate from
+  the composer).** The existing post-processing client logs the raw response
+  body of 400 and 422 errors at INFO. Those bodies can echo back prompt or
+  reply text. Log only the status and a short, redacted summary, and move any
+  full body to DEBUG at most. Keep this as its own change.
+- **Streaming sentence-level speech.** Start speaking the first complete
+  sentence while later sentences are still being composed, instead of waiting
+  for the whole reply. This needs the composer to work per sentence and needs
+  the "superseded" handling to cover queued sentences.
+- **Keep listening after speaking, with conversation context (Branch C).**
+  After Vox finishes speaking, listen for a follow-up without a wake word,
+  and keep the recent turns as context for the composer. This needs the real
+  speaking state wired into the ambient echo guard (the speaking-state stub in
+  the ambient listener) so Vox does not hear itself.

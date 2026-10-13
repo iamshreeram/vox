@@ -113,6 +113,48 @@ export const neutralBucketFor = (backgroundHex: string): "light" | "dark" => {
   return luminance !== null && luminance > 0.5 ? "light" : "dark";
 };
 
+const ON_ACCENT_LIGHT = "#ffffff";
+const ON_ACCENT_DARK = "#111111";
+
+const contrastRatio = (a: string, b: string): number | null => {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  if (la === null || lb === null) return null;
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+};
+
+/**
+ * Text color for content drawn on the accent gradient (active sidebar item,
+ * primary button): whichever of white or near-black has the better WORST-case
+ * contrast across both gradient ends. Falls back to dark text when either
+ * color is unparseable.
+ */
+export const onAccentFor = (accentA: string, accentB: string): string => {
+  const worst = (fg: string): number | null => {
+    const ra = contrastRatio(fg, accentA);
+    const rb = contrastRatio(fg, accentB);
+    return ra === null || rb === null ? null : Math.min(ra, rb);
+  };
+  const light = worst(ON_ACCENT_LIGHT);
+  const dark = worst(ON_ACCENT_DARK);
+  if (light === null || dark === null) return ON_ACCENT_DARK;
+  return light > dark ? ON_ACCENT_LIGHT : ON_ACCENT_DARK;
+};
+
+/** The accent-gradient CSS properties derived from a custom palette. */
+export const derivedAccentProperties = (
+  colors: CustomThemeColors,
+): Record<string, string> => ({
+  "--color-accent-a": colors.accent,
+  "--color-accent-b": colors.accent_secondary,
+  "--color-on-accent": onAccentFor(colors.accent, colors.accent_secondary),
+  "--color-background-ui": colors.accent,
+});
+
+const DERIVED_ACCENT_PROPERTIES = Object.keys(
+  derivedAccentProperties(DEFAULT_CUSTOM_THEME_COLORS),
+);
+
 export interface Appearance {
   theme: Theme;
   customThemeColors: CustomThemeColors;
@@ -131,6 +173,9 @@ export const applyTheme = (
   for (const property of Object.values(CUSTOM_PROPERTY_MAP)) {
     root.style.removeProperty(property);
   }
+  for (const property of DERIVED_ACCENT_PROPERTIES) {
+    root.style.removeProperty(property);
+  }
   for (const property of OVERLAY_NEUTRAL_PROPERTIES) {
     root.style.removeProperty(property);
   }
@@ -147,6 +192,11 @@ export const applyTheme = (
       string,
     ][]) {
       root.style.setProperty(property, customThemeColors[field]);
+    }
+    for (const [property, value] of Object.entries(
+      derivedAccentProperties(customThemeColors),
+    )) {
+      root.style.setProperty(property, value);
     }
     const bucket = neutralBucketFor(customThemeColors.background);
     for (const property of OVERLAY_NEUTRAL_PROPERTIES) {

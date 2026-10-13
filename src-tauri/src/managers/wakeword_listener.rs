@@ -490,7 +490,17 @@ fn open_recorder(
     Ok(())
 }
 
+/// True while a conversation session is active: a wake-word detection must
+/// then neither emit its event nor start a recording (DESIGN.md section 2).
+fn should_ignore_detection() -> bool {
+    crate::managers::converse_hooks::session_active()
+}
+
 fn handle_detection(app: &AppHandle, detection: WakeWordDetection) {
+    if should_ignore_detection() {
+        log::debug!("wake-word detection ignored: conversation session active");
+        return;
+    }
     if let Err(error) = crate::commands::wakeword::emit_wakeword_detection(app, &detection) {
         warn!("Failed to emit wake-word detection event: {error}");
     }
@@ -500,6 +510,17 @@ fn handle_detection(app: &AppHandle, detection: WakeWordDetection) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detection_is_ignored_only_while_a_session_is_active() {
+        let _g = crate::managers::converse_hooks::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::managers::converse_hooks::set_session_active(true);
+        assert!(should_ignore_detection());
+        crate::managers::converse_hooks::set_session_active(false);
+        assert!(!should_ignore_detection());
+    }
 
     #[test]
     fn disabled_and_idle_does_not_feed_frames() {
@@ -562,11 +583,10 @@ mod tests {
     #[test]
     fn prepare_engine_for_fresh_listen_calls_warm_up_exactly_once() {
         let calls = Arc::new(Mutex::new(0u32));
-        let engine: Mutex<Option<Box<dyn WakeWordEngine>>> = Mutex::new(Some(Box::new(
-            SpyWarmUpEngine {
+        let engine: Mutex<Option<Box<dyn WakeWordEngine>>> =
+            Mutex::new(Some(Box::new(SpyWarmUpEngine {
                 warm_up_calls: Arc::clone(&calls),
-            },
-        )));
+            })));
         prepare_engine_for_fresh_listen(&engine);
         assert_eq!(
             *calls.lock().unwrap(),

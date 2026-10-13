@@ -35,7 +35,10 @@ export const AgentBridgeBinaryPathField: React.FC<AgentBridgeBinaryPathFieldProp
           value={localValue}
           onChange={(event) => setLocalValue(event.target.value)}
           onBlur={() =>
-            updateSetting("agent_bridge_binary_path", localValue === "" ? null : localValue)
+            updateSetting(
+              "agent_bridge_binary_path",
+              localValue === "" ? null : localValue,
+            )
           }
           placeholder=""
           variant="compact"

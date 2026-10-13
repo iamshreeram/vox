@@ -4,6 +4,8 @@ fn main() {
 
     generate_tray_translations();
 
+    emit_source_update_metadata();
+
     // Linux ships transcribe-cpp as a shared libtranscribe + loadable ggml
     // backend modules (the `dynamic-backends` posture in Cargo.toml). Bake an
     // $ORIGIN-relative rpath into the `vox` binary so it finds libtranscribe
@@ -35,6 +37,109 @@ fn main() {
     stage_vc_runtime_dlls();
 
     tauri_build::build()
+}
+
+/// Embed the build's source metadata for the "new version available" feature
+/// (`managers::source_update`). Exposes four compile-time env vars:
+///
+/// - `VOX_BUILD_COMMIT`: full commit this build came from (`unknown` if none)
+/// - `VOX_BUILD_BRANCH`: branch this build came from (`unknown` if none)
+/// - `VOX_SOURCE_UPDATES`: `1` only when the opt-in env var is exactly `1`
+/// - `VOX_SOURCE_DIR`: the checkout root (parent of this crate), canonicalized
+///   when possible
+///
+/// Never fails the build: when git is missing or the tree is not a repo, the
+/// commit and branch fall back to `unknown`.
+///
+/// Rerun triggers: cargo would otherwise reuse a cached build-script result
+/// after `git pull` and embed a STALE commit, which would make Vox prompt for
+/// an update forever. So the git files that change when a pull moves the
+/// branch (HEAD, refs/heads, packed-refs) are registered too.
+fn emit_source_update_metadata() {
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    println!("cargo:rerun-if-env-changed=VOX_BUILD_COMMIT");
+    println!("cargo:rerun-if-env-changed=VOX_BUILD_BRANCH");
+    println!("cargo:rerun-if-env-changed=VOX_SOURCE_UPDATES");
+
+    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default());
+
+    // `git -C <manifest_dir> <args>`; `None` when git is missing or fails.
+    let git = |args: &[&str]| -> Option<String> {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(&manifest_dir)
+            .args(args)
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|out| out.status.success())?;
+        let text = String::from_utf8(out.stdout).ok()?;
+        let text = text.trim().to_string();
+        (!text.is_empty()).then_some(text)
+    };
+
+    // A value that is empty or spans lines cannot be a commit or branch name.
+    let sanitize = |value: Option<String>| -> String {
+        match value {
+            Some(v) => {
+                let v = v.trim().to_string();
+                if v.is_empty() || v.contains('\n') || v.contains('\r') {
+                    "unknown".to_string()
+                } else {
+                    v
+                }
+            }
+            None => "unknown".to_string(),
+        }
+    };
+
+    let env_value = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());
+
+    let commit = sanitize(env_value("VOX_BUILD_COMMIT").or_else(|| git(&["rev-parse", "HEAD"])));
+    let branch = sanitize(
+        env_value("VOX_BUILD_BRANCH").or_else(|| git(&["rev-parse", "--abbrev-ref", "HEAD"])),
+    );
+    let updates = if std::env::var("VOX_SOURCE_UPDATES").as_deref() == Ok("1") {
+        "1"
+    } else {
+        "0"
+    };
+    let source_dir = manifest_dir
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| manifest_dir.clone());
+    let source_dir = source_dir.canonicalize().unwrap_or(source_dir);
+    let source_dir = sanitize(Some(source_dir.to_string_lossy().into_owned()));
+
+    println!("cargo:rustc-env=VOX_BUILD_COMMIT={commit}");
+    println!("cargo:rustc-env=VOX_BUILD_BRANCH={branch}");
+    println!("cargo:rustc-env=VOX_SOURCE_UPDATES={updates}");
+    println!("cargo:rustc-env=VOX_SOURCE_DIR={source_dir}");
+
+    // Git dirs: relative answers are relative to the -C dir. Worktrees keep
+    // HEAD per-worktree but share refs in the common dir.
+    let resolve = |arg: &str| -> Option<PathBuf> {
+        let path = PathBuf::from(git(&["rev-parse", arg])?);
+        Some(if path.is_absolute() {
+            path
+        } else {
+            manifest_dir.join(path)
+        })
+    };
+    if let (Some(git_dir), Some(common_dir)) = (resolve("--git-dir"), resolve("--git-common-dir")) {
+        let watched = [
+            git_dir.join("HEAD"),
+            common_dir.join("refs").join("heads"),
+            common_dir.join("packed-refs"),
+        ];
+        for path in watched {
+            if path.exists() {
+                println!("cargo:rerun-if-changed={}", path.display());
+            }
+        }
+    }
 }
 
 /// Stage the MSVC runtime DLLs into `transcribe-libs/` for app-local deployment.

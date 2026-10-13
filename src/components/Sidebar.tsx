@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import VoxTextLogo from "./icons/VoxTextLogo";
 import { useSettings } from "../hooks/useSettings";
+import { SECTION_ICON_CLASS, sidebarItemClass } from "./sidebarTheme";
 import {
   GeneralSettings,
   AdvancedSettings,
@@ -24,6 +25,12 @@ import {
 } from "./settings";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
+
+// Compile-time check that every sidebar section has an icon color class. If a
+// section is added to SECTIONS_CONFIG without a matching SECTION_ICON_CLASS
+// entry, this assignment fails to type-check.
+const _iconCoverage: Record<SidebarSection, string> = SECTION_ICON_CLASS;
+void _iconCoverage;
 
 interface IconProps {
   width?: number | string;
@@ -118,17 +125,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           return (
             <div
               key={section.id}
-              className={`flex gap-2 items-center p-2 w-full rounded-lg cursor-pointer transition-colors ${
-                isActive
-                  ? "bg-logo-primary/80"
-                  : "hover:bg-mid-gray/20 hover:opacity-100 opacity-85"
-              }`}
+              className={sidebarItemClass(isActive)}
               onClick={() => onSectionChange(section.id)}
             >
               <Icon
                 width={24}
                 height={24}
-                className="shrink-0" />
+                className={`shrink-0 ${
+                  isActive ? "text-on-accent" : SECTION_ICON_CLASS[section.id]
+                }`}
+              />
               <p
                 className="text-sm font-medium truncate"
                 title={t(section.labelKey)}

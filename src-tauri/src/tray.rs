@@ -63,6 +63,8 @@ struct MenuInputs {
     downloaded_models: Vec<(String, String)>,
     locale: String,
     update_checks_enabled: bool,
+    /// A source-build check found a newer `main` (see `source_update`).
+    update_available: bool,
     wake_word_enabled: bool,
     ambient_mode_enabled: bool,
     experimental_enabled: bool,
@@ -337,6 +339,7 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             downloaded_models,
             locale: settings.app_language,
             update_checks_enabled: settings.update_checks_enabled,
+            update_available: crate::managers::source_update::update_available(app),
             wake_word_enabled: settings.wake_word_enabled,
             ambient_mode_enabled: settings.ambient_mode_enabled,
             experimental_enabled: settings.experimental_enabled,
@@ -552,8 +555,30 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         true,
         None::<&str>,
     )?;
+    // Conversation toggle. The key is English-only in the locale files, so
+    // other locales fall back to the English label (see localized_or_english).
+    let converse_label = localized_or_english(&strings.converse, &english_converse());
+    let converse_i = MenuItem::with_id(app, "converse", &converse_label, true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app, "quit", &strings.quit, true, quit_accelerator)?;
     let separator = || PredefinedMenuItem::separator(app);
+
+    // "Update available" sits directly above "Check for Updates..." and is only
+    // present while a source-build check found a newer commit. It never starts
+    // an install; clicking it just opens the window.
+    let update_available_i =
+        if show_update_available_item(inputs, settings::update_checks_forced_disabled()) {
+            let label =
+                localized_or_english(&strings.update_available, &english_update_available());
+            Some(MenuItem::with_id(
+                app,
+                "update_available",
+                &label,
+                true,
+                None::<&str>,
+            )?)
+        } else {
+            None
+        };
 
     let menu = if inputs.busy {
         let cancel_i = MenuItem::with_id(app, "cancel", &strings.cancel, true, None::<&str>)?;
@@ -565,6 +590,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
                 &cancel_i,
                 &separator()?,
                 &copy_last_transcript_i,
+                &converse_i,
                 &separator()?,
                 &settings_i,
                 &check_updates_i,
@@ -603,6 +629,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
                 &version_i,
                 &separator()?,
                 &copy_last_transcript_i,
+                &converse_i,
                 &separator()?,
                 &model_submenu,
                 &unload_model_i,
@@ -618,7 +645,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     // The listening-mode group is present only when experimental features are
     // enabled. Insert it before settings in either menu layout.
     if let Some(submenu) = &listening_mode_submenu {
-        let insert_at = if inputs.busy { 6 } else { 7 };
+        let insert_at = if inputs.busy { 7 } else { 8 };
         menu.insert(submenu, insert_at)?;
         menu.insert(&separator()?, insert_at + 1)?;
     }
@@ -629,6 +656,16 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     // still shifts every entry below it by one position. A manually-disabled
     // toggle in Debug Settings keeps the old greyed-out behavior via the
     // enabled flag.
+    if let Some(update_item) = &update_available_i {
+        let items = menu.items()?;
+        if let Some(index) = items
+            .iter()
+            .position(|item| item.id().as_ref() == "check_updates")
+        {
+            menu.insert(update_item, index)?;
+        }
+    }
+
     if settings::update_checks_forced_disabled() {
         menu.remove(&check_updates_i)?;
     }
@@ -643,6 +680,41 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     }
 
     Ok((menu, tooltip))
+}
+
+/// Whether the "Update available" item is shown: only while an update is
+/// known, checks are on, and checks are not forced off by the environment.
+fn show_update_available_item(inputs: &MenuInputs, forced_disabled: bool) -> bool {
+    inputs.update_available && inputs.update_checks_enabled && !forced_disabled
+}
+
+/// The label to use: the localized string when present, else the English one
+/// (build.rs emits an empty string for locales missing the key), else a fixed
+/// literal so the item is never blank.
+fn localized_or_english(localized: &str, english_fallback: &str) -> String {
+    if !localized.is_empty() {
+        localized.to_string()
+    } else if !english_fallback.is_empty() {
+        english_fallback.to_string()
+    } else {
+        "Update available".to_string()
+    }
+}
+
+/// English conversation label from the generated translations.
+fn english_converse() -> String {
+    crate::tray_i18n::TRANSLATIONS
+        .get("en")
+        .map(|strings| strings.converse.clone())
+        .unwrap_or_default()
+}
+
+/// English "Update available" label from the generated translations.
+fn english_update_available() -> String {
+    crate::tray_i18n::TRANSLATIONS
+        .get("en")
+        .map(|strings| strings.update_available.clone())
+        .unwrap_or_default()
 }
 
 fn listening_mode_checked_states(inputs: &MenuInputs) -> Option<(bool, bool, bool)> {
@@ -758,6 +830,7 @@ mod tests {
             downloaded_models: vec![("small".to_string(), "Small".to_string())],
             locale: "en".to_string(),
             update_checks_enabled: true,
+            update_available: false,
             wake_word_enabled: false,
             ambient_mode_enabled: false,
             experimental_enabled: true,
@@ -876,5 +949,68 @@ mod tests {
     #[test]
     fn idle_and_busy_menus_differ() {
         assert_ne!(inputs(false), inputs(true));
+    }
+}
+
+#[cfg(test)]
+mod update_available_item_tests {
+    use super::{localized_or_english, show_update_available_item, MenuInputs};
+
+    fn base(update_available: bool, update_checks_enabled: bool) -> MenuInputs {
+        MenuInputs {
+            busy: false,
+            warning: false,
+            model_loaded: false,
+            selected_model: String::new(),
+            downloaded_models: Vec::new(),
+            locale: "en".to_string(),
+            update_checks_enabled,
+            update_available,
+            wake_word_enabled: false,
+            ambient_mode_enabled: false,
+            experimental_enabled: false,
+        }
+    }
+
+    #[test]
+    fn item_is_shown_only_when_update_available_and_checks_enabled() {
+        for update_available in [false, true] {
+            for checks_enabled in [false, true] {
+                for forced in [false, true] {
+                    let expected = update_available && checks_enabled && !forced;
+                    assert_eq!(
+                        show_update_available_item(&base(update_available, checks_enabled), forced),
+                        expected,
+                        "available={update_available} enabled={checks_enabled} forced={forced}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn update_available_changes_the_menu_inputs() {
+        assert_ne!(base(false, true), base(true, true));
+    }
+
+    #[test]
+    fn localized_label_wins_over_english_fallback() {
+        assert_eq!(
+            localized_or_english("Mise a jour", "Update available"),
+            "Mise a jour"
+        );
+    }
+
+    #[test]
+    fn missing_localized_label_falls_back_to_english() {
+        assert_eq!(
+            localized_or_english("", "Update available"),
+            "Update available"
+        );
+    }
+
+    #[test]
+    fn missing_everything_falls_back_to_literal() {
+        assert_eq!(localized_or_english("", ""), "Update available");
     }
 }

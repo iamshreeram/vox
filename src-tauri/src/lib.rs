@@ -40,6 +40,7 @@ use managers::command_router::CommandRouter;
 use managers::history::HistoryManager;
 use managers::memory::MemoryManager;
 use managers::model::ModelManager;
+use managers::source_update::SourceUpdateRuntime;
 use managers::transcription::TranscriptionManager;
 use managers::wakeword_listener::WakeWordListener;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -203,6 +204,109 @@ fn new_app_discovery() -> Box<dyn managers::command_router::AppDiscovery> {
     }
 }
 
+/// The app events that may be spoken aloud. Command-outcome events are
+/// included so their fixed phrases are spoken; their payloads never are.
+const TTS_EVENTS: [&str; 4] = [
+    "agent-bridge-exchange",
+    "agent-bridge-error",
+    "voice-command-executed",
+    "voice-command-error",
+];
+
+/// Decides whether an app event should be spoken and, if so, what. Pure so
+/// the listener closure stays trivial. `None` when spoken replies are
+/// disabled or the event has no speakable phrase.
+fn tts_phrase_to_speak(enabled: bool, event_name: &str, payload: &str) -> Option<String> {
+    if !enabled {
+        return None;
+    }
+    managers::tts::phrase_for_event(event_name, payload)
+}
+
+/// Decodes an event payload. Agent replies are emitted as Rust strings, so the
+/// payload is a JSON string literal; anything that is not valid JSON string
+/// falls back to the raw payload.
+fn decode_tts_payload(raw: &str) -> String {
+    serde_json::from_str::<String>(raw).unwrap_or_else(|_| raw.to_string())
+}
+
+/// A fixed, content-free name for a speech error, safe to log.
+fn tts_error_kind(error: &managers::tts::TtsError) -> &'static str {
+    use managers::tts::TtsError;
+    match error {
+        TtsError::Empty => "empty",
+        TtsError::Recording => "recording",
+        TtsError::CancelFailed => "cancel-failed",
+        TtsError::Backend(_) => "backend",
+        TtsError::Unsupported => "unsupported",
+        TtsError::Superseded => "superseded",
+    }
+}
+
+/// Registers backend listeners that speak the four speakable app events.
+/// Speech is decoupled from the features that emit these events, so any
+/// feature that emits one is spoken without an inline call.
+fn register_tts_listeners(app: &AppHandle, tts: Arc<managers::tts::TtsManager>) {
+    for event_name in TTS_EVENTS {
+        if event_name == "agent-bridge-exchange" {
+            let app_for_exchange = app.clone();
+            let tts_for_exchange = Arc::clone(&tts);
+            app.listen(event_name, move |event| {
+                let Some(exchange) = managers::speech_pipeline::parse_exchange(event.payload())
+                else {
+                    return;
+                };
+                let app_for_run = app_for_exchange.clone();
+                let tts_for_run = Arc::clone(&tts_for_exchange);
+                tauri::async_runtime::spawn(async move {
+                    let load_app = app_for_run.clone();
+                    let load = move || get_settings(&load_app);
+                    let status_app = app_for_run.clone();
+                    let status = move |outcome: &'static str| {
+                        let _ = status_app.emit(
+                            "speech-composer-status",
+                            serde_json::json!({ "outcome": outcome }),
+                        );
+                    };
+                    managers::speech_pipeline::run_exchange(
+                        &tts_for_run,
+                        &load,
+                        &managers::speech_pipeline::RealComposer,
+                        &status,
+                        exchange,
+                    )
+                    .await;
+                });
+            });
+            continue;
+        }
+        let app_for_event = app.clone();
+        let tts_for_event = Arc::clone(&tts);
+        app.listen(event_name, move |event| {
+            let settings = get_settings(&app_for_event);
+            let payload = decode_tts_payload(event.payload());
+            let Some(phrase) = tts_phrase_to_speak(settings.tts_enabled, event_name, &payload)
+            else {
+                return;
+            };
+            let voice = settings.tts_voice.clone();
+            let rate = settings.tts_rate_wpm;
+            let tts_for_speech = Arc::clone(&tts_for_event);
+            // speak() may block briefly while a previous utterance is killed,
+            // so keep the event thread free.
+            std::thread::spawn(move || {
+                if let Err(error) = tts_for_speech.speak(&phrase, voice.as_deref(), Some(rate)) {
+                    // Log the error KIND only: never the spoken text or payload.
+                    match error {
+                        managers::tts::TtsError::Empty | managers::tts::TtsError::Recording => {}
+                        other => log::warn!("Spoken reply skipped: {}", tts_error_kind(&other)),
+                    }
+                }
+            });
+        });
+    }
+}
+
 fn initialize_core_logic(app_handle: &AppHandle) {
     // Note: Enigo (keyboard/mouse simulation) is NOT initialized here.
     // The frontend is responsible for calling the `initialize_enigo` command
@@ -226,6 +330,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
     let memory_manager =
         Arc::new(MemoryManager::new(app_handle).expect("Failed to initialize memory manager"));
+    let conversation_log = Arc::new(managers::conversation::ConversationLog::new());
     let command_router = Arc::new(CommandRouter::new(new_app_discovery()));
     let wakeword_listener = Arc::new(WakeWordListener::new(app_handle.clone()));
     let ambient_transcript = Arc::new(RollingTranscript::new(90_000));
@@ -249,17 +354,51 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
     app_handle.manage(memory_manager.clone());
+    app_handle.manage(conversation_log);
     app_handle.manage(command_router.clone());
     app_handle.manage(wakeword_listener.clone());
     app_handle.manage(ambient_transcript);
     app_handle.manage(ambient_coordinator);
     app_handle.manage(ambient_listener.clone());
+    app_handle.manage(SourceUpdateRuntime::new());
+    // Spoken replies: one shared manager, managed before any event listener
+    // that might speak. Event listeners are registered in `register_tts_listeners`.
+    #[cfg(target_os = "macos")]
+    let tts_manager = {
+        let settings_handle = app_handle.clone();
+        let pick_fast: Arc<dyn Fn() -> bool + Send + Sync> = Arc::new(move || {
+            managers::realtime_config::RealtimeConfig::from_settings(&get_settings(
+                &settings_handle,
+            ))
+            .fast_voice
+        });
+        Arc::new(managers::tts::TtsManager::new(
+            managers::tts_av::default_backend_with(pick_fast),
+        ))
+    };
+    #[cfg(not(target_os = "macos"))]
+    let tts_manager = Arc::new(managers::tts::TtsManager::new(
+        managers::tts::default_backend(),
+    ));
+    app_handle.manage(tts_manager.clone());
+    // Conversation sessions: one controller, built with the app-backed platform.
+    app_handle.manage(Arc::new(
+        managers::converse_runtime::ConverseController::new(Arc::new(
+            managers::converse_platform::RealPlatform {
+                app: app_handle.clone(),
+            },
+        )),
+    ));
+    register_tts_listeners(app_handle, tts_manager);
     let startup_settings = get_settings(app_handle);
     if startup_settings.wake_word_enabled {
         wakeword_listener.start();
     } else if startup_settings.ambient_mode_enabled {
         ambient_listener.start();
     }
+    // Background "new version available" checks. Only this normal startup path
+    // reaches here; the headless CLI path returns earlier in `setup`.
+    managers::source_update::spawn_scheduler(app_handle.clone());
     app_handle.manage(tray::TrayState::new());
 
     // Note: Shortcuts are NOT initialized here.
@@ -358,6 +497,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 // Full explanation lives in the settings-window banner
                 show_main_window(app);
             }
+            "update_available" => {
+                // Only opens the window; installing is an explicit action there.
+                show_main_window(app);
+            }
             "check_updates" => {
                 let settings = settings::get_settings(app);
                 if settings::update_checks_effectively_enabled(&settings) {
@@ -367,6 +510,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             }
             "copy_last_transcript" => {
                 tray::copy_last_transcript(app);
+            }
+            "converse" => {
+                commands::converse::toggle_conversation(app);
             }
             "listening_mode:hotkey" => {
                 let _ = commands::wakeword::wakeword_set_enabled(app.clone(), false);
@@ -754,6 +900,16 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_auto_submit_key_setting,
             shortcut::change_post_process_enabled_setting,
             shortcut::change_experimental_enabled_setting,
+            shortcut::change_voice_commands_setting,
+            shortcut::change_memory_enabled_setting,
+            shortcut::change_agent_bridge_enabled_setting,
+            shortcut::change_agent_bridge_binary_path_setting,
+            shortcut::change_voice_media_controls_setting,
+            shortcut::change_tts_enabled_setting,
+            shortcut::change_tts_voice_setting,
+            shortcut::change_tts_rate_setting,
+            shortcut::tts_speak_test,
+            shortcut::tts_stop,
             shortcut::change_post_process_base_url_setting,
             shortcut::change_post_process_api_key_setting,
             shortcut::change_post_process_model_setting,
@@ -794,6 +950,11 @@ pub fn run(cli_args: CliArgs) {
             commands::agent_bridge::agent_invoke,
             commands::is_portable,
             commands::is_update_checks_locked,
+            commands::source_update::get_update_mode,
+            commands::source_update::check_source_update,
+            commands::source_update::get_cached_source_update,
+            commands::source_update::get_source_update_install_blocker,
+            commands::source_update::start_source_update,
             commands::get_app_dir_path,
             commands::get_app_settings,
             commands::get_default_settings,
@@ -836,20 +997,35 @@ pub fn run(cli_args: CliArgs) {
             commands::transcription::get_model_load_status,
             commands::transcription::unload_model_manually,
             commands::history::get_history_entries,
+            commands::history::search_history_entries,
             commands::history::toggle_history_entry_saved,
             commands::history::get_audio_file_path,
             commands::history::delete_history_entry,
             commands::history::retry_history_entry_transcription,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
+            commands::tts_composer::change_tts_composer_settings,
+            commands::tts_composer::list_tts_composer_providers,
+            commands::tts_composer::preview_speech_composer,
             commands::memory::memory_remember,
             commands::memory::memory_recall,
             commands::memory::memory_list_all,
             commands::memory::memory_forget,
             commands::memory::memory_set_enabled,
+            shortcut::change_agent_context_setting,
+            shortcut::agent_clear_conversation,
             commands::ambient::ambient_set_enabled,
             commands::ambient::ambient_clear,
             commands::wakeword::wakeword_set_enabled,
+            commands::voice_shortcuts::set_voice_shortcuts,
+            commands::converse::change_converse_silence_ms_setting,
+            commands::converse::change_converse_max_idle_turns_setting,
+            commands::converse::change_converse_context_turns_setting,
+            commands::converse::converse_start,
+            commands::converse::converse_stop,
+            commands::converse::converse_status,
+            commands::realtime::change_exp_rt_bool_setting,
+            commands::realtime::change_exp_rt_text_setting,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![
@@ -859,7 +1035,8 @@ pub fn run(cli_args: CliArgs) {
         ])
         .typ::<settings::AppSettings>()
         .typ::<managers::wakeword::WakeWordDetection>()
-        .typ::<commands::ambient::AmbientAddressedPayload>();
+        .typ::<commands::ambient::AmbientAddressedPayload>()
+        .typ::<managers::converse_platform::ConverseStateEvent>();
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
     // Dev convenience only (regenerates bindings.ts while running `cargo
@@ -1224,4 +1401,85 @@ pub fn run(cli_args: CliArgs) {
         }
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tts_listener_tests {
+    use super::{decode_tts_payload, tts_phrase_to_speak, TTS_EVENTS};
+
+    #[test]
+    fn the_listener_subscribes_to_the_exchange_event_not_the_bare_reply() {
+        assert_eq!(
+            TTS_EVENTS,
+            [
+                "agent-bridge-exchange",
+                "agent-bridge-error",
+                "voice-command-executed",
+                "voice-command-error",
+            ]
+        );
+    }
+
+    #[test]
+    fn disabled_setting_never_speaks() {
+        assert_eq!(
+            tts_phrase_to_speak(false, "agent-bridge-reply", "hello"),
+            None
+        );
+        assert_eq!(
+            tts_phrase_to_speak(false, "voice-command-executed", "x"),
+            None
+        );
+    }
+
+    #[test]
+    fn enabled_agent_reply_speaks_its_text() {
+        assert_eq!(
+            tts_phrase_to_speak(true, "agent-bridge-reply", "It is sunny."),
+            Some("It is sunny.".to_string())
+        );
+    }
+
+    #[test]
+    fn command_outcomes_speak_fixed_phrases_not_payloads() {
+        assert_eq!(
+            tts_phrase_to_speak(true, "voice-command-executed", "open /secret"),
+            Some(crate::managers::tts::DONE_PHRASE.to_string())
+        );
+        assert_eq!(
+            tts_phrase_to_speak(true, "voice-command-error", "stack trace"),
+            Some(crate::managers::tts::ERROR_PHRASE.to_string())
+        );
+    }
+
+    #[test]
+    fn unknown_event_is_never_spoken() {
+        assert_eq!(tts_phrase_to_speak(true, "model-state-changed", "x"), None);
+    }
+
+    #[test]
+    fn json_string_payload_is_decoded() {
+        assert_eq!(decode_tts_payload("\"hi \\\"there\\\"\""), "hi \"there\"");
+    }
+
+    #[test]
+    fn non_json_payload_falls_back_to_raw_text() {
+        assert_eq!(decode_tts_payload("plain text"), "plain text");
+    }
+}
+
+#[cfg(test)]
+mod tts_error_kind_tests {
+    use super::tts_error_kind;
+    use crate::managers::tts::TtsError;
+
+    #[test]
+    fn error_kinds_are_fixed_content_free_names() {
+        assert_eq!(tts_error_kind(&TtsError::Superseded), "superseded");
+        assert_eq!(tts_error_kind(&TtsError::Recording), "recording");
+        assert_eq!(
+            tts_error_kind(&TtsError::Backend("secret".into())),
+            "backend"
+        );
+    }
 }

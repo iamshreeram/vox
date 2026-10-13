@@ -66,6 +66,8 @@ rustfft = "6.4.0"
 strsim = "0.11.0"
 natural = "0.5.0"
 regex = "1"
+plist = "1"
+url = "2"
 # Text-based language ID (filler-word removal fallback); isolang bridges the
 # ISO 639-1 codes in model metadata to whatlang's 639-3 codes.
 whatlang = "0.16"
@@ -99,6 +101,7 @@ hf-hub = { git = "https://github.com/cjpais/hf-hub", branch = "cancellable-downl
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
+libc = "0.2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2.5.1"
@@ -169,7 +172,6 @@ objc2-service-management = "0.3.2"
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8", features = ["v0_6"] }
 gtk = "0.18"
-libc = "0.2"
 transcribe-cpp = { version = "0.3.0", default-features = false, features = [
   "dynamic-backends",
   "vulkan",

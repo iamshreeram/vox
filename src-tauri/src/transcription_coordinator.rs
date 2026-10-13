@@ -692,13 +692,22 @@ fn start(app: &AppHandle, binding_id: &str, hotkey_string: &str) -> bool {
         return false;
     };
     action.start(app, binding_id, hotkey_string);
-    let recording = app
-        .try_state::<Arc<AudioRecordingManager>>()
-        .is_some_and(|a| a.is_recording());
-    if !recording {
+    let (is_recording, active_binding) = match app.try_state::<Arc<AudioRecordingManager>>() {
+        Some(rm) => (rm.is_recording(), rm.recording_binding()),
+        None => (false, None),
+    };
+    let started = start_took_effect(is_recording, active_binding.as_deref(), binding_id);
+    if !started {
         debug!("Start for '{binding_id}' did not begin recording; staying idle");
     }
-    recording
+    started
+}
+
+/// True only when the microphone is recording under exactly the binding that
+/// was requested. A recording owned by another binding (e.g. a conversation
+/// session) means this start did not take effect.
+fn start_took_effect(is_recording: bool, active_binding: Option<&str>, requested: &str) -> bool {
+    is_recording && active_binding == Some(requested)
 }
 
 fn stop(app: &AppHandle, binding_id: &str, hotkey_string: &str) {
@@ -712,6 +721,27 @@ fn stop(app: &AppHandle, binding_id: &str, hotkey_string: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn start_took_effect_when_recording_with_requested_binding() {
+        assert!(start_took_effect(true, Some("transcribe"), "transcribe"));
+    }
+
+    #[test]
+    fn start_did_not_take_effect_when_another_binding_records() {
+        assert!(!start_took_effect(true, Some("converse"), "transcribe"));
+    }
+
+    #[test]
+    fn start_did_not_take_effect_when_not_recording() {
+        assert!(!start_took_effect(false, None, "transcribe"));
+        assert!(!start_took_effect(false, Some("transcribe"), "transcribe"));
+    }
+
+    #[test]
+    fn start_did_not_take_effect_when_recording_has_no_binding() {
+        assert!(!start_took_effect(true, None, "transcribe"));
+    }
 
     #[test]
     fn push_to_talk_release_while_recording_defers_release() {

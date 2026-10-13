@@ -6,6 +6,7 @@ import type {
   AudioDevice,
   ChineseScript,
   CustomThemeColors,
+  ModelUnloadTimeout,
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
   ShortcutActivation,
@@ -173,6 +174,24 @@ const settingUpdaters: {
     commands.updateCustomThemeColors(value as CustomThemeColors),
   experimental_enabled: (value) =>
     commands.changeExperimentalEnabledSetting(value as boolean),
+  voice_commands_enabled: (value) =>
+    commands.changeVoiceCommandsSetting(value as boolean),
+  memory_enabled: (value) =>
+    commands.changeMemoryEnabledSetting(value as boolean),
+  agent_bridge_enabled: (value) =>
+    commands.changeAgentBridgeEnabledSetting(value as boolean),
+  agent_bridge_binary_path: async (value) => {
+    const result = await commands.changeAgentBridgeBinaryPathSetting(
+      (value as string | null) ?? null,
+    );
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
+  model_unload_timeout: (value) =>
+    commands.setModelUnloadTimeout(value as ModelUnloadTimeout),
+  voice_media_controls_enabled: (value) =>
+    commands.changeVoiceMediaControlsSetting(value as boolean),
   lazy_stream_close: (value) =>
     commands.changeLazyStreamCloseSetting(value as boolean),
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),
@@ -182,6 +201,13 @@ const settingUpdaters: {
     if (result.status === "error") {
       // Rejected switches (e.g. mid-recording) roll the dropdown back via the
       // throw below; the toast tells the user why.
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  agent_context_enabled: async (value) => {
+    const result = await commands.changeAgentContextSetting(value as boolean);
+    if (result.status === "error") {
       toast.error(result.error);
       throw new Error(result.error);
     }
@@ -202,6 +228,43 @@ const settingUpdaters: {
     commands.changeTranscribeGpuDevice(value as string | null),
   extra_recording_buffer_ms: (value) =>
     commands.changeExtraRecordingBufferSetting(value as number),
+  tts_enabled: (value) => commands.changeTtsEnabledSetting(value as boolean),
+  tts_voice: (value) => commands.changeTtsVoiceSetting(value as string | null),
+  tts_rate_wpm: (value) => commands.changeTtsRateSetting(value as number),
+  converse_silence_ms: (value) =>
+    commands.changeConverseSilenceMsSetting(value as number),
+  converse_max_idle_turns: (value) =>
+    commands.changeConverseMaxIdleTurnsSetting(value as number),
+  converse_context_turns: (value) =>
+    commands.changeConverseContextTurnsSetting(value as number),
+  exp_rt_enabled: (value) =>
+    commands.changeExpRtBoolSetting("enabled", value as boolean),
+  exp_rt_direct_endpoint: (value) =>
+    commands.changeExpRtBoolSetting("direct_endpoint", value as boolean),
+  exp_rt_stream_reply: (value) =>
+    commands.changeExpRtBoolSetting("stream_reply", value as boolean),
+  exp_rt_early_speech: (value) =>
+    commands.changeExpRtBoolSetting("early_speech", value as boolean),
+  exp_rt_fast_voice: (value) =>
+    commands.changeExpRtBoolSetting("fast_voice", value as boolean),
+  exp_rt_ack: (value) =>
+    commands.changeExpRtBoolSetting("ack", value as boolean),
+  exp_rt_prewarm: (value) =>
+    commands.changeExpRtBoolSetting("prewarm", value as boolean),
+  exp_rt_auto_proxy: (value) =>
+    commands.changeExpRtBoolSetting("auto_proxy", value as boolean),
+  exp_rt_proxy_enabled: (value) =>
+    commands.changeExpRtBoolSetting("proxy_enabled", value as boolean),
+  exp_rt_timing_log: (value) =>
+    commands.changeExpRtBoolSetting("timing_log", value as boolean),
+  exp_rt_endpoint_url: (value) =>
+    commands.changeExpRtTextSetting("endpoint_url", value as string),
+  exp_rt_model: (value) =>
+    commands.changeExpRtTextSetting("model", value as string),
+  exp_rt_token: (value) =>
+    commands.changeExpRtTextSetting("token", value as string),
+  exp_rt_proxy_url: (value) =>
+    commands.changeExpRtTextSetting("proxy_url", value as string),
 };
 
 export const useSettingsStore = create<SettingsStore>()(

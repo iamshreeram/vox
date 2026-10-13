@@ -519,6 +519,43 @@ impl std::ops::DerefMut for SecretMap {
     }
 }
 
+/// A single secret value (API token). Serialized as a plain string so it persists,
+/// but `Debug` never prints it.
+#[derive(Clone, Default, Serialize, Deserialize, Type)]
+#[serde(transparent)]
+pub(crate) struct SecretString(String);
+
+impl fmt::Debug for SecretString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(if self.0.is_empty() {
+            "\"\""
+        } else {
+            "[REDACTED]"
+        })
+    }
+}
+
+impl SecretString {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl From<String> for SecretString {
+    fn from(v: String) -> Self {
+        SecretString(v)
+    }
+}
+
+impl From<&str> for SecretString {
+    fn from(v: &str) -> Self {
+        SecretString(v.to_string())
+    }
+}
+
 /* still handy for composing the initial JSON in the store ------------- */
 /// The container-level `serde(default)` (backed by the `Default` impl below)
 /// guarantees every field — including ones added in the future — falls back to
@@ -601,6 +638,11 @@ pub struct AppSettings {
     pub history_limit: usize,
     #[serde(default)]
     pub memory_enabled: bool,
+    /// Prepend remembered facts (when `memory_enabled`) and the last few
+    /// exchanges to agent-bridge prompts. Opt-in: it sends more data to the
+    /// user-configured external agent. Turning it off clears the in-memory log.
+    #[serde(default)]
+    pub agent_context_enabled: bool,
     #[serde(default)]
     pub ambient_mode_enabled: bool,
     #[serde(default = "default_ambient_wake_name")]
@@ -609,6 +651,10 @@ pub struct AppSettings {
     pub ambient_window_ms: u64,
     #[serde(default)]
     pub voice_commands_enabled: bool,
+    /// Whole-utterance media phrases ("pause", "next track", "volume 40").
+    /// Opt-in and only effective while `voice_commands_enabled` is on.
+    #[serde(default)]
+    pub voice_media_controls_enabled: bool,
     #[serde(default)]
     pub agent_bridge_enabled: bool,
     #[serde(default)]
@@ -617,6 +663,39 @@ pub struct AppSettings {
     pub agent_bridge_prompt_flag: String,
     #[serde(default = "default_agent_bridge_timeout_secs")]
     pub agent_bridge_timeout_secs: u64,
+    /// Speak agent replies and a generic confirmation/failure phrase aloud.
+    /// Opt-in: spoken output audibly exposes agent reply content.
+    #[serde(default)]
+    pub tts_enabled: bool,
+    /// Optional macOS voice name (validated against a strict allowlist).
+    #[serde(default)]
+    pub tts_voice: Option<String>,
+    #[serde(default = "default_tts_rate_wpm")]
+    pub tts_rate_wpm: u32,
+    /// Speech composer (spoken-reply summarizer). See docs/spoken-replies.md.
+    #[serde(default)]
+    pub tts_composer_mode: crate::managers::composer_config::TtsComposerMode,
+    #[serde(default = "default_tts_composer_provider_id")]
+    pub tts_composer_provider_id: String,
+    #[serde(default)]
+    pub tts_composer_model: String,
+    #[serde(default)]
+    pub tts_composer_command_path: String,
+    #[serde(default)]
+    pub tts_composer_command_args: String,
+    #[serde(default = "default_tts_composer_prompt_flag")]
+    pub tts_composer_prompt_flag: String,
+    /// The exact normalized (path, args, flag) tuple the user acknowledged.
+    #[serde(default)]
+    pub tts_composer_command_ack: String,
+    #[serde(default = "default_tts_composer_timeout_secs")]
+    pub tts_composer_timeout_secs: u64,
+    #[serde(default = "default_tts_composer_style")]
+    pub tts_composer_style: String,
+    #[serde(default = "default_tts_composer_true")]
+    pub tts_composer_send_user_utterance: bool,
+    #[serde(default)]
+    pub tts_composer_fallback: crate::managers::composer_config::TtsComposerFallback,
     #[serde(default)]
     pub wake_word_enabled: bool,
     #[serde(default = "default_wake_word_model_name")]
@@ -625,6 +704,10 @@ pub struct AppSettings {
     pub wake_word_confidence_threshold: f32,
     #[serde(default = "default_wake_word_cooldown_ms")]
     pub wake_word_cooldown_ms: u32,
+    /// User-defined spoken phrase -> open URL / folder / app. Validated when
+    /// saved (`set_voice_shortcuts`) and again at match time.
+    #[serde(default)]
+    pub voice_shortcuts: Vec<crate::managers::voice_shortcuts::VoiceShortcut>,
     /// How long (ms) of sustained mic silence after a wake-word-triggered
     /// recording auto-finishes it (transcribe + route, same as pressing
     /// the hotkey again) -- without this, a locked wake-word session waits
@@ -720,6 +803,48 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    /// Silence that ends a conversation utterance (clamped 600..=4000 when used).
+    #[serde(default = "default_converse_silence_ms")]
+    pub converse_silence_ms: u32,
+    /// Idle turns before a conversation ends (clamped 1..=5 when used).
+    #[serde(default = "default_converse_max_idle_turns")]
+    pub converse_max_idle_turns: u8,
+    /// Prior turns sent as context (clamped 0..=12 when used).
+    #[serde(default = "default_converse_context_turns")]
+    pub converse_context_turns: u8,
+    // ---- Experimental: realtime conversation (design R9). All toggles; the master
+    // switch gates every sub-toggle. Absent in old stores => these defaults.
+    /// MASTER switch. Off => the conversation behaves exactly as before.
+    #[serde(default)]
+    pub exp_rt_enabled: bool,
+    /// Use the Anthropic-style endpoint below for replies instead of the speech composer.
+    #[serde(default)]
+    pub exp_rt_direct_endpoint: bool,
+    #[serde(default)]
+    pub exp_rt_endpoint_url: String,
+    #[serde(default)]
+    pub exp_rt_model: String,
+    /// Entered manually in the UI; never logged.
+    #[serde(default)]
+    pub exp_rt_token: SecretString,
+    #[serde(default = "default_exp_rt_true")]
+    pub exp_rt_stream_reply: bool,
+    #[serde(default = "default_exp_rt_true")]
+    pub exp_rt_early_speech: bool,
+    #[serde(default = "default_exp_rt_true")]
+    pub exp_rt_fast_voice: bool,
+    #[serde(default)]
+    pub exp_rt_ack: bool,
+    #[serde(default = "default_exp_rt_true")]
+    pub exp_rt_prewarm: bool,
+    #[serde(default = "default_exp_rt_true")]
+    pub exp_rt_auto_proxy: bool,
+    #[serde(default)]
+    pub exp_rt_proxy_enabled: bool,
+    #[serde(default)]
+    pub exp_rt_proxy_url: String,
+    #[serde(default)]
+    pub exp_rt_timing_log: bool,
 }
 
 fn default_agent_bridge_prompt_flag() -> String {
@@ -728,6 +853,46 @@ fn default_agent_bridge_prompt_flag() -> String {
 
 fn default_agent_bridge_timeout_secs() -> u64 {
     60
+}
+
+fn default_tts_rate_wpm() -> u32 {
+    crate::managers::tts::DEFAULT_RATE_WPM
+}
+
+fn default_tts_composer_provider_id() -> String {
+    "custom".to_string()
+}
+
+fn default_tts_composer_prompt_flag() -> String {
+    crate::managers::composer_rules::DEFAULT_PROMPT_FLAG.to_string()
+}
+
+fn default_tts_composer_timeout_secs() -> u64 {
+    crate::managers::composer_rules::TIMEOUT_DEFAULT_SECS
+}
+
+fn default_tts_composer_style() -> String {
+    crate::managers::composer_rules::DEFAULT_STYLE.to_string()
+}
+
+fn default_tts_composer_true() -> bool {
+    true
+}
+
+fn default_converse_silence_ms() -> u32 {
+    1200
+}
+
+fn default_converse_max_idle_turns() -> u8 {
+    2
+}
+
+fn default_converse_context_turns() -> u8 {
+    6
+}
+
+fn default_exp_rt_true() -> bool {
+    true
 }
 
 fn default_model() -> String {
@@ -1150,6 +1315,20 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: "escape".to_string(),
         },
     );
+    #[cfg(target_os = "macos")]
+    let default_converse_shortcut = "control+option+c";
+    #[cfg(not(target_os = "macos"))]
+    let default_converse_shortcut = "ctrl+alt+c";
+    bindings.insert(
+        "converse".to_string(),
+        ShortcutBinding {
+            id: "converse".to_string(),
+            name: "Start or stop conversation".to_string(),
+            description: "Starts or stops a hands-free spoken conversation.".to_string(),
+            default_binding: default_converse_shortcut.to_string(),
+            current_binding: default_converse_shortcut.to_string(),
+        },
+    );
 
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
@@ -1181,18 +1360,35 @@ pub fn get_default_settings() -> AppSettings {
         word_correction_threshold: default_word_correction_threshold(),
         history_limit: default_history_limit(),
         memory_enabled: false,
+        agent_context_enabled: false,
         ambient_mode_enabled: false,
         ambient_wake_name: default_ambient_wake_name(),
         ambient_window_ms: default_ambient_window_ms(),
         voice_commands_enabled: false,
+        voice_media_controls_enabled: false,
         agent_bridge_enabled: false,
         agent_bridge_binary_path: None,
         agent_bridge_prompt_flag: default_agent_bridge_prompt_flag(),
         agent_bridge_timeout_secs: default_agent_bridge_timeout_secs(),
+        tts_enabled: false,
+        tts_voice: None,
+        tts_rate_wpm: default_tts_rate_wpm(),
+        tts_composer_mode: Default::default(),
+        tts_composer_provider_id: default_tts_composer_provider_id(),
+        tts_composer_model: String::new(),
+        tts_composer_command_path: String::new(),
+        tts_composer_command_args: String::new(),
+        tts_composer_prompt_flag: default_tts_composer_prompt_flag(),
+        tts_composer_command_ack: String::new(),
+        tts_composer_timeout_secs: default_tts_composer_timeout_secs(),
+        tts_composer_style: default_tts_composer_style(),
+        tts_composer_send_user_utterance: default_tts_composer_true(),
+        tts_composer_fallback: Default::default(),
         wake_word_enabled: false,
         wake_word_model_name: default_wake_word_model_name(),
         wake_word_confidence_threshold: default_wake_word_confidence_threshold(),
         wake_word_cooldown_ms: default_wake_word_cooldown_ms(),
+        voice_shortcuts: Vec::new(),
         wake_word_silence_timeout_ms: default_wake_word_silence_timeout_ms(),
         recording_retention_period: default_recording_retention_period(),
         paste_method: PasteMethod::default(),
@@ -1230,7 +1426,38 @@ pub fn get_default_settings() -> AppSettings {
         vad_enabled: default_vad_enabled(),
         vad_backend: VadBackend::default(),
         overlay_style: default_overlay_style(),
+        converse_silence_ms: default_converse_silence_ms(),
+        converse_max_idle_turns: default_converse_max_idle_turns(),
+        converse_context_turns: default_converse_context_turns(),
+        exp_rt_enabled: false,
+        exp_rt_direct_endpoint: false,
+        exp_rt_endpoint_url: String::new(),
+        exp_rt_model: String::new(),
+        exp_rt_token: SecretString::default(),
+        exp_rt_stream_reply: true,
+        exp_rt_early_speech: true,
+        exp_rt_fast_voice: true,
+        exp_rt_ack: false,
+        exp_rt_prewarm: true,
+        exp_rt_auto_proxy: true,
+        exp_rt_proxy_enabled: false,
+        exp_rt_proxy_url: String::new(),
+        exp_rt_timing_log: false,
     }
+}
+
+/// Adds any default binding that `settings` lacks (e.g. bindings introduced
+/// after the store was written). Returns true if anything was inserted.
+fn merge_missing_default_bindings(settings: &mut AppSettings) -> bool {
+    let mut inserted = false;
+    for (key, value) in get_default_settings().bindings {
+        if let std::collections::hash_map::Entry::Vacant(entry) = settings.bindings.entry(key) {
+            debug!("Adding missing binding: {}", entry.key());
+            entry.insert(value);
+            inserted = true;
+        }
+    }
+    inserted
 }
 
 impl Default for AppSettings {
@@ -1293,12 +1520,8 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         }
 
         // Merge in any bindings added since this store was written.
-        for (key, value) in get_default_settings().bindings {
-            if let std::collections::hash_map::Entry::Vacant(entry) = settings.bindings.entry(key) {
-                debug!("Adding missing binding: {}", entry.key());
-                entry.insert(value);
-                updated = true;
-            }
+        if merge_missing_default_bindings(&mut settings) {
+            updated = true;
         }
 
         if updated {
@@ -1814,6 +2037,86 @@ mod tests {
     }
 
     #[test]
+    fn voice_shortcuts_default_empty_and_default_when_missing_from_legacy_settings() {
+        assert!(get_default_settings().voice_shortcuts.is_empty());
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings.as_object_mut().unwrap().remove("voice_shortcuts");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(loaded.voice_shortcuts.is_empty());
+    }
+
+    #[test]
+    fn voice_shortcuts_round_trip_through_json() {
+        use crate::managers::voice_shortcuts::{VoiceShortcut, VoiceShortcutAction};
+        let mut settings = get_default_settings();
+        settings.voice_shortcuts = vec![VoiceShortcut {
+            phrase: "open work".into(),
+            action: VoiceShortcutAction::OpenUrl {
+                url: "https://example.com".into(),
+            },
+        }];
+        let json = serde_json::to_value(&settings).unwrap();
+        assert_eq!(json["voice_shortcuts"][0]["action"]["type"], "open_url");
+        let loaded: AppSettings = serde_json::from_value(json).unwrap();
+        assert_eq!(loaded.voice_shortcuts, settings.voice_shortcuts);
+    }
+
+    #[test]
+    fn malformed_voice_shortcuts_are_salvaged_without_losing_other_settings() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings["voice_shortcuts"] = serde_json::json!([{ "phrase": 5, "action": "nonsense" }]);
+        settings["history_limit"] = serde_json::json!(77);
+        let salvaged = salvage_settings(&settings);
+        assert!(salvaged.voice_shortcuts.is_empty());
+        assert_eq!(salvaged.history_limit, 77);
+    }
+
+    #[test]
+    fn voice_media_controls_default_off_and_default_when_missing_from_legacy_settings() {
+        assert!(!get_default_settings().voice_media_controls_enabled);
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("voice_media_controls_enabled");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.voice_media_controls_enabled);
+    }
+
+    #[test]
+    fn agent_context_is_off_by_default_and_when_missing_from_legacy_settings() {
+        assert!(!get_default_settings().agent_context_enabled);
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("agent_context_enabled");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.agent_context_enabled);
+    }
+
+    #[test]
+    fn tts_defaults_are_off_with_no_voice_and_180_wpm() {
+        let settings = get_default_settings();
+        assert!(!settings.tts_enabled);
+        assert_eq!(settings.tts_voice, None);
+        assert_eq!(settings.tts_rate_wpm, 180);
+    }
+
+    #[test]
+    fn tts_settings_default_when_missing_from_legacy_settings() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        let object = settings.as_object_mut().unwrap();
+        object.remove("tts_enabled");
+        object.remove("tts_voice");
+        object.remove("tts_rate_wpm");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.tts_enabled);
+        assert_eq!(loaded.tts_voice, None);
+        assert_eq!(loaded.tts_rate_wpm, 180);
+    }
+
+    #[test]
     fn agent_bridge_enabled_defaults_false_when_missing_from_legacy_settings() {
         let mut settings = serde_json::to_value(get_default_settings()).unwrap();
         settings
@@ -2277,5 +2580,58 @@ mod tests {
         let out = format!("{:?}", map);
         assert!(!out.contains("secret"));
         assert!(out.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn converse_defaults_and_binding() {
+        let s = get_default_settings();
+        assert_eq!(s.converse_silence_ms, 1200);
+        assert_eq!(s.converse_max_idle_turns, 2);
+        assert_eq!(s.converse_context_turns, 6);
+        let b = s
+            .bindings
+            .get("converse")
+            .expect("converse binding in defaults");
+        assert_eq!(b.id, "converse");
+        #[cfg(target_os = "macos")]
+        let expected = "control+option+c";
+        #[cfg(not(target_os = "macos"))]
+        let expected = "ctrl+alt+c";
+        assert_eq!(b.default_binding, expected);
+        assert_eq!(b.current_binding, expected);
+        assert!(!b.name.is_empty() && !b.description.is_empty());
+    }
+
+    #[test]
+    fn legacy_settings_without_converse_fields_still_load_with_defaults() {
+        let mut v = serde_json::to_value(get_default_settings()).unwrap();
+        let obj = v.as_object_mut().unwrap();
+        obj.remove("converse_silence_ms");
+        obj.remove("converse_max_idle_turns");
+        obj.remove("converse_context_turns");
+        obj.get_mut("bindings")
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("converse");
+        let s: AppSettings = serde_json::from_value(v).expect("legacy store must deserialize");
+        assert_eq!(s.converse_silence_ms, 1200);
+        assert_eq!(s.converse_max_idle_turns, 2);
+        assert_eq!(s.converse_context_turns, 6);
+        assert!(
+            !s.bindings.contains_key("converse"),
+            "serde alone does not invent bindings"
+        );
+        // the existing defaults merge (used at load time) adds the new binding
+        let mut merged = s;
+        assert!(
+            merge_missing_default_bindings(&mut merged),
+            "reports that it added something"
+        );
+        assert!(merged.bindings.contains_key("converse"));
+        assert!(
+            !merge_missing_default_bindings(&mut merged),
+            "second merge is a no-op"
+        );
     }
 }

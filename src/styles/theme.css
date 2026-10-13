@@ -32,6 +32,21 @@
   --aurora-color-logo-stroke: #a78bfa;
   --aurora-color-warning: #fbbf24;
   --aurora-color-error: #f87171;
+  /* Accent FILL for toggles, sliders and primary buttons. Kept deeper than the logo teal so white thumbs and white button text stay readable. */
+  --aurora-color-background-ui: #0d9488;
+
+  /* Vibrant accent gradient (a -> b) used by toggles, sliders, the active
+     sidebar item and primary buttons. on-accent is the text color placed on
+     top of the gradient; each palette keeps >= 4.5:1 contrast at both ends. */
+  --light-color-accent-a: #f59e0b;
+  --light-color-accent-b: #f97316;
+  --light-color-on-accent: #1a1204;
+  --dark-color-accent-a: #fbbf24;
+  --dark-color-accent-b: #fb923c;
+  --dark-color-on-accent: #1a1204;
+  --aurora-color-accent-a: #0f766e;
+  --aurora-color-accent-b: #7c3aed;
+  --aurora-color-on-accent: #ffffff;
 
   /* Semantic status colors. First used by SecureInputWarning; intended to
      replace the ad-hoc yellow-500/red-500 usages (e.g. ui/Alert.tsx) over
@@ -54,6 +69,9 @@
   --color-logo-stroke: var(--light-color-logo-stroke);
   --color-warning: var(--light-color-warning);
   --color-error: var(--light-color-error);
+  --color-accent-a: var(--light-color-accent-a);
+  --color-accent-b: var(--light-color-accent-b);
+  --color-on-accent: var(--light-color-on-accent);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -64,6 +82,9 @@
     --color-logo-stroke: var(--dark-color-logo-stroke);
     --color-warning: var(--dark-color-warning);
     --color-error: var(--dark-color-error);
+    --color-accent-a: var(--dark-color-accent-a);
+    --color-accent-b: var(--dark-color-accent-b);
+    --color-on-accent: var(--dark-color-on-accent);
   }
 }
 
@@ -84,6 +105,9 @@
   --color-logo-stroke: var(--light-color-logo-stroke);
   --color-warning: var(--light-color-warning);
   --color-error: var(--light-color-error);
+  --color-accent-a: var(--light-color-accent-a);
+  --color-accent-b: var(--light-color-accent-b);
+  --color-on-accent: var(--light-color-on-accent);
 }
 
 :root[data-theme="dark"] {
@@ -93,6 +117,9 @@
   --color-logo-stroke: var(--dark-color-logo-stroke);
   --color-warning: var(--dark-color-warning);
   --color-error: var(--dark-color-error);
+  --color-accent-a: var(--dark-color-accent-a);
+  --color-accent-b: var(--dark-color-accent-b);
+  --color-on-accent: var(--dark-color-on-accent);
 }
 
 :root[data-theme="aurora"] {
@@ -100,8 +127,12 @@
   --color-background: var(--aurora-color-background);
   --color-logo-primary: var(--aurora-color-logo-primary);
   --color-logo-stroke: var(--aurora-color-logo-stroke);
+  --color-background-ui: var(--aurora-color-background-ui);
   --color-warning: var(--aurora-color-warning);
   --color-error: var(--aurora-color-error);
+  --color-accent-a: var(--aurora-color-accent-a);
+  --color-accent-b: var(--aurora-color-accent-b);
+  --color-on-accent: var(--aurora-color-on-accent);
 }
 
 /* "Custom": placeholder values only, matching the Rust defaults in
@@ -116,4 +147,10 @@
   --color-logo-stroke: #a78bfa;
   --color-warning: #fbbf24;
   --color-error: #f87171;
+  /* Accent gradient + fill: placeholders (Aurora-like), replaced by the
+     derived values theme.ts sets from the user's accent colors. */
+  --color-accent-a: #2dd4bf;
+  --color-accent-b: #a78bfa;
+  --color-on-accent: #111111;
+  --color-background-ui: var(--aurora-color-background-ui);
 }

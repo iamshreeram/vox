@@ -26,17 +26,56 @@
 #      Python vox project's own scripts/install.sh -- this is the same
 #      fix, transplanted for the Rust/Tauri build.
 #
+# Staged, rollback-safe install (why it is two phases):
+#
+#   Replacing a running app in place is the risky part. A failure halfway
+#   through used to leave /Applications/Vox.app half-built, the LaunchAgent
+#   removed, and nothing running. So the install now works in two phases:
+#
+#   Phase A -- staging, NO effect on the live install. The fresh build is
+#   copied to a hidden sibling of the destination,
+#   $(dirname DEST)/.Vox.staging.app. The launcher wrapper is installed and
+#   the staged bundle is signed there. If anything fails in phase A, the
+#   staging copy is removed and the live app, its LaunchAgent plist and the
+#   running agent are left exactly as they were. launchctl is not called.
+#
+#   Phase B -- critical section. Before the first mutating step, a rollback
+#   trap is installed and the prior state is recorded: whether the agent was
+#   loaded, whether the app was running, whether a previous app bundle
+#   exists, and a byte-exact copy of the old LaunchAgent plist. Then the
+#   agent is booted out, the staged bundle is swapped in (the previous app
+#   is moved to $(dirname DEST)/.Vox.previous.app first), the new plist is
+#   written and the agent is bootstrapped and, if it was running before,
+#   kickstarted. On any failure in phase B the trap rolls back, step by
+#   step and best-effort: it boots out whatever is registered, restores the
+#   previous app bundle and the old plist bytes, re-bootstraps the old agent
+#   if it was loaded and kickstarts it if it was running. Each rollback step
+#   is guarded so that one failing step does not stop the others. Failures
+#   are reported with the word "rollback". The script still exits with the
+#   ORIGINAL failure status, never with the rollback's status. On success the
+#   previous-app backup is discarded.
+#
+#   The staging, swap and rollback helpers live in scripts/lib/swap-app.sh.
+#
 # Usage:
 #   ./scripts/install-macos.sh [path/to/built/Vox.app]
 # Defaults to the debug bundle `tauri build --debug` just produced.
+#
+# Environment:
+#   VOX_INSTALL_DEST_APP  Override the destination bundle path (used by the
+#                         test harness, scripts/test-install-macos.sh). The
+#                         default is /Applications/Vox.app.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/.."
 
 APP_NAME="Vox"
 APP_NAME_LOWER="vox"
 BUNDLE_ID="com.iamshreeram.vox"
 AGENT_LABEL="${BUNDLE_ID}.agent"
-DEST_APP="/Applications/${APP_NAME}.app"
+DEST_APP="${VOX_INSTALL_DEST_APP:-/Applications/${APP_NAME}.app}"
+STAGING="$(dirname "$DEST_APP")/.${APP_NAME}.staging.app"
+BACKUP="$(dirname "$DEST_APP")/.${APP_NAME}.previous.app"
 SRC_APP="${1:-src-tauri/target/debug/bundle/macos/${APP_NAME}.app}"
 AGENT_PLIST="$HOME/Library/LaunchAgents/${AGENT_LABEL}.plist"
 UID_NUM="$(id -u)"
@@ -68,34 +107,89 @@ if [ "$(head -c 2 "$SRC_BIN" 2>/dev/null)" = "#!" ]; then
   exit 1
 fi
 
+# ---- Shared state for the EXIT trap ---------------------------------------
+# PHASE: A (staging, no live effect), B (critical section), done (success).
+PHASE="A"
+MUTATED=0          # set just before the first launchctl/app mutation
+SWAP_STARTED=0     # set just before swap_in_app
+PLIST_CHANGED=0    # set just before the new plist is written
+WAS_LOADED=0       # agent was loaded before this install
+WAS_RUNNING=false  # app was running before this install
+HAD_PREVIOUS=0     # an app bundle existed at DEST before this install
+HAD_PLIST=0        # an old LaunchAgent plist existed before this install
+OLD_PLIST_COPY=""  # temp file holding the byte-exact old plist
+
+# rollback_install: best-effort restore of the previous state. Runs only from
+# the EXIT trap after a failure in phase B. Every step is guarded (set -e is
+# still active inside the trap) so one failure does not stop the others.
+rollback_install() {
+  echo "Install failed -- rolling back to the previous state..." >&2
+  if [ "$MUTATED" = 1 ]; then
+    launchctl bootout "gui/${UID_NUM}/${AGENT_LABEL}" >/dev/null 2>&1 || true
+    if [ "$SWAP_STARTED" = 1 ]; then
+      rollback_app "$DEST_APP" "$BACKUP" "$HAD_PREVIOUS" \
+        || echo "rollback: could not restore the previous app bundle at $DEST_APP" >&2
+    fi
+    if [ "$PLIST_CHANGED" = 1 ]; then
+      if [ "$HAD_PLIST" = 1 ]; then
+        cp "$OLD_PLIST_COPY" "$AGENT_PLIST" \
+          || echo "rollback: could not restore the previous LaunchAgent plist" >&2
+      else
+        rm -f "$AGENT_PLIST" \
+          || echo "rollback: could not remove the new LaunchAgent plist" >&2
+      fi
+    fi
+    if [ "$WAS_LOADED" = 1 ] && [ -f "$AGENT_PLIST" ]; then
+      launchctl bootstrap "gui/${UID_NUM}" "$AGENT_PLIST" >/dev/null 2>&1 \
+        || echo "rollback: could not re-bootstrap the previous agent" >&2
+    fi
+    if [ "$WAS_RUNNING" = true ]; then
+      launchctl kickstart -k "gui/${UID_NUM}/${AGENT_LABEL}" >/dev/null 2>&1 \
+        || echo "rollback: could not restart the previous app" >&2
+    fi
+  fi
+  rm -rf "$STAGING" 2>/dev/null \
+    || echo "rollback: could not remove the staging copy at $STAGING" >&2
+}
+
+# on_exit: runs on every exit. The original status is captured first and is
+# always the status this script exits with.
+on_exit() {
+  local status=$?
+  trap - EXIT
+  if [ "$status" -ne 0 ]; then
+    if [ "$PHASE" = "B" ]; then
+      rollback_install
+    else
+      rm -rf "$STAGING" 2>/dev/null || true
+    fi
+  fi
+  if [ -n "$OLD_PLIST_COPY" ]; then
+    rm -f "$OLD_PLIST_COPY" 2>/dev/null || true
+  fi
+  exit "$status"
+}
+trap on_exit EXIT
+
+. "$SCRIPT_DIR/lib/swap-app.sh"
+
 echo "== Installing ${APP_NAME} =="
 
-# ---- 1. Stop anything currently running, replace the bundle -------------
-# Remember whether it was actually running so step 5 can restart it --
-# re-running this script should always leave you running the build you
-# just installed, not silently leave the old process's copy in memory or
-# require a manual relaunch to find that out.
-WAS_RUNNING=false
-if pgrep -f "${APP_NAME}.app/Contents/MacOS/${APP_NAME_LOWER}-bin" >/dev/null 2>&1; then
-  WAS_RUNNING=true
-fi
-
-echo "Stopping any running instance..."
-launchctl bootout "gui/${UID_NUM}/${AGENT_LABEL}" 2>/dev/null || true
-pkill -f "${APP_NAME}.app/Contents/MacOS/" 2>/dev/null || true
-
-echo "Copying ${SRC_APP} -> ${DEST_APP}..."
-rm -rf "$DEST_APP"
-cp -R "$SRC_APP" "$DEST_APP"
+# ---- Phase A: stage the build (no effect on the live install) ------------
+echo "Staging ${SRC_APP} -> ${STAGING}..."
+stage_app "$SRC_APP" "$STAGING"
 
 # ---- 2. Rename the real binary, install the launchd-kickstart wrapper ---
-MACOS_DIR="${DEST_APP}/Contents/MacOS"
-REAL_BIN="${MACOS_DIR}/${APP_NAME_LOWER}-bin"
-WRAPPER="${MACOS_DIR}/${APP_NAME_LOWER}"
+# Done inside the STAGED bundle. The plist written in phase B points at the
+# bundle's final location in DEST_APP.
+STAGED_MACOS_DIR="${STAGING}/Contents/MacOS"
+STAGED_REAL_BIN="${STAGED_MACOS_DIR}/${APP_NAME_LOWER}-bin"
+STAGED_WRAPPER="${STAGED_MACOS_DIR}/${APP_NAME_LOWER}"
+DEST_REAL_BIN="${DEST_APP}/Contents/MacOS/${APP_NAME_LOWER}-bin"
 
 echo "Installing launchd-kickstart wrapper (see header comment for why)..."
-mv "$WRAPPER" "$REAL_BIN"
-cat > "$WRAPPER" <<WRAPPER_EOF
+mv "$STAGED_WRAPPER" "$STAGED_REAL_BIN"
+cat > "$STAGED_WRAPPER" <<WRAPPER_EOF
 #!/usr/bin/env bash
 # Thin launcher, NOT the real ${APP_NAME} binary (that's ./${APP_NAME_LOWER}-bin).
 # Delegates to a launchd user agent so the real process never launches
@@ -109,7 +203,92 @@ if ! launchctl kickstart -k "gui/\${UID_NUM}/\${AGENT_LABEL}" 2>/tmp/${APP_NAME_
     exit 1
 fi
 WRAPPER_EOF
-chmod +x "$WRAPPER"
+chmod +x "$STAGED_WRAPPER"
+
+# ---- 4. Re-sign the staged bundle ----------------------------------------
+# Uses the stable local "Vox Local Dev Codesign" identity (self-signed,
+# auto-created on first run by ./scripts/setup-codesign-identity.sh if it
+# doesn't already exist -- see that script's header for the full why)
+# instead of plain ad-hoc (`-s -`).
+#
+# This matters a lot more than it sounds: ad-hoc signing has NO stable
+# identity across builds -- it's just a hash of the binary's own content.
+# Every rebuild produces a different signature, and TCC tracks
+# Accessibility/Microphone grants per-signature for ad-hoc apps. The
+# practical effect (confirmed repeatedly): every single rebuild silently
+# invalidated every permission you'd already granted, and worse, left
+# behind a stale duplicate TCC row each time, which made "waiting
+# forever" on a fresh grant look like a bug rather than a side effect of
+# the previous re-sign. A real (even self-signed) certificate has its own
+# persistent identity, so the same cert across rebuilds keeps TCC's
+# grants valid. Auto-creates that identity on first run via
+# setup-codesign-identity.sh (one-time trust-settings prompt); only falls
+# back to ad-hoc if that creation itself fails for some reason (e.g. no
+# openssl, or the user declines the trust prompt), so the script still
+# works end to end either way.
+#
+# Deliberately NOT using --options runtime (hardened runtime): combined
+# with only ad-hoc/self-signed (non-notarized) signing, hardened runtime
+# was observed to silently break the app's XPC calls into tccd entirely
+# (TCCAccessRequest() fired client-side on every poll tick but tccd never
+# logged receiving it) -- permission dialogs never had a chance to show
+# at all. Not needed for a local, non-sandboxed dev build regardless.
+echo "Re-signing..."
+if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "Vox Local Dev Codesign"; then
+  echo "  No stable 'Vox Local Dev Codesign' identity found yet -- creating one now (one-time setup)"
+  echo "  so Accessibility/Microphone grants survive future rebuilds. See"
+  echo "  scripts/setup-codesign-identity.sh for exactly what this does."
+  if ! "$SCRIPT_DIR/setup-codesign-identity.sh"; then
+    echo "  Could not create a stable identity automatically -- falling back to" >&2
+    echo "  ad-hoc; permissions will need re-granting after every future rebuild." >&2
+    echo "  Run ./scripts/setup-codesign-identity.sh by hand to retry." >&2
+  fi
+fi
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "Vox Local Dev Codesign"; then
+  SIGN_IDENTITY="Vox Local Dev Codesign"
+else
+  SIGN_IDENTITY="-"
+fi
+codesign --force --deep -s "$SIGN_IDENTITY" "$STAGING"
+
+# ---- Phase B: critical section (rollback trap is armed) ------------------
+PHASE="B"
+
+# Record the prior state so a failure can restore it exactly.
+if pgrep -f "${APP_NAME}.app/Contents/MacOS/${APP_NAME_LOWER}-bin" >/dev/null 2>&1; then
+  WAS_RUNNING=true
+fi
+if launchctl print "gui/${UID_NUM}/${AGENT_LABEL}" >/dev/null 2>&1; then
+  WAS_LOADED=1
+fi
+if [ -e "$DEST_APP" ]; then
+  HAD_PREVIOUS=1
+fi
+if [ -f "$AGENT_PLIST" ]; then
+  HAD_PLIST=1
+  OLD_PLIST_COPY="$(mktemp "${TMPDIR:-/tmp}/${APP_NAME_LOWER}-agent-plist.XXXXXX")"
+  cp "$AGENT_PLIST" "$OLD_PLIST_COPY"
+fi
+
+# ---- 1. Stop anything currently running ----------------------------------
+# Remember whether it was actually running (WAS_RUNNING above) so the
+# restart step can bring it back -- re-running this script should always
+# leave you running the build you just installed.
+echo "Stopping any running instance..."
+MUTATED=1
+launchctl bootout "gui/${UID_NUM}/${AGENT_LABEL}" 2>/dev/null || true
+pkill -f "${APP_NAME}.app/Contents/MacOS/" 2>/dev/null || true
+
+# ---- 1b. Swap the staged bundle into place -------------------------------
+# Clear any stale backup from an earlier crashed run here, not inside the
+# swap, so that a failure while clearing it cannot be mistaken for a
+# swap that needs rolling back.
+echo "Replacing ${DEST_APP}..."
+rm -rf "$BACKUP"
+SWAP_STARTED=1
+swap_in_app "$STAGING" "$DEST_APP" "$BACKUP"
+
+mdimport "$DEST_APP" >/dev/null 2>&1 || true
 
 # ---- 3. launchd user agent -----------------------------------------------
 echo "Registering launchd user agent..."
@@ -145,6 +324,7 @@ if [ -n "$HTTPS_PROXY_URL" ]; then
   fi
 fi
 
+PLIST_CHANGED=1
 cat > "$AGENT_PLIST" <<PLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -154,7 +334,7 @@ cat > "$AGENT_PLIST" <<PLIST_EOF
     <string>${AGENT_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>${REAL_BIN}</string>
+        <string>${DEST_REAL_BIN}</string>
     </array>
     <key>RunAtLoad</key>
     <false/>
@@ -172,63 +352,17 @@ PLIST_EOF
 launchctl bootstrap "gui/${UID_NUM}" "$AGENT_PLIST"
 echo "  [ok] $AGENT_PLIST"
 
-# ---- 4. Re-sign after structural changes ---------------------------------
-# Uses the stable local "Vox Local Dev Codesign" identity (self-signed,
-# auto-created on first run by ./scripts/setup-codesign-identity.sh if it
-# doesn't already exist -- see that script's header for the full why)
-# instead of plain ad-hoc (`-s -`).
-#
-# This matters a lot more than it sounds: ad-hoc signing has NO stable
-# identity across builds -- it's just a hash of the binary's own content.
-# Every rebuild produces a different signature, and TCC tracks
-# Accessibility/Microphone grants per-signature for ad-hoc apps. The
-# practical effect (confirmed repeatedly): every single rebuild silently
-# invalidated every permission you'd already granted, and worse, left
-# behind a stale duplicate TCC row each time, which made "waiting
-# forever" on a fresh grant look like a bug rather than a side effect of
-# the previous re-sign. A real (even self-signed) certificate has its own
-# persistent identity, so the same cert across rebuilds keeps TCC's
-# grants valid. Auto-creates that identity on first run via
-# setup-codesign-identity.sh (one-time trust-settings prompt); only falls
-# back to ad-hoc if that creation itself fails for some reason (e.g. no
-# openssl, or the user declines the trust prompt), so the script still
-# works end to end either way.
-#
-# Deliberately NOT using --options runtime (hardened runtime): combined
-# with only ad-hoc/self-signed (non-notarized) signing, hardened runtime
-# was observed to silently break the app's XPC calls into tccd entirely
-# (TCCAccessRequest() fired client-side on every poll tick but tccd never
-# logged receiving it) -- permission dialogs never had a chance to show
-# at all. Not needed for a local, non-sandboxed dev build regardless.
-echo "Re-signing..."
-if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "Vox Local Dev Codesign"; then
-  echo "  No stable 'Vox Local Dev Codesign' identity found yet -- creating one now (one-time setup)"
-  echo "  so Accessibility/Microphone grants survive future rebuilds. See"
-  echo "  scripts/setup-codesign-identity.sh for exactly what this does."
-  if ! "$(dirname "$0")/setup-codesign-identity.sh"; then
-    echo "  Could not create a stable identity automatically -- falling back to" >&2
-    echo "  ad-hoc; permissions will need re-granting after every future rebuild." >&2
-    echo "  Run ./scripts/setup-codesign-identity.sh by hand to retry." >&2
-  fi
-fi
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "Vox Local Dev Codesign"; then
-  SIGN_IDENTITY="Vox Local Dev Codesign"
-else
-  SIGN_IDENTITY="-"
-fi
-codesign --force --deep -s "$SIGN_IDENTITY" "$DEST_APP"
-
-mdimport "$DEST_APP" >/dev/null 2>&1 || true
-
 # ---- 5. Restart, if it was running before this script stopped it --------
-# Without this, every re-install silently leaves the just-replaced build
-# sitting unused in /Applications until someone remembers to relaunch it
-# by hand -- easy to mistake for "the fix didn't work" when really it's
-# just the OLD process still (not) running.
+# Restart through launchd (kickstart), never through `open`: LaunchServices
+# launches are exactly what the header comment explains must be avoided.
 if [ "$WAS_RUNNING" = true ]; then
   echo "Restarting (it was running before this install)..."
-  open "$DEST_APP"
+  launchctl kickstart -k "gui/${UID_NUM}/${AGENT_LABEL}"
 fi
+
+# ---- Success: the new install is live ------------------------------------
+discard_backup "$BACKUP" || echo "Warning: could not remove the previous-app backup at $BACKUP" >&2
+PHASE="done"
 
 cat <<EOF
 

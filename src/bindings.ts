@@ -560,6 +560,31 @@ async isPortable() : Promise<boolean> {
 async isUpdateChecksLocked() : Promise<boolean> {
     return await TAURI_INVOKE("is_update_checks_locked");
 },
+async getUpdateMode() : Promise<SourceUpdateMode> {
+    return await TAURI_INVOKE("get_update_mode");
+},
+async checkSourceUpdate() : Promise<Result<SourceUpdateInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("check_source_update") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getCachedSourceUpdate() : Promise<SourceUpdateInfo | null> {
+    return await TAURI_INVOKE("get_cached_source_update");
+},
+async getSourceUpdateInstallBlocker() : Promise<string | null> {
+    return await TAURI_INVOKE("get_source_update_install_blocker");
+},
+async startSourceUpdate() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_source_update") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getAppDirPath() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_app_dir_path") };
@@ -840,6 +865,60 @@ async getClamshellMicrophone() : Promise<Result<string, string>> {
 async isRecording() : Promise<boolean> {
     return await TAURI_INVOKE("is_recording");
 },
+async changeConverseSilenceMsSetting(value: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_converse_silence_ms_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeConverseMaxIdleTurnsSetting(value: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_converse_max_idle_turns_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeConverseContextTurnsSetting(value: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_converse_context_turns_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async converseStart() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("converse_start") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async converseStop() : Promise<boolean> {
+    return await TAURI_INVOKE("converse_stop");
+},
+async converseStatus() : Promise<string> {
+    return await TAURI_INVOKE("converse_status");
+},
+async changeExpRtBoolSetting(key: ExpRtBool, value: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_exp_rt_bool_setting", { key, value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeExpRtTextSetting(key: ExpRtText, value: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_exp_rt_text_setting", { key, value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getMicrophoneChannels(deviceName: string) : Promise<Result<number, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_microphone_channels", { deviceName }) };
@@ -998,6 +1077,148 @@ async wakewordSetEnabled(enabled: boolean) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async changeVoiceCommandsSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_voice_commands_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeMemoryEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_memory_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeAgentBridgeEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_bridge_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeAgentBridgeBinaryPathSetting(path: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_bridge_binary_path_setting", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async searchHistoryEntries(query: string, limit: number | null) : Promise<Result<HistoryEntry[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("search_history_entries", { query, limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setVoiceShortcuts(shortcuts: VoiceShortcut[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_voice_shortcuts", { shortcuts }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeVoiceMediaControlsSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_voice_media_controls_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeAgentContextSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_context_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async agentClearConversation() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("agent_clear_conversation") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsVoiceSetting(voice: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_voice_setting", { voice }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsRateSetting(rate: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_rate_setting", { rate }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Persist FIRST, then invalidate pending speech so any in-flight exchange
+ * is cancelled and the next one sees the new settings.
+ */
+async changeTtsComposerSettings(patch: TtsComposerSettingsPatch) : Promise<Result<TtsComposerSettings, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_composer_settings", { patch }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Providers the composer can use (the UI shows each endpoint).
+ */
+async listTtsComposerProviders() : Promise<ComposerProviderInfo[]> {
+    return await TAURI_INVOKE("list_tts_composer_providers");
+},
+/**
+ * Compose a fixed sample with the CURRENT configuration and speak it when
+ * spoken replies are enabled.
+ */
+async previewSpeechComposer() : Promise<Result<ComposerPreview, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("preview_speech_composer") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsSpeakTest(text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_speak_test", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsStop() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_stop") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Checks if the Mac is a laptop by detecting battery presence
  * 
@@ -1101,7 +1322,33 @@ vad_backend?: VadBackend;
  * not gated on this — that follows model capability. Migrated from the old
  * `overlay_position` (position `none` → style `None`).
  */
-overlay_style?: OverlayStyle }
+overlay_style?: OverlayStyle 
+voice_shortcuts?: VoiceShortcut[];
+voice_media_controls_enabled?: boolean;
+agent_context_enabled?: boolean;
+tts_enabled?: boolean;
+tts_voice?: string | null;
+tts_rate_wpm?: number;
+/**
+ * Speech composer (spoken-reply summarizer). See docs/spoken-replies.md.
+ */
+tts_composer_mode?: TtsComposerMode; tts_composer_provider_id?: string; tts_composer_model?: string; tts_composer_command_path?: string; tts_composer_command_args?: string; tts_composer_prompt_flag?: string;
+/**
+ * The exact normalized (path, args, flag) tuple the user acknowledged.
+ */
+tts_composer_command_ack?: string; tts_composer_timeout_secs?: number; tts_composer_style?: string; tts_composer_send_user_utterance?: boolean; tts_composer_fallback?: TtsComposerFallback;
+converse_silence_ms?: number; converse_max_idle_turns?: number; converse_context_turns?: number;
+exp_rt_enabled?: boolean; exp_rt_direct_endpoint?: boolean; exp_rt_endpoint_url?: string; exp_rt_model?: string; exp_rt_token?: SecretString; exp_rt_stream_reply?: boolean; exp_rt_early_speech?: boolean; exp_rt_fast_voice?: boolean; exp_rt_ack?: boolean; exp_rt_prewarm?: boolean; exp_rt_auto_proxy?: boolean; exp_rt_proxy_enabled?: boolean; exp_rt_proxy_url?: string; exp_rt_timing_log?: boolean;
+}
+export type ExpRtBool = "enabled" | "direct_endpoint" | "stream_reply" | "early_speech" | "fast_voice" | "ack" | "prewarm" | "auto_proxy" | "proxy_enabled" | "timing_log"
+export type ExpRtText = "endpoint_url" | "model" | "token" | "proxy_url"
+/**
+ * A single secret value (API token). Serialized as a plain string so it persists,
+ * but `Debug` never prints it.
+ */
+export type SecretString = string
+export type VoiceShortcut = { phrase: string; action: VoiceShortcutAction }
+export type VoiceShortcutAction = { type: "open_url"; url: string } | { type: "open_path"; path: string } | { type: "open_app"; name: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1124,6 +1371,47 @@ export type EngineType =
  * the file, so this one variant covers the whole transcribe-cpp family.
  */
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere"
+export type ComposerPreview = { speech: string; emotion: Emotion }
+export type ComposerProviderInfo = { id: string; label: string; base_url: string }
+export type Emotion = "neutral" | "cheerful" | "excited" | "calm" | "concerned" | "apologetic" | "serious"
+export type TtsComposerFallback = 
+/**
+ * Speak a fixed short sentence when composition fails.
+ */
+"short_notice" | 
+/**
+ * Speak the (capped) reply verbatim when composition fails.
+ */
+"verbatim" | 
+/**
+ * Say nothing when composition fails.
+ */
+"silent"
+export type TtsComposerMode = 
+/**
+ * Legacy behavior: speak the reply text as-is.
+ */
+"off" | 
+/**
+ * Ask an OpenAI-compatible provider already configured in settings.
+ */
+"model" | 
+/**
+ * Run a user-configured local command.
+ */
+"command"
+export type TtsComposerSettings = { mode: TtsComposerMode; provider_id: string; model: string; command_path: string; command_args: string; prompt_flag: string; command_ack: string; timeout_secs: number; style: string; send_user_utterance: boolean; fallback: TtsComposerFallback }
+/**
+ * Partial update. `None` = untouched. For strings `Some("")` CLEARS (for
+ * `prompt_flag` it resets to the default `-p`; for `provider_id` an empty
+ * string is invalid).
+ */
+export type TtsComposerSettingsPatch = { mode: TtsComposerMode | null; provider_id: string | null; model: string | null; command_path: string | null; command_args: string | null; prompt_flag: string | null; timeout_secs: number | null; style: string | null; send_user_utterance: boolean | null; fallback: TtsComposerFallback | null; 
+/**
+ * Honored ONLY when the same patch also supplies command_path,
+ * command_args and prompt_flag.
+ */
+acknowledge_command: boolean | null }
 export type Fact = { id: number; text: string; source_transcript: string; created_at: number }
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
@@ -1240,6 +1528,9 @@ export type ShortcutActivation =
 "hold_or_toggle"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+export type SourceUpdateInfo = { state: SourceUpdateState; current_commit: string; latest_commit: string; behind_by: number; changes: string[]; compare_url: string; note: string | null; can_install: boolean; install_blocker: string | null }
+export type SourceUpdateMode = "source" | "plugin"
+export type SourceUpdateState = "up_to_date" | "available" | "untracked"
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */
@@ -1268,6 +1559,7 @@ kind?: StreamWorkKind | null }
  * volatile suffix the model may still rewrite.
  */
 export type StreamTextEvent = { committed: string; tentative: string }
+export type ConverseStateEvent = { state: string; end: string | null }
 /**
  * Semantic kind of "working" phase, used to localize the spinner label.
  */

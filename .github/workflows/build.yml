@@ -513,6 +513,7 @@ jobs:
           "$tools_dir/linuxdeploy-${arch}.AppImage" --appimage-extract-and-run --version
 
       - name: Build with Tauri
+        if: ${{ !(contains(inputs.platform, 'macos') && !inputs.sign-binaries) }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -543,7 +544,25 @@ jobs:
           releaseName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
           releaseId: ${{ inputs.release-id }}
           assetNamePattern: ${{ steps.patch-release-name.outputs.platform }}
-          args: ${{ inputs.build-args }}
+          # tauri.conf.json enables updater artifacts and ships an updater public
+          # key, so `tauri build` exits 1 at the very end (after bundling) when no
+          # TAURI_SIGNING_PRIVATE_KEY is available. Unsigned CI verification builds
+          # (sign-binaries: false) therefore turn updater artifacts off; signed
+          # release builds keep them.
+          args: ${{ inputs.build-args }}${{ !inputs.sign-binaries && ' --config src-tauri/tauri.ci-unsigned.conf.json' || '' }}
+
+      # Unsigned macOS verification builds (no release upload, no signing) run
+      # `tauri build` directly. The tauri-action step above exports every
+      # APPLE_* variable as an EMPTY string when sign-binaries is false, and
+      # `tauri build` treats a variable that is present but empty as set:
+      # APPLE_CERTIFICATE='' makes it attempt a keychain import and exit 1
+      # ("failed to import keychain certificate"). Leaving the variables unset
+      # makes it fall back to ad-hoc signing, which is what a verification
+      # build wants. Signed builds still go through tauri-action unchanged.
+      - name: Build with Tauri (unsigned macOS verification build)
+        if: ${{ contains(inputs.platform, 'macos') && !inputs.sign-binaries }}
+        shell: bash
+        run: bun tauri build ${{ inputs.build-args }} --config src-tauri/tauri.ci-unsigned.conf.json
 
       # tauri-action uploads release assets before returning. All AppImage
       # filtering therefore happens inside linuxdeploy above; this verifies the

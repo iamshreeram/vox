@@ -46,6 +46,12 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Test workflow permission guard
+        run: bun run test:workflow-permissions
+
+      - name: Check reusable workflow permissions
+        run: bun run check:workflow-permissions
+
       - name: Check translation consistency
         run: bun run check:translations
 

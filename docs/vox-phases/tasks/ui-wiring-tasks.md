@@ -22,6 +22,7 @@ unit rather than leaving them as two unrelated rows a user has to
 mentally connect themselves.
 
 **Files touched:**
+
 - `src/components/settings/ListeningModeSection.tsx` (new) — a small
   `SettingsGroup`-wrapped component containing both `WakeWordToggle` and
   `AmbientModeToggle` with a short explanatory blurb above them (reuse
@@ -59,6 +60,7 @@ a genuinely continuous/always-on microphone use case that today's
 onboarding copy doesn't mention).
 
 **Files touched:**
+
 - Whatever onboarding/permission component currently explains microphone
   access (check `src/components/onboarding/` and
   `src/components/AccessibilityPermissions.tsx` for the current copy
@@ -93,6 +95,7 @@ scope — flag which approach was taken in the report).
 **Depends on:** W8, A8, U1 (all new UI copy must exist first).
 
 **Files touched:**
+
 - `src/i18n/locales/en/translation.json` only (verification/cleanup
   pass — this task does not translate into other locales, matching the
   precedent already set with Memory/Voice Commands in the prior session;
@@ -100,6 +103,7 @@ scope — flag which approach was taken in the report).
   is acceptable for this round).
 
 **Implement:** nothing new — this is a verification task. Confirm:
+
 - every new translation key introduced across W8/A8/U1/U2 exists in
   `en/translation.json` and is actually referenced via `t("...")` in the
   component that needs it (no orphaned keys, no missing keys).
