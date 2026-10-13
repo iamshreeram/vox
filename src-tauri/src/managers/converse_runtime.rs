@@ -26,6 +26,15 @@ pub struct SessionParts {
     pub cfg: SessionConfig,
 }
 
+/// Holds the per-session admission (for example an ownership lease). The
+/// controller keeps it alive for the whole session; dropping it releases it.
+pub trait AdmissionGuard: Send {}
+
+/// Admission guard that claims nothing.
+pub struct NoopGuard;
+
+impl AdmissionGuard for NoopGuard {}
+
 pub trait Platform: Send + Sync + 'static {
     /// Human-readable reason when a session cannot start (TTS disabled, no
     /// reply backend, wake word/ambient enabled, ...). Checked BEFORE the
@@ -38,6 +47,11 @@ pub trait Platform: Send + Sync + 'static {
     fn parts(&self, capture: &CaptureHandle) -> SessionParts;
     /// Emit one `converse-state` event: `(state_label, end_label)`.
     fn on_state(&self, state: &'static str, end: Option<&'static str>);
+    /// Claim whatever exclusive resource a session needs. Default: claims
+    /// nothing. The controller does not call this yet.
+    fn admit(&self) -> Result<Box<dyn AdmissionGuard>, String> {
+        Ok(Box::new(NoopGuard))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -205,8 +219,10 @@ mod tests {
         CaptureTimings, CaptureWorker, RecorderPort, StartError, TranscribeFailure, Transcriber,
     };
     use crate::managers::converse_hooks;
-    use crate::managers::converse_plan::{PlanError, PlanInput, TurnPlan};
+    use crate::managers::converse_plan::{PlanError, PlanInput, PlanKind, TurnPlan};
     use crate::managers::emotion::Emotion;
+    use crate::managers::ownership::{Busy, Lease, Owner, OwnershipGate};
+    use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
@@ -610,6 +626,316 @@ mod tests {
         assert!(c.start().is_ok());
         c.stop();
         wait_until("drain", || !c.is_active());
+        reset_hooks();
+    }
+
+    // ------------------- admission guard lifecycle (O7'') -------------------
+
+    impl AdmissionGuard for Lease {}
+
+    /// Ears that replay scripted outcomes, then wait until cancelled.
+    struct ScriptedEars(Mutex<VecDeque<ListenOutcome>>);
+    impl Ears for ScriptedEars {
+        fn listen(&self) -> BoxFuture<'_, ListenOutcome> {
+            let next = self.0.lock().unwrap().pop_front();
+            let fut: BoxFuture<'_, ListenOutcome> = match next {
+                Some(outcome) => Box::pin(async move { outcome }),
+                None => Box::pin(std::future::pending()),
+            };
+            fut
+        }
+    }
+
+    /// Brain that always answers with one spoken sentence.
+    struct ScriptedBrain;
+    impl Brain for ScriptedBrain {
+        fn plan<'a>(&'a self, _i: PlanInput<'a>) -> BoxFuture<'a, Result<TurnPlan, PlanError>> {
+            Box::pin(async {
+                Ok(TurnPlan {
+                    kind: PlanKind::Answer,
+                    speech: "Here it is.".to_string(),
+                    emotion: Emotion::Neutral,
+                    paste_text: None,
+                    command: None,
+                })
+            })
+        }
+    }
+
+    /// Wraps `FakePlatform`. `admit` claims the injected gate for the
+    /// conversation. Every state event is logged as `show:<state>` (`hide` for
+    /// the final idle) and probes the gate the way dictation would.
+    struct GatedPlatform {
+        gate: Arc<OwnershipGate>,
+        inner: Arc<FakePlatform>,
+        /// true: scripted turns (acting, thinking, speaking, listening). false:
+        /// the inner fake's blocking capture-backed ears.
+        scripted: bool,
+        ops: Mutex<Vec<String>>,
+        probes: Mutex<Vec<(&'static str, String)>>,
+    }
+    impl GatedPlatform {
+        fn new(gate: Arc<OwnershipGate>, scripted: bool) -> Arc<Self> {
+            Arc::new(GatedPlatform {
+                gate,
+                inner: FakePlatform::new(Mode::Listening),
+                scripted,
+                ops: Mutex::new(vec![]),
+                probes: Mutex::new(vec![]),
+            })
+        }
+        fn op_log(&self) -> Vec<String> {
+            self.ops.lock().unwrap().clone()
+        }
+        fn probe_log(&self) -> Vec<(&'static str, String)> {
+            self.probes.lock().unwrap().clone()
+        }
+        /// What a dictation start would see right now: `free`, or `Busy(owner)`.
+        fn dictation_probe(&self) -> String {
+            match self.gate.try_acquire(Owner::Dictation) {
+                Ok(lease) => {
+                    drop(lease);
+                    "free".to_string()
+                }
+                Err(busy) => format!("{busy:?}"),
+            }
+        }
+    }
+    impl Platform for GatedPlatform {
+        fn preflight(&self) -> Result<(), String> {
+            self.inner.preflight()
+        }
+        fn admit(&self) -> Result<Box<dyn AdmissionGuard>, String> {
+            self.ops.lock().unwrap().push("admit".to_string());
+            match self.gate.try_acquire(Owner::Conversation) {
+                Ok(lease) => Ok(Box::new(lease)),
+                Err(busy) => Err(format!("busy:{busy:?}")),
+            }
+        }
+        fn capture(&self) -> CaptureHandle {
+            self.inner.capture()
+        }
+        fn parts(&self, capture: &CaptureHandle) -> SessionParts {
+            if !self.scripted {
+                return self.inner.parts(capture);
+            }
+            let turns = VecDeque::from(vec![ListenOutcome::Utterance(
+                "open the notes app".to_string(),
+            )]);
+            SessionParts {
+                ears: Box::new(ScriptedEars(Mutex::new(turns))),
+                mouth: Box::new(QuietMouth(self.inner.mouth_log.clone())),
+                hands: Box::new(NoHands),
+                brain: Box::new(ScriptedBrain),
+                cfg: SessionConfig {
+                    post_speech_guard: Duration::from_millis(0),
+                    quiet_wait: Duration::from_millis(5),
+                    ..SessionConfig::default()
+                },
+            }
+        }
+        fn on_state(&self, state: &'static str, end: Option<&'static str>) {
+            if state == "idle" {
+                self.ops.lock().unwrap().push("hide".to_string());
+            } else {
+                self.ops.lock().unwrap().push(format!("show:{state}"));
+            }
+            let probe = self.dictation_probe();
+            self.probes.lock().unwrap().push((state, probe));
+            self.inner.on_state(state, end);
+        }
+    }
+
+    /// Stops and waits for a controller's session when the test ends, even on
+    /// panic, so a failing test cannot leak a running session into the next.
+    struct DrainOnDrop(Arc<ConverseController>);
+    impl Drop for DrainOnDrop {
+        fn drop(&mut self) {
+            self.0.stop();
+            let t = Instant::now();
+            while self.0.is_active() && t.elapsed() < Duration::from_secs(5) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+    }
+
+    /// (a) The registry refuses the start after admission succeeded: the
+    /// admission must be undone, so dictation can take the gate again.
+    #[test]
+    fn o7_admission_is_released_when_the_registry_rejects_the_start() {
+        let _g = lock();
+        reset_hooks();
+        let gate = OwnershipGate::new();
+        let p = GatedPlatform::new(gate.clone(), false);
+        let c = ConverseController::new(p.clone());
+        // Make the single-session guard refuse the start.
+        let (held_id, _cancel) = c.registry.try_begin().expect("occupy the registry");
+        let r = c.start();
+        c.registry.finish(held_id);
+        assert_eq!(r, Err(ALREADY_RUNNING.to_string()));
+        assert_eq!(
+            p.op_log(),
+            vec!["admit".to_string()],
+            "admission must have happened before the registry refused"
+        );
+        assert_eq!(gate.current(), None, "rejected start must release the gate");
+        assert!(gate.try_acquire(Owner::Dictation).is_ok());
+        reset_hooks();
+    }
+
+    /// (b) A panic while building the capture/parts after admission: the start
+    /// fails, the gate is free and no overlay op was recorded.
+    /// NOTE: the controller already catches panics there (`catch_unwind`), so
+    /// the panic path is tested as is, not as a plain Err.
+    #[test]
+    fn o7_admission_is_released_when_collaborator_construction_panics() {
+        let _g = lock();
+        reset_hooks();
+        let gate = OwnershipGate::new();
+        let p = GatedPlatform::new(gate.clone(), false);
+        p.inner.panic_in_parts.store(true, Ordering::SeqCst);
+        let c = ConverseController::new(p.clone());
+        assert_eq!(c.start(), Err(START_FAILED.to_string()));
+        assert_eq!(
+            p.op_log(),
+            vec!["admit".to_string()],
+            "no show or hide may be recorded for a failed start"
+        );
+        assert!(
+            p.probe_log().is_empty(),
+            "no session state was ever emitted"
+        );
+        assert_eq!(gate.current(), None, "panic must release the gate");
+        assert!(gate.try_acquire(Owner::Dictation).is_ok());
+        reset_hooks();
+    }
+
+    /// (c) A full scripted session (listening, acting, thinking, speaking, then
+    /// listening until stopped). Dictation must be refused in every observed
+    /// state, and the gate may be taken only after the final hide is logged
+    /// AND the registry entry is finished.
+    #[test]
+    fn o7_conversation_lease_blocks_dictation_in_every_observed_state_until_final_hide() {
+        let _g = lock();
+        reset_hooks();
+        let gate = OwnershipGate::new();
+        let p = GatedPlatform::new(gate.clone(), true);
+        let c = Arc::new(ConverseController::new(p.clone()));
+        let _drain = DrainOnDrop(c.clone());
+        c.start().expect("conversation start");
+        // The second listen blocks until stop, so this is a settled point.
+        wait_until("the session to listen again", || {
+            p.op_log().iter().filter(|o| *o == "show:listening").count() >= 2
+        });
+        let seen: Vec<&str> = p.probe_log().iter().map(|(s, _)| *s).collect();
+        for state in ["listening", "acting", "thinking", "speaking"] {
+            assert!(
+                seen.contains(&state),
+                "state {state} not observed: {seen:?}"
+            );
+        }
+        assert_eq!(
+            *p.inner.mouth_log.lock().unwrap(),
+            vec!["say:Here it is.".to_string()],
+            "the speaking turn must have run"
+        );
+        let before_stop = p.probe_log();
+        assert!(
+            before_stop.iter().all(|(_, r)| r == "Busy(Conversation)"),
+            "dictation was admitted during the conversation: {before_stop:?}"
+        );
+        assert!(c.stop(), "running session must accept stop");
+        // Bounded poll: each try must be refused until the final hide is logged
+        // and the registry entry is gone. The snapshot is taken BEFORE the try.
+        let t = Instant::now();
+        loop {
+            let hidden = p.op_log().iter().any(|o| o == "hide");
+            let drained = !c.is_active();
+            match gate.try_acquire(Owner::Dictation) {
+                Ok(lease) => {
+                    drop(lease);
+                    assert!(
+                        hidden && drained,
+                        "gate freed before final hide/registry cleanup (hidden={hidden}, drained={drained}): {:?}",
+                        p.op_log()
+                    );
+                    break;
+                }
+                Err(busy) => assert_eq!(busy, Busy(Owner::Conversation), "wrong holder"),
+            }
+            assert!(
+                t.elapsed() < Duration::from_secs(2),
+                "gate never freed after the final hide: {:?}",
+                p.op_log()
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let all = p.probe_log();
+        assert!(all.iter().any(|(s, _)| *s == "idle"), "final idle observed");
+        assert!(
+            all.iter().all(|(_, r)| r == "Busy(Conversation)"),
+            "dictation was admitted at some state: {all:?}"
+        );
+        assert_eq!(c.status(), ConverseStatus::Idle);
+        reset_hooks();
+    }
+
+    /// (d) Dictation already holds the gate: the start is refused before any
+    /// collaborator is built, no overlay op is recorded, and the controller's
+    /// session guard is untouched, so a later start works.
+    #[test]
+    fn o7_refused_admission_builds_nothing_and_leaves_the_session_guard_alone() {
+        let _g = lock();
+        reset_hooks();
+        let gate = OwnershipGate::new();
+        let dictation = gate
+            .try_acquire(Owner::Dictation)
+            .expect("dictation holds the gate");
+        let p = GatedPlatform::new(gate.clone(), false);
+        let c = Arc::new(ConverseController::new(p.clone()));
+        let _drain = DrainOnDrop(c.clone());
+        let r = c.start();
+        assert!(
+            r.is_err(),
+            "conversation must be refused while dictation holds the gate, got {r:?}"
+        );
+        assert_eq!(
+            p.inner.captures_made.load(Ordering::SeqCst),
+            0,
+            "no collaborator may be constructed"
+        );
+        assert!(
+            p.op_log().iter().all(|o| o == "admit"),
+            "no overlay op may be recorded: {:?}",
+            p.op_log()
+        );
+        assert!(!c.is_active());
+        assert_eq!(c.status(), ConverseStatus::Idle);
+        assert!(!converse_hooks::session_active());
+        drop(dictation);
+        c.start()
+            .expect("a later start works once dictation released");
+        assert!(c.stop());
+        wait_until("drain", || !c.is_active());
+        reset_hooks();
+    }
+
+    /// (e) The default `admit` (fakes that do not override it) claims nothing
+    /// and a session still starts and stops as before.
+    #[test]
+    fn o7_default_admit_claims_nothing_and_a_session_still_runs() {
+        let _g = lock();
+        reset_hooks();
+        let p = FakePlatform::new(Mode::Listening);
+        let guard = p.admit();
+        assert!(guard.is_ok(), "default admit must succeed");
+        drop(guard);
+        let c = Arc::new(ConverseController::new(p.clone()));
+        let _drain = DrainOnDrop(c.clone());
+        assert!(c.start().is_ok());
+        assert!(c.stop());
+        wait_until("drain", || !c.is_active());
+        assert_eq!(c.status(), ConverseStatus::Idle);
         reset_hooks();
     }
 }
