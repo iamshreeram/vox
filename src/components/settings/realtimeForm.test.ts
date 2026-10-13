@@ -46,7 +46,11 @@ scenario("field names match the backend settings fields", () => {
 scenario("only the master stays enabled while it is off", () => {
   for (const k of ALL) {
     assert.equal(controlDisabled(k, true), false, `${k} with master on`);
-    assert.equal(controlDisabled(k, false), k !== "enabled", `${k} with master off`);
+    assert.equal(
+      controlDisabled(k, false),
+      k !== "enabled",
+      `${k} with master off`,
+    );
   }
 });
 
@@ -65,7 +69,11 @@ scenario("token summary never reveals the token", () => {
   assert.ok(!s.label.includes("secret") && !s.label.includes("eyJ"));
   assert.ok(!s.label.includes(secret.slice(-4)));
   assert.equal(s.label, `set (${secret.length} characters)`);
-  assert.equal(tokenSummary("   ").hasToken, false, "whitespace only is not a token");
+  assert.equal(
+    tokenSummary("   ").hasToken,
+    false,
+    "whitespace only is not a token",
+  );
 });
 
 scenario("endpoint status mirrors the backend preflight order", () => {
@@ -73,34 +81,70 @@ scenario("endpoint status mirrors the backend preflight order", () => {
   assert.equal(endpointStatus({ ...base, master: false }), "off");
   assert.equal(endpointStatus({ ...base, direct: false }), "off");
   assert.equal(endpointStatus(base), "missing_endpoint");
-  assert.equal(endpointStatus({ ...base, url: "https://gw.example.com" }), "missing_model");
+  assert.equal(
+    endpointStatus({ ...base, url: "https://gw.example.com" }),
+    "missing_model",
+  );
   assert.equal(
     endpointStatus({ ...base, url: "https://gw.example.com", model: "m" }),
     "missing_token",
   );
-  const ready = { ...base, url: "https://gw.example.com", model: "m", token: "t" };
+  const ready = {
+    ...base,
+    url: "https://gw.example.com",
+    model: "m",
+    token: "t",
+  };
   assert.equal(endpointStatus(ready), "ok");
-  assert.equal(endpointStatus({ ...ready, url: "ftp://gw.example.com" }), "invalid_endpoint");
-  assert.equal(endpointStatus({ ...ready, url: "https://u:p@gw.example.com" }), "invalid_endpoint");
-  assert.equal(endpointStatus({ ...ready, url: "http://gw.example.com" }), "needs_https");
-  assert.equal(endpointStatus({ ...ready, url: "http://127.0.0.1:8080" }), "ok");
-  assert.equal(endpointStatus({ ...ready, url: "http://localhost:8080/a" }), "ok");
+  assert.equal(
+    endpointStatus({ ...ready, url: "ftp://gw.example.com" }),
+    "invalid_endpoint",
+  );
+  assert.equal(
+    endpointStatus({ ...ready, url: "https://u:p@gw.example.com" }),
+    "invalid_endpoint",
+  );
+  assert.equal(
+    endpointStatus({ ...ready, url: "http://gw.example.com" }),
+    "needs_https",
+  );
+  assert.equal(
+    endpointStatus({ ...ready, url: "http://127.0.0.1:8080" }),
+    "ok",
+  );
+  assert.equal(
+    endpointStatus({ ...ready, url: "http://localhost:8080/a" }),
+    "ok",
+  );
   assert.equal(endpointStatus({ ...ready, url: "http://[::1]:8080" }), "ok");
 });
 
 scenario("validateText trims and accepts good values", () => {
-  assert.deepEqual(validateText("model", "  some-model "), { ok: true, value: "some-model" });
-  assert.deepEqual(validateText("endpoint_url", " https://gw.example.com/anthropic/ "), {
+  assert.deepEqual(validateText("model", "  some-model "), {
     ok: true,
-    value: "https://gw.example.com/anthropic",
+    value: "some-model",
   });
-  assert.deepEqual(validateText("token", " abc.def-123 "), { ok: true, value: "abc.def-123" });
+  assert.deepEqual(
+    validateText("endpoint_url", " https://gw.example.com/anthropic/ "),
+    {
+      ok: true,
+      value: "https://gw.example.com/anthropic",
+    },
+  );
+  assert.deepEqual(validateText("token", " abc.def-123 "), {
+    ok: true,
+    value: "abc.def-123",
+  });
   assert.deepEqual(validateText("proxy_url", "http://proxy.example:8080"), {
     ok: true,
     value: "http://proxy.example:8080",
   });
   for (const k of ["endpoint_url", "model", "token", "proxy_url"] as const) {
-    assert.deepEqual(validateText(k, "   "), { ok: true, value: "" }, `${k} empty clears`);
+    assert.deepEqual(
+      validateText(k, "   "),
+      { ok: true, value: "" },
+      `${k} empty clears`,
+    );
   }
   assert.deepEqual(validateText("endpoint_url", "http://127.0.0.1:9/x"), {
     ok: true,
@@ -119,7 +163,10 @@ scenario("validateText rejects bad values with stable reasons", () => {
   assert.equal(bad("endpoint_url", "https://x.example.com/?a=1"), "invalid");
   assert.equal(bad("endpoint_url", "https://x.example.com/#f"), "invalid");
   assert.equal(bad("endpoint_url", "http://x.example.com"), "needs_https");
-  assert.equal(bad("endpoint_url", "https://x.example.com/" + "a".repeat(RT_LIMITS.url)), "too_long");
+  assert.equal(
+    bad("endpoint_url", "https://x.example.com/" + "a".repeat(RT_LIMITS.url)),
+    "too_long",
+  );
   assert.equal(bad("model", "bad\nmodel"), "invalid");
   assert.equal(bad("model", "m".repeat(RT_LIMITS.model + 1)), "too_long");
   assert.equal(bad("token", "has space"), "invalid");

@@ -122,8 +122,7 @@ const DRAFT_WORDS: [&str; 3] = ["write", "draft", "compose"];
 const ACTION_WORDS: [&str; 23] = [
     "open", "launch", "start", "play", "pause", "resume", "switch", "search", "find", "show", "go",
     "create", "run", "close", "quit", "mute", "unmute", "lock", "save", "copy", "paste",
-    "increase",
-    "decrease",
+    "increase", "decrease",
 ];
 
 /// Lowercase alphanumeric words; apostrophes are dropped (so "don't" -> "dont").

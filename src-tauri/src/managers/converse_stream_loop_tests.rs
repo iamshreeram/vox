@@ -204,7 +204,11 @@ struct RigOpts {
 }
 impl Default for RigOpts {
     fn default() -> Self {
-        RigOpts { offer: true, accept_limit: None, finish_outcome: SayOutcome::Done }
+        RigOpts {
+            offer: true,
+            accept_limit: None,
+            finish_outcome: SayOutcome::Done,
+        }
     }
 }
 
@@ -274,17 +278,30 @@ fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
 
 /// A turn that streams `json` in slices of `slice` chars, `gap` ms apart, then resolves with
 /// `plan` after `final_delay` ms.
-fn streamed(json: &str, slice: usize, gap: u64, final_delay: u64, p: Result<TurnPlan, PlanError>) -> Turn {
+fn streamed(
+    json: &str,
+    slice: usize,
+    gap: u64,
+    final_delay: u64,
+    p: Result<TurnPlan, PlanError>,
+) -> Turn {
     let chars: Vec<char> = json.chars().collect();
     Turn {
-        deltas: chars.chunks(slice).map(|c| (gap, c.iter().collect())).collect(),
+        deltas: chars
+            .chunks(slice)
+            .map(|c| (gap, c.iter().collect()))
+            .collect(),
         final_delay,
         plan: p,
     }
 }
 
 fn end_turn() -> Turn {
-    Turn { deltas: vec![], final_delay: 0, plan: Ok(plan(PlanKind::End, "Goodbye.")) }
+    Turn {
+        deltas: vec![],
+        final_delay: 0,
+        plan: Ok(plan(PlanKind::End, "Goodbye.")),
+    }
 }
 
 const THREE: &str = "First sentence is here. Second sentence follows now. Third one ends.";
@@ -296,10 +313,22 @@ fn three_json() -> String {
 
 #[tokio::test]
 async fn disabled_early_speech_uses_the_legacy_say_path_and_never_opens_a_queue() {
-    let r = rig(&["hi"], vec![Turn { deltas: vec![], final_delay: 0, plan: Ok(plan(PlanKind::Answer, "Hello there.")) }], RigOpts::default());
+    let r = rig(
+        &["hi"],
+        vec![Turn {
+            deltas: vec![],
+            final_delay: 0,
+            plan: Ok(plan(PlanKind::Answer, "Hello there.")),
+        }],
+        RigOpts::default(),
+    );
     let _ = run(&r, &cfg(false, None)).await;
     assert!(has(&r.log, "say:Hello there."));
-    assert_eq!(r.mouth.opens.load(Ordering::SeqCst), 0, "neither early speech nor ack => no queue");
+    assert_eq!(
+        r.mouth.opens.load(Ordering::SeqCst),
+        0,
+        "neither early speech nor ack => no queue"
+    );
     assert_eq!(r.brain.streaming_calls.load(Ordering::SeqCst), 0);
     assert_eq!(r.brain.plain_calls.load(Ordering::SeqCst), 1);
 }
@@ -308,8 +337,15 @@ async fn disabled_early_speech_uses_the_legacy_say_path_and_never_opens_a_queue(
 async fn a_mouth_without_a_queue_falls_back_to_the_legacy_path() {
     let r = rig(
         &["hi"],
-        vec![Turn { deltas: vec![], final_delay: 0, plan: Ok(plan(PlanKind::Answer, "Hello there.")) }],
-        RigOpts { offer: false, ..Default::default() },
+        vec![Turn {
+            deltas: vec![],
+            final_delay: 0,
+            plan: Ok(plan(PlanKind::Answer, "Hello there.")),
+        }],
+        RigOpts {
+            offer: false,
+            ..Default::default()
+        },
     );
     let _ = run(&r, &cfg(true, Some(10))).await;
     assert!(has(&r.log, "say:Hello there."));
@@ -332,7 +368,9 @@ async fn sentences_are_spoken_while_the_reply_streams_then_the_remainder_follows
     let interesting: Vec<&str> = log
         .iter()
         .map(String::as_str)
-        .filter(|e| e.starts_with("push:") || *e == "plan_done" || *e == "finish" || e.starts_with("say:"))
+        .filter(|e| {
+            e.starts_with("push:") || *e == "plan_done" || *e == "finish" || e.starts_with("say:")
+        })
         .collect();
     assert_eq!(
         interesting[..5],
@@ -345,7 +383,11 @@ async fn sentences_are_spoken_while_the_reply_streams_then_the_remainder_follows
         ],
         "{log:?}"
     );
-    assert_eq!(count_prefix(&r.log, "say:"), 0, "no legacy say for a queued turn");
+    assert_eq!(
+        count_prefix(&r.log, "say:"),
+        0,
+        "no legacy say for a queued turn"
+    );
     // the full spoken answer is remembered as context for the next turn
     let h = r.brain.histories.lock().unwrap().clone();
     assert_eq!(h[1].len(), 1);
@@ -357,7 +399,13 @@ async fn sentences_are_spoken_while_the_reply_streams_then_the_remainder_follows
 async fn the_first_sentence_is_spoken_before_the_plan_resolves() {
     let r = rig(
         &["hi"],
-        vec![streamed(&three_json(), 5, 3, 120, Ok(plan(PlanKind::Answer, THREE)))],
+        vec![streamed(
+            &three_json(),
+            5,
+            3,
+            120,
+            Ok(plan(PlanKind::Answer, THREE)),
+        )],
         RigOpts::default(),
     );
     let _ = run(&r, &cfg(true, None)).await;
@@ -370,9 +418,17 @@ async fn the_first_sentence_is_spoken_before_the_plan_resolves() {
 async fn early_sentences_carry_the_streamed_emotion_and_the_remainder_the_plans() {
     let mut p = plan(PlanKind::Answer, THREE);
     p.emotion = Emotion::Serious;
-    let r = rig(&["hi"], vec![streamed(&three_json(), 9, 1, 5, Ok(p))], RigOpts::default());
+    let r = rig(
+        &["hi"],
+        vec![streamed(&three_json(), 9, 1, 5, Ok(p))],
+        RigOpts::default(),
+    );
     let _ = run(&r, &cfg(true, None)).await;
-    let pushes = r.mouth.queues.lock().unwrap()[0].pushes.lock().unwrap().clone();
+    let pushes = r.mouth.queues.lock().unwrap()[0]
+        .pushes
+        .lock()
+        .unwrap()
+        .clone();
     assert_eq!(pushes[0].1, Emotion::Calm);
     assert_eq!(pushes[1].1, Emotion::Calm);
     assert_eq!(pushes[2], ("Third one ends.".to_string(), Emotion::Serious));
@@ -383,7 +439,16 @@ async fn clarify_turns_are_spoken_like_answers() {
     let json = r#"{"kind":"clarify","speech":"Which contact do you mean exactly? The one from work or home."}"#;
     let r = rig(
         &["call sam"],
-        vec![streamed(json, 6, 1, 5, Ok(plan(PlanKind::Clarify, "Which contact do you mean exactly? The one from work or home.")))],
+        vec![streamed(
+            json,
+            6,
+            1,
+            5,
+            Ok(plan(
+                PlanKind::Clarify,
+                "Which contact do you mean exactly? The one from work or home.",
+            )),
+        )],
         RigOpts::default(),
     );
     let _ = run(&r, &cfg(true, None)).await;
@@ -394,7 +459,11 @@ async fn clarify_turns_are_spoken_like_answers() {
 
 #[tokio::test]
 async fn an_end_plan_is_spoken_through_the_queue_and_ends_the_session() {
-    let r = rig(&["wrap up the session please"], vec![end_turn()], RigOpts::default());
+    let r = rig(
+        &["wrap up the session please"],
+        vec![end_turn()],
+        RigOpts::default(),
+    );
     let end = run(&r, &cfg(true, None)).await;
     assert_eq!(end, SessionEnd::UserEnded);
     assert!(has(&r.log, "push:Goodbye."));
@@ -405,7 +474,10 @@ async fn an_end_plan_is_spoken_through_the_queue_and_ends_the_session() {
 #[tokio::test]
 async fn a_final_plan_that_contradicts_early_speech_aborts_and_executes_nothing() {
     // streams an "answer" sentence, then the final plan turns out to be a command
-    let cmd = TurnPlan { command: Some("delete everything".into()), ..plan(PlanKind::Command, "Opening.") };
+    let cmd = TurnPlan {
+        command: Some("delete everything".into()),
+        ..plan(PlanKind::Command, "Opening.")
+    };
     let r = rig(
         &["hi", "what about tomorrow"],
         vec![streamed(&three_json(), 8, 1, 5, Ok(cmd)), end_turn()],
@@ -420,8 +492,18 @@ async fn a_final_plan_that_contradicts_early_speech_aborts_and_executes_nothing(
     // records the spoken prefix with an incomplete-reply note (never a false "no reply").
     assert_eq!(h[1].len(), 1, "{:?}", h[1]);
     assert_eq!(h[1][0].0, "hi");
-    assert!(h[1][0].1.ends_with(&crate::managers::converse_context::note_incomplete()), "{:?}", h[1][0].1);
-    assert!(!h[1][0].1.contains("\"event\":\"failed\""), "{:?}", h[1][0].1);
+    assert!(
+        h[1][0]
+            .1
+            .ends_with(&crate::managers::converse_context::note_incomplete()),
+        "{:?}",
+        h[1][0].1
+    );
+    assert!(
+        !h[1][0].1.contains("\"event\":\"failed\""),
+        "{:?}",
+        h[1][0].1
+    );
 }
 
 #[tokio::test]
@@ -429,7 +511,13 @@ async fn final_speech_that_does_not_extend_the_spoken_prefix_aborts() {
     let r = rig(
         &["hi", "what about tomorrow"],
         vec![
-            streamed(&three_json(), 8, 1, 5, Ok(plan(PlanKind::Answer, "Something entirely different now."))),
+            streamed(
+                &three_json(),
+                8,
+                1,
+                5,
+                Ok(plan(PlanKind::Answer, "Something entirely different now.")),
+            ),
             end_turn(),
         ],
         RigOpts::default(),
@@ -444,7 +532,10 @@ async fn final_speech_that_does_not_extend_the_spoken_prefix_aborts() {
 async fn a_plan_error_after_early_speech_stops_the_speech_and_apologizes() {
     let r = rig(
         &["hi", "what about tomorrow"],
-        vec![streamed(&three_json(), 8, 1, 5, Err(PlanError::Backend)), end_turn()],
+        vec![
+            streamed(&three_json(), 8, 1, 5, Err(PlanError::Backend)),
+            end_turn(),
+        ],
         RigOpts::default(),
     );
     let _ = run(&r, &cfg(true, None)).await;
@@ -454,11 +545,18 @@ async fn a_plan_error_after_early_speech_stops_the_speech_and_apologizes() {
 
 #[tokio::test]
 async fn action_plans_without_early_speech_use_the_legacy_path() {
-    let paste = TurnPlan { paste_text: Some("hello".into()), ..plan(PlanKind::Paste, "") };
+    let paste = TurnPlan {
+        paste_text: Some("hello".into()),
+        ..plan(PlanKind::Paste, "")
+    };
     let r = rig(
         &["write hello", "bye"],
         vec![
-            Turn { deltas: vec![(1, r#"{"kind":"paste","paste_text":"hello"}"#.into())], final_delay: 1, plan: Ok(paste) },
+            Turn {
+                deltas: vec![(1, r#"{"kind":"paste","paste_text":"hello"}"#.into())],
+                final_delay: 1,
+                plan: Ok(paste),
+            },
             end_turn(),
         ],
         RigOpts::default(),
@@ -473,23 +571,47 @@ async fn action_plans_without_early_speech_use_the_legacy_path() {
 async fn a_refused_push_ends_the_turns_speech_without_further_pushes_or_say() {
     let r = rig(
         &["hi", "what about tomorrow"],
-        vec![streamed(&three_json(), 8, 1, 5, Ok(plan(PlanKind::Answer, THREE))), end_turn()],
-        RigOpts { accept_limit: Some(1), ..Default::default() },
+        vec![
+            streamed(&three_json(), 8, 1, 5, Ok(plan(PlanKind::Answer, THREE))),
+            end_turn(),
+        ],
+        RigOpts {
+            accept_limit: Some(1),
+            ..Default::default()
+        },
     );
     let _ = run(&r, &cfg(true, None)).await;
     assert!(has(&r.log, "push:First sentence is here."));
     assert!(has(&r.log, "refused:Second sentence follows now."));
-    assert_eq!(count_prefix(&r.log, "push:"), 1 + 1, "first accepted turn-1 push plus turn 2's goodbye, nothing else: {:?}", log_of(&r.log));
-    assert_eq!(count_prefix(&r.log, "say:"), 0, "the user took over the speaker: do not resume speaking");
-    assert!(count_prefix(&r.log, "listen") >= 2, "the loop keeps listening");
+    assert_eq!(
+        count_prefix(&r.log, "push:"),
+        1 + 1,
+        "first accepted turn-1 push plus turn 2's goodbye, nothing else: {:?}",
+        log_of(&r.log)
+    );
+    assert_eq!(
+        count_prefix(&r.log, "say:"),
+        0,
+        "the user took over the speaker: do not resume speaking"
+    );
+    assert!(
+        count_prefix(&r.log, "listen") >= 2,
+        "the loop keeps listening"
+    );
 }
 
 #[tokio::test]
 async fn an_interrupted_finish_returns_to_listening_without_a_fallback_say() {
     let r = rig(
         &["hi", "what about tomorrow"],
-        vec![streamed(&three_json(), 8, 1, 5, Ok(plan(PlanKind::Answer, THREE))), end_turn()],
-        RigOpts { finish_outcome: SayOutcome::Interrupted, ..Default::default() },
+        vec![
+            streamed(&three_json(), 8, 1, 5, Ok(plan(PlanKind::Answer, THREE))),
+            end_turn(),
+        ],
+        RigOpts {
+            finish_outcome: SayOutcome::Interrupted,
+            ..Default::default()
+        },
     );
     let end = run(&r, &cfg(true, None)).await;
     assert_eq!(end, SessionEnd::UserEnded);
@@ -518,7 +640,12 @@ async fn a_slow_brain_gets_exactly_one_acknowledgement_before_the_answer() {
         .collect();
     assert_eq!(
         interesting[..4],
-        ["push:One moment.", "plan_done", "push:This is the only sentence here.", "finish"],
+        [
+            "push:One moment.",
+            "plan_done",
+            "push:This is the only sentence here.",
+            "finish"
+        ],
         "{log:?}"
     );
     assert_eq!(count_prefix(&r.log, "push:One moment."), 1);
@@ -529,7 +656,10 @@ async fn a_fast_brain_gets_no_acknowledgement() {
     let r = rig(
         &["hi"],
         vec![Turn {
-            deltas: vec![(1, r#"{"kind":"answer","speech":"Quick answer here."}"#.into())],
+            deltas: vec![(
+                1,
+                r#"{"kind":"answer","speech":"Quick answer here."}"#.into(),
+            )],
             final_delay: 5,
             plan: Ok(plan(PlanKind::Answer, "Quick answer here.")),
         }],
@@ -544,11 +674,22 @@ async fn a_fast_brain_gets_no_acknowledgement() {
 async fn no_acknowledgement_once_early_speech_has_started() {
     let r = rig(
         &["hi"],
-        vec![streamed(&three_json(), 12, 1, 300, Ok(plan(PlanKind::Answer, THREE)))],
+        vec![streamed(
+            &three_json(),
+            12,
+            1,
+            300,
+            Ok(plan(PlanKind::Answer, THREE)),
+        )],
         RigOpts::default(),
     );
     let _ = run(&r, &cfg(true, Some(120))).await;
-    assert_eq!(count_prefix(&r.log, "push:One moment."), 0, "{:?}", log_of(&r.log));
+    assert_eq!(
+        count_prefix(&r.log, "push:One moment."),
+        0,
+        "{:?}",
+        log_of(&r.log)
+    );
 }
 
 #[tokio::test]
@@ -558,7 +699,10 @@ async fn an_acknowledgement_never_counts_as_spoken_answer_text() {
     let r = rig(
         &["hi"],
         vec![Turn {
-            deltas: vec![(300, r#"{"kind":"answer","speech":"Here is your answer."}"#.into())],
+            deltas: vec![(
+                300,
+                r#"{"kind":"answer","speech":"Here is your answer."}"#.into(),
+            )],
             final_delay: 0,
             plan: Ok(plan(PlanKind::Answer, "Here is your answer.")),
         }],
@@ -583,8 +727,16 @@ async fn ack_alone_works_without_early_speech_and_streams_no_sentences() {
     );
     let _ = run(&r, &cfg(false, Some(50))).await;
     let log = log_of(&r.log);
-    let pushes: Vec<&str> = log.iter().map(String::as_str).filter(|e| e.starts_with("push:")).collect();
-    assert_eq!(pushes, vec!["push:One moment.", &format!("push:{THREE}")[..]], "{log:?}");
+    let pushes: Vec<&str> = log
+        .iter()
+        .map(String::as_str)
+        .filter(|e| e.starts_with("push:"))
+        .collect();
+    assert_eq!(
+        pushes,
+        vec!["push:One moment.", &format!("push:{THREE}")[..]],
+        "{log:?}"
+    );
     assert!(!has(&r.log, "abort"));
 }
 
@@ -592,20 +744,34 @@ async fn ack_alone_works_without_early_speech_and_streams_no_sentences() {
 async fn ack_alone_with_a_fast_brain_uses_the_legacy_say() {
     let r = rig(
         &["hi"],
-        vec![Turn { deltas: vec![], final_delay: 0, plan: Ok(plan(PlanKind::Answer, "Quick answer here.")) }],
+        vec![Turn {
+            deltas: vec![],
+            final_delay: 0,
+            plan: Ok(plan(PlanKind::Answer, "Quick answer here.")),
+        }],
         RigOpts::default(),
     );
     let _ = run(&r, &cfg(false, Some(400))).await;
     assert_eq!(count_prefix(&r.log, "push:One moment."), 0);
     // no ack was needed: either path may speak the answer, but exactly once
-    assert_eq!(count_prefix(&r.log, "say:Quick answer here.") + count_prefix(&r.log, "push:Quick answer here."), 1);
+    assert_eq!(
+        count_prefix(&r.log, "say:Quick answer here.")
+            + count_prefix(&r.log, "push:Quick answer here."),
+        1
+    );
 }
 
 #[tokio::test]
 async fn cancellation_during_streaming_ends_the_session_and_stops_the_mouth() {
     let r = rig(
         &["hi"],
-        vec![streamed(&three_json(), 4, 20, 2000, Ok(plan(PlanKind::Answer, THREE)))],
+        vec![streamed(
+            &three_json(),
+            4,
+            20,
+            2000,
+            Ok(plan(PlanKind::Answer, THREE)),
+        )],
         RigOpts::default(),
     );
     let tx = r.cancel.clone();

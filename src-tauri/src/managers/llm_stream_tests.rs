@@ -27,14 +27,38 @@ fn endpoint_accepts_https_and_normalizes() {
 fn endpoint_rejections() {
     let k = true;
     assert_eq!(validate_endpoint("", k), Err(EndpointError::Invalid));
-    assert_eq!(validate_endpoint("not a url", k), Err(EndpointError::Invalid));
-    assert_eq!(validate_endpoint("ftp://x.example.com", k), Err(EndpointError::Scheme));
-    assert_eq!(validate_endpoint("file:///etc/passwd", k), Err(EndpointError::Scheme));
-    assert_eq!(validate_endpoint("https://u:p@x.example.com", k), Err(EndpointError::Userinfo));
-    assert_eq!(validate_endpoint("https://u@x.example.com", k), Err(EndpointError::Userinfo));
-    assert_eq!(validate_endpoint("https://x.example.com/a#frag", k), Err(EndpointError::Fragment));
-    assert_eq!(validate_endpoint("https://x.example.com/a?key=1", k), Err(EndpointError::Query));
-    assert_eq!(validate_endpoint("https://x.example.com/a?", k), Err(EndpointError::Query));
+    assert_eq!(
+        validate_endpoint("not a url", k),
+        Err(EndpointError::Invalid)
+    );
+    assert_eq!(
+        validate_endpoint("ftp://x.example.com", k),
+        Err(EndpointError::Scheme)
+    );
+    assert_eq!(
+        validate_endpoint("file:///etc/passwd", k),
+        Err(EndpointError::Scheme)
+    );
+    assert_eq!(
+        validate_endpoint("https://u:p@x.example.com", k),
+        Err(EndpointError::Userinfo)
+    );
+    assert_eq!(
+        validate_endpoint("https://u@x.example.com", k),
+        Err(EndpointError::Userinfo)
+    );
+    assert_eq!(
+        validate_endpoint("https://x.example.com/a#frag", k),
+        Err(EndpointError::Fragment)
+    );
+    assert_eq!(
+        validate_endpoint("https://x.example.com/a?key=1", k),
+        Err(EndpointError::Query)
+    );
+    assert_eq!(
+        validate_endpoint("https://x.example.com/a?", k),
+        Err(EndpointError::Query)
+    );
 }
 
 #[test]
@@ -44,12 +68,25 @@ fn plain_http_only_for_loopback_or_keyless() {
         Err(EndpointError::InsecureWithKey)
     );
     assert!(validate_endpoint("http://api.example.com", false).is_ok());
-    for host in ["http://localhost:8080", "http://127.0.0.1:1", "http://127.9.9.9", "http://[::1]:9"] {
+    for host in [
+        "http://localhost:8080",
+        "http://127.0.0.1:1",
+        "http://127.9.9.9",
+        "http://[::1]:9",
+    ] {
         let e = validate_endpoint(host, true).unwrap_or_else(|_| panic!("{host}"));
         assert!(e.loopback, "{host}");
     }
-    assert!(!validate_endpoint("http://127.0.0.1.evil.com", false).unwrap().loopback);
-    assert!(!validate_endpoint("https://localhost.evil.com", true).unwrap().loopback);
+    assert!(
+        !validate_endpoint("http://127.0.0.1.evil.com", false)
+            .unwrap()
+            .loopback
+    );
+    assert!(
+        !validate_endpoint("https://localhost.evil.com", true)
+            .unwrap()
+            .loopback
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -71,12 +108,19 @@ fn call<'a>(protocol: Protocol, base: &'a str, key: &'a str) -> StreamCall<'a> {
 }
 
 fn header<'a>(r: &'a BuiltRequest, name: &str) -> Option<&'a str> {
-    r.headers.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+    r.headers
+        .iter()
+        .find(|(k, _)| k == name)
+        .map(|(_, v)| v.as_str())
 }
 
 #[test]
 fn anthropic_request_shape() {
-    let r = build_request(&call(Protocol::AnthropicMessages, "https://h.example.com/anthropic", "KEY"));
+    let r = build_request(&call(
+        Protocol::AnthropicMessages,
+        "https://h.example.com/anthropic",
+        "KEY",
+    ));
     assert_eq!(r.url, "https://h.example.com/anthropic/v1/messages");
     assert_eq!(header(&r, "x-api-key"), Some("KEY"));
     assert_eq!(header(&r, "anthropic-version"), Some("2023-06-01"));
@@ -86,7 +130,10 @@ fn anthropic_request_shape() {
     assert_eq!(r.body["max_tokens"], 321);
     assert_eq!(r.body["stream"], true);
     assert_eq!(r.body["system"], "SYS");
-    assert_eq!(r.body["messages"], json!([{"role": "user", "content": "USER"}]));
+    assert_eq!(
+        r.body["messages"],
+        json!([{"role": "user", "content": "USER"}])
+    );
     assert!(r.body.get("temperature").is_none());
     // no assistant prefill, exactly one message
     assert_eq!(r.body["messages"].as_array().unwrap().len(), 1);
@@ -94,9 +141,17 @@ fn anthropic_request_shape() {
 
 #[test]
 fn anthropic_base_ending_in_v1_does_not_double_the_segment() {
-    let r = build_request(&call(Protocol::AnthropicMessages, "https://h.example.com/v1", "K"));
+    let r = build_request(&call(
+        Protocol::AnthropicMessages,
+        "https://h.example.com/v1",
+        "K",
+    ));
     assert_eq!(r.url, "https://h.example.com/v1/messages");
-    let r = build_request(&call(Protocol::AnthropicMessages, "https://h.example.com/v1/", "K"));
+    let r = build_request(&call(
+        Protocol::AnthropicMessages,
+        "https://h.example.com/v1/",
+        "K",
+    ));
     assert_eq!(r.url, "https://h.example.com/v1/messages");
 }
 
@@ -145,10 +200,22 @@ const SAMPLE: &str = "event: content_block_delta\ndata: {\"a\":1}\n\n: keep-aliv
 
 fn expected_sample() -> Vec<SseEvent> {
     vec![
-        SseEvent { event: Some("content_block_delta".into()), data: "{\"a\":1}".into() },
-        SseEvent { event: None, data: "no-space".into() },
-        SseEvent { event: None, data: "l1\nl2".into() },
-        SseEvent { event: Some("ping".into()), data: "x".into() },
+        SseEvent {
+            event: Some("content_block_delta".into()),
+            data: "{\"a\":1}".into(),
+        },
+        SseEvent {
+            event: None,
+            data: "no-space".into(),
+        },
+        SseEvent {
+            event: None,
+            data: "l1\nl2".into(),
+        },
+        SseEvent {
+            event: Some("ping".into()),
+            data: "x".into(),
+        },
     ]
 }
 
@@ -241,21 +308,36 @@ fn ex(p: Protocol, v: serde_json::Value) -> Extracted {
 }
 
 fn txt(t: &str, end: End) -> Extracted {
-    Extracted { text: Some(t.into()), end }
+    Extracted {
+        text: Some(t.into()),
+        end,
+    }
 }
 
 fn none() -> Extracted {
-    Extracted { text: None, end: End::None }
+    Extracted {
+        text: None,
+        end: End::None,
+    }
 }
 
 #[test]
 fn anthropic_deltas() {
     let p = Protocol::AnthropicMessages;
     assert_eq!(
-        ex(p, json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hel"}})),
+        ex(
+            p,
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hel"}})
+        ),
         txt("Hel", End::None)
     );
-    assert_eq!(ex(p, json!({"type":"message_stop"})), Extracted { text: None, end: End::Done });
+    assert_eq!(
+        ex(p, json!({"type":"message_stop"})),
+        Extracted {
+            text: None,
+            end: End::Done
+        }
+    );
     for ignorable in [
         json!({"type":"ping"}),
         json!({"type":"message_start","message":{}}),
@@ -269,29 +351,61 @@ fn anthropic_deltas() {
         assert_eq!(ex(p, ignorable.clone()), none(), "{ignorable}");
     }
     assert_eq!(
-        ex(p, json!({"type":"message_delta","delta":{"stop_reason":"max_tokens"}})).end,
+        ex(
+            p,
+            json!({"type":"message_delta","delta":{"stop_reason":"max_tokens"}})
+        )
+        .end,
         End::Error
     );
     assert_eq!(
-        ex(p, json!({"type":"message_delta","delta":{"stop_reason":"refusal"}})).end,
+        ex(
+            p,
+            json!({"type":"message_delta","delta":{"stop_reason":"refusal"}})
+        )
+        .end,
         End::Error
     );
-    assert_eq!(ex(p, json!({"type":"error","error":{"message":"x"}})).end, End::Error);
+    assert_eq!(
+        ex(p, json!({"type":"error","error":{"message":"x"}})).end,
+        End::Error
+    );
 }
 
 #[test]
 fn openai_deltas() {
     let p = Protocol::OpenAiChat;
-    assert_eq!(ex(p, json!({"choices":[{"delta":{"content":"Hi"}}]})), txt("Hi", End::None));
-    assert_eq!(ex(p, json!({"choices":[{"delta":{"role":"assistant","content":""}}]})), none());
-    assert_eq!(ex(p, json!({"choices":[{"delta":{}, "finish_reason": null}]})), none());
     assert_eq!(
-        ex(p, json!({"choices":[{"delta":{}, "finish_reason": "stop"}]})),
-        Extracted { text: None, end: End::Done }
+        ex(p, json!({"choices":[{"delta":{"content":"Hi"}}]})),
+        txt("Hi", End::None)
+    );
+    assert_eq!(
+        ex(
+            p,
+            json!({"choices":[{"delta":{"role":"assistant","content":""}}]})
+        ),
+        none()
+    );
+    assert_eq!(
+        ex(p, json!({"choices":[{"delta":{}, "finish_reason": null}]})),
+        none()
+    );
+    assert_eq!(
+        ex(
+            p,
+            json!({"choices":[{"delta":{}, "finish_reason": "stop"}]})
+        ),
+        Extracted {
+            text: None,
+            end: End::Done
+        }
     );
     // final chunk may carry text and the stop together
     assert_eq!(
-        ex(p, json!({"choices":[{"delta":{"content":"!"}, "finish_reason": "stop"}]})),
+        ex(
+            p,
+            json!({"choices":[{"delta":{"content":"!"}, "finish_reason": "stop"}]})
+        ),
         txt("!", End::Done)
     );
     for bad in ["length", "content_filter", "tool_calls"] {
@@ -310,8 +424,10 @@ fn openai_deltas() {
 // ---------------------------------------------------------------------------
 
 fn env_of(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
-    let m: HashMap<String, String> =
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+    let m: HashMap<String, String> = pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
     move |k: &str| m.get(k).cloned()
 }
 
@@ -340,30 +456,65 @@ fn proxy_resolution_order() {
 
     // env proxy => library default, shell not consulted
     let with_env = env_of(&[("https_proxy", "http://env.example:8080")]);
-    assert_eq!(resolve_proxy(None, true, &with_env, &shell), ProxyMode::SystemDefault);
+    assert_eq!(
+        resolve_proxy(None, true, &with_env, &shell),
+        ProxyMode::SystemDefault
+    );
     let with_upper = env_of(&[("HTTPS_PROXY", "http://env.example:8080")]);
-    assert_eq!(resolve_proxy(None, true, &with_upper, &shell), ProxyMode::SystemDefault);
+    assert_eq!(
+        resolve_proxy(None, true, &with_upper, &shell),
+        ProxyMode::SystemDefault
+    );
     assert_eq!(shell_calls.load(Ordering::SeqCst), 1);
 
     // auto off: shell never consulted
-    assert_eq!(resolve_proxy(None, false, &no_env, &shell), ProxyMode::SystemDefault);
+    assert_eq!(
+        resolve_proxy(None, false, &no_env, &shell),
+        ProxyMode::SystemDefault
+    );
     assert_eq!(shell_calls.load(Ordering::SeqCst), 1);
 
     // invalid shell output is rejected
-    for bad in ["", "garbage", "ftp://x:1", "http://x:1/p?q=1", "http://x:1/#f"] {
+    for bad in [
+        "",
+        "garbage",
+        "ftp://x:1",
+        "http://x:1/p?q=1",
+        "http://x:1/#f",
+    ] {
         let s = || Some(bad.to_string());
-        assert_eq!(resolve_proxy(None, true, &no_env, &s), ProxyMode::SystemDefault, "{bad:?}");
+        assert_eq!(
+            resolve_proxy(None, true, &no_env, &s),
+            ProxyMode::SystemDefault,
+            "{bad:?}"
+        );
     }
     let none_shell = || None;
-    assert_eq!(resolve_proxy(None, true, &no_env, &none_shell), ProxyMode::SystemDefault);
+    assert_eq!(
+        resolve_proxy(None, true, &no_env, &none_shell),
+        ProxyMode::SystemDefault
+    );
 }
 
 #[test]
 fn proxy_url_validity() {
-    for ok in ["http://p.example:8080", "https://p.example", "http://u:p@p.example:3128/", " http://p.example:1 "] {
+    for ok in [
+        "http://p.example:8080",
+        "https://p.example",
+        "http://u:p@p.example:3128/",
+        " http://p.example:1 ",
+    ] {
         assert!(is_valid_proxy_url(ok), "{ok:?}");
     }
-    for bad in ["", "p.example:8080", "ftp://p.example", "http://", "http://p.example/?a=1", "http://p.example/#x", "garbage"] {
+    for bad in [
+        "",
+        "p.example:8080",
+        "ftp://p.example",
+        "http://",
+        "http://p.example/?a=1",
+        "http://p.example/#x",
+        "garbage",
+    ] {
         assert!(!is_valid_proxy_url(bad), "{bad:?}");
     }
 }
@@ -459,7 +610,10 @@ fn read_request(s: &mut TcpStream) -> Option<Req> {
     let method = parts.next()?.to_string();
     let target = parts.next()?.to_string();
     let headers: Vec<(String, String)> = lines
-        .filter_map(|l| l.split_once(':').map(|(k, v)| (k.trim().to_string(), v.trim().to_string())))
+        .filter_map(|l| {
+            l.split_once(':')
+                .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        })
         .collect();
     let len = headers
         .iter()
@@ -474,7 +628,12 @@ fn read_request(s: &mut TcpStream) -> Option<Req> {
         }
         body.extend_from_slice(&tmp[..n]);
     }
-    Some(Req { method, target, headers, body })
+    Some(Req {
+        method,
+        target,
+        headers,
+        body,
+    })
 }
 
 fn write_chunk(s: &mut TcpStream, data: &[u8]) -> bool {
@@ -535,7 +694,8 @@ fn serve(handler: Handler) -> Server {
                                             let _ = stream
                                                 .set_read_timeout(Some(Duration::from_secs(5)));
                                             let mut b = [0u8; 16];
-                                            let closed = matches!(stream.read(&mut b), Ok(0) | Err(_));
+                                            let closed =
+                                                matches!(stream.read(&mut b), Ok(0) | Err(_));
                                             let _ = tx.send(closed);
                                             return;
                                         }
@@ -572,11 +732,15 @@ fn a_stop() -> Vec<u8> {
     b"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n".to_vec()
 }
 fn o_text(t: &str) -> Vec<u8> {
-    format!("data: {{\"choices\":[{{\"delta\":{{\"content\":{}}}}}]}}\n\n", serde_json::to_string(t).unwrap())
-        .into_bytes()
+    format!(
+        "data: {{\"choices\":[{{\"delta\":{{\"content\":{}}}}}]}}\n\n",
+        serde_json::to_string(t).unwrap()
+    )
+    .into_bytes()
 }
 fn o_finish(reason: &str) -> Vec<u8> {
-    format!("data: {{\"choices\":[{{\"delta\":{{}},\"finish_reason\":\"{reason}\"}}]}}\n\n").into_bytes()
+    format!("data: {{\"choices\":[{{\"delta\":{{}},\"finish_reason\":\"{reason}\"}}]}}\n\n")
+        .into_bytes()
 }
 
 fn opts(overall_ms: u64, first_ms: u64) -> StreamOpts {
@@ -591,7 +755,10 @@ fn anthropic_call(base: &str) -> StreamCall<'_> {
     call(Protocol::AnthropicMessages, base, "test-key")
 }
 
-async fn run_collect(c: &StreamCall<'_>, o: &StreamOpts) -> (Result<String, ComposeError>, Vec<String>) {
+async fn run_collect(
+    c: &StreamCall<'_>,
+    o: &StreamOpts,
+) -> (Result<String, ComposeError>, Vec<String>) {
     let mut got = Vec::new();
     let mut cb = |t: &str| got.push(t.to_string());
     let r = stream_completion(c, o, &mut cb).await;
@@ -634,7 +801,12 @@ async fn anthropic_stream_collects_text_and_sends_expected_request() {
 #[tokio::test]
 async fn openai_stream_completes_on_finish_reason_without_done_marker() {
     let srv = serve(Box::new(|_| {
-        Reply::Stream(vec![Step::Chunk(o_text("a")), Step::Chunk(o_text("b")), Step::Chunk(o_finish("stop")), Step::End])
+        Reply::Stream(vec![
+            Step::Chunk(o_text("a")),
+            Step::Chunk(o_text("b")),
+            Step::Chunk(o_finish("stop")),
+            Step::End,
+        ])
     }));
     let base = format!("{}/v1", srv.base());
     let c = call(Protocol::OpenAiChat, &base, "");
@@ -673,7 +845,10 @@ async fn first_text_callback_fires_before_the_server_finishes() {
         .expect("first text must arrive while the server is still blocked")
         .unwrap();
     assert_eq!(first, "Hel");
-    assert!(!task.is_finished(), "must not have finished before the gate opens");
+    assert!(
+        !task.is_finished(),
+        "must not have finished before the gate opens"
+    );
     gate.open();
     assert_eq!(task.await.unwrap().unwrap(), "Hello");
 }
@@ -684,7 +859,11 @@ async fn consecutive_calls_and_prewarm_share_one_connection() {
         if req.method == "HEAD" {
             Reply::Status(404, "", None)
         } else {
-            Reply::Stream(vec![Step::Chunk(a_text("ok")), Step::Chunk(a_stop()), Step::End])
+            Reply::Stream(vec![
+                Step::Chunk(a_text("ok")),
+                Step::Chunk(a_stop()),
+                Step::End,
+            ])
         }
     }));
     let base = srv.base();
@@ -693,7 +872,11 @@ async fn consecutive_calls_and_prewarm_share_one_connection() {
         let (r, _) = run_collect(&anthropic_call(&base), &opts(5000, 5000)).await;
         assert_eq!(r.unwrap(), "ok");
     }
-    assert_eq!(srv.conns.load(Ordering::SeqCst), 1, "HEAD + 2 POSTs must reuse one TCP connection");
+    assert_eq!(
+        srv.conns.load(Ordering::SeqCst),
+        1,
+        "HEAD + 2 POSTs must reuse one TCP connection"
+    );
     let reqs = srv.requests();
     assert_eq!(reqs[0].method, "HEAD");
     assert_eq!(reqs[0].target, "/");
@@ -718,12 +901,20 @@ async fn prewarm_uses_only_the_origin_root_and_survives_failures() {
 #[tokio::test]
 async fn truncated_stream_is_a_backend_error() {
     let srv = serve(Box::new(|_| {
-        Reply::Stream(vec![Step::Chunk(a_start()), Step::Chunk(a_text("partial")), Step::End])
+        Reply::Stream(vec![
+            Step::Chunk(a_start()),
+            Step::Chunk(a_text("partial")),
+            Step::End,
+        ])
     }));
     let base = srv.base();
     let (r, got) = run_collect(&anthropic_call(&base), &opts(5000, 5000)).await;
     assert!(is_backend(&r), "{r:?}");
-    assert_eq!(got, vec!["partial"], "text seen before the truncation is still delivered");
+    assert_eq!(
+        got,
+        vec!["partial"],
+        "text seen before the truncation is still delivered"
+    );
 }
 
 #[tokio::test]
@@ -733,7 +924,10 @@ async fn error_event_and_bad_stop_reasons_are_backend_errors() {
         if which.contains("\"model\":\"err-event\"") {
             Reply::Stream(vec![
                 Step::Chunk(a_text("x")),
-                Step::Chunk(b"data: {\"type\":\"error\",\"error\":{\"message\":\"overloaded\"}}\n\n".to_vec()),
+                Step::Chunk(
+                    b"data: {\"type\":\"error\",\"error\":{\"message\":\"overloaded\"}}\n\n"
+                        .to_vec(),
+                ),
                 Step::End,
             ])
         } else if which.contains("\"model\":\"max-tokens\"") {
@@ -744,7 +938,11 @@ async fn error_event_and_bad_stop_reasons_are_backend_errors() {
                 Step::End,
             ])
         } else {
-            Reply::Stream(vec![Step::Chunk(o_text("x")), Step::Chunk(o_finish("length")), Step::End])
+            Reply::Stream(vec![
+                Step::Chunk(o_text("x")),
+                Step::Chunk(o_finish("length")),
+                Step::End,
+            ])
         }
     }));
     let base = srv.base();
@@ -762,7 +960,9 @@ async fn error_event_and_bad_stop_reasons_are_backend_errors() {
 
 #[tokio::test]
 async fn non_200_is_a_backend_error_and_the_body_never_leaks() {
-    let srv = serve(Box::new(|_| Reply::Status(401, "SECRET-BODY-token-123", None)));
+    let srv = serve(Box::new(|_| {
+        Reply::Status(401, "SECRET-BODY-token-123", None)
+    }));
     let base = srv.base();
     let (r, got) = run_collect(&anthropic_call(&base), &opts(5000, 5000)).await;
     assert!(is_backend(&r));
@@ -776,21 +976,35 @@ async fn redirects_are_never_followed() {
         if req.target == "/v1/messages" {
             Reply::Status(302, "", Some("/elsewhere"))
         } else {
-            Reply::Stream(vec![Step::Chunk(a_text("evil")), Step::Chunk(a_stop()), Step::End])
+            Reply::Stream(vec![
+                Step::Chunk(a_text("evil")),
+                Step::Chunk(a_stop()),
+                Step::End,
+            ])
         }
     }));
     let base = srv.base();
     let (r, got) = run_collect(&anthropic_call(&base), &opts(5000, 5000)).await;
     assert!(is_backend(&r), "{r:?}");
     assert!(got.is_empty());
-    assert_eq!(srv.requests().len(), 1, "the Location target must never be requested");
+    assert_eq!(
+        srv.requests().len(),
+        1,
+        "the Location target must never be requested"
+    );
 }
 
 #[tokio::test]
 async fn first_text_deadline_is_absolute_and_reports_timeout() {
     let gate = Gate::new();
     let g2 = gate.clone();
-    let srv = serve(Box::new(move |_| Reply::Stream(vec![Step::Chunk(a_start()), Step::Wait(g2.clone()), Step::End])));
+    let srv = serve(Box::new(move |_| {
+        Reply::Stream(vec![
+            Step::Chunk(a_start()),
+            Step::Wait(g2.clone()),
+            Step::End,
+        ])
+    }));
     let base = srv.base();
     let t0 = Instant::now();
     let (r, _) = run_collect(&anthropic_call(&base), &opts(10_000, 300)).await;
@@ -804,7 +1018,12 @@ async fn overall_deadline_applies_even_after_text_started() {
     let gate = Gate::new();
     let g2 = gate.clone();
     let srv = serve(Box::new(move |_| {
-        Reply::Stream(vec![Step::Chunk(a_text("one")), Step::Wait(g2.clone()), Step::Chunk(a_stop()), Step::End])
+        Reply::Stream(vec![
+            Step::Chunk(a_text("one")),
+            Step::Wait(g2.clone()),
+            Step::Chunk(a_stop()),
+            Step::End,
+        ])
     }));
     let base = srv.base();
     let t0 = Instant::now();
@@ -849,13 +1068,23 @@ async fn dropping_the_future_closes_the_connection() {
         };
         stream_completion(&c, &opts(20_000, 20_000), &mut cb).await
     });
-    assert_eq!(tokio::time::timeout(Duration::from_secs(5), rx.recv()).await.unwrap().unwrap(), "first");
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap(),
+        "first"
+    );
     task.abort();
     let _ = task.await;
     let closed = tokio::task::spawn_blocking(move || crx.recv_timeout(Duration::from_secs(5)))
         .await
         .unwrap();
-    assert_eq!(closed, Ok(true), "server must observe the client closing the connection");
+    assert_eq!(
+        closed,
+        Ok(true),
+        "server must observe the client closing the connection"
+    );
 }
 
 #[tokio::test]
@@ -877,7 +1106,11 @@ async fn invalid_endpoint_never_touches_the_network() {
 #[tokio::test]
 async fn explicit_proxy_receives_absolute_form_requests_for_remote_targets() {
     let proxy = serve(Box::new(|_| {
-        Reply::Stream(vec![Step::Chunk(a_text("via-proxy")), Step::Chunk(a_stop()), Step::End])
+        Reply::Stream(vec![
+            Step::Chunk(a_text("via-proxy")),
+            Step::Chunk(a_stop()),
+            Step::End,
+        ])
     }));
     let o = StreamOpts {
         overall: Duration::from_secs(5),
@@ -885,19 +1118,34 @@ async fn explicit_proxy_receives_absolute_form_requests_for_remote_targets() {
         proxy: ProxyMode::Explicit(proxy.base()),
     };
     // plain http to a non-loopback name is allowed only without a key
-    let c = StreamCall { api_key: "", ..call(Protocol::AnthropicMessages, "http://upstream.example.test", "") };
+    let c = StreamCall {
+        api_key: "",
+        ..call(
+            Protocol::AnthropicMessages,
+            "http://upstream.example.test",
+            "",
+        )
+    };
     let (r, _) = run_collect(&c, &o).await;
     assert_eq!(r.unwrap(), "via-proxy");
     let reqs = proxy.requests();
     assert_eq!(reqs.len(), 1);
-    assert!(reqs[0].target.starts_with("http://upstream.example.test/"), "{}", reqs[0].target);
+    assert!(
+        reqs[0].target.starts_with("http://upstream.example.test/"),
+        "{}",
+        reqs[0].target
+    );
 }
 
 #[tokio::test]
 async fn loopback_targets_never_use_the_proxy() {
     let proxy = serve(Box::new(|_| Reply::Status(500, "", None)));
     let target = serve(Box::new(|_| {
-        Reply::Stream(vec![Step::Chunk(a_text("direct")), Step::Chunk(a_stop()), Step::End])
+        Reply::Stream(vec![
+            Step::Chunk(a_text("direct")),
+            Step::Chunk(a_stop()),
+            Step::End,
+        ])
     }));
     let o = StreamOpts {
         overall: Duration::from_secs(5),
@@ -907,6 +1155,10 @@ async fn loopback_targets_never_use_the_proxy() {
     let base = target.base();
     let (r, _) = run_collect(&anthropic_call(&base), &o).await;
     assert_eq!(r.unwrap(), "direct");
-    assert_eq!(proxy.conns.load(Ordering::SeqCst), 0, "loopback must bypass the proxy");
+    assert_eq!(
+        proxy.conns.load(Ordering::SeqCst),
+        0,
+        "loopback must bypass the proxy"
+    );
     assert_eq!(target.requests().len(), 1);
 }
