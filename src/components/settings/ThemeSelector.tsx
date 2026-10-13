@@ -5,6 +5,7 @@ import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "@/hooks/useSettings";
 import { applyTheme, THEME_OPTIONS } from "@/lib/utils/theme";
 import type { Theme } from "@/bindings";
+import { CustomThemeEditor } from "./CustomThemeEditor";
 
 interface ThemeSelectorProps {
   descriptionMode?: "inline" | "tooltip";
@@ -25,23 +26,26 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = React.memo(
 
     const handleThemeChange = (value: string) => {
       const theme = value as Theme;
-      applyTheme(theme);
+      applyTheme(theme, settings?.custom_theme_colors);
       updateSetting("theme", theme);
     };
 
     return (
-      <SettingContainer
-        title={t("theme.title")}
-        description={t("theme.description")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
-      >
-        <Dropdown
-          options={themeOptions}
-          selectedValue={currentTheme}
-          onSelect={handleThemeChange}
-        />
-      </SettingContainer>
+      <>
+        <SettingContainer
+          title={t("theme.title")}
+          description={t("theme.description")}
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+        >
+          <Dropdown
+            options={themeOptions}
+            selectedValue={currentTheme}
+            onSelect={handleThemeChange}
+          />
+        </SettingContainer>
+        {currentTheme === "custom" && <CustomThemeEditor />}
+      </>
     );
   },
 );

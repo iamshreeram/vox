@@ -5,6 +5,7 @@ import type {
   AppSettings as Settings,
   AudioDevice,
   ChineseScript,
+  CustomThemeColors,
   ModelUnloadTimeout,
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
@@ -169,6 +170,8 @@ const settingUpdaters: {
   log_level: (value) => commands.setLogLevel(value as any),
   app_language: (value) => commands.changeAppLanguageSetting(value as string),
   theme: (value) => commands.changeThemeSetting(value as string),
+  custom_theme_colors: (value) =>
+    commands.updateCustomThemeColors(value as CustomThemeColors),
   experimental_enabled: (value) =>
     commands.changeExperimentalEnabledSetting(value as boolean),
   voice_commands_enabled: (value) =>

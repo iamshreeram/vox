@@ -163,6 +163,17 @@ const scenarios: Record<string, () => void> = {
       assert.match(strip, /border-radius:/);
       assert.match(appCss, /\.settings-card-title/);
     },
+  "the custom theme placeholder block defines the accent gradient tokens":
+    () => {
+      const block = themeBlock("custom");
+      for (const token of [
+        "--color-accent-a",
+        "--color-accent-b",
+        "--color-on-accent",
+      ]) {
+        assert.ok(declared(block, token), `custom block must set ${token}`);
+      }
+    },
 };
 
 let failed = 0;
