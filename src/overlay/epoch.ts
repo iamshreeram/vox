@@ -10,7 +10,15 @@ export interface Epoch {
   isCurrent(n: number): boolean;
 }
 
-// INERT STUB: contract only, intentionally not implemented (red-first).
 export function createEpoch(): Epoch {
-  throw new Error("not implemented");
+  let latest = 0;
+  return {
+    next(): number {
+      latest += 1;
+      return latest;
+    },
+    isCurrent(n: number): boolean {
+      return n >= 1 && n === latest;
+    },
+  };
 }
