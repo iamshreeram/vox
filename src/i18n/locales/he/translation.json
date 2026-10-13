@@ -2,12 +2,18 @@
   "tray": {
     "settings": "הגדרות...",
     "checkUpdates": "בדוק עדכונים...",
+    "updateAvailable": "Update available",
     "copyLastTranscript": "העתק את התמלול האחרון",
+    "converse": "Start or stop conversation",
     "unloadModel": "פרוק מודל",
     "model": "מודל",
     "quit": "יציאה",
     "cancel": "ביטול",
-    "secureInputWarning": "⚠ קיצורי המקשים חסומים על ידי Secure Input"
+    "secureInputWarning": "⚠ קיצורי המקשים חסומים על ידי Secure Input",
+    "listeningMode": "Listening Mode",
+    "listeningModeHotkeyOnly": "Hotkey Only",
+    "listeningModeWakeWord": "Wake Word",
+    "listeningModeAmbient": "Ambient Mode"
   },
   "sidebar": {
     "general": "כללי",
@@ -16,7 +22,8 @@
     "postProcessing": "עיבוד משלים",
     "history": "היסטוריה",
     "debug": "ניפוי שגיאות",
-    "about": "אודות"
+    "about": "אודות",
+    "experimental": "Experimental"
   },
   "onboarding": {
     "subtitle": "כדי להתחיל, בחר מודל תמלול",
@@ -179,6 +186,10 @@
           "transcribe_with_post_process": {
             "name": "קיצור לעיבוד משלים",
             "description": "אופציונלי: קיצור מקשים ייעודי שתמיד מפעיל עיבוד AI על התמלול."
+          },
+          "converse": {
+            "name": "Conversation Shortcut",
+            "description": "The keyboard shortcut to start or stop a hands-free conversation."
           }
         },
         "errors": {
@@ -229,6 +240,9 @@
         "tooltip": "סריקה מחדש לאיתור מודלים שנוספו לתיקיית המודלים או למטמון של Hugging Face מחוץ ל-Vox"
       }
     },
+    "appearance": {
+      "title": "Appearance"
+    },
     "sound": {
       "title": "שמע",
       "microphone": {
@@ -269,6 +283,180 @@
       "experimentalToggle": {
         "label": "תכונות ניסיוניות",
         "description": "הפעל תכונות ניסיוניות שעדיין נמצאות בפיתוח."
+      },
+      "memory": {
+        "label": "Memory",
+        "description": "Lets Vox remember facts you dictate (e.g. \"remember that I prefer tea\") in a local, offline database. Dictation is pasted as usual either way; remembered facts are only stored for future recall, never sent anywhere.",
+        "addPlaceholder": "Type a fact to remember...",
+        "addButton": "Remember",
+        "forgetButton": "Forget",
+        "empty": "No facts remembered yet. Say \"remember that...\" while dictating, or add one above.",
+        "rememberedToast": "Remembered."
+      },
+      "listeningMode": {
+        "title": "Listening Mode",
+        "description": "Choose one way for Vox to listen without a hotkey: Wake Word listens only for a trigger phrase; Ambient Mode transcribes nearby audio into a short-lived, RAM-only buffer and acts only when addressed. Only one mode can be active at a time."
+      },
+      "ambientMode": {
+        "label": "Ambient Mode",
+        "description": "Continuously transcribes nearby audio into a short-lived, RAM-only buffer that is never written to disk. Vox acts only when it detects that you addressed your wake name (for example, \"Vox, what time is it?\").",
+        "clearButton": "Clear ambient history",
+        "clearedToast": "Ambient history cleared.",
+        "addressedToast": "Vox heard: {{request}}",
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+      },
+      "wakeWord": {
+        "label": "Wake Word",
+        "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
+        "detectedToast": "Wake word detected — listening...",
+        "disabledByAmbientMode": "Turn off Ambient Mode to enable Wake Word.",
+        "downloadFailedTitle": "Wake word model couldn't be downloaded"
+      },
+      "voiceCommands": {
+        "label": "Voice Commands",
+        "description": "Lets phrases like \"open Safari\" or \"open Downloads\" open the real app/folder instead of being pasted as text. Only recognized, deterministic commands run — anything else falls back to normal dictation."
+      },
+      "voiceShortcuts": {
+        "title": "Voice Shortcuts",
+        "description": "Say a phrase exactly as written to run its action. Shortcuts work only while Voice Commands is on. Folder shortcuts open folders only, not files. App shortcuts require the app to be installed.",
+        "empty": "No shortcuts yet. Add one to map a spoken phrase to a URL, folder, or app.",
+        "phrasePlaceholder": "Phrase, e.g. open my docs",
+        "phraseLabel": "Spoken phrase",
+        "typeLabel": "Action type",
+        "targetLabel": "Target",
+        "actionType": {
+          "url": "Website",
+          "folder": "Folder",
+          "app": "App"
+        },
+        "placeholder": {
+          "url": "https://example.com",
+          "folder": "~/Documents/Projects",
+          "app": "Safari"
+        },
+        "add": "Add shortcut",
+        "remove": "Remove",
+        "save": "Save"
+      },
+      "voiceMediaControls": {
+        "label": "Media Controls",
+        "description": "Phrases like \"pause\", \"next track\" or \"volume 40\" control Spotify or Music and the system volume instead of being pasted. Only exact whole phrases are matched, but a standalone dictated \"pause\", \"skip\" or \"mute\" will be treated as a command while this is on. Requires Voice Commands. macOS may ask you to allow Automation the first time."
+      },
+      "agentBridge": {
+        "label": "Agent Bridge",
+        "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
+        "binaryPathLabel": "Agent binary path",
+        "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "suggestionFailedTitle": "Agent suggestion failed"
+      },
+      "agentContext": {
+        "title": "Conversation Context",
+        "description": "When on, your last few exchanges with the agent and any remembered facts are sent to the agent along with each request. The conversation is kept in memory only, and is cleared when you turn this off or restart Vox. A remembered fact or reply containing text that looks like instructions could influence the agent.",
+        "clearButton": "Clear conversation history",
+        "clearedToast": "Conversation history cleared.",
+        "clearFailedToast": "Could not clear the conversation history."
+      },
+      "tts": {
+        "groupTitle": "Spoken replies",
+        "label": "Spoken Replies",
+        "description": "Speaks agent replies and short confirmation or failure phrases aloud. Spoken output is audible to anyone nearby. Speech is paused while you are recording and never plays into your microphone on purpose.",
+        "voiceLabel": "Voice",
+        "voiceDescription": "Name of a system voice (for example \"Samantha\"). Leave empty to use the system default.",
+        "voicePlaceholder": "System default",
+        "rateLabel": "Speaking rate",
+        "rateDescription": "How fast spoken replies are read, in words per minute.",
+        "rateValue": "{{value}} wpm",
+        "testLabel": "Test voice",
+        "testDescription": "Speak a short sample with the current voice and rate.",
+        "testButton": "Test voice",
+        "stopButton": "Stop",
+        "testPhrase": "This is how spoken replies will sound.",
+        "composer": {
+          "title": "Spoken reply style",
+          "description": "Rewrites each agent reply into a short spoken sentence before Vox reads it aloud. Off speaks the reply text as it is.",
+          "modeLabel": "Composer mode",
+          "modeDescription": "Off speaks replies as they are. Model asks a configured provider. Command runs a program you choose.",
+          "mode": {
+            "off": "Off",
+            "model": "Model provider",
+            "command": "Command"
+          },
+          "providerLabel": "Provider",
+          "providerDescription": "Provider from your post-processing settings that writes the spoken sentence.",
+          "providersLoadFailed": "Could not load the provider list.",
+          "modelLabel": "Model",
+          "modelDescription": "Model name sent to the provider. Saved when you leave the field or press Enter.",
+          "modelPlaceholder": "Model name",
+          "dataFlowModel": "Sent to {{provider}} at {{baseUrl}}: the agent reply, the style text, and what you asked if that option is on.",
+          "latencyModel": "Model mode calls the provider directly and is usually much faster than command mode.",
+          "commandPathLabel": "Command path",
+          "commandPathDescription": "Absolute path to a command-line agent program. Vox starts it for every reply.",
+          "commandPathPlaceholder": "/path/to/your/agent",
+          "commandArgsLabel": "Extra arguments",
+          "commandArgsDescription": "Arguments placed before the prompt. Keep them free of secrets.",
+          "commandArgsPlaceholder": "--no-tools -m your-fast-model",
+          "promptFlagLabel": "Prompt flag",
+          "promptFlagDescription": "Flag that comes before the prompt text. Leave empty for -p.",
+          "promptFlagPlaceholder": "-p",
+          "ackLabel": "I understand the risks of running this command",
+          "ackDescription": "Required before command mode can run. Changing the path, the arguments or the flag asks for it again.",
+          "ackWarning": "Running this command executes a program with your user permissions every time Vox speaks a reply. The reply text and, if enabled, what you asked are passed to it as an argument. Text inside a reply could steer an agent into using tools or sending data, and Vox cannot enforce a tool-free mode. Prefer a configuration with no tools and no network access. Do not put secrets in the arguments: settings can appear in debug logs.",
+          "saveCommand": "Save command",
+          "readinessLabel": "Status",
+          "readiness": {
+            "needs_setup": "Needs a command path",
+            "needs_acknowledgement": "Needs your acknowledgement before it can run",
+            "ready": "Ready"
+          },
+          "dataFlowCommand": "Command: {{path}}. The reply text, and what you asked if that option is on, are passed to it as one argument.",
+          "latencyCommand": "Command mode starts a program for every reply. A reply usually takes 15 to 20 seconds.",
+          "dataFlowUtterance": "What you asked is sent along with each reply to the composer.",
+          "styleLabel": "Style",
+          "styleDescription": "Short instruction for how the spoken sentence should sound, for example: brief and friendly.",
+          "stylePlaceholder": "Brief and friendly",
+          "timeoutLabel": "Timeout",
+          "timeoutDescription": "How long to wait for the composer before speaking the fallback.",
+          "timeoutHint": "seconds (2 to 60)",
+          "timeoutRange": "Enter a whole number of seconds from 2 to 60.",
+          "sendUtteranceLabel": "Send what I asked",
+          "sendUtteranceDescription": "Also send your spoken request to the composer, so the sentence can answer it. Off sends only the agent reply and the style.",
+          "fallbackLabel": "If composing fails",
+          "fallbackDescription": "What Vox speaks when the composer times out or fails.",
+          "fallback": {
+            "short_notice": "Short notice",
+            "verbatim": "Speak the reply as is",
+            "silent": "Say nothing"
+          },
+          "previewLabel": "Preview",
+          "previewDescription": "Compose a sample sentence with the current settings. Nothing is spoken.",
+          "previewButton": "Preview",
+          "previewRunning": "Previewing...",
+          "previewSpeech": "Sentence:",
+          "previewEmotion": "Emotion:",
+          "emotion": {
+            "neutral": "Neutral",
+            "cheerful": "Cheerful",
+            "excited": "Excited",
+            "calm": "Calm",
+            "concerned": "Concerned",
+            "apologetic": "Apologetic",
+            "serious": "Serious"
+          },
+          "statusLabel": "Last spoken reply",
+          "statusNone": "No reply composed yet.",
+          "status": {
+            "ok": "Spoke the composed sentence.",
+            "timeout": "Timed out, spoke the fallback.",
+            "not_configured": "Not set up yet, spoke the fallback.",
+            "needs_acknowledgement": "Command not acknowledged, spoke the fallback.",
+            "backend_error": "The composer failed, spoke the fallback.",
+            "output_too_large": "The composer reply was too long, spoke the fallback.",
+            "empty": "The composer returned nothing, spoke the fallback.",
+            "unparseable": "The composer reply could not be read, spoke the fallback.",
+            "superseded": "A newer reply replaced this one.",
+            "unknown": "Unknown outcome."
+          }
+        }
       },
       "lazyStreamClose": {
         "label": "השאר את המיקרופון פתוח בין תמלולים",
@@ -468,6 +656,10 @@
       "openFolder": "פתח את תיקיית ההקלטות",
       "loading": "טוען היסטוריה...",
       "empty": "עדיין אין תמלולים. התחל להקליט כדי לבנות את ההיסטוריה שלך!",
+      "searchPlaceholder": "Search transcriptions...",
+      "searchLabel": "Search transcriptions",
+      "noResults": "No transcriptions match your search.",
+      "searchError": "Failed to search history. Please try again.",
       "copyToClipboard": "העתק תמלול ללוח",
       "copyError": "לא ניתן להעתיק את התמלול ללוח.",
       "save": "שמור תמלול",
@@ -645,6 +837,99 @@
         "label": "הצג מה חדש",
         "description": "הצג הערות גרסה לאחר עדכוני Vox"
       }
+    },
+    "experimental": {
+      "groups": {
+        "engine": "Engine & input",
+        "voiceCommands": "Voice commands",
+        "memory": "Memory",
+        "agentBridge": "Agent bridge"
+      },
+      "realtime": {
+        "title": "Realtime conversation",
+        "intro": "Experimental. Every behaviour below is off until you turn it on. Nothing is sent to a remote endpoint unless you enable \"Use my own endpoint\".",
+        "enabled": {
+          "label": "Enable realtime conversation",
+          "description": "Turns on the realtime conversation behaviour. When off, the conversation works exactly as before."
+        },
+        "speakReplies": {
+          "label": "Speak replies aloud",
+          "description": "Speaks the conversation's replies out loud. This is the same setting as Spoken Replies."
+        },
+        "directEndpoint": {
+          "label": "Use my own endpoint",
+          "description": "Send replies to the endpoint you enter below instead of the speech composer settings."
+        },
+        "endpoint": {
+          "label": "Endpoint address",
+          "description": "Base address of an Anthropic-style API. Must use https unless it is localhost.",
+          "placeholder": "https://api.example.com"
+        },
+        "model": {
+          "label": "Model name",
+          "description": "Name of the model to ask.",
+          "placeholder": "model-name"
+        },
+        "token": {
+          "label": "Access token",
+          "description": "Pasted by you and stored in Vox settings. It is never shown here and never written to logs.",
+          "placeholder": "Paste token",
+          "set": "Token set ({{count}} characters)",
+          "none": "No token set",
+          "clear": "Clear token"
+        },
+        "status": {
+          "off": "Off: turn on the realtime conversation and your own endpoint to use it.",
+          "ok": "Ready: the endpoint, model and token are set.",
+          "missing_endpoint": "Enter an endpoint address.",
+          "missing_model": "Enter a model name.",
+          "missing_token": "Enter an access token.",
+          "invalid_endpoint": "The endpoint address is not valid.",
+          "needs_https": "The endpoint must use https unless it is localhost."
+        },
+        "errors": {
+          "invalid": "This value is not valid.",
+          "needs_https": "Use https for this address (plain http is allowed only for localhost).",
+          "too_long": "This value is too long."
+        },
+        "streamReply": {
+          "label": "Stream replies",
+          "description": "Show and speak the reply as it is generated instead of waiting for the whole answer."
+        },
+        "earlySpeech": {
+          "label": "Speak while the reply streams",
+          "description": "Start speaking sentences before the reply finishes. Needs Stream replies."
+        },
+        "fastVoice": {
+          "label": "Fast voice engine",
+          "description": "Use a resident system voice for lower speaking delay (macOS)."
+        },
+        "ack": {
+          "label": "Spoken acknowledgement",
+          "description": "Say a short \"One moment\" when the reply is slow."
+        },
+        "prewarm": {
+          "label": "Pre-connect",
+          "description": "Open the connection to the endpoint before your first question."
+        },
+        "autoProxy": {
+          "label": "Auto-detect proxy",
+          "description": "Use the proxy from your environment or login shell when Vox is started from Finder."
+        },
+        "proxy": {
+          "label": "Use a manual proxy",
+          "description": "Route realtime requests through the proxy address below."
+        },
+        "proxyUrl": {
+          "label": "Proxy address",
+          "description": "http or https address of the proxy, with a host and port.",
+          "placeholder": "http://proxy.example.com:8080"
+        },
+        "timingLog": {
+          "label": "Timing log",
+          "description": "Log per-turn latency numbers only. No text or tokens are logged."
+        }
+      }
     }
   },
   "footer": {
@@ -660,7 +945,26 @@
     "portableUpdateMessage": "התקנות ניידות אינן מתעדכנות אוטומטית. הורד למטה את המתקין המתאים למערכת שלך, הפעל אותו והתקן לאותה תיקייה — תיקיית Data/ (הגדרות, מודלים, הקלטות) נשמרת במקומה.",
     "portableUpdateButton": "הורדת המתקין",
     "portableUpdateBrowseMessage": "התקנות ניידות אינן מתעדכנות אוטומטית. הורד את הגרסה האחרונה המתאימה למערכת שלך מ-GitHub Releases והתקן אותה לאותה תיקייה — תיקיית Data/ (הגדרות, מודלים, הקלטות) נשמרת במקומה.",
-    "portableUpdateBrowseButton": "פתח את GitHub Releases"
+    "portableUpdateBrowseButton": "פתח את GitHub Releases",
+    "sourceUpdate": {
+      "untracked": "Not tracking main",
+      "starting": "Starting update...",
+      "started": "Updating... (click to check)",
+      "error": "Update check failed",
+      "dialog": {
+        "title": "Update Vox",
+        "summary_one": "Vox is {{count}} commit behind main.",
+        "summary_other": "Vox is {{count}} commits behind main.",
+        "versions": "Installed {{current}}, latest {{latest}}",
+        "more": "...and {{count}} more",
+        "viewChanges": "View changes on GitHub",
+        "explanation": "Updating builds the latest code from GitHub main in your local checkout using the repository's own update script. A Terminal window opens, the build takes several minutes, and Vox restarts when it finishes.",
+        "blockerUnknown": "Could not verify that the checkout is ready to update.",
+        "updateNow": "Update now",
+        "updating": "Starting...",
+        "notNow": "Not now"
+      }
+    }
   },
   "common": {
     "loading": "טוען...",
@@ -686,6 +990,7 @@
     },
     "noInputDeviceTitle": "לא נמצא מיקרופון",
     "noInputDevice": "לא זוהה התקן קלט שמע. חבר מיקרופון או אוזנייה ונסה שוב.",
+    "conversationActive": "A conversation is using the microphone. Finish or stop it before dictating.",
     "recordingFailed": "הפעלת ההקלטה נכשלה: {{error}}",
     "modelLoadFailed": "טעינת המודל נכשלה: {{model}}",
     "modelLoadFailedUnknown": "מודל לא ידוע",
@@ -703,12 +1008,26 @@
     "options": {
       "system": "מערכת",
       "light": "בהיר",
-      "dark": "כהה"
+      "dark": "כהה",
+      "aurora": "Aurora",
+      "custom": "Custom"
+    },
+    "custom": {
+      "text": "Text",
+      "background": "Background",
+      "accent": "Accent",
+      "accentSecondary": "Secondary Accent",
+      "warning": "Warning",
+      "error": "Error",
+      "description": "Pick any color for each part of the interface"
     }
   },
   "overlay": {
     "transcribing": "מתמלל...",
-    "processing": "מעבד..."
+    "processing": "מעבד...",
+    "speaking": "Speaking...",
+    "copy": "Copy transcript to clipboard",
+    "copied": "Transcript copied"
   },
   "whatsNew": {
     "title": "חדש ב-Vox v{{version}}"
@@ -723,5 +1042,49 @@
     "learnMore": "איך לתקן את זה",
     "recorderBlocked": "לא ניתן להקליט קיצורים כרגע — Secure Input של macOS חוסם אירועי מקשים. פתור תחילה את אזהרת Secure Input.",
     "dismiss": "התעלם"
+  },
+  "converse": {
+    "state": {
+      "listening": "Listening",
+      "thinking": "Thinking",
+      "speaking": "Speaking",
+      "acting": "Acting",
+      "idle": "Idle"
+    },
+    "end": {
+      "user_ended": "You ended the conversation.",
+      "idle": "Stopped after no speech for several turns.",
+      "cancelled": "Cancelled.",
+      "not_configured": "Spoken replies are not set up. Turn on spoken replies and choose a reply backend.",
+      "audio_unavailable": "The microphone is unavailable.",
+      "speech_stuck": "Speech output got stuck, so the conversation stopped.",
+      "turn_limit": "Stopped at the turn limit."
+    },
+    "section": {
+      "title": "Conversation",
+      "description": "Hands-free conversation: Vox listens, answers aloud, and keeps a short memory of this session.",
+      "startButton": "Start conversation",
+      "stopButton": "Stop conversation",
+      "stateLabel": "Status:",
+      "endLabel": "Last session ended:",
+      "errors": {
+        "unknown": "Something went wrong with the conversation."
+      },
+      "silenceLabel": "Silence before a turn ends",
+      "silenceDescription": "How long Vox waits in silence before it treats your turn as finished.",
+      "silenceUnit": "ms",
+      "idleTurnsLabel": "Silent turns before stopping",
+      "idleTurnsDescription": "Vox stops the conversation after this many turns in a row with no speech.",
+      "idleTurnsUnit": "turns",
+      "contextTurnsLabel": "Turns kept in context",
+      "contextTurnsDescription": "How many recent exchanges are sent to the reply backend. Older turns are dropped and the memory expires with the session.",
+      "contextTurnsUnit": "turns",
+      "valueFormat": "{{value}} {{unit}}",
+      "shortcutLabel": "Conversation shortcut",
+      "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
+      "shortcutNone": "Not set",
+      "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
+      "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    }
   }
 }
