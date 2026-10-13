@@ -2,13 +2,18 @@
 //! actions, gates readiness per listen, orders show/hide through an injected
 //! main-thread executor, and decides where Cancel is routed.
 //! Contract: DESIGN.md Revision 5 (sections 0R5, 0R4, 0R3, 0).
-//!
-//! INERT STUB: type definitions are final; every function body is `todo!()`
-//! until the implementation step lands. The tests below are the spec.
 
-#![allow(dead_code, unused_variables)]
+// The wiring step (overlay window, recorder port, state emitter) is not in
+// this change yet, so these items have no non-test callers.
+#![allow(dead_code)]
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
+/// Locks a mutex, recovering the inner value if a previous holder panicked.
+/// The guarded state is plain data that stays valid after a panic.
+fn lock_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// What the overlay should do for one conversation state label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,7 +45,14 @@ pub enum ShowKind {
 /// `acting` show their look, `idle` hides, and any other text keeps the
 /// current overlay state.
 pub fn overlay_action(label: &str) -> OverlayAction {
-    todo!("overlay_action: not yet implemented")
+    match label {
+        "listening" => OverlayAction::Show(ShowKind::Listening),
+        "thinking" => OverlayAction::Show(ShowKind::Thinking),
+        "speaking" => OverlayAction::Show(ShowKind::Speaking),
+        "acting" => OverlayAction::Show(ShowKind::Acting),
+        "idle" => OverlayAction::Hide,
+        _ => OverlayAction::Keep,
+    }
 }
 
 /// Which handler receives the overlay Cancel button press.
@@ -55,7 +67,11 @@ pub enum CancelRoute {
 /// Routes the overlay Cancel button: a conversation session that is active
 /// takes the press, otherwise dictation cancel runs.
 pub fn cancel_route(conversation_session_active: bool) -> CancelRoute {
-    todo!("cancel_route: not yet implemented")
+    if conversation_session_active {
+        CancelRoute::Conversation
+    } else {
+        CancelRoute::Dictation
+    }
 }
 
 /// Identifies one armed readiness request (one listen).
@@ -79,23 +95,34 @@ struct GateState {
 impl ReadyGate {
     /// Creates a gate with no armed token.
     pub fn new() -> Self {
-        todo!("ReadyGate::new: not yet implemented")
+        Self {
+            state: Mutex::new(GateState::default()),
+        }
     }
 
     /// Arms a fresh token, replacing any previously armed token.
     pub fn arm(&self) -> ReadyToken {
-        todo!("ReadyGate::arm: not yet implemented")
+        let mut state = lock_recover(&self.state);
+        state.next += 1;
+        state.current = Some(state.next);
+        ReadyToken(state.next)
     }
 
     /// Returns `true` only if `token` is the current, not-yet-fired,
     /// not-invalidated token, and consumes it.
     pub fn fire(&self, token: ReadyToken) -> bool {
-        todo!("ReadyGate::fire: not yet implemented")
+        let mut state = lock_recover(&self.state);
+        if state.current == Some(token.0) {
+            state.current = None;
+            true
+        } else {
+            false
+        }
     }
 
     /// Revokes the current token, if any.
     pub fn invalidate(&self) {
-        todo!("ReadyGate::invalidate: not yet implemented")
+        lock_recover(&self.state).current = None;
     }
 }
 
@@ -132,20 +159,37 @@ impl OverlayDispatcher {
         sink: Arc<dyn OverlaySink>,
         gate: Arc<ReadyGate>,
     ) -> Self {
-        todo!("OverlayDispatcher::new: not yet implemented")
+        Self { exec, sink, gate }
     }
 
     /// Applies one state label. `Show` queues a show job. `Hide` invalidates
     /// the gate immediately on the calling thread, then queues a hide job.
     /// `Keep` does nothing.
     pub fn apply_state(&self, label: &str) {
-        todo!("OverlayDispatcher::apply_state: not yet implemented")
+        match overlay_action(label) {
+            OverlayAction::Show(kind) => {
+                let sink = self.sink.clone();
+                self.exec.submit(Box::new(move || sink.show(kind)));
+            }
+            OverlayAction::Hide => {
+                self.gate.invalidate();
+                let sink = self.sink.clone();
+                self.exec.submit(Box::new(move || sink.hide()));
+            }
+            OverlayAction::Keep => {}
+        }
     }
 
     /// Queues a ready delivery. When the job runs it calls `gate.fire(token)`
     /// and calls `sink.ready()` only if that returned `true`.
     pub fn deliver_ready(&self, token: ReadyToken) {
-        todo!("OverlayDispatcher::deliver_ready: not yet implemented")
+        let gate = self.gate.clone();
+        let sink = self.sink.clone();
+        self.exec.submit(Box::new(move || {
+            if gate.fire(token) {
+                sink.ready();
+            }
+        }));
     }
 }
 

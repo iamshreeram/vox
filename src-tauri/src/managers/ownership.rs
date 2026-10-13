@@ -3,13 +3,18 @@
 //! compare-and-set; the returned `Lease` releases ownership on drop, including
 //! during panic unwinding and early return.
 //! Contract: DESIGN.md Revision 3 (O-C4') and Revision 4 (O-C4'').
-//!
-//! INERT STUB: type definitions are final; every function body is `todo!()`
-//! until the implementation step lands. The tests below are the spec.
 
-#![allow(dead_code, unused_variables)]
+// The wiring step (dictation and conversation entry points) is not in this
+// change yet, so these items have no non-test callers.
+#![allow(dead_code)]
 
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
+
+/// Locks the holder mutex, recovering the inner value if a previous holder
+/// panicked. The guarded value is a plain `Option<Owner>` and stays valid.
+fn lock_holder(mutex: &Mutex<Option<Owner>>) -> MutexGuard<'_, Option<Owner>> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// Who currently owns the recorder and overlay.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,18 +38,29 @@ pub struct OwnershipGate {
 impl OwnershipGate {
     /// Creates a gate with no owner.
     pub fn new() -> Arc<OwnershipGate> {
-        todo!("OwnershipGate::new: not yet implemented")
+        Arc::new(OwnershipGate {
+            holder: Mutex::new(None),
+        })
     }
 
     /// Atomically claims the gate for `who`. Fails with `Busy(holder)` if any
     /// owner holds it, including `who` itself. The gate is unchanged on failure.
     pub fn try_acquire(self: &Arc<Self>, who: Owner) -> Result<Lease, Busy> {
-        todo!("OwnershipGate::try_acquire: not yet implemented")
+        let mut holder = lock_holder(&self.holder);
+        match *holder {
+            Some(current) => Err(Busy(current)),
+            None => {
+                *holder = Some(who);
+                Ok(Lease {
+                    gate: Arc::clone(self),
+                })
+            }
+        }
     }
 
     /// Returns the current holder, if any.
     pub fn current(&self) -> Option<Owner> {
-        todo!("OwnershipGate::current: not yet implemented")
+        *lock_holder(&self.holder)
     }
 }
 
@@ -56,14 +72,14 @@ pub struct Lease {
 
 impl Drop for Lease {
     fn drop(&mut self) {
-        todo!("Lease::drop: not yet implemented")
+        *lock_holder(&self.gate.holder) = None;
     }
 }
 
 /// The process-wide singleton gate. Returns the same `Arc` on every call.
 pub fn global() -> &'static Arc<OwnershipGate> {
     static GATE: OnceLock<Arc<OwnershipGate>> = OnceLock::new();
-    todo!("global: not yet implemented")
+    GATE.get_or_init(OwnershipGate::new)
 }
 
 #[cfg(test)]
