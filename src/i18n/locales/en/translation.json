@@ -1012,6 +1012,7 @@
   "overlay": {
     "transcribing": "Transcribing...",
     "processing": "Processing...",
+    "speaking": "Speaking...",
     "copy": "Copy transcript to clipboard",
     "copied": "Transcript copied"
   },

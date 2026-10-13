@@ -1,7 +1,13 @@
 import { listen } from "@tauri-apps/api/event";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { Check, Copy } from "lucide-react";
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import "./RecordingOverlay.css";
 import { commands, events } from "@/bindings";
@@ -14,8 +20,14 @@ import type {
 import i18n, { syncLanguageFromSettings } from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 import { copyOverlayText } from "./clipboard";
+import { createEpoch } from "./epoch";
 
-type OverlayState = "recording" | "streaming" | "transcribing" | "processing";
+type OverlayState =
+  | "recording"
+  | "streaming"
+  | "transcribing"
+  | "processing"
+  | "speaking";
 
 // Number of reactive bars in the waveform (the simple, smoothed style shared by
 // every overlay form). Mic levels arrive as 16 FFT buckets; we take the first N.
@@ -47,6 +59,9 @@ const RecordingOverlay: React.FC = () => {
   // while overflowing, so the resting first line stays crisp flush under the pill.
   const [overflowing, setOverflowing] = useState(false);
   const [showCopied, setShowCopied] = useState(false);
+  // Guards show/hide ordering: a stale show whose awaits resolve after a newer
+  // show/hide must not resurrect the overlay (DESIGN.md section 0, O-C2).
+  const epoch = useMemo(() => createEpoch(), []);
 
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
   // Live-text scroll-back: the text region "sticks" to the newest line while the
@@ -59,6 +74,7 @@ const RecordingOverlay: React.FC = () => {
   useEffect(() => {
     const setupEventListeners = async () => {
       const unlistenShow = await listen("show-overlay", async (event) => {
+        const my = epoch.next();
         const overlayState = event.payload as OverlayState;
         // Reset synchronously before settings I/O. A fast microphone can emit
         // recording-ready while the awaits below are in flight; resetting after
@@ -71,10 +87,12 @@ const RecordingOverlay: React.FC = () => {
         }
 
         await syncLanguageFromSettings();
+        if (!epoch.isCurrent(my)) return;
         // The Live panel flows downward from a top overlay and upward from a
         // bottom one; read the placement so the layout can flip to match.
         try {
           const settings = await commands.getAppSettings();
+          if (!epoch.isCurrent(my)) return;
           if (settings.status === "ok") {
             setPosition(
               settings.data.overlay_position === "top" ? "top" : "bottom",
@@ -82,6 +100,7 @@ const RecordingOverlay: React.FC = () => {
           }
         } catch {
           // Keep the previous/default placement if settings can't be read.
+          if (!epoch.isCurrent(my)) return;
         }
         setState(overlayState);
         if (overlayState === "streaming") {
@@ -94,6 +113,7 @@ const RecordingOverlay: React.FC = () => {
       });
 
       const unlistenHide = await listen("hide-overlay", () => {
+        epoch.next();
         setIsVisible(false);
         setCaptureReady(false);
       });
@@ -136,7 +156,7 @@ const RecordingOverlay: React.FC = () => {
     };
 
     setupEventListeners();
-  }, []);
+  }, [epoch]);
 
   // Elapsed capture timer starts only once microphone samples are flowing.
   useEffect(() => {
@@ -313,11 +333,15 @@ const RecordingOverlay: React.FC = () => {
   // ---- Minimal overlay: exactly one row at a time — waveform (recording), or a
   // spinner + label (transcribing / processing). Never both. The pill animates its
   // width between them; the cancel button is in both rows so it stays put.
-  const working = state === "transcribing" || state === "processing";
+  // "speaking" reuses the processing row (animated spinner, no mic bars).
+  const working =
+    state === "transcribing" || state === "processing" || state === "speaking";
   const workLabel =
-    state === "processing"
-      ? t("overlay.processing")
-      : t("overlay.transcribing");
+    state === "speaking"
+      ? t("overlay.speaking")
+      : state === "processing"
+        ? t("overlay.processing")
+        : t("overlay.transcribing");
 
   return (
     <div
