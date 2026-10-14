@@ -325,13 +325,32 @@ fn read_confined(project: &cap_std::fs::Dir, parts: &[String]) -> Result<String,
     let truncated = bytes.len() > READ_CAP_BYTES;
     bytes.truncate(READ_CAP_BYTES);
     if bytes.contains(&0) {
-        return Err("binary file; Vox reads text files only".to_string());
+        return Err(BINARY_FILE.to_string());
     }
-    let mut text = String::from_utf8_lossy(&bytes).into_owned();
+    let mut text = decode_text(&bytes, truncated)?;
     if truncated {
         text.push_str(TRUNCATED_MARKER);
     }
     Ok(crate::managers::redact::redact(&text))
+}
+
+/// Refusal text for bytes that are not text (NUL or invalid UTF-8).
+#[cfg(unix)]
+const BINARY_FILE: &str = "binary file; Vox reads text files only";
+
+/// Decodes strict UTF-8. When the read was truncated at the cap, an incomplete multibyte
+/// sequence at the very end is trimmed first, so a character split by the cap is kept out
+/// rather than misreported as binary. Any other invalid byte is refused.
+#[cfg(unix)]
+fn decode_text(bytes: &[u8], truncated: bool) -> Result<String, String> {
+    let valid_len = match std::str::from_utf8(bytes) {
+        Ok(_) => bytes.len(),
+        Err(err) if truncated && err.error_len().is_none() => err.valid_up_to(),
+        Err(_) => return Err(BINARY_FILE.to_string()),
+    };
+    std::str::from_utf8(&bytes[..valid_len])
+        .map(str::to_owned)
+        .map_err(|_| BINARY_FILE.to_string())
 }
 
 #[cfg(test)]
