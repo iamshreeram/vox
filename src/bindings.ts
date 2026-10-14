@@ -1137,6 +1137,36 @@ async changeVaultPathSetting(path: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async changeAgentToolsSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_tools_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Blocks model-planned paste and command after project data was read. On by default.
+ */
+async changeAgentToolsGuardActionsSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_tools_guard_actions_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Sets the project folder list. Invalid input is refused with a fixed message.
+ */
+async changeAgentProjectRootsSetting(roots: string[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_project_roots_setting", { roots }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Lists saved conversations, newest first. `limit` is clamped by the store (1..=200, default 50).
  */
@@ -1350,7 +1380,7 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
  */
-selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; memory_enabled?: boolean; ambient_mode_enabled?: boolean; ambient_wake_name?: string; ambient_window_ms?: number; voice_commands_enabled?: boolean; agent_bridge_enabled?: boolean; agent_bridge_binary_path?: string | null; agent_bridge_prompt_flag?: string; agent_bridge_timeout_secs?: number; wake_word_enabled?: boolean; wake_word_model_name?: string; wake_word_confidence_threshold?: number; wake_word_cooldown_ms?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; custom_theme_colors?: CustomThemeColors; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
+selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; memory_enabled?: boolean; ambient_mode_enabled?: boolean; ambient_wake_name?: string; ambient_window_ms?: number; voice_commands_enabled?: boolean; agent_bridge_enabled?: boolean; agent_bridge_binary_path?: string | null; agent_bridge_prompt_flag?: string; agent_bridge_timeout_secs?: number; wake_word_enabled?: boolean; wake_word_model_name?: string; wake_word_confidence_threshold?: number; wake_word_cooldown_ms?: number; wake_word_silence_timeout_ms?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; custom_theme_colors?: CustomThemeColors; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
 /**
  * Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
  * after the target app actually reads the transcript, instead of after a
@@ -1393,7 +1423,7 @@ tts_composer_mode?: TtsComposerMode; tts_composer_provider_id?: string; tts_comp
  */
 tts_composer_command_ack?: string; tts_composer_timeout_secs?: number; tts_composer_style?: string; tts_composer_send_user_utterance?: boolean; tts_composer_fallback?: TtsComposerFallback;
 converse_silence_ms?: number; converse_max_idle_turns?: number; converse_context_turns?: number;
-exp_rt_enabled?: boolean; exp_rt_direct_endpoint?: boolean; exp_rt_endpoint_url?: string; exp_rt_model?: string; exp_rt_token?: SecretString; exp_rt_stream_reply?: boolean; exp_rt_early_speech?: boolean; exp_rt_fast_voice?: boolean; exp_rt_ack?: boolean; exp_rt_prewarm?: boolean; exp_rt_auto_proxy?: boolean; exp_rt_proxy_enabled?: boolean; exp_rt_proxy_url?: string; exp_rt_timing_log?: boolean; conversation_records_enabled?: boolean; conversation_records_to_vault?: boolean; vault_path?: string; vault_context_enabled?: boolean;
+exp_rt_enabled?: boolean; exp_rt_direct_endpoint?: boolean; exp_rt_endpoint_url?: string; exp_rt_model?: string; exp_rt_token?: SecretString; exp_rt_stream_reply?: boolean; exp_rt_early_speech?: boolean; exp_rt_fast_voice?: boolean; exp_rt_ack?: boolean; exp_rt_prewarm?: boolean; exp_rt_auto_proxy?: boolean; exp_rt_proxy_enabled?: boolean; exp_rt_proxy_url?: string; exp_rt_timing_log?: boolean; conversation_records_enabled?: boolean; conversation_records_to_vault?: boolean; vault_path?: string; vault_context_enabled?: boolean; agent_tools_enabled?: boolean; agent_tools_guard_actions?: boolean; agent_project_roots?: string[];
 }
 export type ExpRtBool = "enabled" | "direct_endpoint" | "stream_reply" | "early_speech" | "fast_voice" | "ack" | "prewarm" | "auto_proxy" | "proxy_enabled" | "timing_log"
 export type ExpRtText = "endpoint_url" | "model" | "token" | "proxy_url"

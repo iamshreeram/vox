@@ -20,6 +20,7 @@ import {
   ConversationVaultPathField,
   ConversationVaultToggle,
 } from "../ConversationMemorySettings";
+import { AgentToolsSettings } from "../AgentToolsSettings";
 import { TtsSettings } from "../TtsSettings";
 import { RealtimeSection } from "../RealtimeSection";
 import { WakeWordToggle } from "../WakeWordToggle";
@@ -124,6 +125,14 @@ export const ExperimentalSettings: React.FC = () => {
           descriptionMode="tooltip"
           grouped={true}
         />
+      </CollapsibleSettingsGroup>
+      <CollapsibleSettingsGroup
+        id="agentTools"
+        title={t("settings.experimental.groups.agentTools")}
+        description={t("settings.experimental.agentTools.groupDescription")}
+        defaultOpen={false}
+      >
+        <AgentToolsSettings descriptionMode="tooltip" grouped={true} />
       </CollapsibleSettingsGroup>
     </div>
   );

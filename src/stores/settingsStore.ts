@@ -182,6 +182,19 @@ const settingUpdaters: {
     commands.changeConversationRecordsSetting(value as boolean),
   conversation_records_to_vault: (value) =>
     commands.changeConversationRecordsToVaultSetting(value as boolean),
+  agent_tools_enabled: (value) =>
+    commands.changeAgentToolsSetting(value as boolean),
+  agent_tools_guard_actions: (value) =>
+    commands.changeAgentToolsGuardActionsSetting(value as boolean),
+  agent_project_roots: async (value) => {
+    const result = await commands.changeAgentProjectRootsSetting(
+      value as string[],
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
   vault_path: async (value) => {
     const result = await commands.changeVaultPathSetting(value as string);
     if (result.status === "error") {

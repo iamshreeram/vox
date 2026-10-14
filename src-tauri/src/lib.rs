@@ -852,34 +852,10 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
     0
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run(cli_args: CliArgs) {
-    // Avoid ggml-metal residency-set teardown assertions when a native engine
-    // outlives the Tauri shutdown sequence (#1902). This must happen before
-    // transcribe-cpp initializes its Metal device. Advanced users can restore
-    // upstream residency behavior with HANDY_METAL_RESIDENCY=1.
-    #[cfg(target_os = "macos")]
-    if std::env::var("HANDY_METAL_RESIDENCY").as_deref() == Ok("1") {
-        // ggml treats GGML_METAL_NO_RESIDENCY as presence-based, so remove an
-        // inherited value as well when explicitly opting back in.
-        std::env::remove_var("GGML_METAL_NO_RESIDENCY");
-    } else {
-        std::env::set_var("GGML_METAL_NO_RESIDENCY", "1");
-    }
-
-    // Pin glibc's dynamic mmap threshold before the first large allocation,
-    // so per-dictation transient buffers are returned to the OS on free
-    // instead of accumulating in malloc arenas (#1792). No-op off Linux/glibc.
-    memory::init_allocator();
-
-    // Detect portable mode before anything else
-    portable::init();
-
-    // Parse console logging directives from RUST_LOG, falling back to info-level logging
-    // when the variable is unset
-    let console_filter = build_console_filter();
-
-    let specta_builder = Builder::<tauri::Wry>::new()
+/// The tauri-specta command/event/type registry. Shared by `run()` (which exports the
+/// TypeScript bindings in debug builds) and the headless `export_bindings` test.
+pub fn specta_builder() -> Builder<tauri::Wry> {
+    Builder::<tauri::Wry>::new()
         .commands(collect_commands![
             shortcut::change_binding,
             shortcut::reset_binding,
@@ -918,6 +894,9 @@ pub fn run(cli_args: CliArgs) {
             commands::conversation_records::change_vault_context_setting,
             commands::conversation_records::change_vault_path_setting,
             commands::conversation_records::list_conversation_records,
+            commands::agent_tools::change_agent_tools_setting,
+            commands::agent_tools::change_agent_tools_guard_actions_setting,
+            commands::agent_tools::change_agent_project_roots_setting,
             shortcut::change_agent_bridge_enabled_setting,
             shortcut::change_agent_bridge_binary_path_setting,
             shortcut::change_voice_media_controls_setting,
@@ -1052,7 +1031,37 @@ pub fn run(cli_args: CliArgs) {
         .typ::<settings::AppSettings>()
         .typ::<managers::wakeword::WakeWordDetection>()
         .typ::<commands::ambient::AmbientAddressedPayload>()
-        .typ::<managers::converse_platform::ConverseStateEvent>();
+        .typ::<managers::converse_platform::ConverseStateEvent>()
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run(cli_args: CliArgs) {
+    // Avoid ggml-metal residency-set teardown assertions when a native engine
+    // outlives the Tauri shutdown sequence (#1902). This must happen before
+    // transcribe-cpp initializes its Metal device. Advanced users can restore
+    // upstream residency behavior with HANDY_METAL_RESIDENCY=1.
+    #[cfg(target_os = "macos")]
+    if std::env::var("HANDY_METAL_RESIDENCY").as_deref() == Ok("1") {
+        // ggml treats GGML_METAL_NO_RESIDENCY as presence-based, so remove an
+        // inherited value as well when explicitly opting back in.
+        std::env::remove_var("GGML_METAL_NO_RESIDENCY");
+    } else {
+        std::env::set_var("GGML_METAL_NO_RESIDENCY", "1");
+    }
+
+    // Pin glibc's dynamic mmap threshold before the first large allocation,
+    // so per-dictation transient buffers are returned to the OS on free
+    // instead of accumulating in malloc arenas (#1792). No-op off Linux/glibc.
+    memory::init_allocator();
+
+    // Detect portable mode before anything else
+    portable::init();
+
+    // Parse console logging directives from RUST_LOG, falling back to info-level logging
+    // when the variable is unset
+    let console_filter = build_console_filter();
+
+    let specta_builder = specta_builder();
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
     // Dev convenience only (regenerates bindings.ts while running `cargo
@@ -1496,6 +1505,133 @@ mod tts_error_kind_tests {
         assert_eq!(
             tts_error_kind(&TtsError::Backend("secret".into())),
             "backend"
+        );
+    }
+}
+
+/// Headless bindings checks (no GUI). `export_bindings_to_env` writes a reference export to
+/// the path in `BINDINGS_OUT` (never the committed file). `bindings_in_sync` compares the
+/// committed `src/bindings.ts` with a fresh export on SEMANTIC parity only: the set of invoked
+/// command names and the set of `AppSettings` field names.
+#[cfg(test)]
+mod bindings_export_tests {
+    use super::specta_builder;
+    use specta_typescript::{BigIntExportBehavior, Typescript};
+    use std::collections::BTreeSet;
+
+    fn export_to(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        specta_builder()
+            .export(
+                Typescript::default().bigint(BigIntExportBehavior::Number),
+                path,
+            )
+            .map_err(Into::into)
+    }
+
+    /// Names of every `TAURI_INVOKE("name"` call in a bindings file.
+    fn invoke_names(src: &str) -> BTreeSet<String> {
+        src.split("TAURI_INVOKE(\"")
+            .skip(1)
+            .filter_map(|rest| rest.split('"').next())
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// Field names of `export type AppSettings = { ... }`: for each line before the next
+    /// top-level `export type`, the identifier before `?:` or `:`. Comment lines are skipped.
+    fn app_settings_fields(src: &str) -> BTreeSet<String> {
+        let mut fields = BTreeSet::new();
+        let Some(start) = src.find("export type AppSettings = {") else {
+            return fields;
+        };
+        for line in src[start..].lines().skip(1) {
+            let trimmed = line.trim();
+            if line.starts_with("export type") || line.starts_with('}') {
+                break;
+            }
+            if trimmed.is_empty()
+                || trimmed.starts_with("//")
+                || trimmed.starts_with('*')
+                || trimmed.starts_with("/*")
+            {
+                continue;
+            }
+            // Several `name?: type;` entries may share one line.
+            for entry in trimmed.split(';') {
+                if let Some((name, _)) = entry.split_once(':') {
+                    let name = name.trim().trim_end_matches('?');
+                    if !name.is_empty()
+                        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                    {
+                        fields.insert(name.to_string());
+                    }
+                }
+            }
+        }
+        fields
+    }
+
+    #[test]
+    fn app_settings_parser_reads_fields_and_skips_comments() {
+        let src = "export type AppSettings = { \n\
+            /**\n * doc: with colon\n */\n\
+            alpha?: boolean; beta?: string | null; \n\
+            // note: not a field\n\
+            gamma: number;\n\
+            }\n\
+            export type Other = { delta?: boolean };\n";
+        let expected: BTreeSet<String> = ["alpha", "beta", "gamma"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(app_settings_fields(src), expected);
+    }
+
+    #[test]
+    fn invoke_parser_reads_names() {
+        let src = "TAURI_INVOKE(\"a_cmd\", { x }); TAURI_INVOKE(\"b_cmd\")";
+        let expected: BTreeSet<String> = ["a_cmd", "b_cmd"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(invoke_names(src), expected);
+    }
+
+    #[test]
+    #[ignore = "writes a reference export to BINDINGS_OUT; never the committed file"]
+    fn export_bindings_to_env() {
+        let out =
+            std::env::var("BINDINGS_OUT").expect("set BINDINGS_OUT to the reference output path");
+        export_to(&out).expect("bindings export failed");
+    }
+
+    #[test]
+    fn bindings_in_sync() {
+        let tmp = std::env::temp_dir().join(format!("vox-bindings-{}.ts", std::process::id()));
+        export_to(tmp.to_str().unwrap()).expect("bindings export failed");
+        let fresh = std::fs::read_to_string(&tmp).expect("read exported bindings");
+        let _ = std::fs::remove_file(&tmp);
+        let committed =
+            std::fs::read_to_string("../src/bindings.ts").expect("read committed bindings");
+
+        let mut problems = Vec::new();
+        let (ci, fi) = (invoke_names(&committed), invoke_names(&fresh));
+        for n in ci.difference(&fi) {
+            problems.push(format!("command only in committed bindings.ts: {n}"));
+        }
+        for n in fi.difference(&ci) {
+            problems.push(format!("command only in fresh export: {n}"));
+        }
+        let (cf, ff) = (app_settings_fields(&committed), app_settings_fields(&fresh));
+        for n in cf.difference(&ff) {
+            problems.push(format!(
+                "AppSettings field only in committed bindings.ts: {n}"
+            ));
+        }
+        for n in ff.difference(&cf) {
+            problems.push(format!("AppSettings field only in fresh export: {n}"));
+        }
+        assert!(
+            problems.is_empty(),
+            "src/bindings.ts out of sync (names only):\n{}",
+            problems.join("\n")
         );
     }
 }

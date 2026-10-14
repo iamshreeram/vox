@@ -42,6 +42,10 @@ pub struct RealtimeConfig {
     pub auto_proxy: bool,
     pub manual_proxy: Option<String>,
     pub timing_log: bool,
+    /// Master && `agent_tools_enabled` (DESIGN R4-1). Only the direct route honours it.
+    pub agent_tools: bool,
+    /// Copy of `agent_tools_guard_actions`; only read when `agent_tools` is true.
+    pub agent_tools_guard_actions: bool,
 }
 
 impl RealtimeConfig {
@@ -68,6 +72,8 @@ impl RealtimeConfig {
             auto_proxy: enabled && s.exp_rt_auto_proxy,
             manual_proxy,
             timing_log: enabled && s.exp_rt_timing_log,
+            agent_tools: enabled && s.agent_tools_enabled,
+            agent_tools_guard_actions: s.agent_tools_guard_actions,
         }
     }
 }

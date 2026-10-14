@@ -101,6 +101,8 @@ fn master_off_forces_every_effective_flag_off() {
             auto_proxy: false,
             manual_proxy: None,
             timing_log: false,
+            agent_tools: false,
+            agent_tools_guard_actions: true,
         }
     );
 }
@@ -359,4 +361,49 @@ fn loopback_http_endpoint_is_accepted() {
     )
     .unwrap();
     assert_eq!(s.exp_rt_endpoint_url, "http://127.0.0.1:8080/anthropic");
+}
+
+// ---- M2-0: agent tools flags (design R4-1) ----------------------------------
+
+#[test]
+fn agent_tools_flags_follow_master_and_tools_toggle() {
+    for master in [false, true] {
+        for tools in [false, true] {
+            let mut s = get_default_settings();
+            s.exp_rt_enabled = master;
+            s.agent_tools_enabled = tools;
+            let c = RealtimeConfig::from_settings(&s);
+            assert_eq!(
+                c.agent_tools,
+                master && tools,
+                "agent_tools must be master && agent_tools_enabled (master={master}, tools={tools})"
+            );
+        }
+    }
+}
+
+#[test]
+fn agent_tools_guard_actions_mirrors_the_setting_in_every_case() {
+    for master in [false, true] {
+        for tools in [false, true] {
+            for guard in [false, true] {
+                let mut s = get_default_settings();
+                s.exp_rt_enabled = master;
+                s.agent_tools_enabled = tools;
+                s.agent_tools_guard_actions = guard;
+                let c = RealtimeConfig::from_settings(&s);
+                assert_eq!(
+                    c.agent_tools_guard_actions, guard,
+                    "guard must copy the setting (master={master}, tools={tools}, guard={guard})"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn agent_tools_guard_actions_defaults_true_in_realtime_config() {
+    let c = RealtimeConfig::from_settings(&get_default_settings());
+    assert!(c.agent_tools_guard_actions);
+    assert!(!c.agent_tools);
 }
