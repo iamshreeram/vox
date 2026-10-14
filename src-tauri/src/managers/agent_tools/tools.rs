@@ -40,3 +40,7 @@ impl ToolExecutor for DefaultToolExecutor {
         todo!()
     }
 }
+
+#[cfg(test)]
+#[path = "tools_tests.rs"]
+mod tools_tests;
