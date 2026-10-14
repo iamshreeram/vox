@@ -3,10 +3,6 @@
 //! main-thread executor, and decides where Cancel is routed.
 //! Contract: DESIGN.md Revision 5 (sections 0R5, 0R4, 0R3, 0).
 
-// The wiring step (overlay window, recorder port, state emitter) is not in
-// this change yet, so these items have no non-test callers.
-#![allow(dead_code)]
-
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// Locks a mutex, recovering the inner value if a previous holder panicked.
