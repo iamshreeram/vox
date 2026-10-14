@@ -189,7 +189,7 @@ impl DefaultToolExecutor {
         // model excludes a concurrent local attacker who swaps the folder in that window
         // (critic-approved; the check still refuses every non-matching folder).
         if !handle.path_still_matches_pinned() {
-            return error_output("project_status", PROJECT_CHANGED_TEXT, true);
+            return untrusted_error("project_status", PROJECT_CHANGED_TEXT);
         }
         match git_status_summary(handle.name(), handle.git_dir()).await {
             Ok(text) => fenced_output("project_status", &text),
@@ -232,11 +232,23 @@ impl DefaultToolExecutor {
         }
         let limit = limit_arg(args);
         let Some(source) = self.conversations.clone() else {
-            return error_output("recent_conversations", CONVERSATIONS_DISABLED_TEXT, true);
+            return untrusted_error("recent_conversations", CONVERSATIONS_DISABLED_TEXT);
         };
-        let items = match source.recent(limit) {
-            Ok(items) => items,
-            Err(msg) => return error_output("recent_conversations", &msg, true),
+        // The source is synchronous, so it runs on the blocking pool and the timeout applies
+        // to its handle. On timeout the handle is dropped; the closure may finish later. That
+        // is acceptable: at most one blocking worker per call, and calls are bounded by the
+        // loop budget.
+        let handle = tokio::task::spawn_blocking(move || source.recent(limit));
+        let joined = match tokio::time::timeout(self.tool_timeout, handle).await {
+            Ok(joined) => joined,
+            Err(_) => return untrusted_error("recent_conversations", "the tool timed out"),
+        };
+        let items = match joined {
+            Ok(Ok(items)) => items,
+            Ok(Err(msg)) => return error_output("recent_conversations", &msg, true),
+            Err(_) => {
+                return untrusted_error("recent_conversations", "the conversation worker failed")
+            }
         };
         let lines: Vec<String> = items
             .iter()
@@ -252,10 +264,13 @@ fn is_untrusted_tool(name: &str) -> bool {
     name != "open_settings"
 }
 
-/// Errors are returned with the tool's untrusted flag; unknown names are trusted.
+/// Errors are returned with the tool's untrusted flag. Untrusted errors may carry outside
+/// text (git stderr, file messages, source errors), so they go through redaction.
 fn error_output(name: &str, msg: &str, untrusted: bool) -> ToolOutput {
     if untrusted {
-        untrusted_error(name, msg)
+        let mut out = fenced_output(name, msg);
+        out.is_error = true;
+        out
     } else {
         ToolOutput {
             text: msg.to_string(),
@@ -265,17 +280,25 @@ fn error_output(name: &str, msg: &str, untrusted: bool) -> ToolOutput {
     }
 }
 
-/// An error whose text is fenced like any other untrusted output.
+/// An error whose text is a FIXED message we wrote (timeouts, unknown tool, validation,
+/// the project-changed text). Fenced without redaction; see `fenced_fixed`.
 fn untrusted_error(name: &str, msg: &str) -> ToolOutput {
-    let mut out = fenced_output(name, msg);
+    let mut out = fenced_fixed(name, msg);
     out.is_error = true;
     out
 }
 
-/// Redacts, neutralises, caps and fences untrusted text (D4). Redaction runs before the cap.
+/// Redacts, neutralises, caps and fences text that may contain outside data (D4). Redaction
+/// runs before the cap.
 fn fenced_output(name: &str, raw: &str) -> ToolOutput {
-    let redacted = crate::managers::redact::redact(raw);
-    let neutral = neutralize(&redacted);
+    fenced_fixed(name, &crate::managers::redact::redact(raw))
+}
+
+/// Neutralises, caps and fences a FIXED string we wrote. Skips redaction on purpose: the first
+/// redact call in a process compiles its regex set (about 300 ms), which must never land on a
+/// timeout or error path.
+fn fenced_fixed(name: &str, text: &str) -> ToolOutput {
+    let neutral = neutralize(text);
     let open = format!("{FENCE_OPEN_PREFIX}{name}{FENCE_OPEN_SUFFIX}\n");
     let close = format!("\n{FENCE_CLOSE}");
     let room = RESULT_CAP_BYTES.saturating_sub(open.len() + close.len());
@@ -298,26 +321,37 @@ fn neutralize(text: &str) -> String {
             out.push(c);
         }
     }
-    // Case-insensitive removal of the closing markers.
+    // Case-insensitive removal of every fence-shaped marker, in any letter case.
     let mut result = out;
-    for marker in ["[END UNTRUSTED DATA", "</untrusted"] {
+    for marker in FENCE_MARKERS {
         result = replace_ascii_ci(&result, marker, "?");
     }
     result
 }
 
+/// Fence-shaped markers that content must never contain (matched ASCII case-insensitively).
+const FENCE_MARKERS: [&str; 3] = ["[END UNTRUSTED DATA", "[UNTRUSTED DATA", "</untrusted"];
+
 /// Replaces every ASCII case-insensitive occurrence of `needle` in `hay` with `with`.
+/// Matching runs on the original bytes, never on a lowercased copy, so byte offsets
+/// always refer to the same string. ASCII needles only match at char boundaries, so every
+/// slice taken here is valid UTF-8.
 fn replace_ascii_ci(hay: &str, needle: &str, with: &str) -> String {
-    let lower = hay.to_ascii_lowercase();
+    let hay_bytes = hay.as_bytes();
+    let needle_bytes = needle.as_bytes();
     let mut out = String::with_capacity(hay.len());
     let mut last = 0;
-    let mut from = 0;
-    while let Some(pos) = lower[from..].find(needle) {
-        let start = from + pos;
-        out.push_str(&hay[last..start]);
-        out.push_str(with);
-        last = start + needle.len();
-        from = last;
+    let mut i = 0;
+    while i + needle_bytes.len() <= hay_bytes.len() {
+        let window = &hay_bytes[i..i + needle_bytes.len()];
+        if window.eq_ignore_ascii_case(needle_bytes) {
+            out.push_str(&hay[last..i]);
+            out.push_str(with);
+            i += needle_bytes.len();
+            last = i;
+        } else {
+            i += 1;
+        }
     }
     out.push_str(&hay[last..]);
     out
