@@ -858,6 +858,20 @@ pub struct AppSettings {
     /// Give the conversation model bounded, redacted vault notes as background (answer-only).
     #[serde(default)]
     pub vault_context_enabled: bool,
+    // ---- Agent tools (M2, DESIGN Rev 4 R4-1). Opt-in: tools off by default.
+    /// Let the voice conversation call read-only project tools (needs the Experimental master).
+    #[serde(default)]
+    pub agent_tools_enabled: bool,
+    /// Block model-planned paste/command after the session has read project data.
+    #[serde(default = "default_agent_tools_guard_actions")]
+    pub agent_tools_guard_actions: bool,
+    /// Absolute folders whose immediate subfolders the project tools may read.
+    #[serde(default)]
+    pub agent_project_roots: Vec<String>,
+}
+
+fn default_agent_tools_guard_actions() -> bool {
+    true
 }
 
 fn default_agent_bridge_prompt_flag() -> String {
@@ -1460,6 +1474,9 @@ pub fn get_default_settings() -> AppSettings {
         conversation_records_to_vault: false,
         vault_path: String::new(),
         vault_context_enabled: false,
+        agent_tools_enabled: false,
+        agent_tools_guard_actions: true,
+        agent_project_roots: Vec::new(),
     }
 }
 

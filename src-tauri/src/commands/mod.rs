@@ -1,4 +1,5 @@
 pub mod agent_bridge;
+pub mod agent_tools;
 pub mod ambient;
 pub mod audio;
 pub mod conversation_records;

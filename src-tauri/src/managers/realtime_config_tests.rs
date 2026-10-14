@@ -101,6 +101,8 @@ fn master_off_forces_every_effective_flag_off() {
             auto_proxy: false,
             manual_proxy: None,
             timing_log: false,
+            agent_tools: false,
+            agent_tools_guard_actions: true,
         }
     );
 }

@@ -1,4 +1,5 @@
 pub mod agent_bridge;
+pub mod agent_tools;
 pub mod ambient;
 pub mod ambient_listener;
 pub mod audio;
@@ -34,6 +35,7 @@ pub mod emotion;
 pub mod gguf_meta;
 pub mod history;
 pub mod llm_stream;
+pub mod llm_tools;
 pub mod media_control;
 pub mod memory;
 pub mod model;
@@ -49,6 +51,7 @@ pub mod source_update;
 pub mod speech_backends;
 pub mod speech_compose;
 pub mod speech_pipeline;
+pub mod tool_loop;
 pub mod transcription;
 pub mod tts;
 #[cfg(target_os = "macos")]
