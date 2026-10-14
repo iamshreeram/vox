@@ -16,7 +16,8 @@ use crate::managers::llm_tools::{
 
 /// Tool calls executed or attempted per model turn; calls beyond this are rejected (R2-5).
 const MAX_TOOL_CALLS_PER_TURN: usize = 4;
-const REFUSAL_SPEECH: &str = "I can't act on that after reading project data.";
+/// Fixed refusal spoken when a Paste or Command is blocked after reading project data (R4-2).
+pub(crate) const REFUSAL_SPEECH: &str = "I can't act on that after reading project data.";
 const FALLBACK_SPEECH: &str = "I couldn't finish looking that up.";
 
 /// One absolute time budget; every operation receives `min(own limit, remaining)`.
