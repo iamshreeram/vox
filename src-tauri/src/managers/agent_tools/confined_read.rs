@@ -178,13 +178,25 @@ const DENY_SUFFIX: [&str; 8] = [
     ".kdbx",
 ];
 
-/// True when `component` names something Vox must never read, in any case.
+/// Folds one path component for every denylist comparison (DESIGN R4-9 b). Each char is
+/// uppercased then lowercased, so Unicode lookalikes fold to ASCII (U+017F long s -> `s`,
+/// U+212A Kelvin sign -> `k`), matching case-insensitive filesystems such as APFS.
+#[cfg(unix)]
+fn fold_component(component: &str) -> String {
+    component
+        .chars()
+        .flat_map(|c| c.to_uppercase())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// True when `component` names something Vox must never read, after Unicode case folding.
 #[cfg(unix)]
 fn is_denied(component: &str) -> bool {
-    let lower = component.to_ascii_lowercase();
-    DENY_EXACT.contains(&lower.as_str())
-        || DENY_PREFIX.iter().any(|prefix| lower.starts_with(prefix))
-        || DENY_SUFFIX.iter().any(|suffix| lower.ends_with(suffix))
+    let folded = fold_component(component);
+    DENY_EXACT.contains(&folded.as_str())
+        || DENY_PREFIX.iter().any(|prefix| folded.starts_with(prefix))
+        || DENY_SUFFIX.iter().any(|suffix| folded.ends_with(suffix))
 }
 
 /// Refusal text for a path that is malformed or not a plain relative path.
@@ -212,12 +224,13 @@ fn validate_relative(rel: &str) -> Result<Vec<&str>, String> {
 /// at most 255 bytes, and not denylisted.
 #[cfg(unix)]
 fn validate_component(part: &str) -> Result<(), String> {
+    let folded = fold_component(part);
     let shape_ok = !part.is_empty()
         && part != "."
         && part != ".."
         && part.len() <= MAX_COMPONENT_BYTES
-        && !part.ends_with('.')
-        && !part.ends_with(' ');
+        && !folded.ends_with('.')
+        && !folded.ends_with(' ');
     if !shape_ok {
         return Err(INVALID_PATH.to_string());
     }
