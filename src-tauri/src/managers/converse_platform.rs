@@ -601,9 +601,6 @@ impl Brain for RealBrain {
         Box::pin(async move {
             let settings = get_settings(&self.app);
             let block = self.vault_context(&settings);
-            if let Some(text) = block.as_deref() {
-                mark_vault_taint(&self.taint, text);
-            }
             let input = PlanInput {
                 vault_context: block.as_deref(),
                 ..input
@@ -640,9 +637,6 @@ impl Brain for RealBrain {
             }
             let deadline = effective_deadline(&settings);
             let block = self.vault_context(&settings);
-            if let Some(text) = block.as_deref() {
-                mark_vault_taint(&self.taint, text);
-            }
             let input = PlanInput {
                 vault_context: block.as_deref(),
                 ..input
