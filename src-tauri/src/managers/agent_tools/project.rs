@@ -77,6 +77,10 @@ impl std::error::Error for ProjectError {}
 pub struct ProjectHandle {
     name: String,
     dir: Dir,
+    /// Canonical project path captured at resolve time. Only used for git invocation via
+    /// `git_dir`, never for display or file reads.
+    #[cfg(unix)]
+    git_path: PathBuf,
 }
 
 impl ProjectHandle {
@@ -88,6 +92,35 @@ impl ProjectHandle {
     /// The pinned directory handle every file read goes through.
     pub fn dir(&self) -> &Dir {
         &self.dir
+    }
+
+    /// Canonical project path for git. Callers must first check
+    /// `path_still_matches_pinned`.
+    #[cfg(unix)]
+    pub(crate) fn git_dir(&self) -> &Path {
+        &self.git_path
+    }
+
+    /// `true` only when the path still names the pinned directory: a plain directory (not a
+    /// symlink) with the same device and inode as the pinned handle. Unix only.
+    #[cfg(unix)]
+    pub(crate) fn path_still_matches_pinned(&self) -> bool {
+        let (Ok(pinned), Ok(now)) = (
+            self.dir.dir_metadata(),
+            std::fs::symlink_metadata(&self.git_path),
+        ) else {
+            return false;
+        };
+        now.file_type().is_dir()
+            && !now.file_type().is_symlink()
+            && std::os::unix::fs::MetadataExt::dev(&now) == cap_fs_ext::MetadataExt::dev(&pinned)
+            && std::os::unix::fs::MetadataExt::ino(&now) == cap_fs_ext::MetadataExt::ino(&pinned)
+    }
+
+    /// Non-unix builds never resolve projects, so there is nothing to match.
+    #[cfg(not(unix))]
+    pub(crate) fn path_still_matches_pinned(&self) -> bool {
+        false
     }
 }
 
@@ -104,6 +137,9 @@ impl fmt::Debug for ProjectHandle {
 #[derive(Debug, Clone, Default)]
 pub struct ProjectResolver {
     roots: Arc<Vec<Dir>>,
+    /// Canonical root paths, index-aligned with `roots` (used only for git invocation).
+    #[cfg(unix)]
+    root_paths: Arc<Vec<PathBuf>>,
     /// Count of configured roots refused because they are on a network or virtual
     /// filesystem (used to pick the error when no usable root remains).
     network_roots: usize,
@@ -118,7 +154,18 @@ impl ProjectResolver {
 
     /// Resolves a bare project name to a pinned project handle.
     pub fn resolve(&self, name: &str) -> Result<ProjectHandle, ProjectError> {
-        resolve_in(&self.roots, self.network_roots, name)
+        resolve_in(&self.roots, self.root_paths(), self.network_roots, name)
+    }
+
+    #[cfg(unix)]
+    fn root_paths(&self) -> &[PathBuf] {
+        &self.root_paths
+    }
+
+    /// Non-unix builds keep no root paths.
+    #[cfg(not(unix))]
+    fn root_paths(&self) -> &[PathBuf] {
+        &[]
     }
 
     /// Immediate plain-directory names across roots: sorted, at most 50, at most 500
@@ -133,6 +180,7 @@ impl ProjectResolver {
 fn open_roots(configured: &[String]) -> ProjectResolver {
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut roots = Vec::new();
+    let mut root_paths = Vec::new();
     let mut network_roots = 0;
     for raw in configured {
         if raw.is_empty() || !Path::new(raw).is_absolute() {
@@ -154,13 +202,17 @@ fn open_roots(configured: &[String]) -> ProjectResolver {
             continue;
         };
         match fs_kind_of(&dir) {
-            Ok(FsKind::Local) => roots.push(dir),
+            Ok(FsKind::Local) => {
+                roots.push(dir);
+                root_paths.push(canonical.clone());
+            }
             Ok(FsKind::NetworkOrVirtual(_)) => network_roots += 1,
             Err(_) => {}
         }
     }
     ProjectResolver {
         roots: Arc::new(roots),
+        root_paths: Arc::new(root_paths),
         network_roots,
     }
 }
@@ -193,6 +245,7 @@ fn validate_name(name: &str) -> Result<(), ProjectError> {
 #[cfg(unix)]
 fn resolve_in(
     roots: &[Dir],
+    roots_paths: &[PathBuf],
     network_roots: usize,
     name: &str,
 ) -> Result<ProjectHandle, ProjectError> {
@@ -233,7 +286,12 @@ fn resolve_in(
             let dir = roots[index]
                 .open_dir_nofollow(&actual)
                 .map_err(|_| ProjectError::NotPlainFolder)?;
-            Ok(ProjectHandle { name: actual, dir })
+            let git_path = roots_paths[index].join(&actual);
+            Ok(ProjectHandle {
+                name: actual,
+                dir,
+                git_path,
+            })
         }
         count => Err(ProjectError::Ambiguous(count)),
     }
@@ -243,6 +301,7 @@ fn resolve_in(
 #[cfg(not(unix))]
 fn resolve_in(
     _roots: &[Dir],
+    _roots_paths: &[PathBuf],
     _network_roots: usize,
     _name: &str,
 ) -> Result<ProjectHandle, ProjectError> {
