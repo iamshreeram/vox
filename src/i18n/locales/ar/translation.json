@@ -818,7 +818,8 @@
         "voiceCommands": "Voice commands",
         "memory": "Memory",
         "agentBridge": "Agent bridge",
-        "conversationMemory": "Conversation memory"
+        "conversationMemory": "Conversation memory",
+        "agentTools": "Voice agent tools"
       },
       "realtime": {
         "title": "Realtime conversation",
@@ -915,6 +916,21 @@
         "contextLabel": "Use my vault notes as conversation context",
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
+      },
+      "agentTools": {
+        "groupDescription": "Let the voice assistant read project status and files. Off by default.",
+        "enabledLabel": "Voice agent tools",
+        "enabledDescription": "Lets the voice assistant read git status, file contents, project names and recent conversations to answer questions. Off by default.",
+        "guardLabel": "Block actions after reading project data",
+        "guardDescription": "Protects against files or web text that try to trick the assistant into pasting or opening things. Turn off to let the assistant act freely. When off, a malicious file you ask about could cause it to paste text or open a link.",
+        "projectRootsLabel": "Project folders",
+        "projectRootsDescription": "Folders the assistant may read. Type an absolute path and press Add folder.",
+        "projectRootPlaceholder": "/absolute/path/to/project",
+        "addProjectRoot": "Add folder",
+        "removeProjectRoot": "Remove",
+        "noProjectRoots": "No project folders yet. The assistant cannot read any project until you add one.",
+        "projectRootsLimit": "You can add up to {{max}} project folders.",
+        "privacyText": "When tools are on, file contents and git status are sent to the model. Redaction of sensitive text is best-effort, so review what your project folders contain."
       }
     },
     "modelSettings": {
