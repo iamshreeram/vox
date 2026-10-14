@@ -166,7 +166,15 @@ fn fstatfs_of(dir: &cap_std::fs::Dir) -> std::io::Result<libc::statfs> {
 const DENY_EXACT: [&str; 10] = [
     ".git", ".ssh", ".aws", ".gnupg", ".kube", ".docker", ".env", ".npmrc", ".netrc", ".pgpass",
 ];
-const DENY_PREFIX: [&str; 5] = [".env.", "id_rsa", "id_ed25519", "credentials", "secrets"];
+const DENY_PREFIX: [&str; 7] = [
+    ".env.",
+    "id_rsa",
+    "id_ed25519",
+    "id_ecdsa",
+    "id_dsa",
+    "credentials",
+    "secrets",
+];
 const DENY_SUFFIX: [&str; 8] = [
     ".pem",
     ".key",
@@ -185,7 +193,8 @@ const DENY_SUFFIX: [&str; 8] = [
 fn fold_component(component: &str) -> String {
     component
         .chars()
-        .flat_map(|c| c.to_uppercase())
+        .flat_map(char::to_lowercase)
+        .flat_map(char::to_uppercase)
         .flat_map(char::to_lowercase)
         .collect()
 }
