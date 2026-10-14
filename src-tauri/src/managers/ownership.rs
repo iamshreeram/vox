@@ -4,10 +4,6 @@
 //! during panic unwinding and early return.
 //! Contract: DESIGN.md Revision 3 (O-C4') and Revision 4 (O-C4'').
 
-// The wiring step (dictation and conversation entry points) is not in this
-// change yet, so these items have no non-test callers.
-#![allow(dead_code)]
-
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
 /// Locks the holder mutex, recovering the inner value if a previous holder
@@ -58,7 +54,9 @@ impl OwnershipGate {
         }
     }
 
-    /// Returns the current holder, if any.
+    /// Returns the current holder, if any. Only the tests observe the holder
+    /// directly; production code gates on `try_acquire` alone.
+    #[cfg(test)]
     pub fn current(&self) -> Option<Owner> {
         *lock_holder(&self.holder)
     }
@@ -179,10 +177,9 @@ mod tests {
                 let barrier = barrier.clone();
                 thread::spawn(move || {
                     barrier.wait();
-                    gate.try_acquire(who).map(|lease| {
+                    gate.try_acquire(who).inspect(|_| {
                         // Keep the winner's lease alive until both results exist.
                         std::thread::sleep(std::time::Duration::from_millis(50));
-                        lease
                     })
                 })
             })

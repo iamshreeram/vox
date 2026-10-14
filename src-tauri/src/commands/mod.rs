@@ -26,6 +26,14 @@ use tauri_plugin_opener::OpenerExt;
 #[tauri::command]
 #[specta::specta]
 pub fn cancel_operation(app: AppHandle) {
+    cancel_routed(&app);
+}
+
+/// Conversation-aware cancel shared by the overlay button, the tray Cancel item
+/// and the `--cancel` CLI path. An active conversation session is stopped; any
+/// other state runs the dictation cancel. The keyboard shortcut path in
+/// `actions.rs` calls `utils::cancel_current_operation` directly and is unchanged.
+pub fn cancel_routed(app: &AppHandle) {
     let conversation_active = app
         .state::<Arc<crate::managers::converse_runtime::ConverseController>>()
         .is_active();
@@ -35,7 +43,7 @@ pub fn cancel_operation(app: AppHandle) {
                 .stop();
         }
         crate::managers::converse_overlay::CancelRoute::Dictation => {
-            cancel_current_operation(&app);
+            cancel_current_operation(app);
         }
     }
 }
@@ -217,4 +225,61 @@ pub fn initialize_shortcuts(app: AppHandle) -> Result<(), String> {
 
     log::info!("Shortcuts initialized successfully");
     Ok(())
+}
+
+#[cfg(test)]
+mod cancel_wiring_tests {
+    //! Wiring regression: the tray Cancel item and the single-instance `--cancel`
+    //! arm must reach the conversation-aware `cancel_routed`, never the bare
+    //! `utils::cancel_current_operation` (which would skip conversation routing).
+
+    const LIB_SOURCE: &str = include_str!("../lib.rs");
+
+    /// Returns the text of the match arm that starts with `needle`, up to the
+    /// next line that begins a sibling arm or closes the block.
+    fn arm_body<'a>(source: &'a str, needle: &str) -> &'a str {
+        let start = source
+            .find(needle)
+            .unwrap_or_else(|| panic!("arm `{needle}` not found in lib.rs"));
+        let rest = &source[start..];
+        let end = rest.find("\"quit\" =>").unwrap_or(rest.len().min(400));
+        &rest[..end.min(rest.len())]
+    }
+
+    #[test]
+    fn tray_cancel_arm_routes_through_cancel_routed() {
+        let arm = arm_body(LIB_SOURCE, "\"cancel\" => {");
+        assert!(
+            arm.contains("cancel_routed("),
+            "tray cancel arm must call cancel_routed: {arm}"
+        );
+        assert!(
+            !arm.contains("cancel_current_operation("),
+            "tray cancel arm must not call cancel_current_operation directly"
+        );
+    }
+
+    #[test]
+    fn cli_cancel_arm_routes_through_cancel_routed() {
+        let start = LIB_SOURCE
+            .find("args.iter().any(|a| a == \"--cancel\")")
+            .expect("--cancel arm not found in lib.rs");
+        let arm = &LIB_SOURCE[start..(start + 200).min(LIB_SOURCE.len())];
+        assert!(
+            arm.contains("cancel_routed("),
+            "--cancel arm must call cancel_routed: {arm}"
+        );
+        assert!(
+            !arm.contains("cancel_current_operation("),
+            "--cancel arm must not call cancel_current_operation directly"
+        );
+    }
+
+    #[test]
+    fn lib_has_no_direct_cancel_current_operation_call() {
+        assert!(
+            !LIB_SOURCE.contains("cancel_current_operation("),
+            "lib.rs must reach cancellation only through commands::cancel_routed"
+        );
+    }
 }
