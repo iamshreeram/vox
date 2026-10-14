@@ -71,6 +71,18 @@ pub fn on_levels(levels: &[f32]) {
     }
 }
 
+/// Audio-callback entry: one frame the VAD kept as speech. NON-BLOCKING; a
+/// no-op when nothing is installed or no listen is armed.
+pub fn on_speech_frame() {
+    let handle = {
+        let guard = CAPTURE.lock().unwrap_or_else(|e| e.into_inner());
+        guard.clone()
+    };
+    if let Some(h) = handle {
+        h.push_speech(now_ms());
+    }
+}
+
 #[cfg(test)]
 pub(crate) static TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -139,6 +151,13 @@ mod tests {
     }
 
     #[test]
+    fn on_speech_frame_is_a_no_op_without_a_capture_handle() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        install_capture(None);
+        on_speech_frame(); // must not panic or block
+    }
+
+    #[test]
     fn session_flag_round_trips() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_session_active(true);
@@ -172,6 +191,7 @@ mod tests {
         assert!(port.active.load(Ordering::SeqCst));
         // levels flow through the hook (loud then quiet) and end the utterance
         for _ in 0..30 {
+            on_speech_frame();
             on_levels(&[0.6, 0.3]);
             tokio::time::sleep(Duration::from_millis(10)).await;
         }

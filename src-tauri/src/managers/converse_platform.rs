@@ -40,6 +40,14 @@ use tauri::{AppHandle, Emitter, Manager};
 
 /// Binding id this session records under (the only binding it ever starts).
 const CONVERSE_BINDING: &str = "converse";
+
+/// VAD policy for a conversation listen. Always `Offline`: a conversation
+/// listen always needs the VAD to drop non-speech frames, because end-of-speech
+/// is detected from the VAD-kept frames. The dictation vad setting does not
+/// apply here.
+fn conversation_vad_policy(_vad_enabled: bool) -> VadPolicy {
+    VadPolicy::Offline
+}
 /// Tauri event carrying `ConverseStateEvent`.
 pub const CONVERSE_STATE_EVENT: &str = "converse-state";
 /// Refusal when dictation owns the microphone or is still processing.
@@ -156,11 +164,7 @@ impl RecorderPort for AudioRecorderPort {
         let settings = get_settings(&self.app);
         // Same policy TranscribeAction::start picks for a non-streaming
         // manual recording. Streaming is never used by a session.
-        let policy = if settings.vad_enabled {
-            VadPolicy::Offline
-        } else {
-            VadPolicy::Disabled
-        };
+        let policy = conversation_vad_policy(settings.vad_enabled);
         // Mirror TranscribeAction::start: kick off the model load and the VAD
         // preload before the microphone opens.
         let tm = self.app.state::<Arc<TranscriptionManager>>();
@@ -519,6 +523,13 @@ impl Platform for RealPlatform {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn conversation_always_uses_the_offline_vad_even_if_dictation_vad_is_off() {
+        use crate::audio_toolkit::VadPolicy as P;
+        assert_eq!(super::conversation_vad_policy(true), P::Offline);
+        assert_eq!(super::conversation_vad_policy(false), P::Offline);
+    }
+
     use super::*;
     use crate::managers::composer_config::TtsComposerMode;
 

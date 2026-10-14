@@ -233,6 +233,10 @@ pub async fn run_session(deps: &Deps<'_>, cfg: &SessionConfig, cancel: CancelTok
 
 // Fixed spoken messages. The loop never speaks text taken from an error.
 const MSG_TOO_LONG: &str = "That was too long for me. Please say it in parts.";
+/// Spoken once when the capture reports `TooLong` twice in a row (the
+/// endpointer cannot find the end of speech).
+const MSG_CANT_HEAR: &str =
+    "I can't tell when you stop talking, so I'm ending this. Please try again somewhere quieter.";
 const MSG_MIC: &str = "I can't use the microphone right now.";
 const MSG_STOP_LISTENING: &str = "I'll stop listening now.";
 const MSG_OKAY: &str = "Okay.";
@@ -837,6 +841,7 @@ async fn run_turns(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToke
     let mut history: Vec<(String, String)> = Vec::new();
     let mut carry = Carry::default();
     let mut idle_turns: u32 = 0;
+    let mut consecutive_too_long: u32 = 0;
     let mut turns: usize = 0;
 
     loop {
@@ -863,6 +868,13 @@ async fn run_turns(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToke
             }
             ListenOutcome::TooLong => {
                 idle_turns = 0;
+                consecutive_too_long += 1;
+                if consecutive_too_long >= 2 {
+                    return after_speech(
+                        speak(deps, cfg, cancel, MSG_CANT_HEAR, Emotion::Neutral).await,
+                        SessionEnd::AudioUnavailable,
+                    );
+                }
                 if let Some(end) =
                     speak_or_end(deps, cfg, cancel, MSG_TOO_LONG, Emotion::Neutral).await
                 {
@@ -873,6 +885,8 @@ async fn run_turns(deps: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToke
             ListenOutcome::NoSpeech => String::new(),
             ListenOutcome::Utterance(text) => text,
         };
+        // Any capture that did not report TooLong breaks the streak.
+        consecutive_too_long = 0;
 
         if utterance.trim().is_empty() {
             idle_turns += 1;
@@ -1414,6 +1428,88 @@ mod tests {
         assert_eq!(run(&r, &cfg()).await, SessionEnd::Cancelled);
         assert!(r.log.has("stop"));
         assert_eq!(idle_count(&r), 1);
+    }
+
+    // ---- loop guard (design rev 2, F3): a capture that cannot find the end of
+    // speech must not loop for 25 minutes saying "too long".
+
+    #[tokio::test]
+    async fn two_consecutive_too_long_listens_end_the_session_with_cant_hear() {
+        let r = rig(
+            vec![
+                L::Out(ListenOutcome::TooLong),
+                L::Out(ListenOutcome::TooLong),
+                L::Out(ListenOutcome::Aborted),
+            ],
+            vec![],
+        );
+        assert_eq!(run(&r, &cfg()).await, SessionEnd::AudioUnavailable);
+        assert_eq!(r.log.says(), vec![MSG_TOO_LONG, MSG_CANT_HEAR]);
+        assert_eq!(
+            r.log.count("plan:") + r.log.count("user:") + r.log.count("paste:"),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn a_heard_utterance_between_too_longs_resets_the_counter() {
+        let r = rig(
+            vec![
+                L::Out(ListenOutcome::TooLong),
+                utt("hello"),
+                L::Out(ListenOutcome::TooLong),
+                L::Out(ListenOutcome::Aborted),
+            ],
+            vec![answer("Hi there.")],
+        );
+        assert_eq!(run(&r, &cfg()).await, SessionEnd::Cancelled);
+        let says = r.log.says();
+        assert_eq!(says.iter().filter(|s| *s == MSG_TOO_LONG).count(), 2);
+        assert!(!says.iter().any(|s| s == MSG_CANT_HEAR));
+    }
+
+    #[tokio::test]
+    async fn the_over_long_text_path_is_not_counted_as_a_capture_too_long() {
+        let long = "a".repeat(1001);
+        let r = rig(
+            vec![utt(&long), utt(&long), L::Out(ListenOutcome::Aborted)],
+            vec![],
+        );
+        assert_eq!(run(&r, &cfg()).await, SessionEnd::Cancelled);
+        assert_eq!(r.log.says(), vec![MSG_TOO_LONG, MSG_TOO_LONG]);
+    }
+
+    #[tokio::test]
+    async fn no_speech_between_too_longs_resets_the_counter() {
+        let mut c = cfg();
+        c.max_idle_turns = 3;
+        let r = rig(
+            vec![
+                L::Out(ListenOutcome::TooLong),
+                L::Out(ListenOutcome::NoSpeech),
+                L::Out(ListenOutcome::TooLong),
+                L::Out(ListenOutcome::Aborted),
+            ],
+            vec![],
+        );
+        assert_eq!(run(&r, &c).await, SessionEnd::Cancelled);
+        assert_eq!(r.log.says(), vec![MSG_TOO_LONG, MSG_TOO_LONG]);
+    }
+
+    #[tokio::test]
+    async fn too_long_then_two_no_speech_listens_ends_idle_normally() {
+        let mut c = cfg();
+        c.max_idle_turns = 2;
+        let r = rig(
+            vec![
+                L::Out(ListenOutcome::TooLong),
+                L::Out(ListenOutcome::NoSpeech),
+                L::Out(ListenOutcome::NoSpeech),
+            ],
+            vec![],
+        );
+        assert_eq!(run(&r, &c).await, SessionEnd::Idle);
+        assert_eq!(r.log.says(), vec![MSG_TOO_LONG, MSG_STOP_LISTENING]);
     }
 
     #[tokio::test]

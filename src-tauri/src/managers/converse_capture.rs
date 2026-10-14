@@ -93,6 +93,10 @@ impl Inner {
 /// Bounded queue between callers and the single worker thread.
 const QUEUE_CAPACITY: usize = 1024;
 
+/// A VAD speech frame keeps speech "active" for this long. Speech frames
+/// arrive about every 30 ms, so this is more than 4 frames of slack.
+const SPEECH_GAP_MS: u64 = 150;
+
 enum Command {
     Listen {
         listen_id: u64,
@@ -106,6 +110,11 @@ enum Command {
         listen_id: u64,
         now_ms: u64,
         levels: Vec<f32>,
+    },
+    /// One VAD-kept (speech) audio frame was seen for `listen_id`.
+    Speech {
+        listen_id: u64,
+        now_ms: u64,
     },
     Cancel {
         upto: u64,
@@ -149,6 +158,10 @@ struct Recording {
     abs_deadline: Duration,
     endpointer: Endpointer,
     heard: bool,
+    /// Latest VAD speech frame time for this listen (None until one arrives).
+    last_speech_ms: Option<u64>,
+    /// Number of VAD speech frames accepted for this listen (diagnostic).
+    speech_frames: u32,
 }
 
 enum State {
@@ -253,6 +266,7 @@ impl Worker {
                 now_ms,
                 levels,
             } => self.on_levels(listen_id, now_ms, &levels),
+            Command::Speech { listen_id, now_ms } => self.on_speech(listen_id, now_ms),
             Command::Cancel { upto } => {
                 self.cancel_upto(upto);
             }
@@ -287,6 +301,8 @@ impl Worker {
                         ) + self.timings.abs_slack,
                         endpointer: Endpointer::new(p.cfg),
                         heard: false,
+                        last_speech_ms: None,
+                        speech_frames: 0,
                     });
                 }
             }
@@ -344,11 +360,31 @@ impl Worker {
         }
     }
 
-    fn on_levels(&mut self, listen_id: u64, now_ms: u64, levels: &[f32]) {
+    /// Records one VAD speech frame. Only the recording with this listen id
+    /// accepts it; speech for any other (or no) listen is ignored.
+    fn on_speech(&mut self, listen_id: u64, now_ms: u64) {
+        if let State::Recording(r) = &mut self.state {
+            if r.id == listen_id {
+                r.last_speech_ms = Some(match r.last_speech_ms {
+                    Some(prev) => prev.max(now_ms),
+                    None => now_ms,
+                });
+                r.speech_frames = r.speech_frames.saturating_add(1);
+            }
+        }
+    }
+
+    /// The endpointer is driven by VAD speech activity, not by level values:
+    /// room tone on the visualizer scale is always above the level floor, so
+    /// level-driven endpointing never detects the end of speech.
+    fn on_levels(&mut self, listen_id: u64, now_ms: u64, _levels: &[f32]) {
         match std::mem::replace(&mut self.state, State::Idle) {
             State::Recording(mut r) if r.id == listen_id => {
                 r.heard = true;
-                match r.endpointer.feed(now_ms, levels) {
+                let speech_active = r
+                    .last_speech_ms
+                    .is_some_and(|t| now_ms.saturating_sub(t) <= SPEECH_GAP_MS);
+                match r.endpointer.feed_activity(now_ms, speech_active) {
                     None => self.state = State::Recording(r),
                     Some(EndpointEvent::NoSpeech) => {
                         self.end_with_cancel(r, ListenOutcome::NoSpeech)
@@ -370,6 +406,7 @@ impl Worker {
             None => ListenOutcome::Aborted,
             Some(samples) => self.transcribe(samples),
         };
+        log_listen_end(end_reason(&outcome), &r);
         let _ = r.reply.send(outcome);
     }
 
@@ -412,12 +449,35 @@ impl Worker {
     fn end_with_cancel(&mut self, r: Recording, outcome: ListenOutcome) {
         self.port.cancel();
         self.set_inactive();
+        log_listen_end(end_reason(&outcome), &r);
         let _ = r.reply.send(outcome);
     }
 
     fn set_inactive(&self) {
         self.capture_active.store(false, Ordering::SeqCst);
     }
+}
+
+/// Short, fixed reason for the end of a listen (diagnostic log only).
+fn end_reason(outcome: &ListenOutcome) -> &'static str {
+    match outcome {
+        ListenOutcome::Utterance(_) => "speech_ended",
+        ListenOutcome::NoSpeech => "no_speech",
+        ListenOutcome::TooLong => "too_long",
+        ListenOutcome::Aborted => "aborted",
+        ListenOutcome::Failed(_) => "failed",
+    }
+}
+
+/// F4 diagnostic: one numeric/enum-only line per ended listen. Never audio,
+/// text, device names, ids or paths.
+fn log_listen_end(reason: &str, r: &Recording) {
+    log::info!(
+        "converse capture ended: reason={} dur_ms={} speech_frames={}",
+        reason,
+        r.started_at.elapsed().as_millis(),
+        r.speech_frames
+    );
 }
 
 impl CaptureHandle {
@@ -474,6 +534,19 @@ impl CaptureHandle {
             now_ms,
             levels: levels.to_vec(),
         });
+    }
+
+    /// Called from the audio callback thread for each frame the VAD kept as
+    /// speech: NON-BLOCKING, a no-op unless a listen is armed.
+    pub fn push_speech(&self, now_ms: u64) {
+        let listen_id = self.inner.armed.load(Ordering::SeqCst);
+        if listen_id == 0 {
+            return;
+        }
+        let _ = self
+            .inner
+            .tx
+            .try_send(Command::Speech { listen_id, now_ms });
     }
 
     /// Cancel every listen (current and future ids) of this worker.
@@ -655,6 +728,7 @@ mod tests {
     fn speak_then_silence(h: &CaptureHandle) {
         let mut t = 0u64;
         while t < 400 {
+            h.push_speech(t);
             h.push_levels(t, LOUD);
             t += 50;
         }
@@ -774,6 +848,7 @@ mod tests {
         wait_for("recording", || port.is_active()).await;
         let mut t = 0u64;
         while t <= 600 {
+            h.push_speech(t);
             h.push_levels(t, LOUD);
             t += 50;
         }
@@ -814,11 +889,215 @@ mod tests {
             ListenOutcome::Utterance("hello world".into())
         );
         for t in 0..20u64 {
+            h.push_speech(2000 + t * 50);
             h.push_levels(2000 + t * 50, LOUD);
         }
         tokio::time::sleep(Duration::from_millis(30)).await;
         assert_eq!(port.stops.load(Ordering::SeqCst), 1);
         assert_eq!(port.cancels.load(Ordering::SeqCst), 0);
+        h.shutdown();
+    }
+
+    // ------------------- VAD speech activity (design rev 2) -------------------
+    //
+    // Root cause being pinned: the display-scale levels of a REAL room are far
+    // above the 0.02 floor, so level-driven endpointing never saw silence and
+    // every listen ran to the hard cap ("That was too long for me", forever).
+    // Speech activity must come from the VAD-kept frames, not from level values.
+
+    /// Room tone on the visualizer scale (about -48 dBFS maps to ~0.77).
+    const AMBIENT: &[f32] = &[0.70, 0.77, 0.75];
+
+    async fn start_listen(
+        h: &CaptureHandle,
+        port: &Arc<FakePort>,
+    ) -> (tokio::task::JoinHandle<ListenOutcome>, u64) {
+        let h2 = h.clone();
+        let task = tokio::spawn(async move { h2.listen(cfg()).await });
+        wait_for("recording start", || port.is_active()).await;
+        wait_for("listen armed", || h.inner.armed.load(Ordering::SeqCst) != 0).await;
+        let id = h.inner.armed.load(Ordering::SeqCst);
+        (task, id)
+    }
+
+    fn inject_speech(h: &CaptureHandle, listen_id: u64, now_ms: u64) {
+        let _ = h.inner.tx.try_send(Command::Speech { listen_id, now_ms });
+    }
+
+    /// VAD speech frames every 30 ms for 400 ms while the levels stay at room
+    /// tone every 50 ms; levels stop at 890 ms = last speech (390) +
+    /// SPEECH_GAP_MS (150) + silence_ms (300) + one levels period (50), so the
+    /// utterance MUST complete within that bound (design C3).
+    async fn drive_speech_then_gap(send_speech: &dyn Fn(u64), h: &CaptureHandle) {
+        // (time, kind): kind 0 = VAD speech frame, 1 = levels tick. Sorted, so a
+        // speech frame at the same instant is delivered before the levels tick.
+        let mut events: Vec<(u64, u8)> = (0..400u64)
+            .step_by(30)
+            .map(|t| (t, 0u8))
+            .chain((0..=890u64).step_by(50).map(|t| (t, 1u8)))
+            .collect();
+        events.sort();
+        for (i, (t, kind)) in events.iter().enumerate() {
+            if *kind == 0 {
+                send_speech(*t);
+            } else {
+                h.push_levels(*t, AMBIENT);
+            }
+            if i % 10 == 9 {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        }
+    }
+
+    async fn finish(task: tokio::task::JoinHandle<ListenOutcome>) -> ListenOutcome {
+        tokio::time::timeout(Duration::from_secs(3), task)
+            .await
+            .expect("listen hung: end of speech was never detected")
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn high_ambient_levels_without_speech_frames_give_no_speech_not_too_long() {
+        let port = FakePort::new();
+        let tr = FakeTranscriber::new();
+        let h = spawn(&port, &tr);
+        let (task, _id) = start_listen(&h, &port).await;
+        // Past max_utterance_ms (5000): level-driven code reports TooLong here.
+        let mut t = 0u64;
+        let mut n = 0u32;
+        while t <= 5600 {
+            h.push_levels(t, AMBIENT);
+            n += 1;
+            if n % 10 == 9 {
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+            t += 50;
+        }
+        assert_eq!(finish(task).await, ListenOutcome::NoSpeech);
+        assert_eq!(tr.calls.load(Ordering::SeqCst), 0);
+        h.shutdown();
+    }
+
+    #[tokio::test]
+    async fn speech_frames_then_a_gap_finish_the_utterance_even_with_high_ambient_levels() {
+        let port = FakePort::new();
+        let tr = FakeTranscriber::new();
+        let h = spawn(&port, &tr);
+        let (task, _id) = start_listen(&h, &port).await;
+        let hh = h.clone();
+        drive_speech_then_gap(&move |t| hh.push_speech(t), &h).await;
+        assert_eq!(
+            finish(task).await,
+            ListenOutcome::Utterance("hello world".into())
+        );
+        assert_eq!(tr.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(port.stops.load(Ordering::SeqCst), 1);
+        h.shutdown();
+    }
+
+    #[tokio::test]
+    async fn speech_for_the_current_listen_id_is_accepted_via_the_tagged_command() {
+        let port = FakePort::new();
+        let tr = FakeTranscriber::new();
+        let h = spawn(&port, &tr);
+        let (task, id) = start_listen(&h, &port).await;
+        let hh = h.clone();
+        drive_speech_then_gap(&move |t| inject_speech(&hh, id, t), &h).await;
+        assert_eq!(
+            finish(task).await,
+            ListenOutcome::Utterance("hello world".into())
+        );
+        h.shutdown();
+    }
+
+    #[tokio::test]
+    async fn speech_tagged_with_a_previous_listen_id_is_ignored() {
+        let port = FakePort::new();
+        let tr = FakeTranscriber::new();
+        let h = spawn(&port, &tr);
+        // Listen A completes normally.
+        let (task_a, a_id) = start_listen(&h, &port).await;
+        let hh = h.clone();
+        drive_speech_then_gap(&move |t| hh.push_speech(t), &h).await;
+        assert_eq!(
+            finish(task_a).await,
+            ListenOutcome::Utterance("hello world".into())
+        );
+        wait_for("capture flag cleared", || !h.capture_active()).await;
+        // Listen B: only A-tagged speech arrives (a late notification), plus room tone.
+        let (task_b, b_id) = start_listen(&h, &port).await;
+        assert_ne!(a_id, b_id);
+        for t in (0..400u64).step_by(30) {
+            inject_speech(&h, a_id, t);
+        }
+        let mut t = 0u64;
+        while t <= 700 {
+            h.push_levels(t, AMBIENT);
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            t += 50;
+        }
+        assert_eq!(finish(task_b).await, ListenOutcome::NoSpeech);
+        assert_eq!(
+            tr.calls.load(Ordering::SeqCst),
+            1,
+            "only listen A may be transcribed"
+        );
+        h.shutdown();
+    }
+
+    #[tokio::test]
+    async fn speech_with_no_listen_armed_is_dropped_and_never_leaks_into_the_next_listen() {
+        let port = FakePort::new();
+        let tr = FakeTranscriber::new();
+        let h = spawn(&port, &tr);
+        h.push_speech(10);
+        h.push_speech(20);
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let (task, _id) = start_listen(&h, &port).await;
+        let mut t = 0u64;
+        while t <= 700 {
+            h.push_levels(t, AMBIENT);
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            t += 50;
+        }
+        assert_eq!(finish(task).await, ListenOutcome::NoSpeech);
+        assert_eq!(tr.calls.load(Ordering::SeqCst), 0);
+        h.shutdown();
+    }
+
+    #[test]
+    fn push_speech_never_blocks_even_when_nobody_is_listening_or_the_queue_is_full() {
+        let port = FakePort::new();
+        let tr = FakeTranscriber::new();
+        let (gate_tx, gate_rx) = mpsc::channel();
+        *port.start_gate.lock().unwrap() = Some(gate_rx);
+        let h = CaptureWorker::spawn(port.clone(), tr.clone(), fast());
+        let started = Instant::now();
+        for t in 0..10_000u64 {
+            h.push_speech(t); // not armed: no-op
+        }
+        let h2 = h.clone();
+        let jh = std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async move {
+                tokio::time::timeout(Duration::from_millis(300), h2.listen(cfg()))
+                    .await
+                    .is_err()
+            })
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        for t in 0..10_000u64 {
+            h.push_speech(t); // armed, worker blocked, queue fills: must still not block
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "push_speech blocked the caller"
+        );
+        gate_tx.send(()).unwrap();
+        let _ = jh.join();
         h.shutdown();
     }
 
