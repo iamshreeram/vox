@@ -923,3 +923,161 @@ async fn taint_from_an_earlier_turn_refuses_a_command_after_more_than_six_clean_
 
 #[allow(dead_code)]
 fn _unused_block_import(_: LBlock) {}
+
+// ---------------------------------------------------------------------------
+// FIX-10: legacy plan paths must not mark vault taint (source contract, DESIGN R4-9 a)
+// ---------------------------------------------------------------------------
+
+/// Production source of `converse_platform.rs`, compiled in for the source-contract tests.
+const PLATFORM_SRC: &str = include_str!("converse_platform.rs");
+
+/// Returns the body text of the first function whose header starts with `header`, from the
+/// first `{` after the header to its matching `}`. Braces inside string literals, char
+/// literals and comments are ignored, so a `{` or `}` in a message cannot end the body early.
+/// Returns `None` when the header is absent or its body never closes.
+fn fn_body<'a>(src: &'a str, header: &str) -> Option<&'a str> {
+    let start = src.find(header)?;
+    let open = start + src[start..].find('{')?;
+    let bytes = src.as_bytes();
+    let mut depth = 0usize;
+    let mut i = open;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    i += 1;
+                }
+                continue;
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                i += 2;
+                while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                    i += 1;
+                }
+                i += 2;
+                continue;
+            }
+            b'"' => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'"' {
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+            }
+            b'\'' => {
+                // A char literal is short; a lifetime has no closing quote nearby.
+                let close = (i + 1..bytes.len().min(i + 4)).find(|&j| bytes[j] == b'\'');
+                if let Some(j) = close {
+                    i = j;
+                }
+            }
+            b'{' => depth += 1,
+            b'}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(&src[open + 1..i]);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Number of non-comment occurrences of `needle` in `body`.
+fn count_calls(body: &str, needle: &str) -> usize {
+    body.lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .map(|line| line.matches(needle).count())
+        .sum()
+}
+
+#[test]
+fn slicer_returns_the_body_between_the_braces() {
+    let src = "fn alpha() {\n    let x = 1;\n}\nfn beta() { }";
+    assert_eq!(fn_body(src, "fn alpha("), Some("\n    let x = 1;\n"));
+    assert_eq!(fn_body(src, "fn beta("), Some(" "));
+}
+
+#[test]
+fn slicer_ignores_braces_inside_strings_chars_and_comments() {
+    let src =
+        "fn gamma() {\n    let s = \"}\"; // }\n    let c = '}';\n    /* { */\n}\nfn after() {}";
+    let body = fn_body(src, "fn gamma(").expect("gamma body");
+    assert!(
+        body.contains("let c = '}';"),
+        "char literal brace must not end the body"
+    );
+    assert!(
+        body.trim_end().ends_with("/* { */"),
+        "body ends at the real closing brace"
+    );
+    assert_eq!(fn_body(src, "fn after("), Some(""));
+}
+
+#[test]
+fn slicer_returns_none_for_a_missing_or_unclosed_function() {
+    assert_eq!(fn_body("fn only() { let x = 1;", "fn only("), None);
+    assert_eq!(fn_body("struct A;", "fn missing("), None);
+}
+
+#[test]
+fn legacy_plan_and_plan_streaming_do_not_mark_vault_taint() {
+    // The legacy text path must leave taint alone: only the tool route marks the session from
+    // vault context (DESIGN R4-9 a). A mark here turns an answer-only refusal into a refusal
+    // of the model's Paste/Command plan, which skips the answer-only branch in execute_plan.
+    for header in ["fn plan<'a>(", "fn plan_streaming<'a>("] {
+        let body = fn_body(PLATFORM_SRC, header)
+            .unwrap_or_else(|| panic!("source of {header} must be found"));
+        assert_eq!(
+            count_calls(body, "mark_vault_taint("),
+            0,
+            "legacy {header} must not call mark_vault_taint"
+        );
+    }
+}
+
+#[test]
+fn plan_with_tools_marks_vault_taint_exactly_once() {
+    let body = fn_body(PLATFORM_SRC, "pub(crate) async fn plan_with_tools(")
+        .expect("plan_with_tools source must be found");
+    assert_eq!(
+        count_calls(body, "mark_vault_taint("),
+        1,
+        "the tool route marks vault taint exactly once"
+    );
+}
+
+#[test]
+fn legacy_plan_paths_still_apply_guard_plan_as_defense_in_depth() {
+    for header in ["fn plan<'a>(", "fn plan_streaming<'a>("] {
+        let body = fn_body(PLATFORM_SRC, header)
+            .unwrap_or_else(|| panic!("source of {header} must be found"));
+        assert!(
+            count_calls(body, "guard_plan(") >= 1,
+            "legacy {header} must still apply guard_plan"
+        );
+    }
+}
+
+#[test]
+fn guard_plan_is_a_no_op_while_untainted_even_with_guard_on() {
+    let taint = TaintState::new();
+    assert!(!taint.is_tainted());
+    assert_eq!(guard_plan(command_plan(), &taint, true), command_plan());
+    assert_eq!(guard_plan(paste_plan(), &taint, true), paste_plan());
+}
+
+#[test]
+fn taint_set_by_a_tool_route_turn_still_refuses_on_a_later_legacy_style_guard_call() {
+    // Sticky: a tool-route turn taints the session; a later legacy-path guard_plan (no mark)
+    // must still refuse Paste and Command with the guard on.
+    let taint = TaintState::new();
+    mark_vault_taint(&taint, VAULT_BLOCK);
+    assert!(taint.is_tainted());
+    assert!(refused(&guard_plan(command_plan(), &taint, true)));
+    assert!(refused(&guard_plan(paste_plan(), &taint, true)));
+}
