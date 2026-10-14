@@ -35,3 +35,7 @@ pub async fn run_bounded(
     let _ = (program, args, cwd, env, stdout_cap, timeout);
     todo!()
 }
+
+#[cfg(test)]
+#[path = "bounded_cmd_tests.rs"]
+mod bounded_cmd_tests;

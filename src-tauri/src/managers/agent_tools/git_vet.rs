@@ -36,3 +36,7 @@ pub async fn git_status_summary(project_name: &str, project_dir: &Path) -> Resul
     let _ = (project_name, project_dir);
     todo!()
 }
+
+#[cfg(test)]
+#[path = "git_vet_tests.rs"]
+mod git_vet_tests;
