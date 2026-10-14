@@ -1703,3 +1703,36 @@ async fn fenced_results_never_exceed_four_thousand_bytes_including_the_fence() {
         assert_eq!(out.text.matches("[END UNTRUSTED DATA]").count(), 1);
     }
 }
+
+// ---- FIX-11 (R4-9 b): Unicode case-fold lookalike through the full dispatcher ----------
+
+#[cfg(unix)]
+#[tokio::test]
+async fn read_project_file_refuses_long_s_lookalike_of_ssh_id_rsa_via_dispatcher() {
+    let (_dir, root, proj) = fixture();
+    write(&proj.join(".ssh/id_rsa"), b"DISPATCH-LOOKALIKE-SECRET");
+    let ui = FakeUi::default();
+    let exec = executor(std::slice::from_ref(&root), &ui, true);
+    let plain = run(
+        &exec,
+        "read_project_file",
+        json!({"project": "proj", "path": ".ssh/id_rsa"}),
+    )
+    .await;
+    assert_error(&plain, "plain .ssh/id_rsa must be refused");
+    let lookalike = run(
+        &exec,
+        "read_project_file",
+        json!({"project": "proj", "path": ".\u{017f}sh/id_r\u{017f}a"}),
+    )
+    .await;
+    assert_error(
+        &lookalike,
+        "long-s lookalike of .ssh/id_rsa must be refused",
+    );
+    assert_eq!(
+        lookalike.text, plain.text,
+        "lookalike must get the same refusal text as the plain name"
+    );
+    assert!(!lookalike.text.contains("DISPATCH-LOOKALIKE-SECRET"));
+}

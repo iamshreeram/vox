@@ -882,4 +882,132 @@ mod unix_only {
         );
         drop(releases);
     }
+
+    // ---------------------------------------------------------------------------
+    // FIX-11 (R4-9 b): Unicode case-fold bypass of the denylist. On default macOS (APFS,
+    // case-insensitive with Unicode folding) U+017F (long s) folds to `s` and U+212A (Kelvin
+    // sign) folds to `k`, so these spellings reach the same files as the plain names. The
+    // denylist must refuse them. Real files are created under the PLAIN ASCII names so a
+    // regression would actually open them.
+    // ---------------------------------------------------------------------------
+
+    mod lookalike_denylist {
+        use super::*;
+
+        const SECRET: &[u8] = b"LOOKALIKE-SECRET-BODY";
+
+        /// (plain ASCII relative path to create, lookalike spelling to request)
+        fn lookalike_cases() -> Vec<(&'static str, &'static str)> {
+            vec![
+                (".ssh/id_rsa", ".\u{017f}sh/id_r\u{017f}a"),
+                ("secrets.json", "\u{017f}ecrets.json"),
+                (".aws/credentials", ".aws/credentia\u{017f}"),
+                ("a.key", "a.Key\u{212a}"),
+                (".kube/config", ".\u{212a}ube/config"),
+                ("store.keystore", "store.\u{212a}eystore"),
+                ("store.jks", "store.j\u{212a}s"),
+                (".pgpass", ".pgpa\u{017f}s"),
+            ]
+        }
+
+        /// Sensitive-file refusal for the plain spelling of a case (the reference result).
+        async fn plain_refusal(fx: &Fixture, plain: &str) -> Result<String, String> {
+            read_in(fx, plain).await
+        }
+
+        #[tokio::test]
+        async fn lookalike_spellings_are_refused_like_the_plain_name() {
+            for (plain, lookalike) in lookalike_cases() {
+                let fx = fixture();
+                put(&fx.project.join(plain), SECRET);
+                let reference = plain_refusal(&fx, plain).await;
+                assert!(
+                    reference.is_err(),
+                    "precondition: plain {plain:?} must already be refused, got {reference:?}"
+                );
+                let result = read_in(&fx, lookalike).await;
+                assert_eq!(
+                    result, reference,
+                    "lookalike {lookalike:?} must get the same refusal as plain {plain:?}"
+                );
+                assert!(
+                    !format!("{result:?}").contains("LOOKALIKE-SECRET"),
+                    "lookalike {lookalike:?} leaked the file body"
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn lookalike_names_do_not_reach_the_file_on_disk() {
+            // Negative proof that the plain file exists: the plain spelling reads nothing,
+            // so the lookalike path reaching the file would be a real bypass.
+            let fx = fixture();
+            put(&fx.project.join("secrets.json"), SECRET);
+            assert!(fx.project.join("secrets.json").is_file());
+            let result = read_in(&fx, "\u{017f}ecrets.json").await;
+            assert!(
+                result.is_err(),
+                "long-s secrets.json must be refused, got {result:?}"
+            );
+        }
+
+        #[test]
+        fn denylist_predicate_refuses_lookalikes_and_plain_names() {
+            for (plain, lookalike) in lookalike_cases() {
+                for component in plain.split('/').chain(lookalike.split('/')) {
+                    assert!(
+                        is_denied(component),
+                        "component {component:?} (of {plain:?} / {lookalike:?}) must be denied"
+                    );
+                }
+            }
+            for name in [
+                ".env",
+                "id_rsa",
+                "credentials",
+                "secrets.json",
+                "server.pem",
+            ] {
+                assert!(is_denied(name), "plain {name:?} must be denied");
+            }
+        }
+
+        #[tokio::test]
+        async fn ordinary_non_ascii_and_unrelated_names_still_read() {
+            let fx = fixture();
+            let cases = [
+                ("r\u{e9}sum\u{e9}.txt", "resume body"),
+                ("\u{65e5}\u{672c}\u{8a9e}.md", "cjk body"),
+                ("na\u{ef}ve.md", "naive body"),
+                ("skis.txt", "skis body"),
+                ("monkey.txt", "monkey body"),
+            ];
+            for (name, body) in cases {
+                put(&fx.project.join(name), body.as_bytes());
+                assert_eq!(
+                    read_in(&fx, name).await,
+                    Ok(body.to_string()),
+                    "ordinary name {name:?} must read normally (no over-matching)"
+                );
+            }
+        }
+
+        #[test]
+        fn denylist_predicate_does_not_over_match_unrelated_names() {
+            for name in [
+                "r\u{e9}sum\u{e9}.txt",
+                "\u{65e5}\u{672c}\u{8a9e}.md",
+                "na\u{ef}ve.md",
+                "skis.txt",
+                "monkey.txt",
+                "keys.txt",
+                "sskey.md",
+            ] {
+                assert!(
+                    !is_denied(name),
+                    "unrelated name {name:?} must not be denied"
+                );
+            }
+        }
+    }
 }
