@@ -390,8 +390,9 @@ fn validate_input(name: &str, input: &Value) -> Result<Map<String, Value>, Strin
         "recent_conversations" => (&[], &["limit"]),
         _ => return Err("unknown tool".to_string()),
     };
-    if let Some(extra) = obj.keys().find(|k| !allowed.contains(&k.as_str())) {
-        return Err(format!("unexpected field {extra}"));
+    // Fixed message: never echo a model-chosen key name (DESIGN R4-9 c).
+    if obj.keys().any(|k| !allowed.contains(&k.as_str())) {
+        return Err("unexpected field in tool input".to_string());
     }
     for field in required {
         if !obj.contains_key(*field) {
