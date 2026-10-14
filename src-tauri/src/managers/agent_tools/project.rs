@@ -4,10 +4,13 @@
 //! Project root and name resolution (DESIGN R2-3). Roots are pinned once as directory
 //! handles; a project is a bare name opened relative to its root handle.
 
+use std::fmt;
 use std::path::PathBuf;
 
+use cap_std::fs::Dir;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ResolveError {
+pub enum ProjectError {
     InvalidName,
     NotFound,
     /// Same name found in more than one configured root.
@@ -16,6 +19,34 @@ pub enum ResolveError {
     NotPlainFolder,
     RootInvalid,
     NoRoots,
+}
+
+/// A resolved project: the pinned directory handle (opened no-follow relative to the
+/// pinned root handle) plus the project NAME. No path string is kept for display.
+pub struct ProjectHandle {
+    name: String,
+    dir: Dir,
+}
+
+impl ProjectHandle {
+    /// The project name (the only identity exposed for display).
+    pub fn name(&self) -> &str {
+        todo!()
+    }
+
+    /// The pinned directory handle every file read goes through.
+    pub fn dir(&self) -> &Dir {
+        todo!()
+    }
+}
+
+impl fmt::Debug for ProjectHandle {
+    /// Shows the name only; never the handle internals or any path.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProjectHandle")
+            .field("name", &self.name)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -31,8 +62,8 @@ impl ProjectResolver {
         todo!()
     }
 
-    /// Resolves a bare project name to its canonical folder path.
-    pub fn resolve(&self, name: &str) -> Result<PathBuf, ResolveError> {
+    /// Resolves a bare project name to a pinned project handle.
+    pub fn resolve(&self, name: &str) -> Result<ProjectHandle, ProjectError> {
         let _ = name;
         todo!()
     }

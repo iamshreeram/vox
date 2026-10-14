@@ -4,10 +4,11 @@
 //! Confined no-follow reads inside a project (DESIGN R2-2, R3-3). Every filesystem touch
 //! goes through `FsGate::run`, which caps live blocking jobs at 4.
 
-use std::path::Path;
 use std::sync::Arc;
 
 use tokio::sync::Semaphore;
+
+use super::project::ProjectHandle;
 
 /// Filesystem types the tools refuse (network or virtual drives; R3-3).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,10 +50,10 @@ pub fn classify_fs(type_name_or_magic: &str) -> FsKind {
 /// Returns redacted, neutralised text capped at 32 KiB.
 pub async fn read_project_file(
     gate: &FsGate,
-    project_dir: &Path,
+    project: &ProjectHandle,
     relative_path: &str,
 ) -> Result<String, String> {
-    let _ = (gate, project_dir, relative_path);
+    let _ = (gate, project, relative_path);
     todo!()
 }
 
