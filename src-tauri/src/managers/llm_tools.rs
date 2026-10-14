@@ -129,3 +129,11 @@ pub async fn stream_blocks(
     let _ = (call, body, opts);
     todo!()
 }
+
+#[cfg(test)]
+#[path = "llm_tools_tests.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "llm_tools_http_tests.rs"]
+mod http_tests;
