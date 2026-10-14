@@ -1068,6 +1068,22 @@ mod tests {
     }
 }
 
+/// Replaces a Paste or Command final plan with the fixed refusal when the session is tainted
+/// and the guard is on (DESIGN R4-2). Any other plan, or any plan when untainted or guard off,
+/// is returned unchanged. M2-3B stub: body arrives with the implementation.
+pub(crate) fn guard_plan(plan: TurnPlan, taint: &TaintState, guard_actions: bool) -> TurnPlan {
+    let _ = (plan, taint, guard_actions);
+    todo!()
+}
+
+/// Marks the session tainted when the vault block is non-empty after trimming (DESIGN R3-2).
+/// A whitespace-only or empty block does nothing; taint is sticky (never cleared here).
+/// M2-3B stub: body arrives with the implementation.
+pub(crate) fn mark_vault_taint(taint: &TaintState, vault_block: &str) {
+    let _ = (taint, vault_block);
+    todo!()
+}
+
 #[cfg(test)]
 #[path = "converse_tool_tests.rs"]
 mod converse_tool_tests;
