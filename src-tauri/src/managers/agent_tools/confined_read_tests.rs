@@ -487,6 +487,10 @@ mod unix_only {
             "id_rsa",
             "ID_RSA",
             "id_rsa.pub",
+            "id_ecdsa",
+            "id_ecdsa.pub",
+            "id_dsa",
+            "id_dsa.pub",
             "id_ed25519",
             "server.pem",
             "SERVER.PEM",
@@ -907,7 +911,123 @@ mod unix_only {
                 ("store.keystore", "store.\u{212a}eystore"),
                 ("store.jks", "store.j\u{212a}s"),
                 (".pgpass", ".pgpa\u{017f}s"),
+                (".ssh/id_rsa", ".\u{1e9e}h/id_rsa"),
+                (".ssh/config", ".\u{1e9e}h/config"),
+                (".pgpass", ".pgpa\u{1e9e}"),
+                (".ssh/id_rsa", ".\u{df}h/id_rsa"),
+                (".pgpass", ".pgpa\u{df}"),
             ]
+        }
+
+        /// Maps one APFS-folding character to its ASCII expansion (DESIGN R4-9 b): the
+        /// `s`/`k` lookalikes, sharp s (U+00DF, U+1E9E) to `ss`, and the ligatures to
+        /// their letters. Other characters are returned unchanged.
+        fn expand_apfs_char(c: char) -> Vec<char> {
+            match c {
+                '\u{017f}' => vec!['s'],
+                '\u{212a}' => vec!['k'],
+                '\u{df}' | '\u{1e9e}' => vec!['s', 's'],
+                '\u{fb00}' => "ff".chars().collect(),
+                '\u{fb01}' => "fi".chars().collect(),
+                '\u{fb02}' => "fl".chars().collect(),
+                '\u{fb03}' => "ffi".chars().collect(),
+                '\u{fb04}' => "ffl".chars().collect(),
+                '\u{fb05}' | '\u{fb06}' => "st".chars().collect(),
+                other => vec![other],
+            }
+        }
+
+        /// FIX-11B (R4-9 b): the full APFS folding set. Each special character must fold to
+        /// its ASCII expansion, and ordinary names must not be denied.
+        #[test]
+        fn fold_component_maps_every_apfs_special_to_its_ascii_expansion() {
+            let table: [(&str, &str); 11] = [
+                ("\u{df}", "ss"),
+                ("\u{1e9e}", "ss"),
+                ("\u{017f}", "s"),
+                ("\u{212a}", "k"),
+                ("\u{fb00}", "ff"),
+                ("\u{fb01}", "fi"),
+                ("\u{fb02}", "fl"),
+                ("\u{fb03}", "ffi"),
+                ("\u{fb04}", "ffl"),
+                ("\u{fb05}", "st"),
+                ("\u{fb06}", "st"),
+            ];
+            for (special, expansion) in table {
+                assert_eq!(
+                    fold_component(special),
+                    expansion,
+                    "{special:?} must fold to {expansion:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn ordinary_non_ascii_and_similar_names_are_not_denied() {
+            for name in [
+                "r\u{e9}sum\u{e9}.txt",
+                "na\u{ef}ve.md",
+                "\u{65e5}\u{672c}\u{8a9e}.md",
+                "Stra\u{df}e.txt",
+                "skis.txt",
+                "monkey.txt",
+            ] {
+                assert!(!is_denied(name), "{name:?} must not be denied");
+            }
+        }
+
+        /// Plain ASCII private-key names are refused in ANY directory (FIX-11B (3)).
+        #[test]
+        fn bare_private_key_names_are_denied_in_any_directory() {
+            for name in ["id_ecdsa", "id_dsa", "id_ecdsa.pub", "id_dsa.pub"] {
+                assert!(is_denied(name), "{name:?} must be denied");
+            }
+        }
+
+        #[tokio::test]
+        async fn sharp_s_capital_lookalike_of_ssh_id_rsa_is_refused_and_plain_file_present() {
+            let fx = fixture();
+            put(&fx.project.join(".ssh/id_rsa"), SECRET);
+            assert!(fx.project.join(".ssh/id_rsa").is_file());
+            let result = read_in(&fx, ".\u{1e9e}h/id_rsa").await;
+            assert!(
+                result.is_err(),
+                "capital sharp s lookalike must be refused, got {result:?}"
+            );
+            assert!(!format!("{result:?}").contains("LOOKALIKE-SECRET"));
+        }
+
+        /// Sharp-s lookalikes that really spell a denied name (FIX-11B (1)): each must be
+        /// refused, and the plain real file must exist so a regression would open it.
+        #[tokio::test]
+        async fn sharp_s_lookalikes_of_denied_names_are_refused_end_to_end() {
+            for (plain, lookalike) in [
+                (".ssh/config", ".\u{1e9e}h/config"),
+                (".ssh/id_rsa", ".\u{df}h/id_rsa"),
+                (".pgpass", ".pgpa\u{df}"),
+            ] {
+                let fx = fixture();
+                put(&fx.project.join(plain), SECRET);
+                assert!(fx.project.join(plain).is_file());
+                let result = read_in(&fx, lookalike).await;
+                assert!(
+                    result.is_err(),
+                    "lookalike {lookalike:?} of {plain:?} must be refused, got {result:?}"
+                );
+                assert!(!format!("{result:?}").contains("LOOKALIKE-SECRET"));
+            }
+        }
+
+        #[tokio::test]
+        async fn id_ecdsa_and_id_dsa_are_refused_in_any_directory() {
+            let fx = fixture();
+            for rel in ["id_ecdsa", "keys/id_dsa"] {
+                put(&fx.project.join(rel), SECRET);
+                let result = read_in(&fx, rel).await;
+                assert!(result.is_err(), "{rel:?} must be refused, got {result:?}");
+                assert!(!format!("{result:?}").contains("LOOKALIKE-SECRET"));
+            }
         }
 
         /// Asserts a table row is a genuine lookalike: same character count, differs from the
@@ -918,19 +1038,13 @@ mod unix_only {
                 plain, lookalike,
                 "row {lookalike:?} must differ from {plain:?}"
             );
+            let expanded: String = lookalike.chars().flat_map(expand_apfs_char).collect();
             assert_eq!(
                 plain.chars().count(),
-                lookalike.chars().count(),
-                "lookalike {lookalike:?} must have the same character count as {plain:?}"
+                expanded.chars().count(),
+                "expanded lookalike {expanded:?} must have the same letter count as {plain:?}"
             );
-            let restored: String = lookalike
-                .chars()
-                .map(|c| match c {
-                    '\u{017f}' => 's',
-                    '\u{212a}' => 'k',
-                    other => other,
-                })
-                .collect();
+            let restored: String = lookalike.chars().flat_map(expand_apfs_char).collect();
             assert_eq!(
                 restored, plain,
                 "lookalike {lookalike:?} must be {plain:?} with only s/k letters replaced"

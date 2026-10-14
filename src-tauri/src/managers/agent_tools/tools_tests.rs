@@ -1736,3 +1736,36 @@ async fn read_project_file_refuses_long_s_lookalike_of_ssh_id_rsa_via_dispatcher
     );
     assert!(!lookalike.text.contains("DISPATCH-LOOKALIKE-SECRET"));
 }
+
+// ---- FIX-11B (4): capital sharp s lookalike of id_ecdsa through the full dispatcher ----
+
+#[cfg(unix)]
+#[tokio::test]
+async fn read_project_file_refuses_capital_sharp_s_lookalike_of_id_ecdsa_via_dispatcher() {
+    let (_dir, root, proj) = fixture();
+    write(&proj.join(".ssh/id_ecdsa"), b"DISPATCH-ECDSA-SECRET");
+    let ui = FakeUi::default();
+    let exec = executor(std::slice::from_ref(&root), &ui, true);
+    let plain = run(
+        &exec,
+        "read_project_file",
+        json!({"project": "proj", "path": ".ssh/id_ecdsa"}),
+    )
+    .await;
+    assert_error(&plain, "plain .ssh/id_ecdsa must be refused");
+    let lookalike = run(
+        &exec,
+        "read_project_file",
+        json!({"project": "proj", "path": ".\u{1e9e}h/id_ecdsa"}),
+    )
+    .await;
+    assert_error(
+        &lookalike,
+        "capital sharp s lookalike of .ssh/id_ecdsa must be refused",
+    );
+    assert_eq!(
+        lookalike.text, plain.text,
+        "lookalike must get the same refusal text as the plain name"
+    );
+    assert!(!lookalike.text.contains("DISPATCH-ECDSA-SECRET"));
+}
