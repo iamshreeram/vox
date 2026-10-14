@@ -80,6 +80,7 @@ async fn planner_call(
         history,
         last_draft: draft,
         style: STYLE,
+        vault_context: None,
     });
     let start = Instant::now();
     let mut streamer = PlanStreamer::new();
@@ -282,6 +283,7 @@ async fn context_call(
         history,
         last_draft: draft,
         style: STYLE,
+        vault_context: None,
     });
     let start = Instant::now();
     let mut streamer = PlanStreamer::new();

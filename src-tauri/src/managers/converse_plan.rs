@@ -59,6 +59,8 @@ pub struct PlanInput<'a> {
     pub history: &'a [(String, String)],
     pub last_draft: Option<&'a str>,
     pub style: &'a str,
+    /// Vault context block (DESIGN Rev 3, 3.4); `None` keeps the prompt byte-identical.
+    pub vault_context: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,7 +77,10 @@ const MAX_SCAN_WORK: usize = 4_000_000;
 const MAX_KEPT_CANDIDATES: usize = 512;
 
 pub fn build_plan_prompt(input: &PlanInput) -> PlanPrompt {
-    let system = build_system(input.style);
+    let system = crate::managers::vault_context::system_with_context(
+        &build_system(input.style),
+        input.vault_context,
+    );
     let mut user = String::new();
 
     let start = input.history.len().saturating_sub(MAX_HISTORY_ITEMS);
@@ -429,6 +434,7 @@ mod tests {
             history: h,
             last_draft: d,
             style: "warm and brief",
+            vault_context: None,
         }
     }
 

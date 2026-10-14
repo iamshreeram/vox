@@ -330,6 +330,16 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
     let memory_manager =
         Arc::new(MemoryManager::new(app_handle).expect("Failed to initialize memory manager"));
+    // Conversation records are optional: a store that cannot open is logged (kind only) and
+    // skipped, so startup and the conversation itself are unaffected.
+    let conversation_store = match managers::conversation_store::ConversationStore::new(app_handle)
+    {
+        Ok(store) => Some(Arc::new(store)),
+        Err(_) => {
+            log::warn!("Conversation records unavailable: store did not open");
+            None
+        }
+    };
     let conversation_log = Arc::new(managers::conversation::ConversationLog::new());
     let command_router = Arc::new(CommandRouter::new(new_app_discovery()));
     let wakeword_listener = Arc::new(WakeWordListener::new(app_handle.clone()));
@@ -354,6 +364,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
     app_handle.manage(memory_manager.clone());
+    if let Some(store) = conversation_store {
+        app_handle.manage(store);
+    }
     app_handle.manage(conversation_log);
     app_handle.manage(command_router.clone());
     app_handle.manage(wakeword_listener.clone());
@@ -902,6 +915,11 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_experimental_enabled_setting,
             shortcut::change_voice_commands_setting,
             shortcut::change_memory_enabled_setting,
+            commands::conversation_records::change_conversation_records_setting,
+            commands::conversation_records::change_conversation_records_to_vault_setting,
+            commands::conversation_records::change_vault_context_setting,
+            commands::conversation_records::change_vault_path_setting,
+            commands::conversation_records::list_conversation_records,
             shortcut::change_agent_bridge_enabled_setting,
             shortcut::change_agent_bridge_binary_path_setting,
             shortcut::change_voice_media_controls_setting,

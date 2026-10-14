@@ -845,6 +845,19 @@ pub struct AppSettings {
     pub exp_rt_proxy_url: String,
     #[serde(default)]
     pub exp_rt_timing_log: bool,
+    // ---- Conversation records and vault context (M1, DESIGN Rev 3 section 2). Opt-in: all off.
+    /// Save each finished hands-free conversation to Vox's own conversation database.
+    #[serde(default)]
+    pub conversation_records_enabled: bool,
+    /// Also write a Markdown note into the vault (needs `conversation_records_enabled`).
+    #[serde(default)]
+    pub conversation_records_to_vault: bool,
+    /// Absolute path of the notes vault folder used for notes and vault context.
+    #[serde(default)]
+    pub vault_path: String,
+    /// Give the conversation model bounded, redacted vault notes as background (answer-only).
+    #[serde(default)]
+    pub vault_context_enabled: bool,
 }
 
 fn default_agent_bridge_prompt_flag() -> String {
@@ -1443,6 +1456,10 @@ pub fn get_default_settings() -> AppSettings {
         exp_rt_proxy_enabled: false,
         exp_rt_proxy_url: String::new(),
         exp_rt_timing_log: false,
+        conversation_records_enabled: false,
+        conversation_records_to_vault: false,
+        vault_path: String::new(),
+        vault_context_enabled: false,
     }
 }
 
@@ -2158,6 +2175,49 @@ mod tests {
             .remove("agent_bridge_timeout_secs");
         let loaded: AppSettings = serde_json::from_value(settings).unwrap();
         assert_eq!(loaded.agent_bridge_timeout_secs, 60);
+    }
+
+    #[test]
+    fn conversation_records_and_vault_context_defaults_are_off() {
+        let settings = get_default_settings();
+        assert!(!settings.conversation_records_enabled);
+        assert!(!settings.conversation_records_to_vault);
+        assert_eq!(settings.vault_path, "");
+        assert!(!settings.vault_context_enabled);
+    }
+
+    #[test]
+    fn conversation_and_vault_fields_default_when_missing_from_legacy_settings() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        let obj = settings.as_object_mut().unwrap();
+        for key in [
+            "conversation_records_enabled",
+            "conversation_records_to_vault",
+            "vault_path",
+            "vault_context_enabled",
+        ] {
+            obj.remove(key);
+        }
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.conversation_records_enabled);
+        assert!(!loaded.conversation_records_to_vault);
+        assert_eq!(loaded.vault_path, "");
+        assert!(!loaded.vault_context_enabled);
+    }
+
+    #[test]
+    fn conversation_and_vault_fields_round_trip_with_values_set() {
+        let mut settings = get_default_settings();
+        settings.conversation_records_enabled = true;
+        settings.conversation_records_to_vault = true;
+        settings.vault_path = "/Users/example/Notes".to_string();
+        settings.vault_context_enabled = true;
+        let json = serde_json::to_string(&settings).unwrap();
+        let loaded: AppSettings = serde_json::from_str(&json).unwrap();
+        assert!(loaded.conversation_records_enabled);
+        assert!(loaded.conversation_records_to_vault);
+        assert_eq!(loaded.vault_path, "/Users/example/Notes");
+        assert!(loaded.vault_context_enabled);
     }
 
     #[test]

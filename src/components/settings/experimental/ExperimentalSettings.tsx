@@ -14,6 +14,12 @@ import { VoiceMediaControlsToggle } from "../VoiceMediaControlsToggle";
 import { AgentBridgeToggle } from "../AgentBridgeToggle";
 import { AgentContextToggle } from "../AgentContextToggle";
 import { AgentBridgeBinaryPathField } from "../AgentBridgeBinaryPathField";
+import {
+  ConversationRecordsToggle,
+  ConversationVaultContextToggle,
+  ConversationVaultPathField,
+  ConversationVaultToggle,
+} from "../ConversationMemorySettings";
 import { TtsSettings } from "../TtsSettings";
 import { RealtimeSection } from "../RealtimeSection";
 import { WakeWordToggle } from "../WakeWordToggle";
@@ -103,6 +109,22 @@ export const ExperimentalSettings: React.FC = () => {
           ))}
         </CollapsibleSettingsGroup>
       ))}
+      <CollapsibleSettingsGroup
+        id="conversationMemory"
+        title={t("settings.experimental.groups.conversationMemory")}
+        description={t(
+          "settings.experimental.conversationMemory.groupDescription",
+        )}
+        defaultOpen={false}
+      >
+        <ConversationRecordsToggle descriptionMode="tooltip" grouped={true} />
+        <ConversationVaultToggle descriptionMode="tooltip" grouped={true} />
+        <ConversationVaultPathField descriptionMode="tooltip" grouped={true} />
+        <ConversationVaultContextToggle
+          descriptionMode="tooltip"
+          grouped={true}
+        />
+      </CollapsibleSettingsGroup>
     </div>
   );
 };

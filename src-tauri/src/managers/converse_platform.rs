@@ -9,9 +9,15 @@
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::composer_config::{settings_from_app, TtsComposerMode};
+use crate::managers::conversation_record::SessionRecord;
+use crate::managers::conversation_save::{
+    load_vault_block, save_session, vault_context_active, CollectedSession, RecordStoreSink,
+    RouteSummarizer, SaveDeps, SaveSettings, StoreSink, TranscriptCollector, VaultNoteSink,
+};
+use crate::managers::conversation_store::ConversationStore;
 use crate::managers::converse::{
     endpoint_config, BoxFuture, Brain, Ears, Hands, ListenOutcome, Mouth, PhraseOutcome,
-    QuietOutcome, SayOutcome, SessionConfig, SpeechQueue,
+    QuietOutcome, SayOutcome, SessionConfig, SessionEnd, SpeechQueue, TranscriptSink,
 };
 use crate::managers::converse_audio::{wait_for_speech_end, SpeechProbe, WaitOutcome};
 use crate::managers::converse_capture::{
@@ -414,6 +420,24 @@ impl Hands for RealHands {
 
 struct RealBrain {
     app: AppHandle,
+    /// Vault context block for this session (set by `prepare`, read on every plan call).
+    vault_block: Arc<std::sync::Mutex<Option<String>>>,
+    /// True only for the HTTP model routes. Command and agent-bridge routes must never carry
+    /// vault text (argv is visible in the process list), so they never read the slot.
+    vault_route: bool,
+}
+
+impl RealBrain {
+    /// The session's vault block, if `prepare` loaded one and the route is an HTTP model route.
+    /// The route is re-checked against the current settings on every call: the session-start
+    /// flag alone would let a mid-session switch to a command route carry vault text.
+    /// A poisoned lock reads as none.
+    fn vault_context(&self, settings: &AppSettings) -> Option<String> {
+        if !self.vault_route || !vault_text_allowed(settings) {
+            return None;
+        }
+        self.vault_block.lock().ok().and_then(|slot| slot.clone())
+    }
 }
 
 impl Brain for RealBrain {
@@ -421,6 +445,11 @@ impl Brain for RealBrain {
         Box::pin(async move {
             let settings = get_settings(&self.app);
             let deadline = effective_deadline(&settings);
+            let block = self.vault_context(&settings);
+            let input = PlanInput {
+                vault_context: block.as_deref(),
+                ..input
+            };
             let prompt = build_plan_prompt(&input);
             let raw = complete(&settings, &prompt.system, &prompt.combined, deadline)
                 .await
@@ -437,6 +466,11 @@ impl Brain for RealBrain {
         Box::pin(async move {
             let settings = get_settings(&self.app);
             let deadline = effective_deadline(&settings);
+            let block = self.vault_context(&settings);
+            let input = PlanInput {
+                vault_context: block.as_deref(),
+                ..input
+            };
             let prompt = build_plan_prompt(&input);
             let raw = complete_streaming(
                 &settings,
@@ -455,6 +489,79 @@ impl Brain for RealBrain {
 // ---------------------------------------------------------------------
 // Platform
 // ---------------------------------------------------------------------
+
+/// Stand-in used when the conversation store is not managed: every insert fails, so the vault
+/// note (if any) still gets written and no session data is lost silently.
+struct UnavailableStore;
+
+impl RecordStoreSink for UnavailableStore {
+    fn insert(&self, _rec: &SessionRecord, _vault_note: Option<&str>) -> Result<i64, String> {
+        Err("store unavailable".to_string())
+    }
+}
+
+/// Current time in ms since the Unix epoch (0 before the epoch).
+fn system_now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| i64::try_from(d.as_millis()).ok())
+        .unwrap_or(0)
+}
+
+/// True when the conversation reply goes to an HTTP model route (direct endpoint, OpenAI
+/// compatible or legacy model): the only routes that may receive vault context. Shares its rule
+/// with the summary route, so the two cannot drift apart.
+fn is_http_model_route(settings: &AppSettings) -> bool {
+    !matches!(
+        crate::managers::conversation_save::summary_route(settings),
+        crate::managers::conversation_save::SummaryRoute::NoModel
+    )
+}
+
+/// True when vault text may be sent with the current settings: only on an HTTP model route.
+/// Checked on every plan call, not just at session start, so a mid-session switch to a command
+/// or agent-bridge route stops vault text at once.
+fn vault_text_allowed(settings: &AppSettings) -> bool {
+    is_http_model_route(settings)
+}
+
+/// Saves a finished session. Runs inside the detached task spawned by `on_complete`, so the
+/// session never waits on it. Only fixed error kinds are logged, never transcript, summary or
+/// path text (DESIGN Rev 3, 3.5 (3)). Each sink failure is independent.
+async fn save_session_for_app(
+    app: AppHandle,
+    settings: AppSettings,
+    session: CollectedSession,
+    end: SessionEnd,
+) {
+    let save = SaveSettings::from_settings(&settings);
+    let store = app
+        .try_state::<Arc<ConversationStore>>()
+        .map(|s| s.inner().clone());
+    let offset = chrono::Local::now().offset().local_minus_utc();
+    // The whole save runs on one blocking thread: its SQLite insert and vault write are
+    // blocking, and the summary wait is bounded by its own deadline. No async worker is held.
+    let joined = tauri::async_runtime::spawn_blocking(move || {
+        let summarizer = RouteSummarizer::new(settings);
+        let store_sink = store.map(StoreSink::new);
+        let deps = SaveDeps {
+            summarizer: &summarizer,
+            store: match store_sink.as_ref() {
+                Some(sink) => sink,
+                None => &UnavailableStore,
+            },
+            notes: &VaultNoteSink,
+            now_ms: &system_now_ms,
+            utc_offset_secs: offset,
+        };
+        tauri::async_runtime::block_on(save_session(&save, &deps, session, end))
+    })
+    .await;
+    if joined.is_err() {
+        log::error!("conversation save task failed");
+    }
+}
 
 /// The app-backed `Platform` used by `ConverseController`.
 pub struct RealPlatform {
@@ -490,6 +597,55 @@ impl Platform for RealPlatform {
         let settings = get_settings(&self.app);
         crate::managers::realtime_complete::spawn_prewarm(&settings);
         let tts = self.app.state::<Arc<TtsManager>>().inner().clone();
+
+        // Settings are read once at session start (DESIGN Rev 3, 3.5 (1)-(5)).
+        let save = SaveSettings::from_settings(&settings);
+        let records_on = save.records_enabled;
+        let vault_on = vault_context_active(&settings);
+        let vault_route = is_http_model_route(&settings);
+
+        let vault_block: Arc<std::sync::Mutex<Option<String>>> =
+            Arc::new(std::sync::Mutex::new(None));
+
+        let collector: Option<Arc<TranscriptCollector>> = if records_on {
+            Some(Arc::new(TranscriptCollector::new()))
+        } else {
+            None
+        };
+        let transcript: Option<Arc<dyn TranscriptSink>> =
+            collector.clone().map(|c| c as Arc<dyn TranscriptSink>);
+
+        // Only the vault path is handed to the prepare step, and only the model route uses it.
+        let prepare: Option<BoxFuture<'static, ()>> = if vault_on && vault_route {
+            let path = settings.vault_path.clone();
+            let slot = vault_block.clone();
+            Some(Box::pin(async move {
+                let block = load_vault_block(&path, Duration::from_secs(2)).await;
+                if let Ok(mut guard) = slot.lock() {
+                    *guard = block;
+                }
+            }))
+        } else {
+            None
+        };
+
+        let on_complete: Option<Box<dyn FnOnce(SessionEnd) + Send>> = match collector {
+            Some(collector) => {
+                let app = self.app.clone();
+                let settings_snapshot = settings.clone();
+                Some(Box::new(move |end: SessionEnd| {
+                    let session = collector.take();
+                    let app = app.clone();
+                    let settings_snapshot = settings_snapshot.clone();
+                    // Only spawns: the session never waits on the save (DESIGN 3.5 (2)).
+                    tauri::async_runtime::spawn(async move {
+                        save_session_for_app(app, settings_snapshot, session, end).await;
+                    });
+                }))
+            }
+            None => None,
+        };
+
         SessionParts {
             ears: Box::new(RealEars {
                 app: self.app.clone(),
@@ -504,8 +660,13 @@ impl Platform for RealPlatform {
             }),
             brain: Box::new(RealBrain {
                 app: self.app.clone(),
+                vault_block,
+                vault_route,
             }),
             cfg: SessionConfig::from_settings(&settings),
+            transcript,
+            prepare,
+            on_complete,
         }
     }
 
@@ -532,6 +693,63 @@ mod tests {
 
     use super::*;
     use crate::managers::composer_config::TtsComposerMode;
+
+    /// Vault context may only reach HTTP model routes. Command and off routes must never get
+    /// it, since command argv is visible in the process list (DESIGN Rev 3, 3.5 (5)).
+    #[test]
+    fn vault_route_is_http_model_only() {
+        let mut s = base_settings();
+        s.tts_composer_mode = TtsComposerMode::Command;
+        s.tts_composer_command_path = "/usr/bin/synthetic-agent".to_string();
+        assert!(
+            !is_http_model_route(&s),
+            "command route must not carry vault text"
+        );
+
+        s.tts_composer_mode = TtsComposerMode::Off;
+        assert!(
+            !is_http_model_route(&s),
+            "off route must not carry vault text"
+        );
+
+        s.tts_composer_mode = TtsComposerMode::Model;
+        s.tts_composer_provider_id = "openai".to_string();
+        s.tts_composer_model = "synthetic-model".to_string();
+        assert!(
+            is_http_model_route(&s),
+            "legacy HTTP model route may carry vault text"
+        );
+    }
+
+    /// Every plan call re-checks the route, so each case below must hold on fresh settings.
+    #[test]
+    fn vault_text_allowed_follows_current_settings() {
+        let mut s = base_settings();
+        s.tts_composer_mode = TtsComposerMode::Model;
+        s.tts_composer_provider_id = "openai".to_string();
+        s.tts_composer_model = "synthetic-model".to_string();
+        assert!(vault_text_allowed(&s), "HTTP model route allows vault text");
+
+        s.tts_composer_mode = TtsComposerMode::Command;
+        s.tts_composer_command_path = "/usr/bin/synthetic-agent".to_string();
+        assert!(
+            !vault_text_allowed(&s),
+            "command backend must never receive vault text"
+        );
+
+        s.tts_composer_mode = TtsComposerMode::Off;
+        assert!(
+            !vault_text_allowed(&s),
+            "composer off must not receive vault text"
+        );
+
+        s.tts_composer_mode = TtsComposerMode::Model;
+        s.tts_composer_provider_id = "no-such-provider".to_string();
+        assert!(
+            !vault_text_allowed(&s),
+            "model route without a supported provider must not receive vault text"
+        );
+    }
 
     fn base_settings() -> AppSettings {
         let mut s = crate::settings::get_default_settings();
