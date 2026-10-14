@@ -744,18 +744,55 @@ mod unix_only {
         );
     }
 
+    // DESIGN R2-2: "UTF-8 without NUL else 'binary file'". Invalid UTF-8 is refused,
+    // exactly like a NUL-containing file; it is never replaced with U+FFFD.
     #[tokio::test]
-    async fn invalid_utf8_is_replaced_not_refused() {
+    async fn invalid_utf8_is_refused_as_binary_file() {
         let fx = fixture();
-        put(&fx.project.join("latin1.txt"), &[0xff, b'a', 0xc3, b'b']);
-        let text = read_in(&fx, "latin1.txt")
+        put(&fx.project.join("invalid.txt"), &[0xff, 0xfe, 0xfd, b'a']);
+        put(&fx.project.join("nul.txt"), b"\0ab");
+        let invalid = read_in(&fx, "invalid.txt")
             .await
-            .expect("invalid UTF-8 is readable");
-        assert!(
-            text.contains('\u{fffd}'),
-            "invalid bytes must become U+FFFD: {text:?}"
+            .expect_err("invalid UTF-8 must be refused");
+        let with_nul = read_in(&fx, "nul.txt")
+            .await
+            .expect_err("NUL file must be refused");
+        assert_eq!(
+            invalid, with_nul,
+            "invalid UTF-8 must return the same 'binary file' refusal as a NUL file"
         );
-        assert!(text.contains('a') && text.contains('b'));
+        assert!(
+            invalid.to_lowercase().contains("binary"),
+            "refusal must say binary file: {invalid}"
+        );
+    }
+
+    // A valid UTF-8 file cut by the 32 KiB cap mid-character must still be readable:
+    // the reader trims the incomplete trailing sequence before validating when it
+    // truncated. 3-byte characters: 32 KiB is not a multiple of 3, so the cap splits one.
+    #[tokio::test]
+    async fn multibyte_char_cut_at_the_cap_is_not_misreported_as_binary() {
+        let fx = fixture();
+        let body = "\u{20ac}".repeat(CAP / 3 + 100);
+        assert_ne!(CAP % 3, 0, "cap must fall mid-character for this case");
+        put(&fx.project.join("euro.txt"), body.as_bytes());
+        let text = read_in(&fx, "euro.txt")
+            .await
+            .expect("valid UTF-8 cut at the cap must not be refused as binary");
+        assert!(text.len() > CAP, "truncation marker expected");
+        assert!(
+            text.len() < CAP + 512,
+            "marker must be short: {}",
+            text.len()
+        );
+        assert!(
+            text.starts_with("\u{20ac}"),
+            "content must start with the original characters"
+        );
+        assert!(
+            !text.contains('\u{fffd}'),
+            "kept content must be valid UTF-8 with no replacement characters"
+        );
     }
 
     #[tokio::test]
