@@ -901,13 +901,47 @@ mod unix_only {
             vec![
                 (".ssh/id_rsa", ".\u{017f}sh/id_r\u{017f}a"),
                 ("secrets.json", "\u{017f}ecrets.json"),
-                (".aws/credentials", ".aws/credentia\u{017f}"),
-                ("a.key", "a.Key\u{212a}"),
+                (".aws/credentials", ".aws/credential\u{017f}"),
+                ("a.key", "a.\u{212a}ey"),
                 (".kube/config", ".\u{212a}ube/config"),
                 ("store.keystore", "store.\u{212a}eystore"),
                 ("store.jks", "store.j\u{212a}s"),
                 (".pgpass", ".pgpa\u{017f}s"),
             ]
+        }
+
+        /// Asserts a table row is a genuine lookalike: same character count, differs from the
+        /// plain name, and folding the lookalike's U+017F / U+212A back gives exactly the plain
+        /// name (nothing appended, dropped or changed beyond those letters).
+        fn assert_true_lookalike(plain: &str, lookalike: &str) {
+            assert_ne!(
+                plain, lookalike,
+                "row {lookalike:?} must differ from {plain:?}"
+            );
+            assert_eq!(
+                plain.chars().count(),
+                lookalike.chars().count(),
+                "lookalike {lookalike:?} must have the same character count as {plain:?}"
+            );
+            let restored: String = lookalike
+                .chars()
+                .map(|c| match c {
+                    '\u{017f}' => 's',
+                    '\u{212a}' => 'k',
+                    other => other,
+                })
+                .collect();
+            assert_eq!(
+                restored, plain,
+                "lookalike {lookalike:?} must be {plain:?} with only s/k letters replaced"
+            );
+        }
+
+        #[test]
+        fn lookalike_table_rows_are_true_lookalikes() {
+            for (plain, lookalike) in lookalike_cases() {
+                assert_true_lookalike(plain, lookalike);
+            }
         }
 
         /// Sensitive-file refusal for the plain spelling of a case (the reference result).
@@ -918,6 +952,7 @@ mod unix_only {
         #[tokio::test]
         async fn lookalike_spellings_are_refused_like_the_plain_name() {
             for (plain, lookalike) in lookalike_cases() {
+                assert_true_lookalike(plain, lookalike);
                 let fx = fixture();
                 put(&fx.project.join(plain), SECRET);
                 let reference = plain_refusal(&fx, plain).await;
@@ -954,12 +989,24 @@ mod unix_only {
         #[test]
         fn denylist_predicate_refuses_lookalikes_and_plain_names() {
             for (plain, lookalike) in lookalike_cases() {
-                for component in plain.split('/').chain(lookalike.split('/')) {
-                    assert!(
-                        is_denied(component),
-                        "component {component:?} (of {plain:?} / {lookalike:?}) must be denied"
-                    );
+                assert_true_lookalike(plain, lookalike);
+                // Compare component-by-component: the denied name in each path must be
+                // refused in both spellings. Non-sensitive components (e.g. `config`) are
+                // not the predicate's business; the reader still refuses via the denied one.
+                let plain_parts: Vec<&str> = plain.split('/').collect();
+                let look_parts: Vec<&str> = lookalike.split('/').collect();
+                for (p, l) in plain_parts.iter().zip(look_parts.iter()) {
+                    if is_denied(p) {
+                        assert!(
+                            is_denied(l),
+                            "lookalike component {l:?} (of {plain:?}) must be denied"
+                        );
+                    }
                 }
+                assert!(
+                    plain_parts.iter().any(|p| is_denied(p)),
+                    "row {plain:?} must contain a denied component"
+                );
             }
             for name in [
                 ".env",
