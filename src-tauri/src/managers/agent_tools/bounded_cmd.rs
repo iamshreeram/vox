@@ -230,3 +230,7 @@ impl Drop for DrainTask {
 #[cfg(test)]
 #[path = "bounded_cmd_tests.rs"]
 mod bounded_cmd_tests;
+
+#[cfg(test)]
+#[path = "test_env_child.rs"]
+mod test_env_child;

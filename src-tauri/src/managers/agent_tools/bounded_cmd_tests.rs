@@ -292,13 +292,24 @@ async fn normal_exit_leaves_no_zombie_behind() {
     assert!(!pid_alive(pid), "direct child was not reaped");
 }
 
+#[test]
+fn child_sees_only_the_explicit_minimal_env() {
+    // Parent-side markers that must NOT reach the child; set only in the child process.
+    super::test_env_child::run_in_child(
+        module_path!(),
+        "child_sees_only_the_explicit_minimal_env_inner",
+        &[
+            ("VOX_BOUNDED_TEST_PARENT_MARK", "leak"),
+            ("GIT_CONFIG_COUNT", "1"),
+            ("GIT_CONFIG_KEY_0", "core.fsmonitor"),
+        ],
+    );
+}
+
 #[tokio::test]
-async fn child_sees_only_the_explicit_minimal_env() {
+#[ignore = "runs inside a child process, see child_sees_only_the_explicit_minimal_env"]
+async fn child_sees_only_the_explicit_minimal_env_inner() {
     let dir = tempfile::tempdir().unwrap();
-    // Parent-side markers that must NOT reach the child.
-    std::env::set_var("VOX_BOUNDED_TEST_PARENT_MARK", "leak");
-    std::env::set_var("GIT_CONFIG_COUNT", "1");
-    std::env::set_var("GIT_CONFIG_KEY_0", "core.fsmonitor");
     let env = vec![
         ("PATH".to_string(), "/usr/bin:/bin".to_string()),
         ("VOX_EXPLICIT".to_string(), "yes".to_string()),
@@ -312,9 +323,6 @@ async fn child_sees_only_the_explicit_minimal_env() {
         Duration::from_secs(5),
     )
     .await;
-    std::env::remove_var("VOX_BOUNDED_TEST_PARENT_MARK");
-    std::env::remove_var("GIT_CONFIG_COUNT");
-    std::env::remove_var("GIT_CONFIG_KEY_0");
     let out = out.unwrap();
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     let mut lines: Vec<&str> = text.lines().collect();
@@ -325,6 +333,7 @@ async fn child_sees_only_the_explicit_minimal_env() {
         !text.contains("GIT_"),
         "inherited GIT_* must not leak into the child"
     );
+    super::test_env_child::child_ok("child_sees_only_the_explicit_minimal_env_inner");
 }
 
 #[tokio::test]

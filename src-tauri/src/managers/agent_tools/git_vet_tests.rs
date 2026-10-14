@@ -12,7 +12,6 @@ use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Mutex, MutexGuard};
 
 const TRUSTED_GIT: [&str; 5] = [
     "/usr/bin/git",
@@ -23,13 +22,6 @@ const TRUSTED_GIT: [&str; 5] = [
 ];
 
 const FIXED_PATH: &str = "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin";
-
-/// Serializes tests that mutate the process environment.
-static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-fn env_lock() -> MutexGuard<'static, ()> {
-    ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 /// First trusted absolute git that exists as an executable regular file (R3-1 rule).
 fn trusted_git() -> Option<PathBuf> {
@@ -515,23 +507,24 @@ fn inherited_git_env_of_the_test_process_is_not_passed_on() {
     if require_git("inherited_git_env_of_the_test_process_is_not_passed_on").is_none() {
         return;
     }
-    let _guard = env_lock();
+    super::test_env_child::run_in_child(
+        module_path!(),
+        "inherited_git_env_of_the_test_process_is_not_passed_on_inner",
+        &[
+            ("GIT_DIR", "/tmp/vox-foreign/.git"),
+            ("GIT_WORK_TREE", "/tmp/vox-foreign"),
+            ("GIT_CONFIG_COUNT", "1"),
+            ("GIT_CONFIG_KEY_0", "core.fsmonitor"),
+            ("GIT_CONFIG_VALUE_0", "touch /tmp/vox-never"),
+        ],
+    );
+}
+
+#[test]
+#[ignore = "runs inside a child process, see inherited_git_env_of_the_test_process_is_not_passed_on"]
+fn inherited_git_env_of_the_test_process_is_not_passed_on_inner() {
     let dir = tempfile::tempdir().expect("tempdir");
-    std::env::set_var("GIT_DIR", "/tmp/vox-foreign/.git");
-    std::env::set_var("GIT_WORK_TREE", "/tmp/vox-foreign");
-    std::env::set_var("GIT_CONFIG_COUNT", "1");
-    std::env::set_var("GIT_CONFIG_KEY_0", "core.fsmonitor");
-    std::env::set_var("GIT_CONFIG_VALUE_0", "touch /tmp/vox-never");
     let cmd = build_git_command(dir.path(), &["status"]);
-    for key in [
-        "GIT_DIR",
-        "GIT_WORK_TREE",
-        "GIT_CONFIG_COUNT",
-        "GIT_CONFIG_KEY_0",
-        "GIT_CONFIG_VALUE_0",
-    ] {
-        std::env::remove_var(key);
-    }
     let cmd = cmd.expect("build");
     let env = env_map(&cmd);
     for key in [
@@ -543,6 +536,7 @@ fn inherited_git_env_of_the_test_process_is_not_passed_on() {
     ] {
         assert!(!env.contains_key(key), "{key} leaked into the git child");
     }
+    super::test_env_child::child_ok("inherited_git_env_of_the_test_process_is_not_passed_on_inner");
 }
 
 #[test]
@@ -550,19 +544,23 @@ fn parent_path_with_relative_entries_is_never_used() {
     if require_git("parent_path_with_relative_entries_is_never_used").is_none() {
         return;
     }
-    let _guard = env_lock();
+    super::test_env_child::run_in_child(
+        module_path!(),
+        "parent_path_with_relative_entries_is_never_used_inner",
+        &[("PATH", ".:..")],
+    );
+}
+
+#[test]
+#[ignore = "runs inside a child process, see parent_path_with_relative_entries_is_never_used"]
+fn parent_path_with_relative_entries_is_never_used_inner() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let saved = std::env::var_os("PATH");
-    std::env::set_var("PATH", ".:..");
     let cmd = build_git_command(dir.path(), &["status"]);
-    match saved {
-        Some(v) => std::env::set_var("PATH", v),
-        None => std::env::remove_var("PATH"),
-    }
     let cmd = cmd.expect("build");
     let path = env_map(&cmd).get("PATH").cloned().unwrap_or_default();
     assert_eq!(path, FIXED_PATH);
     assert!(!path.split(':').any(|e| e == "." || e == ".."));
+    super::test_env_child::child_ok("parent_path_with_relative_entries_is_never_used_inner");
 }
 
 // ---------------------------------------------------------------- end-to-end with real git
@@ -689,27 +687,38 @@ fn inherited_git_env_in_test_process_does_not_change_the_result() {
     if require_git("inherited_git_env_in_test_process_does_not_change_the_result").is_none() {
         return;
     }
-    let _guard = env_lock();
-    let own = new_repo_with_commit("own subject");
+    let base = tempfile::tempdir().expect("tempdir");
+    let marker = base.path().join("MARKER");
     let foreign = new_repo_with_commit("foreign subject");
-    let marker = own.path().join("MARKER");
-    std::env::set_var("GIT_DIR", foreign.path().join(".git"));
-    std::env::set_var("GIT_CONFIG_COUNT", "1");
-    std::env::set_var("GIT_CONFIG_KEY_0", "core.fsmonitor");
-    std::env::set_var("GIT_CONFIG_VALUE_0", format!("touch {}", marker.display()));
+    let marker_value = format!("touch {}", marker.display());
+    let foreign_gitdir = foreign.path().join(".git").display().to_string();
+    super::test_env_child::run_in_child(
+        module_path!(),
+        "inherited_git_env_in_test_process_does_not_change_the_result_inner",
+        &[
+            ("GIT_DIR", foreign_gitdir.as_str()),
+            ("GIT_CONFIG_COUNT", "1"),
+            ("GIT_CONFIG_KEY_0", "core.fsmonitor"),
+            ("GIT_CONFIG_VALUE_0", marker_value.as_str()),
+            ("VOX_TEST_MARKER", marker.to_str().expect("utf-8 temp path")),
+        ],
+    );
+    assert!(!marker.exists(), "inherited GIT_CONFIG_* ran a command");
+}
+
+#[test]
+#[ignore = "runs inside a child process, see inherited_git_env_in_test_process_does_not_change_the_result"]
+fn inherited_git_env_in_test_process_does_not_change_the_result_inner() {
+    let own = new_repo_with_commit("own subject");
+    let marker = std::path::PathBuf::from(std::env::var_os("VOX_TEST_MARKER").expect("marker env"));
     let result = git_status_summary("proj", own.path()).await_blocking();
-    for key in [
-        "GIT_DIR",
-        "GIT_CONFIG_COUNT",
-        "GIT_CONFIG_KEY_0",
-        "GIT_CONFIG_VALUE_0",
-    ] {
-        std::env::remove_var(key);
-    }
     let out = result.expect("own clean repo must succeed");
     assert!(out.contains("own subject"));
     assert!(!out.contains("foreign subject"));
     assert!(!marker.exists());
+    super::test_env_child::child_ok(
+        "inherited_git_env_in_test_process_does_not_change_the_result_inner",
+    );
 }
 
 #[test]
@@ -717,22 +726,26 @@ fn project_local_executable_named_git_is_never_run() {
     if require_git("project_local_executable_named_git_is_never_run").is_none() {
         return;
     }
+    super::test_env_child::run_in_child(
+        module_path!(),
+        "project_local_executable_named_git_is_never_run_inner",
+        &[("PATH", ".:..")],
+    );
+}
+
+#[test]
+#[ignore = "runs inside a child process, see project_local_executable_named_git_is_never_run"]
+fn project_local_executable_named_git_is_never_run_inner() {
     use std::os::unix::fs::PermissionsExt;
-    let _guard = env_lock();
     let dir = new_repo_with_commit("first");
     let marker = dir.path().join("MARKER");
     let fake = dir.path().join("git");
     std::fs::write(&fake, format!("#!/bin/sh\ntouch {}\n", marker.display())).expect("write");
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-    let saved = std::env::var_os("PATH");
-    std::env::set_var("PATH", ".:..");
     let result = git_status_summary("proj", dir.path()).await_blocking();
-    match saved {
-        Some(v) => std::env::set_var("PATH", v),
-        None => std::env::remove_var("PATH"),
-    }
     assert!(result.is_ok(), "real git must still run: {result:?}");
     assert!(!marker.exists(), "project-local git was executed");
+    super::test_env_child::child_ok("project_local_executable_named_git_is_never_run_inner");
 }
 
 #[test]

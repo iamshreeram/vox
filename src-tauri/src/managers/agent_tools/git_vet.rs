@@ -474,3 +474,7 @@ fn run_message(project_name: &str, err: &RunError) -> String {
 #[cfg(test)]
 #[path = "git_vet_tests.rs"]
 mod git_vet_tests;
+
+#[cfg(test)]
+#[path = "test_env_child.rs"]
+mod test_env_child;
