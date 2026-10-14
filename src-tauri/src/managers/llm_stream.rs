@@ -599,7 +599,7 @@ fn proxy_key(mode: &ProxyMode) -> String {
 
 /// The pooled client for this proxy mode and loopback flag, built once and reused so
 /// consecutive requests share one TCP connection. Loopback targets never use a proxy.
-fn client_for(mode: &ProxyMode, loopback: bool) -> Option<reqwest::Client> {
+pub(crate) fn client_for(mode: &ProxyMode, loopback: bool) -> Option<reqwest::Client> {
     let cache = CLIENTS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut guard = match cache.lock() {
         Ok(guard) => guard,
