@@ -129,3 +129,7 @@ pub async fn run_tool_loop(
     let _ = (model, exec, first_user, system, cfg, taint);
     todo!()
 }
+
+#[cfg(test)]
+#[path = "tool_loop_tests.rs"]
+mod tests;

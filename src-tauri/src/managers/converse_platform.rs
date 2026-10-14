@@ -916,3 +916,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "converse_tool_tests.rs"]
+mod converse_tool_tests;
