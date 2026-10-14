@@ -2694,4 +2694,60 @@ mod tests {
             "second merge is a no-op"
         );
     }
+
+    // ---- M2-0: agent tools settings (design R4-1) --------------------------
+
+    #[test]
+    fn agent_tools_defaults_are_off_guarded_and_no_roots() {
+        let settings = get_default_settings();
+        assert!(!settings.agent_tools_enabled, "tools must default OFF");
+        assert!(
+            settings.agent_tools_guard_actions,
+            "the action guard must default ON"
+        );
+        assert!(
+            settings.agent_project_roots.is_empty(),
+            "no project roots by default"
+        );
+    }
+
+    #[test]
+    fn agent_tools_fields_round_trip_with_non_default_values() {
+        let mut settings = get_default_settings();
+        settings.agent_tools_enabled = true;
+        settings.agent_tools_guard_actions = false;
+        settings.agent_project_roots = vec![
+            "/Users/example/src/one".to_string(),
+            "/Users/example/src/two".to_string(),
+        ];
+        let json = serde_json::to_string(&settings).unwrap();
+        let loaded: AppSettings = serde_json::from_str(&json).unwrap();
+        assert!(loaded.agent_tools_enabled);
+        assert!(!loaded.agent_tools_guard_actions);
+        assert_eq!(
+            loaded.agent_project_roots,
+            vec![
+                "/Users/example/src/one".to_string(),
+                "/Users/example/src/two".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn agent_tools_fields_default_when_missing_from_old_settings_json() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        let obj = settings.as_object_mut().unwrap();
+        for key in [
+            "agent_tools_enabled",
+            "agent_tools_guard_actions",
+            "agent_project_roots",
+        ] {
+            assert!(obj.remove(key).is_some(), "{key} must be serialized");
+        }
+        let loaded: AppSettings =
+            serde_json::from_value(settings).expect("old settings JSON must deserialize");
+        assert!(!loaded.agent_tools_enabled);
+        assert!(loaded.agent_tools_guard_actions);
+        assert!(loaded.agent_project_roots.is_empty());
+    }
 }
