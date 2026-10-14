@@ -43,3 +43,7 @@ impl ProjectResolver {
         todo!()
     }
 }
+
+#[cfg(test)]
+#[path = "project_tests.rs"]
+mod project_tests;

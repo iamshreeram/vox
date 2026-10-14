@@ -55,3 +55,7 @@ pub async fn read_project_file(
     let _ = (gate, project_dir, relative_path);
     todo!()
 }
+
+#[cfg(test)]
+#[path = "confined_read_tests.rs"]
+mod confined_read_tests;
