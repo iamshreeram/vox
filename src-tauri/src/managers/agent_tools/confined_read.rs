@@ -1,6 +1,3 @@
-// M2 stub: bodies arrive in M2-1..M2-3, this allow is removed in M2-3
-#![allow(dead_code)]
-
 //! Confined no-follow reads inside a project (DESIGN R2-2, R3-3). Every filesystem touch
 //! goes through `FsGate::run`, which caps live blocking jobs at 4.
 

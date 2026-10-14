@@ -1,6 +1,3 @@
-// M2 stub: bodies arrive in M2-1..M2-3, this allow is removed in M2-3
-#![allow(dead_code)]
-
 //! Bounded subprocess runner (DESIGN R2-7): concurrent capped stdout and stderr drains, a
 //! process group killed on success, error, overflow, timeout or drop.
 
@@ -25,6 +22,8 @@ pub struct BoundedOutput {
 pub enum RunError {
     Spawn(String),
     Timeout,
+    /// Only constructed on the non-unix build path (no bounded runner yet).
+    #[allow(dead_code)]
     Overflow,
     Io(String),
 }
@@ -99,6 +98,8 @@ pub async fn run_bounded(
     Err(RunError::Spawn(UNSUPPORTED.to_string()))
 }
 
+/// Reason text for the non-unix stub; unused on unix builds.
+#[allow(dead_code)]
 const UNSUPPORTED: &str = "not supported on this platform yet";
 const SPAWN_ERROR: &str = "could not start the command";
 const IO_ERROR: &str = "could not read the command output";

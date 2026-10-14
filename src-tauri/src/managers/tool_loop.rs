@@ -1,6 +1,3 @@
-// M2 stub: bodies arrive in M2-1..M2-3, this allow is removed in M2-3
-#![allow(dead_code)]
-
 //! Bounded tool loop around one voice turn (DESIGN Rev 4, D3 / R2-4 / R2-6 / R4-2).
 //! Pure over the `ToolModel` and `ToolExecutor` seams so tests can script both.
 
@@ -42,7 +39,8 @@ impl Deadline {
         self.remaining().is_zero()
     }
 
-    /// `min(limit, remaining)`.
+    /// `min(limit, remaining)`. Kept for the deadline contract; tests exercise it.
+    #[allow(dead_code)]
     pub fn cap(&self, limit: Duration) -> Duration {
         limit.min(self.remaining())
     }
@@ -123,7 +121,9 @@ impl TaintState {
         self.flag.store(true, Ordering::SeqCst);
     }
 
-    /// Called when a new session starts.
+    /// Called when a new session starts. Sessions get a fresh `TaintState` today, so the
+    /// production path does not call this; kept for the reset contract.
+    #[allow(dead_code)]
     pub fn reset(&self) {
         self.flag.store(false, Ordering::SeqCst);
     }

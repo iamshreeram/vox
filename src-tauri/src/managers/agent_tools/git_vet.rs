@@ -1,6 +1,3 @@
-// M2 stub: bodies arrive in M2-1..M2-3, this allow is removed in M2-3
-#![allow(dead_code)]
-
 //! Git vetting and argv construction (DESIGN R2-1, R3-1). Refuses any repo whose
 //! `.git/config` is outside the strict allowlist, before git is ever spawned.
 
@@ -23,6 +20,8 @@ pub enum VetError {
     UnsupportedLayout(String),
     /// Config over 64 KiB or 500 lines, non-UTF-8, NUL, or outside the grammar (R3-1).
     MalformedConfig,
+    /// Only constructed on the non-unix stub path.
+    #[allow(dead_code)]
     GitMissing,
 }
 
@@ -94,6 +93,8 @@ const STATUS_LINE_CAP: usize = 40;
 const LOG_LINE_CAP: usize = 5;
 
 const GIT_MISSING: &str = "git is not installed";
+/// Reason text for the non-unix stub; unused on unix builds.
+#[allow(dead_code)]
 const UNSUPPORTED: &str = "not supported on this platform yet";
 
 /// Checks the project directory without executing anything (R2-1, R3-1 grammar).
@@ -111,7 +112,9 @@ pub fn vet_git_config(_project_dir: &Path) -> Result<(), VetError> {
 }
 
 /// Builds the git command: cleared env, fixed trusted PATH, no inherited GIT_* (R2-1, R3-1).
+/// Production runs git through `run_git`; this builder is the inspectable form the tests use.
 #[cfg(unix)]
+#[allow(dead_code)]
 pub fn build_git_command(project_dir: &Path, args: &[&str]) -> Result<Command, VetError> {
     let program = trusted_git().ok_or(VetError::GitMissing)?;
     let mut cmd = Command::new(program);

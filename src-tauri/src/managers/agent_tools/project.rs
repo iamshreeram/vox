@@ -1,6 +1,3 @@
-// M2 stub: bodies arrive in M2-1..M2-3, this allow is removed in M2-3
-#![allow(dead_code)]
-
 //! Project root and name resolution (DESIGN R2-3). Roots are pinned once as directory
 //! handles; a project is a bare name opened relative to its root handle.
 
@@ -44,11 +41,15 @@ pub enum ProjectError {
     Ambiguous(usize),
     /// Symlinked child, not a plain folder.
     NotPlainFolder,
+    /// Only constructed by the resolver when a root cannot be opened.
+    #[allow(dead_code)]
     RootInvalid,
     NoRoots,
     /// The only configured roots are on a network or virtual filesystem.
     NetworkOrVirtual,
     /// Confined project access is not implemented on this platform yet.
+    /// Only constructed on the non-unix stub path.
+    #[allow(dead_code)]
     Unsupported,
 }
 

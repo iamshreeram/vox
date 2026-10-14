@@ -1,6 +1,3 @@
-// M2 stub: bodies arrive in M2-1..M2-3, this allow is removed in M2-3
-#![allow(dead_code)]
-
 //! Native Anthropic tool-use wire format: request builder, SSE block accumulator and the
 //! streamed call (DESIGN Rev 4, D2 / R2-5). Signatures are fixed by R4-6.
 

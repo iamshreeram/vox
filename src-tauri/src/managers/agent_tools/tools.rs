@@ -1,6 +1,3 @@
-// M2 stub: bodies arrive in M2-1..M2-3, this allow is removed in M2-3
-#![allow(dead_code)]
-
 //! Tool dispatcher (DESIGN D4): specs, the ReadOnly risk gate, and the four read tools
 //! plus `open_settings` and `recent_conversations`.
 
@@ -81,6 +78,8 @@ pub struct DefaultToolExecutor {
 
 impl DefaultToolExecutor {
     /// Builds the executor with the default 5 s per-tool timeout and no conversation source.
+    /// Kept for the default constructor; production uses `with_backends`.
+    #[allow(dead_code)]
     pub fn new(
         resolver: ProjectResolver,
         ui: Box<dyn UiPort>,
