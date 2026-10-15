@@ -340,3 +340,21 @@ mod source_contracts {
         );
     }
 }
+
+/// S5 fix (minor 3): the exit fallback deadline must leave room for the SIGKILL that
+/// follows the TERM grace, so a child cannot outlive an updater restart.
+#[test]
+fn exit_fallback_deadline_covers_term_grace_plus_margin() {
+    let budgets = super::exit_fallback_budgets();
+    assert!(
+        budgets.deadline >= budgets.term_grace + super::EXIT_FALLBACK_MARGIN,
+        "deadline {:?} must be at least term_grace {:?} + margin {:?}",
+        budgets.deadline,
+        budgets.term_grace,
+        super::EXIT_FALLBACK_MARGIN
+    );
+    assert!(
+        super::EXIT_FALLBACK_MARGIN >= Duration::from_millis(500),
+        "margin must be at least 500 ms"
+    );
+}

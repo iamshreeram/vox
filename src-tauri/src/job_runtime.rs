@@ -4,6 +4,7 @@
 //! the `job_status` tool reads. Tests live in `job_runtime_tests.rs`.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
 
@@ -88,6 +89,31 @@ impl JobStatusSource for ManagerStatusSource {
 /// True when the status DTO reports a running job (state is exactly `running`).
 pub fn job_ui_running(dto: &AgentJobStatusDto) -> bool {
     dto.state == "running"
+}
+
+/// Budgets for the `RunEvent::Exit` fallback shutdown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExitFallbackBudgets {
+    /// Time between SIGTERM and SIGKILL.
+    pub term_grace: Duration,
+    /// Output drain budget after the job stops.
+    pub drain: Duration,
+    /// Overall deadline. Always at least `term_grace` plus the margin, so the SIGKILL
+    /// is sent before the fallback gives up and a child cannot outlive a restart.
+    pub deadline: Duration,
+}
+
+/// Margin added to the grace so the SIGKILL step always runs before the deadline.
+pub const EXIT_FALLBACK_MARGIN: Duration = Duration::from_millis(500);
+
+/// Pure budgets for the `RunEvent::Exit` fallback (S5 fix, updater restarts).
+pub fn exit_fallback_budgets() -> ExitFallbackBudgets {
+    let term_grace = Duration::from_secs(1);
+    ExitFallbackBudgets {
+        term_grace,
+        drain: Duration::from_secs(1),
+        deadline: term_grace + EXIT_FALLBACK_MARGIN,
+    }
 }
 
 #[cfg(test)]

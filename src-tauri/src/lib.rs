@@ -1453,10 +1453,11 @@ pub fn run(cli_args: CliArgs) {
         tauri::RunEvent::Exit => {
             if let Some(wiring) = app.try_state::<job_runtime::JobWiring>() {
                 // Idempotent belt: the exit coordinator has normally stopped the job already.
+                let budgets = job_runtime::exit_fallback_budgets();
                 wiring.manager.shutdown(&ShutdownConfig {
-                    term_grace: std::time::Duration::from_secs(1),
-                    drain: std::time::Duration::from_secs(1),
-                    deadline: std::time::Duration::from_secs(1),
+                    term_grace: budgets.term_grace,
+                    drain: budgets.drain,
+                    deadline: budgets.deadline,
                 });
             }
             if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
