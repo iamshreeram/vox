@@ -211,6 +211,31 @@ pub fn parse_plan(raw: &str, sent_prompt: &str) -> Result<TurnPlan, PlanError> {
     parse_plan_with_policy(raw, sent_prompt, false)
 }
 
+/// M4 (D2): spoken when the planner asks for `mode: "ask"` while ask is off.
+pub const ASK_NOT_ENABLED_SPEECH: &str = "Asking an agent isn't turned on.";
+
+/// M4 (D2): spoken for an unknown, empty or malformed agent name. Never echoes the name.
+pub const UNKNOWN_AGENT_SPEECH: &str = "I don't have an agent called that.";
+
+/// M4 (D2): `parse_plan_with_policy` with the full job policy (ask mode and agent
+/// allowlist). Stub: the M4 S1 implementer replaces the body.
+#[allow(dead_code)] // wired in a later M4 step
+pub fn parse_plan_with_job_policy(
+    _raw: &str,
+    _sent_prompt: &str,
+    _policy: &JobParsePolicy,
+) -> Result<TurnPlan, PlanError> {
+    todo!("M4 S1")
+}
+
+/// M4 (D2): planner prompt with the job policy. Byte-identical to `build_plan_prompt`
+/// plus `JOB_PLAN_ADDENDUM` when agents are empty and ask is off. Stub: the M4 S1
+/// implementer replaces the body.
+#[allow(dead_code)] // wired in a later M4 step
+pub fn plan_prompt_with_job_policy(_input: &PlanInput, _policy: &JobParsePolicy) -> PlanPrompt {
+    todo!("M4 S1")
+}
+
 /// System prompt: the JSON contract, the kinds, the speech rules and the style.
 fn build_system(style: &str) -> String {
     let style: String = style
@@ -865,3 +890,7 @@ mod tests {
 #[cfg(test)]
 #[path = "converse_plan_job_tests.rs"]
 mod converse_plan_job_tests;
+
+#[cfg(test)]
+#[path = "converse_plan_m4_tests.rs"]
+mod converse_plan_m4_tests;

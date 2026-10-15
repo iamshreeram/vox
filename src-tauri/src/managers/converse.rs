@@ -3001,3 +3001,7 @@ mod converse_gate_tests;
 #[cfg(test)]
 #[path = "converse_gate_answer_only_tests.rs"]
 mod converse_gate_answer_only_tests;
+
+#[cfg(test)]
+#[path = "converse_gate_m4_tests.rs"]
+mod converse_gate_m4_tests;

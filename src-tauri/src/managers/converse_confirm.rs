@@ -666,3 +666,7 @@ mod converse_confirm_tests;
 #[cfg(test)]
 #[path = "converse_confirm_adapter_tests.rs"]
 mod converse_confirm_adapter_tests;
+
+#[cfg(test)]
+#[path = "converse_confirm_m4_tests.rs"]
+mod converse_confirm_m4_tests;
