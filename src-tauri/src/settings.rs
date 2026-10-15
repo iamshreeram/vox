@@ -919,22 +919,86 @@ pub fn clamp_job_timeout_minutes(minutes: u32) -> u32 {
     minutes.clamp(MIN_JOB_TIMEOUT_MINUTES, MAX_JOB_TIMEOUT_MINUTES)
 }
 
-/// Cleans a raw coding agent allowlist (M4 S1b stub; the implementer replaces this body).
+/// Largest number of agent names kept in the allowlist (M4).
+pub const MAX_AGENT_NAMES: usize = 20;
+
+/// Longest accepted agent name, in bytes (M4).
+const MAX_AGENT_NAME_LEN: usize = 64;
+
+/// Longest accepted agent flag name after its dashes, in bytes (M4).
+const MAX_AGENT_FLAG_NAME_LEN: usize = 32;
+
+/// Reports whether `name` matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` (ASCII only).
+fn is_valid_agent_name(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    if bytes.is_empty() || bytes.len() > MAX_AGENT_NAME_LEN {
+        return false;
+    }
+    if !bytes[0].is_ascii_alphanumeric() {
+        return false;
+    }
+    bytes[1..]
+        .iter()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+}
+
+/// Cleans a raw coding agent allowlist (M4).
+///
+/// Invalid names are dropped, case-insensitive duplicates are dropped (the first spelling is
+/// kept), order is kept, and at most [`MAX_AGENT_NAMES`] valid names are returned.
 pub fn clean_agent_names(input: Vec<String>) -> Vec<String> {
-    let _ = input;
-    todo!("M4 S1b")
+    let mut kept: Vec<String> = Vec::new();
+    for name in input {
+        if kept.len() >= MAX_AGENT_NAMES {
+            break;
+        }
+        if !is_valid_agent_name(&name) {
+            continue;
+        }
+        if kept.iter().any(|k| k.eq_ignore_ascii_case(&name)) {
+            continue;
+        }
+        kept.push(name);
+    }
+    kept
 }
 
-/// Reports whether `flag` is a usable agent flag (M4 S1b stub; the implementer replaces this body).
+/// Reports whether `flag` is a usable agent flag (M4).
+///
+/// A usable flag matches `^--?[A-Za-z][A-Za-z0-9-]{0,31}$` and differs from `prompt_flag`.
 pub fn is_valid_agent_flag(flag: &str, prompt_flag: &str) -> bool {
-    let _ = (flag, prompt_flag);
-    todo!("M4 S1b")
+    if flag == prompt_flag {
+        return false;
+    }
+    let name = match flag.strip_prefix("--") {
+        Some(rest) => rest,
+        None => match flag.strip_prefix('-') {
+            Some(rest) => rest,
+            None => return false,
+        },
+    };
+    let bytes = name.as_bytes();
+    if bytes.is_empty() || bytes.len() > MAX_AGENT_FLAG_NAME_LEN {
+        return false;
+    }
+    if !bytes[0].is_ascii_alphabetic() {
+        return false;
+    }
+    bytes[1..]
+        .iter()
+        .all(|b| b.is_ascii_alphanumeric() || *b == b'-')
 }
 
-/// Returns the agent flag to pass to the coding CLI (M4 S1b stub; the implementer replaces this body).
+/// Returns the agent flag to pass to the coding CLI (M4).
+///
+/// Falls back to the default `--agent` when the stored value is invalid or equals the prompt flag.
+#[allow(dead_code)] // wired in a later M4 step (policy source)
 pub fn effective_agent_flag(s: &AppSettings) -> String {
-    let _ = s;
-    todo!("M4 S1b")
+    if is_valid_agent_flag(&s.agent_jobs_agent_flag, &s.agent_bridge_prompt_flag) {
+        s.agent_jobs_agent_flag.clone()
+    } else {
+        default_agent_jobs_agent_flag()
+    }
 }
 
 fn default_agent_bridge_prompt_flag() -> String {

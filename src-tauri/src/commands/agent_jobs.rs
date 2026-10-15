@@ -58,51 +58,57 @@ pub fn change_agent_jobs_timeout_minutes(app: AppHandle, minutes: u32) -> Result
     Ok(())
 }
 
-/// Stores the coding agent allowlist (M4). Scaffolding: the raw list is stored and returned.
+/// Stores the cleaned coding agent allowlist and returns the cleaned list (M4).
 #[tauri::command]
 #[specta::specta]
 pub fn change_agent_jobs_agents(app: AppHandle, agents: Vec<String>) -> Vec<String> {
     let mut current = settings::get_settings(&app);
-    current.agent_jobs_agents = agents.clone();
+    let cleaned = apply_agents_change(&mut current, agents);
     settings::write_settings(&app, current);
-    agents
+    cleaned
 }
 
 /// Stores the flag that passes the selected agent name to the coding CLI (M4).
-/// Scaffolding: the raw flag is stored and returned.
+/// An invalid flag is rejected with `Invalid agent flag.` and the old value is kept.
 #[tauri::command]
 #[specta::specta]
 pub fn change_agent_jobs_agent_flag(app: AppHandle, flag: String) -> Result<String, String> {
     let mut current = settings::get_settings(&app);
-    current.agent_jobs_agent_flag = flag.clone();
+    let result = apply_flag_change(&mut current, flag);
     settings::write_settings(&app, current);
-    Ok(flag)
+    result
 }
 
-/// Turns ask mode on or off (M4). Off by default. Scaffolding: stores the raw value.
+/// Turns ask mode on or off (M4). Off by default.
 #[tauri::command]
 #[specta::specta]
 pub fn change_agent_jobs_ask_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
-    persist_bool(&app, |s, v| s.agent_jobs_ask_enabled = v, enabled);
+    let mut current = settings::get_settings(&app);
+    apply_ask_change(&mut current, enabled);
+    // M4 S6: call summary tokens invalidate() here
+    settings::write_settings(&app, current);
     Ok(())
 }
 
-/// Stores the cleaned agent allowlist and returns it (M4 S1b stub; the implementer replaces this body).
+/// Stores the cleaned agent allowlist on `s` and returns the stored list (M4).
 pub(crate) fn apply_agents_change(s: &mut AppSettings, input: Vec<String>) -> Vec<String> {
-    let _ = (s, input);
-    todo!("M4 S1b")
+    let cleaned = settings::clean_agent_names(input);
+    s.agent_jobs_agents = cleaned.clone();
+    cleaned
 }
 
-/// Stores a valid agent flag, or returns `Invalid agent flag.` and keeps the old value (M4 S1b stub).
+/// Stores a valid agent flag on `s`, or returns `Invalid agent flag.` and keeps the old value (M4).
 pub(crate) fn apply_flag_change(s: &mut AppSettings, flag: String) -> Result<String, String> {
-    let _ = (s, flag);
-    todo!("M4 S1b")
+    if !settings::is_valid_agent_flag(&flag, &s.agent_bridge_prompt_flag) {
+        return Err("Invalid agent flag.".to_string());
+    }
+    s.agent_jobs_agent_flag = flag.clone();
+    Ok(flag)
 }
 
-/// Stores the ask mode switch (M4 S1b stub; the implementer replaces this body).
+/// Stores the ask mode switch on `s` (M4).
 pub(crate) fn apply_ask_change(s: &mut AppSettings, enabled: bool) {
-    let _ = (s, enabled);
-    todo!("M4 S1b")
+    s.agent_jobs_ask_enabled = enabled;
 }
 
 /// Reports the coding job state for the Settings status card.
