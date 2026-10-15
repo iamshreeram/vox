@@ -427,7 +427,14 @@ fn confirmation_delayed_beyond_one_second_defers_finish_until_confirmed() {
     let target = FakeTarget::new(true, Some(Duration::from_millis(1200)), Arc::clone(&log));
     let dyn_target: Arc<dyn ExitTarget> = target.clone();
     let finishes = new_finishes();
-    let cfg = fast_cfg();
+    // hard_cap is long enough that the last resort cannot fire before the
+    // 1200 ms confirmation (R4-2(e): deferral is retained until confirmed).
+    let cfg = ExitConfig {
+        deadline: Duration::from_millis(300),
+        term_grace: Duration::from_millis(100),
+        drain: Duration::from_millis(100),
+        hard_cap: Duration::from_secs(5),
+    };
     let coord = ExitCoordinator::new();
     let decision = coord.on_exit_requested_with(
         dyn_target.clone(),
@@ -946,9 +953,20 @@ fn idle_tray_request_exit_finishes_confirmed_once_with_real_manager() {
     );
 }
 
+/// Reads the pid file if the leader wrote it within `limit`; `None` when the job
+/// was stopped before its script ran (the pid file is then legitimately absent).
+fn pid_if_written(path: &Path, limit: Duration) -> Option<i32> {
+    wait_until(limit, || path.exists());
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| s.trim().parse::<i32>().ok())
+}
+
 /// Case 3 (real): a start() racing close_admission either completes before it
 /// (the job is then seen as active and cleaned before finish) or returns
-/// ShuttingDown; it never leaves a running job after finish. Repeated 8 times.
+/// ShuttingDown. In every round: after finish the manager has no active job, a
+/// later start returns ShuttingDown, and IF a leader pid was recorded its process
+/// is dead. Repeated 8 times with a growing race offset.
 #[test]
 fn start_racing_close_admission_never_leaks_a_running_job() {
     for round in 0..8u64 {
@@ -977,25 +995,15 @@ fn start_racing_close_admission_never_leaks_a_running_job() {
         );
         let started = starter.join().expect("starter thread must not panic");
         let started_ok = started.is_ok();
-        match started {
-            Ok(_) => {
-                // Guard the racing leader before any assertion can fail.
-                let leader_pid = read_pid_file(&leader);
-                let _guard = GroupGuard {
-                    pids: vec![],
-                    pgids: vec![leader_pid],
-                };
-                assert!(
-                    matches!(decision, ExitDecision::Deferred),
-                    "round {round}: a started job must be seen as active"
-                );
-            }
-            Err(e) => {
-                assert!(
-                    matches!(e, JobError::ShuttingDown),
-                    "round {round}: a racing start must be ShuttingDown, got {e:?}"
-                );
-            }
+        match &started {
+            Ok(_) => assert!(
+                matches!(decision, ExitDecision::Deferred),
+                "round {round}: a started job must be seen as active"
+            ),
+            Err(e) => assert!(
+                matches!(e, JobError::ShuttingDown),
+                "round {round}: a racing start must be ShuttingDown, got {e:?}"
+            ),
         }
         if matches!(decision, ExitDecision::Deferred) {
             assert!(
@@ -1007,13 +1015,28 @@ fn start_racing_close_admission_never_leaks_a_running_job() {
                 Some(false),
                 "round {round}: no running job at finish"
             );
-            if started_ok {
-                let pid = read_pid_file(&leader);
-                assert!(
-                    !pid_alive(pid),
-                    "round {round}: started leader must be gone"
-                );
-            }
+        }
+        // Whatever the race outcome, admission stays closed afterwards.
+        let late = mgr.start(spec(tmp.path(), &bin, "task"), Arc::new(NoopObserver));
+        assert!(
+            matches!(late, Err(JobError::ShuttingDown)),
+            "round {round}: a start after exit must return ShuttingDown"
+        );
+        // The pid is recorded only when the script ran before the stop; guard it.
+        let recorded = pid_if_written(&leader, Duration::from_millis(300));
+        let _guard = GroupGuard {
+            pids: vec![],
+            pgids: recorded.into_iter().collect(),
+        };
+        if let Some(pid) = recorded {
+            assert!(
+                started_ok,
+                "round {round}: a pid was recorded, so a start must have succeeded"
+            );
+            assert!(
+                !pid_alive(pid),
+                "round {round}: recorded leader must be dead"
+            );
         }
     }
 }
