@@ -67,6 +67,11 @@ impl JobSpeaker {
         self
     }
 
+    /// M4 S3 stub: overrides the summary deadline (todo until the S4 step).
+    pub fn with_summary_deadline(self, _d: std::time::Duration) -> Self {
+        todo!("M4 S3")
+    }
+
     /// M4: attaches the summary pieces. Scaffolding: stored only, so behavior is unchanged.
     #[allow(dead_code)] // wired in a later M4 step
     pub fn with_summary(
@@ -200,3 +205,7 @@ mod job_speaker_tests;
 #[cfg(test)]
 #[path = "job_speaker_timeout_tests.rs"]
 mod job_speaker_timeout_tests;
+
+#[cfg(test)]
+#[path = "job_speaker_m4_tests.rs"]
+mod job_speaker_m4_tests;

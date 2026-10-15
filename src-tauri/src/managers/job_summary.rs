@@ -141,3 +141,34 @@ impl ResultStore {
         None
     }
 }
+
+/// Spoken when a summary is unavailable (error, timeout, empty, invalid).
+pub const FALLBACK_SPEECH: &str = "The agent finished. The result is in Vox settings.";
+
+/// Prefix of every spoken summary.
+pub const SPEECH_PREFIX: &str = "The agent says: ";
+
+/// How long a summary may take before the fixed fallback is spoken.
+pub const SUMMARY_DEADLINE: Duration = Duration::from_secs(15);
+
+/// System prompt for the summarizer (placeholder until the S4 step).
+pub const ASK_SUMMARY_SYSTEM: &str = "todo";
+
+/// M4 S3 stub: cleans a raw summary answer for speech (todo until the S4 step).
+pub fn clean_summary_text(_raw: &str) -> Option<String> {
+    todo!("M4 S3")
+}
+
+/// M4 S3 stub: wraps cleaned text as spoken summary (todo until the S4 step).
+pub fn spoken_summary(_clean: &str) -> String {
+    todo!("M4 S3")
+}
+
+/// M4 S3 stub: builds the fenced user prompt (todo until the S4 step).
+pub fn summary_user_prompt(_text: &str) -> String {
+    todo!("M4 S3")
+}
+
+#[cfg(test)]
+#[path = "job_summary_m4_tests.rs"]
+mod job_summary_m4_tests;
