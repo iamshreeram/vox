@@ -138,7 +138,6 @@ Vox is a cross-platform desktop speech-to-text application built with Tauri 2.x 
 - `transcribe-rs` - ONNX speech recognition (Parakeet, Moonshine, SenseVoice, etc.)
 - `cpal` - Cross-platform audio I/O
 - `vad-rs` - Voice Activity Detection
-- `rdev` - Global keyboard shortcuts
 - `rubato` - Audio resampling
 - `rodio` - Audio playback for feedback sounds
 
