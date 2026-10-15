@@ -269,7 +269,8 @@ fn speech_outcome(kind: &PlanKind) -> TurnOutcome {
     match kind {
         PlanKind::Clarify => TurnOutcome::Clarified,
         PlanKind::End => TurnOutcome::Ended,
-        // M3: Job plans are not produced yet (parsed in S3a, executed in S3b)
+        // Job plans are parsed only when jobs are allowed and are routed through gate_and_run;
+        // without a policy they are never produced, so this branch only sees answer-like speech.
         PlanKind::Answer | PlanKind::Paste | PlanKind::Command | PlanKind::Job => {
             TurnOutcome::Answered
         }
@@ -1150,7 +1151,9 @@ async fn execute_plan(
                 SessionEnd::UserEnded,
             ));
         }
-        // M3: Job plans are not produced yet (parsed in S3a, executed in S3b)
+        // Job plans are parsed only when jobs are allowed and are routed through gate_and_run.
+        // With no policy a Job plan never reaches this answer path (parsing refuses it), so it
+        // is treated as answer text here.
         PlanKind::Answer | PlanKind::Clarify | PlanKind::Job => {
             carry.journal.set(speech_outcome(&plan.kind), None);
             let outcome = speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?;
