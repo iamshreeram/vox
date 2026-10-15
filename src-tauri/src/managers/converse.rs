@@ -4,19 +4,21 @@
 
 use crate::managers::converse_ack::choose;
 use crate::managers::converse_confirm::{
-    DirFd, JobLaunch, JobStartOutcome, PinError, PolicySource, ValidatedCommand,
+    confirm_action, confirmation_question, decline_message, fingerprint_of, prepare_action,
+    ConfirmConfig, Decision, DeclineReason, DirFd, JobLaunch, JobStartOutcome, PinError,
+    PolicySource, PrepareError, PreparedAction, ValidatedCommand,
 };
 use crate::managers::converse_context::{
     compose, neutralize, note_command, note_delivery_failed, note_failed, note_incomplete,
     note_interrupted, note_paste, note_paste_failed, CommandNote,
 };
-use crate::managers::converse_local::{classify_local, LocalIntent};
+use crate::managers::converse_local::{classify_local_with, LocalIntent};
 use crate::managers::converse_plan::{
     PlanError, PlanInput, PlanKind, TurnPlan, MAX_UTTERANCE_CHARS,
 };
 use crate::managers::converse_stream::{reconcile, PlanStreamer, Reconcile};
 use crate::managers::emotion::Emotion;
-use crate::managers::job_announcer::Announcer;
+use crate::managers::job_announcer::{Announcer, LowPriorityMouth};
 use futures_util::future::{select, Either};
 use std::future::Future;
 use std::pin::Pin;
@@ -232,6 +234,16 @@ impl Journal {
         if !text.is_empty() {
             lock_or_recover(&self.0.submitted).push(text.to_string());
         }
+    }
+
+    /// Number of speech entries recorded so far.
+    fn submitted_len(&self) -> usize {
+        lock_or_recover(&self.0.submitted).len()
+    }
+
+    /// Drops speech entries recorded after `len` (keeps confirmation speech out of the transcript).
+    fn truncate_submitted(&self, len: usize) {
+        lock_or_recover(&self.0.submitted).truncate(len);
     }
 
     /// Records the outcome the turn reached, with an optional machine-generated detail.
@@ -491,6 +503,7 @@ pub fn endpoint_config(
 /// Run one conversation session to its end. Reports `Idle` exactly once on
 /// every exit path and calls `mouth.stop()` when the end is `Cancelled`.
 pub async fn run_session(deps: &Deps<'_>, cfg: &SessionConfig, cancel: CancelToken) -> SessionEnd {
+    let _conversation = ConversationGuard::enter(deps.announcer);
     let mut cancel = cancel;
     let end = run_turns(deps, cfg, &mut cancel).await;
     if end == SessionEnd::Cancelled {
@@ -498,6 +511,29 @@ pub async fn run_session(deps: &Deps<'_>, cfg: &SessionConfig, cancel: CancelTok
     }
     deps.reporter.state(SessionState::Idle);
     end
+}
+
+/// Keeps the announcer's conversation flag set for one session. Cleared on every exit path,
+/// including unwinding (DESIGN R2-6).
+struct ConversationGuard<'a> {
+    announcer: Option<&'a Announcer>,
+}
+
+impl<'a> ConversationGuard<'a> {
+    fn enter(announcer: Option<&'a Announcer>) -> Self {
+        if let Some(announcer) = announcer {
+            announcer.set_conversation_active(true);
+        }
+        ConversationGuard { announcer }
+    }
+}
+
+impl Drop for ConversationGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(announcer) = self.announcer {
+            announcer.set_conversation_active(false);
+        }
+    }
 }
 
 // Fixed spoken messages. The loop never speaks text taken from an error.
@@ -517,6 +553,8 @@ const MSG_NOT_CONFIGURED: &str = "Set up a reply backend in the speech settings 
 const MSG_PLAN_FAILED: &str = "Sorry, I couldn't work that out.";
 const MSG_DONE: &str = "Done.";
 /// Spoken instead of any model-proposed paste or command while vault context is on (DESIGN 3.6).
+/// Spoken when a gated job's settings changed between approval and dispatch (DESIGN R3-2).
+const MSG_SETTINGS_CHANGED: &str = "Settings changed, so I didn't start it.";
 const MSG_ANSWER_ONLY: &str =
     "Vault context is on, so I can only answer questions. Turn it off to dictate text or open things.";
 /// Queued once when the brain is slow (`SessionConfig::ack_after`).
@@ -1033,7 +1071,7 @@ async fn brain_turn(
     let Some(queue) = queue else {
         return match race(cancel, deps.brain.plan(input)).await {
             None => Err(SessionEnd::Cancelled),
-            Some(Ok(plan)) => execute_plan(deps, cfg, cancel, plan, carry).await,
+            Some(Ok(plan)) => gate_and_run(deps, cfg, cancel, plan, carry).await,
             Some(Err(err)) => plan_failed(deps, cfg, cancel, err, &[], &carry.journal).await,
         };
     };
@@ -1154,8 +1192,10 @@ async fn execute_plan(
     Ok(Some(summary))
 }
 
-/// M3 (S3b) stub: the single gated dispatch point. Phase A: body is `todo!()`.
-#[allow(dead_code)]
+/// The single gated dispatch point (DESIGN R2-12). Without a policy, and for every plan the
+/// gate does not cover, this is the legacy `execute_plan`. Gated and Job plans are prepared,
+/// confirmed (when the gate is active), re-checked against the approval fingerprint, and then
+/// executed from the same prepared payload.
 async fn gate_and_run(
     deps: &Deps<'_>,
     cfg: &SessionConfig,
@@ -1163,8 +1203,190 @@ async fn gate_and_run(
     plan: TurnPlan,
     carry: &mut Carry,
 ) -> Result<Option<String>, SessionEnd> {
-    let _ = (deps, cfg, cancel, plan, carry);
-    todo!()
+    let Some(policy) = deps.policy else {
+        return execute_plan(deps, cfg, cancel, plan, carry).await;
+    };
+    let gated = matches!(
+        plan.kind,
+        PlanKind::Paste | PlanKind::Command | PlanKind::Job
+    );
+    if !gated {
+        return execute_plan(deps, cfg, cancel, plan, carry).await;
+    }
+    let state = policy.current();
+    if !state.gate_active && !matches!(plan.kind, PlanKind::Job) {
+        return execute_plan(deps, cfg, cancel, plan, carry).await;
+    }
+    if cfg.answer_only && matches!(plan.kind, PlanKind::Paste | PlanKind::Command) {
+        return execute_plan(deps, cfg, cancel, plan, carry).await;
+    }
+    let prepared = match prepare_action(&plan, policy, deps.hands).await {
+        Ok(prepared) => prepared,
+        Err(PrepareError::Refused(text)) => {
+            carry.journal.set(TurnOutcome::Blocked, None);
+            into_result(speak_or_end(deps, cfg, cancel, &text, Emotion::Neutral).await)?;
+            return Ok(Some(compose(&text, "")));
+        }
+        Err(PrepareError::Unsupported) => {
+            return execute_plan(deps, cfg, cancel, plan, carry).await;
+        }
+    };
+    let fallback = Announcer::new(Arc::new(NoAnnounce));
+    let announcer = deps.announcer.unwrap_or(&fallback);
+    // R3-2: only a job is bound to the approval fingerprint. Paste and Command proceed on
+    // the user's yes even if the gate is switched off meanwhile.
+    let approved_at =
+        matches!(prepared, PreparedAction::Job { .. }).then(|| fingerprint_of(policy));
+    if state.gate_active {
+        let question = confirmation_question(&prepared);
+        let decision = ask_confirmation(deps, announcer, cancel, carry, &question).await;
+        if let Decision::Declined(reason) = &decision {
+            carry
+                .journal
+                .set(TurnOutcome::Blocked, Some("declined".to_string()));
+            let message = decline_message(reason.clone());
+            into_result(speak_or_end(deps, cfg, cancel, message, Emotion::Neutral).await)?;
+            return Ok(Some(compose(message, "")));
+        }
+        carry
+            .journal
+            .set(TurnOutcome::Acted, Some("confirmed".to_string()));
+    }
+    if approved_at.is_some_and(|approved| fingerprint_of(policy) != approved) {
+        carry.journal.set(TurnOutcome::Blocked, None);
+        into_result(speak_or_end(deps, cfg, cancel, MSG_SETTINGS_CHANGED, Emotion::Neutral).await)?;
+        return Ok(Some(compose(MSG_SETTINGS_CHANGED, "")));
+    }
+    match prepared {
+        PreparedAction::Job { launch } => {
+            if is_cancelled(cancel) {
+                return Err(SessionEnd::Cancelled);
+            }
+            let message = job_outcome_message(deps.hands.start_job(launch));
+            carry
+                .journal
+                .set(TurnOutcome::Acted, Some("job".to_string()));
+            speak_outcome(deps, cfg, cancel, &message, Emotion::Neutral).await?;
+            Ok(Some(compose(&message, "")))
+        }
+        other => dispatch_prepared(deps, cfg, cancel, other, carry).await,
+    }
+}
+
+/// Announcer stand-in used when the session has none: it never speaks queued text, so a
+/// confirmation still runs without holding anything back.
+struct NoAnnounce;
+
+impl LowPriorityMouth for NoAnnounce {
+    fn try_speak_if_idle(&self, _text: &str) -> bool {
+        false
+    }
+}
+
+/// Asks one confirmation question. Fails closed: no announcer, cancellation or a missing answer
+/// declines. The question's own speech is rolled back out of the transcript journal, so the
+/// question text and the answer are never stored (DESIGN D2).
+async fn ask_confirmation(
+    deps: &Deps<'_>,
+    announcer: &Announcer,
+    cancel: &mut CancelToken,
+    carry: &Carry,
+    question: &str,
+) -> Decision {
+    let before = carry.journal.submitted_len();
+    let cfg = ConfirmConfig::default();
+    let asked = confirm_action(deps.ears, deps.mouth, announcer, question, &cfg);
+    let decision = match race(cancel, asked).await {
+        Some(decision) => decision,
+        None => Decision::Declined(DeclineReason::Cancelled),
+    };
+    carry.journal.truncate_submitted(before);
+    decision
+}
+
+/// Executes a prepared, approved payload. Only the payload that was presented is used.
+async fn dispatch_prepared(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    prepared: PreparedAction,
+    carry: &mut Carry,
+) -> Result<Option<String>, SessionEnd> {
+    if is_cancelled(cancel) {
+        return Err(SessionEnd::Cancelled);
+    }
+    match prepared {
+        PreparedAction::Paste { text } => {
+            if deps.hands.paste_generated(&text).is_err() {
+                carry.journal.set(TurnOutcome::Failed, None);
+                into_result(
+                    speak_or_end(deps, cfg, cancel, MSG_PASTE_FAILED, Emotion::Neutral).await,
+                )?;
+                return Ok(Some(paste_failed_summary()));
+            }
+            let note = note_paste(&text);
+            carry.journal.set(
+                TurnOutcome::Dictated,
+                Some(format!("dictated {} chars", text.chars().count())),
+            );
+            carry.last_draft = Some(text);
+            speak_outcome(deps, cfg, cancel, MSG_DONE, Emotion::Neutral).await?;
+            Ok(Some(compose(MSG_DONE, &note)))
+        }
+        PreparedAction::Command { cmd } => {
+            let label = cmd.label.clone();
+            if !deps.hands.run_validated_command(cmd) {
+                carry.journal.set(TurnOutcome::Failed, None);
+                into_result(speak_or_end(deps, cfg, cancel, MSG_FAILED, Emotion::Neutral).await)?;
+                return Ok(Some(compose(
+                    "",
+                    &note_command(&label, &CommandNote::Failed),
+                )));
+            }
+            carry
+                .journal
+                .set(TurnOutcome::Acted, Some("action: command".to_string()));
+            speak_outcome(deps, cfg, cancel, MSG_DONE, Emotion::Neutral).await?;
+            Ok(Some(compose(
+                MSG_DONE,
+                &note_command(&label, &CommandNote::Done(String::new())),
+            )))
+        }
+        PreparedAction::Job { launch } => {
+            // Unreachable: `gate_and_run` handles Job before dispatch_prepared.
+            let _ = launch;
+            Err(SessionEnd::Cancelled)
+        }
+    }
+}
+
+/// Fixed spoken text for each job start outcome (DESIGN D5, D8).
+fn job_outcome_message(outcome: JobStartOutcome) -> String {
+    match outcome {
+        JobStartOutcome::Started(_) => "Started. I'll tell you when it's done.".to_string(),
+        JobStartOutcome::Busy => "A coding job is already running.".to_string(),
+        JobStartOutcome::NotConfigured => "Coding jobs aren't set up yet.".to_string(),
+        JobStartOutcome::UnknownProject => "I couldn't find that project.".to_string(),
+        JobStartOutcome::Unsupported => "Coding jobs aren't supported on this system.".to_string(),
+        JobStartOutcome::Refused(text) => text,
+    }
+}
+
+/// Speaks the background announcements queued during the last turn, in order, through the
+/// session mouth (DESIGN R2-6). Called at each turn boundary before the next listen.
+async fn speak_pending(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    announcer: Option<&Announcer>,
+) -> Option<SessionEnd> {
+    let announcer = announcer?;
+    for text in announcer.take_pending() {
+        if let Some(end) = speak_or_end(deps, cfg, cancel, &text, Emotion::Neutral).await {
+            return Some(end);
+        }
+    }
+    None
 }
 
 /// The turn loop. Returns the end; the wrapper reports Idle and stops.
@@ -1180,8 +1402,8 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
         journal: carry.journal.clone(),
     };
     let tapped = Deps {
-        policy: None,
-        announcer: None,
+        policy: outer.policy,
+        announcer: outer.announcer,
         ears: outer.ears,
         mouth: &tap,
         hands: outer.hands,
@@ -1198,6 +1420,9 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
             return SessionEnd::TurnLimit;
         }
         turns += 1;
+        if let Some(end) = speak_pending(deps, cfg, cancel, outer.announcer).await {
+            return end;
+        }
 
         deps.reporter.state(SessionState::Listening);
         let heard = match race(cancel, deps.ears.listen()).await {
@@ -1281,7 +1506,9 @@ async fn dispatch_utterance(
     carry: &mut Carry,
 ) -> Result<Option<String>, SessionEnd> {
     // Local tier: end phrases and explicit dictation.
-    match classify_local(utterance) {
+    let cancel_enabled =
+        deps.policy.is_some_and(|p| p.current().jobs_allowed) || deps.hands.has_active_job();
+    match classify_local_with(utterance, cancel_enabled) {
         LocalIntent::End => {
             carry.journal.set(TurnOutcome::Ended, None);
             return Err(after_speech(
@@ -1309,8 +1536,21 @@ async fn dispatch_utterance(
             );
             return Ok(None);
         }
-        // M3: wired in S3b
-        LocalIntent::CancelJob => {}
+        LocalIntent::CancelJob => {
+            if is_cancelled(cancel) {
+                return Err(SessionEnd::Cancelled);
+            }
+            let message = if deps.hands.cancel_job() {
+                "Cancelled the coding job."
+            } else {
+                "No coding job is running."
+            };
+            carry.journal.set(TurnOutcome::Acted, None);
+            return match speak_or_end(deps, cfg, cancel, message, Emotion::Neutral).await {
+                Some(end) => Err(end),
+                None => Ok(None),
+            };
+        }
         LocalIntent::None => {}
     }
 
