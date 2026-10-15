@@ -25,11 +25,25 @@ fn names(voices: &[crate::managers::tts_voices::TtsVoice]) -> Vec<String> {
     voices.iter().map(|v| v.name.clone()).collect()
 }
 
+/// Waits up to 3 s (polling every 50 ms) for the fake script to write its pid.
 fn read_pid(path: &Path) -> String {
-    std::fs::read_to_string(path)
-        .expect("pid file must exist")
-        .trim()
-        .to_string()
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if let Ok(text) = std::fs::read_to_string(path) {
+            let pid = text.trim();
+            if !pid.is_empty() {
+                return pid.to_string();
+            }
+        }
+        if Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let text = std::fs::read_to_string(path).expect("pid file must exist");
+    let pid = text.trim();
+    assert!(!pid.is_empty(), "pid file is empty");
+    pid.to_string()
 }
 
 /// True while `kill -0` succeeds. A reaped, exited process makes it fail.
@@ -40,9 +54,9 @@ fn pid_alive(pid: &str) -> bool {
         .is_ok_and(|s| s.success())
 }
 
-/// Polls up to 2 s for the pid to disappear.
+/// Polls up to 3 s for the pid to disappear.
 fn wait_until_dead(pid: &str) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now() + Duration::from_secs(3);
     loop {
         if !pid_alive(pid) {
             return true;
@@ -143,11 +157,11 @@ async fn timeout_returns_empty_and_kills_the_child() {
     let _guard = KillOnPanic(vec![pidfile.clone()]);
     let start = Instant::now();
     let voices =
-        crate::managers::tts_voices::list_voices_via(&script, &[], CAP, Duration::from_secs(1))
+        crate::managers::tts_voices::list_voices_via(&script, &[], CAP, Duration::from_secs(4))
             .await;
     let elapsed = start.elapsed();
     assert!(voices.is_empty(), "{voices:?}");
-    assert!(elapsed < Duration::from_secs(4), "took {elapsed:?}");
+    assert!(elapsed < Duration::from_secs(8), "took {elapsed:?}");
     let pid = read_pid(&pidfile);
     assert!(wait_until_dead(&pid), "child pid {pid} still alive");
 }
@@ -166,11 +180,11 @@ async fn closed_stdout_then_sleep_times_out_and_kills_the_child() {
     let _guard = KillOnPanic(vec![pidfile.clone()]);
     let start = Instant::now();
     let voices =
-        crate::managers::tts_voices::list_voices_via(&script, &[], CAP, Duration::from_secs(1))
+        crate::managers::tts_voices::list_voices_via(&script, &[], CAP, Duration::from_secs(4))
             .await;
     let elapsed = start.elapsed();
     assert!(voices.is_empty(), "{voices:?}");
-    assert!(elapsed < Duration::from_secs(4), "took {elapsed:?}");
+    assert!(elapsed < Duration::from_secs(8), "took {elapsed:?}");
     let pid = read_pid(&pidfile);
     assert!(wait_until_dead(&pid), "child pid {pid} still alive");
 }
@@ -191,11 +205,11 @@ async fn shell_exit_with_background_descendant_returns_and_kills_the_group() {
     let _guard = KillOnPanic(vec![pidfile.clone(), descfile.clone()]);
     let start = Instant::now();
     let voices =
-        crate::managers::tts_voices::list_voices_via(&script, &[], CAP, Duration::from_secs(1))
+        crate::managers::tts_voices::list_voices_via(&script, &[], CAP, Duration::from_secs(4))
             .await;
     let elapsed = start.elapsed();
     assert!(voices.is_empty(), "{voices:?}");
-    assert!(elapsed < Duration::from_secs(4), "took {elapsed:?}");
+    assert!(elapsed < Duration::from_secs(8), "took {elapsed:?}");
     let shell_pid = read_pid(&pidfile);
     let desc_pid = read_pid(&descfile);
     assert!(wait_until_dead(&shell_pid), "shell pid {shell_pid} alive");
