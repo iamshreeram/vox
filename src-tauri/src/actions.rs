@@ -474,6 +474,25 @@ pub(crate) fn model_command_core(
     }
 }
 
+/// M3 S3c-1 (Phase A stub): validates a model-proposed command exactly as
+/// `model_command_core` would accept it. `Some` only when the legacy path would execute.
+#[allow(dead_code, unused_variables)]
+pub(crate) fn validate_model_command(
+    phrase: &str,
+    voice_commands_enabled: bool,
+    media: &dyn MediaHook,
+    router: &dyn PhraseRouter,
+) -> Option<CommandAction> {
+    todo!()
+}
+
+/// M3 S3c-1 (Phase A stub): executes an already validated command through `exec`.
+/// Returns the same success flag as the legacy `run_model_command` path.
+#[allow(dead_code, unused_variables)]
+pub(crate) fn run_validated_command(action: &CommandAction, exec: &dyn ActionExecutor) -> bool {
+    todo!()
+}
+
 /// Production wrapper for `user_phrase_core`. Blocking (media can take seconds).
 pub(crate) fn run_user_phrase_blocking(
     app: &AppHandle,
@@ -2448,3 +2467,7 @@ mod dictation_guard_tests {
         assert!(acquire_dictation_lease(&gate).is_ok());
     }
 }
+
+#[cfg(test)]
+#[path = "actions_validate_tests.rs"]
+mod actions_validate_tests;

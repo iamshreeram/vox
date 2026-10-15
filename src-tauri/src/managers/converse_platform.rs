@@ -1153,3 +1153,100 @@ fn neutralize_reference_tags(text: &str) -> String {
 #[cfg(test)]
 #[path = "converse_tool_tests.rs"]
 mod converse_tool_tests;
+
+/// M3 S3c-1 (Phase A stub): the pin table. Resolves `name` through the M2 resolver and
+/// returns the pinned directory as a `DirFd` (same inode as the resolved project).
+#[allow(dead_code, unused_variables)]
+pub(crate) fn pin_project_in(
+    resolver: &crate::managers::agent_tools::project::ProjectResolver,
+    name: &str,
+) -> Result<crate::managers::converse_confirm::DirFd, crate::managers::converse_confirm::PinError> {
+    todo!()
+}
+
+/// M3 S3c-1 (Phase A stub): maps a job start error to the outcome the planner speaks.
+#[allow(dead_code, unused_variables)]
+pub(crate) fn map_job_error(
+    result: Result<u64, crate::managers::agent_jobs::JobError>,
+) -> crate::managers::converse_confirm::JobStartOutcome {
+    todo!()
+}
+
+/// M3 S3c-1 (Phase A stub): the production `PolicySource` over a settings getter.
+#[allow(dead_code)]
+pub struct SettingsPolicy {
+    settings: Arc<dyn Fn() -> AppSettings + Send + Sync>,
+}
+
+impl SettingsPolicy {
+    /// Builds the policy over a settings getter (Phase A stub).
+    #[allow(unused_variables)]
+    pub fn new(settings: Arc<dyn Fn() -> AppSettings + Send + Sync>) -> Self {
+        todo!()
+    }
+}
+
+impl crate::managers::converse_confirm::PolicySource for SettingsPolicy {
+    fn current(&self) -> crate::managers::converse_confirm::ActionPolicy {
+        todo!()
+    }
+    fn launch_config(&self) -> Option<crate::managers::converse_confirm::LaunchConfig> {
+        todo!()
+    }
+}
+
+/// M3 S3c-1 (Phase A stub): what `RealHands::start_job` does with the shared manager.
+/// `None` manager => Unsupported; otherwise the start result is mapped by `map_job_error`.
+#[allow(dead_code, unused_variables)]
+pub(crate) fn start_job_on(
+    manager: Option<&Arc<crate::managers::agent_jobs::JobManager>>,
+    launch: crate::managers::converse_confirm::JobLaunch,
+    observer: Arc<dyn crate::managers::agent_jobs::JobObserver>,
+) -> crate::managers::converse_confirm::JobStartOutcome {
+    todo!()
+}
+
+/// M3 S3c-1 (Phase A stub): `RealHands::cancel_job` over the shared manager (false without one).
+#[allow(dead_code, unused_variables)]
+pub(crate) fn cancel_job_on(
+    manager: Option<&Arc<crate::managers::agent_jobs::JobManager>>,
+) -> bool {
+    todo!()
+}
+
+/// M3 S3c-1 (Phase A stub): `RealHands::has_active_job` over the shared manager (false without one).
+#[allow(dead_code, unused_variables)]
+pub(crate) fn has_active_job_on(
+    manager: Option<&Arc<crate::managers::agent_jobs::JobManager>>,
+) -> bool {
+    todo!()
+}
+
+/// M3 S3c-1 (Phase A stub): the planner prompt the brain sends. The job addendum is
+/// appended ONLY when `jobs_allowed`; otherwise the prompt is byte-identical to
+/// `build_plan_prompt`.
+#[allow(dead_code, unused_variables)]
+pub(crate) fn planner_prompt_for(
+    input: &PlanInput,
+    jobs_allowed: bool,
+) -> crate::managers::converse_plan::PlanPrompt {
+    todo!()
+}
+
+/// M3 S3c-1 (Phase A stub): the parse call the brain makes, with the policy read at parse time.
+#[allow(dead_code, unused_variables)]
+pub(crate) fn parse_with_policy(
+    raw: &str,
+    sent_prompt: &str,
+    policy: &dyn crate::managers::converse_confirm::PolicySource,
+) -> Result<TurnPlan, PlanError> {
+    todo!()
+}
+
+#[cfg(test)]
+#[path = "converse_platform_jobs_tests.rs"]
+mod converse_platform_jobs_tests;
+
+#[cfg(test)]
+#[path = "converse_platform_policy_tests.rs"]
+mod converse_platform_policy_tests;

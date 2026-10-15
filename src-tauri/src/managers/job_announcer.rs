@@ -29,6 +29,25 @@ pub trait LowPriorityMouth: Send + Sync {
     fn try_speak_if_idle(&self, text: &str) -> bool;
 }
 
+/// M3 S3c-1: `LowPriorityMouth` backed by the app's TTS manager (Phase A stub).
+#[allow(dead_code)]
+pub struct TtsLowPriorityMouth(pub Arc<crate::managers::tts::TtsManager>);
+
+impl TtsLowPriorityMouth {
+    /// Trait-object constructor (Phase A stub).
+    #[allow(unused_variables)]
+    pub fn shared(tts: Arc<crate::managers::tts::TtsManager>) -> Arc<dyn LowPriorityMouth> {
+        todo!()
+    }
+}
+
+impl LowPriorityMouth for TtsLowPriorityMouth {
+    #[allow(unused_variables)]
+    fn try_speak_if_idle(&self, text: &str) -> bool {
+        todo!()
+    }
+}
+
 /// Kind of a background announcement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnnounceKind {

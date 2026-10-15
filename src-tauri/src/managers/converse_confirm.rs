@@ -465,6 +465,7 @@ pub fn fingerprint_of(policy: &dyn PolicySource) -> ApprovalFingerprint {
 }
 
 /// Why a project could not be pinned.
+#[derive(Debug)]
 pub enum PinError {
     /// The name matched no configured project.
     Unknown,
