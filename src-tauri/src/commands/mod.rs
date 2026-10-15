@@ -12,6 +12,7 @@ pub mod realtime;
 pub mod source_update;
 pub mod transcription;
 pub mod tts_composer;
+pub mod tts_voices;
 pub mod voice_shortcuts;
 pub mod wakeword;
 

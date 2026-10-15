@@ -63,6 +63,7 @@ pub mod tts;
 #[cfg(target_os = "macos")]
 pub mod tts_av;
 pub mod tts_queue;
+pub mod tts_voices;
 pub mod vault;
 pub mod vault_context;
 #[cfg(test)]
