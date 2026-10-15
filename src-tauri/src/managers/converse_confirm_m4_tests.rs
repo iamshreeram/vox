@@ -191,7 +191,10 @@ async fn m4_prepare_selected_agent_stores_selection_and_current_flag() {
     let action = prepared_of(prepare_action(&plan, &pol, &M4Hands).await);
     match action {
         PreparedAction::Job { launch } => {
-            assert_eq!(launch.selection, selection(Some("coder-one"), JobMode::Task));
+            assert_eq!(
+                launch.selection,
+                selection(Some("coder-one"), JobMode::Task)
+            );
             assert_eq!(
                 launch.config.agent_flag.as_deref(),
                 Some("--agent-name"),

@@ -187,7 +187,11 @@ fn m4_non_string_agent_values_are_refused() {
 
 #[test]
 fn m4_agent_with_space_slash_or_nul_is_refused() {
-    let pol = policy(true, false, &["coder one", "coder/one", "coder\u{0}one", "../x"]);
+    let pol = policy(
+        true,
+        false,
+        &["coder one", "coder/one", "coder\u{0}one", "../x"],
+    );
     for name in ["coder one", "coder/one", "coder\u{0}one", "../x"] {
         let raw = job_with(json!({ "agent": name }));
         assert_not_a_job(&raw, &pol);
@@ -341,7 +345,11 @@ fn m4_prompt_with_agents_and_ask_appends_block_after_addendum() {
     );
     let extra = &got.system[prefix.len()..];
     assert!(!extra.trim().is_empty(), "an extra block must be appended");
-    assert_eq!(got.system.matches("coder-one").count(), 1, "name listed once");
+    assert_eq!(
+        got.system.matches("coder-one").count(),
+        1,
+        "name listed once"
+    );
     assert_eq!(
         got.system.matches("Other-Agent").count(),
         1,
