@@ -235,7 +235,8 @@ impl Owner {
             }
             rec.snapshot()
         };
-        self.delivery.offer_progress(Arc::clone(&self.observer), snap);
+        self.delivery
+            .offer_progress(Arc::clone(&self.observer), snap);
         self.next_progress = now + self.progress_interval;
     }
 
@@ -256,7 +257,9 @@ impl Owner {
 }
 
 fn lock_record(record: &Mutex<Record>) -> MutexGuard<'_, Record> {
-    record.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    record
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Maps the trigger and the reaped status to the single terminal state.

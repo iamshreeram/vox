@@ -159,7 +159,9 @@ pub struct JobManager {
 }
 
 fn lock_state(state: &Mutex<State>) -> MutexGuard<'_, State> {
-    state.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl JobManager {
@@ -252,11 +254,7 @@ impl JobManager {
             .name("agent-job-owner".to_string())
             .spawn(move || owner.run())
             .map_err(|_| JobError::SpawnFailed)?;
-        st.job = Some(Active {
-            tx,
-            record,
-            done,
-        });
+        st.job = Some(Active { tx, record, done });
         Ok(id)
     }
 
@@ -312,7 +310,9 @@ fn lock_done(done: &Mutex<bool>) -> MutexGuard<'_, bool> {
 }
 
 fn lock_record(record: &Mutex<Record>) -> MutexGuard<'_, Record> {
-    record.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    record
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Result of the exit cleanup.
