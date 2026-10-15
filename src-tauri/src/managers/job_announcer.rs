@@ -90,6 +90,36 @@ struct Entry {
     guard: Option<SpeechGuard>,
 }
 
+/// One queued announcement taken at a turn boundary, with its summary guard (M4 S8).
+/// Call `resolve` immediately before speaking the item so the guard is checked at that
+/// moment, not when the item was taken.
+#[allow(dead_code)] // wired in S8 (converse turn boundary)
+#[derive(Clone)]
+pub struct PendingSpeech {
+    /// Summary text, or the ordinary text for unguarded entries.
+    pub text: String,
+    /// Summary guard of a guarded entry (`None` = ordinary text).
+    pub guard: Option<SpeechGuard>,
+}
+
+impl std::fmt::Debug for PendingSpeech {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingSpeech")
+            .field("text", &self.text)
+            .field("guarded", &self.guard.is_some())
+            .finish()
+    }
+}
+
+impl PendingSpeech {
+    /// Returns the text to speak now: the summary while its guard is valid, otherwise
+    /// the guard's fallback. Unguarded items return their text unchanged.
+    #[allow(dead_code)] // wired in S8 (converse turn boundary)
+    pub fn resolve(&self) -> String {
+        todo!("M4 S8")
+    }
+}
+
 /// Copy of the front entry taken out of the queue for one speech attempt.
 struct Claim {
     seq: u64,
@@ -195,6 +225,13 @@ impl Announcer {
         }
         st.pending = kept;
         taken
+    }
+
+    /// Removes and returns the queued announcements as `PendingSpeech` items (M4 S8).
+    /// Same selection and order as `take_pending`; guarded items keep their guard.
+    #[allow(dead_code)] // wired in S8 (converse turn boundary)
+    pub fn take_pending_items(&self) -> Vec<PendingSpeech> {
+        todo!("M4 S8")
     }
 
     /// Speaks queued announcements now that the speaker is idle.
@@ -372,3 +409,7 @@ fn wait_for<'a>(shared: &'a Shared, st: MutexGuard<'a, State>) -> MutexGuard<'a,
 #[cfg(test)]
 #[path = "job_announcer_tests.rs"]
 mod job_announcer_tests;
+
+#[cfg(test)]
+#[path = "job_turnboundary_m4_tests.rs"]
+mod job_turnboundary_m4_tests;
