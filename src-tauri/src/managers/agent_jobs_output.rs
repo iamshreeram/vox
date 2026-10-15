@@ -79,6 +79,29 @@ impl TailRing {
     }
 }
 
+/// M4: bounded capture of the sanitized, redacted lines of an ask job. Keeps the
+/// last 8192 bytes of the lines joined with '\n'. Stub: bodies are todo!() until S2 implements them.
+#[allow(dead_code)] // wired in a later M4 step
+pub(super) struct ResultCapture;
+
+#[allow(dead_code)] // wired in a later M4 step
+impl ResultCapture {
+    /// Creates an empty capture.
+    pub(super) fn new() -> Self {
+        todo!("M4 S2")
+    }
+
+    /// Adds one already sanitized and redacted line (no newline).
+    pub(super) fn push_line(&mut self, _line: &str) {
+        todo!("M4 S2")
+    }
+
+    /// Returns the captured text (last 8192 bytes, char-boundary safe).
+    pub(super) fn text(&self) -> String {
+        todo!("M4 S2")
+    }
+}
+
 /// Frames one output stream into sanitised, redacted, display-truncated lines.
 pub struct OutputPipeline {
     ring: Arc<Mutex<TailRing>>,

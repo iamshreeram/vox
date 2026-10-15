@@ -380,3 +380,7 @@ mod agent_jobs_exit_tests;
 #[cfg(test)]
 #[path = "agent_jobs_nonunix_tests.rs"]
 mod agent_jobs_nonunix_tests;
+
+#[cfg(test)]
+#[path = "agent_jobs_m4_tests.rs"]
+mod agent_jobs_m4_tests;
