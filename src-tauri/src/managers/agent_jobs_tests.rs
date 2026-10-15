@@ -543,9 +543,10 @@ fn timeout_kills_group_and_records_timed_out() {
     let (bin, leader, grandchild) = group_script(tmp.path());
     let mgr = JobManager::new();
     let mut s = spec(tmp.path(), &bin, "task");
-    // Host fact: a fresh sh script needs ~450 ms before its first line runs, so
-    // the timeout must leave room for the pid files to be written first.
-    s.launch.config.timeout = Duration::from_secs(2);
+    // Host fact: a fresh sh script needs ~450 ms before its first line runs, and
+    // first exec is security-scanned by the OS, so under parallel load the scans
+    // queue. The timeout must leave room for the pid files to be written first.
+    s.launch.config.timeout = Duration::from_secs(12);
     must_start(&mgr, s, Arc::new(RecordingObserver::default()));
     let leader_pid = read_pid_file(&leader);
     let gc_pid = read_pid_file(&grandchild);
@@ -553,7 +554,7 @@ fn timeout_kills_group_and_records_timed_out() {
         pids: vec![gc_pid],
         pgids: vec![leader_pid],
     };
-    let snap = wait_terminal(&mgr, Duration::from_secs(15)).expect("snapshot");
+    let snap = wait_terminal(&mgr, Duration::from_secs(30)).expect("snapshot");
     assert!(matches!(snap.state, JobState::TimedOut));
     assert!(wait_until(Duration::from_secs(5), || !pid_alive(gc_pid)));
 }
@@ -565,8 +566,8 @@ fn cancel_and_timeout_together_record_one_terminal_state() {
     let mgr = JobManager::new();
     let obs = Arc::new(RecordingObserver::default());
     let mut s = spec(tmp.path(), &bin, "task");
-    // 2 s timeout (see the host-timing note in timeout_kills_group_and_records_timed_out).
-    s.launch.config.timeout = Duration::from_secs(2);
+    // Load-tolerant 12 s timeout (see timeout_kills_group_and_records_timed_out).
+    s.launch.config.timeout = Duration::from_secs(12);
     let started = Instant::now();
     must_start(&mgr, s, obs.clone());
     let leader_pid = read_pid_file(&leader);
@@ -575,13 +576,13 @@ fn cancel_and_timeout_together_record_one_terminal_state() {
         pids: vec![gc_pid],
         pgids: vec![leader_pid],
     };
-    // Call cancel right around the moment the timeout fires.
-    let target = Duration::from_millis(1950);
+    // Call cancel right around the moment the timeout fires (timeout minus 50 ms).
+    let target = Duration::from_millis(11_950);
     if let Some(remaining) = target.checked_sub(started.elapsed()) {
         std::thread::sleep(remaining);
     }
     let _ = mgr.cancel();
-    let snap = wait_terminal(&mgr, Duration::from_secs(15)).expect("snapshot");
+    let snap = wait_terminal(&mgr, Duration::from_secs(30)).expect("snapshot");
     assert!(matches!(
         snap.state,
         JobState::Cancelled | JobState::TimedOut
