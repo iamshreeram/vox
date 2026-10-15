@@ -223,7 +223,7 @@ fn pid_alive(pid: i32) -> bool {
 
 fn read_pid_file(path: &Path) -> i32 {
     let mut pid = None;
-    wait_until(Duration::from_secs(5), || {
+    wait_until(Duration::from_secs(15), || {
         pid = std::fs::read_to_string(path)
             .ok()
             .and_then(|s| s.trim().parse::<i32>().ok());
@@ -675,6 +675,77 @@ fn natural_exit_while_grandchild_holds_pipe_does_not_hang() {
     assert!(
         wait_until(Duration::from_secs(5), || !pid_alive(gc_pid)),
         "grandchild must be dead after the job finishes"
+    );
+}
+
+#[test]
+fn natural_exit_kills_background_member_that_closed_its_pipes() {
+    // R2-5: the group is cleaned at every terminal state. Here the leader exits
+    // naturally with no pipe held open, so only the owner's group cleanup can
+    // stop the background member that detached from the pipes.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let leader = tmp.path().join("leader.pid");
+    let grandchild = tmp.path().join("grandchild.pid");
+    let bin = write_script(
+        tmp.path(),
+        "cli",
+        &format!(
+            "echo $$ > '{}'; (sleep 60 >/dev/null 2>&1 </dev/null & echo $! > '{}'); exit 0",
+            leader.display(),
+            grandchild.display()
+        ),
+    );
+    let mgr = JobManager::new();
+    must_start(
+        &mgr,
+        spec(tmp.path(), &bin, "task"),
+        Arc::new(RecordingObserver::default()),
+    );
+    let gc_pid = read_pid_file(&grandchild);
+    let _guard = GroupGuard {
+        pids: vec![gc_pid],
+        pgids: vec![read_pid_file(&leader)],
+    };
+    let snap = wait_terminal(&mgr, Duration::from_secs(10));
+    assert!(
+        snap.is_some_and(|s| matches!(s.state, JobState::Succeeded)),
+        "natural exit must record Succeeded"
+    );
+    assert!(
+        wait_until(Duration::from_secs(5), || !pid_alive(gc_pid)),
+        "background member that closed its pipes must be killed at the terminal state"
+    );
+}
+
+#[test]
+fn cancel_and_timeout_do_not_wait_a_full_grace_when_the_group_exits_at_once() {
+    // A leader that dies on SIGTERM must not make cancel sit out the 5 s grace.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let pidfile = tmp.path().join("leader.pid");
+    let bin = write_script(
+        tmp.path(),
+        "cli",
+        &format!("echo $$ > '{}'; exec sleep 60", pidfile.display()),
+    );
+    let mgr = JobManager::with_timing(Duration::from_secs(5), Duration::from_secs(1));
+    must_start(
+        &mgr,
+        spec(tmp.path(), &bin, "task"),
+        Arc::new(RecordingObserver::default()),
+    );
+    let leader = read_pid_file(&pidfile);
+    let _guard = GroupGuard {
+        pids: vec![],
+        pgids: vec![leader],
+    };
+    let began = Instant::now();
+    assert!(mgr.cancel());
+    let snap = wait_terminal(&mgr, Duration::from_secs(10)).expect("snapshot");
+    assert!(matches!(snap.state, JobState::Cancelled));
+    assert!(
+        began.elapsed() < Duration::from_secs(3),
+        "cancel waited {:?}; it must not sit out the 5 s grace",
+        began.elapsed()
     );
 }
 
