@@ -1,5 +1,6 @@
 pub mod agent_bridge;
 pub mod agent_jobs;
+pub mod agent_jobs_output;
 pub mod agent_tools;
 pub mod ambient;
 pub mod ambient_listener;
