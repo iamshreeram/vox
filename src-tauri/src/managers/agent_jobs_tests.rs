@@ -543,7 +543,9 @@ fn timeout_kills_group_and_records_timed_out() {
     let (bin, leader, grandchild) = group_script(tmp.path());
     let mgr = JobManager::new();
     let mut s = spec(tmp.path(), &bin, "task");
-    s.launch.config.timeout = Duration::from_millis(300);
+    // Host fact: a fresh sh script needs ~450 ms before its first line runs, so
+    // the timeout must leave room for the pid files to be written first.
+    s.launch.config.timeout = Duration::from_secs(2);
     must_start(&mgr, s, Arc::new(RecordingObserver::default()));
     let leader_pid = read_pid_file(&leader);
     let gc_pid = read_pid_file(&grandchild);
@@ -551,7 +553,7 @@ fn timeout_kills_group_and_records_timed_out() {
         pids: vec![gc_pid],
         pgids: vec![leader_pid],
     };
-    let snap = wait_terminal(&mgr, Duration::from_secs(10)).expect("snapshot");
+    let snap = wait_terminal(&mgr, Duration::from_secs(15)).expect("snapshot");
     assert!(matches!(snap.state, JobState::TimedOut));
     assert!(wait_until(Duration::from_secs(5), || !pid_alive(gc_pid)));
 }
@@ -563,7 +565,9 @@ fn cancel_and_timeout_together_record_one_terminal_state() {
     let mgr = JobManager::new();
     let obs = Arc::new(RecordingObserver::default());
     let mut s = spec(tmp.path(), &bin, "task");
-    s.launch.config.timeout = Duration::from_millis(50);
+    // 2 s timeout (see the host-timing note in timeout_kills_group_and_records_timed_out).
+    s.launch.config.timeout = Duration::from_secs(2);
+    let started = Instant::now();
     must_start(&mgr, s, obs.clone());
     let leader_pid = read_pid_file(&leader);
     let gc_pid = read_pid_file(&grandchild);
@@ -571,13 +575,22 @@ fn cancel_and_timeout_together_record_one_terminal_state() {
         pids: vec![gc_pid],
         pgids: vec![leader_pid],
     };
+    // Call cancel right around the moment the timeout fires.
+    let target = Duration::from_millis(1950);
+    if let Some(remaining) = target.checked_sub(started.elapsed()) {
+        std::thread::sleep(remaining);
+    }
     let _ = mgr.cancel();
-    let snap = wait_terminal(&mgr, Duration::from_secs(10)).expect("snapshot");
+    let snap = wait_terminal(&mgr, Duration::from_secs(15)).expect("snapshot");
     assert!(matches!(
         snap.state,
         JobState::Cancelled | JobState::TimedOut
     ));
     assert!(wait_until(Duration::from_secs(5), || obs.finish_count() == 1));
+    assert!(
+        wait_until(Duration::from_secs(5), || !pid_alive(gc_pid)),
+        "group must be dead after the single terminal state"
+    );
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(
         obs.finish_count(),
@@ -623,7 +636,19 @@ fn sigterm_ignoring_child_is_killed_after_grace() {
 #[test]
 fn natural_exit_while_grandchild_holds_pipe_does_not_hang() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let (bin, leader, grandchild) = group_script(tmp.path());
+    let leader = tmp.path().join("leader.pid");
+    let grandchild = tmp.path().join("grandchild.pid");
+    // The leader exits at once; the backgrounded sleep inherits the stdout and
+    // stderr pipes and keeps them open.
+    let bin = write_script(
+        tmp.path(),
+        "cli",
+        &format!(
+            "echo $$ > '{}'; sleep 60 & echo $! > '{}'; exit 0",
+            leader.display(),
+            grandchild.display()
+        ),
+    );
     let mgr = JobManager::new();
     let started = Instant::now();
     must_start(
@@ -631,20 +656,25 @@ fn natural_exit_while_grandchild_holds_pipe_does_not_hang() {
         spec(tmp.path(), &bin, "task"),
         Arc::new(RecordingObserver::default()),
     );
+    let gc_pid = read_pid_file(&grandchild);
     let _guard = GroupGuard {
-        pids: vec![read_pid_file(&grandchild)],
+        pids: vec![gc_pid],
         pgids: vec![read_pid_file(&leader)],
     };
-    // The leader exits only when the grandchild exits; with sleep 60 that would
-    // be a hang, so the manager must cut the group off and report a terminal state.
-    let snap = wait_terminal(&mgr, Duration::from_secs(10));
+    // The manager must terminate leftover group members once the leader exits,
+    // then drain, and report a terminal state. A hang here is a failure.
+    let snap = wait_terminal(&mgr, Duration::from_secs(8));
     assert!(
-        snap.is_some(),
-        "a terminal state must be reached, not a hang"
+        snap.is_some_and(|s| matches!(s.state, JobState::Succeeded)),
+        "a Succeeded terminal state must be reached within 8 s, not a hang"
     );
     assert!(
         started.elapsed() < Duration::from_secs(8),
         "drain deadline respected"
+    );
+    assert!(
+        wait_until(Duration::from_secs(5), || !pid_alive(gc_pid)),
+        "grandchild must be dead after the job finishes"
     );
 }
 
@@ -724,16 +754,18 @@ fn progress_is_throttled_and_finish_is_last_and_once() {
     s.progress_interval = Duration::from_millis(100);
     let mgr = JobManager::new();
     let obs = Arc::new(RecordingObserver::default());
+    let started = Instant::now();
     must_start(&mgr, s, obs.clone());
     wait_terminal(&mgr, Duration::from_secs(10)).expect("snapshot");
     assert!(wait_until(Duration::from_secs(5), || obs.finish_count() == 1));
+    let wall_ms = started.elapsed().as_millis();
     assert!(
         obs.progress_count() >= 1,
         "progress after the first interval"
     );
     assert!(
-        obs.progress_count() <= 8,
-        "progress at most once per 100 ms interval over ~0.7 s"
+        obs.progress_count() as u128 <= wall_ms / 100 + 1,
+        "progress at most once per 100 ms interval of measured wall time"
     );
     assert_eq!(obs.last_kind(), Some("finish"), "no progress after finish");
 }
