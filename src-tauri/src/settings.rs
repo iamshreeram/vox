@@ -868,10 +868,42 @@ pub struct AppSettings {
     /// Absolute folders whose immediate subfolders the project tools may read.
     #[serde(default)]
     pub agent_project_roots: Vec<String>,
+    // ---- Confirmation and coding jobs (M3, DESIGN Rev 5 D1). Defaults keep both off.
+    /// Ask aloud before a model-planned paste, command or job runs (when an agent feature is on).
+    #[serde(default = "default_agent_confirm_actions")]
+    pub agent_confirm_actions: bool,
+    /// Master switch for coding jobs run through the configured coding CLI.
+    #[serde(default)]
+    pub agent_jobs_enabled: bool,
+    /// Hard time limit for one coding job, in minutes (clamped to 1..=120 on write and use).
+    #[serde(default = "default_agent_jobs_timeout_minutes")]
+    pub agent_jobs_timeout_minutes: u32,
 }
 
 fn default_agent_tools_guard_actions() -> bool {
     true
+}
+
+fn default_agent_confirm_actions() -> bool {
+    true
+}
+
+fn default_agent_jobs_timeout_minutes() -> u32 {
+    30
+}
+
+/// Smallest accepted coding job time limit, in minutes.
+pub const MIN_JOB_TIMEOUT_MINUTES: u32 = 1;
+
+/// Largest accepted coding job time limit, in minutes.
+pub const MAX_JOB_TIMEOUT_MINUTES: u32 = 120;
+
+/// Clamps a requested coding job time limit to `1..=120` minutes.
+///
+/// Zero rises to the minimum, and anything above the maximum (including `u32::MAX`) falls to
+/// the maximum.
+pub fn clamp_job_timeout_minutes(minutes: u32) -> u32 {
+    minutes.clamp(MIN_JOB_TIMEOUT_MINUTES, MAX_JOB_TIMEOUT_MINUTES)
 }
 
 fn default_agent_bridge_prompt_flag() -> String {
@@ -1477,6 +1509,9 @@ pub fn get_default_settings() -> AppSettings {
         agent_tools_enabled: false,
         agent_tools_guard_actions: true,
         agent_project_roots: Vec::new(),
+        agent_confirm_actions: true,
+        agent_jobs_enabled: false,
+        agent_jobs_timeout_minutes: 30,
     }
 }
 
@@ -2766,5 +2801,59 @@ mod tests {
         assert!(!loaded.agent_tools_enabled);
         assert!(loaded.agent_tools_guard_actions);
         assert!(loaded.agent_project_roots.is_empty());
+    }
+
+    // ---- M3-0: confirmation and coding job settings (DESIGN Rev 5 D1) -------
+
+    #[test]
+    fn m3_job_settings_defaults() {
+        let settings = get_default_settings();
+        assert!(
+            settings.agent_confirm_actions,
+            "confirmation must default ON"
+        );
+        assert!(!settings.agent_jobs_enabled, "coding jobs must default OFF");
+        assert_eq!(settings.agent_jobs_timeout_minutes, 30);
+    }
+
+    #[test]
+    fn m3_job_settings_default_when_missing_from_old_settings_json() {
+        let mut value = serde_json::to_value(get_default_settings()).unwrap();
+        let obj = value.as_object_mut().unwrap();
+        for key in [
+            "agent_confirm_actions",
+            "agent_jobs_enabled",
+            "agent_jobs_timeout_minutes",
+        ] {
+            assert!(obj.remove(key).is_some(), "{key} must be serialized");
+        }
+        let loaded: AppSettings =
+            serde_json::from_value(value).expect("old settings JSON must deserialize");
+        assert!(loaded.agent_confirm_actions);
+        assert!(!loaded.agent_jobs_enabled);
+        assert_eq!(loaded.agent_jobs_timeout_minutes, 30);
+    }
+
+    #[test]
+    fn m3_job_clamp_table() {
+        assert_eq!(clamp_job_timeout_minutes(0), 1);
+        assert_eq!(clamp_job_timeout_minutes(1), 1);
+        assert_eq!(clamp_job_timeout_minutes(30), 30);
+        assert_eq!(clamp_job_timeout_minutes(120), 120);
+        assert_eq!(clamp_job_timeout_minutes(121), 120);
+        assert_eq!(clamp_job_timeout_minutes(u32::MAX), 120);
+    }
+
+    #[test]
+    fn m3_job_settings_round_trip_custom_values() {
+        let mut settings = get_default_settings();
+        settings.agent_confirm_actions = false;
+        settings.agent_jobs_enabled = true;
+        settings.agent_jobs_timeout_minutes = 75;
+        let json = serde_json::to_string(&settings).unwrap();
+        let loaded: AppSettings = serde_json::from_str(&json).unwrap();
+        assert!(!loaded.agent_confirm_actions);
+        assert!(loaded.agent_jobs_enabled);
+        assert_eq!(loaded.agent_jobs_timeout_minutes, 75);
     }
 }
