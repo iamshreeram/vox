@@ -919,6 +919,24 @@ pub fn clamp_job_timeout_minutes(minutes: u32) -> u32 {
     minutes.clamp(MIN_JOB_TIMEOUT_MINUTES, MAX_JOB_TIMEOUT_MINUTES)
 }
 
+/// Cleans a raw coding agent allowlist (M4 S1b stub; the implementer replaces this body).
+pub fn clean_agent_names(input: Vec<String>) -> Vec<String> {
+    let _ = input;
+    todo!("M4 S1b")
+}
+
+/// Reports whether `flag` is a usable agent flag (M4 S1b stub; the implementer replaces this body).
+pub fn is_valid_agent_flag(flag: &str, prompt_flag: &str) -> bool {
+    let _ = (flag, prompt_flag);
+    todo!("M4 S1b")
+}
+
+/// Returns the agent flag to pass to the coding CLI (M4 S1b stub; the implementer replaces this body).
+pub fn effective_agent_flag(s: &AppSettings) -> String {
+    let _ = s;
+    todo!("M4 S1b")
+}
+
 fn default_agent_bridge_prompt_flag() -> String {
     "-p".to_string()
 }

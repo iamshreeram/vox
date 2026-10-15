@@ -87,6 +87,24 @@ pub fn change_agent_jobs_ask_enabled(app: AppHandle, enabled: bool) -> Result<()
     Ok(())
 }
 
+/// Stores the cleaned agent allowlist and returns it (M4 S1b stub; the implementer replaces this body).
+pub(crate) fn apply_agents_change(s: &mut AppSettings, input: Vec<String>) -> Vec<String> {
+    let _ = (s, input);
+    todo!("M4 S1b")
+}
+
+/// Stores a valid agent flag, or returns `Invalid agent flag.` and keeps the old value (M4 S1b stub).
+pub(crate) fn apply_flag_change(s: &mut AppSettings, flag: String) -> Result<String, String> {
+    let _ = (s, flag);
+    todo!("M4 S1b")
+}
+
+/// Stores the ask mode switch (M4 S1b stub; the implementer replaces this body).
+pub(crate) fn apply_ask_change(s: &mut AppSettings, enabled: bool) {
+    let _ = (s, enabled);
+    todo!("M4 S1b")
+}
+
 /// Reports the coding job state for the Settings status card.
 #[tauri::command]
 #[specta::specta]
@@ -100,3 +118,7 @@ pub fn agent_job_status(wiring: State<'_, JobWiring>) -> AgentJobStatusDto {
 pub fn agent_job_cancel(wiring: State<'_, JobWiring>) -> bool {
     job_speaker::cancel(&wiring.manager)
 }
+
+#[cfg(test)]
+#[path = "agent_jobs_m4_tests.rs"]
+mod agent_jobs_m4_tests;

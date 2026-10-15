@@ -54,3 +54,36 @@ export function stateLabelKey(state: string): string {
 export function isRunning(state: string): boolean {
   return state === "running";
 }
+
+/** Maximum number of agent names kept in the allowlist (mirrors the backend). */
+export const MAX_AGENT_NAMES = 20;
+
+/** Returns true when the name matches the agent name rule (ASCII only, no trimming). */
+export function isValidAgentName(_name: string): boolean {
+  throw new Error("not implemented: M4 S4");
+}
+
+/** Drops invalid and case-insensitive duplicate names, keeps order and the first spelling, caps at MAX_AGENT_NAMES. */
+export function cleanAgentNames(_names: string[]): string[] {
+  throw new Error("not implemented: M4 S4");
+}
+
+/** Returns true when the flag matches the agent flag rule and is not the prompt flag. */
+export function isValidAgentFlag(_flag: string, _promptFlag: string): boolean {
+  throw new Error("not implemented: M4 S4");
+}
+
+/** Returns true when the candidate is a valid, non-duplicate name and the list is below MAX_AGENT_NAMES. */
+export function canAddAgentName(
+  _existing: string[],
+  _candidate: string,
+): boolean {
+  throw new Error("not implemented: M4 S4");
+}
+
+/** Returns the result text for the result panel, or null when it is empty or whitespace-only. Text is not trimmed or truncated. */
+export function resultPanelText(
+  _result: string | null | undefined,
+): string | null {
+  throw new Error("not implemented: M4 S4");
+}
