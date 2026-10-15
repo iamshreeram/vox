@@ -6,7 +6,8 @@
 //!
 //! Scaffolding only: bodies are filled in by ram-implementer (Phase B).
 
-use std::sync::{Arc, Mutex};
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// Reader chunk size used by the job runner (documented here; the reader lives in agent_jobs.rs).
 pub const CHUNK_BYTES: usize = 8 * 1024;
@@ -21,10 +22,27 @@ pub const RING_BYTES: usize = 32 * 1024;
 /// After this many bytes fed to one stream, further bytes are read and dropped.
 pub const TOTAL_CAP: u64 = 64 * 1024 * 1024;
 
+/// Marker pushed in place of an overlong line.
+const LONG_LINE_MARKER: &str = "[long line omitted]";
+/// Marker pushed once when a private-key block starts being suppressed.
+const BLOCK_MARKER: &str = "[private key block omitted]";
+/// Marker pushed by [`OutputPipeline::read_error`].
+const READ_ERROR_MARKER: &str = "[output read error]";
+/// Start marker of a private-key block.
+const BEGIN_MARK: &[u8] = b"-----BEGIN";
+/// End marker of a private-key block.
+const END_MARK: &[u8] = b"-----END";
+/// Key marker that must follow BEGIN/END closely.
+const KEY_MARK: &[u8] = b"PRIVATE KEY-----";
+/// Maximum distance in bytes between a BEGIN/END marker and the key marker.
+const MARK_GAP: usize = 40;
+/// Rolling byte window used by the private-key marker scan.
+const SCAN_WINDOW: usize = 96;
+
 /// Bounded ring of the newest output lines; the oldest lines are dropped first.
 #[derive(Debug, Default)]
 pub struct TailRing {
-    lines: std::collections::VecDeque<String>,
+    lines: VecDeque<String>,
     bytes: usize,
 }
 
@@ -32,27 +50,35 @@ pub struct TailRing {
 impl TailRing {
     /// Creates an empty ring.
     pub fn new() -> Self {
-        todo!("S2a Phase B: TailRing::new")
+        Self::default()
     }
 
     /// Appends a line, evicting the oldest lines until both caps hold.
-    pub fn push(&mut self, _line: String) {
-        todo!("S2a Phase B: TailRing::push")
+    pub fn push(&mut self, line: String) {
+        self.bytes += line.len();
+        self.lines.push_back(line);
+        while self.lines.len() > RING_LINES || self.bytes > RING_BYTES {
+            match self.lines.pop_front() {
+                Some(old) => self.bytes = self.bytes.saturating_sub(old.len()),
+                None => break,
+            }
+        }
     }
 
     /// Returns the newest `n` lines, oldest first.
-    pub fn last(&self, _n: usize) -> Vec<String> {
-        todo!("S2a Phase B: TailRing::last")
+    pub fn last(&self, n: usize) -> Vec<String> {
+        let skip = self.lines.len().saturating_sub(n);
+        self.lines.iter().skip(skip).cloned().collect()
     }
 
     /// Total bytes currently held by the ring.
     pub fn bytes(&self) -> usize {
-        todo!("S2a Phase B: TailRing::bytes")
+        self.bytes
     }
 
     /// Number of lines currently held by the ring.
     pub fn len(&self) -> usize {
-        todo!("S2a Phase B: TailRing::len")
+        self.lines.len()
     }
 }
 
@@ -60,43 +86,234 @@ impl TailRing {
 pub struct OutputPipeline {
     ring: Arc<Mutex<TailRing>>,
     total_cap: u64,
+    /// Bytes offered so far (saturating); bytes past `total_cap` are ignored.
+    fed: u64,
+    /// Framing buffer for the current line; never longer than LINE_CAP.
+    line: Vec<u8>,
+    /// The current line overflowed LINE_CAP; its bytes are dropped until newline.
+    discarding: bool,
+    /// A CR was seen; it is a terminator only if LF follows.
+    pending_cr: bool,
+    /// Private-key END line: drop the rest of the line up to newline.
+    skip_rest: bool,
+    /// Inside a private-key block.
+    suppressing: bool,
+    /// Last SCAN_WINDOW bytes, for the private-key marker scan.
+    window: VecDeque<u8>,
 }
 
 impl OutputPipeline {
     /// Creates a pipeline that pushes finished lines into `ring`, using [`TOTAL_CAP`].
-    pub fn new(_ring: Arc<Mutex<TailRing>>) -> Self {
-        todo!("S2a Phase B: OutputPipeline::new")
+    pub fn new(ring: Arc<Mutex<TailRing>>) -> Self {
+        Self::with_total_cap(ring, TOTAL_CAP)
     }
 
     /// Like [`OutputPipeline::new`] but with an injectable total byte cap (tests).
-    pub fn with_total_cap(_ring: Arc<Mutex<TailRing>>, _total_cap: u64) -> Self {
-        todo!("S2a Phase B: OutputPipeline::with_total_cap")
+    pub fn with_total_cap(ring: Arc<Mutex<TailRing>>, total_cap: u64) -> Self {
+        Self {
+            ring,
+            total_cap,
+            fed: 0,
+            line: Vec::with_capacity(LINE_CAP),
+            discarding: false,
+            pending_cr: false,
+            skip_rest: false,
+            suppressing: false,
+            window: VecDeque::with_capacity(SCAN_WINDOW),
+        }
     }
 
     /// Feeds one chunk of raw bytes (any size, any boundaries).
-    pub fn feed(&mut self, _chunk: &[u8]) {
-        todo!("S2a Phase B: OutputPipeline::feed")
+    pub fn feed(&mut self, chunk: &[u8]) {
+        let remaining = self.total_cap.saturating_sub(self.fed);
+        let take = usize::try_from(remaining)
+            .unwrap_or(usize::MAX)
+            .min(chunk.len());
+        for &byte in &chunk[..take] {
+            self.process_byte(byte);
+        }
+        self.fed = self
+            .fed
+            .saturating_add(u64::try_from(chunk.len()).unwrap_or(u64::MAX));
     }
 
     /// EOF: flushes a partial last line under the same rules, ends suppression.
     pub fn finish(&mut self) {
-        todo!("S2a Phase B: OutputPipeline::finish")
+        if !self.suppressing {
+            if self.pending_cr {
+                self.pending_cr = false;
+                self.append(b'\r');
+            }
+            if self.discarding || !self.line.is_empty() {
+                self.end_line();
+            }
+        }
+        self.suppressing = false;
+        self.skip_rest = false;
+        self.pending_cr = false;
+        self.discarding = false;
+        self.line.clear();
     }
 
     /// Pushes the marker line "[output read error]".
     pub fn read_error(&mut self) {
-        todo!("S2a Phase B: OutputPipeline::read_error")
+        self.push_line(READ_ERROR_MARKER.to_string());
     }
 
     /// Current framing buffer size in bytes (must never exceed LINE_CAP).
     pub fn buffered_bytes(&self) -> usize {
-        todo!("S2a Phase B: OutputPipeline::buffered_bytes")
+        self.line.len()
     }
 
     /// True while a private-key block is being suppressed.
     pub fn suppressing(&self) -> bool {
-        todo!("S2a Phase B: OutputPipeline::suppressing")
+        self.suppressing
     }
+
+    /// Handles one byte: marker scan first, then framing.
+    fn process_byte(&mut self, byte: u8) {
+        self.scan_markers(byte);
+        if self.suppressing {
+            return;
+        }
+        if self.skip_rest {
+            if byte == b'\n' {
+                self.skip_rest = false;
+            }
+            return;
+        }
+        if byte == b'\n' {
+            self.pending_cr = false;
+            self.end_line();
+            return;
+        }
+        if self.pending_cr {
+            self.pending_cr = false;
+            self.append(b'\r');
+        }
+        if byte == b'\r' {
+            self.pending_cr = true;
+            return;
+        }
+        self.append(byte);
+    }
+
+    /// Appends one data byte to the framing buffer, overflowing to discard mode.
+    fn append(&mut self, byte: u8) {
+        if self.discarding {
+            return;
+        }
+        if self.line.len() >= LINE_CAP {
+            self.discarding = true;
+            self.line.clear();
+            return;
+        }
+        self.line.push(byte);
+    }
+
+    /// Completes the current line and pushes its display form.
+    fn end_line(&mut self) {
+        let text = if self.discarding {
+            LONG_LINE_MARKER.to_string()
+        } else {
+            display_line(&self.line)
+        };
+        self.discarding = false;
+        self.line.clear();
+        self.push_line(text);
+    }
+
+    /// Updates the rolling window and enters or leaves suppression on a match.
+    fn scan_markers(&mut self, byte: u8) {
+        if self.window.len() == SCAN_WINDOW {
+            self.window.pop_front();
+        }
+        self.window.push_back(byte);
+        if byte != b'-' || !self.ends_with_key_mark() {
+            return;
+        }
+        let bytes: Vec<u8> = self.window.iter().copied().collect();
+        let key_start = bytes.len() - KEY_MARK.len();
+        if !self.suppressing && has_mark_before(&bytes, key_start, BEGIN_MARK) {
+            self.enter_block();
+        } else if self.suppressing && has_mark_before(&bytes, key_start, END_MARK) {
+            self.exit_block();
+        }
+    }
+
+    /// True when the rolling window ends with the key marker.
+    fn ends_with_key_mark(&self) -> bool {
+        self.window.len() >= KEY_MARK.len()
+            && self
+                .window
+                .iter()
+                .rev()
+                .zip(KEY_MARK.iter().rev())
+                .all(|(a, b)| a == b)
+    }
+
+    /// Starts suppression: the BEGIN line is dropped and one marker is pushed.
+    fn enter_block(&mut self) {
+        self.suppressing = true;
+        self.discarding = false;
+        self.pending_cr = false;
+        self.line.clear();
+        self.push_line(BLOCK_MARKER.to_string());
+    }
+
+    /// Ends suppression; the rest of the END line is dropped.
+    fn exit_block(&mut self) {
+        self.suppressing = false;
+        self.skip_rest = true;
+        self.discarding = false;
+        self.pending_cr = false;
+        self.line.clear();
+    }
+
+    /// Pushes one finished display line into the shared ring.
+    fn push_line(&mut self, text: String) {
+        lock_ring(&self.ring).push(text);
+    }
+}
+
+/// Locks the ring, recovering the data if a previous holder panicked.
+fn lock_ring(ring: &Mutex<TailRing>) -> MutexGuard<'_, TailRing> {
+    ring.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// True if `mark` occurs in `bytes` ending at or before `key_start`, at most MARK_GAP bytes before it.
+fn has_mark_before(bytes: &[u8], key_start: usize, mark: &[u8]) -> bool {
+    bytes
+        .windows(mark.len())
+        .enumerate()
+        .any(|(start, window)| {
+            let end = start + mark.len();
+            window == mark && end <= key_start && key_start - end <= MARK_GAP
+        })
+}
+
+/// Sanitises, redacts and display-truncates one framed line.
+fn display_line(bytes: &[u8]) -> String {
+    let lossy = String::from_utf8_lossy(bytes);
+    let sanitised: String = lossy
+        .chars()
+        .map(|c| if c == '\t' || !c.is_control() { c } else { '?' })
+        .collect();
+    let mut text = crate::managers::redact::redact(&sanitised);
+    truncate_to_char_boundary(&mut text, DISPLAY_CAP);
+    text
+}
+
+/// Truncates `text` to at most `max` bytes without splitting a character.
+fn truncate_to_char_boundary(text: &mut String, max: usize) {
+    if text.len() <= max {
+        return;
+    }
+    let mut cut = max;
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    text.truncate(cut);
 }
 
 #[cfg(test)]

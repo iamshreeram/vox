@@ -358,9 +358,10 @@ fn display_truncation_limits_lines_to_display_cap_bytes() {
 #[test]
 fn display_truncation_never_splits_a_multibyte_char() {
     // 199 ASCII bytes then one 2-byte char: the 200-byte cut would split it.
-    let data = format!("{}\u{e9}tail\n", "a".repeat(199));
+    // Filler is 'z' (not a hex digit) so the redactor's long-hex rule does not fire.
+    let data = format!("{}\u{e9}tail\n", "z".repeat(199));
     let lines = collect(&[data.as_bytes()]);
-    assert_eq!(lines[0], "a".repeat(199));
+    assert_eq!(lines[0], "z".repeat(199));
     assert!(lines[0].len() <= DISPLAY_CAP);
 }
 
