@@ -236,17 +236,26 @@ impl RecorderPort for AudioRecorderPort {
     }
 }
 
-/// M4 S5 stub: the transcription timing line, or `None` when timing is disabled. `audio_ms`
-/// is the clip length (floor of samples * 1000 / rate, 0 when the rate is 0). The
-/// implementation replaces this body.
-#[allow(dead_code)] // wired by the M4 S5 implementation
+/// The transcription timing line, or `None` when timing is disabled. `audio_ms` is the clip
+/// length (floor of samples * 1000 / rate, 0 when the rate is 0). Never contains any text.
 pub(crate) fn transcribe_line(
-    _enabled: bool,
-    _elapsed_ms: u64,
-    _samples: usize,
-    _sample_rate_hz: u32,
+    enabled: bool,
+    elapsed_ms: u64,
+    samples: usize,
+    sample_rate_hz: u32,
 ) -> Option<String> {
-    todo!("M4 S5")
+    if !enabled {
+        return None;
+    }
+    let audio_ms = if sample_rate_hz == 0 {
+        0
+    } else {
+        let ms = (samples as u128).saturating_mul(1000) / u128::from(sample_rate_hz);
+        u64::try_from(ms).unwrap_or(u64::MAX)
+    };
+    Some(crate::managers::converse::format_transcribe(
+        elapsed_ms, audio_ms,
+    ))
 }
 
 /// Transcriber: the non-streaming path of `TranscribeAction::stop`. Writes no
@@ -257,8 +266,20 @@ struct AppTranscriber {
 
 impl Transcriber for AppTranscriber {
     fn transcribe(&self, samples: Vec<f32>) -> Result<String, TranscribeFailure> {
+        let sample_count = samples.len();
+        let started = Instant::now();
         let tm = self.app.state::<Arc<TranscriptionManager>>();
-        tm.transcribe(samples).map_err(|_| TranscribeFailure)
+        let result = tm.transcribe(samples).map_err(|_| TranscribeFailure);
+        let enabled = crate::managers::realtime_config::RealtimeConfig::from_settings(
+            &get_settings(&self.app),
+        )
+        .timing_log;
+        let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let rate = crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
+        if let Some(line) = transcribe_line(enabled, elapsed_ms, sample_count, rate) {
+            log::info!("{line}");
+        }
+        result
     }
 }
 

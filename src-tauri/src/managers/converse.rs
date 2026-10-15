@@ -413,7 +413,6 @@ pub trait Reporter: Send + Sync {
     fn transcript(&self, _ev: TranscriptEvent) {}
 
     /// M4: receives one timing line (observability only). Default: written to the log at info.
-    #[allow(dead_code)] // wired in a later M4 step
     fn timing_line(&self, line: &str) {
         log::info!("{line}");
     }
@@ -1033,37 +1032,105 @@ fn ms_since(base: Instant, at: Option<Instant>) -> String {
     }
 }
 
-/// One latency line per streamed turn. Never logs any text.
-fn log_timing(cfg: &SessionConfig, tier_start: Instant, early: &Early, plan_at: Instant) {
+/// Timing-only pass-through around the turn's mouth. Every call is forwarded unchanged, in the
+/// same order; the only addition is recording when the mouth accepted a say. A say counts as
+/// accepted when it did not fail (`Done` or `Interrupted`).
+struct TimedMouth<'a> {
+    inner: &'a dyn Mouth,
+    first_speech: Mutex<Option<Instant>>,
+}
+
+impl<'a> TimedMouth<'a> {
+    fn new(inner: &'a dyn Mouth) -> Self {
+        Self {
+            inner,
+            first_speech: Mutex::new(None),
+        }
+    }
+
+    /// The instant the first accepted say returned, if any.
+    fn first_speech(&self) -> Option<Instant> {
+        *self
+            .first_speech
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+impl Mouth for TimedMouth<'_> {
+    fn say<'b>(&'b self, text: &'b str, emotion: Emotion) -> BoxFuture<'b, SayOutcome> {
+        let inner = self.inner;
+        Box::pin(async move {
+            let outcome = inner.say(text, emotion).await;
+            if outcome != SayOutcome::Failed {
+                let mut first = self
+                    .first_speech
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                first.get_or_insert_with(Instant::now);
+            }
+            outcome
+        })
+    }
+
+    fn wait_quiet(&self, max: Duration) -> BoxFuture<'_, QuietOutcome> {
+        self.inner.wait_quiet(max)
+    }
+
+    fn stop(&self) {
+        self.inner.stop();
+    }
+
+    fn open_queue(&self) -> Option<Arc<dyn SpeechQueue>> {
+        self.inner.open_queue()
+    }
+}
+
+/// One latency line per turn, emitted through the reporter. Only when `timing_log` is on.
+/// Never contains any text.
+fn log_timing(
+    reporter: &dyn Reporter,
+    cfg: &SessionConfig,
+    tier_start: Instant,
+    first_text: Option<Instant>,
+    first_speech: Option<Instant>,
+    plan_at: Instant,
+) {
     if !cfg.timing_log {
         return;
     }
-    log::info!(
-        "converse timing: first_text_ms={} first_speech_ms={} plan_ms={} total_ms={}",
-        ms_since(tier_start, early.first_text),
-        ms_since(tier_start, early.first_speech),
-        ms_since(tier_start, Some(plan_at)),
-        ms_since(tier_start, Some(Instant::now())),
+    let line = format_timing(
+        tier_start,
+        first_text,
+        first_speech,
+        plan_at,
+        Instant::now(),
     );
+    reporter.timing_line(&line);
 }
 
-/// M4 S5 stub: the streaming turn latency line (`converse timing: ...`). Missing values print
-/// as `-`. Never contains any text. The implementation replaces this body.
-#[allow(dead_code)] // wired by the M4 S5 implementation
+/// The streaming turn latency line (`converse timing: ...`). Missing values print as `-`.
+/// Never contains any text.
 pub(crate) fn format_timing(
-    _tier_start: Instant,
-    _first_text: Option<Instant>,
-    _first_speech: Option<Instant>,
-    _plan_at: Instant,
-    _now: Instant,
+    tier_start: Instant,
+    first_text: Option<Instant>,
+    first_speech: Option<Instant>,
+    plan_at: Instant,
+    now: Instant,
 ) -> String {
-    todo!("M4 S5")
+    format!(
+        "converse timing: first_text_ms={} first_speech_ms={} plan_ms={} total_ms={}",
+        ms_since(tier_start, first_text),
+        ms_since(tier_start, first_speech),
+        ms_since(tier_start, Some(plan_at)),
+        ms_since(tier_start, Some(now)),
+    )
 }
 
-/// M4 S5 stub: the transcription latency line (`converse transcribe: ms=.. audio_ms=..`).
-#[allow(dead_code)] // wired by the M4 S5 implementation
-pub(crate) fn format_transcribe(_ms: u64, _audio_ms: u64) -> String {
-    todo!("M4 S5")
+/// The transcription latency line (`converse transcribe: ms=.. audio_ms=..`). Never contains
+/// any text.
+pub(crate) fn format_transcribe(ms: u64, audio_ms: u64) -> String {
+    format!("converse transcribe: ms={ms} audio_ms={audio_ms}")
 }
 
 /// Brain tier: plan the turn and carry it out. Streams (early speech / acknowledgement)
@@ -1095,11 +1162,35 @@ async fn brain_turn(
         None
     };
     let Some(queue) = queue else {
-        return match race(cancel, deps.brain.plan(input)).await {
-            None => Err(SessionEnd::Cancelled),
-            Some(Ok(plan)) => gate_and_run(deps, cfg, cancel, plan, carry).await,
-            Some(Err(err)) => plan_failed(deps, cfg, cancel, err, &[], &carry.journal).await,
+        let Some(planned) = race(cancel, deps.brain.plan(input)).await else {
+            return Err(SessionEnd::Cancelled);
         };
+        let plan_at = Instant::now();
+        // Timing only: the mouth is wrapped so the first accepted reply is timed. Every call
+        // still reaches the real mouth in the same order.
+        let timed = TimedMouth::new(deps.mouth);
+        let timed_deps = Deps {
+            mouth: &timed,
+            ears: deps.ears,
+            hands: deps.hands,
+            brain: deps.brain,
+            reporter: deps.reporter,
+            policy: deps.policy,
+            announcer: deps.announcer,
+        };
+        let turn = match planned {
+            Ok(plan) => gate_and_run(&timed_deps, cfg, cancel, plan, carry).await,
+            Err(err) => plan_failed(&timed_deps, cfg, cancel, err, &[], &carry.journal).await,
+        };
+        log_timing(
+            deps.reporter,
+            cfg,
+            tier_start,
+            None,
+            timed.first_speech(),
+            plan_at,
+        );
+        return turn;
     };
     let ack = ack_for(cfg, utterance, carry.last_draft.is_some(), carry.last_ack);
     let early = Mutex::new(Early {
@@ -1144,7 +1235,14 @@ async fn brain_turn(
             }
         }
     };
-    log_timing(cfg, tier_start, &early, plan_at);
+    log_timing(
+        deps.reporter,
+        cfg,
+        tier_start,
+        early.first_text,
+        early.first_speech,
+        plan_at,
+    );
     turn
 }
 
