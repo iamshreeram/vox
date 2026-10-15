@@ -3,12 +3,9 @@
 //! Speech and status events for background coding jobs (M3 S3c-2, DESIGN D5, R2-6, R2-8).
 //!
 //! Only fixed templates are ever spoken. The job output tail is never spoken, emitted or
-//! logged. The module-level dead-code allow covers the command wiring that lands later.
-
-#![allow(dead_code)]
+//! logged.
 
 use std::sync::Arc;
-use std::time::Instant;
 
 use crate::commands::agent_jobs::AgentJobStatusDto;
 use crate::managers::agent_jobs::{JobManager, JobObserver, JobSnapshot, JobState};
@@ -29,7 +26,6 @@ pub struct JobSpeaker {
     announcer: Arc<Announcer>,
     tts_enabled: Arc<dyn Fn() -> bool + Send + Sync>,
     sink: Arc<dyn JobEventSink>,
-    started: Instant,
     /// Configured time limit in minutes, used only in the timed-out message.
     timeout_minutes: Option<u32>,
 }
@@ -47,7 +43,6 @@ impl JobSpeaker {
             announcer,
             tts_enabled,
             sink,
-            started: Instant::now(),
             timeout_minutes: None,
         }
     }

@@ -144,6 +144,7 @@ pub struct PlanStreamer {
 }
 
 impl PlanStreamer {
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
     }
@@ -166,12 +167,14 @@ impl PlanStreamer {
     }
 
     /// Emotion seen so far (from an `\"emotion\"` member), if any.
+    #[cfg(test)]
     pub fn emotion(&self) -> Option<Emotion> {
         self.emotion
     }
 
     /// True once the stream was rejected for early speech (wrong shape/kind, duplicate key,
     /// bad escape, ...).
+    #[cfg(test)]
     pub fn is_disabled(&self) -> bool {
         self.state == St::Disabled
     }

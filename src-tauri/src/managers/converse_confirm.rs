@@ -1,13 +1,12 @@
 //! Spoken confirmation gate and the typed action preparation that feeds it
-//! (M3). Scaffolding only: bodies are filled by later M3 steps.
-
-#![allow(dead_code, unused_imports, unused_variables)]
+//! (M3).
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::managers::command_router::CommandAction;
 use crate::managers::converse::{Ears, Hands, ListenOutcome, Mouth, QuietOutcome, SayOutcome};
+#[cfg(test)]
 pub use crate::managers::converse_plan::JobRequest;
 use crate::managers::converse_plan::{PlanKind, TurnPlan};
 use crate::managers::emotion::Emotion;

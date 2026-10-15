@@ -7,8 +7,6 @@
 //! finds the speaker busy is dropped. The mouth is never called while the
 //! announcer lock is held.
 
-#![allow(dead_code)]
-
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
@@ -31,7 +29,6 @@ pub trait LowPriorityMouth: Send + Sync {
 
 /// M3 S3c-1: `LowPriorityMouth` backed by the app's TTS manager. Speaks only when the
 /// manager is idle (`TtsManager::speak_if_idle`), never superseding current speech.
-#[allow(dead_code)]
 pub struct TtsLowPriorityMouth(pub Arc<crate::managers::tts::TtsManager>);
 
 impl TtsLowPriorityMouth {
@@ -184,6 +181,7 @@ impl Announcer {
     }
 
     /// Speaks queued announcements now that the speaker is idle.
+    #[cfg(test)]
     pub fn notify_idle(&self) {
         self.shared.wake.notify_all();
         drain(&self.shared);

@@ -2,8 +2,6 @@
 //! shutdown path that cleans up before the app exits (M3, DESIGN D4, R2-5,
 //! R2-6, R3-4, R4-2). Unix only: on other targets start() returns Unsupported.
 
-#![allow(dead_code, unused_variables)]
-
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -23,9 +21,10 @@ mod agent_jobs_spawn;
 #[path = "agent_jobs_exit.rs"]
 mod exit;
 
-// Re-exported for the app wiring (a later step); unused in non-test builds until then.
-#[allow(unused_imports)]
-pub use exit::{CleanupResult, ExitConfig, ExitCoordinator, ExitDecision};
+pub use exit::{ExitConfig, ExitCoordinator};
+// Result types used by the coordinator's public signatures; tests name them through this module.
+#[cfg(test)]
+pub use exit::{CleanupResult, ExitDecision};
 
 use agent_jobs_delivery::Delivery;
 use agent_jobs_owner::{Msg, Owner, Record};
@@ -152,11 +151,6 @@ impl JobManager {
     /// Creates a manager with the default termination grace.
     pub fn new() -> Arc<Self> {
         Self::with_timing(DEFAULT_GRACE, DEFAULT_DRAIN)
-    }
-
-    /// Creates a manager with an explicit termination grace.
-    pub fn with_grace(term_grace: Duration) -> Arc<Self> {
-        Self::with_timing(term_grace, DEFAULT_DRAIN)
     }
 
     /// Creates a manager with explicit termination grace and output drain budgets (tests and shutdown).

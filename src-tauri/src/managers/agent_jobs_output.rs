@@ -1,10 +1,6 @@
-#![allow(dead_code)]
-
 //! Pure output pipeline for background job output (M3 S2a): line framing,
 //! per-line sanitising and redaction, a bounded tail ring, and private-key
 //! block suppression. No process, tokio or Tauri use.
-//!
-//! Scaffolding only: bodies are filled in by ram-implementer (Phase B).
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -46,7 +42,6 @@ pub struct TailRing {
     bytes: usize,
 }
 
-#[allow(clippy::len_without_is_empty)]
 impl TailRing {
     /// Creates an empty ring.
     pub fn new() -> Self {
@@ -72,11 +67,13 @@ impl TailRing {
     }
 
     /// Total bytes currently held by the ring.
+    #[cfg(test)]
     pub fn bytes(&self) -> usize {
         self.bytes
     }
 
     /// Number of lines currently held by the ring.
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.lines.len()
     }
@@ -161,11 +158,13 @@ impl OutputPipeline {
     }
 
     /// Current framing buffer size in bytes (must never exceed LINE_CAP).
+    #[cfg(test)]
     pub fn buffered_bytes(&self) -> usize {
         self.line.len()
     }
 
     /// True while a private-key block is being suppressed.
+    #[cfg(test)]
     pub fn suppressing(&self) -> bool {
         self.suppressing
     }
