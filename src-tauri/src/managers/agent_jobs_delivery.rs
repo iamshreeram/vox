@@ -9,7 +9,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
 
-use super::{JobObserver, JobSnapshot};
+use super::{JobObserver, JobResult, JobSnapshot};
 
 /// Number of Finish deliveries that may be pending at once.
 pub(super) const FINISH_RESERVATIONS: usize = 4;
@@ -18,6 +18,9 @@ pub(super) const FINISH_RESERVATIONS: usize = 4;
 struct Event {
     observer: Arc<dyn JobObserver>,
     snap: JobSnapshot,
+    /// M4: the captured result of an ask job, delivered before its finish. Always
+    /// `None` for progress events.
+    result: Option<JobResult>,
 }
 
 /// Queue state guarded by one mutex.
@@ -95,19 +98,33 @@ impl Delivery {
         if st.closed || st.last_finish_id.is_some_and(|id| snap.id <= id) {
             return;
         }
-        st.progress = Some(Event { observer, snap });
+        st.progress = Some(Event {
+            observer,
+            snap,
+            result: None,
+        });
         self.shared.wake.notify_one();
     }
 
-    /// Queues the Finish of a job. Never blocks; the caller holds a reservation
-    /// taken by try_reserve, which is returned after the observer returns.
-    pub(super) fn enqueue_finish(&self, observer: Arc<dyn JobObserver>, snap: JobSnapshot) {
+    /// Queues the Finish of a job, with its result when there is one. Never
+    /// blocks; the caller holds a reservation taken by try_reserve, which is
+    /// returned after the observer returns.
+    pub(super) fn enqueue_finish(
+        &self,
+        observer: Arc<dyn JobObserver>,
+        snap: JobSnapshot,
+        result: Option<JobResult>,
+    ) {
         let mut st = lock(&self.shared.state);
         if st.progress.as_ref().is_some_and(|p| p.snap.id == snap.id) {
             st.progress = None;
         }
         st.last_finish_id = Some(snap.id);
-        st.finishes.push_back(Event { observer, snap });
+        st.finishes.push_back(Event {
+            observer,
+            snap,
+            result,
+        });
         self.shared.wake.notify_one();
     }
 }
@@ -143,17 +160,29 @@ fn next_event(shared: &Shared) -> Option<(Event, bool)> {
 /// Delivery thread body: delivers events in order until closed and drained.
 fn run(shared: &Shared) {
     while let Some((event, is_finish)) = next_event(shared) {
-        // A panicking observer is isolated; the job lifecycle never sees it.
-        let _ = catch_unwind(AssertUnwindSafe(|| {
-            if is_finish {
-                event.observer.on_finish(&event.snap);
-            } else {
-                event.observer.on_progress(&event.snap);
-            }
-        }));
         if is_finish {
+            deliver_finish(&event);
             let mut st = lock(&shared.state);
             st.free_reservations = (st.free_reservations + 1).min(FINISH_RESERVATIONS);
+        } else {
+            // A panicking observer is isolated; the job lifecycle never sees it.
+            let _ = catch_unwind(AssertUnwindSafe(|| {
+                event.observer.on_progress(&event.snap);
+            }));
         }
     }
+}
+
+/// Delivers a finish: on_result first (when the job has a result), then on_finish.
+/// Each call has its own catch_unwind, so a panicking on_result still lets
+/// on_finish run.
+fn deliver_finish(event: &Event) {
+    if let Some(result) = event.result.as_ref() {
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            event.observer.on_result(result);
+        }));
+    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        event.observer.on_finish(&event.snap);
+    }));
 }

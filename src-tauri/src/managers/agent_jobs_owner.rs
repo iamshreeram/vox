@@ -12,8 +12,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::agent_jobs_delivery::Delivery;
-use super::{JobObserver, JobSnapshot, JobState};
-use crate::managers::agent_jobs_output::{OutputPipeline, TailRing, CHUNK_BYTES};
+use super::{JobObserver, JobResult, JobSnapshot, JobState};
+use crate::managers::agent_jobs_output::{OutputPipeline, ResultCapture, TailRing, CHUNK_BYTES};
 
 /// Lines of output kept in every snapshot.
 const TAIL_LINES: usize = 20;
@@ -124,6 +124,8 @@ pub(super) struct Owner {
     pub(super) leader_exited: bool,
     /// Called after the terminal state is stored and the finish is queued.
     pub(super) on_done: Option<Box<dyn FnOnce() + Send>>,
+    /// M4: bounded result capture, present only for ask jobs.
+    pub(super) capture: Option<Arc<Mutex<ResultCapture>>>,
 }
 
 impl Owner {
@@ -145,15 +147,24 @@ impl Owner {
     fn start_io(&mut self) -> io::Result<()> {
         let ring = Arc::clone(&lock_record(&self.record).tail);
         if let Some(out) = self.child.stdout.take() {
-            spawn_reader(out, OutputPipeline::new(Arc::clone(&ring)), self.tx.clone())?;
+            spawn_reader(out, self.pipeline(&ring), self.tx.clone())?;
             self.readers_left += 1;
         }
         if let Some(err) = self.child.stderr.take() {
-            spawn_reader(err, OutputPipeline::new(ring), self.tx.clone())?;
+            spawn_reader(err, self.pipeline(&ring), self.tx.clone())?;
             self.readers_left += 1;
         }
         spawn_waiter(self.pgid, self.tx.clone())?;
         Ok(())
+    }
+
+    /// Builds one output pipeline for a reader, feeding the result capture when present.
+    fn pipeline(&self, ring: &Arc<Mutex<TailRing>>) -> OutputPipeline {
+        let pipe = OutputPipeline::new(Arc::clone(ring));
+        match self.capture.as_ref() {
+            Some(capture) => pipe.with_capture(Arc::clone(capture)),
+            None => pipe,
+        }
     }
 
     /// Waits for natural exit, a stop request or the time limit.
@@ -266,24 +277,45 @@ impl Owner {
         self.next_progress = now + self.progress_interval;
     }
 
-    /// Stores the terminal state, queues the finish and releases the slot.
+    /// Stores the terminal state, queues the finish (with the result when one
+    /// exists) and releases the slot.
     fn finish(&mut self, state: JobState) {
-        let snap = {
+        let (snap, id, project) = {
             let mut rec = lock_record(&self.record);
             rec.state = state;
             rec.ended = Some(Instant::now());
-            rec.snapshot()
+            (rec.snapshot(), rec.id, rec.project.clone())
         };
+        let result = self.result_for(state, id, project);
         self.delivery
-            .enqueue_finish(Arc::clone(&self.observer), snap);
+            .enqueue_finish(Arc::clone(&self.observer), snap, result);
         if let Some(done) = self.on_done.take() {
             done();
         }
+    }
+
+    /// The result of an ask job that succeeded with non-blank captured text; None otherwise.
+    fn result_for(&self, state: JobState, id: u64, project: String) -> Option<JobResult> {
+        if !matches!(state, JobState::Succeeded) {
+            return None;
+        }
+        let text = self.capture.as_ref()?;
+        let text = lock_capture(text).text();
+        if text.trim().is_empty() {
+            return None;
+        }
+        Some(JobResult { id, project, text })
     }
 }
 
 fn lock_record(record: &Mutex<Record>) -> MutexGuard<'_, Record> {
     record
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn lock_capture(capture: &Mutex<ResultCapture>) -> MutexGuard<'_, ResultCapture> {
+    capture
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }

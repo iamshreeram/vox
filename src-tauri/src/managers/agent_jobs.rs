@@ -2,12 +2,17 @@
 //! shutdown path that cleans up before the app exits (M3, DESIGN D4, R2-5,
 //! R2-6, R3-4, R4-2). Unix only: on other targets start() returns Unsupported.
 
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+#[cfg(unix)]
+use crate::managers::agent_jobs_output::ResultCapture;
 use crate::managers::agent_jobs_output::TailRing;
 use crate::managers::converse_confirm::JobLaunch;
+#[cfg(unix)]
+use crate::managers::converse_plan::JobMode;
 
 #[path = "agent_jobs_delivery.rs"]
 mod agent_jobs_delivery;
@@ -105,12 +110,12 @@ pub trait JobObserver: Send + Sync {
     fn on_finish(&self, snap: &JobSnapshot);
     /// M4: called once with the captured result of an ask job that succeeded.
     /// Scaffolding default: ignored, so existing observers are unaffected.
-    #[allow(dead_code)] // wired in a later M4 step
     fn on_result(&self, _r: &JobResult) {}
 }
 
 /// M4: the captured result text of an ask job, delivered before its finish.
-#[allow(dead_code)] // wired in a later M4 step
+// Fields are read by the summary observer, which is wired in a later M4 step.
+#[allow(dead_code)]
 pub struct JobResult {
     /// Job id.
     pub id: u64,
@@ -121,7 +126,8 @@ pub struct JobResult {
 }
 
 /// M4: callbacks the job manager invokes at admission and at close (see `set_hooks`).
-#[allow(dead_code)] // wired in a later M4 step
+///
+/// Hooks run synchronously on the calling thread, on_admit under the manager state lock; they MUST NOT call back into JobManager.
 pub struct JobHooks {
     /// Called with the id of each newly admitted job.
     pub on_admit: Arc<dyn Fn(u64) + Send + Sync>,
@@ -167,8 +173,7 @@ pub struct JobManager {
     term_grace: Duration,
     /// Default output drain budget.
     drain: Duration,
-    /// M4: admission and close hooks. Stored by `set_hooks`; not yet invoked.
-    #[allow(dead_code)] // wired in a later M4 step
+    /// M4: admission and close hooks. None until `set_hooks` is called.
     hooks: Mutex<Option<JobHooks>>,
 }
 
@@ -199,8 +204,9 @@ impl JobManager {
         })
     }
 
-    /// M4: installs the admission and close hooks. Scaffolding: stored, never invoked.
-    #[allow(dead_code)] // wired in a later M4 step
+    /// M4: installs the admission and close hooks. Replaces any earlier hooks.
+    // Installed by the app wiring in a later M4 step; no production caller yet.
+    #[allow(dead_code)]
     pub fn set_hooks(&self, hooks: JobHooks) {
         *lock_hooks(&self.hooks) = Some(hooks);
     }
@@ -241,6 +247,7 @@ impl JobManager {
         }
         agent_jobs_spawn::check_binary(&spec.launch.config)?;
         agent_jobs_spawn::check_dir(&spec.launch.dir)?;
+        agent_jobs_spawn::check_agent(&spec.launch)?;
         if !self.delivery.try_reserve() {
             return Err(JobError::Busy);
         }
@@ -253,6 +260,7 @@ impl JobManager {
         };
         let id = st.next_id;
         st.next_id += 1;
+        self.call_on_admit(id);
         let pgid = child.id() as i32;
         let (tx, rx) = mpsc::channel();
         let tail = Arc::new(Mutex::new(TailRing::new()));
@@ -285,6 +293,7 @@ impl JobManager {
             on_done: Some(Box::new(move || {
                 *lock_done(&done_flag) = true;
             })),
+            capture: capture_for(&spec.launch),
         };
         let owner_thread = std::thread::Builder::new()
             .name("agent-job-owner".to_string())
@@ -320,6 +329,7 @@ impl JobManager {
     /// Stops admission of new jobs. Synchronous; a racing start either completes first or fails.
     pub fn close_admission(&self) {
         lock_state(&self.state).closed = true;
+        self.call_on_close();
     }
 
     /// Stops the active job within the budgets. Returns `true` when it is clean.
@@ -334,6 +344,23 @@ impl JobManager {
             std::thread::sleep(Duration::from_millis(10));
         }
         true
+    }
+
+    /// Runs the admit hook for a newly admitted job. A panicking hook is isolated.
+    #[cfg(unix)]
+    fn call_on_admit(&self, id: u64) {
+        let hooks = lock_hooks(&self.hooks);
+        if let Some(h) = hooks.as_ref() {
+            let _ = catch_unwind(AssertUnwindSafe(|| (h.on_admit)(id)));
+        }
+    }
+
+    /// Runs the close hook. A panicking hook is isolated.
+    fn call_on_close(&self) {
+        let hooks = lock_hooks(&self.hooks);
+        if let Some(h) = hooks.as_ref() {
+            let _ = catch_unwind(AssertUnwindSafe(|| (h.on_close)()));
+        }
     }
 
     /// Asks the owner to terminate the job with the given budgets. Returns
@@ -355,6 +382,15 @@ impl JobManager {
 
 fn lock_done(done: &Mutex<bool>) -> MutexGuard<'_, bool> {
     done.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Allocates the result capture for an ask job only; task jobs get none.
+#[cfg(unix)]
+fn capture_for(launch: &JobLaunch) -> Option<Arc<Mutex<ResultCapture>>> {
+    match launch.selection.mode {
+        JobMode::Ask => Some(Arc::new(Mutex::new(ResultCapture::new()))),
+        JobMode::Task => None,
+    }
 }
 
 fn lock_hooks(hooks: &Mutex<Option<JobHooks>>) -> MutexGuard<'_, Option<JobHooks>> {

@@ -302,7 +302,8 @@ fn result_capture_three_byte_chars_straddling_cut_stay_valid_utf8() {
 fn result_capture_thousand_lines_keeps_only_newest_and_ends_with_last() {
     let mut cap = ResultCapture::new();
     for i in 1..=1000 {
-        let line = format!("{i:03}{}", "-".repeat(97));
+        // Owner fix: 4-digit numbers so every line (including 1000) is exactly 100 bytes.
+        let line = format!("{i:04}{}", "-".repeat(96));
         assert_eq!(line.len(), 100);
         cap.push_line(&line);
     }
