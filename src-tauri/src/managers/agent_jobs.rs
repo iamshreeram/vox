@@ -20,6 +20,11 @@ mod agent_jobs_owner;
 #[path = "agent_jobs_spawn.rs"]
 mod agent_jobs_spawn;
 
+#[path = "agent_jobs_exit.rs"]
+mod exit;
+
+pub use exit::{CleanupResult, ExitConfig, ExitCoordinator, ExitDecision};
+
 use agent_jobs_delivery::Delivery;
 use agent_jobs_owner::{Msg, Owner, Record};
 
@@ -103,29 +108,6 @@ pub struct ShutdownConfig {
     pub drain: Duration,
     /// Overall shutdown deadline.
     pub deadline: Duration,
-}
-
-/// Budgets for the app-exit coordinator.
-pub struct ExitConfig {
-    /// Time allowed for a clean job stop before forcing it.
-    pub deadline: Duration,
-    /// Time between terminate and kill.
-    pub term_grace: Duration,
-    /// Time to drain output after the job stops.
-    pub drain: Duration,
-    /// Last resort: how long to wait after the deadline before giving up.
-    pub hard_cap: Duration,
-}
-
-impl Default for ExitConfig {
-    fn default() -> Self {
-        ExitConfig {
-            deadline: Duration::from_secs(5),
-            term_grace: Duration::from_secs(1),
-            drain: Duration::from_secs(1),
-            hard_cap: Duration::from_secs(15),
-        }
-    }
 }
 
 /// The active job as seen by the manager.
@@ -316,53 +298,10 @@ fn lock_record(record: &Mutex<Record>) -> MutexGuard<'_, Record> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Result of the exit cleanup.
-pub enum CleanupResult {
-    /// The job group is gone and the leader reaped.
-    Confirmed,
-    /// Cleanup could not be confirmed within the hard cap.
-    Unconfirmed,
-}
-
-/// Decision returned to the exit event.
-pub enum ExitDecision {
-    /// Let the exit proceed.
-    Allow,
-    /// Keep the process alive until cleanup finishes.
-    Deferred,
-}
-
-/// Serializes app-exit handling for both quit paths.
-pub struct ExitCoordinator;
-
-impl ExitCoordinator {
-    /// Creates a coordinator.
-    pub fn new() -> Arc<Self> {
-        todo!()
-    }
-
-    /// Handles a native exit request.
-    pub fn on_exit_requested(
-        self: &Arc<Self>,
-        manager: &Arc<JobManager>,
-        prevent: impl FnOnce(),
-        finish: impl FnOnce(CleanupResult) + Send + 'static,
-        cfg: &ExitConfig,
-    ) -> ExitDecision {
-        todo!()
-    }
-
-    /// Handles a tray quit request.
-    pub fn request_exit(
-        self: &Arc<Self>,
-        manager: &Arc<JobManager>,
-        finish: impl FnOnce(CleanupResult) + Send + 'static,
-        cfg: &ExitConfig,
-    ) {
-        todo!()
-    }
-}
-
 #[cfg(test)]
 #[path = "agent_jobs_tests.rs"]
 mod agent_jobs_tests;
+
+#[cfg(test)]
+#[path = "agent_jobs_exit_tests.rs"]
+mod agent_jobs_exit_tests;
