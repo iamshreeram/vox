@@ -23,6 +23,8 @@ mod agent_jobs_spawn;
 #[path = "agent_jobs_exit.rs"]
 mod exit;
 
+// Re-exported for the app wiring (a later step); unused in non-test builds until then.
+#[allow(unused_imports)]
 pub use exit::{CleanupResult, ExitConfig, ExitCoordinator, ExitDecision};
 
 use agent_jobs_delivery::Delivery;
@@ -280,9 +282,15 @@ impl JobManager {
     /// Asks the owner to terminate the job with the given budgets. Returns
     /// `true` when a running job was asked to stop.
     fn send_stop(&self, grace: Duration, drain: Duration) -> bool {
+        self.send_active(Msg::Stop { grace, drain })
+    }
+
+    /// Sends a command to the owner of the active job. Returns `true` when a
+    /// running job received it; a finished or absent job ignores it.
+    fn send_active(&self, msg: Msg) -> bool {
         let st = lock_state(&self.state);
         match st.job.as_ref() {
-            Some(a) if !*lock_done(&a.done) => a.tx.send(Msg::Stop { grace, drain }).is_ok(),
+            Some(a) if !*lock_done(&a.done) => a.tx.send(msg).is_ok(),
             _ => false,
         }
     }
