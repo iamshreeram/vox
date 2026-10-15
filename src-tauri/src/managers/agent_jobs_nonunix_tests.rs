@@ -6,13 +6,13 @@
 //! `assert_nonunix_contract` so it can run on a unix host too (the simulation
 //! below), where `start` would really spawn and therefore is not called.
 
+#[cfg(not(unix))]
+use super::exit::ExitTarget;
 use super::{JobError, JobManager, ShutdownConfig};
 #[cfg(not(unix))]
 use super::{JobObserver, JobSnapshot, JobSpec};
 #[cfg(not(unix))]
 use crate::managers::converse_confirm::{DirFd, FileId, JobLaunch, LaunchConfig};
-#[cfg(not(unix))]
-use super::exit::ExitTarget;
 #[cfg(not(unix))]
 use std::path::PathBuf;
 use std::sync::Arc;
