@@ -128,6 +128,20 @@ pub fn build_plan_prompt(input: &PlanInput) -> PlanPrompt {
     }
 }
 
+/// M3: planner prompt addendum that teaches the `job` kind. Added to the
+/// system prompt only when jobs are allowed (wired in a later step).
+pub const JOB_PLAN_ADDENDUM: &str = "";
+
+/// M3: `parse_plan` with the job policy. With `jobs_allowed == false` a
+/// `job` kind is rejected exactly like any unknown kind.
+pub fn parse_plan_with_policy(
+    _raw: &str,
+    _sent_prompt: &str,
+    _jobs_allowed: bool,
+) -> Result<TurnPlan, PlanError> {
+    todo!("S3a: parse_plan_with_policy is not implemented yet")
+}
+
 pub fn parse_plan(raw: &str, sent_prompt: &str) -> Result<TurnPlan, PlanError> {
     let text = strip_fence_lines(&strip_ansi(raw));
     if text.trim().is_empty() {
@@ -755,3 +769,7 @@ mod tests {
         assert_eq!(plan.emotion, Emotion::Neutral);
     }
 }
+
+#[cfg(test)]
+#[path = "converse_plan_job_tests.rs"]
+mod converse_plan_job_tests;

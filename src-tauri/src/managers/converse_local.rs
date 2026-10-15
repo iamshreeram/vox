@@ -10,6 +10,9 @@ pub enum LocalIntent {
     End,
     /// The user wants this exact text pasted into the active window.
     Dictate(String),
+    /// M3: the user wants the running coding job cancelled (only from
+    /// `classify_local_with` with `cancel_job_enabled == true`).
+    CancelJob,
     /// Nothing local matched.
     None,
 }
@@ -103,6 +106,23 @@ fn match_prefix(words: &[Word], pattern: &[&str]) -> Option<usize> {
     } else {
         None
     }
+}
+
+/// M3: whole-utterance cancel phrases (compared on word keys).
+#[allow(dead_code)]
+const CANCEL_JOB_PHRASES: &[&[&str]] = &[
+    &["cancel", "the", "job"],
+    &["stop", "the", "job"],
+    &["cancel", "the", "coding", "job"],
+    &["stop", "the", "coding", "job"],
+    &["cancel", "job"],
+    &["stop", "job"],
+];
+
+/// M3: classify with the cancel-job intent optionally enabled. With
+/// `cancel_job_enabled == false` the result equals `classify_local(text)`.
+pub fn classify_local_with(_text: &str, _cancel_job_enabled: bool) -> LocalIntent {
+    todo!("S3a: classify_local_with is not implemented yet")
 }
 
 /// Classify one utterance. See DESIGN.md 3.1 for the exact word model.
@@ -266,3 +286,7 @@ mod tests {
         assert_eq!(classify_local("   "), LocalIntent::None);
     }
 }
+
+#[cfg(test)]
+#[path = "converse_local_cancel_tests.rs"]
+mod converse_local_cancel_tests;

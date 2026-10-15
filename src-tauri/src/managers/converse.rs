@@ -1296,6 +1296,8 @@ async fn dispatch_utterance(
             );
             return Ok(None);
         }
+        // M3: wired in S3b
+        LocalIntent::CancelJob => {}
         LocalIntent::None => {}
     }
 
