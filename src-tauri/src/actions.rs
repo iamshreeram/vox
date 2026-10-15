@@ -474,23 +474,29 @@ pub(crate) fn model_command_core(
     }
 }
 
-/// M3 S3c-1 (Phase A stub): validates a model-proposed command exactly as
-/// `model_command_core` would accept it. `Some` only when the legacy path would execute.
-#[allow(dead_code, unused_variables)]
+/// M3 (DESIGN R2-12): validates a model-proposed command exactly as `model_command_core`
+/// would accept it. `Some` only when the legacy path would execute: voice commands on, the
+/// media hook does not handle the phrase, and the router's action passes
+/// `restrict_model_action`. Nothing is executed and no event is emitted.
 pub(crate) fn validate_model_command(
     phrase: &str,
     voice_commands_enabled: bool,
     media: &dyn MediaHook,
     router: &dyn PhraseRouter,
 ) -> Option<CommandAction> {
-    todo!()
+    if !voice_commands_enabled || media.consult(phrase).is_some() {
+        return None;
+    }
+    restrict_model_action(&router.route_phrase(phrase))
 }
 
-/// M3 S3c-1 (Phase A stub): executes an already validated command through `exec`.
-/// Returns the same success flag as the legacy `run_model_command` path.
-#[allow(dead_code, unused_variables)]
+/// M3 (DESIGN R2-12): executes an already validated command through `exec`. Returns the
+/// same success flag as the legacy `run_model_command` path.
 pub(crate) fn run_validated_command(action: &CommandAction, exec: &dyn ActionExecutor) -> bool {
-    todo!()
+    matches!(
+        action_result_outcome(exec.execute_action(action)),
+        PhraseOutcome::Done(_)
+    )
 }
 
 /// Production wrapper for `user_phrase_core`. Blocking (media can take seconds).
