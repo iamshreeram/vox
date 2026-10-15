@@ -1097,7 +1097,7 @@ mod tests {
 /// and the guard is on (DESIGN R4-2). Any other plan, or any plan when untainted or guard off,
 /// is returned unchanged. Idempotent: a refusal is an Answer, so a second call is a no-op.
 pub(crate) fn guard_plan(plan: TurnPlan, taint: &TaintState, guard_actions: bool) -> TurnPlan {
-    let is_action = matches!(plan.kind, PlanKind::Paste | PlanKind::Command);
+    let is_action = matches!(plan.kind, PlanKind::Paste | PlanKind::Command | PlanKind::Job);
     if !(guard_actions && taint.is_tainted() && is_action) {
         return plan;
     }
@@ -1154,22 +1154,52 @@ fn neutralize_reference_tags(text: &str) -> String {
 #[path = "converse_tool_tests.rs"]
 mod converse_tool_tests;
 
-/// M3 S3c-1 (Phase A stub): the pin table. Resolves `name` through the M2 resolver and
-/// returns the pinned directory as a `DirFd` (same inode as the resolved project).
-#[allow(dead_code, unused_variables)]
+/// M3 (DESIGN R2-2, M3-10): resolves `name` through the M2 resolver and returns a duplicate
+/// of the PINNED project directory descriptor. The duplicate refers to the same inode, so a
+/// later rename or replacement of the path cannot change where a job runs. Never re-opens
+/// the path.
 pub(crate) fn pin_project_in(
     resolver: &crate::managers::agent_tools::project::ProjectResolver,
     name: &str,
 ) -> Result<crate::managers::converse_confirm::DirFd, crate::managers::converse_confirm::PinError> {
-    todo!()
+    use crate::managers::agent_tools::project::ProjectError;
+    use crate::managers::converse_confirm::PinError;
+    let handle = resolver.resolve(name).map_err(|err| match err {
+        ProjectError::InvalidName | ProjectError::NotFound | ProjectError::NotPlainFolder => {
+            PinError::Unknown
+        }
+        ProjectError::Ambiguous(_) => PinError::Ambiguous,
+        ProjectError::RootInvalid
+        | ProjectError::NoRoots
+        | ProjectError::NetworkOrVirtual
+        | ProjectError::Unsupported => PinError::Unavailable,
+    })?;
+    let dup = handle
+        .dir()
+        .try_clone()
+        .map_err(|_| PinError::Unavailable)?;
+    Ok(dup.into())
 }
 
-/// M3 S3c-1 (Phase A stub): maps a job start error to the outcome the planner speaks.
-#[allow(dead_code, unused_variables)]
+/// M3 (D8, M3-10): maps a job start result to the outcome the conversation speaks. Fixed
+/// texts only; no job output is ever included.
 pub(crate) fn map_job_error(
     result: Result<u64, crate::managers::agent_jobs::JobError>,
 ) -> crate::managers::converse_confirm::JobStartOutcome {
-    todo!()
+    use crate::managers::agent_jobs::JobError;
+    use crate::managers::converse_confirm::JobStartOutcome;
+    match result {
+        Ok(id) => JobStartOutcome::Started(id),
+        Err(JobError::Busy) => JobStartOutcome::Busy,
+        Err(JobError::BadBinary | JobError::BadDir) => JobStartOutcome::NotConfigured,
+        Err(JobError::Unsupported) => JobStartOutcome::Unsupported,
+        Err(JobError::SpawnFailed) => {
+            JobStartOutcome::Refused("The coding job couldn't start.".to_string())
+        }
+        Err(JobError::ShuttingDown) => {
+            JobStartOutcome::Refused("Vox is closing, so I didn't start it.".to_string())
+        }
+    }
 }
 
 /// M3 S3c-1 (Phase A stub): the production `PolicySource` over a settings getter.
@@ -1179,47 +1209,57 @@ pub struct SettingsPolicy {
 }
 
 impl SettingsPolicy {
-    /// Builds the policy over a settings getter (Phase A stub).
-    #[allow(unused_variables)]
+    /// Builds the policy over a settings getter. The getter is called on every query, so a
+    /// settings change is seen immediately.
     pub fn new(settings: Arc<dyn Fn() -> AppSettings + Send + Sync>) -> Self {
-        todo!()
+        SettingsPolicy { settings }
     }
 }
 
 impl crate::managers::converse_confirm::PolicySource for SettingsPolicy {
     fn current(&self) -> crate::managers::converse_confirm::ActionPolicy {
-        todo!()
+        crate::managers::converse_confirm::effective_policy(&(self.settings)())
     }
     fn launch_config(&self) -> Option<crate::managers::converse_confirm::LaunchConfig> {
-        todo!()
+        let settings = (self.settings)();
+        if !(settings.agent_jobs_enabled && settings.agent_bridge_enabled) {
+            return None;
+        }
+        crate::managers::converse_confirm::launch_config_from_settings(&settings)
     }
 }
 
-/// M3 S3c-1 (Phase A stub): what `RealHands::start_job` does with the shared manager.
-/// `None` manager => Unsupported; otherwise the start result is mapped by `map_job_error`.
-#[allow(dead_code, unused_variables)]
+/// M3 (D8, M3-10): what `RealHands::start_job` does with the shared manager. `None` manager
+/// => Unsupported; otherwise the start result is mapped by `map_job_error`.
 pub(crate) fn start_job_on(
     manager: Option<&Arc<crate::managers::agent_jobs::JobManager>>,
     launch: crate::managers::converse_confirm::JobLaunch,
     observer: Arc<dyn crate::managers::agent_jobs::JobObserver>,
 ) -> crate::managers::converse_confirm::JobStartOutcome {
-    todo!()
+    use crate::managers::converse_confirm::JobStartOutcome;
+    let Some(manager) = manager else {
+        return JobStartOutcome::Unsupported;
+    };
+    let spec = crate::managers::agent_jobs::JobSpec {
+        launch,
+        progress_interval: JOB_PROGRESS_INTERVAL,
+    };
+    map_job_error(manager.start(spec, observer))
 }
 
-/// M3 S3c-1 (Phase A stub): `RealHands::cancel_job` over the shared manager (false without one).
-#[allow(dead_code, unused_variables)]
-pub(crate) fn cancel_job_on(
-    manager: Option<&Arc<crate::managers::agent_jobs::JobManager>>,
-) -> bool {
-    todo!()
+/// Minimum time between job progress announcements (DESIGN D4).
+const JOB_PROGRESS_INTERVAL: Duration = Duration::from_secs(90);
+
+/// M3 (D8, M3-10): `RealHands::cancel_job` over the shared manager (false without one).
+pub(crate) fn cancel_job_on(manager: Option<&Arc<crate::managers::agent_jobs::JobManager>>) -> bool {
+    manager.is_some_and(|m| m.cancel())
 }
 
-/// M3 S3c-1 (Phase A stub): `RealHands::has_active_job` over the shared manager (false without one).
-#[allow(dead_code, unused_variables)]
+/// M3 (D8, M3-10): `RealHands::has_active_job` over the shared manager (false without one).
 pub(crate) fn has_active_job_on(
     manager: Option<&Arc<crate::managers::agent_jobs::JobManager>>,
 ) -> bool {
-    todo!()
+    manager.is_some_and(|m| m.has_active_job())
 }
 
 /// M3 S3c-1 (Phase A stub): the planner prompt the brain sends. The job addendum is
@@ -1230,7 +1270,16 @@ pub(crate) fn planner_prompt_for(
     input: &PlanInput,
     jobs_allowed: bool,
 ) -> crate::managers::converse_plan::PlanPrompt {
-    todo!()
+    let mut prompt = build_plan_prompt(input);
+    if jobs_allowed {
+        prompt.system = format!(
+            "{}\n{}",
+            prompt.system,
+            crate::managers::converse_plan::JOB_PLAN_ADDENDUM
+        );
+        prompt.combined = format!("{}\n\n{}", prompt.system, prompt.user);
+    }
+    prompt
 }
 
 /// M3 S3c-1 (Phase A stub): the parse call the brain makes, with the policy read at parse time.
@@ -1240,7 +1289,11 @@ pub(crate) fn parse_with_policy(
     sent_prompt: &str,
     policy: &dyn crate::managers::converse_confirm::PolicySource,
 ) -> Result<TurnPlan, PlanError> {
-    todo!()
+    crate::managers::converse_plan::parse_plan_with_policy(
+        raw,
+        sent_prompt,
+        policy.current().jobs_allowed,
+    )
 }
 
 #[cfg(test)]

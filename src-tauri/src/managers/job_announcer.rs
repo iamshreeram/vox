@@ -29,22 +29,21 @@ pub trait LowPriorityMouth: Send + Sync {
     fn try_speak_if_idle(&self, text: &str) -> bool;
 }
 
-/// M3 S3c-1: `LowPriorityMouth` backed by the app's TTS manager (Phase A stub).
+/// M3 S3c-1: `LowPriorityMouth` backed by the app's TTS manager. Speaks only when the
+/// manager is idle (`TtsManager::speak_if_idle`), never superseding current speech.
 #[allow(dead_code)]
 pub struct TtsLowPriorityMouth(pub Arc<crate::managers::tts::TtsManager>);
 
 impl TtsLowPriorityMouth {
-    /// Trait-object constructor (Phase A stub).
-    #[allow(unused_variables)]
+    /// Trait-object constructor for the announcer and the confirmation gate.
     pub fn shared(tts: Arc<crate::managers::tts::TtsManager>) -> Arc<dyn LowPriorityMouth> {
-        todo!()
+        Arc::new(TtsLowPriorityMouth(tts))
     }
 }
 
 impl LowPriorityMouth for TtsLowPriorityMouth {
-    #[allow(unused_variables)]
     fn try_speak_if_idle(&self, text: &str) -> bool {
-        todo!()
+        self.0.speak_if_idle(text)
     }
 }
 
