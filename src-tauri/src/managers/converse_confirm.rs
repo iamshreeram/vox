@@ -3,7 +3,7 @@
 
 #![allow(dead_code, unused_imports, unused_variables)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::managers::command_router::CommandAction;
@@ -22,6 +22,7 @@ pub type DirFd = std::os::fd::OwnedFd;
 pub struct DirFd;
 
 /// Classification of a spoken yes/no answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verdict {
     /// The user approved.
     Yes,
@@ -37,6 +38,7 @@ pub fn classify_confirmation(text: &str) -> Verdict {
 }
 
 /// Why a confirmation did not approve.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeclineReason {
     /// The user said no.
     No,
@@ -51,6 +53,7 @@ pub enum DeclineReason {
 }
 
 /// Outcome of a confirmation prompt.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
     /// The user approved the action.
     Approved,
@@ -90,6 +93,7 @@ pub async fn confirm_action(
 }
 
 /// Which action paths the current settings allow.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionPolicy {
     /// Whether the confirmation gate is active.
     pub gate_active: bool,
@@ -233,3 +237,31 @@ pub enum JobStartOutcome {
     /// Refused, with fixed spoken text.
     Refused(String),
 }
+
+/// Fixed question spoken before a prepared action runs (M3 S1 stub).
+pub fn confirmation_question(action: &PreparedAction) -> String {
+    todo!()
+}
+
+/// Fixed spoken reply after a decline (M3 S1 stub).
+pub fn decline_message(reason: DeclineReason) -> &'static str {
+    todo!()
+}
+
+/// True when `path` is an absolute, existing, executable regular file (M3 S1 stub).
+pub fn binary_valid(path: &Path) -> bool {
+    todo!()
+}
+
+/// Launch settings from the current settings, or `None` if the binary is not valid (M3 S1 stub).
+pub fn launch_config_from_settings(settings: &AppSettings) -> Option<LaunchConfig> {
+    todo!()
+}
+
+#[cfg(test)]
+#[path = "converse_confirm_tests.rs"]
+mod converse_confirm_tests;
+
+#[cfg(test)]
+#[path = "converse_confirm_adapter_tests.rs"]
+mod converse_confirm_adapter_tests;
