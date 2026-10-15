@@ -1803,3 +1803,7 @@ mod epoch_tests {
 #[cfg(test)]
 #[path = "tts_queue_manager_tests.rs"]
 mod queue_manager_tests;
+
+#[cfg(test)]
+#[path = "tts_idle_tests.rs"]
+mod tts_idle_tests;

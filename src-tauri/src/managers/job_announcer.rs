@@ -28,6 +28,15 @@ impl Announcer {
         todo!()
     }
 
+    /// Creates an announcer with an explicit retry interval and give-up bound.
+    pub fn with_timing(
+        mouth: Arc<dyn LowPriorityMouth>,
+        retry_interval: std::time::Duration,
+        give_up_after: std::time::Duration,
+    ) -> Self {
+        todo!()
+    }
+
     /// Queues one announcement (speaks now if idle, otherwise later).
     pub fn announce(&self, kind: AnnounceKind, text: String) {
         todo!()
@@ -56,3 +65,7 @@ impl Announcer {
 
 /// RAII hold on announcements during a confirmation.
 pub struct ConfirmationGuard;
+
+#[cfg(test)]
+#[path = "job_announcer_tests.rs"]
+mod job_announcer_tests;
