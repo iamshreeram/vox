@@ -95,10 +95,11 @@ struct Entry {
 /// moment, not when the item was taken.
 #[derive(Clone)]
 pub struct PendingSpeech {
-    /// Summary text, or the ordinary text for unguarded entries.
-    pub text: String,
+    /// Summary text, or the ordinary text for unguarded entries. Private on purpose: read it
+    /// only through `resolve`, which applies the guard.
+    text: String,
     /// Summary guard of a guarded entry (`None` = ordinary text).
-    pub guard: Option<SpeechGuard>,
+    guard: Option<SpeechGuard>,
 }
 
 impl std::fmt::Debug for PendingSpeech {
