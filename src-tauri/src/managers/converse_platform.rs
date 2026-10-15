@@ -1296,6 +1296,7 @@ mod converse_tool_tests;
 /// of the PINNED project directory descriptor. The duplicate refers to the same inode, so a
 /// later rename or replacement of the path cannot change where a job runs. Never re-opens
 /// the path.
+#[cfg(unix)]
 pub(crate) fn pin_project_in(
     resolver: &crate::managers::agent_tools::project::ProjectResolver,
     name: &str,
@@ -1317,6 +1318,16 @@ pub(crate) fn pin_project_in(
         .try_clone()
         .map_err(|_| PinError::Unavailable)?;
     Ok(dup.into())
+}
+
+/// Non-unix twin: pinned descriptors exist only on unix, so pinning is unavailable.
+#[cfg(not(unix))]
+pub(crate) fn pin_project_in(
+    resolver: &crate::managers::agent_tools::project::ProjectResolver,
+    name: &str,
+) -> Result<crate::managers::converse_confirm::DirFd, crate::managers::converse_confirm::PinError> {
+    let _ = (resolver, name);
+    Err(crate::managers::converse_confirm::PinError::Unavailable)
 }
 
 /// M3 (D8, M3-10): maps a job start result to the outcome the conversation speaks. Fixed
