@@ -1047,6 +1047,25 @@ fn log_timing(cfg: &SessionConfig, tier_start: Instant, early: &Early, plan_at: 
     );
 }
 
+/// M4 S5 stub: the streaming turn latency line (`converse timing: ...`). Missing values print
+/// as `-`. Never contains any text. The implementation replaces this body.
+#[allow(dead_code)] // wired by the M4 S5 implementation
+pub(crate) fn format_timing(
+    _tier_start: Instant,
+    _first_text: Option<Instant>,
+    _first_speech: Option<Instant>,
+    _plan_at: Instant,
+    _now: Instant,
+) -> String {
+    todo!("M4 S5")
+}
+
+/// M4 S5 stub: the transcription latency line (`converse transcribe: ms=.. audio_ms=..`).
+#[allow(dead_code)] // wired by the M4 S5 implementation
+pub(crate) fn format_transcribe(_ms: u64, _audio_ms: u64) -> String {
+    todo!("M4 S5")
+}
+
 /// Brain tier: plan the turn and carry it out. Streams (early speech / acknowledgement)
 /// when the mouth opens a queue; otherwise the legacy one-shot path.
 async fn brain_turn(
@@ -3010,3 +3029,7 @@ mod converse_gate_answer_only_tests;
 #[cfg(test)]
 #[path = "converse_gate_m4_tests.rs"]
 mod converse_gate_m4_tests;
+
+#[cfg(test)]
+#[path = "converse_timing_m4_tests.rs"]
+mod converse_timing_m4_tests;

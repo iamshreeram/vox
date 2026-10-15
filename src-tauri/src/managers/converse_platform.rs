@@ -236,6 +236,19 @@ impl RecorderPort for AudioRecorderPort {
     }
 }
 
+/// M4 S5 stub: the transcription timing line, or `None` when timing is disabled. `audio_ms`
+/// is the clip length (floor of samples * 1000 / rate, 0 when the rate is 0). The
+/// implementation replaces this body.
+#[allow(dead_code)] // wired by the M4 S5 implementation
+pub(crate) fn transcribe_line(
+    _enabled: bool,
+    _elapsed_ms: u64,
+    _samples: usize,
+    _sample_rate_hz: u32,
+) -> Option<String> {
+    todo!("M4 S5")
+}
+
 /// Transcriber: the non-streaming path of `TranscribeAction::stop`. Writes no
 /// WAV, no history, and logs no text.
 struct AppTranscriber {
