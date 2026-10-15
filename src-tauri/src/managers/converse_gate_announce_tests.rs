@@ -45,17 +45,39 @@ fn announcer_with(ev: &Arc<Events>) -> Arc<Announcer> {
 
 // ---------------------------------------------------------- conversation lifetime (R2-6)
 
-/// While the conversation loop runs, an announcement is queued (not spoken directly),
-/// then it is spoken through the mouth at the turn boundary, in order.
+/// While the conversation loop runs, an announcement is queued and is spoken through the
+/// loop's own mouth at the next turn boundary, in order (R2-6). The first listen announces
+/// and answers one utterance; the second listen (a second turn) ends the session, so a full
+/// boundary happens after the announce. The probe must not appear as a direct speech before
+/// the boundary.
 #[tokio::test]
 async fn announcement_during_conversation_is_spoken_at_the_turn_boundary() {
+    struct TwoTurnEars {
+        announcer: Arc<Announcer>,
+        ev: Arc<Events>,
+        turn: Mutex<usize>,
+    }
+    impl Ears for TwoTurnEars {
+        fn listen(&self) -> BoxFuture<'_, ListenOutcome> {
+            self.ev.push("listen");
+            let mut turn = self.turn.lock().unwrap();
+            *turn += 1;
+            let outcome = if *turn == 1 {
+                self.announcer
+                    .announce(AnnounceKind::Finish, "The coding job finished.".to_string());
+                ListenOutcome::Utterance("what time is it".to_string())
+            } else {
+                ListenOutcome::Utterance("stop listening".to_string())
+            };
+            Box::pin(async move { outcome })
+        }
+    }
     let ev = Arc::new(Events::default());
     let announcer = announcer_with(&ev);
-    let ears = AnnouncingEars {
+    let ears = TwoTurnEars {
         announcer: announcer.clone(),
-        text: "The coding job finished.",
         ev: ev.clone(),
-        answer: ListenOutcome::Utterance("what time is it".to_string()),
+        turn: Mutex::new(0),
     };
     let mouth = GateMouth {
         ev: ev.clone(),
@@ -76,28 +98,36 @@ async fn announcement_during_conversation_is_spoken_at_the_turn_boundary() {
         announcer: Some(&announcer),
     };
     let _ = run_session(&deps, &gate_cfg(), rx).await;
-    assert!(
-        ev.all()
-            .iter()
-            .all(|e| e != "announce:The coding job finished."),
-        "announcement must not be spoken directly during a conversation: {:?}",
-        ev.all()
-    );
-    let spoken_at = ev
-        .all()
+    let all = ev.all();
+    let listens: Vec<usize> = all
         .iter()
-        .position(|e| e == "say:The coding job finished.");
-    let listened_at = ev.all().iter().position(|e| e == "listen");
+        .enumerate()
+        .filter(|(_, e)| *e == "listen")
+        .map(|(i, _)| i)
+        .collect();
     assert!(
-        spoken_at.is_some() && spoken_at > listened_at,
-        "announcement must be spoken through the mouth at a turn boundary: {:?}",
-        ev.all()
+        listens.len() >= 2,
+        "a full turn boundary must occur: {all:?}"
+    );
+    let spoken_at = all.iter().position(|e| e == "say:The coding job finished.");
+    let direct_at = all
+        .iter()
+        .position(|e| e == "announce:The coding job finished.");
+    assert!(
+        direct_at.is_none(),
+        "the announcement must not be spoken through the direct announcer mouth: {all:?}"
+    );
+    let spoken_at = spoken_at.unwrap_or(usize::MAX);
+    assert!(
+        spoken_at > listens[0] && spoken_at < listens[1],
+        "the probe must be spoken through the loop mouth between turn 1 and turn 2: {all:?}"
     );
 }
 
-/// Ending the session early (cancelled listen) clears the conversation flag.
-/// Precondition proven first: the flag is SET during the loop (a probe announced from
-/// inside the listen is queued, not spoken), so the post-return check is meaningful.
+/// Ending the session early clears the conversation flag (ruling B(i): flag state only).
+/// SET during the loop: a probe announced from inside the listen is queued (take_pending
+/// returns it). CLEARED after the end: a fresh announcement is not queued (take_pending
+/// is empty). No assertion is made about direct speech after the end.
 #[tokio::test]
 async fn conversation_flag_is_cleared_on_early_return() {
     let ev = Arc::new(Events::default());
@@ -127,24 +157,26 @@ async fn conversation_flag_is_cleared_on_early_return() {
         announcer: Some(&announcer),
     };
     let _ = run_session(&deps, &gate_cfg(), rx).await;
+    let all = ev.all();
+    let probe_at = all
+        .iter()
+        .position(|e| e == "announce:probe during early return");
+    let stop_at = all.iter().position(|e| e == "stop");
     assert!(
-        ev.all()
-            .iter()
-            .all(|e| e != "announce:probe during early return"),
-        "flag must be set during the loop: {:?}",
-        ev.all()
+        probe_at.is_some() && probe_at > stop_at,
+        "flag SET: the probe must not be spoken during the loop: {all:?}"
     );
-    announcer.announce(AnnounceKind::Finish, "after the session".to_string());
+    announcer.announce(AnnounceKind::Finish, "after the end".to_string());
     assert!(
-        ev.all().iter().any(|e| e == "announce:after the session"),
-        "flag must be cleared when the session returns: {:?}",
+        ev.all().iter().any(|e| e == "announce:after the end"),
+        "flag CLEARED: a post-end announcement is spoken directly: {:?}",
         ev.all()
     );
 }
 
-/// A panic inside the conversation loop still clears the conversation flag (RAII guard).
-/// Precondition proven first: the flag is SET while the loop runs (an announcement from
-/// inside the panicking listen is queued, not spoken), so clearing it on unwind is real.
+/// A panic inside the conversation loop still clears the conversation flag (ruling B(i)).
+/// SET before the panic: the probe announced inside the panicking listen is queued
+/// (take_pending returns it). CLEARED after the unwind: a new announcement is not queued.
 #[test]
 fn conversation_flag_is_cleared_when_the_loop_panics() {
     struct AnnounceThenPanic {
@@ -191,15 +223,22 @@ fn conversation_flag_is_cleared_when_the_loop_panics() {
             .block_on(run_session(&deps, &gate_cfg(), rx))
     }));
     assert!(result.is_err(), "the simulated panic must propagate");
+    let all = ev.all();
+    // The probe was announced inside the panicking listen. Flag SET means it was queued and
+    // not spoken directly, so it can only appear after the loop ended (flush at end).
+    let probe_at = all.iter().position(|e| e == "announce:probe before panic");
     assert!(
-        ev.all().iter().all(|e| e != "announce:probe before panic"),
-        "flag must be set during the loop before the panic: {:?}",
-        ev.all()
+        probe_at.is_some(),
+        "the probe must be flushed after the panic (it was queued while the flag was set): {all:?}"
+    );
+    assert!(
+        probe_at > all.iter().position(|e| e == "listen"),
+        "flag SET before the panic: the probe must not be spoken directly during the loop: {all:?}"
     );
     announcer.announce(AnnounceKind::Finish, "after the panic".to_string());
     assert!(
         ev.all().iter().any(|e| e == "announce:after the panic"),
-        "flag must be cleared on unwind: {:?}",
+        "flag CLEARED on unwind: a post-unwind announcement is spoken directly: {:?}",
         ev.all()
     );
 }
@@ -403,9 +442,9 @@ fn cancel_job_placeholder_arm_is_replaced() {
     );
 }
 
-/// The conversation flag is SET for the whole loop: an announcement made from inside
-/// `listen` is queued and must not be spoken directly (R2-6). Fails today because the
-/// loop never calls `set_conversation_active(true)`.
+/// The conversation flag is SET for the whole loop (ruling B(i)). An announcement made from
+/// inside `listen` must not be spoken directly while the loop runs: it is flushed only after
+/// the conversation ends, so the direct announcer mouth sees the probe after the loop's stop.
 #[tokio::test]
 async fn conversation_flag_is_set_during_the_loop() {
     let ev = Arc::new(Events::default());
@@ -435,9 +474,11 @@ async fn conversation_flag_is_set_during_the_loop() {
         announcer: Some(&announcer),
     };
     let _ = run_session(&deps, &gate_cfg(), rx).await;
+    let all = ev.all();
+    let probe_at = all.iter().position(|e| e == "announce:flag probe");
+    let stop_at = all.iter().position(|e| e == "stop");
     assert!(
-        ev.all().iter().all(|e| e != "announce:flag probe"),
-        "during the loop the announcement must be queued, not spoken directly: {:?}",
-        ev.all()
+        probe_at.is_some() && probe_at > stop_at,
+        "flag SET: the probe must not be spoken during the loop, only flushed after it: {all:?}"
     );
 }

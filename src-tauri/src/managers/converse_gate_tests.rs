@@ -6,8 +6,7 @@
 use super::*;
 use crate::managers::command_router::CommandAction;
 use crate::managers::converse_confirm::{
-    ActionPolicy, ApprovalFingerprint, FileId, JobStartOutcome, LaunchConfig, PolicySource,
-    ValidatedCommand,
+    ActionPolicy, FileId, JobStartOutcome, LaunchConfig, PolicySource, ValidatedCommand,
 };
 use crate::managers::converse_plan::{JobRequest, PlanKind};
 use crate::managers::emotion::Emotion;
@@ -326,13 +325,13 @@ fn gate_cfg() -> SessionConfig {
 /// `answers` is the script of listen outcomes after the question is spoken.
 /// Returns the events in order.
 async fn run_gate(
+    ev: &Arc<Events>,
     plan: TurnPlan,
     pol: Arc<GatePolicy>,
     hands: &GateHands,
     answers: Vec<Heard>,
     flip: Option<Flip>,
 ) -> (Arc<Events>, Result<Option<String>, SessionEnd>) {
-    let ev = Arc::new(Events::default());
     let ears = GateEars {
         script: Mutex::new(answers.into()),
         ev: ev.clone(),
@@ -359,7 +358,7 @@ async fn run_gate(
     let cfg = gate_cfg();
     let mut carry = Carry::default();
     let outcome = gate_and_run(&deps, &cfg, &mut cancel, plan, &mut carry).await;
-    (ev, outcome)
+    (ev.clone(), outcome)
 }
 
 // ------------------------------------------------------------------ tests
@@ -371,7 +370,15 @@ async fn gate_stub_is_reached_for_paste_with_gate_active() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let pol = policy(true, false);
-    let (ev, _outcome) = run_gate(paste_plan("hello"), pol, &hands, vec![utt("yes")], None).await;
+    let (ev, _outcome) = run_gate(
+        &ev,
+        paste_plan("hello"),
+        pol,
+        &hands,
+        vec![utt("yes")],
+        None,
+    )
+    .await;
     assert!(ev.says().iter().any(|s| s.contains("type that")));
 }
 
@@ -383,6 +390,7 @@ async fn paste_with_gate_active_asks_then_pastes_the_same_text_on_yes() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, outcome) = run_gate(
+        &ev,
         paste_plan("hello world"),
         policy(true, false),
         &hands,
@@ -407,6 +415,7 @@ async fn paste_with_gate_inactive_runs_without_asking() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _outcome) = run_gate(
+        &ev,
         paste_plan("hello world"),
         policy(false, false),
         &hands,
@@ -424,6 +433,7 @@ async fn paste_declined_with_no_pastes_nothing() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _outcome) = run_gate(
+        &ev,
         paste_plan("secret draft"),
         policy(true, false),
         &hands,
@@ -441,6 +451,7 @@ async fn paste_declined_with_unclear_answer_pastes_nothing() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _outcome) = run_gate(
+        &ev,
         paste_plan("x"),
         policy(true, false),
         &hands,
@@ -461,6 +472,7 @@ async fn paste_declined_on_silence_pastes_nothing() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _outcome) = run_gate(
+        &ev,
         paste_plan("x"),
         policy(true, false),
         &hands,
@@ -478,6 +490,7 @@ async fn paste_declined_on_listen_error_pastes_nothing() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _outcome) = run_gate(
+        &ev,
         paste_plan("x"),
         policy(true, false),
         &hands,
@@ -504,6 +517,7 @@ async fn command_with_gate_active_asks_then_runs_the_validated_command_on_yes() 
         },
     });
     let (ev, outcome) = run_gate(
+        &ev,
         command_plan("open notes"),
         policy(true, false),
         &hands,
@@ -536,6 +550,7 @@ async fn command_payload_asked_equals_payload_run() {
         },
     });
     let (ev, _o) = run_gate(
+        &ev,
         command_plan("open mail"),
         policy(true, false),
         &hands,
@@ -564,6 +579,7 @@ async fn command_with_gate_inactive_runs_without_asking() {
         },
     });
     let (ev, _o) = run_gate(
+        &ev,
         command_plan("open notes"),
         policy(false, false),
         &hands,
@@ -571,8 +587,11 @@ async fn command_with_gate_inactive_runs_without_asking() {
         None,
     )
     .await;
+    // Gate inactive keeps the legacy route (R2-12): no question, and the model command is
+    // handed to run_model_command exactly as before, not to the validated path.
     assert_eq!(ev.count("listen"), 0);
-    assert!(ev.all().iter().any(|e| e == "run_validated:Notes"));
+    assert!(ev.all().iter().any(|e| e == "model:open notes"));
+    assert_eq!(ev.count("run_validated:"), 0);
 }
 
 /// A command the router refuses (validate returns None) is never confirmed or run.
@@ -581,6 +600,7 @@ async fn command_refused_by_validation_is_never_asked_or_run() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _o) = run_gate(
+        &ev,
         command_plan("format the disk"),
         policy(true, false),
         &hands,
@@ -607,7 +627,7 @@ async fn answer_and_clarify_are_not_gated() {
             kind,
             ..answer_plan("Here you go.")
         };
-        let (ev, _o) = run_gate(plan, policy(true, true), &hands, vec![], None).await;
+        let (ev, _o) = run_gate(&ev, plan, policy(true, true), &hands, vec![], None).await;
         assert_eq!(ev.count("listen"), 0, "{kind:?} must not ask");
         assert_eq!(ev.count("start_job:"), 0);
         assert_eq!(ev.count("paste:"), 0);
@@ -672,6 +692,7 @@ async fn cancel_job_utterance_cancels_when_a_job_is_active() {
     let mut hands = GateHands::new(ev.clone());
     hands.active_job = true;
     let (ev, _o) = run_dispatch(
+        &ev,
         "stop job",
         policy(true, true),
         &hands,
@@ -700,6 +721,7 @@ async fn cancel_job_utterance_reports_no_job_running() {
     let mut hands = GateHands::new(ev.clone());
     hands.cancel_result = false;
     let (ev, _o) = run_dispatch(
+        &ev,
         "cancel the job",
         policy(true, true),
         &hands,
@@ -727,6 +749,7 @@ async fn stop_job_with_defaults_keeps_legacy_meaning_and_does_not_cancel() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (_ev, _o) = run_dispatch(
+        &ev,
         "stop job",
         policy(false, false),
         &hands,
@@ -749,6 +772,7 @@ async fn cancel_job_with_active_job_cancels_even_if_jobs_disabled() {
     let mut hands = GateHands::new(ev.clone());
     hands.active_job = true;
     let (_ev, _o) = run_dispatch(
+        &ev,
         "cancel job",
         policy(false, false),
         &hands,
@@ -766,12 +790,12 @@ async fn cancel_job_with_active_job_cancels_even_if_jobs_disabled() {
 
 /// Runs one utterance through `run_turns` (the real dispatch path) with a single listen.
 async fn run_dispatch(
+    ev: &Arc<Events>,
     utterance: &str,
     _unused: Arc<GatePolicy>,
     hands: &GateHands,
     pol: Arc<GatePolicy>,
 ) -> (Arc<Events>, Result<(), SessionEnd>) {
-    let ev = Arc::new(Events::default());
     let ears = GateEars {
         script: Mutex::new(vec![utt(utterance)].into()),
         ev: ev.clone(),
@@ -785,8 +809,7 @@ async fn run_dispatch(
     let brain = GateBrain {
         plan: answer_plan("unused"),
     };
-    let (_tx, rx) = watch::channel(false);
-    let cancel_rx: CancelToken = rx;
+    let (_tx, _rx) = watch::channel(false);
     let deps = Deps {
         ears: &ears,
         mouth: &mouth,
@@ -796,10 +819,9 @@ async fn run_dispatch(
         policy: Some(&*pol),
         announcer: None,
     };
-    let _ = cancel_rx;
     let outcome = run_session(&deps, &gate_cfg(), watch::channel(false).1).await;
     (
-        ev,
+        ev.clone(),
         if outcome == SessionEnd::Idle {
             Ok(())
         } else {

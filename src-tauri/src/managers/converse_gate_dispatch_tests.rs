@@ -4,12 +4,10 @@
 //! `converse_gate_tests` so it reuses the same fakes.
 
 use super::*;
-use crate::managers::converse_plan::JobRequest as PlanJobRequest;
-use futures_util::FutureExt;
-use std::panic::AssertUnwindSafe;
 
 /// Run one gated plan with a chosen mouth result for the question.
 async fn run_gate_say(
+    ev: &Arc<Events>,
     plan: TurnPlan,
     pol: Arc<GatePolicy>,
     hands: &GateHands,
@@ -17,7 +15,6 @@ async fn run_gate_say(
     flip: Option<Flip>,
     say_result: SayOutcome,
 ) -> (Arc<Events>, Result<Option<String>, SessionEnd>) {
-    let ev = Arc::new(Events::default());
     let ears = GateEars {
         script: Mutex::new(answers.into()),
         ev: ev.clone(),
@@ -43,7 +40,7 @@ async fn run_gate_say(
     };
     let mut carry = Carry::default();
     let outcome = gate_and_run(&deps, &gate_cfg(), &mut cancel, plan, &mut carry).await;
-    (ev, outcome)
+    (ev.clone(), outcome)
 }
 
 // ---------------------------------------------------------- job outcomes (D5, D8)
@@ -79,6 +76,7 @@ async fn job_start_outcomes_are_spoken_with_their_fixed_messages() {
         let mut hands = GateHands::new(ev.clone());
         hands.start = Mutex::new(Some(outcome));
         let (ev, _o) = run_gate(
+            &ev,
             job_plan("proj", "fix the test"),
             policy(false, true),
             &hands,
@@ -105,6 +103,7 @@ async fn job_with_gate_active_asks_with_fixed_template_then_starts_on_yes() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, outcome) = run_gate(
+        &ev,
         job_plan("proj", "fix the failing test"),
         policy(true, true),
         &hands,
@@ -126,6 +125,7 @@ async fn job_question_never_speaks_the_model_speech() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _o) = run_gate(
+        &ev,
         job_plan("proj", "fix it"),
         policy(true, true),
         &hands,
@@ -146,6 +146,7 @@ async fn job_payload_asked_equals_payload_started() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _o) = run_gate(
+        &ev,
         job_plan("proj", "fix the test"),
         policy(true, true),
         &hands,
@@ -168,6 +169,7 @@ async fn job_with_gate_inactive_starts_without_asking() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _o) = run_gate(
+        &ev,
         job_plan("proj", "fix it"),
         policy(false, true),
         &hands,
@@ -186,6 +188,7 @@ async fn job_with_jobs_disallowed_is_refused_and_never_started() {
         let ev = Arc::new(Events::default());
         let hands = GateHands::new(ev.clone());
         let (ev, _o) = run_gate(
+            &ev,
             job_plan("proj", "fix it"),
             policy(gate, false),
             &hands,
@@ -210,6 +213,7 @@ async fn job_declined_never_starts() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _o) = run_gate(
+        &ev,
         job_plan("proj", "fix it"),
         policy(true, true),
         &hands,
@@ -231,6 +235,7 @@ async fn job_task_with_secret_is_refused_and_secret_never_leaks() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _o) = run_gate(
+        &ev,
         job_plan("proj", &task),
         policy(true, true),
         &hands,
@@ -256,6 +261,7 @@ async fn job_over_long_task_is_refused_before_asking() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _o) = run_gate(
+        &ev,
         job_plan("proj", &task),
         policy(true, true),
         &hands,
@@ -278,6 +284,7 @@ async fn job_unknown_project_is_refused_before_asking() {
     let mut hands = GateHands::new(ev.clone());
     hands.pin = Err(PinError::Unknown);
     let (ev, _o) = run_gate(
+        &ev,
         job_plan("missing", "fix it"),
         policy(true, true),
         &hands,
@@ -300,6 +307,7 @@ async fn job_ambiguous_project_is_refused_before_asking() {
     let mut hands = GateHands::new(ev.clone());
     hands.pin = Err(PinError::Ambiguous);
     let (ev, _o) = run_gate(
+        &ev,
         job_plan("dup", "fix it"),
         policy(true, true),
         &hands,
@@ -320,6 +328,7 @@ async fn job_project_name_with_path_characters_is_refused() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _o) = run_gate(
+        &ev,
         job_plan("../etc", "fix it"),
         policy(true, true),
         &hands,
@@ -339,6 +348,7 @@ async fn job_without_launch_config_is_refused_as_not_set_up() {
     let pol = policy(true, true);
     *pol.launch.lock().unwrap() = None;
     let (ev, _o) = run_gate(
+        &ev,
         job_plan("proj", "fix it"),
         pol,
         &hands,
@@ -360,6 +370,7 @@ async fn job_task_containing_say_yes_is_read_as_data() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _o) = run_gate(
+        &ev,
         job_plan("proj", task),
         policy(true, true),
         &hands,
@@ -383,6 +394,7 @@ async fn command_label_is_sanitized_before_asking() {
         },
     });
     let (ev, _o) = run_gate(
+        &ev,
         command_plan("open notes"),
         policy(true, false),
         &hands,
@@ -406,6 +418,7 @@ async fn job_turned_off_during_confirmation_is_not_started() {
     let hands = GateHands::new(ev.clone());
     let pol = policy(true, true);
     let (ev, _o) = run_gate_say(
+        &ev,
         job_plan("proj", "fix it"),
         pol,
         &hands,
@@ -436,6 +449,7 @@ async fn binary_replaced_during_confirmation_is_not_started() {
     let mut replaced = launch_config();
     replaced.binary_id.ino = 999;
     let (ev, _o) = run_gate_say(
+        &ev,
         job_plan("proj", "fix it"),
         policy(true, true),
         &hands,
@@ -456,6 +470,7 @@ async fn binary_path_changed_during_confirmation_is_not_started() {
     let mut moved = launch_config();
     moved.binary = PathBuf::from("/opt/other-cli/bin/other-cli");
     let (ev, _o) = run_gate_say(
+        &ev,
         job_plan("proj", "fix it"),
         policy(true, true),
         &hands,
@@ -476,6 +491,7 @@ async fn prompt_flag_changed_during_confirmation_is_not_started() {
     let mut changed = launch_config();
     changed.prompt_flag = "-p".to_string();
     let (ev, _o) = run_gate_say(
+        &ev,
         job_plan("proj", "fix it"),
         policy(true, true),
         &hands,
@@ -494,6 +510,7 @@ async fn identical_fingerprint_after_flip_back_is_allowed() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _o) = run_gate_say(
+        &ev,
         job_plan("proj", "fix it"),
         policy(true, true),
         &hands,
@@ -514,6 +531,7 @@ async fn approved_paste_proceeds_even_if_gate_is_switched_off() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _o) = run_gate_say(
+        &ev,
         paste_plan("hello"),
         policy(true, false),
         &hands,
@@ -534,6 +552,7 @@ async fn declined_paste_stays_declined_even_if_settings_change() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _o) = run_gate_say(
+        &ev,
         paste_plan("hello"),
         policy(true, false),
         &hands,
@@ -556,6 +575,7 @@ async fn question_interrupted_by_stop_declines_as_cancelled() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _o) = run_gate_say(
+        &ev,
         paste_plan("hello"),
         policy(true, false),
         &hands,
@@ -574,6 +594,7 @@ async fn question_speech_failure_declines_as_error() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _o) = run_gate_say(
+        &ev,
         paste_plan("hello"),
         policy(true, false),
         &hands,
@@ -595,6 +616,7 @@ async fn answer_aborted_by_cancel_declines_and_runs_nothing() {
     let ev = Arc::new(Events::default());
     let hands = GateHands::new(ev.clone());
     let (ev, _o) = run_gate(
+        &ev,
         paste_plan("hello"),
         policy(true, false),
         &hands,
@@ -640,7 +662,8 @@ async fn gated_kinds_execute_only_on_explicit_yes() {
                 Heard::Out(ref o) => Heard::Out(o.clone()),
                 Heard::Hang => Heard::Hang,
             };
-            let (ev, _o) = run_gate(plan, policy(true, true), &hands, vec![scripted], None).await;
+            let (ev, _o) =
+                run_gate(&ev, plan, policy(true, true), &hands, vec![scripted], None).await;
             let executed = ev.count("paste:") + ev.count("run_validated:") + ev.count("start_job:");
             assert_eq!(
                 executed > 0,
@@ -669,13 +692,14 @@ async fn gate_inactive_runs_gated_kinds_without_a_question() {
             "command" => command_plan("open notes"),
             _ => job_plan("proj", "fix it"),
         };
-        let (ev, _o) = run_gate(plan, policy(false, true), &hands, vec![], None).await;
+        let (ev, _o) = run_gate(&ev, plan, policy(false, true), &hands, vec![], None).await;
         assert_eq!(
             ev.count("listen"),
             0,
             "kind={kind} asked with gate inactive"
         );
-        let executed = ev.count("paste:") + ev.count("run_validated:") + ev.count("start_job:");
+        // Legacy routes when the gate is inactive: paste, the legacy model command, or the job.
+        let executed = ev.count("paste:") + ev.count("model:") + ev.count("start_job:");
         assert_eq!(executed, 1, "kind={kind}: events {:?}", ev.all());
     }
 }
