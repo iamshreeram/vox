@@ -139,6 +139,14 @@ export const TtsSettings: React.FC<TtsSettingsProps> = React.memo(
                         value: "",
                         label: t("settings.advanced.tts.voiceDefaultOption"),
                       },
+                      ...(voiceResult.selected !== ""
+                        ? [
+                            {
+                              value: voiceResult.selected,
+                              label: voiceResult.selected,
+                            },
+                          ]
+                        : []),
                     ]
                   : voiceResult.options
               }

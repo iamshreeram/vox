@@ -102,7 +102,9 @@ pub(crate) async fn list_voices_via(
     }
 }
 
-/// Installed voices on macOS, via `/usr/bin/say -v '?'` with a 5 s timeout.
+/// Installed voices on macOS, via `/usr/bin/say -v '?'`. The collection timeout is 5 s;
+/// the shared runner adds a short termination grace and reap wait (about 1.25 s), so the
+/// worst case is roughly 6.25 s plus spawn time.
 #[cfg(target_os = "macos")]
 pub async fn list_installed_voices() -> Vec<TtsVoice> {
     let args = ["-v".to_string(), "?".to_string()];
