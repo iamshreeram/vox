@@ -12,6 +12,9 @@ use crate::managers::converse_confirm::JobLaunch;
 #[path = "agent_jobs_spawn.rs"]
 mod agent_jobs_spawn;
 
+#[path = "agent_jobs_delivery.rs"]
+mod agent_jobs_delivery;
+
 /// Parameters for starting one job.
 pub struct JobSpec {
     /// The prepared launch.
