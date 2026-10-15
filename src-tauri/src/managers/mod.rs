@@ -38,6 +38,7 @@ pub mod emotion;
 pub mod gguf_meta;
 pub mod history;
 pub mod job_announcer;
+pub mod job_speaker;
 pub mod llm_stream;
 pub mod llm_tools;
 pub mod media_control;

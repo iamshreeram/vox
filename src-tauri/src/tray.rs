@@ -682,6 +682,12 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     Ok((menu, tooltip))
 }
 
+/// Whether the "Cancel coding job" tray item is enabled (M3 S3c-2, DESIGN D6): only while a
+/// coding job is running. Phase A stub.
+fn cancel_job_item_enabled(job_running: bool) -> bool {
+    todo!("S3c-2 Phase B: cancel_job_item_enabled")
+}
+
 /// Whether the "Update available" item is shown: only while an update is
 /// known, checks are on, and checks are not forced off by the environment.
 fn show_update_available_item(inputs: &MenuInputs, forced_disabled: bool) -> bool {
@@ -1014,3 +1020,7 @@ mod update_available_item_tests {
         assert_eq!(localized_or_english("", ""), "Update available");
     }
 }
+
+#[cfg(test)]
+#[path = "tray_job_tests.rs"]
+mod tray_job_tests;

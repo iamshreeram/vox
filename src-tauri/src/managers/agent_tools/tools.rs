@@ -8,6 +8,7 @@ use serde_json::{json, Map, Value};
 
 use crate::managers::agent_tools::confined_read::{read_project_file, FsGate};
 use crate::managers::agent_tools::git_vet::git_status_summary;
+use crate::managers::agent_tools::job_status::JobStatusSource;
 use crate::managers::agent_tools::project::ProjectResolver;
 use crate::managers::agent_tools::ui_port::{UiPort, OPEN_SETTINGS_SECTIONS};
 use crate::managers::converse::BoxFuture;
@@ -111,6 +112,12 @@ impl DefaultToolExecutor {
             gate: FsGate::new(),
             tool_timeout,
         }
+    }
+
+    /// Adds the `job_status` tool, backed by `source`. Only executors built with a source
+    /// advertise `job_status` (M3 S3c-2, DESIGN D7). Phase A stub.
+    pub fn with_job_status(self, source: Arc<dyn JobStatusSource>) -> Self {
+        todo!("S3c-2 Phase B: with_job_status")
     }
 
     /// Runs one tool body with the per-tool timeout. A timeout is an untrusted error.

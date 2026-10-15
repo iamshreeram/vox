@@ -4,6 +4,7 @@
 pub mod bounded_cmd;
 pub mod confined_read;
 pub mod git_vet;
+pub mod job_status;
 pub mod project;
 pub mod tauri_backends;
 pub mod tools;
