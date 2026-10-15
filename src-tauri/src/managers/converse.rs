@@ -1373,7 +1373,10 @@ async fn dispatch_prepared(
 /// Fixed spoken text for each job start outcome (DESIGN D5, D8).
 fn job_outcome_message(outcome: JobStartOutcome) -> String {
     match outcome {
-        JobStartOutcome::Started(_) => "Started. I'll tell you when it's done.".to_string(),
+        JobStartOutcome::Started(id) => {
+            log::info!("coding job {id} started");
+            "Started. I'll tell you when it's done.".to_string()
+        }
         JobStartOutcome::Busy => "A coding job is already running.".to_string(),
         JobStartOutcome::NotConfigured => "Coding jobs aren't set up yet.".to_string(),
         JobStartOutcome::UnknownProject => "I couldn't find that project.".to_string(),

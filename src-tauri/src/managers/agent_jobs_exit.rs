@@ -20,6 +20,9 @@ pub struct ExitConfig {
     /// Time between terminate and kill.
     pub term_grace: Duration,
     /// Time to drain output after the job stops.
+    // Documented budget; the job owner applies its own drain budget while
+    // stopping (JobManager::with_timing), so the coordinator does not read it.
+    #[allow(dead_code)]
     pub drain: Duration,
     /// Last resort: how long to wait after the deadline before giving up.
     pub hard_cap: Duration,

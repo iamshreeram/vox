@@ -483,6 +483,9 @@ pub enum JobStartOutcome {
     /// Jobs are not configured.
     NotConfigured,
     /// The project name is unknown.
+    // Part of the Hands contract (the gate speaks it); the real hands refuse an
+    // unknown project earlier, while preparing the action.
+    #[allow(dead_code)]
     UnknownProject,
     /// Starting jobs is not supported here.
     Unsupported,

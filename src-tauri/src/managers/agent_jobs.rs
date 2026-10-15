@@ -82,6 +82,8 @@ pub enum JobError {
     /// Another job is active, or no Finish reservation is left.
     Busy,
     /// Jobs are not supported here.
+    // Only constructed on non-unix targets, where start() cannot run a job.
+    #[cfg_attr(unix, allow(dead_code))]
     Unsupported,
     /// The coding CLI binary is not usable.
     BadBinary,
