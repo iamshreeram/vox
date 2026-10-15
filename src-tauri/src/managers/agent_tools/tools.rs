@@ -119,6 +119,7 @@ impl DefaultToolExecutor {
 
     /// Adds the `job_status` tool, backed by `source`. Only executors built with a source
     /// advertise `job_status` (M3 S3c-2, DESIGN D7).
+    #[allow(dead_code)]
     pub fn with_job_status(mut self, source: Arc<dyn JobStatusSource>) -> Self {
         self.job_status = Some(source);
         self
