@@ -12,9 +12,11 @@ use crate::managers::converse_confirm::JobLaunch;
 #[path = "agent_jobs_delivery.rs"]
 mod agent_jobs_delivery;
 
+// Unix-only: the owner and spawn modules use process groups, signals and fchdir.
 #[path = "agent_jobs_owner.rs"]
 mod agent_jobs_owner;
 
+#[cfg(unix)]
 #[path = "agent_jobs_spawn.rs"]
 mod agent_jobs_spawn;
 
@@ -175,6 +177,25 @@ impl JobManager {
         spec: JobSpec,
         observer: Arc<dyn JobObserver>,
     ) -> Result<u64, JobError> {
+        #[cfg(not(unix))]
+        {
+            // Jobs need process groups, signals and fchdir: none exist off unix.
+            let _ = (spec, observer);
+            Err(JobError::Unsupported)
+        }
+        #[cfg(unix)]
+        {
+            self.start_unix(spec, observer)
+        }
+    }
+
+    /// Unix start path: checks, spawns the process group and starts the owner thread.
+    #[cfg(unix)]
+    fn start_unix(
+        self: &Arc<Self>,
+        spec: JobSpec,
+        observer: Arc<dyn JobObserver>,
+    ) -> Result<u64, JobError> {
         let mut st = lock_state(&self.state);
         if st.closed {
             return Err(JobError::ShuttingDown);
@@ -231,10 +252,16 @@ impl JobManager {
                 *lock_done(&done_flag) = true;
             })),
         };
-        std::thread::Builder::new()
+        let owner_thread = std::thread::Builder::new()
             .name("agent-job-owner".to_string())
-            .spawn(move || owner.run())
-            .map_err(|_| JobError::SpawnFailed)?;
+            .spawn(move || owner.run());
+        if owner_thread.is_err() {
+            // The owner (and the Child it holds) was dropped with the failed spawn. Kill the
+            // still-unsupervised process group by its pid and release the reservation.
+            agent_jobs_owner::kill_orphan_group(pgid);
+            self.delivery.cancel_reservation();
+            return Err(JobError::SpawnFailed);
+        }
         st.job = Some(Active { tx, record, done });
         Ok(id)
     }

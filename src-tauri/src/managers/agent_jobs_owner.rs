@@ -66,6 +66,18 @@ fn lock_ring(ring: &Mutex<TailRing>) -> MutexGuard<'_, TailRing> {
     ring.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// SIGTERM on unix; unused elsewhere (jobs never start off unix).
+#[cfg(unix)]
+const SIG_TERM: i32 = libc::SIGTERM;
+#[cfg(not(unix))]
+const SIG_TERM: i32 = 15;
+
+/// SIGKILL on unix; unused elsewhere (jobs never start off unix).
+#[cfg(unix)]
+const SIG_KILL: i32 = libc::SIGKILL;
+#[cfg(not(unix))]
+const SIG_KILL: i32 = 9;
+
 /// Grace between SIGTERM and SIGKILL when the leader exited on its own.
 const NATURAL_GRACE_MS: u64 = 300;
 
@@ -189,7 +201,7 @@ impl Owner {
     /// has exited and all readers are done), then ALWAYS SIGKILL the group. The
     /// leader is still unreaped here, so the pgid is ours. Honors ForceKill.
     fn stop_group(&mut self, grace: Duration) {
-        signal_group(self.pgid, libc::SIGTERM);
+        signal_group(self.pgid, SIG_TERM);
         let until = Instant::now() + grace;
         while Instant::now() < until {
             if self.leader_exited && self.readers_left == 0 {
@@ -199,7 +211,7 @@ impl Owner {
                 break;
             }
         }
-        signal_group(self.pgid, libc::SIGKILL);
+        signal_group(self.pgid, SIG_KILL);
     }
 
     /// Waits until all readers are done or `until`. Returns true when all are done.
@@ -290,6 +302,7 @@ fn terminal_state(trigger: Trigger, status: Option<std::process::ExitStatus>) ->
 }
 
 /// Sends `sig` to the process group. Only called while the leader is unreaped.
+#[cfg(unix)]
 pub(super) fn signal_group(pgid: i32, sig: i32) {
     // SAFETY: killpg only sends a signal. `pgid` is the pid of the job leader,
     // which the owner has not reaped yet, so the group id cannot have been reused;
@@ -297,6 +310,17 @@ pub(super) fn signal_group(pgid: i32, sig: i32) {
     unsafe {
         libc::killpg(pgid, sig);
     }
+}
+
+/// Non-unix placeholder: jobs never start here, so there is no group to signal.
+#[cfg(not(unix))]
+pub(super) fn signal_group(_pgid: i32, _sig: i32) {}
+
+/// Kills a job group whose owner thread could not be started. The leader is still
+/// our unreaped child (the owner, which would reap it, never ran), so the pgid is
+/// ours to signal. ESRCH is harmless.
+pub(super) fn kill_orphan_group(pgid: i32) {
+    signal_group(pgid, SIG_KILL);
 }
 
 /// Reads one output stream into the pipeline until EOF, then notifies the owner.
@@ -327,6 +351,7 @@ fn spawn_reader<R: Read + Send + 'static>(
 }
 
 /// Waits for the leader to exit without reaping it, then notifies the owner.
+#[cfg(unix)]
 fn spawn_waiter(pgid: i32, tx: Sender<Msg>) -> io::Result<()> {
     thread::Builder::new()
         .name("agent-job-waiter".to_string())
@@ -337,7 +362,15 @@ fn spawn_waiter(pgid: i32, tx: Sender<Msg>) -> io::Result<()> {
         .map(|_| ())
 }
 
+/// Non-unix placeholder: no leader can run here, so report the exit at once.
+#[cfg(not(unix))]
+fn spawn_waiter(_pgid: i32, tx: Sender<Msg>) -> io::Result<()> {
+    tx.send(Msg::Exited)
+        .map_err(|_| io::Error::other("owner channel closed"))
+}
+
 /// Blocks until the leader has exited; the leader stays a zombie (unreaped).
+#[cfg(unix)]
 fn wait_leader_exit(pid: i32) {
     loop {
         // SAFETY: siginfo_t is plain C data and an all-zero value is valid.
