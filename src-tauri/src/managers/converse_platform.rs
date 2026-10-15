@@ -29,7 +29,9 @@ use crate::managers::converse_confirm::{
     DirFd, JobLaunch, JobStartOutcome, PinError, PolicySource, ValidatedCommand,
 };
 use crate::managers::converse_overlay::{OverlayDispatcher, ReadyGate};
-use crate::managers::converse_plan::{build_plan_prompt, PlanError, PlanInput, PlanKind, TurnPlan};
+use crate::managers::converse_plan::{
+    build_plan_prompt, JobParsePolicy, PlanError, PlanInput, PlanKind, PlanPrompt, TurnPlan,
+};
 use crate::managers::converse_queue::TtsQueueSession;
 use crate::managers::converse_runtime::{AdmissionGuard, Platform, SessionParts, ALREADY_RUNNING};
 use crate::managers::emotion::Emotion;
@@ -236,6 +238,28 @@ impl RecorderPort for AudioRecorderPort {
     }
 }
 
+/// The transcription timing line, or `None` when timing is disabled. `audio_ms` is the clip
+/// length (floor of samples * 1000 / rate, 0 when the rate is 0). Never contains any text.
+pub(crate) fn transcribe_line(
+    enabled: bool,
+    elapsed_ms: u64,
+    samples: usize,
+    sample_rate_hz: u32,
+) -> Option<String> {
+    if !enabled {
+        return None;
+    }
+    let audio_ms = if sample_rate_hz == 0 {
+        0
+    } else {
+        let ms = (samples as u128).saturating_mul(1000) / u128::from(sample_rate_hz);
+        u64::try_from(ms).unwrap_or(u64::MAX)
+    };
+    Some(crate::managers::converse::format_transcribe(
+        elapsed_ms, audio_ms,
+    ))
+}
+
 /// Transcriber: the non-streaming path of `TranscribeAction::stop`. Writes no
 /// WAV, no history, and logs no text.
 struct AppTranscriber {
@@ -244,8 +268,20 @@ struct AppTranscriber {
 
 impl Transcriber for AppTranscriber {
     fn transcribe(&self, samples: Vec<f32>) -> Result<String, TranscribeFailure> {
+        let sample_count = samples.len();
+        let started = Instant::now();
         let tm = self.app.state::<Arc<TranscriptionManager>>();
-        tm.transcribe(samples).map_err(|_| TranscribeFailure)
+        let result = tm.transcribe(samples).map_err(|_| TranscribeFailure);
+        let enabled = crate::managers::realtime_config::RealtimeConfig::from_settings(
+            &get_settings(&self.app),
+        )
+        .timing_log;
+        let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let rate = crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
+        if let Some(line) = transcribe_line(enabled, elapsed_ms, sample_count, rate) {
+            log::info!("{line}");
+        }
+        result
     }
 }
 
@@ -612,8 +648,8 @@ pub(crate) async fn plan_with_tools(
         style: input.style,
         vault_context: None,
     };
-    let jobs_allowed = crate::managers::converse_confirm::effective_policy(settings).jobs_allowed;
-    let prompt = planner_prompt_for(&base, jobs_allowed);
+    let policy = job_parse_policy(settings);
+    let prompt = planner_prompt_for_policy(&base, &policy);
     let system = format!("{}{TOOLS_ADDENDUM}", prompt.system);
     let first_user = match vault {
         Some(block) => format!("{}{}", vault_user_block(block), prompt.user),
@@ -639,10 +675,10 @@ pub(crate) async fn plan_with_tools(
     let outcome = run_tool_loop(&model, exec.as_ref(), first_user, system, &cfg, taint)
         .await
         .map_err(map_turn_error)?;
-    let plan = crate::managers::converse_plan::parse_plan_with_policy(
+    let plan = crate::managers::converse_plan::parse_plan_with_job_policy(
         &outcome.final_text,
         &sent,
-        jobs_allowed,
+        &policy,
     )?;
     Ok(guard_plan(plan, taint, guard_actions))
 }
@@ -674,16 +710,15 @@ impl Brain for RealBrain {
                 return plan_with_tools(&settings, prepared, &input, &self.taint, &make_exec).await;
             }
             let deadline = effective_deadline(&settings);
-            let jobs_allowed =
-                crate::managers::converse_confirm::effective_policy(&settings).jobs_allowed;
-            let prompt = planner_prompt_for(&input, jobs_allowed);
+            let policy = job_parse_policy(&settings);
+            let prompt = planner_prompt_for_policy(&input, &policy);
             let raw = complete(&settings, &prompt.system, &prompt.combined, deadline)
                 .await
                 .map_err(map_compose_error)?;
-            let plan = crate::managers::converse_plan::parse_plan_with_policy(
+            let plan = crate::managers::converse_plan::parse_plan_with_job_policy(
                 &raw,
                 &prompt.combined,
-                jobs_allowed,
+                &policy,
             )?;
             Ok(guard_plan(
                 plan,
@@ -711,9 +746,8 @@ impl Brain for RealBrain {
                 vault_context: block.as_deref(),
                 ..input
             };
-            let jobs_allowed =
-                crate::managers::converse_confirm::effective_policy(&settings).jobs_allowed;
-            let prompt = planner_prompt_for(&input, jobs_allowed);
+            let policy = job_parse_policy(&settings);
+            let prompt = planner_prompt_for_policy(&input, &policy);
             let raw = complete_streaming(
                 &settings,
                 &prompt.system,
@@ -723,10 +757,10 @@ impl Brain for RealBrain {
             )
             .await
             .map_err(map_compose_error)?;
-            let plan = crate::managers::converse_plan::parse_plan_with_policy(
+            let plan = crate::managers::converse_plan::parse_plan_with_job_policy(
                 &raw,
                 &prompt.combined,
-                jobs_allowed,
+                &policy,
             )?;
             Ok(guard_plan(
                 plan,
@@ -1352,7 +1386,6 @@ pub(crate) fn map_job_error(
 }
 
 /// The production `PolicySource` over a settings getter.
-#[allow(dead_code)]
 pub struct SettingsPolicy {
     settings: Arc<dyn Fn() -> AppSettings + Send + Sync>,
 }
@@ -1375,6 +1408,21 @@ impl crate::managers::converse_confirm::PolicySource for SettingsPolicy {
             return None;
         }
         crate::managers::converse_confirm::launch_config_from_settings(&settings)
+    }
+    fn ask_allowed(&self) -> bool {
+        let settings = (self.settings)();
+        crate::managers::converse_confirm::effective_policy(&settings).jobs_allowed
+            && settings.agent_jobs_ask_enabled
+    }
+    fn allowed_agents(&self) -> Vec<String> {
+        let settings = (self.settings)();
+        if !crate::managers::converse_confirm::effective_policy(&settings).jobs_allowed {
+            return Vec::new();
+        }
+        crate::settings::clean_agent_names(settings.agent_jobs_agents)
+    }
+    fn agent_flag(&self) -> String {
+        crate::settings::effective_agent_flag(&(self.settings)())
     }
 }
 
@@ -1416,7 +1464,7 @@ pub(crate) fn has_active_job_on(
 /// The planner prompt the brain sends. The job addendum is
 /// appended ONLY when `jobs_allowed`; otherwise the prompt is byte-identical to
 /// `build_plan_prompt`.
-#[allow(dead_code, unused_variables)]
+#[allow(dead_code)] // production uses planner_prompt_for_policy; kept for the M3 contract tests
 pub(crate) fn planner_prompt_for(
     input: &PlanInput,
     jobs_allowed: bool,
@@ -1433,8 +1481,30 @@ pub(crate) fn planner_prompt_for(
     prompt
 }
 
+/// M4: the parse policy for one settings snapshot (jobs off => nothing exposed).
+pub(crate) fn job_parse_policy(settings: &AppSettings) -> JobParsePolicy {
+    let jobs_allowed = crate::managers::converse_confirm::effective_policy(settings).jobs_allowed;
+    let ask_allowed = jobs_allowed && settings.agent_jobs_ask_enabled;
+    let agents = if jobs_allowed {
+        crate::settings::clean_agent_names(settings.agent_jobs_agents.clone())
+    } else {
+        Vec::new()
+    };
+    JobParsePolicy {
+        jobs_allowed,
+        ask_allowed,
+        agents,
+    }
+}
+
+/// M4: the planner prompt over a parse policy. Byte-identical to `build_plan_prompt` when
+/// jobs are not allowed.
+pub(crate) fn planner_prompt_for_policy(input: &PlanInput, policy: &JobParsePolicy) -> PlanPrompt {
+    crate::managers::converse_plan::plan_prompt_with_job_policy(input, policy)
+}
+
 /// The parse call the brain makes, with the policy read at parse time.
-#[allow(dead_code, unused_variables)]
+#[allow(dead_code)] // production parses with parse_plan_with_job_policy; kept for the policy contract tests
 pub(crate) fn parse_with_policy(
     raw: &str,
     sent_prompt: &str,
@@ -1458,3 +1528,7 @@ mod converse_platform_glue_tests;
 #[cfg(test)]
 #[path = "converse_platform_policy_tests.rs"]
 mod converse_platform_policy_tests;
+
+#[cfg(test)]
+#[path = "converse_platform_m4_tests.rs"]
+mod converse_platform_m4_tests;

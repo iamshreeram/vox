@@ -226,6 +226,7 @@ fn launch_config() -> LaunchConfig {
             mtime_secs: 4,
         },
         prompt_flag: "--prompt".to_string(),
+        agent_flag: None,
         timeout: Duration::from_secs(60),
     }
 }
@@ -271,6 +272,8 @@ fn job_plan(project: &str, task: &str) -> TurnPlan {
         job: Some(JobRequest {
             project: project.to_string(),
             task: task.to_string(),
+            agent: None,
+            mode: crate::managers::converse_plan::JobMode::Task,
         }),
     }
 }

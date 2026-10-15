@@ -8,6 +8,11 @@ import { SettingContainer } from "../ui/SettingContainer";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
 import {
+  AgentFlagField,
+  AgentNamesField,
+  LastResultPanel,
+} from "./JobsAgentSettings";
+import {
   clampTimeoutMinutes,
   DEFAULT_TIMEOUT_MINUTES,
   formatElapsed,
@@ -26,6 +31,7 @@ const IDLE_STATUS: AgentJobStatusDto = {
   state: "idle",
   project: null,
   elapsed_secs: 0,
+  result: null,
 };
 
 // Shows the job state only. The DTO carries no job output, and none is rendered.
@@ -69,6 +75,7 @@ const JobStatusCard: React.FC = () => {
         {t("settings.experimental.jobs.status.title")}
       </p>
       <p className="text-sm">{t(stateLabelKey(status.state))}</p>
+      <LastResultPanel result={status.result} />
       {status.project !== null && (
         <p className="truncate font-mono text-xs">{status.project}</p>
       )}
@@ -149,6 +156,7 @@ export const JobsSettings: React.FC<JobsSettingsProps> = React.memo(
     const { getSetting, updateSetting, isUpdating } = useSettings();
     const confirmActions = getSetting("agent_confirm_actions") ?? true;
     const jobsEnabled = getSetting("agent_jobs_enabled") ?? false;
+    const askEnabled = getSetting("agent_jobs_ask_enabled") ?? false;
 
     return (
       <>
@@ -175,6 +183,25 @@ export const JobsSettings: React.FC<JobsSettingsProps> = React.memo(
           tooltipPosition="bottom"
         />
         <TimeoutField grouped={grouped} descriptionMode={descriptionMode} />
+        <AgentNamesField grouped={grouped} descriptionMode={descriptionMode} />
+        <AgentFlagField grouped={grouped} descriptionMode={descriptionMode} />
+        <ToggleSwitch
+          checked={askEnabled}
+          onChange={(enabled) =>
+            updateSetting("agent_jobs_ask_enabled", enabled)
+          }
+          disabled={!jobsEnabled}
+          isUpdating={isUpdating("agent_jobs_ask_enabled")}
+          label={t("settings.experimental.jobs.ask.label")}
+          description={
+            jobsEnabled
+              ? t("settings.experimental.jobs.ask.description")
+              : t("settings.experimental.jobs.ask.needsJobs")
+          }
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+          tooltipPosition="bottom"
+        />
         <JobStatusCard />
         <div className="px-1 py-2">
           <p className="text-xs text-mid-gray">

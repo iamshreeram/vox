@@ -192,6 +192,28 @@ const settingUpdaters: {
     commands.changeAgentJobsEnabled(value as boolean),
   agent_jobs_timeout_minutes: (value) =>
     commands.changeAgentJobsTimeoutMinutes(value as number),
+  agent_jobs_agents: async (value) => {
+    // The backend returns the cleaned list; keep that list, not the request.
+    const cleaned = await commands.changeAgentJobsAgents(value as string[]);
+    useSettingsStore.setState((state) => ({
+      settings: state.settings
+        ? { ...state.settings, agent_jobs_agents: cleaned }
+        : null,
+    }));
+  },
+  agent_jobs_agent_flag: async (value) => {
+    const result = await commands.changeAgentJobsAgentFlag(value as string);
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  agent_jobs_ask_enabled: async (value) => {
+    const result = await commands.changeAgentJobsAskEnabled(value as boolean);
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
   agent_project_roots: async (value) => {
     const result = await commands.changeAgentProjectRootsSetting(
       value as string[],

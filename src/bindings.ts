@@ -1201,6 +1201,35 @@ async changeAgentJobsTimeoutMinutes(minutes: number) : Promise<Result<null, stri
 }
 },
 /**
+ * Stores the coding agent allowlist (M4). Scaffolding: the raw list is stored and returned.
+ */
+async changeAgentJobsAgents(agents: string[]) : Promise<string[]> {
+    return await TAURI_INVOKE("change_agent_jobs_agents", { agents });
+},
+/**
+ * Stores the flag that passes the selected agent name to the coding CLI (M4).
+ * Scaffolding: the raw flag is stored and returned.
+ */
+async changeAgentJobsAgentFlag(flag: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_jobs_agent_flag", { flag }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Turns ask mode on or off (M4). Off by default. Scaffolding: stores the raw value.
+ */
+async changeAgentJobsAskEnabled(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_jobs_ask_enabled", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Reports the coding job state for the Settings status card.
  */
 async agentJobStatus() : Promise<AgentJobStatusDto> {
@@ -1468,7 +1497,7 @@ tts_composer_mode?: TtsComposerMode; tts_composer_provider_id?: string; tts_comp
  */
 tts_composer_command_ack?: string; tts_composer_timeout_secs?: number; tts_composer_style?: string; tts_composer_send_user_utterance?: boolean; tts_composer_fallback?: TtsComposerFallback;
 converse_silence_ms?: number; converse_max_idle_turns?: number; converse_context_turns?: number;
-exp_rt_enabled?: boolean; exp_rt_direct_endpoint?: boolean; exp_rt_endpoint_url?: string; exp_rt_model?: string; exp_rt_token?: SecretString; exp_rt_stream_reply?: boolean; exp_rt_early_speech?: boolean; exp_rt_fast_voice?: boolean; exp_rt_ack?: boolean; exp_rt_prewarm?: boolean; exp_rt_auto_proxy?: boolean; exp_rt_proxy_enabled?: boolean; exp_rt_proxy_url?: string; exp_rt_timing_log?: boolean; conversation_records_enabled?: boolean; conversation_records_to_vault?: boolean; vault_path?: string; vault_context_enabled?: boolean; agent_tools_enabled?: boolean; agent_tools_guard_actions?: boolean; agent_project_roots?: string[]; agent_confirm_actions?: boolean; agent_jobs_enabled?: boolean; agent_jobs_timeout_minutes?: number;
+exp_rt_enabled?: boolean; exp_rt_direct_endpoint?: boolean; exp_rt_endpoint_url?: string; exp_rt_model?: string; exp_rt_token?: SecretString; exp_rt_stream_reply?: boolean; exp_rt_early_speech?: boolean; exp_rt_fast_voice?: boolean; exp_rt_ack?: boolean; exp_rt_prewarm?: boolean; exp_rt_auto_proxy?: boolean; exp_rt_proxy_enabled?: boolean; exp_rt_proxy_url?: string; exp_rt_timing_log?: boolean; conversation_records_enabled?: boolean; conversation_records_to_vault?: boolean; vault_path?: string; vault_context_enabled?: boolean; agent_tools_enabled?: boolean; agent_tools_guard_actions?: boolean; agent_project_roots?: string[]; agent_confirm_actions?: boolean; agent_jobs_enabled?: boolean; agent_jobs_timeout_minutes?: number; agent_jobs_agents?: string[]; agent_jobs_agent_flag?: string; agent_jobs_ask_enabled?: boolean;
 }
 export type ExpRtBool = "enabled" | "direct_endpoint" | "stream_reply" | "early_speech" | "fast_voice" | "ack" | "prewarm" | "auto_proxy" | "proxy_enabled" | "timing_log"
 export type ExpRtText = "endpoint_url" | "model" | "token" | "proxy_url"
@@ -1610,7 +1639,7 @@ export type OverlayStyle = "none" | "minimal" | "live"
  * `state` is one of `idle`, `running`, `succeeded`, `failed`, `cancelled`, `timed_out` or
  * `spawn_failed`. The DTO never carries job output.
  */
-export type AgentJobStatusDto = { state: string; project: string | null; elapsed_secs: number }
+export type AgentJobStatusDto = { state: string; project: string | null; elapsed_secs: number; result: string | null }
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"

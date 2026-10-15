@@ -40,6 +40,8 @@ fn valid_job_plan_is_parsed_with_policy_allowed() {
         Some(JobRequest {
             project: "vox".to_string(),
             task: "fix the typo in the readme".to_string(),
+            agent: None,
+            mode: crate::managers::converse_plan::JobMode::Task,
         })
     );
 }

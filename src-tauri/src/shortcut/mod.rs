@@ -1008,6 +1008,11 @@ pub fn change_tts_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), S
     let mut settings = settings::get_settings(&app);
     settings.tts_enabled = enabled;
     settings::write_settings(&app, settings);
+    // M4: any change, on or off, invalidates the summaries issued under the old switch.
+    let summary_tokens = app
+        .try_state::<crate::job_runtime::JobWiring>()
+        .map(|wiring| wiring.summary_tokens.clone());
+    crate::job_runtime::invalidate_summaries(summary_tokens.as_ref());
     if let Some(tts) = app.try_state::<Arc<crate::managers::tts::TtsManager>>() {
         if !enabled {
             tts.stop();

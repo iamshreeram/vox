@@ -306,8 +306,10 @@ fn launch_in(dir: &TempDir, binary: &Path, task: &str) -> JobLaunch {
             binary: binary.to_path_buf(),
             binary_id: file_id_of(binary),
             prompt_flag: "-p".to_string(),
+            agent_flag: None,
             timeout: Duration::from_secs(60),
         },
+        selection: Default::default(),
     }
 }
 

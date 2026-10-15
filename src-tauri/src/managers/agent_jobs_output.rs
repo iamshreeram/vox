@@ -79,6 +79,69 @@ impl TailRing {
     }
 }
 
+/// Bytes kept by a [`ResultCapture`].
+const RESULT_CAP: usize = 8192;
+
+/// M4: bounded capture of the sanitized, redacted lines of an ask job. Keeps the
+/// last RESULT_CAP bytes of the lines joined with a newline between each pair.
+#[derive(Debug, Default)]
+pub(super) struct ResultCapture {
+    lines: VecDeque<String>,
+    /// Sum of the byte lengths of `lines`, not counting separators.
+    bytes: usize,
+}
+
+impl ResultCapture {
+    /// Creates an empty capture.
+    pub(super) fn new() -> Self {
+        Self::default()
+    }
+
+    /// Adds one already sanitized and redacted line (no newline).
+    pub(super) fn push_line(&mut self, line: &str) {
+        self.bytes += line.len();
+        self.lines.push_back(line.to_string());
+        while self.joined_len() > RESULT_CAP && self.lines.len() > 1 {
+            if let Some(old) = self.lines.pop_front() {
+                self.bytes = self.bytes.saturating_sub(old.len());
+            }
+        }
+        if self.joined_len() > RESULT_CAP {
+            self.keep_tail_of_single_line();
+        }
+    }
+
+    /// Returns the captured text (last RESULT_CAP bytes, char-boundary safe).
+    pub(super) fn text(&self) -> String {
+        let mut out = String::with_capacity(self.joined_len());
+        for (i, line) in self.lines.iter().enumerate() {
+            if i > 0 {
+                out.push('\n');
+            }
+            out.push_str(line);
+        }
+        out
+    }
+
+    /// Length of the lines joined with one newline between each pair.
+    fn joined_len(&self) -> usize {
+        self.bytes + self.lines.len().saturating_sub(1)
+    }
+
+    /// Keeps only the last RESULT_CAP bytes of the single remaining line, cut
+    /// forward to a char boundary so the result stays valid UTF-8 and within the cap.
+    fn keep_tail_of_single_line(&mut self) {
+        if let Some(line) = self.lines.front_mut() {
+            let mut cut = line.len().saturating_sub(RESULT_CAP);
+            while !line.is_char_boundary(cut) {
+                cut += 1;
+            }
+            line.drain(..cut);
+            self.bytes = line.len();
+        }
+    }
+}
+
 /// Frames one output stream into sanitised, redacted, display-truncated lines.
 pub struct OutputPipeline {
     ring: Arc<Mutex<TailRing>>,
@@ -97,6 +160,8 @@ pub struct OutputPipeline {
     suppressing: bool,
     /// Last SCAN_WINDOW bytes, for the private-key marker scan.
     window: VecDeque<u8>,
+    /// Optional capture of the sanitized, redacted lines (ask jobs only).
+    capture: Option<Arc<Mutex<ResultCapture>>>,
 }
 
 impl OutputPipeline {
@@ -117,7 +182,15 @@ impl OutputPipeline {
             skip_rest: false,
             suppressing: false,
             window: VecDeque::with_capacity(SCAN_WINDOW),
+            capture: None,
         }
+    }
+
+    /// Also feeds every finished line (after redaction, before display truncation)
+    /// into `capture`.
+    pub(super) fn with_capture(mut self, capture: Arc<Mutex<ResultCapture>>) -> Self {
+        self.capture = Some(capture);
+        self
     }
 
     /// Feeds one chunk of raw bytes (any size, any boundaries).
@@ -212,13 +285,17 @@ impl OutputPipeline {
 
     /// Completes the current line and pushes its display form.
     fn end_line(&mut self) {
-        let text = if self.discarding {
+        let mut text = if self.discarding {
             LONG_LINE_MARKER.to_string()
         } else {
-            display_line(&self.line)
+            clean_line(&self.line)
         };
         self.discarding = false;
         self.line.clear();
+        if let Some(capture) = self.capture.as_ref() {
+            lock_capture(capture).push_line(&text);
+        }
+        truncate_to_char_boundary(&mut text, DISPLAY_CAP);
         self.push_line(text);
     }
 
@@ -280,6 +357,13 @@ fn lock_ring(ring: &Mutex<TailRing>) -> MutexGuard<'_, TailRing> {
     ring.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Locks the result capture, recovering the data if a previous holder panicked.
+fn lock_capture(capture: &Mutex<ResultCapture>) -> MutexGuard<'_, ResultCapture> {
+    capture
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// True if `mark` occurs in `bytes` ending at or before `key_start`, at most MARK_GAP bytes before it.
 fn has_mark_before(bytes: &[u8], key_start: usize, mark: &[u8]) -> bool {
     bytes
@@ -291,16 +375,14 @@ fn has_mark_before(bytes: &[u8], key_start: usize, mark: &[u8]) -> bool {
         })
 }
 
-/// Sanitises, redacts and display-truncates one framed line.
-fn display_line(bytes: &[u8]) -> String {
+/// Sanitises and redacts one framed line. Display truncation is applied later.
+fn clean_line(bytes: &[u8]) -> String {
     let lossy = String::from_utf8_lossy(bytes);
     let sanitised: String = lossy
         .chars()
         .map(|c| if c == '\t' || !c.is_control() { c } else { '?' })
         .collect();
-    let mut text = crate::managers::redact::redact(&sanitised);
-    truncate_to_char_boundary(&mut text, DISPLAY_CAP);
-    text
+    crate::managers::redact::redact(&sanitised)
 }
 
 /// Truncates `text` to at most `max` bytes without splitting a character.

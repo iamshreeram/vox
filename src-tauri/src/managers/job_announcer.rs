@@ -12,6 +12,8 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::managers::job_summary::SpeechGuard;
+
 /// Maximum number of queued announcements.
 const MAX_PENDING: usize = 4;
 
@@ -84,6 +86,46 @@ struct Entry {
     text: String,
     /// When a finish first found the speaker busy.
     first_failed: Option<Instant>,
+    /// M4: summary guard for a finish that carries summary text (`None` = ordinary).
+    guard: Option<SpeechGuard>,
+}
+
+/// One queued announcement taken at a turn boundary, with its summary guard (M4 S8).
+/// Call `resolve` immediately before speaking the item so the guard is checked at that
+/// moment, not when the item was taken.
+#[derive(Clone)]
+pub struct PendingSpeech {
+    /// Summary text, or the ordinary text for unguarded entries. Private on purpose: read it
+    /// only through `resolve`, which applies the guard.
+    text: String,
+    /// Summary guard of a guarded entry (`None` = ordinary text).
+    guard: Option<SpeechGuard>,
+}
+
+impl std::fmt::Debug for PendingSpeech {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingSpeech")
+            .field("text", &self.text)
+            .field("guarded", &self.guard.is_some())
+            .finish()
+    }
+}
+
+impl PendingSpeech {
+    /// Returns the text to speak now: the summary while its guard is valid, otherwise
+    /// the guard's fallback. Unguarded items return their text unchanged.
+    pub fn resolve(&self) -> String {
+        match self.guard.as_ref() {
+            None => self.text.clone(),
+            Some(guard) => guard.tokens.run_if_valid(&guard.ticket, |valid| {
+                if valid {
+                    self.text.clone()
+                } else {
+                    guard.fallback.clone()
+                }
+            }),
+        }
+    }
 }
 
 /// Copy of the front entry taken out of the queue for one speech attempt.
@@ -92,6 +134,7 @@ struct Claim {
     kind: AnnounceKind,
     text: String,
     first_failed: Option<Instant>,
+    guard: Option<SpeechGuard>,
 }
 
 /// Outcome of a drain pass.
@@ -127,6 +170,17 @@ impl Announcer {
 
     /// Queues one announcement (speaks now if idle, otherwise later).
     pub fn announce(&self, kind: AnnounceKind, text: String) {
+        self.enqueue_entry(kind, text, None);
+    }
+
+    /// M4: queues one announcement that carries a summary guard. The guard is checked
+    /// at every mouth attempt; an invalid guard speaks its fallback text instead.
+    pub fn announce_guarded(&self, kind: AnnounceKind, text: String, guard: SpeechGuard) {
+        self.enqueue_entry(kind, text, Some(guard));
+    }
+
+    /// Shared queueing path for `announce` and `announce_guarded`.
+    fn enqueue_entry(&self, kind: AnnounceKind, text: String, guard: Option<SpeechGuard>) {
         if text.trim().is_empty() {
             return;
         }
@@ -141,6 +195,7 @@ impl Announcer {
                     kind,
                     text,
                     first_failed: None,
+                    guard,
                 },
             );
         }
@@ -163,8 +218,20 @@ impl Announcer {
         }
     }
 
-    /// Removes and returns the queued announcements.
+    /// Removes and returns the queued announcements, resolved to plain text.
+    /// Test-only: production speaks through `take_pending_items` and resolves per item.
+    #[cfg(test)]
     pub fn take_pending(&self) -> Vec<String> {
+        self.take_pending_items()
+            .iter()
+            .map(PendingSpeech::resolve)
+            .collect()
+    }
+
+    /// Removes and returns the queued announcements as `PendingSpeech` items (M4 S8).
+    /// Same selection and order as `take_pending`; guarded items keep their guard.
+    /// The state lock is released before the caller resolves any item.
+    pub fn take_pending_items(&self) -> Vec<PendingSpeech> {
         let mut st = lock(&self.shared.state);
         let in_flight = st.in_flight;
         let mut taken = Vec::new();
@@ -173,7 +240,10 @@ impl Announcer {
             if Some(entry.seq) == in_flight {
                 kept.push_back(entry);
             } else {
-                taken.push(entry.text);
+                taken.push(PendingSpeech {
+                    text: entry.text,
+                    guard: entry.guard,
+                });
             }
         }
         st.pending = kept;
@@ -254,6 +324,7 @@ fn claim_front(shared: &Shared) -> Option<Claim> {
         kind: front.kind,
         text: front.text.clone(),
         first_failed: front.first_failed,
+        guard: front.guard.clone(),
     };
     st.in_flight = Some(claim.seq);
     Some(claim)
@@ -263,7 +334,7 @@ fn claim_front(shared: &Shared) -> Option<Claim> {
 /// gate closes, or a finish finds the speaker busy (then a retry is armed).
 fn drain(shared: &Arc<Shared>) -> Pass {
     while let Some(claim) = claim_front(shared) {
-        let spoken = shared.mouth.try_speak_if_idle(&claim.text);
+        let spoken = speak_claim(shared, &claim);
         let mut st = lock(&shared.state);
         st.in_flight = None;
         if spoken {
@@ -288,6 +359,23 @@ fn drain(shared: &Arc<Shared>) -> Pass {
         }
     }
     Pass::Idle
+}
+
+/// Offers one claimed entry to the mouth. A guarded entry is spoken only while its
+/// ticket is still valid at acceptance; otherwise its fallback text is offered instead.
+/// The mouth runs with no announcer lock held.
+fn speak_claim(shared: &Shared, claim: &Claim) -> bool {
+    match claim.guard.as_ref() {
+        None => shared.mouth.try_speak_if_idle(&claim.text),
+        Some(guard) => guard.tokens.run_if_valid(&guard.ticket, |valid| {
+            let text = if valid {
+                claim.text.as_str()
+            } else {
+                guard.fallback.as_str()
+            };
+            shared.mouth.try_speak_if_idle(text)
+        }),
+    }
 }
 
 /// Starts the retry thread if none is running.
@@ -337,3 +425,7 @@ fn wait_for<'a>(shared: &'a Shared, st: MutexGuard<'a, State>) -> MutexGuard<'a,
 #[cfg(test)]
 #[path = "job_announcer_tests.rs"]
 mod job_announcer_tests;
+
+#[cfg(test)]
+#[path = "job_turnboundary_m4_tests.rs"]
+mod job_turnboundary_m4_tests;

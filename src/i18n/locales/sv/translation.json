@@ -981,6 +981,30 @@
           "cancelled": "Cancelled",
           "timedOut": "Timed out",
           "couldntStart": "Couldn't start"
+        },
+        "agents": {
+          "label": "Agent names",
+          "description": "Names of the coding agents Vox may choose from. Leave empty to always use the default agent.",
+          "inputPlaceholder": "Agent name",
+          "add": "Add",
+          "remove": "Remove",
+          "invalid": "Use 1 to 64 letters, digits, dots, dashes or underscores, starting with a letter or digit.",
+          "limit": "You can add up to {{max}} agent names."
+        },
+        "flag": {
+          "label": "Agent flag",
+          "description": "The option that passes the chosen agent name to the coding CLI, for example --agent.",
+          "invalid": "Use one or two dashes, then a letter and up to 31 more letters, digits or dashes. It cannot be the prompt flag."
+        },
+        "ask": {
+          "label": "Ask an agent and speak a summary",
+          "description": "After an ask job finishes, Vox sends a redacted excerpt (at most 8 KiB) of the agent's output to the model gateway you configured and speaks a short summary. Off by default.",
+          "needsJobs": "Turn on coding jobs first."
+        },
+        "result": {
+          "label": "Last result",
+          "copy": "Copy",
+          "copied": "Copied"
         }
       }
     }

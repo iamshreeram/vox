@@ -52,12 +52,26 @@ pub(super) fn check_dir(fd: &OwnedFd) -> Result<(), JobError> {
     }
 }
 
+/// Refuses an agent selection the configured CLI cannot receive: an agent was
+/// chosen but no agent flag is configured. Uses the existing BadBinary variant
+/// (the CLI is not usable for this start), so no new error variant is needed.
+pub(super) fn check_agent(launch: &JobLaunch) -> Result<(), JobError> {
+    match (&launch.selection.agent, &launch.config.agent_flag) {
+        (Some(_), None) => Err(JobError::BadBinary),
+        _ => Ok(()),
+    }
+}
+
 /// Spawns the coding CLI as the leader of a new process group. The argv is
-/// `[binary, prompt_flag, task]` with no shell; stdin is null; stdout and
+/// `[binary, agent_flag, agent?, prompt_flag, task]` with no shell; the agent
+/// pair is present only when an agent is selected. stdin is null; stdout and
 /// stderr are piped; the working directory is the pinned project handle.
 pub(super) fn spawn_job(launch: &JobLaunch) -> Result<Child, JobError> {
     let dir_fd = launch.dir.as_raw_fd();
     let mut cmd = Command::new(&launch.config.binary);
+    if let (Some(agent), Some(flag)) = (&launch.selection.agent, &launch.config.agent_flag) {
+        cmd.arg(flag).arg(agent);
+    }
     cmd.arg(&launch.config.prompt_flag)
         .arg(&launch.task)
         .stdin(Stdio::null())

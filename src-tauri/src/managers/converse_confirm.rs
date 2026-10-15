@@ -8,7 +8,10 @@ use crate::managers::command_router::CommandAction;
 use crate::managers::converse::{Ears, Hands, ListenOutcome, Mouth, QuietOutcome, SayOutcome};
 #[cfg(test)]
 pub use crate::managers::converse_plan::JobRequest;
-use crate::managers::converse_plan::{PlanKind, TurnPlan};
+use crate::managers::converse_plan::{
+    canonical_agent, JobMode, JobSelection, PlanKind, TurnPlan, ASK_NOT_ENABLED_SPEECH,
+    UNKNOWN_AGENT_SPEECH,
+};
 use crate::managers::emotion::Emotion;
 use crate::managers::job_announcer::Announcer;
 use crate::managers::redact::redact;
@@ -268,6 +271,19 @@ pub struct LaunchConfig {
     pub prompt_flag: String,
     /// Maximum run time of a job.
     pub timeout: Duration,
+    /// M4: flag that passes the selected agent name. `Some` only for a selected agent.
+    pub agent_flag: Option<String>,
+}
+
+/// M4: agent-selection parts of an approval, for a job with a selection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobFp {
+    /// The selected agent (if any) is still in the allowlist.
+    pub agent_ok: bool,
+    /// Ask mode (if selected) is still allowed.
+    pub ask_ok: bool,
+    /// The agent flag in effect, when an agent is selected.
+    pub agent_flag: Option<String>,
 }
 
 /// Snapshot of everything an approval depends on.
@@ -279,6 +295,8 @@ pub struct ApprovalFingerprint {
     pub jobs_allowed: bool,
     /// Launch settings at approval time, if any.
     pub launch: Option<LaunchConfig>,
+    /// M4: agent-selection state at approval time (`None` when not a selected job).
+    pub job: Option<JobFp>,
 }
 
 /// Live source of the action policy and launch settings.
@@ -287,6 +305,26 @@ pub trait PolicySource: Send + Sync {
     fn current(&self) -> ActionPolicy;
     /// The current launch settings, if jobs are configured.
     fn launch_config(&self) -> Option<LaunchConfig>;
+    /// M4: whether ask mode is currently allowed. Defaults to refused.
+    fn ask_allowed(&self) -> bool {
+        false
+    }
+    /// M4: the current agent allowlist. Defaults to empty (no agent selection).
+    fn allowed_agents(&self) -> Vec<String> {
+        Vec::new()
+    }
+    /// M4: the current agent flag. Defaults to `--agent`.
+    fn agent_flag(&self) -> String {
+        "--agent".to_string()
+    }
+    /// M4: launch settings for a selection. Sets `agent_flag` only when an agent is selected.
+    fn launch_config_for(&self, sel: Option<&JobSelection>) -> Option<LaunchConfig> {
+        let mut config = self.launch_config()?;
+        config.agent_flag = sel
+            .and_then(|s| s.agent.as_ref())
+            .map(|_| self.agent_flag());
+        Some(config)
+    }
 }
 
 /// A model-proposed command that passed validation.
@@ -307,6 +345,8 @@ pub struct JobLaunch {
     pub task: String,
     /// Launch settings captured at preparation time.
     pub config: LaunchConfig,
+    /// M4: the agent selection captured at parse time (default = no selection).
+    pub selection: JobSelection,
 }
 
 /// An action that is validated and ready to execute after approval.
@@ -326,6 +366,16 @@ pub enum PreparedAction {
         /// The prepared launch.
         launch: JobLaunch,
     },
+}
+
+impl PreparedAction {
+    /// M4: the job selection of a prepared job; `None` for paste and command actions.
+    pub fn selection(&self) -> Option<&JobSelection> {
+        match self {
+            PreparedAction::Job { launch } => Some(&launch.selection),
+            PreparedAction::Paste { .. } | PreparedAction::Command { .. } => None,
+        }
+    }
 }
 
 /// Why an action could not be prepared.
@@ -415,8 +465,9 @@ fn prepare_job(
             "The task contains something that looks like a secret, so I didn't start it.",
         ));
     }
+    let selection = job_selection(request, policy)?;
     let config = policy
-        .launch_config()
+        .launch_config_for(Some(&selection))
         .ok_or_else(|| refuse("Coding jobs aren't set up yet."))?;
     let dir = hands.pin_project(project).map_err(|err| match err {
         PinError::Unknown | PinError::Ambiguous => refuse("I couldn't find that project."),
@@ -428,8 +479,30 @@ fn prepare_job(
             dir,
             task,
             config,
+            selection,
         },
     })
+}
+
+/// M4 (D3): re-validates the planner's mode and agent against the CURRENT settings.
+/// Ask needs ask to be allowed; a named agent must still be on the allowlist (matched
+/// ASCII case-insensitively, the canonical spelling is stored). Refusals never echo the name.
+fn job_selection(
+    request: Option<&crate::managers::converse_plan::JobRequest>,
+    policy: &dyn PolicySource,
+) -> Result<JobSelection, PrepareError> {
+    let mode = request.map_or(JobMode::Task, |r| r.mode);
+    if mode == JobMode::Ask && !policy.ask_allowed() {
+        return Err(refuse(ASK_NOT_ENABLED_SPEECH));
+    }
+    let agent = match request.and_then(|r| r.agent.as_deref()) {
+        None => None,
+        Some(name) => Some(
+            canonical_agent(name, &policy.allowed_agents())
+                .ok_or_else(|| refuse(UNKNOWN_AGENT_SPEECH))?,
+        ),
+    };
+    Ok(JobSelection { agent, mode })
 }
 
 const LABEL_MAX_CHARS: usize = 40;
@@ -463,13 +536,43 @@ fn normalize_task(raw: &str) -> Option<String> {
     (1..=TASK_MAX_CHARS).contains(&len).then_some(task)
 }
 
-/// Captures the approval fingerprint from a policy source.
+/// Captures the approval fingerprint from a policy source (no job selection).
+/// Production paths use `fingerprint_for`; this stays for the M3 contract and its tests.
+#[allow(dead_code)] // M3 entry point kept for the fingerprint contract tests
 pub fn fingerprint_of(policy: &dyn PolicySource) -> ApprovalFingerprint {
+    fingerprint_for(policy, None)
+}
+
+/// M4 (D3): captures the approval fingerprint, including the agent selection of a job.
+///
+/// `sel = None` leaves the job part empty. A default job (no agent, task mode) gets the
+/// constant part, so unrelated allowlist, flag or ask edits never change it. A selected
+/// agent records whether it is still allowed and the flag in effect; Ask records whether
+/// ask is still allowed.
+pub fn fingerprint_for(
+    policy: &dyn PolicySource,
+    sel: Option<&JobSelection>,
+) -> ApprovalFingerprint {
     let current = policy.current();
     ApprovalFingerprint {
         gate_active: current.gate_active,
         jobs_allowed: current.jobs_allowed,
         launch: policy.launch_config(),
+        job: sel.map(|sel| job_fingerprint(policy, sel)),
+    }
+}
+
+/// M4 (D3): the agent-selection part of an approval for one job selection.
+fn job_fingerprint(policy: &dyn PolicySource, sel: &JobSelection) -> JobFp {
+    let agent_ok = match sel.agent.as_deref() {
+        None => true,
+        Some(name) => canonical_agent(name, &policy.allowed_agents()).is_some(),
+    };
+    let ask_ok = sel.mode == JobMode::Task || policy.ask_allowed();
+    JobFp {
+        agent_ok,
+        ask_ok,
+        agent_flag: sel.agent.as_ref().map(|_| policy.agent_flag()),
     }
 }
 
@@ -514,9 +617,31 @@ pub fn confirmation_question(action: &PreparedAction) -> String {
         PreparedAction::Command { cmd } => {
             format!("I'll open {}. Say yes or no.", cmd.label)
         }
-        PreparedAction::Job { launch } => format!(
+        PreparedAction::Job { launch } => job_question(launch),
+    }
+}
+
+/// M4 (D3): the job question. Without an agent and in task mode this is exactly the M3
+/// wording. Names and text are interpolated in full, as validated.
+fn job_question(launch: &JobLaunch) -> String {
+    let agent = launch.selection.agent.as_deref();
+    match (launch.selection.mode, agent) {
+        (JobMode::Task, None) => format!(
             "I'll start a coding job in {}. The task is: {}. Say yes or no.",
             launch.project, launch.task
+        ),
+        (JobMode::Task, Some(name)) => format!(
+            "I'll start a coding job in {} with the {name} agent. The task is: {}. Say yes or no.",
+            launch.project, launch.task
+        ),
+        (JobMode::Ask, agent) => format!(
+            "I'll ask the {} about {}: {}. It can change files. Say yes or no.",
+            agent.map_or_else(
+                || "coding agent".to_string(),
+                |name| format!("{name} agent")
+            ),
+            launch.project,
+            launch.task
         ),
     }
 }
@@ -573,6 +698,7 @@ pub fn launch_config_from_settings(settings: &AppSettings) -> Option<LaunchConfi
         binary_id,
         prompt_flag: settings.agent_bridge_prompt_flag.clone(),
         timeout: Duration::from_secs(u64::from(minutes) * 60),
+        agent_flag: None,
     })
 }
 
@@ -599,3 +725,7 @@ mod converse_confirm_tests;
 #[cfg(test)]
 #[path = "converse_confirm_adapter_tests.rs"]
 mod converse_confirm_adapter_tests;
+
+#[cfg(test)]
+#[path = "converse_confirm_m4_tests.rs"]
+mod converse_confirm_m4_tests;

@@ -54,3 +54,53 @@ export function stateLabelKey(state: string): string {
 export function isRunning(state: string): boolean {
   return state === "running";
 }
+
+/** Maximum number of agent names kept in the allowlist (mirrors the backend). */
+export const MAX_AGENT_NAMES = 20;
+
+const AGENT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const AGENT_FLAG_PATTERN = /^--?[A-Za-z][A-Za-z0-9-]{0,31}$/;
+
+/** Returns true when the name matches the agent name rule (ASCII only, no trimming). */
+export function isValidAgentName(name: string): boolean {
+  return AGENT_NAME_PATTERN.test(name);
+}
+
+/** Drops invalid and case-insensitive duplicate names, keeps order and the first spelling, caps at MAX_AGENT_NAMES. */
+export function cleanAgentNames(names: string[]): string[] {
+  const kept: string[] = [];
+  const seen = new Set<string>();
+  for (const name of names) {
+    if (kept.length >= MAX_AGENT_NAMES) break;
+    if (!isValidAgentName(name)) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    kept.push(name);
+  }
+  return kept;
+}
+
+/** Returns true when the flag matches the agent flag rule and is not the prompt flag. */
+export function isValidAgentFlag(flag: string, promptFlag: string): boolean {
+  return AGENT_FLAG_PATTERN.test(flag) && flag !== promptFlag;
+}
+
+/** Returns true when the candidate is a valid, non-duplicate name and the list is below MAX_AGENT_NAMES. */
+export function canAddAgentName(
+  existing: string[],
+  candidate: string,
+): boolean {
+  if (existing.length >= MAX_AGENT_NAMES) return false;
+  if (!isValidAgentName(candidate)) return false;
+  const key = candidate.toLowerCase();
+  return !existing.some((name) => name.toLowerCase() === key);
+}
+
+/** Returns the result text for the result panel, or null when it is empty or whitespace-only. Text is not trimmed or truncated. */
+export function resultPanelText(
+  result: string | null | undefined,
+): string | null {
+  if (result === null || result === undefined) return null;
+  return result.trim() === "" ? null : result;
+}

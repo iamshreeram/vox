@@ -3,10 +3,10 @@
 //! The three setting commands are real: each is a read-modify-write of one field, modelled on
 //! `agent_tools.rs`. The status and cancel commands read the shared job manager.
 
-use crate::job_runtime::JobWiring;
+use crate::job_runtime::{self, JobWiring};
 use crate::managers::job_speaker;
 use crate::settings::{self, AppSettings};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 /// Read-only status of the coding job, for the Settings status card and the tray.
 ///
@@ -20,6 +20,8 @@ pub struct AgentJobStatusDto {
     pub project: Option<String>,
     /// Whole seconds since the job started (0 when idle).
     pub elapsed_secs: u64,
+    /// M4: the captured result text of the job, when one is held (scaffolding: always None).
+    pub result: Option<String>,
 }
 
 /// Read-modify-write of one boolean field, then persist.
@@ -56,11 +58,68 @@ pub fn change_agent_jobs_timeout_minutes(app: AppHandle, minutes: u32) -> Result
     Ok(())
 }
 
+/// Stores the cleaned coding agent allowlist and returns the cleaned list (M4).
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_jobs_agents(app: AppHandle, agents: Vec<String>) -> Vec<String> {
+    let mut current = settings::get_settings(&app);
+    let cleaned = apply_agents_change(&mut current, agents);
+    settings::write_settings(&app, current);
+    cleaned
+}
+
+/// Stores the flag that passes the selected agent name to the coding CLI (M4).
+/// An invalid flag is rejected with `Invalid agent flag.` and the old value is kept.
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_jobs_agent_flag(app: AppHandle, flag: String) -> Result<String, String> {
+    let mut current = settings::get_settings(&app);
+    let result = apply_flag_change(&mut current, flag);
+    settings::write_settings(&app, current);
+    result
+}
+
+/// Turns ask mode on or off (M4). Off by default.
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_jobs_ask_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut current = settings::get_settings(&app);
+    apply_ask_change(&mut current, enabled);
+    settings::write_settings(&app, current);
+    // Any change, on or off, invalidates the summaries issued under the old switch.
+    let tokens = app
+        .try_state::<JobWiring>()
+        .map(|wiring| wiring.summary_tokens.clone());
+    job_runtime::invalidate_summaries(tokens.as_ref());
+    Ok(())
+}
+
+/// Stores the cleaned agent allowlist on `s` and returns the stored list (M4).
+pub(crate) fn apply_agents_change(s: &mut AppSettings, input: Vec<String>) -> Vec<String> {
+    let cleaned = settings::clean_agent_names(input);
+    s.agent_jobs_agents = cleaned.clone();
+    cleaned
+}
+
+/// Stores a valid agent flag on `s`, or returns `Invalid agent flag.` and keeps the old value (M4).
+pub(crate) fn apply_flag_change(s: &mut AppSettings, flag: String) -> Result<String, String> {
+    if !settings::is_valid_agent_flag(&flag, &s.agent_bridge_prompt_flag) {
+        return Err("Invalid agent flag.".to_string());
+    }
+    s.agent_jobs_agent_flag = flag.clone();
+    Ok(flag)
+}
+
+/// Stores the ask mode switch on `s` (M4).
+pub(crate) fn apply_ask_change(s: &mut AppSettings, enabled: bool) {
+    s.agent_jobs_ask_enabled = enabled;
+}
+
 /// Reports the coding job state for the Settings status card.
 #[tauri::command]
 #[specta::specta]
 pub fn agent_job_status(wiring: State<'_, JobWiring>) -> AgentJobStatusDto {
-    job_speaker::status_dto(&wiring.manager)
+    job_runtime::status_dto_with(&wiring.manager, &wiring.results)
 }
 
 /// Cancels the running coding job. Returns false when nothing is running.
@@ -69,3 +128,7 @@ pub fn agent_job_status(wiring: State<'_, JobWiring>) -> AgentJobStatusDto {
 pub fn agent_job_cancel(wiring: State<'_, JobWiring>) -> bool {
     job_speaker::cancel(&wiring.manager)
 }
+
+#[cfg(test)]
+#[path = "agent_jobs_m4_tests.rs"]
+mod agent_jobs_m4_tests;

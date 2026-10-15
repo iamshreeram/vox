@@ -26,6 +26,8 @@ fn job_plan(speech: &str) -> TurnPlan {
         job: Some(JobRequest {
             project: "alpha".to_string(),
             task: "fix the tests".to_string(),
+            agent: None,
+            mode: crate::managers::converse_plan::JobMode::Task,
         }),
     }
 }
