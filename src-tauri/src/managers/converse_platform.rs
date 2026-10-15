@@ -29,7 +29,9 @@ use crate::managers::converse_confirm::{
     DirFd, JobLaunch, JobStartOutcome, PinError, PolicySource, ValidatedCommand,
 };
 use crate::managers::converse_overlay::{OverlayDispatcher, ReadyGate};
-use crate::managers::converse_plan::{build_plan_prompt, PlanError, PlanInput, PlanKind, TurnPlan};
+use crate::managers::converse_plan::{
+    build_plan_prompt, JobParsePolicy, PlanError, PlanInput, PlanKind, PlanPrompt, TurnPlan,
+};
 use crate::managers::converse_queue::TtsQueueSession;
 use crate::managers::converse_runtime::{AdmissionGuard, Platform, SessionParts, ALREADY_RUNNING};
 use crate::managers::emotion::Emotion;
@@ -1467,6 +1469,19 @@ pub(crate) fn planner_prompt_for(
     prompt
 }
 
+/// M4: the parse policy for one settings snapshot (jobs off => nothing exposed).
+#[allow(dead_code, unused_variables)]
+pub(crate) fn job_parse_policy(settings: &AppSettings) -> JobParsePolicy {
+    todo!("M4 S6")
+}
+
+/// M4: the planner prompt over a parse policy. Byte-identical to `build_plan_prompt` when
+/// jobs are not allowed.
+#[allow(dead_code, unused_variables)]
+pub(crate) fn planner_prompt_for_policy(input: &PlanInput, policy: &JobParsePolicy) -> PlanPrompt {
+    todo!("M4 S6")
+}
+
 /// The parse call the brain makes, with the policy read at parse time.
 #[allow(dead_code, unused_variables)]
 pub(crate) fn parse_with_policy(
@@ -1492,3 +1507,7 @@ mod converse_platform_glue_tests;
 #[cfg(test)]
 #[path = "converse_platform_policy_tests.rs"]
 mod converse_platform_policy_tests;
+
+#[cfg(test)]
+#[path = "converse_platform_m4_tests.rs"]
+mod converse_platform_m4_tests;

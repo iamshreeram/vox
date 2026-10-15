@@ -14,8 +14,11 @@ use crate::managers::agent_tools::job_status::JobStatusSource;
 use crate::managers::converse_platform::{JobObserverFactory, JobRuntime};
 use crate::managers::job_announcer::{Announcer, TtsLowPriorityMouth};
 use crate::managers::job_speaker::{JobEventSink, JobSpeaker};
+use crate::managers::job_summary::{
+    ResultStore, ResultSummarizer, SummaryHandle, SummaryPolicy, SummaryTokens,
+};
 use crate::managers::tts::TtsManager;
-use crate::settings::{clamp_job_timeout_minutes, get_settings};
+use crate::settings::{clamp_job_timeout_minutes, get_settings, AppSettings};
 use crate::tray;
 
 /// The single shared job objects the app registers as Tauri state.
@@ -116,6 +119,58 @@ pub fn exit_fallback_budgets() -> ExitFallbackBudgets {
     }
 }
 
+/// M4: a completion call that takes (system prompt, user prompt) and returns the answer text.
+pub type CompleteFn = Arc<dyn Fn(&str, &str) -> Result<String, ()> + Send + Sync>;
+
+/// M4: production summarizer that runs one gateway completion on a detached worker.
+#[allow(dead_code, unused_variables)]
+pub struct GatewaySummarizer {
+    complete: CompleteFn,
+}
+
+impl GatewaySummarizer {
+    /// Builds the summarizer over a completion call.
+    #[allow(dead_code, unused_variables)]
+    pub fn new(complete: CompleteFn) -> Self {
+        todo!("M4 S6")
+    }
+}
+
+impl ResultSummarizer for GatewaySummarizer {
+    #[allow(dead_code, unused_variables)]
+    fn submit(&self, text: &str) -> SummaryHandle {
+        todo!("M4 S6")
+    }
+}
+
+/// M4: installs the admission and close hooks that feed the summary tokens.
+#[allow(dead_code, unused_variables)]
+pub fn install_summary_hooks(manager: &JobManager, tokens: Arc<SummaryTokens>) {
+    todo!("M4 S6")
+}
+
+/// M4: live ask and TTS switches read from the settings getter on every call.
+#[allow(dead_code, unused_variables)]
+pub fn summary_policy(settings: Arc<dyn Fn() -> AppSettings + Send + Sync>) -> SummaryPolicy {
+    todo!("M4 S6")
+}
+
+/// M4: the job status DTO with the stored result for the current or most recent job.
+#[allow(dead_code, unused_variables)]
+pub fn status_dto_with(manager: &JobManager, results: &ResultStore) -> AgentJobStatusDto {
+    todo!("M4 S6")
+}
+
+/// M4: invalidates every outstanding summary ticket. `None` is a no-op.
+#[allow(dead_code, unused_variables)]
+pub fn invalidate_summaries(tokens: Option<&Arc<SummaryTokens>>) {
+    todo!("M4 S6")
+}
+
 #[cfg(test)]
 #[path = "job_runtime_tests.rs"]
 mod job_runtime_tests;
+
+#[cfg(test)]
+#[path = "job_runtime_m4_tests.rs"]
+mod job_runtime_m4_tests;
