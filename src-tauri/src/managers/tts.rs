@@ -444,6 +444,12 @@ impl TtsManager {
         ok
     }
 
+    /// M3: speaks `text` only when nothing else is speaking. Implemented by a later M3 step.
+    #[allow(unused_variables)]
+    pub fn speak_if_idle(&self, text: &str) -> bool {
+        todo!()
+    }
+
     pub fn is_speaking(&self) -> bool {
         let mut state = lock_state(&self.inner);
         let running = match state.current.as_mut() {

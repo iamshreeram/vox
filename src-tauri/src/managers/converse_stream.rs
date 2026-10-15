@@ -541,13 +541,19 @@ pub enum Reconcile {
 pub fn reconcile(plan: &TurnPlan, spoken: &[String]) -> Reconcile {
     if spoken.is_empty() {
         return match plan.kind {
-            PlanKind::Answer | PlanKind::Clarify | PlanKind::End => Reconcile::Remainder {
-                text: canon(&plan.speech),
-            },
+            // M3: Job plans are not produced yet (parsed in S3a, executed in S3b)
+            PlanKind::Answer | PlanKind::Clarify | PlanKind::End | PlanKind::Job => {
+                Reconcile::Remainder {
+                    text: canon(&plan.speech),
+                }
+            }
             PlanKind::Paste | PlanKind::Command => Reconcile::Legacy,
         };
     }
-    if !matches!(plan.kind, PlanKind::Answer | PlanKind::Clarify) {
+    if !matches!(
+        plan.kind,
+        PlanKind::Answer | PlanKind::Clarify | PlanKind::Job
+    ) {
         return Reconcile::Abort;
     }
     let joined = spoken.join(" ");

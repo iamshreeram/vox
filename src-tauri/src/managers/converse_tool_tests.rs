@@ -461,6 +461,7 @@ fn plan_json(kind: &str, speech: &str) -> String {
 
 fn command_plan() -> TurnPlan {
     TurnPlan {
+        job: None,
         kind: PlanKind::Command,
         speech: "Opening.".into(),
         emotion: Emotion::Neutral,
@@ -471,6 +472,7 @@ fn command_plan() -> TurnPlan {
 
 fn paste_plan() -> TurnPlan {
     TurnPlan {
+        job: None,
         kind: PlanKind::Paste,
         speech: "Pasting.".into(),
         emotion: Emotion::Neutral,
@@ -481,6 +483,7 @@ fn paste_plan() -> TurnPlan {
 
 fn answer_plan_value() -> TurnPlan {
     TurnPlan {
+        job: None,
         kind: PlanKind::Answer,
         speech: "Fine.".into(),
         emotion: Emotion::Neutral,
@@ -818,6 +821,7 @@ fn guard_plan_tainted_with_guard_on_refuses_paste_and_command_only() {
     assert!(refused(&guard_plan(paste_plan(), &taint, true)));
 
     let clarify = TurnPlan {
+        job: None,
         kind: PlanKind::Clarify,
         speech: "Which one?".into(),
         emotion: Emotion::Neutral,
@@ -825,6 +829,7 @@ fn guard_plan_tainted_with_guard_on_refuses_paste_and_command_only() {
         command: None,
     };
     let end = TurnPlan {
+        job: None,
         kind: PlanKind::End,
         speech: "Bye.".into(),
         emotion: Emotion::Neutral,

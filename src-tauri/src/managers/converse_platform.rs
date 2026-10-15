@@ -1102,6 +1102,7 @@ pub(crate) fn guard_plan(plan: TurnPlan, taint: &TaintState, guard_actions: bool
         return plan;
     }
     TurnPlan {
+        job: None,
         kind: PlanKind::Answer,
         speech: REFUSAL_SPEECH.to_string(),
         emotion: Emotion::Neutral,

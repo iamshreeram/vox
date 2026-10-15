@@ -30,6 +30,17 @@ pub enum PlanKind {
     Command,
     Clarify,
     End,
+    /// M3: a background coding job request (parsed in a later step).
+    Job,
+}
+
+/// M3: a request to run a coding job in one configured project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobRequest {
+    /// Name of the project the job should run in.
+    pub project: String,
+    /// The task text handed to the coding CLI.
+    pub task: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +51,8 @@ pub struct TurnPlan {
     pub emotion: Emotion,
     pub paste_text: Option<String>,
     pub command: Option<String>,
+    /// M3: the job request, set only for `PlanKind::Job` plans.
+    pub job: Option<JobRequest>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,6 +208,7 @@ fn plain_plan(text: &str) -> Result<TurnPlan, PlanError> {
             emotion: Emotion::Neutral,
             paste_text: None,
             command: None,
+            job: None,
         }),
         None => Err(PlanError::Empty),
     }
@@ -241,12 +255,15 @@ fn plan_from_value(value: &Value) -> Option<TurnPlan> {
         .map(Emotion::from_label)
         .unwrap_or(Emotion::Neutral);
     match kind {
+        // M3: Job plans are not produced yet (parsed in S3a, executed in S3b)
+        PlanKind::Job => None,
         PlanKind::Answer | PlanKind::Clarify | PlanKind::End => Some(TurnPlan {
             kind,
             speech: speech_from(obj)?,
             emotion,
             paste_text: None,
             command: None,
+            job: None,
         }),
         PlanKind::Paste => {
             let paste_text = clean_paste(obj.get("paste_text")?.as_str()?)?;
@@ -256,6 +273,7 @@ fn plan_from_value(value: &Value) -> Option<TurnPlan> {
                 emotion,
                 paste_text: Some(paste_text),
                 command: None,
+                job: None,
             })
         }
         PlanKind::Command => {
@@ -266,6 +284,7 @@ fn plan_from_value(value: &Value) -> Option<TurnPlan> {
                 emotion,
                 paste_text: None,
                 command: Some(command),
+                job: None,
             })
         }
     }

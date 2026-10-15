@@ -274,6 +274,8 @@ fn lcfg(early: bool, ack: Option<u64>) -> SessionConfig {
 
 async fn run(r: &Rig, cfg: &SessionConfig) -> SessionEnd {
     let deps = Deps {
+        policy: None,
+        announcer: None,
         ears: &r.ears,
         mouth: &r.mouth,
         hands: &r.hands,
@@ -288,6 +290,7 @@ async fn run(r: &Rig, cfg: &SessionConfig) -> SessionEnd {
 
 fn tp(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
+        job: None,
         kind,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,
@@ -298,6 +301,7 @@ fn tp(kind: PlanKind, speech: &str) -> TurnPlan {
 
 fn paste_plan(text: &str, speech: &str) -> TurnPlan {
     TurnPlan {
+        job: None,
         paste_text: Some(text.to_string()),
         ..tp(PlanKind::Paste, speech)
     }
@@ -305,6 +309,7 @@ fn paste_plan(text: &str, speech: &str) -> TurnPlan {
 
 fn cmd_plan(command: &str, speech: &str) -> TurnPlan {
     TurnPlan {
+        job: None,
         command: Some(command.to_string()),
         ..tp(PlanKind::Command, speech)
     }
@@ -725,6 +730,7 @@ async fn cl14_streamed_error_after_a_queued_sentence_records_the_prefix_and_inco
 async fn cl15_reconcile_abort_after_early_speech_records_the_prefix_and_executes_nothing() {
     // The stream speaks sentences as an answer, then the final plan is a command: Abort.
     let cmd = TurnPlan {
+        job: None,
         command: Some("delete everything".into()),
         ..tp(PlanKind::Command, "Opening.")
     };

@@ -114,6 +114,7 @@ fn cfg(context_turns: usize) -> SessionConfig {
 
 fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
+        job: None,
         kind,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,
@@ -141,6 +142,8 @@ async fn drive(
     let reporter = TReporter(Mutex::new(vec![]));
     let (tx, rx) = watch::channel(false);
     let deps = Deps {
+        policy: None,
+        announcer: None,
         ears: &ears,
         mouth: &mouth,
         hands,
@@ -290,6 +293,7 @@ async fn t5_brain_answer_records_the_submitted_speech() {
 #[tokio::test]
 async fn t5_brain_paste_records_the_confirmation_and_never_the_pasted_text() {
     let brain = TBrain(Mutex::new(VecDeque::from(vec![Ok(TurnPlan {
+        job: None,
         paste_text: Some("SECRET BODY".to_string()),
         ..plan(PlanKind::Paste, "Done, pasted.")
     })])));
@@ -312,6 +316,7 @@ async fn t5_brain_paste_records_the_confirmation_and_never_the_pasted_text() {
 #[tokio::test]
 async fn t5_brain_command_records_an_action_kind_without_the_command_text() {
     let brain = TBrain(Mutex::new(VecDeque::from(vec![Ok(TurnPlan {
+        job: None,
         command: Some("open safari".to_string()),
         ..plan(PlanKind::Command, "")
     })])));
@@ -428,6 +433,8 @@ async fn t5_a_panicking_brain_emits_one_interrupted_or_failed_event_via_drop() {
     let reporter = TReporter(Mutex::new(vec![]));
     let (_tx, rx) = watch::channel(false);
     let deps = Deps {
+        policy: None,
+        announcer: None,
         ears: &ears,
         mouth: &mouth,
         hands: &hands,
@@ -575,6 +582,8 @@ async fn t5_streaming_answer_with_several_submitted_sentences_then_barge_in() {
     let hands = hands(vec![], vec![]);
     let reporter = TReporter(Mutex::new(vec![]));
     let deps = Deps {
+        policy: None,
+        announcer: None,
         ears: &ears,
         mouth: &mouth,
         hands: &hands,
@@ -622,6 +631,8 @@ async fn t5_cancellation_during_planning() {
     let hands = hands(vec![], vec![]);
     let reporter = TReporter(Mutex::new(vec![]));
     let deps = Deps {
+        policy: None,
+        announcer: None,
         ears: &ears,
         mouth: &mouth,
         hands: &hands,

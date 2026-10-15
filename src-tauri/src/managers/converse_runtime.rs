@@ -213,6 +213,8 @@ impl ConverseController {
                     transcript,
                 };
                 let deps = Deps {
+                    policy: None,
+                    announcer: None,
                     ears: ears.as_ref(),
                     mouth: mouth.as_ref(),
                     hands: hands.as_ref(),
@@ -714,6 +716,7 @@ mod tests {
         fn plan<'a>(&'a self, _i: PlanInput<'a>) -> BoxFuture<'a, Result<TurnPlan, PlanError>> {
             Box::pin(async {
                 Ok(TurnPlan {
+                    job: None,
                     kind: PlanKind::Answer,
                     speech: "Here it is.".to_string(),
                     emotion: Emotion::Neutral,

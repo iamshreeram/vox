@@ -3,6 +3,9 @@
 //! the traits below. Contract: DESIGN.md section 3.3 (Revision 4).
 
 use crate::managers::converse_ack::choose;
+use crate::managers::converse_confirm::{
+    DirFd, JobLaunch, JobStartOutcome, PinError, PolicySource, ValidatedCommand,
+};
 use crate::managers::converse_context::{
     compose, neutralize, note_command, note_delivery_failed, note_failed, note_incomplete,
     note_interrupted, note_paste, note_paste_failed, CommandNote,
@@ -13,6 +16,7 @@ use crate::managers::converse_plan::{
 };
 use crate::managers::converse_stream::{reconcile, PlanStreamer, Reconcile};
 use crate::managers::emotion::Emotion;
+use crate::managers::job_announcer::Announcer;
 use futures_util::future::{select, Either};
 use std::future::Future;
 use std::pin::Pin;
@@ -119,6 +123,36 @@ pub trait Hands: Send + Sync {
     fn run_user_phrase<'a>(&'a self, phrase: &'a str) -> BoxFuture<'a, PhraseOutcome>;
     /// Restricted tier: a command PROPOSED BY THE MODEL.
     fn run_model_command<'a>(&'a self, phrase: &'a str) -> BoxFuture<'a, PhraseOutcome>;
+    /// M3: validates a model-proposed command against the allowlist. Default: refused.
+    #[allow(dead_code)]
+    fn validate_command(&self, _text: &str) -> Option<ValidatedCommand> {
+        None
+    }
+    /// M3: runs a command that was already validated. Default: not run.
+    #[allow(dead_code)]
+    fn run_validated_command(&self, _cmd: ValidatedCommand) -> bool {
+        false
+    }
+    /// M3: pins a configured project to a directory handle. Default: unavailable.
+    #[allow(dead_code)]
+    fn pin_project(&self, _name: &str) -> Result<DirFd, PinError> {
+        Err(PinError::Unavailable)
+    }
+    /// M3: starts a background coding job. Default: unsupported.
+    #[allow(dead_code)]
+    fn start_job(&self, _launch: JobLaunch) -> JobStartOutcome {
+        JobStartOutcome::Unsupported
+    }
+    /// M3: cancels the active background job. Default: nothing to cancel.
+    #[allow(dead_code)]
+    fn cancel_job(&self) -> bool {
+        false
+    }
+    /// M3: whether a background job is active. Default: none.
+    #[allow(dead_code)]
+    fn has_active_job(&self) -> bool {
+        false
+    }
 }
 
 pub trait Brain: Send + Sync {
@@ -223,7 +257,10 @@ fn speech_outcome(kind: &PlanKind) -> TurnOutcome {
     match kind {
         PlanKind::Clarify => TurnOutcome::Clarified,
         PlanKind::End => TurnOutcome::Ended,
-        PlanKind::Answer | PlanKind::Paste | PlanKind::Command => TurnOutcome::Answered,
+        // M3: Job plans are not produced yet (parsed in S3a, executed in S3b)
+        PlanKind::Answer | PlanKind::Paste | PlanKind::Command | PlanKind::Job => {
+            TurnOutcome::Answered
+        }
     }
 }
 
@@ -369,6 +406,12 @@ pub struct Deps<'a> {
     pub hands: &'a dyn Hands,
     pub brain: &'a dyn Brain,
     pub reporter: &'a dyn Reporter,
+    /// M3: action policy source. `None` keeps the gate inactive (legacy behavior).
+    #[allow(dead_code)]
+    pub policy: Option<&'a dyn PolicySource>,
+    /// M3: announcer for background job speech. `None` means no announcements.
+    #[allow(dead_code)]
+    pub announcer: Option<&'a Announcer>,
 }
 
 #[derive(Debug, Clone)]
@@ -1064,7 +1107,8 @@ async fn execute_plan(
                 SessionEnd::UserEnded,
             ));
         }
-        PlanKind::Answer | PlanKind::Clarify => {
+        // M3: Job plans are not produced yet (parsed in S3a, executed in S3b)
+        PlanKind::Answer | PlanKind::Clarify | PlanKind::Job => {
             carry.journal.set(speech_outcome(&plan.kind), None);
             let outcome = speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?;
             answer_summary(&plan.speech, outcome)
@@ -1123,6 +1167,8 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
         journal: carry.journal.clone(),
     };
     let tapped = Deps {
+        policy: None,
+        announcer: None,
         ears: outer.ears,
         mouth: &tap,
         hands: outer.hands,
@@ -1639,6 +1685,8 @@ mod tests {
 
     async fn run(r: &Rig, cfg: &SessionConfig) -> SessionEnd {
         let deps = Deps {
+            policy: None,
+            announcer: None,
             ears: &r.ears,
             mouth: &r.mouth,
             hands: &r.hands,
@@ -1657,6 +1705,7 @@ mod tests {
     }
     fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
         TurnPlan {
+            job: None,
             kind,
             speech: speech.to_string(),
             emotion: Emotion::Neutral,
@@ -1669,12 +1718,14 @@ mod tests {
     }
     fn paste_plan(text: &str, speech: &str) -> TurnPlan {
         TurnPlan {
+            job: None,
             paste_text: Some(text.to_string()),
             ..plan(PlanKind::Paste, speech)
         }
     }
     fn command_plan(cmd: &str, speech: &str) -> TurnPlan {
         TurnPlan {
+            job: None,
             command: Some(cmd.to_string()),
             ..plan(PlanKind::Command, speech)
         }

@@ -132,6 +132,7 @@ impl Brain for ABrain {
 
 fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
+        job: None,
         kind,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,
@@ -142,6 +143,7 @@ fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
 
 fn paste_plan() -> TurnPlan {
     TurnPlan {
+        job: None,
         paste_text: Some("model-written body".to_string()),
         ..plan(PlanKind::Paste, "Pasted it.")
     }
@@ -149,6 +151,7 @@ fn paste_plan() -> TurnPlan {
 
 fn command_plan() -> TurnPlan {
     TurnPlan {
+        job: None,
         command: Some("open safari".to_string()),
         ..plan(PlanKind::Command, "Opening Safari.")
     }
@@ -182,6 +185,8 @@ async fn drive(
     let reporter = Rep(Mutex::new(vec![]));
     let (_tx, rx) = watch::channel(false);
     let deps = Deps {
+        policy: None,
+        announcer: None,
         ears: &ears,
         mouth: &mouth,
         hands,

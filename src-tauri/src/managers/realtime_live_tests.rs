@@ -43,6 +43,7 @@ fn kind_name(kind: PlanKind) -> &'static str {
         PlanKind::Command => "Command",
         PlanKind::Clarify => "Clarify",
         PlanKind::End => "End",
+        PlanKind::Job => "Job",
     }
 }
 
