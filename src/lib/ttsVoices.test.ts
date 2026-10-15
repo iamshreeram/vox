@@ -235,7 +235,7 @@ testCase("every locale has the new tts keys and keeps the old ones", () => {
     const tts = json.settings?.advanced?.tts;
     assert.ok(tts, `${locale}: settings.advanced.tts missing`);
     for (const key of required) {
-      const value = tts[key];
+      const value: unknown = tts[key];
       assert.equal(typeof value, "string", `${locale}: ${key} missing`);
       assert.notEqual(
         (value as string).trim(),
