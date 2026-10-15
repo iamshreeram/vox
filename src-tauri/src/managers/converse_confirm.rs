@@ -8,7 +8,10 @@ use crate::managers::command_router::CommandAction;
 use crate::managers::converse::{Ears, Hands, ListenOutcome, Mouth, QuietOutcome, SayOutcome};
 #[cfg(test)]
 pub use crate::managers::converse_plan::JobRequest;
-use crate::managers::converse_plan::{JobSelection, PlanKind, TurnPlan};
+use crate::managers::converse_plan::{
+    canonical_agent, JobMode, JobSelection, PlanKind, TurnPlan, ASK_NOT_ENABLED_SPEECH,
+    UNKNOWN_AGENT_SPEECH,
+};
 use crate::managers::emotion::Emotion;
 use crate::managers::job_announcer::Announcer;
 use crate::managers::redact::redact;
@@ -303,22 +306,18 @@ pub trait PolicySource: Send + Sync {
     /// The current launch settings, if jobs are configured.
     fn launch_config(&self) -> Option<LaunchConfig>;
     /// M4: whether ask mode is currently allowed. Defaults to refused.
-    #[allow(dead_code)] // wired in a later M4 step
     fn ask_allowed(&self) -> bool {
         false
     }
     /// M4: the current agent allowlist. Defaults to empty (no agent selection).
-    #[allow(dead_code)] // wired in a later M4 step
     fn allowed_agents(&self) -> Vec<String> {
         Vec::new()
     }
     /// M4: the current agent flag. Defaults to `--agent`.
-    #[allow(dead_code)] // wired in a later M4 step
     fn agent_flag(&self) -> String {
         "--agent".to_string()
     }
     /// M4: launch settings for a selection. Sets `agent_flag` only when an agent is selected.
-    #[allow(dead_code)] // wired in a later M4 step
     fn launch_config_for(&self, sel: Option<&JobSelection>) -> Option<LaunchConfig> {
         let mut config = self.launch_config()?;
         config.agent_flag = sel
@@ -347,7 +346,6 @@ pub struct JobLaunch {
     /// Launch settings captured at preparation time.
     pub config: LaunchConfig,
     /// M4: the agent selection captured at parse time (default = no selection).
-    #[allow(dead_code)] // wired in a later M4 step
     pub selection: JobSelection,
 }
 
@@ -372,7 +370,6 @@ pub enum PreparedAction {
 
 impl PreparedAction {
     /// M4: the job selection of a prepared job; `None` for paste and command actions.
-    #[allow(dead_code)] // wired in a later M4 step
     pub fn selection(&self) -> Option<&JobSelection> {
         match self {
             PreparedAction::Job { launch } => Some(&launch.selection),
@@ -468,8 +465,9 @@ fn prepare_job(
             "The task contains something that looks like a secret, so I didn't start it.",
         ));
     }
+    let selection = job_selection(request, policy)?;
     let config = policy
-        .launch_config()
+        .launch_config_for(Some(&selection))
         .ok_or_else(|| refuse("Coding jobs aren't set up yet."))?;
     let dir = hands.pin_project(project).map_err(|err| match err {
         PinError::Unknown | PinError::Ambiguous => refuse("I couldn't find that project."),
@@ -481,9 +479,30 @@ fn prepare_job(
             dir,
             task,
             config,
-            selection: JobSelection::default(),
+            selection,
         },
     })
+}
+
+/// M4 (D3): re-validates the planner's mode and agent against the CURRENT settings.
+/// Ask needs ask to be allowed; a named agent must still be on the allowlist (matched
+/// ASCII case-insensitively, the canonical spelling is stored). Refusals never echo the name.
+fn job_selection(
+    request: Option<&crate::managers::converse_plan::JobRequest>,
+    policy: &dyn PolicySource,
+) -> Result<JobSelection, PrepareError> {
+    let mode = request.map_or(JobMode::Task, |r| r.mode);
+    if mode == JobMode::Ask && !policy.ask_allowed() {
+        return Err(refuse(ASK_NOT_ENABLED_SPEECH));
+    }
+    let agent = match request.and_then(|r| r.agent.as_deref()) {
+        None => None,
+        Some(name) => Some(
+            canonical_agent(name, &policy.allowed_agents())
+                .ok_or_else(|| refuse(UNKNOWN_AGENT_SPEECH))?,
+        ),
+    };
+    Ok(JobSelection { agent, mode })
 }
 
 const LABEL_MAX_CHARS: usize = 40;
@@ -517,25 +536,43 @@ fn normalize_task(raw: &str) -> Option<String> {
     (1..=TASK_MAX_CHARS).contains(&len).then_some(task)
 }
 
-/// Captures the approval fingerprint from a policy source.
+/// Captures the approval fingerprint from a policy source (no job selection).
+/// Production paths use `fingerprint_for`; this stays for the M3 contract and its tests.
+#[allow(dead_code)] // M3 entry point kept for the fingerprint contract tests
 pub fn fingerprint_of(policy: &dyn PolicySource) -> ApprovalFingerprint {
     fingerprint_for(policy, None)
 }
 
-/// M4: captures the approval fingerprint, including the agent selection of a job.
+/// M4 (D3): captures the approval fingerprint, including the agent selection of a job.
 ///
-/// Scaffolding: the selection is not yet part of the fingerprint, so this matches
-/// `fingerprint_of` for every input.
+/// `sel = None` leaves the job part empty. A default job (no agent, task mode) gets the
+/// constant part, so unrelated allowlist, flag or ask edits never change it. A selected
+/// agent records whether it is still allowed and the flag in effect; Ask records whether
+/// ask is still allowed.
 pub fn fingerprint_for(
     policy: &dyn PolicySource,
-    _sel: Option<&JobSelection>,
+    sel: Option<&JobSelection>,
 ) -> ApprovalFingerprint {
     let current = policy.current();
     ApprovalFingerprint {
         gate_active: current.gate_active,
         jobs_allowed: current.jobs_allowed,
         launch: policy.launch_config(),
-        job: None,
+        job: sel.map(|sel| job_fingerprint(policy, sel)),
+    }
+}
+
+/// M4 (D3): the agent-selection part of an approval for one job selection.
+fn job_fingerprint(policy: &dyn PolicySource, sel: &JobSelection) -> JobFp {
+    let agent_ok = match sel.agent.as_deref() {
+        None => true,
+        Some(name) => canonical_agent(name, &policy.allowed_agents()).is_some(),
+    };
+    let ask_ok = sel.mode == JobMode::Task || policy.ask_allowed();
+    JobFp {
+        agent_ok,
+        ask_ok,
+        agent_flag: sel.agent.as_ref().map(|_| policy.agent_flag()),
     }
 }
 
@@ -580,9 +617,31 @@ pub fn confirmation_question(action: &PreparedAction) -> String {
         PreparedAction::Command { cmd } => {
             format!("I'll open {}. Say yes or no.", cmd.label)
         }
-        PreparedAction::Job { launch } => format!(
+        PreparedAction::Job { launch } => job_question(launch),
+    }
+}
+
+/// M4 (D3): the job question. Without an agent and in task mode this is exactly the M3
+/// wording. Names and text are interpolated in full, as validated.
+fn job_question(launch: &JobLaunch) -> String {
+    let agent = launch.selection.agent.as_deref();
+    match (launch.selection.mode, agent) {
+        (JobMode::Task, None) => format!(
             "I'll start a coding job in {}. The task is: {}. Say yes or no.",
             launch.project, launch.task
+        ),
+        (JobMode::Task, Some(name)) => format!(
+            "I'll start a coding job in {} with the {name} agent. The task is: {}. Say yes or no.",
+            launch.project, launch.task
+        ),
+        (JobMode::Ask, agent) => format!(
+            "I'll ask the {} about {}: {}. It can change files. Say yes or no.",
+            agent.map_or_else(
+                || "coding agent".to_string(),
+                |name| format!("{name} agent")
+            ),
+            launch.project,
+            launch.task
         ),
     }
 }

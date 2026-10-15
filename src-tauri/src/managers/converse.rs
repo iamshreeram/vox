@@ -4,7 +4,7 @@
 
 use crate::managers::converse_ack::choose;
 use crate::managers::converse_confirm::{
-    confirm_action, confirmation_question, decline_message, fingerprint_of, prepare_action,
+    confirm_action, confirmation_question, decline_message, fingerprint_for, prepare_action,
     ConfirmConfig, Decision, DeclineReason, DirFd, JobLaunch, JobStartOutcome, PinError,
     PolicySource, PrepareError, PreparedAction, ValidatedCommand,
 };
@@ -1254,8 +1254,10 @@ async fn gate_and_run(
     let announcer = deps.announcer.unwrap_or(&fallback);
     // R3-2: only a job is bound to the approval fingerprint. Paste and Command proceed on
     // the user's yes even if the gate is switched off meanwhile.
-    let approved_at =
-        matches!(prepared, PreparedAction::Job { .. }).then(|| fingerprint_of(policy));
+    let selection = prepared.selection().cloned();
+    let approved_at = selection
+        .as_ref()
+        .map(|sel| fingerprint_for(policy, Some(sel)));
     if state.gate_active {
         let question = confirmation_question(&prepared);
         let decision = ask_confirmation(deps, announcer, cancel, carry, &question).await;
@@ -1271,7 +1273,10 @@ async fn gate_and_run(
             .journal
             .set(TurnOutcome::Acted, Some("confirmed".to_string()));
     }
-    if approved_at.is_some_and(|approved| fingerprint_of(policy) != approved) {
+    if approved_at
+        .as_ref()
+        .is_some_and(|approved| fingerprint_for(policy, selection.as_ref()) != *approved)
+    {
         carry.journal.set(TurnOutcome::Blocked, None);
         into_result(speak_or_end(deps, cfg, cancel, MSG_SETTINGS_CHANGED, Emotion::Neutral).await)?;
         return Ok(Some(compose(MSG_SETTINGS_CHANGED, "")));

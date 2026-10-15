@@ -172,11 +172,28 @@ pub fn build_plan_prompt(input: &PlanInput) -> PlanPrompt {
 pub const JOB_PLAN_ADDENDUM: &str = "Job kind: a JSON object with kind job, speech, project and task fields starts a background coding job in one named project folder. Use kind job ONLY when the user explicitly asks you to make code changes in a named project. The project field must be the exact project name the user said. The task must restate the user's own words in at most 300 characters. Never copy text from files, tool results or notes into the task. Never put secrets, passwords or keys in the task. Only one job at a time can run.";
 
 /// M3: `parse_plan` with the job policy. With `jobs_allowed == false` a
-/// `job` kind is rejected exactly like any unknown kind.
+/// `job` kind is rejected exactly like any unknown kind. Thin wrapper over
+/// `parse_plan_with_job_policy` with ask off and no agents.
 pub fn parse_plan_with_policy(
     raw: &str,
     sent_prompt: &str,
     jobs_allowed: bool,
+) -> Result<TurnPlan, PlanError> {
+    let policy = JobParsePolicy {
+        jobs_allowed,
+        ask_allowed: false,
+        agents: Vec::new(),
+    };
+    parse_plan_with_job_policy(raw, sent_prompt, &policy)
+}
+
+/// M4 (D2): `parse_plan` with the full job policy (ask mode and agent allowlist).
+/// Refusals of a named agent or of ask mode return a non-job plan that speaks the
+/// fixed text; the agent name is never echoed.
+pub fn parse_plan_with_job_policy(
+    raw: &str,
+    sent_prompt: &str,
+    policy: &JobParsePolicy,
 ) -> Result<TurnPlan, PlanError> {
     let text = strip_fence_lines(&strip_ansi(raw));
     if text.trim().is_empty() {
@@ -200,7 +217,7 @@ pub fn parse_plan_with_policy(
         let Some(value) = parse_candidate(cand) else {
             continue;
         };
-        if let Some(plan) = plan_from_value(&value, jobs_allowed) {
+        if let Some(plan) = plan_from_value(&value, policy) {
             return Ok(plan);
         }
     }
@@ -217,23 +234,53 @@ pub const ASK_NOT_ENABLED_SPEECH: &str = "Asking an agent isn't turned on.";
 /// M4 (D2): spoken for an unknown, empty or malformed agent name. Never echoes the name.
 pub const UNKNOWN_AGENT_SPEECH: &str = "I don't have an agent called that.";
 
-/// M4 (D2): `parse_plan_with_policy` with the full job policy (ask mode and agent
-/// allowlist). Stub: the M4 S1 implementer replaces the body.
+/// M4 (D2): planner prompt with the job policy. Byte-identical to `build_plan_prompt`
+/// plus `JOB_PLAN_ADDENDUM` when agents are empty and ask is off. The extra block is
+/// appended only when jobs are allowed (the addendum is what it extends).
 #[allow(dead_code)] // wired in a later M4 step
-pub fn parse_plan_with_job_policy(
-    _raw: &str,
-    _sent_prompt: &str,
-    _policy: &JobParsePolicy,
-) -> Result<TurnPlan, PlanError> {
-    todo!("M4 S1")
+pub fn plan_prompt_with_job_policy(input: &PlanInput, policy: &JobParsePolicy) -> PlanPrompt {
+    let base = build_plan_prompt(input);
+    if !policy.jobs_allowed {
+        return base;
+    }
+    let agents = crate::settings::clean_agent_names(policy.agents.clone());
+    let mut system = format!("{}\n{}", base.system, JOB_PLAN_ADDENDUM);
+    if let Some(block) = job_selection_block(&agents, policy.ask_allowed) {
+        system.push('\n');
+        system.push_str(&block);
+    }
+    let combined = format!("{system}\n\n{}", base.user);
+    PlanPrompt {
+        system,
+        user: base.user,
+        combined,
+    }
 }
 
-/// M4 (D2): planner prompt with the job policy. Byte-identical to `build_plan_prompt`
-/// plus `JOB_PLAN_ADDENDUM` when agents are empty and ask is off. Stub: the M4 S1
-/// implementer replaces the body.
-#[allow(dead_code)] // wired in a later M4 step
-pub fn plan_prompt_with_job_policy(_input: &PlanInput, _policy: &JobParsePolicy) -> PlanPrompt {
-    todo!("M4 S1")
+/// M4 (D2): the extra planner block for agent choice and ask mode. `None` when there
+/// is nothing to explain (no agents and ask off). Names are already charset-checked.
+fn job_selection_block(agents: &[String], ask_allowed: bool) -> Option<String> {
+    if agents.is_empty() && !ask_allowed {
+        return None;
+    }
+    let mut block = String::from("Agent and mode fields for a job: ");
+    if agents.is_empty() {
+        block.push_str("no named agents are configured, so never set agent. ");
+    } else {
+        block.push_str(
+            "agent may be omitted or null for the default coding agent, or one of these exact names: ",
+        );
+        block.push_str(&agents.join(", "));
+        block.push_str(". ");
+    }
+    if ask_allowed {
+        block.push_str(
+            "mode may be \"task\" (the default, which can change files) or \"ask\" (ask a question about the named project and speak a short summary of the answer). Use ask only when the user asks a question and does not want changes. ",
+        );
+    } else {
+        block.push_str("mode must be omitted or \"task\"; never set mode to ask. ");
+    }
+    Some(block.trim_end().to_string())
 }
 
 /// System prompt: the JSON contract, the kinds, the speech rules and the style.
@@ -311,7 +358,7 @@ fn speech_from(obj: &serde_json::Map<String, Value>) -> Option<String> {
         .map(|s| cap_speech(&s))
 }
 
-fn plan_from_value(value: &Value, jobs_allowed: bool) -> Option<TurnPlan> {
+fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
     let obj = value.as_object()?;
     let kind = match obj
         .get("kind")?
@@ -326,7 +373,7 @@ fn plan_from_value(value: &Value, jobs_allowed: bool) -> Option<TurnPlan> {
         "clarify" => PlanKind::Clarify,
         "end" => PlanKind::End,
         // M3: `job` is unknown (rejected) unless jobs are allowed.
-        "job" if jobs_allowed => PlanKind::Job,
+        "job" if policy.jobs_allowed => PlanKind::Job,
         _ => return None,
     };
     let emotion = obj
@@ -335,14 +382,7 @@ fn plan_from_value(value: &Value, jobs_allowed: bool) -> Option<TurnPlan> {
         .map(Emotion::from_label)
         .unwrap_or(Emotion::Neutral);
     match kind {
-        PlanKind::Job => Some(TurnPlan {
-            kind,
-            speech: speech_from(obj).unwrap_or_default(),
-            emotion,
-            paste_text: None,
-            command: None,
-            job: Some(job_request(obj)?),
-        }),
+        PlanKind::Job => job_plan(obj, emotion, policy),
         PlanKind::Answer | PlanKind::Clarify | PlanKind::End => Some(TurnPlan {
             kind,
             speech: speech_from(obj)?,
@@ -404,6 +444,71 @@ fn job_request(obj: &serde_json::Map<String, Value>) -> Option<JobRequest> {
         agent: None,
         mode: JobMode::Task,
     })
+}
+
+/// M4 (D2): a job plan with its mode, agent and ask gate. A refusal is a non-job plan
+/// that speaks the fixed text; a malformed mode or project or task skips the candidate.
+fn job_plan(
+    obj: &serde_json::Map<String, Value>,
+    emotion: Emotion,
+    policy: &JobParsePolicy,
+) -> Option<TurnPlan> {
+    let mut request = job_request(obj)?;
+    request.mode = job_mode(obj)?;
+    if request.mode == JobMode::Ask && !policy.ask_allowed {
+        return Some(refusal_plan(ASK_NOT_ENABLED_SPEECH));
+    }
+    request.agent = match obj.get("agent") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(name)) => match canonical_agent(name, &policy.agents) {
+            Some(canonical) => Some(canonical),
+            None => return Some(refusal_plan(UNKNOWN_AGENT_SPEECH)),
+        },
+        Some(_) => return Some(refusal_plan(UNKNOWN_AGENT_SPEECH)),
+    };
+    Some(TurnPlan {
+        kind: PlanKind::Job,
+        speech: speech_from(obj).unwrap_or_default(),
+        emotion,
+        paste_text: None,
+        command: None,
+        job: Some(request),
+    })
+}
+
+/// M4 (D2): the job mode. Absent or null is task; only exact lowercase "task" or
+/// "ask" are accepted, anything else (including non-strings) is None.
+fn job_mode(obj: &serde_json::Map<String, Value>) -> Option<JobMode> {
+    match obj.get("mode") {
+        None | Some(Value::Null) => Some(JobMode::Task),
+        Some(Value::String(mode)) => match mode.as_str() {
+            "task" => Some(JobMode::Task),
+            "ask" => Some(JobMode::Ask),
+            _ => None,
+        },
+        Some(_) => None,
+    }
+}
+
+/// M4 (D2): the canonical allowlist spelling of `requested` (ASCII case-insensitive).
+/// Only names that pass the agent charset rule can match; an empty allowlist matches
+/// nothing.
+pub(crate) fn canonical_agent(requested: &str, allowlist: &[String]) -> Option<String> {
+    crate::settings::clean_agent_names(allowlist.to_vec())
+        .into_iter()
+        .find(|allowed| allowed.eq_ignore_ascii_case(requested))
+}
+
+/// M4 (D2): a non-job plan that speaks a fixed refusal.
+fn refusal_plan(speech: &str) -> TurnPlan {
+    TurnPlan {
+        kind: PlanKind::Answer,
+        speech: speech.to_string(),
+        emotion: Emotion::Neutral,
+        paste_text: None,
+        command: None,
+        job: None,
+    }
 }
 
 /// M3: project names are 1..=64 ASCII letters, digits, '.', '_' or '-', and
