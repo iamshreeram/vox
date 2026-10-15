@@ -1,16 +1,19 @@
 //! Speaks and emits background coding job progress (M3 S3c-2, DESIGN D5, D7, R2-6, R2-8).
 //!
-//! Phase A stub: every body is `todo!()` so the tests in `job_speaker_tests.rs` compile and
-//! fail at runtime until the implementation lands.
+//! Speech and status events for background coding jobs (M3 S3c-2, DESIGN D5, R2-6, R2-8).
+//!
+//! Only fixed templates are ever spoken. The job output tail is never spoken, emitted or
+//! logged. The module-level dead-code allow covers the command wiring that lands later.
 
-#![allow(dead_code, unused_variables)]
+#![allow(dead_code)]
 
 use std::sync::Arc;
 use std::time::Instant;
 
 use crate::commands::agent_jobs::AgentJobStatusDto;
-use crate::managers::agent_jobs::{JobManager, JobObserver, JobSnapshot};
-use crate::managers::job_announcer::Announcer;
+use crate::managers::agent_jobs::{JobManager, JobObserver, JobSnapshot, JobState};
+use crate::managers::job_announcer::{AnnounceKind, Announcer};
+use crate::managers::tts::sanitize_speech_text;
 
 /// Receives the job status events and tray refresh requests from the speaker.
 pub trait JobEventSink: Send + Sync {
@@ -27,6 +30,8 @@ pub struct JobSpeaker {
     tts_enabled: Arc<dyn Fn() -> bool + Send + Sync>,
     sink: Arc<dyn JobEventSink>,
     started: Instant,
+    /// Configured time limit in minutes, used only in the timed-out message.
+    timeout_minutes: Option<u32>,
 }
 
 impl JobSpeaker {
@@ -37,40 +42,132 @@ impl JobSpeaker {
         tts_enabled: Arc<dyn Fn() -> bool + Send + Sync>,
         sink: Arc<dyn JobEventSink>,
     ) -> Self {
-        todo!("S3c-2 Phase B: JobSpeaker::new")
+        Self {
+            project,
+            announcer,
+            tts_enabled,
+            sink,
+            started: Instant::now(),
+            timeout_minutes: None,
+        }
+    }
+
+    /// Sets the configured time limit, so the timed-out message names the minutes.
+    pub fn with_timeout_minutes(mut self, minutes: u32) -> Self {
+        self.timeout_minutes = Some(minutes);
+        self
+    }
+
+    /// Whether speech is enabled right now.
+    fn speech_enabled(&self) -> bool {
+        (self.tts_enabled)()
+    }
+
+    /// "The coding job in <project>", or "The coding job" when the name sanitizes to nothing.
+    fn subject(&self) -> String {
+        match sanitize_speech_text(&self.project) {
+            Some(name) => format!("The coding job in {name}"),
+            None => "The coding job".to_string(),
+        }
+    }
+
+    /// Fixed final-state sentence, or `None` for a state that is not final.
+    fn finish_text(&self, state: JobState) -> Option<String> {
+        let subject = self.subject();
+        let text = match state {
+            JobState::Succeeded => format!("{subject} finished successfully."),
+            JobState::Failed { code: Some(code) } => {
+                format!("{subject} failed with exit code {code}.")
+            }
+            JobState::Failed { code: None } => format!("{subject} failed."),
+            JobState::Cancelled => format!("{subject} was cancelled."),
+            JobState::TimedOut => match self.timeout_minutes {
+                Some(minutes) => format!("{subject} timed out after {minutes} minutes."),
+                None => format!("{subject} timed out."),
+            },
+            JobState::SpawnFailed => format!("{subject} couldn't start."),
+            JobState::Running => return None,
+        };
+        Some(text)
+    }
+
+    /// Fixed progress sentence naming the project when it is speakable.
+    fn progress_text(&self) -> String {
+        match sanitize_speech_text(&self.project) {
+            Some(name) => format!("Still working on the job in {name}."),
+            None => "Still working on the coding job.".to_string(),
+        }
     }
 }
 
 impl JobObserver for JobSpeaker {
     fn on_progress(&self, snap: &JobSnapshot) {
-        todo!("S3c-2 Phase B: JobSpeaker::on_progress")
+        self.sink.emit(&snapshot_to_dto(snap));
+        if self.speech_enabled() {
+            self.announcer
+                .announce(AnnounceKind::Progress, self.progress_text());
+        }
     }
 
     fn on_finish(&self, snap: &JobSnapshot) {
-        todo!("S3c-2 Phase B: JobSpeaker::on_finish")
+        self.sink.emit(&snapshot_to_dto(snap));
+        self.sink.refresh_tray();
+        if !self.speech_enabled() {
+            return;
+        }
+        if let Some(text) = self.finish_text(snap.state) {
+            self.announcer.announce(AnnounceKind::Finish, text);
+        }
     }
 }
 
 /// Maps a job snapshot to the status DTO (state name, project, elapsed seconds; no output).
 pub fn snapshot_to_dto(snap: &JobSnapshot) -> AgentJobStatusDto {
-    todo!("S3c-2 Phase B: snapshot_to_dto")
+    AgentJobStatusDto {
+        state: state_name(snap.state).to_string(),
+        project: Some(snap.project.clone()),
+        elapsed_secs: snap.elapsed_secs,
+    }
+}
+
+/// Stable wire name of a job state (used by the status DTO and the `job_status` tool).
+pub fn state_name(state: JobState) -> &'static str {
+    match state {
+        JobState::Running => "running",
+        JobState::Succeeded => "succeeded",
+        JobState::Failed { .. } => "failed",
+        JobState::Cancelled => "cancelled",
+        JobState::TimedOut => "timed_out",
+        JobState::SpawnFailed => "spawn_failed",
+    }
 }
 
 /// The DTO reported when no job exists: state `idle`, no project, zero elapsed seconds.
 pub fn idle_dto() -> AgentJobStatusDto {
-    todo!("S3c-2 Phase B: idle_dto")
+    AgentJobStatusDto {
+        state: "idle".to_string(),
+        project: None,
+        elapsed_secs: 0,
+    }
 }
 
 /// Status of the current or most recent job, or `idle_dto()` when none exists.
 pub fn status_dto(manager: &JobManager) -> AgentJobStatusDto {
-    todo!("S3c-2 Phase B: status_dto")
+    manager
+        .snapshot()
+        .map(|snap| snapshot_to_dto(&snap))
+        .unwrap_or_else(idle_dto)
 }
 
 /// Cancels the running job. Returns `true` when a running job was asked to stop.
 pub fn cancel(manager: &JobManager) -> bool {
-    todo!("S3c-2 Phase B: cancel")
+    manager.cancel()
 }
 
 #[cfg(test)]
 #[path = "job_speaker_tests.rs"]
 mod job_speaker_tests;
+
+#[cfg(test)]
+#[path = "job_speaker_timeout_tests.rs"]
+mod job_speaker_timeout_tests;
