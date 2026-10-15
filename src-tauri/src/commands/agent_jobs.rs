@@ -3,10 +3,10 @@
 //! The three setting commands are real: each is a read-modify-write of one field, modelled on
 //! `agent_tools.rs`. The status and cancel commands read the shared job manager.
 
-use crate::job_runtime::JobWiring;
+use crate::job_runtime::{self, JobWiring};
 use crate::managers::job_speaker;
 use crate::settings::{self, AppSettings};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 /// Read-only status of the coding job, for the Settings status card and the tray.
 ///
@@ -85,8 +85,12 @@ pub fn change_agent_jobs_agent_flag(app: AppHandle, flag: String) -> Result<Stri
 pub fn change_agent_jobs_ask_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut current = settings::get_settings(&app);
     apply_ask_change(&mut current, enabled);
-    // M4 S6: call summary tokens invalidate() here
     settings::write_settings(&app, current);
+    // Any change, on or off, invalidates the summaries issued under the old switch.
+    let tokens = app
+        .try_state::<JobWiring>()
+        .map(|wiring| wiring.summary_tokens.clone());
+    job_runtime::invalidate_summaries(tokens.as_ref());
     Ok(())
 }
 
@@ -115,7 +119,7 @@ pub(crate) fn apply_ask_change(s: &mut AppSettings, enabled: bool) {
 #[tauri::command]
 #[specta::specta]
 pub fn agent_job_status(wiring: State<'_, JobWiring>) -> AgentJobStatusDto {
-    job_speaker::status_dto(&wiring.manager)
+    job_runtime::status_dto_with(&wiring.manager, &wiring.results)
 }
 
 /// Cancels the running coding job. Returns false when nothing is running.

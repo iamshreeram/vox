@@ -326,6 +326,7 @@ pub fn idle_dto() -> AgentJobStatusDto {
 }
 
 /// Status of the current or most recent job, or `idle_dto()` when none exists.
+#[allow(dead_code)] // production uses `status_dto_with` (carries the stored result); kept for tests
 pub fn status_dto(manager: &JobManager) -> AgentJobStatusDto {
     manager
         .snapshot()
