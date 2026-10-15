@@ -1154,6 +1154,19 @@ async fn execute_plan(
     Ok(Some(summary))
 }
 
+/// M3 (S3b) stub: the single gated dispatch point. Phase A: body is `todo!()`.
+#[allow(dead_code)]
+async fn gate_and_run(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    plan: TurnPlan,
+    carry: &mut Carry,
+) -> Result<Option<String>, SessionEnd> {
+    let _ = (deps, cfg, cancel, plan, carry);
+    todo!()
+}
+
 /// The turn loop. Returns the end; the wrapper reports Idle and stops.
 async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToken) -> SessionEnd {
     let mut history: Vec<(String, String)> = Vec::new();
@@ -2718,3 +2731,7 @@ mod transcript_tests;
 #[cfg(test)]
 #[path = "converse_answer_only_tests.rs"]
 mod answer_only_tests;
+
+#[cfg(test)]
+#[path = "converse_gate_tests.rs"]
+mod converse_gate_tests;
