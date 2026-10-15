@@ -186,6 +186,12 @@ const settingUpdaters: {
     commands.changeAgentToolsSetting(value as boolean),
   agent_tools_guard_actions: (value) =>
     commands.changeAgentToolsGuardActionsSetting(value as boolean),
+  agent_confirm_actions: (value) =>
+    commands.changeAgentConfirmActions(value as boolean),
+  agent_jobs_enabled: (value) =>
+    commands.changeAgentJobsEnabled(value as boolean),
+  agent_jobs_timeout_minutes: (value) =>
+    commands.changeAgentJobsTimeoutMinutes(value as number),
   agent_project_roots: async (value) => {
     const result = await commands.changeAgentProjectRootsSetting(
       value as string[],

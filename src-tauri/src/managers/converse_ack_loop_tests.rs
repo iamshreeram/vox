@@ -282,6 +282,8 @@ fn legacy(ack_after_ms: u64) -> SessionConfig {
 
 async fn run(r: &Rig, cfg: &SessionConfig) -> SessionEnd {
     let deps = Deps {
+        policy: None,
+        announcer: None,
         ears: &r.ears,
         mouth: &r.mouth,
         hands: &r.hands,
@@ -296,6 +298,7 @@ async fn run(r: &Rig, cfg: &SessionConfig) -> SessionEnd {
 
 fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
+        job: None,
         kind,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,
@@ -474,6 +477,7 @@ async fn al7_smart_ack_without_ack_after_is_silent_and_opens_no_queue() {
 #[tokio::test]
 async fn al8_revision_with_a_draft_gets_a_revise_acknowledgement() {
     let paste = TurnPlan {
+        job: None,
         paste_text: Some("Dogs are loyal companions.".into()),
         ..plan(PlanKind::Paste, "")
     };
@@ -550,6 +554,7 @@ async fn al11_ack_then_paste_plan_aborts_the_queue_pastes_and_records_the_pasted
     use crate::managers::converse_context::{compose, note_paste};
     let pasted = "Hi team, the release is delayed.";
     let paste = TurnPlan {
+        job: None,
         paste_text: Some(pasted.into()),
         ..plan(PlanKind::Paste, "Done.")
     };
@@ -632,6 +637,7 @@ async fn al12_ack_then_command_plan_runs_the_command_and_records_the_action_note
     let cmd = "open -a Safari";
     let speech = "Opening Safari.";
     let command_plan = TurnPlan {
+        job: None,
         command: Some(cmd.into()),
         ..plan(PlanKind::Command, speech)
     };
@@ -641,6 +647,8 @@ async fn al12_ack_then_command_plan_runs_the_command_and_records_the_action_note
     );
     let hands = CmdHands { log: r.log.clone() };
     let deps = Deps {
+        policy: None,
+        announcer: None,
         ears: &r.ears,
         mouth: &r.mouth,
         hands: &hands,

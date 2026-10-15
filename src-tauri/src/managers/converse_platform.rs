@@ -25,10 +25,11 @@ use crate::managers::converse_capture::{
     CaptureHandle, CaptureTimings, CaptureWorker, RecorderPort, StartError, TranscribeFailure,
     Transcriber,
 };
-use crate::managers::converse_overlay::{OverlayDispatcher, ReadyGate};
-use crate::managers::converse_plan::{
-    build_plan_prompt, parse_plan, PlanError, PlanInput, PlanKind, TurnPlan,
+use crate::managers::converse_confirm::{
+    DirFd, JobLaunch, JobStartOutcome, PinError, PolicySource, ValidatedCommand,
 };
+use crate::managers::converse_overlay::{OverlayDispatcher, ReadyGate};
+use crate::managers::converse_plan::{build_plan_prompt, PlanError, PlanInput, PlanKind, TurnPlan};
 use crate::managers::converse_queue::TtsQueueSession;
 use crate::managers::converse_runtime::{AdmissionGuard, Platform, SessionParts, ALREADY_RUNNING};
 use crate::managers::emotion::Emotion;
@@ -368,8 +369,27 @@ impl Mouth for RealMouth {
     }
 }
 
+/// Builds the per-job observer for one project (the announcer-backed `JobSpeaker` in production).
+pub(crate) type JobObserverFactory =
+    Arc<dyn Fn(&str) -> Arc<dyn crate::managers::agent_jobs::JobObserver> + Send + Sync>;
+
 struct RealHands {
     app: AppHandle,
+    /// The shared job manager. `None` keeps every job method at its trait default.
+    jobs: Option<Arc<crate::managers::agent_jobs::JobManager>>,
+    /// Observer for a job started in a project. Only used when `jobs` is `Some`.
+    job_observer: Option<JobObserverFactory>,
+}
+
+impl RealHands {
+    /// Hands with no job support (every job method keeps its trait default).
+    fn without_jobs(app: AppHandle) -> Self {
+        RealHands {
+            app,
+            jobs: None,
+            job_observer: None,
+        }
+    }
 }
 
 impl Hands for RealHands {
@@ -426,6 +446,45 @@ impl Hands for RealHands {
             .await;
             joined.unwrap_or(PhraseOutcome::Failed)
         })
+    }
+
+    fn validate_command(&self, text: &str) -> Option<ValidatedCommand> {
+        let settings = get_settings(&self.app);
+        let action = crate::actions::validate_model_command_for_app(&self.app, &settings, text)?;
+        Some(ValidatedCommand {
+            label: text.trim().to_string(),
+            action,
+        })
+    }
+
+    fn run_validated_command(&self, cmd: ValidatedCommand) -> bool {
+        crate::actions::run_validated_command_for_app(&self.app, &cmd.action)
+    }
+
+    fn pin_project(&self, name: &str) -> Result<DirFd, PinError> {
+        let settings = get_settings(&self.app);
+        let resolver = crate::managers::agent_tools::project::ProjectResolver::new(
+            &settings.agent_project_roots,
+        );
+        pin_project_in(&resolver, name)
+    }
+
+    fn start_job(&self, launch: JobLaunch) -> JobStartOutcome {
+        match (&self.jobs, &self.job_observer) {
+            (Some(_), Some(factory)) => {
+                let observer = factory(&launch.project);
+                start_job_on(self.jobs.as_ref(), launch, observer)
+            }
+            _ => JobStartOutcome::Unsupported,
+        }
+    }
+
+    fn cancel_job(&self) -> bool {
+        cancel_job_on(self.jobs.as_ref())
+    }
+
+    fn has_active_job(&self) -> bool {
+        has_active_job_on(self.jobs.as_ref())
     }
 }
 
@@ -553,7 +612,8 @@ pub(crate) async fn plan_with_tools(
         style: input.style,
         vault_context: None,
     };
-    let prompt = build_plan_prompt(&base);
+    let jobs_allowed = crate::managers::converse_confirm::effective_policy(settings).jobs_allowed;
+    let prompt = planner_prompt_for(&base, jobs_allowed);
     let system = format!("{}{TOOLS_ADDENDUM}", prompt.system);
     let first_user = match vault {
         Some(block) => format!("{}{}", vault_user_block(block), prompt.user),
@@ -579,7 +639,11 @@ pub(crate) async fn plan_with_tools(
     let outcome = run_tool_loop(&model, exec.as_ref(), first_user, system, &cfg, taint)
         .await
         .map_err(map_turn_error)?;
-    let plan = parse_plan(&outcome.final_text, &sent)?;
+    let plan = crate::managers::converse_plan::parse_plan_with_policy(
+        &outcome.final_text,
+        &sent,
+        jobs_allowed,
+    )?;
     Ok(guard_plan(plan, taint, guard_actions))
 }
 
@@ -610,11 +674,17 @@ impl Brain for RealBrain {
                 return plan_with_tools(&settings, prepared, &input, &self.taint, &make_exec).await;
             }
             let deadline = effective_deadline(&settings);
-            let prompt = build_plan_prompt(&input);
+            let jobs_allowed =
+                crate::managers::converse_confirm::effective_policy(&settings).jobs_allowed;
+            let prompt = planner_prompt_for(&input, jobs_allowed);
             let raw = complete(&settings, &prompt.system, &prompt.combined, deadline)
                 .await
                 .map_err(map_compose_error)?;
-            let plan = parse_plan(&raw, &prompt.combined)?;
+            let plan = crate::managers::converse_plan::parse_plan_with_policy(
+                &raw,
+                &prompt.combined,
+                jobs_allowed,
+            )?;
             Ok(guard_plan(
                 plan,
                 &self.taint,
@@ -641,7 +711,9 @@ impl Brain for RealBrain {
                 vault_context: block.as_deref(),
                 ..input
             };
-            let prompt = build_plan_prompt(&input);
+            let jobs_allowed =
+                crate::managers::converse_confirm::effective_policy(&settings).jobs_allowed;
+            let prompt = planner_prompt_for(&input, jobs_allowed);
             let raw = complete_streaming(
                 &settings,
                 &prompt.system,
@@ -651,7 +723,11 @@ impl Brain for RealBrain {
             )
             .await
             .map_err(map_compose_error)?;
-            let plan = parse_plan(&raw, &prompt.combined)?;
+            let plan = crate::managers::converse_plan::parse_plan_with_policy(
+                &raw,
+                &prompt.combined,
+                jobs_allowed,
+            )?;
             Ok(guard_plan(
                 plan,
                 &self.taint,
@@ -738,9 +814,55 @@ async fn save_session_for_app(
     }
 }
 
+/// Shared background-job pieces the app wires into the conversation platform (M3 S3c-1).
+pub struct JobRuntime {
+    /// The one job manager for the app.
+    pub manager: Arc<crate::managers::agent_jobs::JobManager>,
+    /// The low-priority announcer shared by jobs and the confirmation gate.
+    pub announcer: Arc<crate::managers::job_announcer::Announcer>,
+    /// Builds the observer for a job started in one project.
+    pub observer_factory: JobObserverFactory,
+}
+
+/// M3 S3c-1: the policy and announcer a session gets. `None` runtime keeps the legacy behavior
+/// (both None). With a runtime, the policy reads settings through `settings` on every query.
+pub(crate) fn job_parts(
+    runtime: Option<&JobRuntime>,
+    settings: Arc<dyn Fn() -> AppSettings + Send + Sync>,
+) -> (
+    Option<Arc<dyn PolicySource>>,
+    Option<Arc<crate::managers::job_announcer::Announcer>>,
+) {
+    match runtime {
+        None => (None, None),
+        Some(rt) => {
+            let policy: Arc<dyn PolicySource> = Arc::new(SettingsPolicy::new(settings));
+            (Some(policy), Some(rt.announcer.clone()))
+        }
+    }
+}
+
 /// The app-backed `Platform` used by `ConverseController`.
 pub struct RealPlatform {
     pub app: AppHandle,
+    /// `None` keeps the legacy behavior: no policy, no announcer, no job support.
+    job_runtime: Option<JobRuntime>,
+}
+
+impl RealPlatform {
+    /// The platform with no job support (legacy behavior).
+    pub fn new(app: AppHandle) -> Self {
+        RealPlatform {
+            app,
+            job_runtime: None,
+        }
+    }
+
+    /// Enables background jobs, the confirmation gate and the planner job rules.
+    pub fn with_job_runtime(mut self, runtime: JobRuntime) -> Self {
+        self.job_runtime = Some(runtime);
+        self
+    }
 }
 
 impl Platform for RealPlatform {
@@ -821,6 +943,12 @@ impl Platform for RealPlatform {
             None => None,
         };
 
+        let app_for_settings = self.app.clone();
+        let (policy, announcer) = job_parts(
+            self.job_runtime.as_ref(),
+            Arc::new(move || get_settings(&app_for_settings)),
+        );
+
         SessionParts {
             ears: Box::new(RealEars {
                 app: self.app.clone(),
@@ -830,8 +958,13 @@ impl Platform for RealPlatform {
                 app: self.app.clone(),
                 tts,
             }),
-            hands: Box::new(RealHands {
-                app: self.app.clone(),
+            hands: Box::new(match &self.job_runtime {
+                Some(rt) => RealHands {
+                    app: self.app.clone(),
+                    jobs: Some(rt.manager.clone()),
+                    job_observer: Some(rt.observer_factory.clone()),
+                },
+                None => RealHands::without_jobs(self.app.clone()),
             }),
             brain: Box::new(RealBrain {
                 app: self.app.clone(),
@@ -843,6 +976,8 @@ impl Platform for RealPlatform {
             transcript,
             prepare,
             on_complete,
+            policy,
+            announcer,
         }
     }
 
@@ -1097,11 +1232,15 @@ mod tests {
 /// and the guard is on (DESIGN R4-2). Any other plan, or any plan when untainted or guard off,
 /// is returned unchanged. Idempotent: a refusal is an Answer, so a second call is a no-op.
 pub(crate) fn guard_plan(plan: TurnPlan, taint: &TaintState, guard_actions: bool) -> TurnPlan {
-    let is_action = matches!(plan.kind, PlanKind::Paste | PlanKind::Command);
+    let is_action = matches!(
+        plan.kind,
+        PlanKind::Paste | PlanKind::Command | PlanKind::Job
+    );
     if !(guard_actions && taint.is_tainted() && is_action) {
         return plan;
     }
     TurnPlan {
+        job: None,
         kind: PlanKind::Answer,
         speech: REFUSAL_SPEECH.to_string(),
         emotion: Emotion::Neutral,
@@ -1152,3 +1291,170 @@ fn neutralize_reference_tags(text: &str) -> String {
 #[cfg(test)]
 #[path = "converse_tool_tests.rs"]
 mod converse_tool_tests;
+
+/// M3 (DESIGN R2-2, M3-10): resolves `name` through the M2 resolver and returns a duplicate
+/// of the PINNED project directory descriptor. The duplicate refers to the same inode, so a
+/// later rename or replacement of the path cannot change where a job runs. Never re-opens
+/// the path.
+#[cfg(unix)]
+pub(crate) fn pin_project_in(
+    resolver: &crate::managers::agent_tools::project::ProjectResolver,
+    name: &str,
+) -> Result<crate::managers::converse_confirm::DirFd, crate::managers::converse_confirm::PinError> {
+    use crate::managers::agent_tools::project::ProjectError;
+    use crate::managers::converse_confirm::PinError;
+    let handle = resolver.resolve(name).map_err(|err| match err {
+        ProjectError::InvalidName | ProjectError::NotFound | ProjectError::NotPlainFolder => {
+            PinError::Unknown
+        }
+        ProjectError::Ambiguous(_) => PinError::Ambiguous,
+        ProjectError::RootInvalid
+        | ProjectError::NoRoots
+        | ProjectError::NetworkOrVirtual
+        | ProjectError::Unsupported => PinError::Unavailable,
+    })?;
+    let dup = handle
+        .dir()
+        .try_clone()
+        .map_err(|_| PinError::Unavailable)?;
+    Ok(dup.into())
+}
+
+/// Non-unix twin: pinned descriptors exist only on unix, so pinning is unavailable.
+#[cfg(not(unix))]
+pub(crate) fn pin_project_in(
+    resolver: &crate::managers::agent_tools::project::ProjectResolver,
+    name: &str,
+) -> Result<crate::managers::converse_confirm::DirFd, crate::managers::converse_confirm::PinError> {
+    let _ = (resolver, name);
+    Err(crate::managers::converse_confirm::PinError::Unavailable)
+}
+
+/// M3 (D8, M3-10): maps a job start result to the outcome the conversation speaks. Fixed
+/// texts only; no job output is ever included.
+pub(crate) fn map_job_error(
+    result: Result<u64, crate::managers::agent_jobs::JobError>,
+) -> crate::managers::converse_confirm::JobStartOutcome {
+    use crate::managers::agent_jobs::JobError;
+    use crate::managers::converse_confirm::JobStartOutcome;
+    match result {
+        Ok(id) => JobStartOutcome::Started(id),
+        Err(JobError::Busy) => JobStartOutcome::Busy,
+        Err(JobError::BadBinary | JobError::BadDir) => JobStartOutcome::NotConfigured,
+        Err(JobError::Unsupported) => JobStartOutcome::Unsupported,
+        Err(JobError::SpawnFailed) => {
+            JobStartOutcome::Refused("The coding job couldn't start.".to_string())
+        }
+        Err(JobError::ShuttingDown) => {
+            JobStartOutcome::Refused("Vox is closing, so I didn't start it.".to_string())
+        }
+    }
+}
+
+/// The production `PolicySource` over a settings getter.
+#[allow(dead_code)]
+pub struct SettingsPolicy {
+    settings: Arc<dyn Fn() -> AppSettings + Send + Sync>,
+}
+
+impl SettingsPolicy {
+    /// Builds the policy over a settings getter. The getter is called on every query, so a
+    /// settings change is seen immediately.
+    pub fn new(settings: Arc<dyn Fn() -> AppSettings + Send + Sync>) -> Self {
+        SettingsPolicy { settings }
+    }
+}
+
+impl crate::managers::converse_confirm::PolicySource for SettingsPolicy {
+    fn current(&self) -> crate::managers::converse_confirm::ActionPolicy {
+        crate::managers::converse_confirm::effective_policy(&(self.settings)())
+    }
+    fn launch_config(&self) -> Option<crate::managers::converse_confirm::LaunchConfig> {
+        let settings = (self.settings)();
+        if !(settings.agent_jobs_enabled && settings.agent_bridge_enabled) {
+            return None;
+        }
+        crate::managers::converse_confirm::launch_config_from_settings(&settings)
+    }
+}
+
+/// M3 (D8, M3-10): what `RealHands::start_job` does with the shared manager. `None` manager
+/// => Unsupported; otherwise the start result is mapped by `map_job_error`.
+pub(crate) fn start_job_on(
+    manager: Option<&Arc<crate::managers::agent_jobs::JobManager>>,
+    launch: crate::managers::converse_confirm::JobLaunch,
+    observer: Arc<dyn crate::managers::agent_jobs::JobObserver>,
+) -> crate::managers::converse_confirm::JobStartOutcome {
+    use crate::managers::converse_confirm::JobStartOutcome;
+    let Some(manager) = manager else {
+        return JobStartOutcome::Unsupported;
+    };
+    let spec = crate::managers::agent_jobs::JobSpec {
+        launch,
+        progress_interval: JOB_PROGRESS_INTERVAL,
+    };
+    map_job_error(manager.start(spec, observer))
+}
+
+/// Minimum time between job progress announcements (DESIGN D4).
+const JOB_PROGRESS_INTERVAL: Duration = Duration::from_secs(90);
+
+/// M3 (D8, M3-10): `RealHands::cancel_job` over the shared manager (false without one).
+pub(crate) fn cancel_job_on(
+    manager: Option<&Arc<crate::managers::agent_jobs::JobManager>>,
+) -> bool {
+    manager.is_some_and(|m| m.cancel())
+}
+
+/// M3 (D8, M3-10): `RealHands::has_active_job` over the shared manager (false without one).
+pub(crate) fn has_active_job_on(
+    manager: Option<&Arc<crate::managers::agent_jobs::JobManager>>,
+) -> bool {
+    manager.is_some_and(|m| m.has_active_job())
+}
+
+/// The planner prompt the brain sends. The job addendum is
+/// appended ONLY when `jobs_allowed`; otherwise the prompt is byte-identical to
+/// `build_plan_prompt`.
+#[allow(dead_code, unused_variables)]
+pub(crate) fn planner_prompt_for(
+    input: &PlanInput,
+    jobs_allowed: bool,
+) -> crate::managers::converse_plan::PlanPrompt {
+    let mut prompt = build_plan_prompt(input);
+    if jobs_allowed {
+        prompt.system = format!(
+            "{}\n{}",
+            prompt.system,
+            crate::managers::converse_plan::JOB_PLAN_ADDENDUM
+        );
+        prompt.combined = format!("{}\n\n{}", prompt.system, prompt.user);
+    }
+    prompt
+}
+
+/// The parse call the brain makes, with the policy read at parse time.
+#[allow(dead_code, unused_variables)]
+pub(crate) fn parse_with_policy(
+    raw: &str,
+    sent_prompt: &str,
+    policy: &dyn crate::managers::converse_confirm::PolicySource,
+) -> Result<TurnPlan, PlanError> {
+    crate::managers::converse_plan::parse_plan_with_policy(
+        raw,
+        sent_prompt,
+        policy.current().jobs_allowed,
+    )
+}
+
+#[cfg(test)]
+#[path = "converse_platform_jobs_tests.rs"]
+mod converse_platform_jobs_tests;
+
+#[cfg(test)]
+#[path = "converse_platform_glue_tests.rs"]
+mod converse_platform_glue_tests;
+
+#[cfg(test)]
+#[path = "converse_platform_policy_tests.rs"]
+mod converse_platform_policy_tests;

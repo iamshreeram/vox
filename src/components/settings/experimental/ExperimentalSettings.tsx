@@ -21,6 +21,7 @@ import {
   ConversationVaultToggle,
 } from "../ConversationMemorySettings";
 import { AgentToolsSettings } from "../AgentToolsSettings";
+import { JobsSettings } from "../JobsSettings";
 import { TtsSettings } from "../TtsSettings";
 import { RealtimeSection } from "../RealtimeSection";
 import { WakeWordToggle } from "../WakeWordToggle";
@@ -133,6 +134,14 @@ export const ExperimentalSettings: React.FC = () => {
         defaultOpen={false}
       >
         <AgentToolsSettings descriptionMode="tooltip" grouped={true} />
+      </CollapsibleSettingsGroup>
+      <CollapsibleSettingsGroup
+        id="codingJobs"
+        title={t("settings.experimental.groups.codingJobs")}
+        description={t("settings.experimental.jobs.groupDescription")}
+        defaultOpen={false}
+      >
+        <JobsSettings descriptionMode="tooltip" grouped={true} />
       </CollapsibleSettingsGroup>
     </div>
   );

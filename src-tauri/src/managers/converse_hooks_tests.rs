@@ -265,6 +265,8 @@ impl Platform for HPlatform {
                 ..SessionConfig::default()
             },
             transcript: None,
+            policy: None,
+            announcer: None,
             prepare,
             on_complete: Some(Box::new(move |end: SessionEnd| {
                 trace

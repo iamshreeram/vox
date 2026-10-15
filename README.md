@@ -87,6 +87,8 @@ In short: you talk, Vox types what you said. With the optional features below it
   - open a page in Vox's own Settings,
   - recall titles and summaries of past conversations.
 - **Built-in safety.** Project lookups only see folders you list in Settings. Secret files such as keys and `.env` files are never read, results are scrubbed of anything that looks like a password or token, and results are treated as data, not instructions. A protection switch (on by default) stops the model from pasting text or running a command for the rest of a session once it has read project data. Turning that switch off lets Vox act freely.
+- **Spoken "OK?" before changes.** When assistant tools or coding jobs are turned on, Vox asks you out loud and waits for a clear "yes" before it types text, opens something or starts a coding job that the model planned. Anything other than a plain yes, including silence, an unclear answer or an error, means no. It asks once and never reads your answer back or saves it. Commands you say yourself, such as an exact phrase you configured, are not asked about. A switch in Settings turns the question off. With the assistant tools and coding jobs both off, nothing changes.
+- **Background coding jobs (off by default, macOS and Linux).** Ask Vox to make a code change in one of your listed projects and it starts the coding command you set up for the agent bridge, in that project's folder, in the background. Only one job runs at a time and each has a time limit (30 minutes by default, adjustable from 1 to 120). Vox tells you when it starts and when it finishes, succeeds, fails, times out or is cancelled. It never reads the job's output aloud. Say "cancel the job", use the tray menu, or press Cancel in Settings to stop it, and quitting Vox stops it too. A job runs the coding command with your account's permissions, so turn this on only if you are comfortable with that.
 
 ### The app itself
 
@@ -98,7 +100,7 @@ In short: you talk, Vox types what you said. With the optional features below it
 
 ### Not built yet
 
-Vox is not a complete autonomous voice assistant. Reading your screen (OCR), spoken "OK?" confirmation before changes, running coding jobs in the background, and controlling other windows or the browser are planned but not implemented. Design notes live in [`docs/vox-phases/`](docs/vox-phases/); details for the talking features are in [`docs/spoken-replies.md`](docs/spoken-replies.md) and [`docs/conversation.md`](docs/conversation.md).
+Vox is not a complete autonomous voice assistant. Reading your screen (OCR) and controlling other windows or the browser are planned but not implemented, and coding jobs are not available on Windows yet. Design notes live in [`docs/vox-phases/`](docs/vox-phases/); details for the talking features are in [`docs/spoken-replies.md`](docs/spoken-replies.md) and [`docs/conversation.md`](docs/conversation.md).
 
 ## Permissions and platform notes
 

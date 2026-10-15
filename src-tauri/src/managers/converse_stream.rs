@@ -144,6 +144,7 @@ pub struct PlanStreamer {
 }
 
 impl PlanStreamer {
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
     }
@@ -166,12 +167,14 @@ impl PlanStreamer {
     }
 
     /// Emotion seen so far (from an `\"emotion\"` member), if any.
+    #[cfg(test)]
     pub fn emotion(&self) -> Option<Emotion> {
         self.emotion
     }
 
     /// True once the stream was rejected for early speech (wrong shape/kind, duplicate key,
     /// bad escape, ...).
+    #[cfg(test)]
     pub fn is_disabled(&self) -> bool {
         self.state == St::Disabled
     }
@@ -541,13 +544,19 @@ pub enum Reconcile {
 pub fn reconcile(plan: &TurnPlan, spoken: &[String]) -> Reconcile {
     if spoken.is_empty() {
         return match plan.kind {
-            PlanKind::Answer | PlanKind::Clarify | PlanKind::End => Reconcile::Remainder {
-                text: canon(&plan.speech),
-            },
+            // M3: Job plans are not produced yet (parsed in S3a, executed in S3b)
+            PlanKind::Answer | PlanKind::Clarify | PlanKind::End | PlanKind::Job => {
+                Reconcile::Remainder {
+                    text: canon(&plan.speech),
+                }
+            }
             PlanKind::Paste | PlanKind::Command => Reconcile::Legacy,
         };
     }
-    if !matches!(plan.kind, PlanKind::Answer | PlanKind::Clarify) {
+    if !matches!(
+        plan.kind,
+        PlanKind::Answer | PlanKind::Clarify | PlanKind::Job
+    ) {
         return Reconcile::Abort;
     }
     let joined = spoken.join(" ");

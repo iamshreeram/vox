@@ -25,6 +25,7 @@
     "test:composer-form": "bun src/components/settings/composerForm.test.ts",
     "test:converse-form": "bun src/components/settings/converseForm.test.ts",
     "test:realtime-form": "bun src/components/settings/realtimeForm.test.ts",
+    "test:agent-jobs": "bun src/lib/agentJobs.test.ts",
     "test:scripts": "bash scripts/test-update-lock.sh && bash scripts/test-update-macos.sh && bash scripts/test-install-macos.sh",
     "test:workflow-permissions": "bun scripts/check-workflow-permissions.test.ts",
     "test:playwright": "playwright test",

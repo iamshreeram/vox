@@ -98,6 +98,11 @@ struct TrayInner {
     next_seq: u64,
     /// Sequence number of the request that produced `desired`.
     desired_seq: u64,
+    /// A coding job is running (set by [`set_job_running`]). Kept out of `MenuInputs` so the
+    /// menu inputs stay unchanged; the applier diffs it through `applied_cancel_enabled`.
+    job_running: bool,
+    /// Enabled state the native "Cancel coding job" item was last built with.
+    applied_cancel_enabled: Option<bool>,
 }
 
 /// Tauri managed state owning the tray's desired/applied snapshots.
@@ -114,6 +119,8 @@ impl TrayState {
             icons: HashMap::new(),
             next_seq: 0,
             desired_seq: 0,
+            job_running: false,
+            applied_cancel_enabled: None,
         }))
     }
 
@@ -222,6 +229,54 @@ pub fn get_icon_path(theme: AppTheme, state: TrayIconState, warning: bool) -> &'
 /// Sets the recording state shown by the tray (icon + Cancel/model menu).
 pub fn set_tray_state(app: &AppHandle, state: TrayIconState) {
     sync_tray_with(app, |inner| inner.icon_state = state);
+}
+
+/// Callback run when the user clicks "Cancel coding job" (M3 S3c-2, DESIGN D6). Registered
+/// by a later step; until then the item stays disabled.
+type CancelJobHandler = Arc<dyn Fn() + Send + Sync>;
+
+/// The registered cancel handler, if any.
+static CANCEL_JOB_HANDLER: Mutex<Option<CancelJobHandler>> = Mutex::new(None);
+
+/// Registers the handler the "Cancel coding job" item calls. Replaces any earlier handler.
+/// Call [`sync_tray`] afterwards so the item's enabled state is refreshed.
+#[allow(dead_code)]
+pub fn set_cancel_job_handler(handler: CancelJobHandler) {
+    let mut slot = CANCEL_JOB_HANDLER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *slot = Some(handler);
+}
+
+/// Runs the registered cancel handler. Returns `false` when none is registered.
+#[allow(dead_code)]
+pub fn invoke_cancel_job_handler() -> bool {
+    let handler = CANCEL_JOB_HANDLER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    match handler {
+        Some(run) => {
+            run();
+            true
+        }
+        None => false,
+    }
+}
+
+/// Records whether a coding job is running and re-syncs the tray so the cancel item
+/// follows it (M3 S3c-2, DESIGN D6).
+#[allow(dead_code)]
+pub fn set_job_running(app: &AppHandle, running: bool) {
+    sync_tray_with(app, |inner| inner.job_running = running);
+}
+
+/// Whether the cancel handler is registered.
+fn cancel_job_handler_registered() -> bool {
+    CANCEL_JOB_HANDLER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .is_some()
 }
 
 /// Re-syncs the tray after something other than the recording state changed
@@ -369,20 +424,23 @@ fn apply_on_main(app: &AppHandle) {
     };
 
     let started = Instant::now();
-    let (desired, icon, icon_changed, menu_changed) = {
+    let (desired, icon, icon_changed, menu_changed, cancel_enabled) = {
         let mut inner = state.lock();
         inner.pending = false;
         let Some(desired) = inner.desired.clone() else {
             return;
         };
+        let cancel_enabled =
+            cancel_job_item_enabled(inner.job_running) && cancel_job_handler_registered();
         let icon_changed = inner.applied_icon != Some(desired.icon_path);
-        let menu_changed = inner.applied_menu.as_ref() != Some(&desired.menu);
+        let cancel_changed = inner.applied_cancel_enabled != Some(cancel_enabled);
+        let menu_changed = inner.applied_menu.as_ref() != Some(&desired.menu) || cancel_changed;
         if !icon_changed && !menu_changed {
             trace!("tray apply: nothing changed");
             return;
         }
         let icon = inner.icons.get(desired.icon_path).cloned();
-        (desired, icon, icon_changed, menu_changed)
+        (desired, icon, icon_changed, menu_changed, cancel_enabled)
     };
 
     // Each part is recorded as applied only if its native call succeeded, so a
@@ -401,7 +459,7 @@ fn apply_on_main(app: &AppHandle) {
 
     let mut menu_ok = false;
     if menu_changed {
-        match build_menu(app, &desired.menu) {
+        match build_menu(app, &desired.menu, cancel_enabled) {
             Ok((menu, tooltip)) => match tray.set_menu(Some(menu)) {
                 Ok(()) => {
                     menu_ok = true;
@@ -427,6 +485,7 @@ fn apply_on_main(app: &AppHandle) {
         }
         if menu_ok {
             inner.applied_menu = Some(desired.menu.clone());
+            inner.applied_cancel_enabled = Some(cancel_enabled);
         }
     }
 
@@ -466,7 +525,11 @@ fn version_label() -> String {
 /// to app state: everything it depends on is in `inputs`, plus the
 /// process-constant `HANDY_DISABLE_UPDATER` env flag behind
 /// `update_checks_forced_disabled()`, which cannot change during a run.
-fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri::Wry>, String)> {
+fn build_menu(
+    app: &AppHandle,
+    inputs: &MenuInputs,
+    cancel_job_enabled: bool,
+) -> tauri::Result<(Menu<tauri::Wry>, String)> {
     let strings = get_tray_translations(Some(inputs.locale.clone()));
 
     // Secure Input warning entry (macOS): clicking opens the settings window
@@ -559,6 +622,15 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     // other locales fall back to the English label (see localized_or_english).
     let converse_label = localized_or_english(&strings.converse, &english_converse());
     let converse_i = MenuItem::with_id(app, "converse", &converse_label, true, None::<&str>)?;
+    // "Cancel coding job" (M3 S3c-2, DESIGN D6): English-only label, enabled only while a job
+    // runs and a cancel handler is registered (see `cancel_job_item_enabled`).
+    let cancel_job_i = MenuItem::with_id(
+        app,
+        "cancel_job",
+        CANCEL_JOB_LABEL,
+        cancel_job_enabled,
+        None::<&str>,
+    )?;
     let quit_i = MenuItem::with_id(app, "quit", &strings.quit, true, quit_accelerator)?;
     let separator = || PredefinedMenuItem::separator(app);
 
@@ -630,6 +702,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
                 &separator()?,
                 &copy_last_transcript_i,
                 &converse_i,
+                &cancel_job_i,
                 &separator()?,
                 &model_submenu,
                 &unload_model_i,
@@ -645,7 +718,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     // The listening-mode group is present only when experimental features are
     // enabled. Insert it before settings in either menu layout.
     if let Some(submenu) = &listening_mode_submenu {
-        let insert_at = if inputs.busy { 7 } else { 8 };
+        let insert_at = if inputs.busy { 7 } else { 9 };
         menu.insert(submenu, insert_at)?;
         menu.insert(&separator()?, insert_at + 1)?;
     }
@@ -680,6 +753,16 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     }
 
     Ok((menu, tooltip))
+}
+
+/// English label for the "Cancel coding job" tray item. English only, like the "Update
+/// available" fallback: the locale files do not carry this key yet (M3 S3c-2).
+const CANCEL_JOB_LABEL: &str = "Cancel coding job";
+
+/// Whether the "Cancel coding job" tray item is enabled (M3 S3c-2, DESIGN D6): only while a
+/// coding job is running.
+fn cancel_job_item_enabled(job_running: bool) -> bool {
+    job_running
 }
 
 /// Whether the "Update available" item is shown: only while an update is
@@ -1014,3 +1097,7 @@ mod update_available_item_tests {
         assert_eq!(localized_or_english("", ""), "Update available");
     }
 }
+
+#[cfg(test)]
+#[path = "tray_job_tests.rs"]
+mod tray_job_tests;

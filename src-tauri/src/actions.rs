@@ -474,6 +474,52 @@ pub(crate) fn model_command_core(
     }
 }
 
+/// M3 (DESIGN R2-12): validates a model-proposed command exactly as `model_command_core`
+/// would accept it. `Some` only when the legacy path would execute: voice commands on, the
+/// media hook does not handle the phrase, and the router's action passes
+/// `restrict_model_action`. Nothing is executed and no event is emitted.
+pub(crate) fn validate_model_command(
+    phrase: &str,
+    voice_commands_enabled: bool,
+    media: &dyn MediaHook,
+    router: &dyn PhraseRouter,
+) -> Option<CommandAction> {
+    if !voice_commands_enabled || media.consult(phrase).is_some() {
+        return None;
+    }
+    restrict_model_action(&router.route_phrase(phrase))
+}
+
+/// M3 (DESIGN R2-12): app-backed `validate_model_command` for the Hands trait. Uses the same
+/// media hook and router as the legacy `run_model_command_blocking`, executes nothing.
+pub(crate) fn validate_model_command_for_app(
+    app: &AppHandle,
+    settings: &AppSettings,
+    phrase: &str,
+) -> Option<CommandAction> {
+    let router_state = app.state::<Arc<CommandRouter>>();
+    let router: &CommandRouter = &router_state;
+    let media = SettingsMediaHook {
+        settings,
+        runner: &OsascriptRunner,
+    };
+    validate_model_command(phrase, settings.voice_commands_enabled, &media, router)
+}
+
+/// M3 (DESIGN R2-12): app-backed execution of a validated command (the legacy executor).
+pub(crate) fn run_validated_command_for_app(app: &AppHandle, action: &CommandAction) -> bool {
+    run_validated_command(action, &AppActionExecutor(app))
+}
+
+/// M3 (DESIGN R2-12): executes an already validated command through `exec`. Returns the
+/// same success flag as the legacy `run_model_command` path.
+pub(crate) fn run_validated_command(action: &CommandAction, exec: &dyn ActionExecutor) -> bool {
+    matches!(
+        action_result_outcome(exec.execute_action(action)),
+        PhraseOutcome::Done(_)
+    )
+}
+
 /// Production wrapper for `user_phrase_core`. Blocking (media can take seconds).
 pub(crate) fn run_user_phrase_blocking(
     app: &AppHandle,
@@ -2448,3 +2494,7 @@ mod dictation_guard_tests {
         assert!(acquire_dictation_lease(&gate).is_ok());
     }
 }
+
+#[cfg(test)]
+#[path = "actions_validate_tests.rs"]
+mod actions_validate_tests;

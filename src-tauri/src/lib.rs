@@ -11,7 +11,9 @@ mod clipboard;
 mod commands;
 mod helpers;
 mod input;
+mod job_runtime;
 mod llm_client;
+use crate::managers::agent_jobs::ShutdownConfig;
 mod managers;
 mod memory;
 mod overlay;
@@ -394,12 +396,14 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         managers::tts::default_backend(),
     ));
     app_handle.manage(tts_manager.clone());
+    // Background coding jobs: one manager, one announcer, one exit coordinator (M3 S3d).
+    let (job_wiring, job_runtime) = job_runtime::build(app_handle, tts_manager.clone());
+    app_handle.manage(job_wiring);
     // Conversation sessions: one controller, built with the app-backed platform.
     app_handle.manage(Arc::new(
         managers::converse_runtime::ConverseController::new(Arc::new(
-            managers::converse_platform::RealPlatform {
-                app: app_handle.clone(),
-            },
+            managers::converse_platform::RealPlatform::new(app_handle.clone())
+                .with_job_runtime(job_runtime),
         )),
     ));
     register_tts_listeners(app_handle, tts_manager);
@@ -552,8 +556,17 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 // Conversation-aware cancel (same routing as the overlay button).
                 commands::cancel_routed(app);
             }
+            "cancel_job" => {
+                tray::invoke_cancel_job_handler();
+            }
             "quit" => {
-                app.exit(0);
+                let job_wiring = app.state::<job_runtime::JobWiring>();
+                let quit_handle = app.clone();
+                job_wiring.exit.request_exit(
+                    &job_wiring.manager,
+                    move |_result| quit_handle.exit(0),
+                    &crate::managers::agent_jobs::ExitConfig::default(),
+                );
             }
             id if id.starts_with("model_select:") => {
                 let model_id = id.strip_prefix("model_select:").unwrap().to_string();
@@ -897,6 +910,11 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::agent_tools::change_agent_tools_setting,
             commands::agent_tools::change_agent_tools_guard_actions_setting,
             commands::agent_tools::change_agent_project_roots_setting,
+            commands::agent_jobs::change_agent_confirm_actions,
+            commands::agent_jobs::change_agent_jobs_enabled,
+            commands::agent_jobs::change_agent_jobs_timeout_minutes,
+            commands::agent_jobs::agent_job_status,
+            commands::agent_jobs::agent_job_cancel,
             shortcut::change_agent_bridge_enabled_setting,
             shortcut::change_agent_bridge_binary_path_setting,
             shortcut::change_voice_media_controls_setting,
@@ -1419,7 +1437,27 @@ pub fn run(cli_args: CliArgs) {
             show_main_window(app);
         }
         // Teardown transcribe.cpp before exit
+        tauri::RunEvent::ExitRequested { api, .. } => {
+            let job_wiring = app.state::<job_runtime::JobWiring>();
+            let exit_handle = app.clone();
+            let decision = job_wiring.exit.on_exit_requested(
+                &job_wiring.manager,
+                || api.prevent_exit(),
+                move |_result| exit_handle.exit(0),
+                &crate::managers::agent_jobs::ExitConfig::default(),
+            );
+            log::debug!("native exit request decision: {:?}", decision);
+        }
         tauri::RunEvent::Exit => {
+            if let Some(wiring) = app.try_state::<job_runtime::JobWiring>() {
+                // Idempotent belt: the exit coordinator has normally stopped the job already.
+                let budgets = job_runtime::exit_fallback_budgets();
+                wiring.manager.shutdown(&ShutdownConfig {
+                    term_grace: budgets.term_grace,
+                    drain: budgets.drain,
+                    deadline: budgets.deadline,
+                });
+            }
             if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
                 let _ = tm.unload_model();
             }

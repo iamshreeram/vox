@@ -6,6 +6,7 @@ use std::sync::Arc;
 use chrono::TimeZone;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::job_runtime::{JobWiring, ManagerStatusSource};
 use crate::managers::agent_tools::project::ProjectResolver;
 use crate::managers::agent_tools::tools::{
     ConversationSource, ConversationSummary, DefaultToolExecutor, DEFAULT_TOOL_TIMEOUT,
@@ -95,14 +96,22 @@ fn local_date(ms: i64) -> String {
 
 /// Builds the default read-only executor for one turn from the current settings and the
 /// Tauri-backed ports (DESIGN D4). Recent conversations are offered only when records are on.
+/// The `job_status` tool is offered only when coding jobs are enabled (DESIGN D7).
 pub fn build_tauri_executor(app: &AppHandle, settings: &AppSettings) -> Arc<dyn ToolExecutor> {
     let resolver = ProjectResolver::new(&settings.agent_project_roots);
     let conversations: Arc<dyn ConversationSource> = Arc::new(StoreConversations::new(app.clone()));
-    Arc::new(DefaultToolExecutor::with_backends(
+    let executor = DefaultToolExecutor::with_backends(
         resolver,
         Box::new(TauriUiPort::new(app.clone())),
         settings.conversation_records_enabled,
         Some(conversations),
         DEFAULT_TOOL_TIMEOUT,
-    ))
+    );
+    let executor = match (settings.agent_jobs_enabled, app.try_state::<JobWiring>()) {
+        (true, Some(wiring)) => {
+            executor.with_job_status(Arc::new(ManagerStatusSource(wiring.manager.clone())))
+        }
+        _ => executor,
+    };
+    Arc::new(executor)
 }

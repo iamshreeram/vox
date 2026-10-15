@@ -444,6 +444,37 @@ impl TtsManager {
         ok
     }
 
+    /// M3: speaks `text` only when nothing else is speaking. Never bumps the epoch and
+    /// never stops speech in progress. Returns `false` for empty text, while speech is
+    /// running, while recording, or when the backend cannot start.
+    pub fn speak_if_idle(&self, text: &str) -> bool {
+        let Some(text) = sanitize_speech_text(text) else {
+            return false;
+        };
+        let mut state = lock_state(&self.inner);
+        if state.recording_active {
+            return false;
+        }
+        let running = match state.current.as_mut() {
+            Some(handle) => handle.is_running(),
+            None => false,
+        };
+        if running {
+            return false;
+        }
+        state.current = None;
+        match self
+            .backend
+            .spawn_styled(&text, None, None, Emotion::Neutral)
+        {
+            Ok(handle) => {
+                state.current = Some(handle);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
     pub fn is_speaking(&self) -> bool {
         let mut state = lock_state(&self.inner);
         let running = match state.current.as_mut() {
@@ -1797,3 +1828,7 @@ mod epoch_tests {
 #[cfg(test)]
 #[path = "tts_queue_manager_tests.rs"]
 mod queue_manager_tests;
+
+#[cfg(test)]
+#[path = "tts_idle_tests.rs"]
+mod tts_idle_tests;

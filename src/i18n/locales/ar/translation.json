@@ -819,7 +819,8 @@
         "memory": "Memory",
         "agentBridge": "Agent bridge",
         "conversationMemory": "Conversation memory",
-        "agentTools": "Voice agent tools"
+        "agentTools": "Voice agent tools",
+        "codingJobs": "Coding jobs"
       },
       "realtime": {
         "title": "Realtime conversation",
@@ -931,6 +932,30 @@
         "noProjectRoots": "No project folders yet. The assistant cannot read any project until you add one.",
         "projectRootsLimit": "You can add up to {{max}} project folders.",
         "privacyText": "When tools are on, file contents and git status are sent to the model. Redaction of sensitive text is best-effort, so review what your project folders contain."
+      },
+      "jobs": {
+        "groupDescription": "Let the voice assistant start a coding job in a project folder. Off by default.",
+        "confirmLabel": "Ask before acting",
+        "confirmDescription": "Vox asks \"OK?\" aloud before it types, opens something or starts a coding job. Turn off only if you trust every voice command.",
+        "enabledLabel": "Coding jobs",
+        "enabledDescription": "Lets the voice assistant start your coding CLI on a task inside a project folder you configured. Off by default.",
+        "timeoutLabel": "Job time limit (minutes)",
+        "timeoutDescription": "A job is stopped when it runs longer than this. Choose from {{min}} to {{max}} minutes.",
+        "warning": "A coding job runs your coding CLI with your account's permissions and environment inside the project folder. The task text is visible to other programs on this computer while it runs.",
+        "status": {
+          "title": "Current job",
+          "elapsed": "Elapsed: {{elapsed}}",
+          "cancel": "Cancel job"
+        },
+        "state": {
+          "idle": "No job running",
+          "running": "Running",
+          "succeeded": "Finished successfully",
+          "failed": "Failed",
+          "cancelled": "Cancelled",
+          "timedOut": "Timed out",
+          "couldntStart": "Couldn't start"
+        }
       }
     },
     "modelSettings": {
