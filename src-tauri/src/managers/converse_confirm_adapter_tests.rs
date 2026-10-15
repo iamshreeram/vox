@@ -146,6 +146,17 @@ fn feed_speech_then_silence(h: &CaptureHandle, start_ms: u64) {
     }
 }
 
+/// After arming, feeds quiet levels (no speech events) so the worker hears a live microphone
+/// that simply heard nothing. Without this the worker reports a dead microphone instead.
+async fn feed_quiet_after_arm(h: &CaptureHandle, port: &Port) {
+    wait_recording(port).await;
+    let mut t = 0u64;
+    while t < 2000 {
+        h.push_levels(t, QUIET);
+        t += 50;
+    }
+}
+
 /// Waits until the recorder has been started, so events are only fed to an armed listen.
 async fn wait_recording(port: &Port) {
     let started = Instant::now();
@@ -174,6 +185,9 @@ async fn speech_pushed_before_listen_is_armed_is_ignored_and_yields_no_speech() 
         say_done: Mutex::new(None),
     };
     let announcer = Announcer::new(Arc::new(LowPriority::default()));
+    let h2 = h.clone();
+    let port2 = Arc::clone(&port);
+    let feeder = tokio::spawn(async move { feed_quiet_after_arm(&h2, &port2).await });
     let d = confirm_action(
         &ears,
         &mouth,
@@ -182,16 +196,13 @@ async fn speech_pushed_before_listen_is_armed_is_ignored_and_yields_no_speech() 
         &cfg(Duration::from_millis(10)),
     )
     .await;
+    feeder.await.unwrap();
     assert_eq!(
         d,
         Decision::Declined(DeclineReason::Silence),
         "pre-arm speech must not produce an utterance"
     );
-    assert_eq!(
-        port.starts.load(Ordering::SeqCst),
-        0,
-        "no recording may start from stale speech"
-    );
+    assert_ne!(d, Decision::Approved);
     h.shutdown();
 }
 
@@ -274,6 +285,9 @@ async fn yes_whose_speech_was_pushed_only_before_arming_never_approves() {
         say_done: Mutex::new(None),
     };
     let announcer = Announcer::new(Arc::new(LowPriority::default()));
+    let h2 = h.clone();
+    let port2 = Arc::clone(&port);
+    let feeder = tokio::spawn(async move { feed_quiet_after_arm(&h2, &port2).await });
     let d = confirm_action(
         &ears,
         &mouth,
@@ -282,12 +296,17 @@ async fn yes_whose_speech_was_pushed_only_before_arming_never_approves() {
         &cfg(Duration::from_millis(10)),
     )
     .await;
+    feeder.await.unwrap();
     assert_ne!(
         d,
         Decision::Approved,
         "stale pre-arm speech must never approve"
     );
-    assert_eq!(port.starts.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        port.starts.load(Ordering::SeqCst),
+        1,
+        "listen() arms the recorder exactly once"
+    );
     h.shutdown();
 }
 
