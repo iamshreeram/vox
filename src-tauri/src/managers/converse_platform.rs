@@ -1351,7 +1351,7 @@ pub(crate) fn map_job_error(
     }
 }
 
-/// M3 S3c-1 (Phase A stub): the production `PolicySource` over a settings getter.
+/// The production `PolicySource` over a settings getter.
 #[allow(dead_code)]
 pub struct SettingsPolicy {
     settings: Arc<dyn Fn() -> AppSettings + Send + Sync>,
@@ -1413,7 +1413,7 @@ pub(crate) fn has_active_job_on(
     manager.is_some_and(|m| m.has_active_job())
 }
 
-/// M3 S3c-1 (Phase A stub): the planner prompt the brain sends. The job addendum is
+/// The planner prompt the brain sends. The job addendum is
 /// appended ONLY when `jobs_allowed`; otherwise the prompt is byte-identical to
 /// `build_plan_prompt`.
 #[allow(dead_code, unused_variables)]
@@ -1433,7 +1433,7 @@ pub(crate) fn planner_prompt_for(
     prompt
 }
 
-/// M3 S3c-1 (Phase A stub): the parse call the brain makes, with the policy read at parse time.
+/// The parse call the brain makes, with the policy read at parse time.
 #[allow(dead_code, unused_variables)]
 pub(crate) fn parse_with_policy(
     raw: &str,
