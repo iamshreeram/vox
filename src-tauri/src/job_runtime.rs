@@ -21,8 +21,6 @@ use crate::tray;
 pub struct JobWiring {
     /// The one job manager for the app.
     pub manager: Arc<JobManager>,
-    /// The one low-priority announcer.
-    pub announcer: Arc<Announcer>,
     /// The one idempotent exit coordinator for both quit paths.
     pub exit: Arc<ExitCoordinator>,
 }
@@ -35,18 +33,14 @@ pub fn build(app: &AppHandle, tts: Arc<TtsManager>) -> (JobWiring, JobRuntime) {
     let observer_factory = observer_factory(app.clone(), announcer.clone());
     let runtime = JobRuntime {
         manager: manager.clone(),
-        announcer: announcer.clone(),
+        announcer,
         observer_factory,
     };
     let cancel_manager = manager.clone();
     tray::set_cancel_job_handler(Arc::new(move || {
         cancel_manager.cancel();
     }));
-    let wiring = JobWiring {
-        manager,
-        announcer,
-        exit,
-    };
+    let wiring = JobWiring { manager, exit };
     (wiring, runtime)
 }
 
