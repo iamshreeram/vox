@@ -66,6 +66,9 @@ fn lock_ring(ring: &Mutex<TailRing>) -> MutexGuard<'_, TailRing> {
     ring.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Grace between SIGTERM and SIGKILL when the leader exited on its own.
+const NATURAL_GRACE_MS: u64 = 300;
+
 /// Why the owner stopped waiting for the job to run.
 #[derive(Clone, Copy)]
 enum Trigger {
@@ -105,6 +108,8 @@ pub(super) struct Owner {
     pub(super) drain: Duration,
     /// Readers still running.
     pub(super) readers_left: usize,
+    /// The leader exit was observed (leader still unreaped).
+    pub(super) leader_exited: bool,
     /// Called after the terminal state is stored and the finish is queued.
     pub(super) on_done: Option<Box<dyn FnOnce() + Send>>,
 }
@@ -143,7 +148,10 @@ impl Owner {
     fn wait_trigger(&mut self) -> Trigger {
         loop {
             match self.pump(self.deadline) {
-                Some(Msg::Exited) => return Trigger::Natural,
+                Some(Msg::Exited) => {
+                    self.leader_exited = true;
+                    return Trigger::Natural;
+                }
                 Some(Msg::Stop { grace, drain }) => {
                     self.term_grace = grace;
                     self.drain = drain;
@@ -164,27 +172,29 @@ impl Owner {
 
     /// Cleans the process group, reaps the leader and drains the readers.
     fn cleanup(&mut self, trigger: Trigger) -> Option<std::process::ExitStatus> {
-        match trigger {
-            Trigger::Natural => {
-                let drain = self.drain;
-                if !self.wait_readers(Instant::now() + drain) {
-                    self.stop_group(self.term_grace);
-                }
-            }
-            Trigger::Stop | Trigger::Timeout => self.stop_group(self.term_grace),
-        }
+        // The group is always cleaned, even when the leader exited on its own:
+        // a background member may still hold the pipes or keep running.
+        let grace = match trigger {
+            Trigger::Natural => self.term_grace.min(Duration::from_millis(NATURAL_GRACE_MS)),
+            Trigger::Stop | Trigger::Timeout => self.term_grace,
+        };
+        self.stop_group(grace);
         let status = self.child.wait().ok();
         let drain_until = Instant::now() + self.drain;
         self.wait_readers(drain_until);
         status
     }
 
-    /// SIGTERM to the group, wait up to `grace` (or until the readers are gone),
-    /// then SIGKILL. The leader is still unreaped here, so the pgid is ours.
+    /// SIGTERM to the group, wait up to `grace` (stopping early once the leader
+    /// has exited and all readers are done), then ALWAYS SIGKILL the group. The
+    /// leader is still unreaped here, so the pgid is ours. Honors ForceKill.
     fn stop_group(&mut self, grace: Duration) {
         signal_group(self.pgid, libc::SIGTERM);
         let until = Instant::now() + grace;
         while Instant::now() < until {
+            if self.leader_exited && self.readers_left == 0 {
+                break;
+            }
             if let Some(Msg::ForceKill) = self.pump(until) {
                 break;
             }
@@ -215,6 +225,10 @@ impl Owner {
             let wake = until.min(self.next_progress);
             match self.rx.recv_timeout(wake.saturating_duration_since(now)) {
                 Ok(Msg::ReaderDone) => self.readers_left = self.readers_left.saturating_sub(1),
+                Ok(Msg::Exited) => {
+                    self.leader_exited = true;
+                    return Some(Msg::Exited);
+                }
                 Ok(msg) => return Some(msg),
                 Err(RecvTimeoutError::Timeout) => {}
                 // The owner holds a sender, so this cannot happen; treat it as a kill.

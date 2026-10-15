@@ -246,6 +246,7 @@ impl JobManager {
             term_grace: self.term_grace,
             drain: self.drain,
             readers_left: 0,
+            leader_exited: false,
             on_done: Some(Box::new(move || {
                 *lock_done(&done_flag) = true;
             })),
