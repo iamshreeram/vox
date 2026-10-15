@@ -360,7 +360,9 @@ fn failed_cancelled_and_timed_out_states_ignore_a_stray_result() {
             Duration::from_secs(5),
         );
         fx.tokens.admit(1);
-        fx.speaker.on_result(&result(1, "stray result"));
+        // Owner fix: the manager never delivers on_result for a job that did not
+        // succeed (S2 tests), and a JobResult carries no state, so this drives
+        // on_finish alone for the non-success states.
         fx.speaker.on_finish(&snap(1, state));
         assert_eq!(
             fx.summarizer.submit_count(),

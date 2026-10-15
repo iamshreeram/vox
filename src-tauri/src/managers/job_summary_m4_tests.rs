@@ -354,12 +354,22 @@ fn stress_no_valid_closure_overlaps_a_completed_invalidate() {
     let invalidator = {
         let tokens = tokens.clone();
         let invalidations = invalidations.clone();
+        let violations = violations.clone();
         let stop = stop.clone();
         thread::spawn(move || {
             let mut n = 0u32;
             while !stop.load(Ordering::SeqCst) && n < 400 {
+                // Owner fix: a ticket taken before invalidate() must be invalid
+                // as soon as invalidate() has returned.
+                let stale = tokens.begin(1);
                 tokens.invalidate();
                 invalidations.fetch_add(1, Ordering::SeqCst);
+                if let Some(t) = stale {
+                    let valid_after = tokens.run_if_valid(&t, |v| v);
+                    if valid_after {
+                        violations.fetch_add(1, Ordering::SeqCst);
+                    }
+                }
                 n += 1;
                 thread::yield_now();
             }
@@ -369,7 +379,6 @@ fn stress_no_valid_closure_overlaps_a_completed_invalidate() {
     let workers: Vec<_> = (0..8)
         .map(|_| {
             let tokens = tokens.clone();
-            let invalidations = invalidations.clone();
             let valid_runs = valid_runs.clone();
             let violations = violations.clone();
             thread::spawn(move || {
@@ -378,10 +387,12 @@ fn stress_no_valid_closure_overlaps_a_completed_invalidate() {
                     tokens.run_if_valid(&t, |valid| {
                         if valid {
                             valid_runs.fetch_add(1, Ordering::SeqCst);
-                            let at_start = invalidations.load(Ordering::SeqCst);
+                            // Owner fix: inside a valid closure the gate is held, so the
+                            // lock-free epoch mirror must not change while it runs.
+                            let a = tokens.is_current(&t);
                             thread::yield_now();
-                            let at_end = invalidations.load(Ordering::SeqCst);
-                            if at_start != at_end {
+                            let b = tokens.is_current(&t);
+                            if !(a && b) {
                                 violations.fetch_add(1, Ordering::SeqCst);
                             }
                         }

@@ -87,7 +87,6 @@ struct Entry {
     /// When a finish first found the speaker busy.
     first_failed: Option<Instant>,
     /// M4: summary guard for a finish that carries summary text (`None` = ordinary).
-    #[allow(dead_code)] // wired in a later M4 step
     guard: Option<SpeechGuard>,
 }
 
@@ -97,7 +96,6 @@ struct Claim {
     kind: AnnounceKind,
     text: String,
     first_failed: Option<Instant>,
-    #[allow(dead_code)] // wired in a later M4 step
     guard: Option<SpeechGuard>,
 }
 
@@ -137,11 +135,8 @@ impl Announcer {
         self.enqueue_entry(kind, text, None);
     }
 
-    /// M4: queues one announcement that carries a summary guard.
-    ///
-    /// Scaffolding: the guard is stored but not yet checked, so this behaves exactly
-    /// like `announce`.
-    #[allow(dead_code)] // wired in a later M4 step
+    /// M4: queues one announcement that carries a summary guard. The guard is checked
+    /// at every mouth attempt; an invalid guard speaks its fallback text instead.
     pub fn announce_guarded(&self, kind: AnnounceKind, text: String, guard: SpeechGuard) {
         self.enqueue_entry(kind, text, Some(guard));
     }
@@ -286,7 +281,7 @@ fn claim_front(shared: &Shared) -> Option<Claim> {
 /// gate closes, or a finish finds the speaker busy (then a retry is armed).
 fn drain(shared: &Arc<Shared>) -> Pass {
     while let Some(claim) = claim_front(shared) {
-        let spoken = shared.mouth.try_speak_if_idle(&claim.text);
+        let spoken = speak_claim(shared, &claim);
         let mut st = lock(&shared.state);
         st.in_flight = None;
         if spoken {
@@ -311,6 +306,23 @@ fn drain(shared: &Arc<Shared>) -> Pass {
         }
     }
     Pass::Idle
+}
+
+/// Offers one claimed entry to the mouth. A guarded entry is spoken only while its
+/// ticket is still valid at acceptance; otherwise its fallback text is offered instead.
+/// The mouth runs with no announcer lock held.
+fn speak_claim(shared: &Shared, claim: &Claim) -> bool {
+    match claim.guard.as_ref() {
+        None => shared.mouth.try_speak_if_idle(&claim.text),
+        Some(guard) => guard.tokens.run_if_valid(&guard.ticket, |valid| {
+            let text = if valid {
+                claim.text.as_str()
+            } else {
+                guard.fallback.as_str()
+            };
+            shared.mouth.try_speak_if_idle(text)
+        }),
+    }
 }
 
 /// Starts the retry thread if none is running.

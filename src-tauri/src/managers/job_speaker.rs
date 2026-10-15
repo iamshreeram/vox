@@ -3,14 +3,20 @@
 //! Speech and status events for background coding jobs (M3 S3c-2, DESIGN D5, R2-6, R2-8).
 //!
 //! Only fixed templates are ever spoken. The job output tail is never spoken, emitted or
-//! logged.
+//! logged. M4: an ask job that succeeded may speak a short summary of its result instead
+//! of the fixed finish sentence (DESIGN D6).
 
-use std::sync::Arc;
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use crate::commands::agent_jobs::AgentJobStatusDto;
-use crate::managers::agent_jobs::{JobManager, JobObserver, JobSnapshot, JobState};
+use crate::managers::agent_jobs::{JobManager, JobObserver, JobResult, JobSnapshot, JobState};
 use crate::managers::job_announcer::{AnnounceKind, Announcer};
-use crate::managers::job_summary::{ResultStore, ResultSummarizer, SummaryPolicy, SummaryTokens};
+use crate::managers::job_summary::{
+    clean_summary_text, spoken_summary, ResultStore, ResultSummarizer, SpeechGuard, SummaryError,
+    SummaryPolicy, SummaryTokens, Ticket, FALLBACK_SPEECH, SUMMARY_DEADLINE,
+};
 use crate::managers::tts::sanitize_speech_text;
 
 /// Receives the job status events and tray refresh requests from the speaker.
@@ -29,18 +35,36 @@ pub struct JobSpeaker {
     sink: Arc<dyn JobEventSink>,
     /// Configured time limit in minutes, used only in the timed-out message.
     timeout_minutes: Option<u32>,
-    /// M4: summary pieces. Stored by `with_summary`; not read until a later step.
-    #[allow(dead_code)] // wired in a later M4 step
+    /// M4: summary pieces, present only after `with_summary`.
     summary: Option<SummaryParts>,
+    /// M4: how long a summary may take before the fixed fallback is spoken.
+    summary_deadline: Duration,
+    /// M4: outcome of the latest summary attempt, keyed by job id, consumed by `on_finish`.
+    outcome: Mutex<Option<(u64, SummaryOutcome)>>,
 }
 
 /// M4: the summary dependencies of a speaker (see `JobSpeaker::with_summary`).
-#[allow(dead_code)] // wired in a later M4 step
 struct SummaryParts {
     summarizer: Arc<dyn ResultSummarizer>,
     results: Arc<ResultStore>,
     tokens: Arc<SummaryTokens>,
     policy: SummaryPolicy,
+}
+
+/// M4: what the summary attempt for one job produced.
+enum SummaryOutcome {
+    /// No summary was requested (policy off, no ticket, or no result).
+    NotAttempted,
+    /// The summary was superseded or the tokens changed; the fixed text is spoken.
+    Invalidated,
+    /// The summary failed (error, timeout, empty, NUL, panic); the fallback is spoken.
+    Failed,
+    /// A valid summary, guarded by the ticket it was issued under.
+    Summary {
+        tokens: Arc<SummaryTokens>,
+        ticket: Ticket,
+        text: String,
+    },
 }
 
 impl JobSpeaker {
@@ -58,6 +82,8 @@ impl JobSpeaker {
             sink,
             timeout_minutes: None,
             summary: None,
+            summary_deadline: SUMMARY_DEADLINE,
+            outcome: Mutex::new(None),
         }
     }
 
@@ -67,13 +93,15 @@ impl JobSpeaker {
         self
     }
 
-    /// M4 S3 stub: overrides the summary deadline (todo until the S4 step).
-    pub fn with_summary_deadline(self, _d: std::time::Duration) -> Self {
-        todo!("M4 S3")
+    /// Overrides how long a summary may take before the fixed fallback is spoken.
+    #[allow(dead_code)] // wired in S6 (production job runtime)
+    pub fn with_summary_deadline(mut self, deadline: Duration) -> Self {
+        self.summary_deadline = deadline;
+        self
     }
 
-    /// M4: attaches the summary pieces. Scaffolding: stored only, so behavior is unchanged.
-    #[allow(dead_code)] // wired in a later M4 step
+    /// M4: attaches the summary pieces. Without this call the speaker behaves as in M3.
+    #[allow(dead_code)] // wired in S6 (production job runtime)
     pub fn with_summary(
         mut self,
         summarizer: Arc<dyn ResultSummarizer>,
@@ -130,25 +158,137 @@ impl JobSpeaker {
             None => "Still working on the coding job.".to_string(),
         }
     }
+
+    /// Status DTO for `snap`, carrying the stored result of that job when one exists.
+    fn dto(&self, snap: &JobSnapshot) -> AgentJobStatusDto {
+        let mut dto = snapshot_to_dto(snap);
+        dto.result = self
+            .summary
+            .as_ref()
+            .and_then(|parts| parts.results.get_for(snap.id));
+        dto
+    }
+
+    /// Runs the summary attempt for one successful ask result.
+    fn attempt_summary(&self, parts: &SummaryParts, r: &JobResult) -> SummaryOutcome {
+        let enabled = (parts.policy.ask_enabled)() && (parts.policy.tts_enabled)();
+        if !enabled {
+            return SummaryOutcome::NotAttempted;
+        }
+        let Some(ticket) = parts.tokens.begin(r.id) else {
+            return SummaryOutcome::NotAttempted;
+        };
+        let submitted = parts.tokens.run_if_valid(&ticket, |valid| {
+            valid.then(|| catch_unwind(AssertUnwindSafe(|| parts.summarizer.submit(&r.text))))
+        });
+        let handle = match submitted {
+            None => return SummaryOutcome::Invalidated,
+            Some(Ok(handle)) => handle,
+            Some(Err(_)) => return SummaryOutcome::Failed,
+        };
+        let still_current = || parts.tokens.is_current(&ticket);
+        let waited = catch_unwind(AssertUnwindSafe(|| {
+            handle.wait(&still_current, self.summary_deadline)
+        }));
+        match waited {
+            Ok(Ok(raw)) => validate_summary(parts, ticket, &raw),
+            Ok(Err(SummaryError::Aborted)) => SummaryOutcome::Invalidated,
+            Ok(Err(SummaryError::TimedOut | SummaryError::Failed)) | Err(_) => {
+                SummaryOutcome::Failed
+            }
+        }
+    }
+
+    /// Takes the stored outcome when it belongs to `job_id`; otherwise leaves it in place.
+    fn take_outcome(&self, job_id: u64) -> Option<SummaryOutcome> {
+        let mut slot = lock_slot(&self.outcome);
+        if slot.as_ref().is_some_and(|(id, _)| *id == job_id) {
+            slot.take().map(|(_, outcome)| outcome)
+        } else {
+            None
+        }
+    }
+}
+
+/// Cleans the raw answer and re-checks validity under the gate before using it.
+fn validate_summary(parts: &SummaryParts, ticket: Ticket, raw: &str) -> SummaryOutcome {
+    let Some(clean) = clean_summary_text(raw) else {
+        return SummaryOutcome::Failed;
+    };
+    parts.tokens.run_if_valid(&ticket, |valid| {
+        if valid {
+            SummaryOutcome::Summary {
+                tokens: parts.tokens.clone(),
+                ticket,
+                text: spoken_summary(&clean),
+            }
+        } else {
+            SummaryOutcome::Invalidated
+        }
+    })
+}
+
+/// Locks the outcome slot, recovering from a poisoned mutex.
+fn lock_slot(
+    slot: &Mutex<Option<(u64, SummaryOutcome)>>,
+) -> MutexGuard<'_, Option<(u64, SummaryOutcome)>> {
+    slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl JobObserver for JobSpeaker {
     fn on_progress(&self, snap: &JobSnapshot) {
-        self.sink.emit(&snapshot_to_dto(snap));
+        self.sink.emit(&self.dto(snap));
         if self.speech_enabled() {
             self.announcer
                 .announce(AnnounceKind::Progress, self.progress_text());
         }
     }
 
+    fn on_result(&self, r: &JobResult) {
+        let Some(parts) = self.summary.as_ref() else {
+            return;
+        };
+        parts.results.set(r.id, r.text.clone());
+        let outcome = self.attempt_summary(parts, r);
+        *lock_slot(&self.outcome) = Some((r.id, outcome));
+    }
+
     fn on_finish(&self, snap: &JobSnapshot) {
-        self.sink.emit(&snapshot_to_dto(snap));
+        self.sink.emit(&self.dto(snap));
         self.sink.refresh_tray();
+        let outcome = self.take_outcome(snap.id);
         if !self.speech_enabled() {
             return;
         }
-        if let Some(text) = self.finish_text(snap.state) {
-            self.announcer.announce(AnnounceKind::Finish, text);
+        let Some(text) = self.finish_text(snap.state) else {
+            return;
+        };
+        let outcome = if matches!(snap.state, JobState::Succeeded) {
+            outcome
+        } else {
+            None
+        };
+        match outcome {
+            Some(SummaryOutcome::Summary {
+                tokens,
+                ticket,
+                text: spoken,
+            }) => {
+                let guard = SpeechGuard {
+                    tokens,
+                    ticket,
+                    fallback: text,
+                };
+                self.announcer
+                    .announce_guarded(AnnounceKind::Finish, spoken, guard);
+            }
+            Some(SummaryOutcome::Failed) => {
+                self.announcer
+                    .announce(AnnounceKind::Finish, FALLBACK_SPEECH.to_string());
+            }
+            Some(SummaryOutcome::NotAttempted | SummaryOutcome::Invalidated) | None => {
+                self.announcer.announce(AnnounceKind::Finish, text);
+            }
         }
     }
 }
