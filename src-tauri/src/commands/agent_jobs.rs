@@ -20,6 +20,8 @@ pub struct AgentJobStatusDto {
     pub project: Option<String>,
     /// Whole seconds since the job started (0 when idle).
     pub elapsed_secs: u64,
+    /// M4: the captured result text of the job, when one is held (scaffolding: always None).
+    pub result: Option<String>,
 }
 
 /// Read-modify-write of one boolean field, then persist.
@@ -53,6 +55,35 @@ pub fn change_agent_jobs_timeout_minutes(app: AppHandle, minutes: u32) -> Result
     let mut current = settings::get_settings(&app);
     current.agent_jobs_timeout_minutes = clamped;
     settings::write_settings(&app, current);
+    Ok(())
+}
+
+/// Stores the coding agent allowlist (M4). Scaffolding: the raw list is stored and returned.
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_jobs_agents(app: AppHandle, agents: Vec<String>) -> Vec<String> {
+    let mut current = settings::get_settings(&app);
+    current.agent_jobs_agents = agents.clone();
+    settings::write_settings(&app, current);
+    agents
+}
+
+/// Stores the flag that passes the selected agent name to the coding CLI (M4).
+/// Scaffolding: the raw flag is stored and returned.
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_jobs_agent_flag(app: AppHandle, flag: String) -> Result<String, String> {
+    let mut current = settings::get_settings(&app);
+    current.agent_jobs_agent_flag = flag.clone();
+    settings::write_settings(&app, current);
+    Ok(flag)
+}
+
+/// Turns ask mode on or off (M4). Off by default. Scaffolding: stores the raw value.
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_jobs_ask_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    persist_bool(&app, |s, v| s.agent_jobs_ask_enabled = v, enabled);
     Ok(())
 }
 

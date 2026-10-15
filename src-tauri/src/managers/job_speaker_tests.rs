@@ -416,8 +416,10 @@ fn start_live_job(tmp: &Path) -> (Arc<JobManager>, Arc<FakeSink>, Arc<FakeMouth>
             binary: bin.clone(),
             binary_id: file_id(&bin),
             prompt_flag: "-p".to_string(),
+            agent_flag: None,
             timeout: Duration::from_secs(60),
         },
+        selection: Default::default(),
     };
     let spec = JobSpec {
         launch,

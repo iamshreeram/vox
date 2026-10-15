@@ -10,6 +10,7 @@ use std::sync::Arc;
 use crate::commands::agent_jobs::AgentJobStatusDto;
 use crate::managers::agent_jobs::{JobManager, JobObserver, JobSnapshot, JobState};
 use crate::managers::job_announcer::{AnnounceKind, Announcer};
+use crate::managers::job_summary::{ResultStore, ResultSummarizer, SummaryPolicy, SummaryTokens};
 use crate::managers::tts::sanitize_speech_text;
 
 /// Receives the job status events and tray refresh requests from the speaker.
@@ -28,6 +29,18 @@ pub struct JobSpeaker {
     sink: Arc<dyn JobEventSink>,
     /// Configured time limit in minutes, used only in the timed-out message.
     timeout_minutes: Option<u32>,
+    /// M4: summary pieces. Stored by `with_summary`; not read until a later step.
+    #[allow(dead_code)] // wired in a later M4 step
+    summary: Option<SummaryParts>,
+}
+
+/// M4: the summary dependencies of a speaker (see `JobSpeaker::with_summary`).
+#[allow(dead_code)] // wired in a later M4 step
+struct SummaryParts {
+    summarizer: Arc<dyn ResultSummarizer>,
+    results: Arc<ResultStore>,
+    tokens: Arc<SummaryTokens>,
+    policy: SummaryPolicy,
 }
 
 impl JobSpeaker {
@@ -44,12 +57,31 @@ impl JobSpeaker {
             tts_enabled,
             sink,
             timeout_minutes: None,
+            summary: None,
         }
     }
 
     /// Sets the configured time limit, so the timed-out message names the minutes.
     pub fn with_timeout_minutes(mut self, minutes: u32) -> Self {
         self.timeout_minutes = Some(minutes);
+        self
+    }
+
+    /// M4: attaches the summary pieces. Scaffolding: stored only, so behavior is unchanged.
+    #[allow(dead_code)] // wired in a later M4 step
+    pub fn with_summary(
+        mut self,
+        summarizer: Arc<dyn ResultSummarizer>,
+        results: Arc<ResultStore>,
+        tokens: Arc<SummaryTokens>,
+        policy: SummaryPolicy,
+    ) -> Self {
+        self.summary = Some(SummaryParts {
+            summarizer,
+            results,
+            tokens,
+            policy,
+        });
         self
     }
 
@@ -122,6 +154,7 @@ pub fn snapshot_to_dto(snap: &JobSnapshot) -> AgentJobStatusDto {
         state: state_name(snap.state).to_string(),
         project: Some(snap.project.clone()),
         elapsed_secs: snap.elapsed_secs,
+        result: None,
     }
 }
 
@@ -143,6 +176,7 @@ pub fn idle_dto() -> AgentJobStatusDto {
         state: "idle".to_string(),
         project: None,
         elapsed_secs: 0,
+        result: None,
     }
 }
 

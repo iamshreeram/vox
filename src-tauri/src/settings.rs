@@ -878,6 +878,19 @@ pub struct AppSettings {
     /// Hard time limit for one coding job, in minutes (clamped to 1..=120 on write and use).
     #[serde(default = "default_agent_jobs_timeout_minutes")]
     pub agent_jobs_timeout_minutes: u32,
+    /// Allowlist of coding CLI agent names a job may select (M4). Empty disables selection.
+    #[serde(default)]
+    pub agent_jobs_agents: Vec<String>,
+    /// Flag that passes the selected agent name to the coding CLI (M4). Used only with a selection.
+    #[serde(default = "default_agent_jobs_agent_flag")]
+    pub agent_jobs_agent_flag: String,
+    /// Turns ask mode on: a question to a coding agent whose summary is spoken (M4). Off by default.
+    #[serde(default)]
+    pub agent_jobs_ask_enabled: bool,
+}
+
+fn default_agent_jobs_agent_flag() -> String {
+    "--agent".to_string()
 }
 
 fn default_agent_tools_guard_actions() -> bool {
@@ -1512,6 +1525,9 @@ pub fn get_default_settings() -> AppSettings {
         agent_confirm_actions: true,
         agent_jobs_enabled: false,
         agent_jobs_timeout_minutes: 30,
+        agent_jobs_agents: Vec::new(),
+        agent_jobs_agent_flag: default_agent_jobs_agent_flag(),
+        agent_jobs_ask_enabled: false,
     }
 }
 

@@ -243,6 +243,8 @@ fn parse_with_jobs_on_accepts_a_job_plan_with_its_request() {
         Some(JobRequest {
             project: "alpha".to_string(),
             task: "fix the tests".to_string(),
+            agent: None,
+            mode: crate::managers::converse_plan::JobMode::Task,
         })
     );
 }
@@ -277,6 +279,8 @@ fn job_plan() -> TurnPlan {
         job: Some(JobRequest {
             project: "alpha".to_string(),
             task: "fix the tests".to_string(),
+            agent: None,
+            mode: crate::managers::converse_plan::JobMode::Task,
         }),
     }
 }

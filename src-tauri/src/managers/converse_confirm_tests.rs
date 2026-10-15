@@ -36,6 +36,8 @@ fn job_plan(project: &str, task: &str) -> TurnPlan {
         job: Some(JobRequest {
             project: project.to_string(),
             task: task.to_string(),
+            agent: None,
+            mode: crate::managers::converse_plan::JobMode::Task,
         }),
         ..plan(PlanKind::Job)
     }
@@ -51,6 +53,7 @@ fn sample_launch() -> LaunchConfig {
             mtime_secs: 4,
         },
         prompt_flag: "-p".to_string(),
+        agent_flag: None,
         timeout: Duration::from_secs(1800),
     }
 }
@@ -954,6 +957,7 @@ fn question_for_job_names_project_and_full_task() {
             dir: dir_fd,
             task: "list the files".to_string(),
             config: sample_launch(),
+            selection: Default::default(),
         },
     };
     assert_eq!(

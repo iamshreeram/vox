@@ -103,6 +103,30 @@ pub trait JobObserver: Send + Sync {
     fn on_progress(&self, snap: &JobSnapshot);
     /// Called once when the job reaches a final state.
     fn on_finish(&self, snap: &JobSnapshot);
+    /// M4: called once with the captured result of an ask job that succeeded.
+    /// Scaffolding default: ignored, so existing observers are unaffected.
+    #[allow(dead_code)] // wired in a later M4 step
+    fn on_result(&self, _r: &JobResult) {}
+}
+
+/// M4: the captured result text of an ask job, delivered before its finish.
+#[allow(dead_code)] // wired in a later M4 step
+pub struct JobResult {
+    /// Job id.
+    pub id: u64,
+    /// Project name.
+    pub project: String,
+    /// Redacted, bounded result text.
+    pub text: String,
+}
+
+/// M4: callbacks the job manager invokes at admission and at close (see `set_hooks`).
+#[allow(dead_code)] // wired in a later M4 step
+pub struct JobHooks {
+    /// Called with the id of each newly admitted job.
+    pub on_admit: Arc<dyn Fn(u64) + Send + Sync>,
+    /// Called when admission closes for good.
+    pub on_close: Arc<dyn Fn() + Send + Sync>,
 }
 
 /// Budgets for a graceful shutdown of the job manager.
@@ -143,6 +167,9 @@ pub struct JobManager {
     term_grace: Duration,
     /// Default output drain budget.
     drain: Duration,
+    /// M4: admission and close hooks. Stored by `set_hooks`; not yet invoked.
+    #[allow(dead_code)] // wired in a later M4 step
+    hooks: Mutex<Option<JobHooks>>,
 }
 
 fn lock_state(state: &Mutex<State>) -> MutexGuard<'_, State> {
@@ -168,7 +195,14 @@ impl JobManager {
             delivery: Arc::new(Delivery::spawn()),
             term_grace,
             drain,
+            hooks: Mutex::new(None),
         })
+    }
+
+    /// M4: installs the admission and close hooks. Scaffolding: stored, never invoked.
+    #[allow(dead_code)] // wired in a later M4 step
+    pub fn set_hooks(&self, hooks: JobHooks) {
+        *lock_hooks(&self.hooks) = Some(hooks);
     }
 
     /// Starts a job. Returns its id.
@@ -321,6 +355,12 @@ impl JobManager {
 
 fn lock_done(done: &Mutex<bool>) -> MutexGuard<'_, bool> {
     done.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn lock_hooks(hooks: &Mutex<Option<JobHooks>>) -> MutexGuard<'_, Option<JobHooks>> {
+    hooks
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn lock_record(record: &Mutex<Record>) -> MutexGuard<'_, Record> {

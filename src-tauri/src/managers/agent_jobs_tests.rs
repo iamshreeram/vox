@@ -166,8 +166,10 @@ fn launch(dir: &Path, binary: &Path, task: &str, timeout: Duration) -> JobLaunch
             binary: binary.to_path_buf(),
             binary_id: file_id(binary),
             prompt_flag: "-p".to_string(),
+            agent_flag: None,
             timeout,
         },
+        selection: Default::default(),
     }
 }
 

@@ -411,6 +411,12 @@ pub trait Reporter: Send + Sync {
 
     /// Receives one transcript event per accepted utterance. Default: ignored.
     fn transcript(&self, _ev: TranscriptEvent) {}
+
+    /// M4: receives one timing line (observability only). Default: written to the log at info.
+    #[allow(dead_code)] // wired in a later M4 step
+    fn timing_line(&self, line: &str) {
+        log::info!("{line}");
+    }
 }
 
 pub struct Deps<'a> {

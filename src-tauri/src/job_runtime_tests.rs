@@ -18,6 +18,7 @@ fn dto(state: &str, project: Option<&str>, elapsed_secs: u64) -> AgentJobStatusD
         state: state.to_string(),
         project: project.map(str::to_string),
         elapsed_secs,
+        result: None,
     }
 }
 
@@ -127,8 +128,10 @@ mod process_tests {
                 binary: binary.to_path_buf(),
                 binary_id: file_id(binary),
                 prompt_flag: "-p".to_string(),
+                agent_flag: None,
                 timeout,
             },
+            selection: Default::default(),
         }
     }
 

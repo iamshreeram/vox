@@ -43,8 +43,10 @@ fn launch() -> JobLaunch {
                 mtime_secs: 0,
             },
             prompt_flag: "-p".to_string(),
+            agent_flag: None,
             timeout: Duration::from_secs(60),
         },
+        selection: Default::default(),
     }
 }
 

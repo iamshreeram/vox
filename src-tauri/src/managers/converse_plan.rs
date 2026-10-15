@@ -38,6 +38,37 @@ pub enum PlanKind {
     Job,
 }
 
+/// M4: what a coding job does with its result. `Task` changes files; `Ask` asks a
+/// question about the project and speaks a summary of the answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum JobMode {
+    /// Run the task as a normal coding job (the default).
+    #[default]
+    Task,
+    /// Ask a question and summarize the answer aloud.
+    Ask,
+}
+
+/// M4: the agent a job selected from the allowlist, and its mode. Immutable once parsed.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct JobSelection {
+    /// Canonical agent name from the allowlist, or `None` for the CLI default agent.
+    pub agent: Option<String>,
+    /// Task or ask mode.
+    pub mode: JobMode,
+}
+
+/// M4: job permissions for planner parsing.
+#[derive(Debug, Clone, Default)]
+pub struct JobParsePolicy {
+    /// Whether a `job` kind is accepted at all.
+    pub jobs_allowed: bool,
+    /// Whether `"mode": "ask"` is accepted.
+    pub ask_allowed: bool,
+    /// Allowlisted agent names (empty = agent selection refused).
+    pub agents: Vec<String>,
+}
+
 /// M3: a request to run a coding job in one configured project.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JobRequest {
@@ -45,6 +76,10 @@ pub struct JobRequest {
     pub project: String,
     /// The task text handed to the coding CLI.
     pub task: String,
+    /// M4: the agent the planner selected, if any (canonical spelling).
+    pub agent: Option<String>,
+    /// M4: task or ask mode (`Task` unless the planner asked for `ask`).
+    pub mode: JobMode,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -341,6 +376,8 @@ fn job_request(obj: &serde_json::Map<String, Value>) -> Option<JobRequest> {
     Some(JobRequest {
         project: project.to_string(),
         task,
+        agent: None,
+        mode: JobMode::Task,
     })
 }
 

@@ -26,6 +26,7 @@ const IDLE_STATUS: AgentJobStatusDto = {
   state: "idle",
   project: null,
   elapsed_secs: 0,
+  result: null,
 };
 
 // Shows the job state only. The DTO carries no job output, and none is rendered.

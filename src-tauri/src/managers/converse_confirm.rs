@@ -8,7 +8,7 @@ use crate::managers::command_router::CommandAction;
 use crate::managers::converse::{Ears, Hands, ListenOutcome, Mouth, QuietOutcome, SayOutcome};
 #[cfg(test)]
 pub use crate::managers::converse_plan::JobRequest;
-use crate::managers::converse_plan::{PlanKind, TurnPlan};
+use crate::managers::converse_plan::{JobSelection, PlanKind, TurnPlan};
 use crate::managers::emotion::Emotion;
 use crate::managers::job_announcer::Announcer;
 use crate::managers::redact::redact;
@@ -268,6 +268,19 @@ pub struct LaunchConfig {
     pub prompt_flag: String,
     /// Maximum run time of a job.
     pub timeout: Duration,
+    /// M4: flag that passes the selected agent name. `Some` only for a selected agent.
+    pub agent_flag: Option<String>,
+}
+
+/// M4: agent-selection parts of an approval, for a job with a selection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobFp {
+    /// The selected agent (if any) is still in the allowlist.
+    pub agent_ok: bool,
+    /// Ask mode (if selected) is still allowed.
+    pub ask_ok: bool,
+    /// The agent flag in effect, when an agent is selected.
+    pub agent_flag: Option<String>,
 }
 
 /// Snapshot of everything an approval depends on.
@@ -279,6 +292,8 @@ pub struct ApprovalFingerprint {
     pub jobs_allowed: bool,
     /// Launch settings at approval time, if any.
     pub launch: Option<LaunchConfig>,
+    /// M4: agent-selection state at approval time (`None` when not a selected job).
+    pub job: Option<JobFp>,
 }
 
 /// Live source of the action policy and launch settings.
@@ -287,6 +302,30 @@ pub trait PolicySource: Send + Sync {
     fn current(&self) -> ActionPolicy;
     /// The current launch settings, if jobs are configured.
     fn launch_config(&self) -> Option<LaunchConfig>;
+    /// M4: whether ask mode is currently allowed. Defaults to refused.
+    #[allow(dead_code)] // wired in a later M4 step
+    fn ask_allowed(&self) -> bool {
+        false
+    }
+    /// M4: the current agent allowlist. Defaults to empty (no agent selection).
+    #[allow(dead_code)] // wired in a later M4 step
+    fn allowed_agents(&self) -> Vec<String> {
+        Vec::new()
+    }
+    /// M4: the current agent flag. Defaults to `--agent`.
+    #[allow(dead_code)] // wired in a later M4 step
+    fn agent_flag(&self) -> String {
+        "--agent".to_string()
+    }
+    /// M4: launch settings for a selection. Sets `agent_flag` only when an agent is selected.
+    #[allow(dead_code)] // wired in a later M4 step
+    fn launch_config_for(&self, sel: Option<&JobSelection>) -> Option<LaunchConfig> {
+        let mut config = self.launch_config()?;
+        config.agent_flag = sel
+            .and_then(|s| s.agent.as_ref())
+            .map(|_| self.agent_flag());
+        Some(config)
+    }
 }
 
 /// A model-proposed command that passed validation.
@@ -307,6 +346,9 @@ pub struct JobLaunch {
     pub task: String,
     /// Launch settings captured at preparation time.
     pub config: LaunchConfig,
+    /// M4: the agent selection captured at parse time (default = no selection).
+    #[allow(dead_code)] // wired in a later M4 step
+    pub selection: JobSelection,
 }
 
 /// An action that is validated and ready to execute after approval.
@@ -326,6 +368,17 @@ pub enum PreparedAction {
         /// The prepared launch.
         launch: JobLaunch,
     },
+}
+
+impl PreparedAction {
+    /// M4: the job selection of a prepared job; `None` for paste and command actions.
+    #[allow(dead_code)] // wired in a later M4 step
+    pub fn selection(&self) -> Option<&JobSelection> {
+        match self {
+            PreparedAction::Job { launch } => Some(&launch.selection),
+            PreparedAction::Paste { .. } | PreparedAction::Command { .. } => None,
+        }
+    }
 }
 
 /// Why an action could not be prepared.
@@ -428,6 +481,7 @@ fn prepare_job(
             dir,
             task,
             config,
+            selection: JobSelection::default(),
         },
     })
 }
@@ -465,11 +519,23 @@ fn normalize_task(raw: &str) -> Option<String> {
 
 /// Captures the approval fingerprint from a policy source.
 pub fn fingerprint_of(policy: &dyn PolicySource) -> ApprovalFingerprint {
+    fingerprint_for(policy, None)
+}
+
+/// M4: captures the approval fingerprint, including the agent selection of a job.
+///
+/// Scaffolding: the selection is not yet part of the fingerprint, so this matches
+/// `fingerprint_of` for every input.
+pub fn fingerprint_for(
+    policy: &dyn PolicySource,
+    _sel: Option<&JobSelection>,
+) -> ApprovalFingerprint {
     let current = policy.current();
     ApprovalFingerprint {
         gate_active: current.gate_active,
         jobs_allowed: current.jobs_allowed,
         launch: policy.launch_config(),
+        job: None,
     }
 }
 
@@ -573,6 +639,7 @@ pub fn launch_config_from_settings(settings: &AppSettings) -> Option<LaunchConfi
         binary_id,
         prompt_flag: settings.agent_bridge_prompt_flag.clone(),
         timeout: Duration::from_secs(u64::from(minutes) * 60),
+        agent_flag: None,
     })
 }
 

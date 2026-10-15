@@ -12,6 +12,8 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::managers::job_summary::SpeechGuard;
+
 /// Maximum number of queued announcements.
 const MAX_PENDING: usize = 4;
 
@@ -84,6 +86,9 @@ struct Entry {
     text: String,
     /// When a finish first found the speaker busy.
     first_failed: Option<Instant>,
+    /// M4: summary guard for a finish that carries summary text (`None` = ordinary).
+    #[allow(dead_code)] // wired in a later M4 step
+    guard: Option<SpeechGuard>,
 }
 
 /// Copy of the front entry taken out of the queue for one speech attempt.
@@ -92,6 +97,8 @@ struct Claim {
     kind: AnnounceKind,
     text: String,
     first_failed: Option<Instant>,
+    #[allow(dead_code)] // wired in a later M4 step
+    guard: Option<SpeechGuard>,
 }
 
 /// Outcome of a drain pass.
@@ -127,6 +134,20 @@ impl Announcer {
 
     /// Queues one announcement (speaks now if idle, otherwise later).
     pub fn announce(&self, kind: AnnounceKind, text: String) {
+        self.enqueue_entry(kind, text, None);
+    }
+
+    /// M4: queues one announcement that carries a summary guard.
+    ///
+    /// Scaffolding: the guard is stored but not yet checked, so this behaves exactly
+    /// like `announce`.
+    #[allow(dead_code)] // wired in a later M4 step
+    pub fn announce_guarded(&self, kind: AnnounceKind, text: String, guard: SpeechGuard) {
+        self.enqueue_entry(kind, text, Some(guard));
+    }
+
+    /// Shared queueing path for `announce` and `announce_guarded`.
+    fn enqueue_entry(&self, kind: AnnounceKind, text: String, guard: Option<SpeechGuard>) {
         if text.trim().is_empty() {
             return;
         }
@@ -141,6 +162,7 @@ impl Announcer {
                     kind,
                     text,
                     first_failed: None,
+                    guard,
                 },
             );
         }
@@ -254,6 +276,7 @@ fn claim_front(shared: &Shared) -> Option<Claim> {
         kind: front.kind,
         text: front.text.clone(),
         first_failed: front.first_failed,
+        guard: front.guard.clone(),
     };
     st.in_flight = Some(claim.seq);
     Some(claim)
