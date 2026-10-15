@@ -94,14 +94,14 @@ impl JobSpeaker {
     }
 
     /// Overrides how long a summary may take before the fixed fallback is spoken.
-    #[allow(dead_code)] // wired in S6 (production job runtime)
+    /// Test-only: production uses the default deadline.
+    #[cfg(test)]
     pub fn with_summary_deadline(mut self, deadline: Duration) -> Self {
         self.summary_deadline = deadline;
         self
     }
 
     /// M4: attaches the summary pieces. Without this call the speaker behaves as in M3.
-    #[allow(dead_code)] // wired in S6 (production job runtime)
     pub fn with_summary(
         mut self,
         summarizer: Arc<dyn ResultSummarizer>,
@@ -326,7 +326,8 @@ pub fn idle_dto() -> AgentJobStatusDto {
 }
 
 /// Status of the current or most recent job, or `idle_dto()` when none exists.
-#[allow(dead_code)] // production uses `status_dto_with` (carries the stored result); kept for tests
+/// Test-only: production uses `status_dto_with` (carries the stored result).
+#[cfg(test)]
 pub fn status_dto(manager: &JobManager) -> AgentJobStatusDto {
     manager
         .snapshot()

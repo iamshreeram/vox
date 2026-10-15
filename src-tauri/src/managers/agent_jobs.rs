@@ -114,7 +114,7 @@ pub trait JobObserver: Send + Sync {
 }
 
 /// M4: the captured result text of an ask job, delivered before its finish.
-// Fields are read by the summary observer, which is wired in a later M4 step.
+// `project` is set but not yet read in production (no reader in the summary path).
 #[allow(dead_code)]
 pub struct JobResult {
     /// Job id.
@@ -205,8 +205,6 @@ impl JobManager {
     }
 
     /// M4: installs the admission and close hooks. Replaces any earlier hooks.
-    // Installed by the app wiring in a later M4 step; no production caller yet.
-    #[allow(dead_code)]
     pub fn set_hooks(&self, hooks: JobHooks) {
         *lock_hooks(&self.hooks) = Some(hooks);
     }

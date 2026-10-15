@@ -237,7 +237,6 @@ pub const UNKNOWN_AGENT_SPEECH: &str = "I don't have an agent called that.";
 /// M4 (D2): planner prompt with the job policy. Byte-identical to `build_plan_prompt`
 /// plus `JOB_PLAN_ADDENDUM` when agents are empty and ask is off. The extra block is
 /// appended only when jobs are allowed (the addendum is what it extends).
-#[allow(dead_code)] // wired in a later M4 step
 pub fn plan_prompt_with_job_policy(input: &PlanInput, policy: &JobParsePolicy) -> PlanPrompt {
     let base = build_plan_prompt(input);
     if !policy.jobs_allowed {

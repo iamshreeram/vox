@@ -1525,7 +1525,10 @@ async fn speak_pending(
     announcer: Option<&Announcer>,
 ) -> Option<SessionEnd> {
     let announcer = announcer?;
-    for text in announcer.take_pending() {
+    for item in announcer.take_pending_items() {
+        // Resolve each item only now, just before it is spoken, so a change made during an
+        // earlier item still degrades a later guarded summary (DESIGN D6, Revision 5).
+        let text = item.resolve();
         if let Some(end) = speak_or_end(deps, cfg, cancel, &text, Emotion::Neutral).await {
             return Some(end);
         }

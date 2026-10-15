@@ -992,7 +992,6 @@ pub fn is_valid_agent_flag(flag: &str, prompt_flag: &str) -> bool {
 /// Returns the agent flag to pass to the coding CLI (M4).
 ///
 /// Falls back to the default `--agent` when the stored value is invalid or equals the prompt flag.
-#[allow(dead_code)] // wired in a later M4 step (policy source)
 pub fn effective_agent_flag(s: &AppSettings) -> String {
     if is_valid_agent_flag(&s.agent_jobs_agent_flag, &s.agent_bridge_prompt_flag) {
         s.agent_jobs_agent_flag.clone()

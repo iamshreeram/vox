@@ -93,7 +93,6 @@ struct Entry {
 /// One queued announcement taken at a turn boundary, with its summary guard (M4 S8).
 /// Call `resolve` immediately before speaking the item so the guard is checked at that
 /// moment, not when the item was taken.
-#[allow(dead_code)] // wired in S8 (converse turn boundary)
 #[derive(Clone)]
 pub struct PendingSpeech {
     /// Summary text, or the ordinary text for unguarded entries.
@@ -114,9 +113,17 @@ impl std::fmt::Debug for PendingSpeech {
 impl PendingSpeech {
     /// Returns the text to speak now: the summary while its guard is valid, otherwise
     /// the guard's fallback. Unguarded items return their text unchanged.
-    #[allow(dead_code)] // wired in S8 (converse turn boundary)
     pub fn resolve(&self) -> String {
-        todo!("M4 S8")
+        match self.guard.as_ref() {
+            None => self.text.clone(),
+            Some(guard) => guard.tokens.run_if_valid(&guard.ticket, |valid| {
+                if valid {
+                    self.text.clone()
+                } else {
+                    guard.fallback.clone()
+                }
+            }),
+        }
     }
 }
 
@@ -210,8 +217,20 @@ impl Announcer {
         }
     }
 
-    /// Removes and returns the queued announcements.
+    /// Removes and returns the queued announcements, resolved to plain text.
+    /// Test-only: production speaks through `take_pending_items` and resolves per item.
+    #[cfg(test)]
     pub fn take_pending(&self) -> Vec<String> {
+        self.take_pending_items()
+            .iter()
+            .map(PendingSpeech::resolve)
+            .collect()
+    }
+
+    /// Removes and returns the queued announcements as `PendingSpeech` items (M4 S8).
+    /// Same selection and order as `take_pending`; guarded items keep their guard.
+    /// The state lock is released before the caller resolves any item.
+    pub fn take_pending_items(&self) -> Vec<PendingSpeech> {
         let mut st = lock(&self.shared.state);
         let in_flight = st.in_flight;
         let mut taken = Vec::new();
@@ -220,18 +239,14 @@ impl Announcer {
             if Some(entry.seq) == in_flight {
                 kept.push_back(entry);
             } else {
-                taken.push(entry.text);
+                taken.push(PendingSpeech {
+                    text: entry.text,
+                    guard: entry.guard,
+                });
             }
         }
         st.pending = kept;
         taken
-    }
-
-    /// Removes and returns the queued announcements as `PendingSpeech` items (M4 S8).
-    /// Same selection and order as `take_pending`; guarded items keep their guard.
-    #[allow(dead_code)] // wired in S8 (converse turn boundary)
-    pub fn take_pending_items(&self) -> Vec<PendingSpeech> {
-        todo!("M4 S8")
     }
 
     /// Speaks queued announcements now that the speaker is idle.
