@@ -397,9 +397,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Conversation sessions: one controller, built with the app-backed platform.
     app_handle.manage(Arc::new(
         managers::converse_runtime::ConverseController::new(Arc::new(
-            managers::converse_platform::RealPlatform {
-                app: app_handle.clone(),
-            },
+            managers::converse_platform::RealPlatform::new(app_handle.clone()),
         )),
     ));
     register_tts_listeners(app_handle, tts_manager);

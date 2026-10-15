@@ -25,6 +25,9 @@ use crate::managers::converse_capture::{
     CaptureHandle, CaptureTimings, CaptureWorker, RecorderPort, StartError, TranscribeFailure,
     Transcriber,
 };
+use crate::managers::converse_confirm::{
+    DirFd, JobLaunch, JobStartOutcome, PinError, PolicySource, ValidatedCommand,
+};
 use crate::managers::converse_overlay::{OverlayDispatcher, ReadyGate};
 use crate::managers::converse_plan::{build_plan_prompt, PlanError, PlanInput, PlanKind, TurnPlan};
 use crate::managers::converse_queue::TtsQueueSession;
@@ -366,8 +369,27 @@ impl Mouth for RealMouth {
     }
 }
 
+/// Builds the per-job observer for one project (the announcer-backed `JobSpeaker` in production).
+pub(crate) type JobObserverFactory =
+    Arc<dyn Fn(&str) -> Arc<dyn crate::managers::agent_jobs::JobObserver> + Send + Sync>;
+
 struct RealHands {
     app: AppHandle,
+    /// The shared job manager. `None` keeps every job method at its trait default.
+    jobs: Option<Arc<crate::managers::agent_jobs::JobManager>>,
+    /// Observer for a job started in a project. Only used when `jobs` is `Some`.
+    job_observer: Option<JobObserverFactory>,
+}
+
+impl RealHands {
+    /// Hands with no job support (every job method keeps its trait default).
+    fn without_jobs(app: AppHandle) -> Self {
+        RealHands {
+            app,
+            jobs: None,
+            job_observer: None,
+        }
+    }
 }
 
 impl Hands for RealHands {
@@ -424,6 +446,45 @@ impl Hands for RealHands {
             .await;
             joined.unwrap_or(PhraseOutcome::Failed)
         })
+    }
+
+    fn validate_command(&self, text: &str) -> Option<ValidatedCommand> {
+        let settings = get_settings(&self.app);
+        let action = crate::actions::validate_model_command_for_app(&self.app, &settings, text)?;
+        Some(ValidatedCommand {
+            label: text.trim().to_string(),
+            action,
+        })
+    }
+
+    fn run_validated_command(&self, cmd: ValidatedCommand) -> bool {
+        crate::actions::run_validated_command_for_app(&self.app, &cmd.action)
+    }
+
+    fn pin_project(&self, name: &str) -> Result<DirFd, PinError> {
+        let settings = get_settings(&self.app);
+        let resolver = crate::managers::agent_tools::project::ProjectResolver::new(
+            &settings.agent_project_roots,
+        );
+        pin_project_in(&resolver, name)
+    }
+
+    fn start_job(&self, launch: JobLaunch) -> JobStartOutcome {
+        match (&self.jobs, &self.job_observer) {
+            (Some(_), Some(factory)) => {
+                let observer = factory(&launch.project);
+                start_job_on(self.jobs.as_ref(), launch, observer)
+            }
+            _ => JobStartOutcome::Unsupported,
+        }
+    }
+
+    fn cancel_job(&self) -> bool {
+        cancel_job_on(self.jobs.as_ref())
+    }
+
+    fn has_active_job(&self) -> bool {
+        has_active_job_on(self.jobs.as_ref())
     }
 }
 
@@ -753,9 +814,37 @@ async fn save_session_for_app(
     }
 }
 
+/// Shared background-job pieces the app wires into the conversation platform (M3 S3c-1).
+pub struct JobRuntime {
+    /// The one job manager for the app.
+    pub manager: Arc<crate::managers::agent_jobs::JobManager>,
+    /// The low-priority announcer shared by jobs and the confirmation gate.
+    pub announcer: Arc<crate::managers::job_announcer::Announcer>,
+    /// Builds the observer for a job started in one project.
+    pub observer_factory: JobObserverFactory,
+}
+
 /// The app-backed `Platform` used by `ConverseController`.
 pub struct RealPlatform {
     pub app: AppHandle,
+    /// `None` keeps the legacy behavior: no policy, no announcer, no job support.
+    job_runtime: Option<JobRuntime>,
+}
+
+impl RealPlatform {
+    /// The platform with no job support (legacy behavior).
+    pub fn new(app: AppHandle) -> Self {
+        RealPlatform {
+            app,
+            job_runtime: None,
+        }
+    }
+
+    /// Enables background jobs, the confirmation gate and the planner job rules.
+    pub fn with_job_runtime(mut self, runtime: JobRuntime) -> Self {
+        self.job_runtime = Some(runtime);
+        self
+    }
 }
 
 impl Platform for RealPlatform {
@@ -845,8 +934,13 @@ impl Platform for RealPlatform {
                 app: self.app.clone(),
                 tts,
             }),
-            hands: Box::new(RealHands {
-                app: self.app.clone(),
+            hands: Box::new(match &self.job_runtime {
+                Some(rt) => RealHands {
+                    app: self.app.clone(),
+                    jobs: Some(rt.manager.clone()),
+                    job_observer: Some(rt.observer_factory.clone()),
+                },
+                None => RealHands::without_jobs(self.app.clone()),
             }),
             brain: Box::new(RealBrain {
                 app: self.app.clone(),

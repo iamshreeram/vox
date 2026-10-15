@@ -296,9 +296,10 @@ fn guard_refuses_a_job_when_tainted_and_guard_is_on() {
         "tainted job must become the refusal"
     );
     assert!(out.job.is_none());
-    assert!(
-        out.speech.contains("read project data"),
-        "fixed refusal text"
+    assert_eq!(
+        out.speech,
+        crate::managers::tool_loop::REFUSAL_SPEECH,
+        "a tainted Job gets the same fixed refusal as Paste/Command"
     );
 }
 

@@ -490,6 +490,27 @@ pub(crate) fn validate_model_command(
     restrict_model_action(&router.route_phrase(phrase))
 }
 
+/// M3 (DESIGN R2-12): app-backed `validate_model_command` for the Hands trait. Uses the same
+/// media hook and router as the legacy `run_model_command_blocking`, executes nothing.
+pub(crate) fn validate_model_command_for_app(
+    app: &AppHandle,
+    settings: &AppSettings,
+    phrase: &str,
+) -> Option<CommandAction> {
+    let router_state = app.state::<Arc<CommandRouter>>();
+    let router: &CommandRouter = &router_state;
+    let media = SettingsMediaHook {
+        settings,
+        runner: &OsascriptRunner,
+    };
+    validate_model_command(phrase, settings.voice_commands_enabled, &media, router)
+}
+
+/// M3 (DESIGN R2-12): app-backed execution of a validated command (the legacy executor).
+pub(crate) fn run_validated_command_for_app(app: &AppHandle, action: &CommandAction) -> bool {
+    run_validated_command(action, &AppActionExecutor(app))
+}
+
 /// M3 (DESIGN R2-12): executes an already validated command through `exec`. Returns the
 /// same success flag as the legacy `run_model_command` path.
 pub(crate) fn run_validated_command(action: &CommandAction, exec: &dyn ActionExecutor) -> bool {
