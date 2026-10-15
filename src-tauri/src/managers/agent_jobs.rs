@@ -209,7 +209,7 @@ impl JobManager {
         if !self.delivery.try_reserve() {
             return Err(JobError::Busy);
         }
-        let mut child = match agent_jobs_spawn::spawn_job(&spec.launch) {
+        let child = match agent_jobs_spawn::spawn_job(&spec.launch) {
             Ok(child) => child,
             Err(e) => {
                 self.delivery.cancel_reservation();
