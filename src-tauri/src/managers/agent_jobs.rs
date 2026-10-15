@@ -121,6 +121,11 @@ impl JobManager {
         todo!()
     }
 
+    /// Creates a manager with explicit termination grace and output drain budgets (tests and shutdown).
+    pub fn with_timing(term_grace: Duration, drain: Duration) -> Arc<Self> {
+        todo!()
+    }
+
     /// Starts a job. Returns its id.
     pub fn start(
         self: &Arc<Self>,
@@ -202,3 +207,7 @@ impl ExitCoordinator {
         todo!()
     }
 }
+
+#[cfg(test)]
+#[path = "agent_jobs_tests.rs"]
+mod agent_jobs_tests;
