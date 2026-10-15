@@ -26,9 +26,7 @@ use crate::managers::converse_capture::{
     Transcriber,
 };
 use crate::managers::converse_overlay::{OverlayDispatcher, ReadyGate};
-use crate::managers::converse_plan::{
-    build_plan_prompt, parse_plan, PlanError, PlanInput, PlanKind, TurnPlan,
-};
+use crate::managers::converse_plan::{build_plan_prompt, PlanError, PlanInput, PlanKind, TurnPlan};
 use crate::managers::converse_queue::TtsQueueSession;
 use crate::managers::converse_runtime::{AdmissionGuard, Platform, SessionParts, ALREADY_RUNNING};
 use crate::managers::emotion::Emotion;
@@ -553,7 +551,8 @@ pub(crate) async fn plan_with_tools(
         style: input.style,
         vault_context: None,
     };
-    let prompt = build_plan_prompt(&base);
+    let jobs_allowed = crate::managers::converse_confirm::effective_policy(settings).jobs_allowed;
+    let prompt = planner_prompt_for(&base, jobs_allowed);
     let system = format!("{}{TOOLS_ADDENDUM}", prompt.system);
     let first_user = match vault {
         Some(block) => format!("{}{}", vault_user_block(block), prompt.user),
@@ -579,7 +578,11 @@ pub(crate) async fn plan_with_tools(
     let outcome = run_tool_loop(&model, exec.as_ref(), first_user, system, &cfg, taint)
         .await
         .map_err(map_turn_error)?;
-    let plan = parse_plan(&outcome.final_text, &sent)?;
+    let plan = crate::managers::converse_plan::parse_plan_with_policy(
+        &outcome.final_text,
+        &sent,
+        jobs_allowed,
+    )?;
     Ok(guard_plan(plan, taint, guard_actions))
 }
 
@@ -610,11 +613,17 @@ impl Brain for RealBrain {
                 return plan_with_tools(&settings, prepared, &input, &self.taint, &make_exec).await;
             }
             let deadline = effective_deadline(&settings);
-            let prompt = build_plan_prompt(&input);
+            let jobs_allowed =
+                crate::managers::converse_confirm::effective_policy(&settings).jobs_allowed;
+            let prompt = planner_prompt_for(&input, jobs_allowed);
             let raw = complete(&settings, &prompt.system, &prompt.combined, deadline)
                 .await
                 .map_err(map_compose_error)?;
-            let plan = parse_plan(&raw, &prompt.combined)?;
+            let plan = crate::managers::converse_plan::parse_plan_with_policy(
+                &raw,
+                &prompt.combined,
+                jobs_allowed,
+            )?;
             Ok(guard_plan(
                 plan,
                 &self.taint,
@@ -641,7 +650,9 @@ impl Brain for RealBrain {
                 vault_context: block.as_deref(),
                 ..input
             };
-            let prompt = build_plan_prompt(&input);
+            let jobs_allowed =
+                crate::managers::converse_confirm::effective_policy(&settings).jobs_allowed;
+            let prompt = planner_prompt_for(&input, jobs_allowed);
             let raw = complete_streaming(
                 &settings,
                 &prompt.system,
@@ -651,7 +662,11 @@ impl Brain for RealBrain {
             )
             .await
             .map_err(map_compose_error)?;
-            let plan = parse_plan(&raw, &prompt.combined)?;
+            let plan = crate::managers::converse_plan::parse_plan_with_policy(
+                &raw,
+                &prompt.combined,
+                jobs_allowed,
+            )?;
             Ok(guard_plan(
                 plan,
                 &self.taint,
@@ -1097,7 +1112,10 @@ mod tests {
 /// and the guard is on (DESIGN R4-2). Any other plan, or any plan when untainted or guard off,
 /// is returned unchanged. Idempotent: a refusal is an Answer, so a second call is a no-op.
 pub(crate) fn guard_plan(plan: TurnPlan, taint: &TaintState, guard_actions: bool) -> TurnPlan {
-    let is_action = matches!(plan.kind, PlanKind::Paste | PlanKind::Command | PlanKind::Job);
+    let is_action = matches!(
+        plan.kind,
+        PlanKind::Paste | PlanKind::Command | PlanKind::Job
+    );
     if !(guard_actions && taint.is_tainted() && is_action) {
         return plan;
     }
@@ -1251,7 +1269,9 @@ pub(crate) fn start_job_on(
 const JOB_PROGRESS_INTERVAL: Duration = Duration::from_secs(90);
 
 /// M3 (D8, M3-10): `RealHands::cancel_job` over the shared manager (false without one).
-pub(crate) fn cancel_job_on(manager: Option<&Arc<crate::managers::agent_jobs::JobManager>>) -> bool {
+pub(crate) fn cancel_job_on(
+    manager: Option<&Arc<crate::managers::agent_jobs::JobManager>>,
+) -> bool {
     manager.is_some_and(|m| m.cancel())
 }
 

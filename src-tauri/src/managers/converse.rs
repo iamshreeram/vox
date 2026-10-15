@@ -1132,7 +1132,12 @@ async fn execute_plan(
     carry: &mut Carry,
 ) -> Result<Option<String>, SessionEnd> {
     // Cancel is checked before each effect.
-    if cfg.answer_only && matches!(plan.kind, PlanKind::Paste | PlanKind::Command | PlanKind::Job) {
+    if cfg.answer_only
+        && matches!(
+            plan.kind,
+            PlanKind::Paste | PlanKind::Command | PlanKind::Job
+        )
+    {
         // Answer-only boundary (DESIGN 3.6): zero paste/command/job calls; only the fixed refusal.
         carry.journal.set(TurnOutcome::Blocked, None);
         into_result(speak_or_end(deps, cfg, cancel, MSG_ANSWER_ONLY, Emotion::Neutral).await)?;
@@ -1217,7 +1222,12 @@ async fn gate_and_run(
     if !state.gate_active && !matches!(plan.kind, PlanKind::Job) {
         return execute_plan(deps, cfg, cancel, plan, carry).await;
     }
-    if cfg.answer_only && matches!(plan.kind, PlanKind::Paste | PlanKind::Command | PlanKind::Job) {
+    if cfg.answer_only
+        && matches!(
+            plan.kind,
+            PlanKind::Paste | PlanKind::Command | PlanKind::Job
+        )
+    {
         return execute_plan(deps, cfg, cancel, plan, carry).await;
     }
     let prepared = match prepare_action(&plan, policy, deps.hands).await {
