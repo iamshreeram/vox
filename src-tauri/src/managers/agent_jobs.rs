@@ -15,6 +15,9 @@ mod agent_jobs_spawn;
 #[path = "agent_jobs_delivery.rs"]
 mod agent_jobs_delivery;
 
+#[path = "agent_jobs_owner.rs"]
+mod agent_jobs_owner;
+
 /// Parameters for starting one job.
 pub struct JobSpec {
     /// The prepared launch.
@@ -24,6 +27,7 @@ pub struct JobSpec {
 }
 
 /// Lifecycle state of a job.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum JobState {
     /// Still running.
     Running,
