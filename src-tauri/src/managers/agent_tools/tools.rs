@@ -73,6 +73,8 @@ pub struct DefaultToolExecutor {
     ui: Box<dyn UiPort>,
     recent_conversations_enabled: bool,
     conversations: Option<Arc<dyn ConversationSource>>,
+    /// Coding job status source. `None` keeps `job_status` out of the registry (M3 D7).
+    job_status: Option<Arc<dyn JobStatusSource>>,
     gate: FsGate,
     tool_timeout: Duration,
 }
@@ -109,15 +111,17 @@ impl DefaultToolExecutor {
             ui,
             recent_conversations_enabled,
             conversations,
+            job_status: None,
             gate: FsGate::new(),
             tool_timeout,
         }
     }
 
     /// Adds the `job_status` tool, backed by `source`. Only executors built with a source
-    /// advertise `job_status` (M3 S3c-2, DESIGN D7). Phase A stub.
-    pub fn with_job_status(self, source: Arc<dyn JobStatusSource>) -> Self {
-        todo!("S3c-2 Phase B: with_job_status")
+    /// advertise `job_status` (M3 S3c-2, DESIGN D7).
+    pub fn with_job_status(mut self, source: Arc<dyn JobStatusSource>) -> Self {
+        self.job_status = Some(source);
+        self
     }
 
     /// Runs one tool body with the per-tool timeout. A timeout is an untrusted error.
@@ -143,6 +147,9 @@ impl ToolExecutor for DefaultToolExecutor {
         if self.recent_conversations_enabled {
             specs.push(recent_conversations_spec());
         }
+        if self.job_status.is_some() {
+            specs.push(job_status_spec());
+        }
         specs
     }
 
@@ -162,6 +169,7 @@ impl ToolExecutor for DefaultToolExecutor {
                 "read_project_file" => self.with_timeout(name, self.read_file(&args)).await,
                 "open_settings" => self.with_timeout(name, self.open_settings(&args)).await,
                 "recent_conversations" => self.with_timeout(name, self.recent(&args)).await,
+                "job_status" => self.with_timeout(name, self.job_status()).await,
                 _ => error_output(name, "unknown tool", false),
             }
         })
@@ -169,6 +177,25 @@ impl ToolExecutor for DefaultToolExecutor {
 }
 
 impl DefaultToolExecutor {
+    /// `job_status`: state, project, elapsed seconds and the output tail. The tail is redacted
+    /// and fenced by `fenced_output`. No job is reported as `idle`, not as an error.
+    async fn job_status(&self) -> ToolOutput {
+        let Some(source) = self.job_status.as_ref() else {
+            return error_output("job_status", "unknown tool", false);
+        };
+        let text = match source.status() {
+            None => "state: idle".to_string(),
+            Some(snap) => format!(
+                "state: {}\nproject: {}\nelapsed_secs: {}\ntail:\n{}",
+                crate::managers::job_speaker::state_name(snap.state),
+                snap.project,
+                snap.elapsed_secs,
+                snap.tail.join("\n"),
+            ),
+        };
+        fenced_output("job_status", &text)
+    }
+
     /// `list_projects`: names only, sorted, at most 50.
     async fn list_projects(&self) -> ToolOutput {
         let names = self.resolver.list_projects();
@@ -395,6 +422,7 @@ fn validate_input(name: &str, input: &Value) -> Result<Map<String, Value>, Strin
         "read_project_file" => (&["project", "path"], &["project", "path"]),
         "open_settings" => (&["section"], &["section"]),
         "recent_conversations" => (&[], &["limit"]),
+        "job_status" => (&[], &[]),
         _ => return Err("unknown tool".to_string()),
     };
     // Fixed message: never echo a model-chosen key name (DESIGN R4-9 c).
@@ -525,6 +553,23 @@ fn open_settings_spec() -> ToolSpec {
                 }
             },
             "required": ["section"],
+            "additionalProperties": false
+        }),
+        risk: ToolRisk::ReadOnly,
+    }
+}
+
+/// `job_status` spec (D7): read-only, no input fields. Advertised only with a job source.
+fn job_status_spec() -> ToolSpec {
+    ToolSpec {
+        name: "job_status".to_string(),
+        description: "Report the state of the background coding job: running, finished, \
+                      failed, cancelled, timed out or idle, with its project, elapsed \
+                      seconds and recent output. Read-only."
+            .to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {},
             "additionalProperties": false
         }),
         risk: ToolRisk::ReadOnly,
