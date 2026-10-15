@@ -1,10 +1,12 @@
 //! Tauri commands for the confirmation and coding job settings (M3, DESIGN Rev 5 D1, D6, R2-8).
 //!
 //! The three setting commands are real: each is a read-modify-write of one field, modelled on
-//! `agent_tools.rs`. The status and cancel commands are stubs until the job manager is wired.
+//! `agent_tools.rs`. The status and cancel commands read the shared job manager.
 
+use crate::job_runtime::JobWiring;
+use crate::managers::job_speaker;
 use crate::settings::{self, AppSettings};
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 
 /// Read-only status of the coding job, for the Settings status card and the tray.
 ///
@@ -57,19 +59,13 @@ pub fn change_agent_jobs_timeout_minutes(app: AppHandle, minutes: u32) -> Result
 /// Reports the coding job state for the Settings status card.
 #[tauri::command]
 #[specta::specta]
-pub fn agent_job_status() -> AgentJobStatusDto {
-    // S3D-STUB: replaced when the job manager is wired
-    AgentJobStatusDto {
-        state: "idle".to_string(),
-        project: None,
-        elapsed_secs: 0,
-    }
+pub fn agent_job_status(wiring: State<'_, JobWiring>) -> AgentJobStatusDto {
+    job_speaker::status_dto(&wiring.manager)
 }
 
 /// Cancels the running coding job. Returns false when nothing is running.
 #[tauri::command]
 #[specta::specta]
-pub fn agent_job_cancel() -> bool {
-    // S3D-STUB: replaced when the job manager is wired
-    false
+pub fn agent_job_cancel(wiring: State<'_, JobWiring>) -> bool {
+    job_speaker::cancel(&wiring.manager)
 }

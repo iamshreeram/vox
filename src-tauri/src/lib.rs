@@ -11,7 +11,9 @@ mod clipboard;
 mod commands;
 mod helpers;
 mod input;
+mod job_runtime;
 mod llm_client;
+use crate::managers::agent_jobs::ShutdownConfig;
 mod managers;
 mod memory;
 mod overlay;
@@ -394,10 +396,14 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         managers::tts::default_backend(),
     ));
     app_handle.manage(tts_manager.clone());
+    // Background coding jobs: one manager, one announcer, one exit coordinator (M3 S3d).
+    let (job_wiring, job_runtime) = job_runtime::build(app_handle, tts_manager.clone());
+    app_handle.manage(job_wiring);
     // Conversation sessions: one controller, built with the app-backed platform.
     app_handle.manage(Arc::new(
         managers::converse_runtime::ConverseController::new(Arc::new(
-            managers::converse_platform::RealPlatform::new(app_handle.clone()),
+            managers::converse_platform::RealPlatform::new(app_handle.clone())
+                .with_job_runtime(job_runtime),
         )),
     ));
     register_tts_listeners(app_handle, tts_manager);
@@ -552,8 +558,17 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 // Use centralized cancellation that handles all operations
                 cancel_current_operation(app);
             }
+            "cancel_job" => {
+                tray::invoke_cancel_job_handler();
+            }
             "quit" => {
-                app.exit(0);
+                let job_wiring = app.state::<job_runtime::JobWiring>();
+                let quit_handle = app.clone();
+                job_wiring.exit.request_exit(
+                    &job_wiring.manager,
+                    move |_result| quit_handle.exit(0),
+                    &crate::managers::agent_jobs::ExitConfig::default(),
+                );
             }
             id if id.starts_with("model_select:") => {
                 let model_id = id.strip_prefix("model_select:").unwrap().to_string();
@@ -1424,7 +1439,26 @@ pub fn run(cli_args: CliArgs) {
             show_main_window(app);
         }
         // Teardown transcribe.cpp before exit
+        tauri::RunEvent::ExitRequested { api, .. } => {
+            let job_wiring = app.state::<job_runtime::JobWiring>();
+            let exit_handle = app.clone();
+            let decision = job_wiring.exit.on_exit_requested(
+                &job_wiring.manager,
+                || api.prevent_exit(),
+                move |_result| exit_handle.exit(0),
+                &crate::managers::agent_jobs::ExitConfig::default(),
+            );
+            log::debug!("native exit request decision: {:?}", decision);
+        }
         tauri::RunEvent::Exit => {
+            if let Some(wiring) = app.try_state::<job_runtime::JobWiring>() {
+                // Idempotent belt: the exit coordinator has normally stopped the job already.
+                wiring.manager.shutdown(&ShutdownConfig {
+                    term_grace: std::time::Duration::from_secs(1),
+                    drain: std::time::Duration::from_secs(1),
+                    deadline: std::time::Duration::from_secs(1),
+                });
+            }
             if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
                 let _ = tm.unload_model();
             }

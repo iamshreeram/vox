@@ -859,7 +859,6 @@ impl RealPlatform {
     }
 
     /// Enables background jobs, the confirmation gate and the planner job rules.
-    #[allow(dead_code)] // wired in S3d
     pub fn with_job_runtime(mut self, runtime: JobRuntime) -> Self {
         self.job_runtime = Some(runtime);
         self
