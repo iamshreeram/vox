@@ -14,6 +14,7 @@ use crate::managers::converse_plan::{
 };
 use crate::managers::emotion::Emotion;
 use crate::managers::job_announcer::LowPriorityMouth;
+#[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -53,17 +54,21 @@ fn configured(roots: &[&Path]) -> Vec<String> {
         .collect()
 }
 
+#[cfg(unix)]
 fn ino_of(path: &Path) -> (u64, u64) {
     let meta = std::fs::metadata(path).expect("stat");
     (meta.dev(), meta.ino())
 }
 
+#[cfg(unix)]
+#[cfg(unix)]
 fn fd_ino(fd: &DirFd) -> (u64, u64) {
     let file = std::fs::File::from(fd.try_clone().expect("dup fd"));
     let meta = file.metadata().expect("fstat fd");
     (meta.dev(), meta.ino())
 }
 
+#[cfg(unix)]
 pub(super) fn file_id_of(path: &Path) -> FileId {
     // A missing binary gets a zero identity: the spawn-time check must reject it, not the helper.
     let Ok(meta) = std::fs::metadata(path) else {
@@ -82,7 +87,21 @@ pub(super) fn file_id_of(path: &Path) -> FileId {
     }
 }
 
+/// Non-unix twin: identities come from unix inode metadata, so every file gets the zero
+/// identity here. Only unix builds run jobs, so this value is never used for a launch.
+#[cfg(not(unix))]
+pub(super) fn file_id_of(path: &Path) -> FileId {
+    let _ = path;
+    FileId {
+        dev: 0,
+        ino: 0,
+        len: 0,
+        mtime_secs: 0,
+    }
+}
+
 /// Writes an executable sh script (fake coding CLI) into `dir`.
+#[cfg(unix)]
 pub(super) fn write_fake_cli(dir: &Path, body: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let path = dir.join("fake-cli");
@@ -91,10 +110,17 @@ pub(super) fn write_fake_cli(dir: &Path, body: &str) -> PathBuf {
     path
 }
 
+/// Non-unix twin: no fake CLI can run off unix, so the path is returned unwritten.
+#[cfg(not(unix))]
+pub(super) fn write_fake_cli(dir: &Path, _body: &str) -> PathBuf {
+    dir.join("fake-cli")
+}
+
 // ---------------------------------------------------------------------------------------
 // pin_project_in: resolution table and the pinned inode (D8, R2-2, M3-10)
 // ---------------------------------------------------------------------------------------
 
+#[cfg(unix)]
 #[test]
 fn pin_exact_name_returns_the_projects_directory() {
     let root = TempDir::new("pin-exact");
@@ -109,6 +135,7 @@ fn pin_exact_name_returns_the_projects_directory() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn pin_is_still_the_same_inode_after_the_path_is_renamed() {
     let root = TempDir::new("pin-rename");
@@ -131,6 +158,7 @@ fn pin_is_still_the_same_inode_after_the_path_is_renamed() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn pin_unknown_name_is_unknown() {
     let root = TempDir::new("pin-unknown");
@@ -142,6 +170,7 @@ fn pin_unknown_name_is_unknown() {
     ));
 }
 
+#[cfg(unix)]
 #[test]
 fn pin_name_found_in_two_roots_is_ambiguous() {
     let a = TempDir::new("pin-amb-a");
@@ -155,6 +184,7 @@ fn pin_name_found_in_two_roots_is_ambiguous() {
     ));
 }
 
+#[cfg(unix)]
 #[test]
 fn pin_symlinked_project_escaping_the_root_is_refused() {
     let root = TempDir::new("pin-escape-root");
@@ -168,6 +198,7 @@ fn pin_symlinked_project_escaping_the_root_is_refused() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn pin_with_no_roots_is_unavailable() {
     let resolver = ProjectResolver::new(&[]);
@@ -177,6 +208,7 @@ fn pin_with_no_roots_is_unavailable() {
     ));
 }
 
+#[cfg(unix)]
 #[test]
 fn pin_with_only_relative_or_missing_roots_is_unavailable() {
     let resolver = ProjectResolver::new(&["relative/root".to_string()]);
@@ -186,6 +218,7 @@ fn pin_with_only_relative_or_missing_roots_is_unavailable() {
     ));
 }
 
+#[cfg(unix)]
 #[test]
 fn pin_invalid_project_name_is_refused_not_resolved() {
     let root = TempDir::new("pin-badname");
@@ -278,6 +311,7 @@ fn launch_in(dir: &TempDir, binary: &Path, task: &str) -> JobLaunch {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn start_without_a_manager_is_unsupported() {
     let dir = TempDir::new("start-none");
@@ -286,6 +320,7 @@ fn start_without_a_manager_is_unsupported() {
     assert!(matches!(outcome, JobStartOutcome::Unsupported));
 }
 
+#[cfg(unix)]
 #[test]
 fn start_with_a_manager_starts_then_second_start_is_busy() {
     let dir = TempDir::new("start-busy");
@@ -310,6 +345,7 @@ fn start_with_a_manager_starts_then_second_start_is_busy() {
     assert!(cancel_job_on(Some(&mgr)), "cancel must report a stop");
 }
 
+#[cfg(unix)]
 #[test]
 fn start_with_a_missing_binary_is_not_configured() {
     let dir = TempDir::new("start-badbin");
@@ -324,6 +360,7 @@ fn start_with_a_missing_binary_is_not_configured() {
     assert!(!has_active_job_on(Some(&mgr)));
 }
 
+#[cfg(unix)]
 #[test]
 fn start_after_shutdown_is_the_closing_refusal() {
     let dir = TempDir::new("start-closed");
