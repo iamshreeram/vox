@@ -824,6 +824,24 @@ pub struct JobRuntime {
     pub observer_factory: JobObserverFactory,
 }
 
+/// M3 S3c-1: the policy and announcer a session gets. `None` runtime keeps the legacy behavior
+/// (both None). With a runtime, the policy reads settings through `settings` on every query.
+pub(crate) fn job_parts(
+    runtime: Option<&JobRuntime>,
+    settings: Arc<dyn Fn() -> AppSettings + Send + Sync>,
+) -> (
+    Option<Arc<dyn PolicySource>>,
+    Option<Arc<crate::managers::job_announcer::Announcer>>,
+) {
+    match runtime {
+        None => (None, None),
+        Some(rt) => {
+            let policy: Arc<dyn PolicySource> = Arc::new(SettingsPolicy::new(settings));
+            (Some(policy), Some(rt.announcer.clone()))
+        }
+    }
+}
+
 /// The app-backed `Platform` used by `ConverseController`.
 pub struct RealPlatform {
     pub app: AppHandle,
@@ -841,6 +859,7 @@ impl RealPlatform {
     }
 
     /// Enables background jobs, the confirmation gate and the planner job rules.
+    #[allow(dead_code)] // wired in S3d
     pub fn with_job_runtime(mut self, runtime: JobRuntime) -> Self {
         self.job_runtime = Some(runtime);
         self
@@ -925,6 +944,12 @@ impl Platform for RealPlatform {
             None => None,
         };
 
+        let app_for_settings = self.app.clone();
+        let (policy, announcer) = job_parts(
+            self.job_runtime.as_ref(),
+            Arc::new(move || get_settings(&app_for_settings)),
+        );
+
         SessionParts {
             ears: Box::new(RealEars {
                 app: self.app.clone(),
@@ -952,6 +977,8 @@ impl Platform for RealPlatform {
             transcript,
             prepare,
             on_complete,
+            policy,
+            announcer,
         }
     }
 
@@ -1413,6 +1440,10 @@ pub(crate) fn parse_with_policy(
 #[cfg(test)]
 #[path = "converse_platform_jobs_tests.rs"]
 mod converse_platform_jobs_tests;
+
+#[cfg(test)]
+#[path = "converse_platform_glue_tests.rs"]
+mod converse_platform_glue_tests;
 
 #[cfg(test)]
 #[path = "converse_platform_policy_tests.rs"]

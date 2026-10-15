@@ -9,6 +9,7 @@ use crate::managers::converse::{
     SessionConfig, SessionEnd, SessionRegistry, SessionState, TranscriptEvent, TranscriptSink,
 };
 use crate::managers::converse_capture::CaptureHandle;
+use crate::managers::converse_confirm::PolicySource;
 use crate::managers::converse_hooks;
 use futures_util::FutureExt;
 use std::panic::AssertUnwindSafe;
@@ -30,6 +31,10 @@ pub struct SessionParts {
     pub prepare: Option<BoxFuture<'static, ()>>,
     /// Called exactly once with the session end, after the finalizer steps. Default None.
     pub on_complete: Option<Box<dyn FnOnce(SessionEnd) + Send>>,
+    /// Policy source for jobs and the confirmation gate (M3). Default None (legacy behavior).
+    pub policy: Option<Arc<dyn PolicySource>>,
+    /// Announcer for job and gate speech (M3). Default None (legacy behavior).
+    pub announcer: Option<Arc<crate::managers::job_announcer::Announcer>>,
 }
 
 /// Holds the per-session admission (for example an ownership lease). The
@@ -204,6 +209,8 @@ impl ConverseController {
                 transcript,
                 prepare,
                 on_complete,
+                policy,
+                announcer,
             } = parts;
             let mut cancel = cancel;
             // prepare + run_session share ONE caught boundary; any panic is Cancelled.
@@ -213,8 +220,8 @@ impl ConverseController {
                     transcript,
                 };
                 let deps = Deps {
-                    policy: None,
-                    announcer: None,
+                    policy: policy.as_deref(),
+                    announcer: announcer.as_deref(),
                     ears: ears.as_ref(),
                     mouth: mouth.as_ref(),
                     hands: hands.as_ref(),
@@ -440,6 +447,8 @@ mod tests {
                 },
                 transcript: None,
                 prepare: None,
+                policy: None,
+                announcer: None,
                 on_complete: None,
             }
         }
@@ -800,6 +809,8 @@ mod tests {
                 transcript: None,
                 prepare: None,
                 on_complete: None,
+                policy: None,
+                announcer: None,
             }
         }
         fn on_state(&self, state: &'static str, end: Option<&'static str>) {
