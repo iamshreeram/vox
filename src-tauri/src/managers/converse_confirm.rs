@@ -72,6 +72,16 @@ pub type DirFd = std::os::fd::OwnedFd;
 #[cfg(not(unix))]
 pub struct DirFd;
 
+/// Non-unix twin of the descriptor conversion: there is no pinned handle off unix, so the
+/// opened directory is dropped and the placeholder is returned.
+#[cfg(not(unix))]
+impl From<std::fs::File> for DirFd {
+    fn from(file: std::fs::File) -> Self {
+        drop(file);
+        DirFd
+    }
+}
+
 /// Classification of a spoken yes/no answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verdict {
