@@ -2,11 +2,17 @@ import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { commands } from "@/bindings";
 import { Button } from "../ui/Button";
+import { Dropdown } from "../ui/Dropdown";
 import { Input } from "../ui/Input";
 import { SettingContainer } from "../ui/SettingContainer";
 import { Slider } from "../ui/Slider";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
+import {
+  buildVoiceOptions,
+  voiceValueToSetting,
+  type TtsVoiceInfo,
+} from "../../lib/ttsVoices";
 import { SpokenReplyStyle } from "./SpokenReplyStyle";
 import { ConversationSection } from "./ConversationSection";
 
@@ -31,10 +37,45 @@ export const TtsSettings: React.FC<TtsSettingsProps> = React.memo(
     const ttsVoice = getSetting("tts_voice") ?? null;
     const ttsRate = getSetting("tts_rate_wpm") ?? DEFAULT_RATE_WPM;
     const [localVoice, setLocalVoice] = useState(ttsVoice ?? "");
+    const [voices, setVoices] = useState<TtsVoiceInfo[]>([]);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
       setLocalVoice(ttsVoice ?? "");
     }, [ttsVoice]);
+
+    useEffect(() => {
+      let active = true;
+      const loadVoices = async () => {
+        let list: TtsVoiceInfo[] = [];
+        try {
+          list = await commands.listTtsVoices();
+        } catch (error) {
+          console.warn("Listing system voices failed:", error);
+        }
+        if (active) {
+          setVoices(list);
+          setLoading(false);
+        }
+      };
+      void loadVoices();
+      return () => {
+        active = false;
+      };
+    }, []);
+
+    const voiceResult = buildVoiceOptions(voices, ttsVoice, {
+      defaultLabel: t("settings.advanced.tts.voiceDefaultOption"),
+      notInstalled: (name: string) =>
+        t("settings.advanced.tts.voiceNotInstalled", { name }),
+    });
+    const showTextInput = !loading && voiceResult.useTextFallback;
+
+    const handleVoiceSelect = (value: string) => {
+      const next = voiceValueToSetting(value);
+      if (next === ttsVoice) return;
+      updateSetting("tts_voice", next);
+    };
 
     const handleTest = async () => {
       const result = await commands.ttsSpeakTest(
@@ -66,24 +107,48 @@ export const TtsSettings: React.FC<TtsSettingsProps> = React.memo(
         />
         <SettingContainer
           title={t("settings.advanced.tts.voiceLabel")}
-          description={t("settings.advanced.tts.voiceDescription")}
+          description={t(
+            loading
+              ? "settings.advanced.tts.voiceListDescription"
+              : voiceResult.descriptionKey,
+          )}
           descriptionMode={descriptionMode}
           grouped={grouped}
         >
-          <Input
-            type="text"
-            value={localVoice}
-            onChange={(event) => setLocalVoice(event.target.value)}
-            onBlur={() => {
-              const next = localVoice.trim();
-              if (next === (ttsVoice ?? "")) return;
-              updateSetting("tts_voice", next === "" ? null : next);
-            }}
-            placeholder={t("settings.advanced.tts.voicePlaceholder")}
-            variant="compact"
-            disabled={isUpdating("tts_voice")}
-            className="flex-1 min-w-[360px]"
-          />
+          {showTextInput ? (
+            <Input
+              type="text"
+              value={localVoice}
+              onChange={(event) => setLocalVoice(event.target.value)}
+              onBlur={() => {
+                const next = localVoice.trim();
+                if (next === (ttsVoice ?? "")) return;
+                updateSetting("tts_voice", next === "" ? null : next);
+              }}
+              placeholder={t("settings.advanced.tts.voicePlaceholder")}
+              variant="compact"
+              disabled={isUpdating("tts_voice")}
+              className="flex-1 min-w-[360px]"
+            />
+          ) : (
+            <Dropdown
+              options={
+                loading
+                  ? [
+                      {
+                        value: "",
+                        label: t("settings.advanced.tts.voiceDefaultOption"),
+                      },
+                    ]
+                  : voiceResult.options
+              }
+              selectedValue={voiceResult.selected}
+              onSelect={handleVoiceSelect}
+              placeholder={t("settings.advanced.tts.voiceDefaultOption")}
+              disabled={loading || isUpdating("tts_voice")}
+              className="flex-1 min-w-[360px]"
+            />
+          )}
         </SettingContainer>
         <Slider
           value={ttsRate}

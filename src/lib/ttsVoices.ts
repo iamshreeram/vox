@@ -1,5 +1,4 @@
 // Pure helper that builds the spoken-reply voice dropdown.
-// STUB (S2-A RED): every function throws until the S2-B implementation lands.
 
 /** A voice reported by the backend (name and locale as listed by the system). */
 export interface TtsVoiceInfo {
@@ -35,23 +34,57 @@ export interface VoiceOptionsResult {
 /**
  * Builds the dropdown options for the voice picker.
  *
- * @param _voices installed voices in display order
- * @param _current saved voice name, or null when unset
- * @param _labels labels for the default and not-installed entries
+ * @param voices installed voices in display order
+ * @param current saved voice name, or null when unset
+ * @param labels labels for the default and not-installed entries
  */
 export function buildVoiceOptions(
-  _voices: TtsVoiceInfo[],
-  _current: string | null,
-  _labels: VoiceLabels,
+  voices: TtsVoiceInfo[],
+  current: string | null,
+  labels: VoiceLabels,
 ): VoiceOptionsResult {
-  throw new Error("todo");
+  const useTextFallback = voices.length === 0;
+  const selected = (current ?? "").trim();
+
+  const defaultOption: VoiceOption = { value: "", label: labels.defaultLabel };
+  if (useTextFallback) {
+    return {
+      options: [defaultOption],
+      selected,
+      useTextFallback,
+      descriptionKey: "settings.advanced.tts.voiceDescription",
+    };
+  }
+
+  const options: VoiceOption[] = [defaultOption];
+  const seen = new Set<string>();
+  for (const voice of voices) {
+    if (seen.has(voice.name)) continue;
+    seen.add(voice.name);
+    options.push({
+      value: voice.name,
+      label: `${voice.name} (${voice.locale})`,
+    });
+  }
+
+  if (selected !== "" && !seen.has(selected)) {
+    options.push({ value: selected, label: labels.notInstalled(selected) });
+  }
+
+  return {
+    options,
+    selected,
+    useTextFallback,
+    descriptionKey: "settings.advanced.tts.voiceListDescription",
+  };
 }
 
 /**
  * Maps a dropdown value to the setting value: blank means system default (null).
  *
- * @param _value dropdown value
+ * @param value dropdown value
  */
-export function voiceValueToSetting(_value: string): string | null {
-  throw new Error("todo");
+export function voiceValueToSetting(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
 }
