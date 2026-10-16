@@ -503,6 +503,28 @@ const scenarios: Record<string, () => void> = {
     assert.ok(row.scrolls.length >= 1, "scroll was attempted");
   },
 
+  // Pins the rule "the timeout fallback scrolls only if the destination section
+  // was observed": the outgoing page stays mounted, so nothing may move.
+  "outgoing page stays mounted past the timeout: no scroll, no highlight, no group fallback, no pending frames or timers":
+    () => {
+      cancelReveal();
+      const row = makeRow("Same");
+      const group = makeGroup("engine", [row]);
+      const root = makeRoot("general", [group]);
+      const h = new Harness(root);
+      revealSetting(
+        { section: SECTION, groupId: "engine", labelText: "Same" },
+        h.deps,
+      );
+      h.runUntil(REVEAL_TIMEOUT_MS + 200);
+      assert.deepEqual(root.scrolls, [], "outgoing root must not be scrolled");
+      assert.deepEqual(group.scrolls, [], "no group fallback scroll");
+      assert.deepEqual(row.scrolls, [], "no row scroll");
+      assert.ok(!row.classes.has(HIGHLIGHT_CLASS), "no highlight added");
+      assert.equal(h.rafs.size, 0, "no pending animation frames");
+      assert.equal(h.timers.size, 0, "no pending timers");
+    },
+
   "nothing throws when the section root is null for the whole timeout": () => {
     cancelReveal();
     const h = new Harness(null);

@@ -121,20 +121,31 @@ const findRow = (
   return row.getClientRects().length > 0 ? row : null;
 };
 
-const scrollBehavior = (reveal: ActiveReveal): "auto" | "smooth" =>
-  reveal.deps.reducedMotion() ? "auto" : "smooth";
+const scrollBehavior = (reveal: ActiveReveal): "auto" | "smooth" => {
+  // A throwing reducedMotion probe falls back to "auto" (no animation).
+  let reduced = true;
+  attempt(() => {
+    reduced = reveal.deps.reducedMotion();
+  });
+  return reduced ? "auto" : "smooth";
+};
 
 const foundRow = (reveal: ActiveReveal, row: RevealElement): void => {
   const { deps } = reveal;
   const behavior = scrollBehavior(reveal);
   attempt(() => row.scrollIntoView({ block: "center", behavior }));
-  row.classList.add(HIGHLIGHT_CLASS);
-  reveal.highlighted = row;
   reveal.rafId = null;
-  reveal.highlightTimer = deps.setTimeout(() => {
-    reveal.highlightTimer = null;
+  try {
+    row.classList.add(HIGHLIGHT_CLASS);
+    reveal.highlighted = row;
+    reveal.highlightTimer = deps.setTimeout(() => {
+      reveal.highlightTimer = null;
+      stop(reveal);
+    }, HIGHLIGHT_MS);
+  } catch {
+    // A failing highlight must not strand the reveal: tear it down.
     stop(reveal);
-  }, HIGHLIGHT_MS);
+  }
 };
 
 const timedOut = (
@@ -153,10 +164,8 @@ const timedOut = (
   stop(reveal);
 };
 
-/** One animation frame of the reveal state machine (WAITING -> ARRIVED -> found/timeout). */
-const runFrame = (reveal: ActiveReveal): void => {
-  reveal.rafId = null;
-  if (active !== reveal) return;
+/** The state machine body for one frame (WAITING -> ARRIVED -> found/timeout). May throw. */
+const advanceFrame = (reveal: ActiveReveal): void => {
   const { deps, request } = reveal;
   const groupId =
     request.groupId !== undefined && GROUP_ID_PATTERN.test(request.groupId)
@@ -178,7 +187,7 @@ const runFrame = (reveal: ActiveReveal): void => {
       stop(reveal);
       return;
     }
-    if (groupId !== undefined) deps.openGroup(groupId);
+    if (groupId !== undefined) attempt(() => deps.openGroup(groupId));
     const scope =
       groupId === undefined ? root : root.querySelector(groupScopeSel(groupId));
     const row = findRow(scope, request.labelText, request.occurrence ?? 0);
@@ -193,6 +202,21 @@ const runFrame = (reveal: ActiveReveal): void => {
     return;
   }
   reveal.rafId = deps.raf(() => runFrame(reveal));
+};
+
+/**
+ * One animation frame. Any throw from the DOM or injected deps ends this reveal
+ * (stop clears the frame, timers, highlight and the active token) instead of
+ * escaping into the browser's frame callback.
+ */
+const runFrame = (reveal: ActiveReveal): void => {
+  reveal.rafId = null;
+  if (active !== reveal) return;
+  try {
+    advanceFrame(reveal);
+  } catch {
+    stop(reveal);
+  }
 };
 
 /**

@@ -125,6 +125,9 @@ const CONVERSE_END_IDS = [
   "turn_limit",
 ] as const;
 
+/** Slider label family in ConversationSection.tsx: `converse.section.<id>Label` (object array, label={item.label}). */
+const CONVERSE_SLIDER_IDS = ["silence", "idleTurns", "contextTurns"] as const;
+
 const JOB_STATE_IDS = [
   "idle",
   "running",
@@ -1086,6 +1089,12 @@ export const EXPERIMENTAL_DYNAMIC: readonly DynamicFamily[] = [
     source: CONVERSATION_SOURCE,
     prefix: "converse.end.",
     ids: CONVERSE_END_IDS,
+  },
+  {
+    source: CONVERSATION_SOURCE,
+    prefix: "converse.section.",
+    suffix: "Label",
+    ids: CONVERSE_SLIDER_IDS,
   },
   {
     source: JOBS_SOURCE,

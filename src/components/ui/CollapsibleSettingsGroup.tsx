@@ -28,7 +28,10 @@ export const CollapsibleSettingsGroup: React.FC<
   useEffect(() => {
     if (consumePendingOpen(id)) setOpen(true);
     const onOpenRequest = (event: Event) => {
-      if (parseGroupOpenEvent(event) === id) setOpen(true);
+      if (parseGroupOpenEvent(event) !== id) return;
+      // Already mounted: handling the event consumes the pending request too.
+      consumePendingOpen(id);
+      setOpen(true);
     };
     window.addEventListener(GROUP_OPEN_EVENT, onOpenRequest);
     return () => window.removeEventListener(GROUP_OPEN_EVENT, onOpenRequest);

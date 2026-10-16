@@ -3,19 +3,20 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
 import { installTauriMock, setMockSetting } from "./fixtures/tauriMock";
 
 /*
- * Mounted acceptance tests for Settings search (DESIGN.md rev 5).
- * Phase 1 (smoke) proves the Vite app boots with the Tauri mock.
- * The remaining scenarios target UI that is NOT implemented yet
- * (SettingsSearch combobox, data-setting-title/data-group-id attributes,
- * settings-search-highlight class). They are expected to fail until it exists.
- *
- * Selectors that depend on translation strings use the en/de translation
- * files as the source of truth where possible.
+ * Mounted acceptance tests for Settings search (DESIGN.md rev 5), run against the
+ * Vite dev server with the Tauri mock (tests/fixtures/tauriMock.ts). The suite
+ * covers: boot smoke; cross-page reveal (same-titled rows); reveal into a card
+ * that starts collapsed (storage blocked, and late mount after leaving the page);
+ * reveal cancellation on sidebar navigation (Playwright clock); keyboard and IME
+ * handling of the combobox; active-option reconciliation; locked results routed
+ * to their enabler; debug gating; pageOnly navigation; no-result state; and the
+ * German boot-language path.
+ * Selectors that depend on translated text use the en/de translation files as
+ * the source of truth, or locale-neutral attributes.
  */
 
 const RESULT_ID_PREFIX = "settings-search-option-";
 const HIGHLIGHT_CLASS = "settings-search-highlight";
-const HIGHLIGHT_MS = 1800;
 
 function translation(locale: string): Record<string, unknown> {
   const url = new URL(
@@ -54,6 +55,21 @@ const section = (page: Page, id: string): Locator =>
   page.locator(`[data-settings-section="${id}"]`);
 const navItem = (page: Page, label: string): Locator =>
   page.locator("p", { hasText: new RegExp(`^${label}$`) });
+
+// The "listening" card starts collapsed (defaultOpen: false in experimentalLayout.ts).
+const listeningCard = (page: Page): Locator =>
+  page.locator('[data-group-id="listening"]');
+const listeningHeader = (page: Page): Locator =>
+  listeningCard(page).getByRole("button").first();
+const wakeWordRow = (page: Page): Locator =>
+  page.locator('[data-group-id="listening"] [data-setting-title="Wake Word"]');
+
+/** Precondition: the listening card is rendered and collapsed, its row hidden. */
+async function expectListeningCollapsed(page: Page): Promise<void> {
+  await expect(listeningHeader(page)).toHaveAttribute("aria-expanded", "false");
+  await expect(wakeWordRow(page)).toHaveCount(1);
+  await expect(wakeWordRow(page)).toBeHidden();
+}
 
 async function activeOptionId(box: Locator): Promise<string | null> {
   return box.getAttribute("aria-activedescendant");
@@ -100,62 +116,136 @@ test.describe("Settings search: navigation and reveal", () => {
 
     await expect(section(page, "experimental")).toBeVisible();
     await expect(highlighted(page)).toHaveCount(1);
+    await expect(highlighted(page)).toHaveAttribute(
+      "data-setting-title",
+      "Model",
+    );
     await expect(
       section(page, "experimental").locator(`.${HIGHLIGHT_CLASS}`),
     ).toHaveCount(1);
     await expect(highlighted(page)).toBeInViewport();
   });
 
-  test("(2) closed Experimental card opens when localStorage throws and the row is revealed", async ({
+  test("(2) a closed card opens from another page when localStorage getItem and setItem throw", async ({
     page,
   }) => {
+    // storageThrows overrides Storage.prototype.getItem and setItem.
     await installTauriMock(page, {
       storageThrows: true,
       settings: { experimental_enabled: true },
     });
     await page.goto("/");
 
-    await searchBox(page).fill("keep mic");
-    await options(page).filter({ hasText: "Keep Mic Open" }).first().click();
+    // Precondition: the listening card is collapsed on the Experimental page.
+    await navItem(page, "Experimental").click();
+    await expect(section(page, "experimental")).toBeVisible();
+    await expectListeningCollapsed(page);
 
-    const title = "Keep Mic Open Between Transcriptions";
-    const row = page.locator(`[data-setting-title="${title}"]`);
-    await expect(row).toBeVisible();
-    await expect(row).toHaveClass(new RegExp(HIGHLIGHT_CLASS));
-  });
-
-  test("(3) card opens after late mount when the page is entered from search", async ({
-    page,
-  }) => {
-    await installTauriMock(page, { settings: { experimental_enabled: true } });
-    await page.goto("/");
-
-    // The Experimental page is not mounted until the search result navigates there.
-    await expect(section(page, "experimental")).toHaveCount(0);
-    await searchBox(page).fill("keep mic");
-    await options(page).filter({ hasText: "Keep Mic Open" }).first().click();
+    // Leave for another page, then reveal from search.
+    await navItem(page, "Advanced").click();
+    await expect(section(page, "advanced")).toBeVisible();
+    await searchBox(page).fill("wake word");
+    await options(page).filter({ hasText: "Wake Word" }).first().click();
 
     await expect(section(page, "experimental")).toBeVisible();
-    const row = page.locator(
-      '[data-group-id] [data-setting-title="Keep Mic Open Between Transcriptions"]',
+    await expect(listeningHeader(page)).toHaveAttribute(
+      "aria-expanded",
+      "true",
     );
-    await expect(row).toBeVisible();
+    await expect(wakeWordRow(page)).toBeVisible();
+    await expect(wakeWordRow(page)).toHaveClass(new RegExp(HIGHLIGHT_CLASS));
   });
 
-  test("(10) leaving mid-reveal cancels later highlight and scroll", async ({
+  test("(3) a card left collapsed opens after a late mount when re-entered from search", async ({
     page,
   }) => {
     await installTauriMock(page, { settings: { experimental_enabled: true } });
     await page.goto("/");
 
-    await searchBox(page).fill("keep mic");
-    await options(page).filter({ hasText: "Keep Mic Open" }).first().click();
+    // Precondition: visit Experimental, confirm the card is collapsed, leave.
+    await navItem(page, "Experimental").click();
+    await expect(section(page, "experimental")).toBeVisible();
+    await expectListeningCollapsed(page);
     await navItem(page, "General").click();
-
-    // Timing window under test: the reveal would have run within this period.
-    await page.waitForTimeout(HIGHLIGHT_MS + 500);
     await expect(section(page, "general")).toBeVisible();
+    // The Experimental page is unmounted now; search mounts it late.
+    await expect(section(page, "experimental")).toHaveCount(0);
+
+    await searchBox(page).fill("wake word");
+    await options(page).filter({ hasText: "Wake Word" }).first().click();
+
+    await expect(section(page, "experimental")).toBeVisible();
+    await expect(listeningHeader(page)).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    await expect(wakeWordRow(page)).toBeVisible();
+    await expect(wakeWordRow(page)).toHaveClass(new RegExp(HIGHLIGHT_CLASS));
+  });
+
+  test("(10) a reveal held while the page changes is cancelled by sidebar navigation", async ({
+    page,
+  }) => {
+    // Mechanism: the reveal advances in requestAnimationFrame and timers, which the
+    // Playwright clock controls in the page. The clock is installed and paused, so
+    // after the search selection the reveal's first frame is queued but has not run.
+    // The user goes to General and back to Experimental, then time advances past
+    // the reveal timeout. Sidebar.tsx's nav-click wrapper calls cancelReveal() before
+    // onSectionChange. Removing that cancelReveal() call makes the queued frame run
+    // once Experimental is back: it would open the card, scroll to the row and
+    // highlight it, so the assertions below would fail.
+    const REVEAL_WINDOW_MS = 1500;
+    await installTauriMock(page, { settings: { experimental_enabled: true } });
+    await page.clock.install({ time: new Date("2026-10-16T10:00:00Z") });
+    await page.goto("/");
+    await expect(navItem(page, "General")).toBeVisible();
+    await page.clock.pauseAt(new Date("2026-10-16T10:00:05Z"));
+
+    // Precondition: the listening card is collapsed on the Experimental page.
+    await navItem(page, "Experimental").click();
+    await expect(section(page, "experimental")).toBeVisible();
+    await expectListeningCollapsed(page);
+    await navItem(page, "General").click();
+    await expect(section(page, "general")).toBeVisible();
+
+    // Count scrolls of the Wake Word row (its own scrollIntoView, nothing else).
+    await page.evaluate(() => {
+      const spy = window as unknown as { __wakeWordScrolls: number };
+      spy.__wakeWordScrolls = 0;
+      const original = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = function (
+        this: Element,
+        ...args: [(boolean | ScrollIntoViewOptions)?]
+      ): void {
+        if (this.getAttribute("data-setting-title") === "Wake Word") {
+          spy.__wakeWordScrolls += 1;
+        }
+        original.apply(this, args);
+      };
+    });
+
+    // Select the result: the reveal starts, its frame is queued, nothing has run.
+    await searchBox(page).fill("wake word");
+    await options(page).filter({ hasText: "Wake Word" }).first().click();
+    await expect(section(page, "experimental")).toBeVisible();
+    await expectListeningCollapsed(page);
     await expect(highlighted(page)).toHaveCount(0);
+
+    // Leave during the reveal, then return to Experimental.
+    await navItem(page, "General").click();
+    await expect(section(page, "general")).toBeVisible();
+    await navItem(page, "Experimental").click();
+    await expect(section(page, "experimental")).toBeVisible();
+
+    // Let time pass the reveal timeout: a surviving reveal would run now.
+    await page.clock.runFor(REVEAL_WINDOW_MS);
+    await expect(highlighted(page)).toHaveCount(0);
+    await expectListeningCollapsed(page);
+    const scrolls = await page.evaluate(
+      () =>
+        (window as unknown as { __wakeWordScrolls: number }).__wakeWordScrolls,
+    );
+    expect(scrolls).toBe(0);
   });
 
   test("(12) pageOnly results navigate without a reveal", async ({ page }) => {
