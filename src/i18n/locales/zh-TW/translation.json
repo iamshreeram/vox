@@ -1010,6 +1010,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "搜尋設定",
+      "label": "搜尋設定",
+      "clear": "清除搜尋",
+      "noResults": "找不到與「{{query}}」相關的設定",
+      "unlockHint": "請先開啟「{{setting}}」",
+      "showing": "正在顯示「{{setting}}」"
     }
   },
   "footer": {

@@ -1010,6 +1010,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "Търсене в настройките",
+      "label": "Търсене в настройките",
+      "clear": "Изчистване на търсенето",
+      "noResults": "Не са намерени настройки за „{{query}}“",
+      "unlockHint": "Първо включете „{{setting}}“",
+      "showing": "Показване на „{{setting}}“"
     }
   },
   "footer": {

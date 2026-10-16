@@ -1010,6 +1010,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "설정 검색",
+      "label": "설정 검색",
+      "clear": "검색 지우기",
+      "noResults": "“{{query}}”에 대한 설정을 찾을 수 없습니다",
+      "unlockHint": "먼저 “{{setting}}”을(를) 켜세요",
+      "showing": "“{{setting}}” 표시 중"
     }
   },
   "footer": {

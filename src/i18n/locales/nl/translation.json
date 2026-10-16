@@ -1010,6 +1010,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "Instellingen doorzoeken",
+      "label": "Instellingen doorzoeken",
+      "clear": "Zoekopdracht wissen",
+      "noResults": "Geen instellingen gevonden voor “{{query}}”",
+      "unlockHint": "Schakel eerst “{{setting}}” in",
+      "showing": "“{{setting}}” wordt getoond"
     }
   },
   "footer": {

@@ -1010,6 +1010,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "Cerca a la configuració",
+      "label": "Cerca a la configuració",
+      "clear": "Esborra la cerca",
+      "noResults": "No s'han trobat configuracions per a «{{query}}»",
+      "unlockHint": "Activa primer «{{setting}}»",
+      "showing": "Mostrant «{{setting}}»"
     }
   },
   "footer": {

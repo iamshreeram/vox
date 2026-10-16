@@ -1010,6 +1010,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "Tìm kiếm cài đặt",
+      "label": "Tìm kiếm cài đặt",
+      "clear": "Xóa tìm kiếm",
+      "noResults": "Không tìm thấy cài đặt nào cho “{{query}}”",
+      "unlockHint": "Bật “{{setting}}” trước",
+      "showing": "Đang hiển thị “{{setting}}”"
     }
   },
   "footer": {

@@ -1010,6 +1010,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "Rechercher dans les paramètres",
+      "label": "Rechercher dans les paramètres",
+      "clear": "Effacer la recherche",
+      "noResults": "Aucun paramètre trouvé pour « {{query}} »",
+      "unlockHint": "Activez d'abord « {{setting}} »",
+      "showing": "Affichage de « {{setting}} »"
     }
   },
   "footer": {

@@ -1010,6 +1010,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "Søg i indstillinger",
+      "label": "Søg i indstillinger",
+      "clear": "Ryd søgning",
+      "noResults": "Ingen indstillinger fundet for »{{query}}«",
+      "unlockHint": "Slå »{{setting}}« til først",
+      "showing": "Viser »{{setting}}«"
     }
   },
   "footer": {

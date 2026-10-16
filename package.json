@@ -20,6 +20,8 @@
     "test:theme": "bun src/styles/theme.test.ts",
     "test:theme-utils": "bun src/lib/utils/theme.test.ts",
     "test:sidebar-theme": "bun src/components/sidebarTheme.test.ts",
+    "test:settings-search": "bun src/components/settings/search/settingsSearch.test.ts && bun src/components/settings/search/settingsSearchIndex.test.ts && bun src/components/settings/search/settingsReveal.test.ts && bun src/components/settings/search/SettingsSearchBox.test.tsx && bun src/components/ui/collapsibleOpen.test.ts && bun src/components/ui/settingContainerAnchor.test.tsx",
+    "test:settings-search:e2e": "playwright test tests/settings-search.spec.ts --reporter=line",
     "test:collapsible": "bun src/components/ui/collapsibleState.test.ts && bun src/components/ui/collapsibleGroup.test.tsx",
     "test:experimental-layout": "bun src/components/settings/experimental/experimentalLayout.test.ts",
     "test:composer-form": "bun src/components/settings/composerForm.test.ts",

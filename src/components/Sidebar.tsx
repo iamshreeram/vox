@@ -23,6 +23,8 @@ import {
   ModelsSettings,
   ExperimentalSettings,
 } from "./settings";
+import { SettingsSearchBox } from "./settings/search/SettingsSearchBox";
+import { cancelReveal } from "./settings/search/settingsReveal";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
 
@@ -114,10 +116,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
     .filter(([_, config]) => config.enabled(settings))
     .map(([id, config]) => ({ id: id as SidebarSection, ...config }));
 
+  // Same visibility rules as the nav list (enabled predicates + settings).
+  const isSectionEnabled = (section: SidebarSection): boolean =>
+    SECTIONS_CONFIG[section].enabled(settings);
+
   return (
     <div className="flex flex-col w-40 h-full border-e border-mid-gray/20 items-center px-2">
       <VoxTextLogo width={120} className="m-4" />
       <div className="flex flex-col w-full items-center gap-1 pt-2 border-t border-mid-gray/20">
+        <SettingsSearchBox
+          isSectionEnabled={isSectionEnabled}
+          onNavigate={onSectionChange}
+        />
         {availableSections.map((section) => {
           const Icon = section.icon;
           const isActive = activeSection === section.id;
@@ -126,7 +136,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div
               key={section.id}
               className={sidebarItemClass(isActive)}
-              onClick={() => onSectionChange(section.id)}
+              onClick={() => {
+                // Normal sidebar navigation cancels any pending search reveal.
+                cancelReveal();
+                onSectionChange(section.id);
+              }}
             >
               <Icon
                 width={24}

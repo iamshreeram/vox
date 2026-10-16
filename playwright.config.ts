@@ -10,6 +10,10 @@ export default defineConfig({
   use: {
     baseURL: "http://localhost:1420",
     trace: "on-first-retry",
+    // Optional: point at a system Chrome when Playwright's bundled browser is not installed.
+    launchOptions: process.env.PW_CHROME_PATH
+      ? { executablePath: process.env.PW_CHROME_PATH }
+      : undefined,
   },
   projects: [
     {

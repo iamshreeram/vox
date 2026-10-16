@@ -1,6 +1,12 @@
-import React, { useId, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import { ChevronRight } from "lucide-react";
-import { readOpen, writeOpen } from "./collapsibleState";
+import {
+  GROUP_OPEN_EVENT,
+  consumePendingOpen,
+  parseGroupOpenEvent,
+  readOpen,
+  writeOpen,
+} from "./collapsibleState";
 import { SettingsGroupContext } from "./settingsGroupContext";
 
 interface CollapsibleSettingsGroupProps {
@@ -19,6 +25,18 @@ export const CollapsibleSettingsGroup: React.FC<
   const [open, setOpen] = useState(() => readOpen(id, defaultOpen));
   const bodyId = `settings-group-body-${useId().replace(/:/g, "")}`;
 
+  useEffect(() => {
+    if (consumePendingOpen(id)) setOpen(true);
+    const onOpenRequest = (event: Event) => {
+      if (parseGroupOpenEvent(event) !== id) return;
+      // Already mounted: handling the event consumes the pending request too.
+      consumePendingOpen(id);
+      setOpen(true);
+    };
+    window.addEventListener(GROUP_OPEN_EVENT, onOpenRequest);
+    return () => window.removeEventListener(GROUP_OPEN_EVENT, onOpenRequest);
+  }, [id]);
+
   const toggle = () => {
     const next = !open;
     setOpen(next);
@@ -26,7 +44,7 @@ export const CollapsibleSettingsGroup: React.FC<
   };
 
   return (
-    <div className="settings-card">
+    <div className="settings-card" data-group-id={id}>
       <button
         type="button"
         aria-expanded={open}

@@ -1010,6 +1010,14 @@
     },
     "appearance": {
       "title": "Appearance"
+    },
+    "search": {
+      "placeholder": "ابحث في الإعدادات",
+      "label": "ابحث في الإعدادات",
+      "clear": "مسح البحث",
+      "noResults": "لم يتم العثور على إعدادات لـ «{{query}}»",
+      "unlockHint": "فعّل «{{setting}}» أولاً",
+      "showing": "عرض «{{setting}}»"
     }
   },
   "footer": {
