@@ -1362,6 +1362,12 @@ async previewSpeechComposer() : Promise<Result<ComposerPreview, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Voices installed on this Mac for the Spoken replies dropdown (empty off macOS).
+ */
+async listTtsVoices() : Promise<TtsVoice[]> {
+    return await TAURI_INVOKE("list_tts_voices");
+},
 async ttsSpeakTest(text: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("tts_speak_test", { text }) };
@@ -1575,6 +1581,18 @@ export type TtsComposerSettingsPatch = { mode: TtsComposerMode | null; provider_
  * command_args and prompt_flag.
  */
 acknowledge_command: boolean | null }
+/**
+ * One installed speech voice, as reported by `say -v '?'`.
+ */
+export type TtsVoice = { 
+/**
+ * Voice name exactly as `say -v` accepts it (passes `sanitize_voice`).
+ */
+name: string; 
+/**
+ * Locale code such as `en_US` or `es_419`.
+ */
+locale: string }
 export type Fact = { id: number; text: string; source_transcript: string; created_at: number }
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }

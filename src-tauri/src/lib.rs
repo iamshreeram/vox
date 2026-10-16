@@ -1023,6 +1023,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::tts_composer::change_tts_composer_settings,
             commands::tts_composer::list_tts_composer_providers,
             commands::tts_composer::preview_speech_composer,
+            commands::tts_voices::list_tts_voices,
             commands::memory::memory_remember,
             commands::memory::memory_recall,
             commands::memory::memory_list_all,
