@@ -1007,6 +1007,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "Ayarlarda ara",
+      "label": "Ayarlarda ara",
+      "clear": "Aramayı temizle",
+      "noResults": "“{{query}}” için ayar bulunamadı",
+      "unlockHint": "Önce “{{setting}}” seçeneğini açın",
+      "showing": "“{{setting}}” gösteriliyor"
     }
   },
   "footer": {

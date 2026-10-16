@@ -1007,6 +1007,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "搜索设置",
+      "label": "搜索设置",
+      "clear": "清除搜索",
+      "noResults": "未找到与“{{query}}”相关的设置",
+      "unlockHint": "请先开启“{{setting}}”",
+      "showing": "正在显示“{{setting}}”"
     }
   },
   "footer": {

@@ -1007,6 +1007,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "Sök i inställningar",
+      "label": "Sök i inställningar",
+      "clear": "Rensa sökning",
+      "noResults": "Inga inställningar hittades för ”{{query}}”",
+      "unlockHint": "Aktivera ”{{setting}}” först",
+      "showing": "Visar ”{{setting}}”"
     }
   },
   "footer": {

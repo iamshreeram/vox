@@ -478,7 +478,11 @@ function App() {
           />
           {/* Scrollable content area */}
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div ref={settingsScrollRef} className="flex-1 overflow-y-auto">
+            <div
+              ref={settingsScrollRef}
+              data-settings-section={currentSection}
+              className="flex-1 overflow-y-auto"
+            >
               <div className="flex flex-col items-center p-4 gap-4">
                 <AccessibilityPermissions />
                 <SecureInputWarning />

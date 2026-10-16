@@ -1007,6 +1007,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "Cerca nelle impostazioni",
+      "label": "Cerca nelle impostazioni",
+      "clear": "Cancella ricerca",
+      "noResults": "Nessuna impostazione trovata per «{{query}}»",
+      "unlockHint": "Attiva prima «{{setting}}»",
+      "showing": "Mostra «{{setting}}»"
     }
   },
   "footer": {

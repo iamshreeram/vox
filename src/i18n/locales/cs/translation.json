@@ -1007,6 +1007,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "Hledat v nastavení",
+      "label": "Hledat v nastavení",
+      "clear": "Vymazat hledání",
+      "noResults": "Nebyla nalezena žádná nastavení pro „{{query}}“",
+      "unlockHint": "Nejprve zapněte „{{setting}}“",
+      "showing": "Zobrazuji „{{setting}}“"
     }
   },
   "footer": {

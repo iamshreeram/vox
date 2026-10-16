@@ -1007,6 +1007,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "Cari pengaturan",
+      "label": "Cari pengaturan",
+      "clear": "Hapus pencarian",
+      "noResults": "Tidak ada pengaturan yang ditemukan untuk “{{query}}”",
+      "unlockHint": "Aktifkan “{{setting}}” terlebih dahulu",
+      "showing": "Menampilkan “{{setting}}”"
     }
   },
   "footer": {

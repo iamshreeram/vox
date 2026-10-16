@@ -1007,6 +1007,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "Пошук у налаштуваннях",
+      "label": "Пошук у налаштуваннях",
+      "clear": "Очистити пошук",
+      "noResults": "Налаштувань для «{{query}}» не знайдено",
+      "unlockHint": "Спочатку увімкніть «{{setting}}»",
+      "showing": "Показано «{{setting}}»"
     }
   },
   "footer": {

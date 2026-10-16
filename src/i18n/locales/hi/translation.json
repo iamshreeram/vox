@@ -1007,6 +1007,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "सेटिंग खोजें",
+      "label": "सेटिंग खोजें",
+      "clear": "खोज साफ़ करें",
+      "noResults": "“{{query}}” के लिए कोई सेटिंग नहीं मिली",
+      "unlockHint": "पहले “{{setting}}” चालू करें",
+      "showing": "“{{setting}}” दिखाया जा रहा है"
     }
   },
   "footer": {

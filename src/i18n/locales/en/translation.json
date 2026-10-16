@@ -1007,6 +1007,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "Search settings",
+      "label": "Search settings",
+      "clear": "Clear search",
+      "noResults": "No settings found for “{{query}}”",
+      "unlockHint": "Turn on “{{setting}}” first",
+      "showing": "Showing “{{setting}}”"
     }
   },
   "footer": {

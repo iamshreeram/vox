@@ -1007,6 +1007,14 @@
           "copied": "Copied"
         }
       }
+    },
+    "search": {
+      "placeholder": "חיפוש בהגדרות",
+      "label": "חיפוש בהגדרות",
+      "clear": "נקה חיפוש",
+      "noResults": "לא נמצאו הגדרות עבור “{{query}}”",
+      "unlockHint": "יש להפעיל תחילה את “{{setting}}”",
+      "showing": "מוצג “{{setting}}”"
     }
   },
   "footer": {
