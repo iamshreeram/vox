@@ -1137,6 +1137,64 @@ async changeVaultPathSetting(path: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Turns the RAG switch on or off (DESIGN 3.6).
+ */
+async changeVaultRagSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_vault_rag_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stores the vault folder list from the settings form (DESIGN 3.6).
+ */
+async changeVaultRagFoldersSetting(folders: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_vault_rag_folders_setting", { folders }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Index counters and the tool-support state for the settings page (DESIGN 3.6).
+ */
+async vaultIndexStatus() : Promise<VaultIndexStatusDto> {
+    return await TAURI_INVOKE("vault_index_status");
+},
+/**
+ * Asks for a refresh of the applied vault (DESIGN 3.6).
+ */
+async vaultReindex() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("vault_reindex") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Runs a preview search over the applied vault (DESIGN 3.6).
+ */
+async vaultSearchPreview(query: string) : Promise<Result<VaultHitDto[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("vault_search_preview", { query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async vaultRagProbe() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("vault_rag_probe") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeAgentToolsSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_agent_tools_setting", { enabled }) };
@@ -1503,7 +1561,7 @@ tts_composer_mode?: TtsComposerMode; tts_composer_provider_id?: string; tts_comp
  */
 tts_composer_command_ack?: string; tts_composer_timeout_secs?: number; tts_composer_style?: string; tts_composer_send_user_utterance?: boolean; tts_composer_fallback?: TtsComposerFallback;
 converse_silence_ms?: number; converse_max_idle_turns?: number; converse_context_turns?: number;
-exp_rt_enabled?: boolean; exp_rt_direct_endpoint?: boolean; exp_rt_endpoint_url?: string; exp_rt_model?: string; exp_rt_token?: SecretString; exp_rt_stream_reply?: boolean; exp_rt_early_speech?: boolean; exp_rt_fast_voice?: boolean; exp_rt_ack?: boolean; exp_rt_prewarm?: boolean; exp_rt_auto_proxy?: boolean; exp_rt_proxy_enabled?: boolean; exp_rt_proxy_url?: string; exp_rt_timing_log?: boolean; conversation_records_enabled?: boolean; conversation_records_to_vault?: boolean; vault_path?: string; vault_context_enabled?: boolean; agent_tools_enabled?: boolean; agent_tools_guard_actions?: boolean; agent_project_roots?: string[]; agent_confirm_actions?: boolean; agent_jobs_enabled?: boolean; agent_jobs_timeout_minutes?: number; agent_jobs_agents?: string[]; agent_jobs_agent_flag?: string; agent_jobs_ask_enabled?: boolean;
+exp_rt_enabled?: boolean; exp_rt_direct_endpoint?: boolean; exp_rt_endpoint_url?: string; exp_rt_model?: string; exp_rt_token?: SecretString; exp_rt_stream_reply?: boolean; exp_rt_early_speech?: boolean; exp_rt_fast_voice?: boolean; exp_rt_ack?: boolean; exp_rt_prewarm?: boolean; exp_rt_auto_proxy?: boolean; exp_rt_proxy_enabled?: boolean; exp_rt_proxy_url?: string; exp_rt_timing_log?: boolean; conversation_records_enabled?: boolean; conversation_records_to_vault?: boolean; vault_path?: string; vault_context_enabled?: boolean; vault_rag_enabled?: boolean; vault_rag_folders?: string; agent_tools_enabled?: boolean; agent_tools_guard_actions?: boolean; agent_project_roots?: string[]; agent_confirm_actions?: boolean; agent_jobs_enabled?: boolean; agent_jobs_timeout_minutes?: number; agent_jobs_agents?: string[]; agent_jobs_agent_flag?: string; agent_jobs_ask_enabled?: boolean;
 }
 export type ExpRtBool = "enabled" | "direct_endpoint" | "stream_reply" | "early_speech" | "fast_voice" | "ack" | "prewarm" | "auto_proxy" | "proxy_enabled" | "timing_log"
 export type ExpRtText = "endpoint_url" | "model" | "token" | "proxy_url"
@@ -1773,6 +1831,15 @@ error: string
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
+export type VaultHitDto = { rel: string; heading: string; snippet: string; note_date: string | null }
+/**
+ * Status DTO for the settings UI (DESIGN Rev 5, 3.6). `tool_support` is a plain string here.
+ */
+export type VaultIndexStatusDto = { notes: number; chunks: number; skipped: number; last_refresh_ms: number | null; refreshing: boolean; last_error_kind: string | null; 
+/**
+ * untested | supported | unsupported | unknown, for the current route key.
+ */
+tool_support: string }
 /**
  * A wake-word detection emitted by an engine. Must be Serialize/Type so it
  * can be sent as a Tauri event payload (see `commands/wakeword.rs`'s

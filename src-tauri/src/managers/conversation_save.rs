@@ -388,13 +388,24 @@ pub async fn load_vault_block(vault_path: &str, timeout: Duration) -> Option<Str
 /// True when the conversation runs answer-only (DESIGN Rev 3, 3.6): vault context enabled and a
 /// non-blank vault path. Conservative: stays true even if the later read fails.
 pub fn answer_only_for(settings: &AppSettings) -> bool {
-    settings.vault_context_enabled && !settings.vault_path.trim().is_empty()
+    let has_path = !settings.vault_path.trim().is_empty();
+    // A RAG session is answer-only unconditionally (DESIGN Rev 5, 3.2), even with guard_actions off.
+    (settings.vault_context_enabled && has_path) || (settings.vault_rag_enabled && has_path)
 }
 
 /// True when vault context is actually in use: `answer_only_for` and the realtime master
 /// (`exp_rt_enabled`), combined the way `realtime_config` combines it.
 pub fn vault_context_active(settings: &AppSettings) -> bool {
     answer_only_for(settings) && RealtimeConfig::from_settings(settings).enabled
+}
+
+/// True when the vault RAG may be used for these settings (DESIGN Rev 5, 3.1): RAG enabled, a
+/// vault path set, realtime master on and an HTTP model route. Pure, no IO.
+pub(crate) fn rag_possible(settings: &AppSettings) -> bool {
+    settings.vault_rag_enabled
+        && !settings.vault_path.trim().is_empty()
+        && RealtimeConfig::from_settings(settings).enabled
+        && crate::managers::converse_platform::vault_text_allowed(settings)
 }
 
 /// Which backend the summary call uses (DESIGN Rev 3, 3.5 (4)). Mirrors the reply route.
