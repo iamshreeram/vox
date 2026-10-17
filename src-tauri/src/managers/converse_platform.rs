@@ -874,7 +874,7 @@ impl Platform for RealPlatform {
         // Settings are read once at session start (DESIGN Rev 3, 3.5 (1)-(5)).
         let save = SaveSettings::from_settings(&settings);
         let records_on = save.records_enabled;
-        let vault_on = vault_context_active(&settings) && settings.vault_context_enabled;
+        let vault_on = vault_context_active(&settings);
         let vault_route = is_http_model_route(&settings);
         // The RAG session is pinned here, from atomics only, and only when RAG may be used
         // (DESIGN 3.1, 3.2). Off or ineligible sessions carry no session at all.
@@ -1724,7 +1724,8 @@ pub(crate) async fn plan_turn_core(
     } else {
         plan
     };
-    if latched && plan.kind == PlanKind::Answer {
+    // Every plan kind's speech reaches the Mouth and history, so a latched session scrubs all of it.
+    if latched {
         plan.speech = redact(&plan.speech);
     }
     Ok(plan)

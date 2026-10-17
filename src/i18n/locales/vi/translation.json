@@ -947,6 +947,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "Tìm kiếm trong ghi chú kho",
+        "description": "Cho phép trợ lý giọng nói tìm các đoạn liên quan trong ghi chú kho của bạn và dùng chúng để trả lời. Mặc định là tắt.",
+        "enable": {
+          "label": "Tìm trong ghi chú kho của tôi",
+          "description": "Tạo chỉ mục từ khóa cục bộ cho các thư mục bên dưới. Khi bạn đặt câu hỏi, các đoạn khớp sẽ được gửi tới nhà cung cấp mô hình. Cần một thư mục kho và đường dẫn mô hình thời gian thực."
+        },
+        "needsVaultPath": "Hãy đặt thư mục kho trong Bộ nhớ hội thoại trước.",
+        "folders": {
+          "label": "Thư mục kho cần lập chỉ mục",
+          "description": "Tên thư mục trong kho, phân cách bằng dấu phẩy. Chỉ dùng tên đơn giản: không có dấu gạch chéo, không có \"..\" và không có dấu chấm ở đầu. Tối đa 16 thư mục.",
+          "placeholder": "Dự án, Nhật ký, Bộ nhớ"
+        },
+        "status": {
+          "off": "Tắt.",
+          "indexing": "Đang lập chỉ mục ghi chú...",
+          "ready": "Sẵn sàng.",
+          "unavailable": "Không khả dụng. Hãy thử lập chỉ mục lại hoặc kiểm tra thư mục kho.",
+          "busy": "Đang bận. Chỉ mục đang được dùng; hãy thử lại sau ít phút.",
+          "counts": "{{notes}} ghi chú, {{chunks}} đoạn có thể tìm, {{skipped}} bị bỏ qua"
+        },
+        "reindex": {
+          "button": "Lập chỉ mục lại ngay"
+        },
+        "probe": {
+          "button": "Kiểm tra hỗ trợ công cụ",
+          "results": {
+            "supported": "Hỗ trợ công cụ: hoạt động trên đường dẫn mô hình hiện tại.",
+            "unsupported": "Hỗ trợ công cụ: không khả dụng. Phiên kho chỉ dùng bằng chứng, không dùng công cụ.",
+            "unknown": "Hỗ trợ công cụ: kết quả kiểm tra không rõ ràng."
+          }
+        },
+        "preview": {
+          "label": "Xem trước tìm kiếm",
+          "placeholder": "Nhập một từ để tìm",
+          "empty": "Không có ghi chú khớp."
+        },
+        "disclosure": {
+          "folders": "Tìm kiếm trong ghi chú kho chỉ đọc các thư mục đã liệt kê và không gửi gì khi tắt. Công tắc ngữ cảnh kho riêng có cách hoạt động riêng.",
+          "sentToProvider": "Câu hỏi của bạn, các lượt hội thoại gần đây, đoạn ghi chú khớp, đối số công cụ và kết quả công cụ được gửi tới nhà cung cấp mô hình đã cấu hình.",
+          "bestEffortRedaction": "Việc ẩn thông tin bí mật trong ghi chú chỉ ở mức cố gắng hết sức. Một số có thể bị sót, vì vậy đừng chỉ dựa vào nó.",
+          "notesMayInstruct": "Ghi chú có thể chứa chỉ dẫn mà mô hình có thể lặp lại trong câu trả lời. Vì vậy phiên kho chỉ để trả lời: không thể dán văn bản hay mở bất cứ thứ gì.",
+          "spokenAloud": "Câu trả lời được đọc thành tiếng, nên những người xung quanh có thể nghe nội dung ghi chú.",
+          "toolsRequirement": "Công cụ kho chỉ đọc. Chúng chỉ chạy khi công cụ tác nhân được bật và đang dùng đường dẫn mô hình trực tiếp.",
+          "unsupportedFallback": "Nếu kiểm tra công cụ báo rằng công cụ không được hỗ trợ, phiên kho trên đường dẫn đó chuyển sang chỉ dùng bằng chứng, không dùng công cụ.",
+          "localCache": "Chỉ mục là một tệp bộ nhớ đệm cục bộ trong thư mục dữ liệu của ứng dụng. Bạn có thể xóa bất cứ lúc nào; việc xóa không làm thay đổi ghi chú của bạn."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

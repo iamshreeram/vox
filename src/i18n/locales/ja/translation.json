@@ -947,6 +947,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "ボールトのノート検索",
+        "description": "音声アシスタントがボールト内のノートから関連する箇所を見つけ、回答に使えるようにします。初期設定ではオフです。",
+        "enable": {
+          "label": "ボールトのノートを検索",
+          "description": "下のフォルダのローカルなキーワード索引を作成します。質問すると、一致した箇所がモデルプロバイダーに送信されます。ボールトのフォルダとリアルタイムモデルの経路が必要です。"
+        },
+        "needsVaultPath": "先に会話メモリでボールトのフォルダを設定してください。",
+        "folders": {
+          "label": "索引を作成するボールトのフォルダ",
+          "description": "ボールト内のフォルダ名をカンマで区切って入力します。使えるのは単純な名前だけです。スラッシュ、\"..\"、先頭のドットは使えません。最大16個です。",
+          "placeholder": "プロジェクト, 日次, メモリ"
+        },
+        "status": {
+          "off": "オフ。",
+          "indexing": "ノートを索引化しています...",
+          "ready": "準備完了。",
+          "unavailable": "利用できません。再索引を試すか、ボールトのフォルダを確認してください。",
+          "busy": "使用中です。索引が使われています。しばらくしてから再度お試しください。",
+          "counts": "ノート {{notes}} 件、検索可能な区間 {{chunks}} 件、スキップ {{skipped}} 件"
+        },
+        "reindex": {
+          "button": "今すぐ再索引"
+        },
+        "probe": {
+          "button": "ツール対応を確認",
+          "results": {
+            "supported": "ツール対応: 現在のモデル経路で動作します。",
+            "unsupported": "ツール対応: 利用できません。ボールトのセッションはツールなしで根拠のみを使います。",
+            "unknown": "ツール対応: 検査結果が不明確でした。"
+          }
+        },
+        "preview": {
+          "label": "検索プレビュー",
+          "placeholder": "検索する語を入力",
+          "empty": "一致するノートはありません。"
+        },
+        "disclosure": {
+          "folders": "ボールトのノート検索は、一覧にあるフォルダだけを読み取り、オフの間は何も送信しません。別のボールトコンテキストの切り替えは独自の動作をします。",
+          "sentToProvider": "質問、直近のやり取り、一致したノートの抜粋、ツールの引数とツールの結果は、設定されたモデルプロバイダーに送信されます。",
+          "bestEffortRedaction": "ノート内の秘密情報の非表示はベストエフォートです。一部を見逃す可能性があるので、これだけに頼らないでください。",
+          "notesMayInstruct": "ノートには指示文が含まれることがあり、モデルが回答でそれを繰り返す可能性があります。そのためボールトのセッションは回答のみです。テキストの貼り付けや何かを開くことはできません。",
+          "spokenAloud": "回答は音声で読み上げられるため、近くにいる人にノートの内容が聞こえることがあります。",
+          "toolsRequirement": "ボールトのツールは読み取り専用です。エージェントのツールが有効で、モデルへの直接経路を使う場合にのみ動作します。",
+          "unsupportedFallback": "ツールの検査で非対応と判定された場合、その経路のボールトのセッションはツールなしで根拠のみを使う方式に切り替わります。",
+          "localCache": "索引はアプリのデータフォルダにあるローカルのキャッシュファイルです。いつでも削除できます。削除してもノートは変更されません。"
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

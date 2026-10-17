@@ -947,6 +947,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "Ricerca nelle note del vault",
+        "description": "Consente all'assistente vocale di trovare passaggi pertinenti nelle note del tuo vault e usarli per rispondere. Disattivato per impostazione predefinita.",
+        "enable": {
+          "label": "Cerca nelle note del mio vault",
+          "description": "Crea un indice locale di parole chiave delle cartelle indicate sotto. Quando fai una domanda, i passaggi corrispondenti vengono inviati al tuo fornitore di modelli. Richiede una cartella del vault e il percorso del modello in tempo reale."
+        },
+        "needsVaultPath": "Imposta prima una cartella del vault in Memoria delle conversazioni.",
+        "folders": {
+          "label": "Cartelle del vault da indicizzare",
+          "description": "Nomi di cartelle nel vault, separati da virgole. Solo nomi semplici: niente barre, niente \"..\" e niente punto iniziale. Fino a 16 cartelle.",
+          "placeholder": "Progetti, Diario, Memoria"
+        },
+        "status": {
+          "off": "Disattivato.",
+          "indexing": "Indicizzazione delle note in corso...",
+          "ready": "Pronto.",
+          "unavailable": "Non disponibile. Prova a reindicizzare o controlla la cartella del vault.",
+          "busy": "Occupato. L'indice è in uso; riprova tra poco.",
+          "counts": "{{notes}} note, {{chunks}} sezioni ricercabili, {{skipped}} saltate"
+        },
+        "reindex": {
+          "button": "Reindicizza ora"
+        },
+        "probe": {
+          "button": "Verifica supporto degli strumenti",
+          "results": {
+            "supported": "Supporto degli strumenti: funziona sul percorso del modello attuale.",
+            "unsupported": "Supporto degli strumenti: non disponibile. Le sessioni del vault usano solo le prove, senza strumenti.",
+            "unknown": "Supporto degli strumenti: il risultato del test non è chiaro."
+          }
+        },
+        "preview": {
+          "label": "Anteprima della ricerca",
+          "placeholder": "Digita una parola da cercare",
+          "empty": "Nessuna nota corrispondente."
+        },
+        "disclosure": {
+          "folders": "La ricerca nelle note del vault legge solo le cartelle elencate e non invia nulla quando è disattivata. L'interruttore separato del contesto del vault ha un comportamento proprio.",
+          "sentToProvider": "La tua domanda, i turni recenti, i frammenti di note corrispondenti, gli argomenti degli strumenti e i loro risultati vengono inviati al fornitore di modelli configurato.",
+          "bestEffortRedaction": "La rimozione dei segreti dalle note avviene con il massimo impegno possibile. Alcuni possono sfuggire, quindi non affidartici da solo.",
+          "notesMayInstruct": "Le note possono contenere istruzioni che il modello potrebbe ripetere nella risposta. Per questo le sessioni del vault servono solo a rispondere: non possono incollare testo né aprire nulla.",
+          "spokenAloud": "Le risposte vengono lette ad alta voce, quindi le persone vicine possono sentire il contenuto delle note.",
+          "toolsRequirement": "Gli strumenti del vault sono di sola lettura. Funzionano solo quando gli strumenti dell'agente sono attivi e si usa il percorso diretto verso il modello.",
+          "unsupportedFallback": "Se il test degli strumenti segnala che non sono supportati, le sessioni del vault su quel percorso passano alle sole prove, senza strumenti.",
+          "localCache": "L'indice è un file di cache locale nella cartella dati dell'app. Puoi eliminarlo in qualsiasi momento; eliminarlo non modifica le tue note."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

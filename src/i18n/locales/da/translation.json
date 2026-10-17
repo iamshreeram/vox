@@ -947,6 +947,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "Søgning i notesamlingen",
+        "description": "Lader stemmeassistenten finde relevante passager i din notesamling og bruge dem i svar. Slået fra som standard.",
+        "enable": {
+          "label": "Søg i noter i notesamlingen",
+          "description": "Opretter et lokalt nøgleordsindeks over mapperne nedenfor. Når du stiller et spørgsmål, sendes matchende passager til din modeludbyder. Kræver en mappe til notesamlingen og realtidsmodelruten."
+        },
+        "needsVaultPath": "Angiv først en mappe til notesamlingen under Samtalehukommelse.",
+        "folders": {
+          "label": "Mapper i notesamlingen, der skal indekseres",
+          "description": "Mappenavne i notesamlingen adskilt af kommaer. Kun enkle navne: ingen skråstreger, ingen \"..\" og intet punktum forrest. Op til 16 mapper.",
+          "placeholder": "Projekter, Dagbog, Hukommelse"
+        },
+        "status": {
+          "off": "Slået fra.",
+          "indexing": "Indekserer dine noter...",
+          "ready": "Klar.",
+          "unavailable": "Ikke tilgængelig. Prøv at genindeksere, eller tjek mappen til notesamlingen.",
+          "busy": "Optaget. Indekset bruges; prøv igen om lidt.",
+          "counts": "{{notes}} noter, {{chunks}} søgbare afsnit, {{skipped}} sprunget over"
+        },
+        "reindex": {
+          "button": "Genindekser nu"
+        },
+        "probe": {
+          "button": "Test værktøjsunderstøttelse",
+          "results": {
+            "supported": "Værktøjsunderstøttelse: virker på den aktuelle modelrute.",
+            "unsupported": "Værktøjsunderstøttelse: ikke tilgængelig. Notesessioner bruger kun belæg uden værktøjer.",
+            "unknown": "Værktøjsunderstøttelse: testresultatet var ikke tydeligt."
+          }
+        },
+        "preview": {
+          "label": "Forhåndsvisning af søgning",
+          "placeholder": "Skriv et ord at søge efter",
+          "empty": "Ingen matchende noter."
+        },
+        "disclosure": {
+          "folders": "Søgning i notesamlingen læser kun de listede mapper og sender intet, mens den er slået fra. Den separate kontakt for notesamlingens kontekst har sin egen adfærd.",
+          "sentToProvider": "Dit spørgsmål, de seneste replikker, matchende uddrag fra noter, værktøjsargumenter og værktøjsresultater sendes til den konfigurerede modeludbyder.",
+          "bestEffortRedaction": "Skjulning af hemmeligheder i noter sker efter bedste evne. Nogle kan blive overset, så stol ikke alene på den.",
+          "notesMayInstruct": "Noter kan indeholde instruktioner, og modellen kan gentage dem i sit svar. Derfor er notesessioner kun til svar: de kan ikke indsætte tekst eller åbne ting.",
+          "spokenAloud": "Svar læses op højt, så folk i nærheden kan høre indholdet af noterne.",
+          "toolsRequirement": "Værktøjer til notesamlingen er skrivebeskyttede. De kører kun, når agentværktøjer er slået til, og den direkte modelrute bruges.",
+          "unsupportedFallback": "Hvis værktøjstesten viser, at værktøjer ikke understøttes, skifter notesessioner på den rute til kun belæg uden værktøjer.",
+          "localCache": "Indekset er en lokal cachefil i appens datamappe. Du kan slette den når som helst; sletning ændrer ikke dine noter."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

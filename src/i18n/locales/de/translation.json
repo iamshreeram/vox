@@ -947,6 +947,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "Suche im Notiz-Tresor",
+        "description": "Ermöglicht dem Sprachassistenten, relevante Stellen in deinem Notiz-Tresor zu finden und für Antworten zu nutzen. Standardmäßig aus.",
+        "enable": {
+          "label": "Notiz-Tresor durchsuchen",
+          "description": "Erstellt einen lokalen Stichwortindex der unten genannten Ordner. Bei einer Frage werden passende Stellen an deinen Modellanbieter gesendet. Benötigt einen Tresor-Ordner und die Echtzeit-Modellroute."
+        },
+        "needsVaultPath": "Lege zuerst einen Tresor-Ordner unter Gesprächsspeicher fest.",
+        "folders": {
+          "label": "Zu indexierende Tresor-Ordner",
+          "description": "Ordnernamen im Tresor, durch Kommas getrennt. Nur einfache Namen: keine Schrägstriche, kein \"..\" und kein Punkt am Anfang. Bis zu 16 Ordner.",
+          "placeholder": "Projekte, Tagebuch, Speicher"
+        },
+        "status": {
+          "off": "Aus.",
+          "indexing": "Notizen werden indexiert...",
+          "ready": "Bereit.",
+          "unavailable": "Nicht verfügbar. Versuche eine erneute Indexierung oder prüfe den Tresor-Ordner.",
+          "busy": "Beschäftigt. Der Index wird gerade verwendet; versuche es gleich erneut.",
+          "counts": "{{notes}} Notizen, {{chunks}} durchsuchbare Abschnitte, {{skipped}} übersprungen"
+        },
+        "reindex": {
+          "button": "Jetzt neu indexieren"
+        },
+        "probe": {
+          "button": "Werkzeugunterstützung testen",
+          "results": {
+            "supported": "Werkzeugunterstützung: funktioniert mit der aktuellen Modellroute.",
+            "unsupported": "Werkzeugunterstützung: nicht verfügbar. Tresor-Sitzungen nutzen nur Belege ohne Werkzeuge.",
+            "unknown": "Werkzeugunterstützung: das Testergebnis war nicht eindeutig."
+          }
+        },
+        "preview": {
+          "label": "Suchvorschau",
+          "placeholder": "Wort zum Suchen eingeben",
+          "empty": "Keine passenden Notizen."
+        },
+        "disclosure": {
+          "folders": "Die Suche im Notiz-Tresor liest nur die aufgeführten Ordner und sendet nichts, solange sie aus ist. Der separate Schalter für Tresor-Kontext hat ein eigenes Verhalten.",
+          "sentToProvider": "Deine Frage, die letzten Gesprächsbeiträge, passende Notizausschnitte, Werkzeugargumente und Werkzeugergebnisse werden an den konfigurierten Modellanbieter gesendet.",
+          "bestEffortRedaction": "Das Ausblenden von Geheimnissen in Notizen erfolgt nach bestem Bemühen. Es kann einige übersehen, verlass dich also nicht allein darauf.",
+          "notesMayInstruct": "Notizen können Anweisungen enthalten, die das Modell in seiner Antwort wiederholen könnte. Tresor-Sitzungen dienen daher nur der Antwort: Sie können keinen Text einfügen und nichts öffnen.",
+          "spokenAloud": "Antworten werden laut vorgelesen, daher können Personen in der Nähe Notizinhalte hören.",
+          "toolsRequirement": "Tresor-Werkzeuge sind nur lesend. Sie laufen nur, wenn Agenten-Werkzeuge aktiviert sind und die direkte Modellroute genutzt wird.",
+          "unsupportedFallback": "Meldet der Werkzeugtest, dass Werkzeuge nicht unterstützt werden, wechseln Tresor-Sitzungen auf dieser Route auf reine Belege ohne Werkzeuge.",
+          "localCache": "Der Index ist eine lokale Cache-Datei im Datenordner der App. Du kannst sie jederzeit löschen; deine Notizen bleiben dabei unverändert."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

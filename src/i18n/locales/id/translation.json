@@ -947,6 +947,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "Pencarian di catatan brankas",
+        "description": "Memungkinkan asisten suara menemukan bagian catatan yang relevan di brankas Anda dan menggunakannya untuk menjawab. Mati secara default.",
+        "enable": {
+          "label": "Cari di catatan brankas saya",
+          "description": "Membuat indeks kata kunci lokal untuk folder di bawah. Saat Anda mengajukan pertanyaan, bagian yang cocok dikirim ke penyedia model Anda. Memerlukan folder brankas dan rute model waktu nyata."
+        },
+        "needsVaultPath": "Atur dulu folder brankas di Memori percakapan.",
+        "folders": {
+          "label": "Folder brankas yang diindeks",
+          "description": "Nama folder di dalam brankas, dipisahkan koma. Hanya nama sederhana: tanpa garis miring, tanpa \"..\", dan tanpa titik di awal. Maksimal 16 folder.",
+          "placeholder": "Proyek, Harian, Memori"
+        },
+        "status": {
+          "off": "Mati.",
+          "indexing": "Sedang mengindeks catatan Anda...",
+          "ready": "Siap.",
+          "unavailable": "Tidak tersedia. Coba indeks ulang atau periksa folder brankas.",
+          "busy": "Sibuk. Indeks sedang dipakai; coba lagi sebentar lagi.",
+          "counts": "{{notes}} catatan, {{chunks}} bagian yang bisa dicari, {{skipped}} dilewati"
+        },
+        "reindex": {
+          "button": "Indeks ulang sekarang"
+        },
+        "probe": {
+          "button": "Uji dukungan alat",
+          "results": {
+            "supported": "Dukungan alat: berfungsi pada rute model saat ini.",
+            "unsupported": "Dukungan alat: tidak tersedia. Sesi brankas hanya memakai bukti, tanpa alat.",
+            "unknown": "Dukungan alat: hasil uji tidak jelas."
+          }
+        },
+        "preview": {
+          "label": "Pratinjau pencarian",
+          "placeholder": "Ketik kata untuk dicari",
+          "empty": "Tidak ada catatan yang cocok."
+        },
+        "disclosure": {
+          "folders": "Pencarian catatan brankas hanya membaca folder yang tercantum dan tidak mengirim apa pun saat mati. Sakelar konteks brankas yang terpisah memiliki perilakunya sendiri.",
+          "sentToProvider": "Pertanyaan Anda, giliran bicara terbaru, cuplikan catatan yang cocok, argumen alat, dan hasil alat dikirim ke penyedia model yang dikonfigurasi.",
+          "bestEffortRedaction": "Penyembunyian rahasia di catatan dilakukan sebisanya. Sebagian bisa terlewat, jadi jangan hanya mengandalkannya.",
+          "notesMayInstruct": "Catatan dapat berisi instruksi yang mungkin diulang model dalam jawabannya. Karena itu sesi brankas hanya untuk menjawab: tidak bisa menempelkan teks atau membuka apa pun.",
+          "spokenAloud": "Jawaban diucapkan dengan keras, jadi orang di sekitar dapat mendengar isi catatan.",
+          "toolsRequirement": "Alat brankas hanya baca. Alat hanya berjalan jika alat agen aktif dan rute model langsung digunakan.",
+          "unsupportedFallback": "Jika uji alat menyatakan alat tidak didukung, sesi brankas pada rute itu beralih ke bukti saja, tanpa alat.",
+          "localCache": "Indeks adalah file cache lokal di folder data aplikasi. Anda bisa menghapusnya kapan saja; menghapusnya tidak mengubah catatan Anda."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

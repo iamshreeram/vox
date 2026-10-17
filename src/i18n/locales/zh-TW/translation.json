@@ -947,6 +947,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "搜尋筆記庫中的筆記",
+        "description": "讓語音助理在你的筆記庫中找出相關段落並用於回答。預設為關閉。",
+        "enable": {
+          "label": "搜尋我的筆記庫",
+          "description": "為下方資料夾建立本機關鍵字索引。提問時，符合的段落會傳送給你的模型提供者。需要設定筆記庫資料夾，並使用即時模型路線。"
+        },
+        "needsVaultPath": "請先在對話記憶中設定筆記庫資料夾。",
+        "folders": {
+          "label": "要建立索引的筆記庫資料夾",
+          "description": "筆記庫內的資料夾名稱，以逗號分隔。僅限簡單名稱：不能包含斜線、\"..\" 或以點開頭。最多 16 個資料夾。",
+          "placeholder": "專案, 日記, 記憶"
+        },
+        "status": {
+          "off": "已關閉。",
+          "indexing": "正在為筆記建立索引...",
+          "ready": "就緒。",
+          "unavailable": "無法使用。請嘗試重新索引，或檢查筆記庫資料夾。",
+          "busy": "忙碌中。索引正在使用，請稍後再試。",
+          "counts": "{{notes}} 則筆記，{{chunks}} 個可搜尋片段，{{skipped}} 個已略過"
+        },
+        "reindex": {
+          "button": "立即重新索引"
+        },
+        "probe": {
+          "button": "測試工具支援",
+          "results": {
+            "supported": "工具支援：目前的模型路線可用。",
+            "unsupported": "工具支援：無法使用。筆記庫工作階段只使用依據，不使用工具。",
+            "unknown": "工具支援：測試結果不明確。"
+          }
+        },
+        "preview": {
+          "label": "搜尋預覽",
+          "placeholder": "輸入要搜尋的字詞",
+          "empty": "沒有符合的筆記。"
+        },
+        "disclosure": {
+          "folders": "筆記庫搜尋只讀取列出的資料夾，關閉時不傳送任何內容。獨立的筆記庫上下文開關有其自己的行為。",
+          "sentToProvider": "你的問題、最近幾輪對話、符合的筆記片段、工具參數和工具結果都會傳送給已設定的模型提供者。",
+          "bestEffortRedaction": "隱藏筆記中的敏感資訊只是盡力而為。可能會漏掉一些，請不要只依賴它。",
+          "notesMayInstruct": "筆記中可能包含指令，模型可能會在回答中重複這些內容。因此筆記庫工作階段只用於回答：不能貼上文字，也不能開啟任何東西。",
+          "spokenAloud": "回答會被朗讀出聲，因此附近的人可能聽到筆記內容。",
+          "toolsRequirement": "筆記庫工具為唯讀。只有在開啟代理工具並使用直連模型路線時才會執行。",
+          "unsupportedFallback": "如果工具測試顯示不支援工具，該路線上的筆記庫工作階段會切換為只使用依據、不使用工具。",
+          "localCache": "索引是應用程式資料資料夾中的本機快取檔案。你可以隨時刪除；刪除不會改變你的筆記。"
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",
