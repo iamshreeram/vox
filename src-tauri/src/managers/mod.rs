@@ -76,6 +76,11 @@ pub mod vault_io;
 mod vault_io_tests;
 #[cfg(test)]
 mod vault_query_tests;
+pub mod vault_rag;
+#[cfg(test)]
+mod vault_rag_tests;
+#[cfg(test)]
+mod vault_rag_tools_tests;
 #[cfg(test)]
 mod vault_tests;
 #[cfg(test)]
