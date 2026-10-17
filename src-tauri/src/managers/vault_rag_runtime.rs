@@ -108,8 +108,7 @@ pub struct ConfigRequest {
 }
 
 /// One RAG session, pinned at start (DESIGN Rev 5, 3.2). Built from atomics only.
-// Consumed by the converse wiring (S8); allowed until then.
-#[allow(dead_code)]
+#[derive(Clone)]
 pub struct RagSession {
     /// True when the feature was on at session start (DESIGN 3.2 latch).
     pub latched: bool,
@@ -119,6 +118,8 @@ pub struct RagSession {
     pub generation: u64,
     /// Index used for retrieval and tools.
     pub index: Arc<dyn IndexBackend>,
+    /// Concrete index for retrieval and tools; `None` means every read is Unavailable.
+    pub manager: Option<Arc<IndexManager>>,
     /// Shared admission gate.
     pub gate: BlockingGate,
     runtime: Arc<VaultRagRuntime>,
@@ -127,8 +128,6 @@ pub struct RagSession {
     ready_at_start: bool,
 }
 
-// Consumed by the converse wiring (S8); allowed until then.
-#[allow(dead_code)]
 impl RagSession {
     /// True while the pinned session may still read the index (DESIGN Rev 5, 3.2).
     /// `settings` are the fresh settings read by the caller.
@@ -139,12 +138,23 @@ impl RagSession {
             && self.runtime.is_ready()
             && self.index.generation() == self.generation
     }
+
+    /// Probe state for `key` as stored by the runtime (DESIGN 3.1, 3.6).
+    pub(crate) fn probe_state(
+        &self,
+        key: &crate::managers::converse_platform::RouteKey,
+    ) -> crate::managers::converse_platform::ToolSupport {
+        self.runtime.probe_state_for(key)
+    }
 }
 
 /// Owns the index backend, the revision protocol and the single coordinator thread (DESIGN Rev 5,
 /// 3.2 and 3.6). Nothing here logs note text, queries, paths or route keys.
 pub struct VaultRagRuntime {
     backend: Arc<dyn IndexBackend>,
+    /// The concrete index for per-turn retrieval and tools (DESIGN Rev 5, 3.4-3.5). `None` makes
+    /// every retrieval Unavailable (fail safe).
+    manager: Option<Arc<IndexManager>>,
     gate: BlockingGate,
     /// Bumped synchronously by every accepted settings change (DESIGN 3.2).
     revision: AtomicU64,
@@ -162,13 +172,41 @@ pub struct VaultRagRuntime {
     live: AtomicBool,
     /// Snapshot of the applied configuration, used by refresh-only reindex requests.
     applied_settings: Mutex<Option<AppSettings>>,
+    /// Last probe result with the route key it was taken for (read via `probe_state_for`).
+    probe: Mutex<
+        Option<(
+            crate::managers::converse_platform::RouteKey,
+            crate::managers::converse_platform::ToolSupport,
+        )>,
+    >,
 }
 
 impl VaultRagRuntime {
     /// Creates the runtime and spawns its single coordinator thread (DESIGN 3.6).
+    /// Production uses `with_manager`; this constructor serves the tests without a concrete index.
+    #[allow(dead_code)] // called by tests only
     pub fn new(backend: Arc<dyn IndexBackend>, gate: BlockingGate) -> Arc<Self> {
+        Self::build(backend, None, gate)
+    }
+
+    /// Creates the runtime with the concrete index used for retrieval and tools (DESIGN Rev 5,
+    /// 3.4-3.5). `backend` and `manager` must be the same index.
+    pub fn with_manager(
+        backend: Arc<dyn IndexBackend>,
+        manager: Arc<IndexManager>,
+        gate: BlockingGate,
+    ) -> Arc<Self> {
+        Self::build(backend, Some(manager), gate)
+    }
+
+    fn build(
+        backend: Arc<dyn IndexBackend>,
+        manager: Option<Arc<IndexManager>>,
+        gate: BlockingGate,
+    ) -> Arc<Self> {
         let runtime = Arc::new(VaultRagRuntime {
             backend,
+            manager,
             gate,
             revision: AtomicU64::new(0),
             applied: AtomicU64::new(0),
@@ -178,6 +216,7 @@ impl VaultRagRuntime {
             threads: AtomicUsize::new(0),
             live: AtomicBool::new(false),
             applied_settings: Mutex::new(None),
+            probe: Mutex::new(None),
         });
         let worker = Arc::clone(&runtime);
         let spawned = thread::Builder::new()
@@ -224,7 +263,7 @@ impl VaultRagRuntime {
     }
 
     /// The revision whose configuration is serving the index (0 = none).
-    #[allow(dead_code)] // read by tests and the S8 status wiring
+    #[allow(dead_code)] // read by tests only
     pub fn applied_revision(&self) -> u64 {
         self.applied.load(std::sync::atomic::Ordering::SeqCst)
     }
@@ -302,8 +341,6 @@ impl VaultRagRuntime {
     }
 
     /// Builds a session pinned to the current revision and generation (DESIGN 3.2). Atomics only.
-    // Consumed by the converse wiring (S8); allowed until then.
-    #[allow(dead_code)]
     pub fn session(self: &Arc<Self>, settings: &AppSettings) -> RagSession {
         let ready_at_start = self.is_ready();
         let revision = self.revision();
@@ -312,6 +349,7 @@ impl VaultRagRuntime {
             revision,
             generation: self.backend.generation(),
             index: Arc::clone(&self.backend),
+            manager: self.manager.clone(),
             gate: self.gate.clone(),
             runtime: Arc::clone(self),
             ready_at_start,
@@ -332,6 +370,28 @@ impl VaultRagRuntime {
             settings: settings.clone(),
             reindex,
         });
+    }
+
+    /// Probe state for `key`: the stored classification when the stored route key equals `key`,
+    /// otherwise Untested (DESIGN 3.1).
+    pub(crate) fn probe_state_for(
+        &self,
+        key: &crate::managers::converse_platform::RouteKey,
+    ) -> crate::managers::converse_platform::ToolSupport {
+        use crate::managers::converse_platform::ToolSupport;
+        match lock(&self.probe).as_ref() {
+            Some((stored, support)) if stored == key => *support,
+            _ => ToolSupport::Untested,
+        }
+    }
+
+    /// Stores a probe result together with the route key it was taken for (DESIGN 3.6).
+    pub(crate) fn record_probe(
+        &self,
+        key: crate::managers::converse_platform::RouteKey,
+        support: crate::managers::converse_platform::ToolSupport,
+    ) {
+        *lock(&self.probe) = Some((key, support));
     }
 
     /// Number of coordinator threads started by this runtime (test accessor; fixed at one).
@@ -494,9 +554,12 @@ fn note_date(ms: i64) -> Option<String> {
 pub fn start_for_app(app: &AppHandle) -> Option<Arc<VaultRagRuntime>> {
     let data_dir = app.path().app_data_dir().ok()?;
     std::fs::create_dir_all(&data_dir).ok()?;
-    let index = IndexManager::new(data_dir, Arc::new(VaultIoWorker::start()));
-    let backend: Arc<dyn IndexBackend> = Arc::new(index);
-    let runtime = VaultRagRuntime::new(backend, BlockingGate::new(2));
+    let index = Arc::new(IndexManager::new(
+        data_dir,
+        Arc::new(VaultIoWorker::start()),
+    ));
+    let backend: Arc<dyn IndexBackend> = index.clone();
+    let runtime = VaultRagRuntime::with_manager(backend, index, BlockingGate::new(2));
     if runtime.threads.load(Ordering::SeqCst) == 0 {
         return None;
     }

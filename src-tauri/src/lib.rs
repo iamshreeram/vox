@@ -913,6 +913,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::vault_rag::vault_index_status,
             commands::vault_rag::vault_reindex,
             commands::vault_rag::vault_search_preview,
+            commands::vault_rag::vault_rag_probe,
             commands::conversation_records::list_conversation_records,
             commands::agent_tools::change_agent_tools_setting,
             commands::agent_tools::change_agent_tools_guard_actions_setting,

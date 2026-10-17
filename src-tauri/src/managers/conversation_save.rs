@@ -401,8 +401,6 @@ pub fn vault_context_active(settings: &AppSettings) -> bool {
 
 /// True when the vault RAG may be used for these settings (DESIGN Rev 5, 3.1): RAG enabled, a
 /// vault path set, realtime master on and an HTTP model route. Pure, no IO.
-// Consumed by RagSession (S8); allowed until then.
-#[allow(dead_code)]
 pub(crate) fn rag_possible(settings: &AppSettings) -> bool {
     settings.vault_rag_enabled
         && !settings.vault_path.trim().is_empty()

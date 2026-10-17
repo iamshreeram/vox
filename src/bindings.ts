@@ -1187,6 +1187,14 @@ async vaultSearchPreview(query: string) : Promise<Result<VaultHitDto[], string>>
     else return { status: "error", error: e  as any };
 }
 },
+async vaultRagProbe() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("vault_rag_probe") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeAgentToolsSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_agent_tools_setting", { enabled }) };

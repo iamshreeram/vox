@@ -1,6 +1,6 @@
 //! T2 settings and eligibility tests for the vault RAG (DESIGN Rev 5, 3.1 and 3.2). Step S5:
-//! written first, red until S6. Plain-data tests (defaults, legacy JSON, round trip) are green
-//! because the fields are real. Everything else fails on `todo!()`.
+//! written first (red at S5, green from S6). Plain-data tests (defaults, legacy JSON, round trip)
+//! and the eligibility table exercise the real fields and rules.
 
 use crate::managers::composer_config::{composer_provider_supported, TtsComposerMode};
 use crate::managers::conversation_save::{answer_only_for, rag_possible};

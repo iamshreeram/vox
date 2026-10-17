@@ -32,6 +32,10 @@ pub mod converse_plan;
 mod converse_plan_vault_tests;
 pub mod converse_platform;
 pub mod converse_queue;
+#[cfg(test)]
+mod converse_rag_probe_tests;
+#[cfg(test)]
+mod converse_rag_tests;
 pub mod converse_runtime;
 pub mod converse_stream;
 pub mod emotion;

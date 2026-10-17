@@ -1,6 +1,6 @@
 //! T2 command tests (DESIGN Rev 5, 3.6): the pure inner functions behind the vault RAG commands,
-//! and the generated TypeScript contract. Step S5: written first, red until S6 (inner fns are
-//! `todo!()`, and bindings.ts is regenerated only in S6).
+//! and the generated TypeScript contract. Step S5: written first; the inner functions and the
+//! bindings are implemented from S6 on.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};

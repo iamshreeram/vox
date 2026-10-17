@@ -3,9 +3,6 @@
 //! evidence block, the blocking admission gate, the four read-only vault tools and the composed
 //! tool executor. Nothing here logs note text, queries or paths.
 
-// Nothing calls this module until the C2 runtime and C3 wiring land; the allowance is removed then.
-#![allow(dead_code)]
-
 use std::sync::Arc;
 use std::time::Duration;
 

@@ -1,8 +1,9 @@
 //! Tauri commands for the vault RAG settings, status, reindex and preview (DESIGN Rev 5, 3.6).
 //! Each command body delegates to a pure `*_inner` fn that takes explicit arguments so the logic
 //! is testable without a Tauri app. The status and preview reads go through the runtime's gate,
-//! so they run on a plain thread and never block the UI or an async task. The probe command is
-//! not part of this step. Nothing here logs note text, queries, paths or route keys.
+//! so they run on a plain thread and never block the UI or an async task. The probe command
+//! runs one bounded model turn and records the result with its route key. Nothing here logs note
+//! text, queries, paths or route keys.
 
 use std::sync::Arc;
 use std::thread;
@@ -161,9 +162,29 @@ pub fn change_vault_rag_folders_setting(app: AppHandle, folders: String) -> Resu
 #[specta::specta]
 pub async fn vault_index_status(app: AppHandle) -> VaultIndexStatusDto {
     let runtime = runtime_of(&app);
-    run_detached(move || status_inner(runtime.as_deref()))
+    let settings = get_settings(&app);
+    run_detached(move || status_with_support(runtime.as_deref(), &settings))
         .await
         .unwrap_or_else(unavailable_status)
+}
+
+/// The status DTO with `tool_support` for the CURRENT route key (DESIGN 3.6). "untested" when no
+/// tool route is active.
+fn status_with_support(
+    runtime: Option<&VaultRagRuntime>,
+    settings: &AppSettings,
+) -> VaultIndexStatusDto {
+    let mut dto = status_inner(runtime);
+    if let Some(runtime) = runtime {
+        dto.tool_support = match tool_route(settings) {
+            Some(prepared) => runtime
+                .probe_state_for(&route_key_of(&prepared))
+                .as_str()
+                .to_string(),
+            None => "untested".to_string(),
+        };
+    }
+    dto
 }
 
 /// Asks for a refresh of the applied vault (DESIGN 3.6).
@@ -186,4 +207,93 @@ pub async fn vault_search_preview(
     run_detached(move || preview_inner(&settings, runtime.as_deref(), &query))
         .await
         .unwrap_or_else(|| Err(MSG_UNAVAILABLE.to_string()))
+}
+
+// ---------------------------------------------------------------------
+// Tool probe command (DESIGN 3.6).
+// ---------------------------------------------------------------------
+
+use crate::managers::converse::BoxFuture;
+use crate::managers::converse_platform::{
+    resolve_tool_proxy, route_key_of, run_probe_with_proxy, tool_route,
+};
+use crate::managers::llm_stream::ProxyMode;
+use crate::managers::llm_tools::{ToolRisk, ToolSpec};
+use crate::managers::realtime_complete::Prepared;
+use crate::managers::tool_loop::{ToolExecutor, ToolOutput};
+use serde_json::json;
+use std::time::Duration;
+
+/// Turn budget of the tool probe (DESIGN 3.6).
+const PROBE_DEADLINE: Duration = Duration::from_secs(15);
+
+/// The probe echo tool: returns the trusted word "ping" (DESIGN 3.6).
+struct ProbeEcho;
+
+impl ToolExecutor for ProbeEcho {
+    fn specs(&self) -> Vec<ToolSpec> {
+        vec![ToolSpec {
+            name: "vox_probe_echo".to_string(),
+            description: "Echoes the probe word back.".to_string(),
+            input_schema: json!({"type": "object",
+                "properties": {"word": {"type": "string"}}, "required": ["word"]}),
+            risk: ToolRisk::ReadOnly,
+        }]
+    }
+
+    fn call<'a>(
+        &'a self,
+        _name: &'a str,
+        _input: &'a serde_json::Value,
+    ) -> BoxFuture<'a, ToolOutput> {
+        Box::pin(async {
+            ToolOutput {
+                text: "ping".to_string(),
+                is_error: false,
+                untrusted: false,
+            }
+        })
+    }
+}
+
+/// Probe logic with explicit inputs (DESIGN 3.6). `route` is `tool_route(settings)`; `exec` is the
+/// probe echo executor. Records the result with its route key in `runtime` (when managed) and
+/// returns the classification label, or the Err text for a refused probe.
+#[cfg(test)]
+pub(crate) async fn probe_inner(
+    runtime: Option<&VaultRagRuntime>,
+    route: Option<Prepared>,
+    deadline: Duration,
+    exec: Arc<dyn ToolExecutor>,
+) -> Result<String, String> {
+    probe_inner_with_proxy(runtime, route, deadline, exec, ProxyMode::SystemDefault).await
+}
+
+/// `probe_inner` with the proxy a real turn would use (DESIGN 3.6).
+async fn probe_inner_with_proxy(
+    runtime: Option<&VaultRagRuntime>,
+    route: Option<Prepared>,
+    deadline: Duration,
+    exec: Arc<dyn ToolExecutor>,
+    proxy: ProxyMode,
+) -> Result<String, String> {
+    let key = route.as_ref().map(route_key_of);
+    let support = run_probe_with_proxy(route, deadline, exec, proxy).await?;
+    if let (Some(runtime), Some(key)) = (runtime, key) {
+        runtime.record_probe(key, support);
+    }
+    Ok(support.as_str().to_string())
+}
+
+// Tests whether the current route supports tool calls (DESIGN 3.6). Plain comment: specta emits
+// no doc block for it, which keeps the bindings splice to the wrapper itself.
+#[tauri::command]
+#[specta::specta]
+pub async fn vault_rag_probe(app: AppHandle) -> Result<String, String> {
+    let settings = get_settings(&app);
+    let runtime = runtime_of(&app);
+    let route = tool_route(&settings);
+    let proxy = resolve_tool_proxy(&settings).await;
+    let exec: Arc<dyn ToolExecutor> = Arc::new(ProbeEcho);
+    probe_inner_with_proxy(runtime.as_deref(), route, PROBE_DEADLINE, exec, proxy).await
 }
