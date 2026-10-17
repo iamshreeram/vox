@@ -67,12 +67,15 @@ impl ToolExecutor for Echo {
     }
 }
 
-/// A probe echo executor plus its counters.
-fn echo() -> (
+/// The probe echo executor with its call and "ping" counters, and the recorded words.
+type ProbeEchoParts = (
     Arc<dyn ToolExecutor>,
     Arc<AtomicUsize>,
     Arc<Mutex<Vec<String>>>,
-) {
+);
+
+/// A probe echo executor plus its counters.
+fn echo() -> ProbeEchoParts {
     let calls = Arc::new(AtomicUsize::new(0));
     let words = Arc::new(Mutex::new(Vec::new()));
     let exec: Arc<dyn ToolExecutor> = Arc::new(Echo {

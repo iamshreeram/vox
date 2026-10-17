@@ -985,7 +985,7 @@
           "empty": "Nenhuma nota correspondente."
         },
         "disclosure": {
-          "folders": "Somente as pastas listadas acima são indexadas. As outras pastas do cofre nunca são lidas.",
+          "folders": "A pesquisa nas notas do cofre lê somente as pastas listadas e não envia nada enquanto estiver desativada. A chave separada de contexto do cofre tem comportamento próprio.",
           "sentToProvider": "Sua pergunta, as últimas trocas, os trechos de notas correspondentes, os argumentos das ferramentas e os resultados das ferramentas são enviados ao provedor de modelo configurado.",
           "bestEffortRedaction": "A ocultação de segredos nas notas é feita da melhor forma possível. Alguns podem passar despercebidos, então não confie só nela.",
           "notesMayInstruct": "As notas podem conter instruções que o modelo repita na resposta. Por isso as sessões do cofre servem apenas para responder: não podem colar texto nem abrir nada.",

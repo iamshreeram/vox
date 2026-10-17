@@ -985,7 +985,7 @@
           "empty": "Tidak ada catatan yang cocok."
         },
         "disclosure": {
-          "folders": "Hanya folder yang tercantum di atas yang diindeks. Folder brankas lain tidak pernah dibaca.",
+          "folders": "Pencarian catatan brankas hanya membaca folder yang tercantum dan tidak mengirim apa pun saat mati. Sakelar konteks brankas yang terpisah memiliki perilakunya sendiri.",
           "sentToProvider": "Pertanyaan Anda, giliran bicara terbaru, cuplikan catatan yang cocok, argumen alat, dan hasil alat dikirim ke penyedia model yang dikonfigurasi.",
           "bestEffortRedaction": "Penyembunyian rahasia di catatan dilakukan sebisanya. Sebagian bisa terlewat, jadi jangan hanya mengandalkannya.",
           "notesMayInstruct": "Catatan dapat berisi instruksi yang mungkin diulang model dalam jawabannya. Karena itu sesi brankas hanya untuk menjawab: tidak bisa menempelkan teks atau membuka apa pun.",

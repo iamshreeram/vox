@@ -28,7 +28,8 @@ does not do.
 
 The status line shows whether the index is off, indexing, ready, busy or
 unavailable, with the number of notes, searchable sections and skipped files.
-"Re-index now" rebuilds the index. It is disabled while indexing is running.
+"Re-index now" refreshes the index: it picks up new, changed and removed notes
+in the listed folders. It is disabled while indexing is running.
 The status is refreshed about every two seconds, but only while the
 Experimental page is visible and the toggle is on. Leaving the page or turning
 the toggle off stops the refresh.
@@ -36,8 +37,7 @@ the toggle off stops the refresh.
 ## What is sent to the model provider, and when
 
 Turning the toggle on means you agree that matching passages from the listed
-folders may be sent to the model provider you configured. Nothing from the
-vault is sent while the toggle is off.
+folders may be sent to the model provider you configured. Vault notes search sends nothing while its toggle is off.
 
 When the feature is active for a turn, the following go to the configured model
 provider:
@@ -46,7 +46,11 @@ provider:
 - the matching note snippets for that turn;
 - tool arguments and tool results, when vault tools are used.
 
-Notes outside the listed folders are never read for the index.
+Vault notes search reads only the listed folders for its index.
+
+The separate vault context switch in Conversation memory is not part of vault
+notes search. It reads a single context-pack note from the vault folder under
+its own rules; see [docs/conversation.md](conversation.md).
 
 ## Folders setting
 

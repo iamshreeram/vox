@@ -985,7 +985,7 @@
           "empty": "No matching notes."
         },
         "disclosure": {
-          "folders": "Only the folders listed above are indexed. Other vault folders are never read.",
+          "folders": "Vault notes search reads only the listed folders and sends nothing while it is off. The separate vault context switch has its own behaviour.",
           "sentToProvider": "Your question, recent turns, matching note snippets, tool arguments and tool results are sent to the configured model provider.",
           "bestEffortRedaction": "Hiding secrets in notes is best effort. It can miss some, so do not rely on it.",
           "notesMayInstruct": "Notes may contain instructions, and the model could repeat them in its reply. Vault sessions are therefore answer-only: they cannot paste text or open things.",

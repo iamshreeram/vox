@@ -985,7 +985,7 @@
           "empty": "No hi ha notes coincidents."
         },
         "disclosure": {
-          "folders": "Només s'indexen les carpetes enumerades més amunt. Mai es llegeixen les altres carpetes del magatzem.",
+          "folders": "La cerca a les notes del magatzem només llegeix les carpetes indicades i no envia res mentre està desactivada. L'interruptor separat de context del magatzem té el seu propi comportament.",
           "sentToProvider": "La teva pregunta, els torns recents, els fragments de notes coincidents, els arguments de les eines i els resultats de les eines s'envien al proveïdor del model configurat.",
           "bestEffortRedaction": "L'ocultació de secrets a les notes es fa com millor es pot. Pot deixar-ne passar alguns, així que no hi confiïs del tot.",
           "notesMayInstruct": "Les notes poden contenir instruccions que el model podria repetir a la resposta. Per això, les sessions del magatzem només responen: no poden enganxar text ni obrir res.",

@@ -13,6 +13,7 @@ import {
   canReindex,
   createStatusPoller,
   foldersOutcome,
+  normalizeFolders,
   previewLines,
   probeMessage,
   shouldPollStatus,
@@ -926,6 +927,69 @@ await scenario(
         `${e.id} labelKey not in VAULT_RAG_I18N_KEYS: ${e.labelKey}`,
       );
     }
+  },
+);
+
+// ---- 12 normalizeFolders (V2) --------------------------------------------
+const G_NORMALIZE = "12 normalizeFolders";
+
+await scenario(G_NORMALIZE, "empty and separator-only input is empty", () => {
+  assert.equal(normalizeFolders(""), "");
+  assert.equal(normalizeFolders("   "), "");
+  assert.equal(normalizeFolders(" , ,  ,"), "");
+});
+
+await scenario(G_NORMALIZE, "spaces around names are trimmed", () => {
+  assert.equal(normalizeFolders(" Projects ,  Daily  "), "Projects,Daily");
+});
+
+await scenario(G_NORMALIZE, "repeated names are dropped, first kept", () => {
+  assert.equal(normalizeFolders("A,B,A,C,B"), "A,B,C");
+  assert.equal(normalizeFolders("Daily, Daily ,Daily"), "Daily");
+});
+
+await scenario(G_NORMALIZE, "the order of first appearance is kept", () => {
+  assert.equal(normalizeFolders("Zeta,Alpha,Mid"), "Zeta,Alpha,Mid");
+});
+
+await scenario(G_NORMALIZE, "trailing and leading commas are dropped", () => {
+  assert.equal(normalizeFolders("A,B,,"), "A,B");
+  assert.equal(normalizeFolders(",A,B"), "A,B");
+});
+
+await scenario(
+  G_NORMALIZE,
+  "unicode names are kept whole and deduplicated",
+  () => {
+    assert.equal(
+      normalizeFolders("Проекты, Дневник ,Проекты"),
+      "Проекты,Дневник",
+    );
+    assert.equal(normalizeFolders("日記,メモ,日記"), "日記,メモ");
+  },
+);
+
+await scenario(G_NORMALIZE, "names differing only by case are distinct", () => {
+  assert.equal(normalizeFolders("Projects,projects"), "Projects,projects");
+});
+
+await scenario(
+  G_NORMALIZE,
+  "a single name with no separator is returned unchanged",
+  () => {
+    assert.equal(normalizeFolders("Memory"), "Memory");
+  },
+);
+
+await scenario(
+  G_NORMALIZE,
+  "vault_rag_enabled updater throws on a backend error",
+  () => {
+    const body = updaterBody(
+      readFileSync(SETTINGS_STORE, "utf8"),
+      "vault_rag_enabled",
+    );
+    assert.match(body, /throw new Error\(result\.error\)/);
   },
 );
 

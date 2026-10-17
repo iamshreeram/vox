@@ -238,3 +238,19 @@ export function createStatusPoller(d: PollerDeps): {
     },
   };
 }
+
+/**
+ * The folder list as the backend stores it: split on ",", trim, drop empty names,
+ * drop repeats (first kept), join with ",". Same rules as parse_rag_folders in
+ * settings.rs without its validation; the backend stays the authority.
+ */
+export function normalizeFolders(raw: string): string {
+  const kept: string[] = [];
+  for (const part of raw.split(",")) {
+    const name = part.trim();
+    if (name !== "" && !kept.includes(name)) {
+      kept.push(name);
+    }
+  }
+  return kept.join(",");
+}

@@ -985,7 +985,7 @@
           "empty": "Inga matchande anteckningar."
         },
         "disclosure": {
-          "folders": "Endast mapparna som anges ovan indexeras. Andra valvmappar läses aldrig.",
+          "folders": "Sökning i valvets anteckningar läser endast de angivna mapparna och skickar inget när den är av. Den separata växlingen för valvkontext har sitt eget beteende.",
           "sentToProvider": "Din fråga, de senaste replikerna, matchande anteckningsutdrag, verktygsargument och verktygsresultat skickas till den konfigurerade modelleverantören.",
           "bestEffortRedaction": "Dold hantering av hemligheter i anteckningar görs efter bästa förmåga. Vissa kan missas, så förlita dig inte bara på den.",
           "notesMayInstruct": "Anteckningar kan innehålla instruktioner som modellen kan upprepa i sitt svar. Därför är valvsessioner endast för svar: de kan inte klistra in text eller öppna något.",

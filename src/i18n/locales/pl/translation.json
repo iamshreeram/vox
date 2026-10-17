@@ -985,7 +985,7 @@
           "empty": "Brak pasujących notatek."
         },
         "disclosure": {
-          "folders": "Indeksowane są tylko wymienione powyżej foldery. Inne foldery skarbca nigdy nie są czytane.",
+          "folders": "Wyszukiwanie w notatkach skarbca czyta tylko wymienione foldery i nic nie wysyła, gdy jest wyłączone. Osobny przełącznik kontekstu skarbca działa według własnych zasad.",
           "sentToProvider": "Twoje pytanie, ostatnie wypowiedzi, pasujące fragmenty notatek, argumenty narzędzi i wyniki narzędzi są wysyłane do skonfigurowanego dostawcy modelu.",
           "bestEffortRedaction": "Ukrywanie sekretów w notatkach działa w miarę możliwości. Niektóre mogą zostać pominięte, więc nie polegaj tylko na tym.",
           "notesMayInstruct": "Notatki mogą zawierać instrukcje, które model może powtórzyć w odpowiedzi. Dlatego sesje skarbca służą tylko do odpowiedzi: nie mogą wklejać tekstu ani otwierać czegokolwiek.",

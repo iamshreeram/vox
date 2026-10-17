@@ -985,7 +985,7 @@
           "empty": "Eşleşen not yok."
         },
         "disclosure": {
-          "folders": "Yalnızca yukarıda listelenen klasörler dizinlenir. Kasanın diğer klasörleri hiçbir zaman okunmaz.",
+          "folders": "Kasa notlarında arama yalnızca listelenen klasörleri okur ve kapalıyken hiçbir şey göndermez. Ayrı kasa bağlamı anahtarının kendi davranışı vardır.",
           "sentToProvider": "Sorunuz, son konuşma turları, eşleşen not parçaları, araç argümanları ve araç sonuçları yapılandırılmış model sağlayıcısına gönderilir.",
           "bestEffortRedaction": "Notlardaki gizli bilgilerin gizlenmesi en iyi çabayla yapılır. Bazıları kaçabilir, bu yüzden yalnızca buna güvenmeyin.",
           "notesMayInstruct": "Notlar, modelin yanıtında tekrarlayabileceği talimatlar içerebilir. Bu nedenle kasa oturumları yalnızca yanıt verir: metin yapıştıramaz veya bir şeyi açamaz.",

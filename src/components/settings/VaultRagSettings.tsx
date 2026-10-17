@@ -15,6 +15,7 @@ import {
   canReindex,
   createStatusPoller,
   foldersOutcome,
+  normalizeFolders,
   probeMessage,
   shouldPollStatus,
   statusView,
@@ -25,12 +26,23 @@ interface VaultRagSettingsProps {
   grouped?: boolean;
 }
 
+type RagSettingsPatch =
+  | { vault_rag_enabled: boolean }
+  | { vault_rag_folders: string };
+
+/** Mirrors a saved value into the settings store (the backend already has it). */
+function patchRagSettings(patch: RagSettingsPatch): void {
+  useSettingsStore.setState((state) => ({
+    settings: state.settings && { ...state.settings, ...patch },
+  }));
+}
+
 export const VaultRagSettings: React.FC<VaultRagSettingsProps> = ({
   descriptionMode = "tooltip",
   grouped = false,
 }) => {
   const { t } = useTranslation();
-  const { getSetting, updateSetting, isUpdating } = useSettings();
+  const { getSetting } = useSettings();
   const enabled = getSetting("vault_rag_enabled") ?? false;
   const vaultPath = getSetting("vault_path") ?? "";
   const folders = getSetting("vault_rag_folders") ?? "";
@@ -50,6 +62,7 @@ export const VaultRagSettings: React.FC<VaultRagSettingsProps> = ({
   const [probeLine, setProbeLine] = useState<string | null>(null);
   const [reindexing, setReindexing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [toggling, setToggling] = useState(false);
 
   useEffect(() => setLocalFolders(folders), [folders]);
 
@@ -85,21 +98,25 @@ export const VaultRagSettings: React.FC<VaultRagSettingsProps> = ({
     unknown: t("settings.experimental.vaultRag.probe.results.unknown"),
   };
 
+  // Direct call so a refusal shows inline; a refused toggle keeps its stored (OFF) value.
+  const setEnabled = async (value: boolean): Promise<void> => {
+    setToggling(true);
+    const result = await commands.changeVaultRagSetting(value);
+    setToggling(false);
+    setActionError(result.status === "error" ? result.error : null);
+    if (result.status === "ok") patchRagSettings({ vault_rag_enabled: value });
+  };
+
   const saveFolders = async (): Promise<void> => {
     const attempted = localFolders;
     // Called directly (not via updateSetting) so the backend error can be shown inline.
     const result = await commands.changeVaultRagFoldersSetting(attempted);
-    const outcome = foldersOutcome(folders, attempted, result);
+    const saved = normalizeFolders(attempted);
+    const outcome = foldersOutcome(folders, saved, result);
     setLocalFolders(outcome.value);
     setFoldersError(outcome.error);
-    if (outcome.error === null) {
-      useSettingsStore.setState((state) => ({
-        settings: state.settings && {
-          ...state.settings,
-          vault_rag_folders: attempted,
-        },
-      }));
-    }
+    if (outcome.error === null)
+      patchRagSettings({ vault_rag_folders: outcome.value });
   };
 
   const reindex = async (): Promise<void> => {
@@ -123,8 +140,8 @@ export const VaultRagSettings: React.FC<VaultRagSettingsProps> = ({
     <>
       <ToggleSwitch
         checked={enabled}
-        onChange={(value) => updateSetting("vault_rag_enabled", value)}
-        isUpdating={isUpdating("vault_rag_enabled")}
+        onChange={(value) => setEnabled(value)}
+        isUpdating={toggling}
         disabled={!enabled && !canEnable}
         label={t("settings.experimental.vaultRag.enable.label")}
         description={t("settings.experimental.vaultRag.enable.description")}

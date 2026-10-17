@@ -985,7 +985,7 @@
           "empty": "Aucune note correspondante."
         },
         "disclosure": {
-          "folders": "Seuls les dossiers listés ci-dessus sont indexés. Les autres dossiers du coffre ne sont jamais lus.",
+          "folders": "La recherche dans les notes du coffre ne lit que les dossiers listés et n'envoie rien lorsqu'elle est désactivée. L'interrupteur séparé de contexte du coffre a son propre fonctionnement.",
           "sentToProvider": "Votre question, les derniers échanges, les extraits de notes correspondants, les arguments des outils et leurs résultats sont envoyés au fournisseur de modèle configuré.",
           "bestEffortRedaction": "Le masquage des secrets dans les notes se fait au mieux. Certains peuvent échapper au filtre : ne vous y fiez pas seul.",
           "notesMayInstruct": "Les notes peuvent contenir des instructions que le modèle pourrait répéter dans sa réponse. Les sessions du coffre sont donc réservées aux réponses : elles ne peuvent ni coller de texte ni ouvrir quoi que ce soit.",

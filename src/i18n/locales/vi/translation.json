@@ -985,7 +985,7 @@
           "empty": "Không có ghi chú khớp."
         },
         "disclosure": {
-          "folders": "Chỉ các thư mục liệt kê ở trên được lập chỉ mục. Các thư mục khác trong kho không bao giờ được đọc.",
+          "folders": "Tìm kiếm trong ghi chú kho chỉ đọc các thư mục đã liệt kê và không gửi gì khi tắt. Công tắc ngữ cảnh kho riêng có cách hoạt động riêng.",
           "sentToProvider": "Câu hỏi của bạn, các lượt hội thoại gần đây, đoạn ghi chú khớp, đối số công cụ và kết quả công cụ được gửi tới nhà cung cấp mô hình đã cấu hình.",
           "bestEffortRedaction": "Việc ẩn thông tin bí mật trong ghi chú chỉ ở mức cố gắng hết sức. Một số có thể bị sót, vì vậy đừng chỉ dựa vào nó.",
           "notesMayInstruct": "Ghi chú có thể chứa chỉ dẫn mà mô hình có thể lặp lại trong câu trả lời. Vì vậy phiên kho chỉ để trả lời: không thể dán văn bản hay mở bất cứ thứ gì.",

@@ -985,7 +985,7 @@
           "empty": "Ingen matchende noter."
         },
         "disclosure": {
-          "folders": "Kun de mapper, der er nævnt ovenfor, indekseres. Andre mapper i notesamlingen læses aldrig.",
+          "folders": "Søgning i notesamlingen læser kun de listede mapper og sender intet, mens den er slået fra. Den separate kontakt for notesamlingens kontekst har sin egen adfærd.",
           "sentToProvider": "Dit spørgsmål, de seneste replikker, matchende uddrag fra noter, værktøjsargumenter og værktøjsresultater sendes til den konfigurerede modeludbyder.",
           "bestEffortRedaction": "Skjulning af hemmeligheder i noter sker efter bedste evne. Nogle kan blive overset, så stol ikke alene på den.",
           "notesMayInstruct": "Noter kan indeholde instruktioner, og modellen kan gentage dem i sit svar. Derfor er notesessioner kun til svar: de kan ikke indsætte tekst eller åbne ting.",

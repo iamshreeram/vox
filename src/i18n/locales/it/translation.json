@@ -985,7 +985,7 @@
           "empty": "Nessuna nota corrispondente."
         },
         "disclosure": {
-          "folders": "Vengono indicizzate solo le cartelle elencate sopra. Le altre cartelle del vault non vengono mai lette.",
+          "folders": "La ricerca nelle note del vault legge solo le cartelle elencate e non invia nulla quando è disattivata. L'interruttore separato del contesto del vault ha un comportamento proprio.",
           "sentToProvider": "La tua domanda, i turni recenti, i frammenti di note corrispondenti, gli argomenti degli strumenti e i loro risultati vengono inviati al fornitore di modelli configurato.",
           "bestEffortRedaction": "La rimozione dei segreti dalle note avviene con il massimo impegno possibile. Alcuni possono sfuggire, quindi non affidartici da solo.",
           "notesMayInstruct": "Le note possono contenere istruzioni che il modello potrebbe ripetere nella risposta. Per questo le sessioni del vault servono solo a rispondere: non possono incollare testo né aprire nulla.",

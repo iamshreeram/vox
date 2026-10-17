@@ -985,7 +985,7 @@
           "empty": "Geen overeenkomende notities."
         },
         "disclosure": {
-          "folders": "Alleen de hierboven genoemde mappen worden geïndexeerd. Andere vaultmappen worden nooit gelezen.",
+          "folders": "Zoeken in vaultnotities leest alleen de vermelde mappen en stuurt niets terwijl het uit staat. De aparte schakelaar voor vaultcontext heeft een eigen gedrag.",
           "sentToProvider": "Je vraag, recente beurten, overeenkomende notitiefragmenten, toolargumenten en toolresultaten worden naar de ingestelde modelprovider gestuurd.",
           "bestEffortRedaction": "Geheimen in notities verbergen gebeurt naar beste vermogen. Sommige kunnen worden gemist, dus vertrouw er niet alleen op.",
           "notesMayInstruct": "Notities kunnen instructies bevatten die het model in zijn antwoord kan herhalen. Vaultsessies zijn daarom alleen voor antwoorden: ze kunnen geen tekst plakken of iets openen.",

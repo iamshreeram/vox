@@ -393,10 +393,12 @@ pub fn answer_only_for(settings: &AppSettings) -> bool {
     (settings.vault_context_enabled && has_path) || (settings.vault_rag_enabled && has_path)
 }
 
-/// True when vault context is actually in use: `answer_only_for` and the realtime master
-/// (`exp_rt_enabled`), combined the way `realtime_config` combines it.
+/// True when vault context (M1) is actually in use: the M1 switch, a non-blank vault path and the
+/// realtime master (`exp_rt_enabled`), combined the way `realtime_config` combines it.
 pub fn vault_context_active(settings: &AppSettings) -> bool {
-    answer_only_for(settings) && RealtimeConfig::from_settings(settings).enabled
+    let has_path = !settings.vault_path.trim().is_empty();
+    // M1 only: the RAG switch does not turn on the M1 context block (DESIGN Rev 3, 3.4).
+    settings.vault_context_enabled && has_path && RealtimeConfig::from_settings(settings).enabled
 }
 
 /// True when the vault RAG may be used for these settings (DESIGN Rev 5, 3.1): RAG enabled, a

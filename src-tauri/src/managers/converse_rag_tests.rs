@@ -951,6 +951,46 @@ async fn credential_answer_redacted_before_mouth() {
     );
 }
 
+#[tokio::test]
+async fn credential_clarify_and_end_redacted_before_mouth() {
+    // Clarify and End speech reach the Mouth and history too: a latched session scrubs them
+    // as it does Answer speech. Without RAG the speech is passed through unchanged.
+    for (kind, expected) in [("clarify", PlanKind::Clarify), ("end", PlanKind::End)] {
+        let spoken = format!("Which one? The key is {SECRET} for you.");
+
+        let (base, _seen) = serve_sequence(vec![text_reply(&plan_json(kind, &spoken))]);
+        let rig = ready_rig(&base, false);
+        let core = core_for(Some(rig.runtime.session(&rig.settings)), true);
+        let plan = plan_once(
+            &core,
+            &rig.settings,
+            "status of Atlas",
+            Arc::new(AtomicUsize::new(0)),
+        )
+        .await
+        .expect("plan");
+        assert_eq!(plan.kind, expected);
+        assert!(
+            !plan.speech.contains(SECRET),
+            "a {kind} credential never reaches the Mouth"
+        );
+
+        let (base, _seen) = serve_sequence(vec![text_reply(&plan_json(kind, &spoken))]);
+        let rig = ready_rig(&base, false);
+        let core = core_for(None, true);
+        let plan = plan_once(
+            &core,
+            &rig.settings,
+            "status of Atlas",
+            Arc::new(AtomicUsize::new(0)),
+        )
+        .await
+        .expect("plan");
+        assert_eq!(plan.kind, expected);
+        assert_eq!(plan.speech, spoken, "non-RAG {kind} speech is unchanged");
+    }
+}
+
 // ---- Tools in the loop (3.1, 3.5) -----------------------------------------------------
 
 #[tokio::test]
@@ -1339,7 +1379,8 @@ async fn rag_revocation_mid_retrieval_no_stale_evidence() {
 async fn rag_revocation_mid_tool_read() {
     // The provider flips RAG off on the first request, before it returns the tool call. The
     // tool then runs against a revoked session and must refuse with the fixed fenced error.
-    let slot: Arc<Mutex<Option<(Arc<VaultRagRuntime>, AppSettings)>>> = Arc::new(Mutex::new(None));
+    type RuntimeSlot = Arc<Mutex<Option<(Arc<VaultRagRuntime>, AppSettings)>>>;
+    let slot: RuntimeSlot = Arc::new(Mutex::new(None));
     let hook_slot = slot.clone();
     let on_request: Arc<dyn Fn(usize) + Send + Sync> = Arc::new(move |n| {
         if n != 0 {

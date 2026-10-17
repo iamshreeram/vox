@@ -985,7 +985,7 @@
           "empty": "No hay notas coincidentes."
         },
         "disclosure": {
-          "folders": "Solo se indexan las carpetas enumeradas arriba. Las demás carpetas de la bóveda nunca se leen.",
+          "folders": "La búsqueda en las notas de la bóveda solo lee las carpetas indicadas y no envía nada mientras está desactivada. El interruptor separado de contexto de la bóveda tiene su propio comportamiento.",
           "sentToProvider": "Tu pregunta, los turnos recientes, los fragmentos de notas coincidentes, los argumentos de las herramientas y sus resultados se envían al proveedor de modelos configurado.",
           "bestEffortRedaction": "Ocultar secretos en las notas se hace con el mejor esfuerzo. Puede pasar por alto algunos, así que no confíes solo en ello.",
           "notesMayInstruct": "Las notas pueden contener instrucciones que el modelo repita en su respuesta. Por eso las sesiones de la bóveda solo responden: no pueden pegar texto ni abrir nada.",

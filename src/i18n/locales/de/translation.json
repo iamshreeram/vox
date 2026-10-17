@@ -985,7 +985,7 @@
           "empty": "Keine passenden Notizen."
         },
         "disclosure": {
-          "folders": "Nur die oben genannten Ordner werden indexiert. Andere Tresor-Ordner werden nie gelesen.",
+          "folders": "Die Suche im Notiz-Tresor liest nur die aufgeführten Ordner und sendet nichts, solange sie aus ist. Der separate Schalter für Tresor-Kontext hat ein eigenes Verhalten.",
           "sentToProvider": "Deine Frage, die letzten Gesprächsbeiträge, passende Notizausschnitte, Werkzeugargumente und Werkzeugergebnisse werden an den konfigurierten Modellanbieter gesendet.",
           "bestEffortRedaction": "Das Ausblenden von Geheimnissen in Notizen erfolgt nach bestem Bemühen. Es kann einige übersehen, verlass dich also nicht allein darauf.",
           "notesMayInstruct": "Notizen können Anweisungen enthalten, die das Modell in seiner Antwort wiederholen könnte. Tresor-Sitzungen dienen daher nur der Antwort: Sie können keinen Text einfügen und nichts öffnen.",

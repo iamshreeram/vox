@@ -985,7 +985,7 @@
           "empty": "Žádné odpovídající poznámky."
         },
         "disclosure": {
-          "folders": "Indexují se pouze složky uvedené výše. Ostatní složky trezoru se nikdy nečtou.",
+          "folders": "Hledání v poznámkách trezoru čte pouze uvedené složky a když je vypnuté, neodesílá nic. Samostatný přepínač kontextu trezoru se chová podle vlastních pravidel.",
           "sentToProvider": "Vaše otázka, poslední repliky, odpovídající úryvky poznámek, argumenty nástrojů a výsledky nástrojů se odesílají nakonfigurovanému poskytovateli modelu.",
           "bestEffortRedaction": "Skrývání tajných údajů v poznámkách funguje podle nejlepšího úsilí. Některé může přehlédnout, proto se na něj nespoléhejte.",
           "notesMayInstruct": "Poznámky mohou obsahovat instrukce, které model může zopakovat ve své odpovědi. Relace s trezorem jsou proto jen pro odpovědi: nemohou vkládat text ani otevírat věci.",
