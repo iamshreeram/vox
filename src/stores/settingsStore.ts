@@ -231,6 +231,14 @@ const settingUpdaters: {
   },
   vault_context_enabled: (value) =>
     commands.changeVaultContextSetting(value as boolean),
+  vault_rag_enabled: (value) =>
+    commands.changeVaultRagSetting(value as boolean),
+  vault_rag_folders: async (value) => {
+    const result = await commands.changeVaultRagFoldersSetting(value as string);
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
   agent_bridge_enabled: (value) =>
     commands.changeAgentBridgeEnabledSetting(value as boolean),
   agent_bridge_binary_path: async (value) => {

@@ -947,6 +947,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "Vault notes search",
+        "description": "Lets the voice assistant find relevant passages in your notes vault and use them to answer. Off by default.",
+        "enable": {
+          "label": "Search my vault notes",
+          "description": "Builds a local keyword index of the folders below. When you ask a question, matching passages are sent to your model provider. Needs a vault folder and the realtime model route."
+        },
+        "needsVaultPath": "Set a vault folder in Conversation memory first.",
+        "folders": {
+          "label": "Vault folders to index",
+          "description": "Comma-separated folder names inside the vault. Plain names only: no slashes, no \"..\", no leading dot. Up to 16 folders.",
+          "placeholder": "Projects, Daily, Memory"
+        },
+        "status": {
+          "off": "Off.",
+          "indexing": "Indexing your notes...",
+          "ready": "Ready.",
+          "unavailable": "Unavailable. Try re-indexing, or check the vault folder.",
+          "busy": "Busy. The index is in use; try again shortly.",
+          "counts": "{{notes}} notes, {{chunks}} searchable sections, {{skipped}} skipped"
+        },
+        "reindex": {
+          "button": "Re-index now"
+        },
+        "probe": {
+          "button": "Test tool support",
+          "results": {
+            "supported": "Tool support: works on the current model route.",
+            "unsupported": "Tool support: not available. Vault sessions use evidence only, without tools.",
+            "unknown": "Tool support: the test result was not clear."
+          }
+        },
+        "preview": {
+          "label": "Search preview",
+          "placeholder": "Type a word to search",
+          "empty": "No matching notes."
+        },
+        "disclosure": {
+          "folders": "Only the folders listed above are indexed. Other vault folders are never read.",
+          "sentToProvider": "Your question, recent turns, matching note snippets, tool arguments and tool results are sent to the configured model provider.",
+          "bestEffortRedaction": "Hiding secrets in notes is best effort. It can miss some, so do not rely on it.",
+          "notesMayInstruct": "Notes may contain instructions, and the model could repeat them in its reply. Vault sessions are therefore answer-only: they cannot paste text or open things.",
+          "spokenAloud": "Replies are spoken aloud, so people nearby may hear note content.",
+          "toolsRequirement": "Vault tools are read-only. They run only when agent tools are on and the direct model route is used.",
+          "unsupportedFallback": "If the tool test reports that tools are unsupported, vault sessions on that route switch to evidence only, without tools.",
+          "localCache": "The index is a local cache file in the app data folder. You can delete it at any time; deleting it does not change your notes."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

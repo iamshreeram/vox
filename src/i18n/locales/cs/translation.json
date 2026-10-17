@@ -947,6 +947,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "Hledání v poznámkách trezoru",
+        "description": "Umožňuje hlasovému asistentovi najít relevantní úryvky z poznámek ve vašem trezoru a použít je v odpovědi. Ve výchozím nastavení vypnuto.",
+        "enable": {
+          "label": "Hledat v poznámkách trezoru",
+          "description": "Vytvoří místní index klíčových slov pro složky níže. Při dotazu se odpovídající úryvky odešlou poskytovateli modelu. Vyžaduje složku trezoru a trasu k modelu v reálném čase."
+        },
+        "needsVaultPath": "Nejprve nastavte složku trezoru v Paměti konverzace.",
+        "folders": {
+          "label": "Složky trezoru k indexování",
+          "description": "Názvy složek v trezoru oddělené čárkou. Pouze jednoduché názvy: bez lomítek, bez \"..\" a bez tečky na začátku. Až 16 složek.",
+          "placeholder": "Projekty, Deník, Paměť"
+        },
+        "status": {
+          "off": "Vypnuto.",
+          "indexing": "Indexuji vaše poznámky...",
+          "ready": "Připraveno.",
+          "unavailable": "Nedostupné. Zkuste znovu indexovat nebo zkontrolujte složku trezoru.",
+          "busy": "Zaneprázdněno. Index se používá; zkuste to za chvíli znovu.",
+          "counts": "{{notes}} poznámek, {{chunks}} prohledávatelných částí, {{skipped}} přeskočeno"
+        },
+        "reindex": {
+          "button": "Znovu indexovat"
+        },
+        "probe": {
+          "button": "Otestovat podporu nástrojů",
+          "results": {
+            "supported": "Podpora nástrojů: funguje na aktuální trase k modelu.",
+            "unsupported": "Podpora nástrojů: není dostupná. Relace s trezorem používají jen důkazy bez nástrojů.",
+            "unknown": "Podpora nástrojů: výsledek testu nebyl jasný."
+          }
+        },
+        "preview": {
+          "label": "Náhled hledání",
+          "placeholder": "Zadejte slovo k hledání",
+          "empty": "Žádné odpovídající poznámky."
+        },
+        "disclosure": {
+          "folders": "Indexují se pouze složky uvedené výše. Ostatní složky trezoru se nikdy nečtou.",
+          "sentToProvider": "Vaše otázka, poslední repliky, odpovídající úryvky poznámek, argumenty nástrojů a výsledky nástrojů se odesílají nakonfigurovanému poskytovateli modelu.",
+          "bestEffortRedaction": "Skrývání tajných údajů v poznámkách funguje podle nejlepšího úsilí. Některé může přehlédnout, proto se na něj nespoléhejte.",
+          "notesMayInstruct": "Poznámky mohou obsahovat instrukce, které model může zopakovat ve své odpovědi. Relace s trezorem jsou proto jen pro odpovědi: nemohou vkládat text ani otevírat věci.",
+          "spokenAloud": "Odpovědi se čtou nahlas, takže lidé v okolí mohou slyšet obsah poznámek.",
+          "toolsRequirement": "Nástroje trezoru jsou pouze pro čtení. Běží jen tehdy, když jsou zapnuté nástroje agenta a používá se přímá trasa k modelu.",
+          "unsupportedFallback": "Pokud test nástrojů uvede, že nástroje nejsou podporovány, relace s trezorem na této trase přejdou jen na důkazy bez nástrojů.",
+          "localCache": "Index je místní soubor mezipaměti ve složce s daty aplikace. Můžete jej kdykoli smazat; smazání nezmění vaše poznámky."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

@@ -947,6 +947,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "볼트 노트 검색",
+        "description": "음성 어시스턴트가 볼트 노트에서 관련 구절을 찾아 답변에 사용하도록 합니다. 기본값은 꺼짐입니다.",
+        "enable": {
+          "label": "볼트 노트 검색",
+          "description": "아래 폴더의 로컬 키워드 색인을 만듭니다. 질문하면 일치하는 구절이 모델 제공자로 전송됩니다. 볼트 폴더와 실시간 모델 경로가 필요합니다."
+        },
+        "needsVaultPath": "먼저 대화 메모리에서 볼트 폴더를 설정하세요.",
+        "folders": {
+          "label": "색인할 볼트 폴더",
+          "description": "볼트 안의 폴더 이름을 쉼표로 구분해 입력합니다. 단순한 이름만 사용할 수 있습니다. 슬래시, \"..\", 맨 앞의 점은 안 됩니다. 최대 16개입니다.",
+          "placeholder": "프로젝트, 일일, 메모리"
+        },
+        "status": {
+          "off": "꺼짐.",
+          "indexing": "노트를 색인하는 중...",
+          "ready": "준비됨.",
+          "unavailable": "사용할 수 없음. 다시 색인하거나 볼트 폴더를 확인해 보세요.",
+          "busy": "사용 중. 색인이 사용되고 있으니 잠시 후 다시 시도하세요.",
+          "counts": "노트 {{notes}}개, 검색 가능한 구간 {{chunks}}개, 건너뜀 {{skipped}}개"
+        },
+        "reindex": {
+          "button": "지금 다시 색인"
+        },
+        "probe": {
+          "button": "도구 지원 테스트",
+          "results": {
+            "supported": "도구 지원: 현재 모델 경로에서 작동합니다.",
+            "unsupported": "도구 지원: 사용할 수 없습니다. 볼트 세션은 도구 없이 근거만 사용합니다.",
+            "unknown": "도구 지원: 테스트 결과가 분명하지 않습니다."
+          }
+        },
+        "preview": {
+          "label": "검색 미리보기",
+          "placeholder": "검색할 단어를 입력하세요",
+          "empty": "일치하는 노트가 없습니다."
+        },
+        "disclosure": {
+          "folders": "위에 나열된 폴더만 색인됩니다. 볼트의 다른 폴더는 읽지 않습니다.",
+          "sentToProvider": "질문, 최근 대화 턴, 일치한 노트 발췌, 도구 인자와 도구 결과는 설정된 모델 제공자로 전송됩니다.",
+          "bestEffortRedaction": "노트의 비밀 정보 가리기는 최선을 다하는 방식입니다. 일부를 놓칠 수 있으니 이것에만 의존하지 마세요.",
+          "notesMayInstruct": "노트에는 지시문이 들어 있을 수 있으며, 모델이 답변에서 그대로 반복할 수 있습니다. 그래서 볼트 세션은 답변만 합니다. 텍스트를 붙여넣거나 무언가를 열 수 없습니다.",
+          "spokenAloud": "답변은 소리 내어 읽히므로 주변 사람들이 노트 내용을 들을 수 있습니다.",
+          "toolsRequirement": "볼트 도구는 읽기 전용입니다. 에이전트 도구가 켜져 있고 모델 직접 경로를 쓸 때만 실행됩니다.",
+          "unsupportedFallback": "도구 테스트에서 도구를 지원하지 않는다고 나오면, 해당 경로의 볼트 세션은 도구 없이 근거만 사용하도록 바뀝니다.",
+          "localCache": "색인은 앱 데이터 폴더에 있는 로컬 캐시 파일입니다. 언제든 삭제할 수 있으며, 삭제해도 노트는 바뀌지 않습니다."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

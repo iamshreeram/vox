@@ -947,6 +947,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "Wyszukiwanie w notatkach skarbca",
+        "description": "Pozwala asystentowi głosowemu znaleźć istotne fragmenty w notatkach skarbca i użyć ich w odpowiedzi. Domyślnie wyłączone.",
+        "enable": {
+          "label": "Przeszukuj notatki w skarbcu",
+          "description": "Tworzy lokalny indeks słów kluczowych dla folderów poniżej. Po zadaniu pytania pasujące fragmenty są wysyłane do dostawcy modelu. Wymaga folderu skarbca i trasy modelu w czasie rzeczywistym."
+        },
+        "needsVaultPath": "Najpierw ustaw folder skarbca w Pamięci rozmów.",
+        "folders": {
+          "label": "Foldery skarbca do indeksowania",
+          "description": "Nazwy folderów w skarbcu oddzielone przecinkami. Tylko proste nazwy: bez ukośników, bez \"..\" i bez kropki na początku. Maksymalnie 16 folderów.",
+          "placeholder": "Projekty, Dziennik, Pamięć"
+        },
+        "status": {
+          "off": "Wyłączone.",
+          "indexing": "Indeksowanie notatek...",
+          "ready": "Gotowe.",
+          "unavailable": "Niedostępne. Spróbuj ponownie zindeksować albo sprawdź folder skarbca.",
+          "busy": "Zajęte. Indeks jest używany; spróbuj ponownie za chwilę.",
+          "counts": "Notatki: {{notes}}, fragmenty do przeszukania: {{chunks}}, pominięte: {{skipped}}"
+        },
+        "reindex": {
+          "button": "Zindeksuj ponownie teraz"
+        },
+        "probe": {
+          "button": "Sprawdź obsługę narzędzi",
+          "results": {
+            "supported": "Obsługa narzędzi: działa na bieżącej trasie modelu.",
+            "unsupported": "Obsługa narzędzi: niedostępna. Sesje skarbca korzystają tylko z dowodów, bez narzędzi.",
+            "unknown": "Obsługa narzędzi: wynik testu nie jest jasny."
+          }
+        },
+        "preview": {
+          "label": "Podgląd wyszukiwania",
+          "placeholder": "Wpisz słowo do wyszukania",
+          "empty": "Brak pasujących notatek."
+        },
+        "disclosure": {
+          "folders": "Indeksowane są tylko wymienione powyżej foldery. Inne foldery skarbca nigdy nie są czytane.",
+          "sentToProvider": "Twoje pytanie, ostatnie wypowiedzi, pasujące fragmenty notatek, argumenty narzędzi i wyniki narzędzi są wysyłane do skonfigurowanego dostawcy modelu.",
+          "bestEffortRedaction": "Ukrywanie sekretów w notatkach działa w miarę możliwości. Niektóre mogą zostać pominięte, więc nie polegaj tylko na tym.",
+          "notesMayInstruct": "Notatki mogą zawierać instrukcje, które model może powtórzyć w odpowiedzi. Dlatego sesje skarbca służą tylko do odpowiedzi: nie mogą wklejać tekstu ani otwierać czegokolwiek.",
+          "spokenAloud": "Odpowiedzi są czytane na głos, więc osoby w pobliżu mogą usłyszeć treść notatek.",
+          "toolsRequirement": "Narzędzia skarbca są tylko do odczytu. Działają wyłącznie wtedy, gdy narzędzia agenta są włączone i używana jest bezpośrednia trasa do modelu.",
+          "unsupportedFallback": "Jeśli test narzędzi wykaże, że narzędzia nie są obsługiwane, sesje skarbca na tej trasie przechodzą na same dowody, bez narzędzi.",
+          "localCache": "Indeks to lokalny plik pamięci podręcznej w folderze danych aplikacji. Możesz go usunąć w dowolnej chwili; usunięcie nie zmienia notatek."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

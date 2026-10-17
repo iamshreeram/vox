@@ -947,6 +947,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "חיפוש בהערות הכספת",
+        "description": "מאפשר לעוזר הקולי למצוא קטעים רלוונטיים בהערות הכספת שלך ולהשתמש בהם בתשובות. כבוי כברירת מחדל.",
+        "enable": {
+          "label": "חיפוש בהערות הכספת שלי",
+          "description": "יוצר אינדקס מקומי של מילות מפתח לתיקיות שלמטה. כששואלים שאלה, הקטעים המתאימים נשלחים לספק המודל שלך. נדרשת תיקיית כספת ונתיב המודל בזמן אמת."
+        },
+        "needsVaultPath": "הגדר קודם תיקיית כספת בזיכרון השיחה.",
+        "folders": {
+          "label": "תיקיות כספת לאינדוקס",
+          "description": "שמות תיקיות בתוך הכספת, מופרדים בפסיקים. רק שמות פשוטים: בלי לוכסנים, בלי \"..\" ובלי נקודה בתחילת השם. עד 16 תיקיות.",
+          "placeholder": "פרויקטים, יומן, זיכרון"
+        },
+        "status": {
+          "off": "כבוי.",
+          "indexing": "מבצע אינדוקס של ההערות שלך...",
+          "ready": "מוכן.",
+          "unavailable": "לא זמין. נסה לבצע אינדוקס מחדש או בדוק את תיקיית הכספת.",
+          "busy": "עסוק. האינדקס נמצא בשימוש; נסה שוב בעוד רגע.",
+          "counts": "{{notes}} הערות, {{chunks}} קטעים לחיפוש, {{skipped}} דולגו"
+        },
+        "reindex": {
+          "button": "בצע אינדוקס מחדש עכשיו"
+        },
+        "probe": {
+          "button": "בדוק תמיכה בכלים",
+          "results": {
+            "supported": "תמיכה בכלים: פועלת עם נתיב המודל הנוכחי.",
+            "unsupported": "תמיכה בכלים: לא זמינה. שיחות עם הכספת משתמשות רק בראיות, בלי כלים.",
+            "unknown": "תמיכה בכלים: תוצאת הבדיקה לא הייתה ברורה."
+          }
+        },
+        "preview": {
+          "label": "תצוגה מקדימה של חיפוש",
+          "placeholder": "הקלד מילה לחיפוש",
+          "empty": "אין הערות תואמות."
+        },
+        "disclosure": {
+          "folders": "מאונדקסות רק התיקיות המפורטות למעלה. תיקיות אחרות בכספת לעולם לא נקראות.",
+          "sentToProvider": "השאלה שלך, התורות האחרונים, קטעי ההערות המתאימים, ארגומנטים של כלים ותוצאות כלים נשלחים לספק המודל שהוגדר.",
+          "bestEffortRedaction": "הסתרת סודות בהערות נעשית במאמץ סביר בלבד. ייתכן שחלקם יפספסו, ולכן אל תסתמך עליה בלבד.",
+          "notesMayInstruct": "הערות עשויות להכיל הוראות שהמודל עלול לחזור עליהן בתשובתו. לכן שיחות עם הכספת הן לתשובות בלבד: אין בהן הדבקת טקסט או פתיחת דברים.",
+          "spokenAloud": "התשובות נאמרות בקול רם, ולכן אנשים בסביבה עשויים לשמוע את תוכן ההערות.",
+          "toolsRequirement": "כלי הכספת הם לקריאה בלבד. הם פועלים רק כששימוש בכלי סוכן מופעל ונעשה שימוש בנתיב המודל הישיר.",
+          "unsupportedFallback": "אם בדיקת הכלים מציינת שכלים אינם נתמכים, שיחות הכספת בנתיב זה עוברות לראיות בלבד, בלי כלים.",
+          "localCache": "האינדקס הוא קובץ מטמון מקומי בתיקיית הנתונים של האפליקציה. אפשר למחוק אותו בכל עת; מחיקתו אינה משנה את ההערות שלך."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",
