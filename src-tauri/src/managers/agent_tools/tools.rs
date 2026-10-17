@@ -347,7 +347,7 @@ fn fenced_fixed(name: &str, text: &str) -> ToolOutput {
 
 /// Replaces control characters (except newline and tab) and anything that could close the
 /// fence with `?` or a neutral form, so content can never end the untrusted block.
-fn neutralize(text: &str) -> String {
+pub(crate) fn neutralize(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
         if c == '\u{27E6}' || c == '\u{27E7}' || (c.is_control() && c != '\n' && c != '\t') {
