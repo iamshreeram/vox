@@ -807,7 +807,7 @@ fn is_http_model_route(settings: &AppSettings) -> bool {
 /// True when vault text may be sent with the current settings: only on an HTTP model route.
 /// Checked on every plan call, not just at session start, so a mid-session switch to a command
 /// or agent-bridge route stops vault text at once.
-fn vault_text_allowed(settings: &AppSettings) -> bool {
+pub(crate) fn vault_text_allowed(settings: &AppSettings) -> bool {
     is_http_model_route(settings)
 }
 

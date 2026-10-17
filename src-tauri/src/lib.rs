@@ -407,6 +407,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         )),
     ));
     register_tts_listeners(app_handle, tts_manager);
+    // Vault RAG runtime (DESIGN 3.6): None on any init failure; startup only queues the settings.
+    app_handle.manage(managers::vault_rag_runtime::start_for_app(app_handle));
     let startup_settings = get_settings(app_handle);
     if startup_settings.wake_word_enabled {
         wakeword_listener.start();
@@ -906,6 +908,11 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::conversation_records::change_conversation_records_to_vault_setting,
             commands::conversation_records::change_vault_context_setting,
             commands::conversation_records::change_vault_path_setting,
+            commands::vault_rag::change_vault_rag_setting,
+            commands::vault_rag::change_vault_rag_folders_setting,
+            commands::vault_rag::vault_index_status,
+            commands::vault_rag::vault_reindex,
+            commands::vault_rag::vault_search_preview,
             commands::conversation_records::list_conversation_records,
             commands::agent_tools::change_agent_tools_setting,
             commands::agent_tools::change_agent_tools_guard_actions_setting,
@@ -1453,6 +1460,14 @@ pub fn run(cli_args: CliArgs) {
             log::debug!("native exit request decision: {:?}", decision);
         }
         tauri::RunEvent::Exit => {
+            // Non-blocking: the coordinator and IO worker are detached (DESIGN 3.6 shutdown).
+            if let Some(state) =
+                app.try_state::<Option<Arc<managers::vault_rag_runtime::VaultRagRuntime>>>()
+            {
+                if let Some(runtime) = state.inner() {
+                    runtime.shutdown();
+                }
+            }
             if let Some(wiring) = app.try_state::<job_runtime::JobWiring>() {
                 // Idempotent belt: the exit coordinator has normally stopped the job already.
                 let budgets = job_runtime::exit_fallback_budgets();
