@@ -360,6 +360,8 @@ fn vault_error_kind(err: &VaultError) -> &'static str {
         VaultError::Unsafe => "unsafe",
         VaultError::Exists => "exists",
         VaultError::Io(_) => "io",
+        VaultError::Forbidden => "forbidden",
+        VaultError::Unstable => "unstable",
     }
 }
 
