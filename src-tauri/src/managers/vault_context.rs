@@ -27,12 +27,21 @@ fn strip_controls(text: &str) -> String {
 /// untrusted-data header and a footer marker. Returns `None` when the pack has
 /// no non-blank line to keep.
 pub fn build_vault_block(raw_pack: &str) -> Option<String> {
+    build_vault_block_with_cap(raw_pack, MAX_VAULT_CONTEXT_CHARS)
+}
+
+/// Like [`build_vault_block`] with a caller-chosen cap (DESIGN 3.0 F6).
+///
+/// `max_chars` bounds the whole returned block, wrapper included. Whole lines are kept
+/// from the top; a line that does not fit ends the body. Returns `None` for blank input
+/// or when no whole line fits.
+pub fn build_vault_block_with_cap(raw_pack: &str, max_chars: usize) -> Option<String> {
     if raw_pack.trim().is_empty() {
         return None;
     }
     let clean = strip_controls(&redact(raw_pack));
     let head = format!("{HEADER}\n");
-    let budget = MAX_VAULT_CONTEXT_CHARS
+    let budget = max_chars
         .saturating_sub(head.chars().count())
         .saturating_sub(FOOTER.chars().count());
 

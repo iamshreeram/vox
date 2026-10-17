@@ -174,3 +174,75 @@ fn system_with_some_keeps_base_unchanged_for_unicode_base() {
     assert!(out.starts_with(base));
     assert!(out.ends_with(&block));
 }
+
+// ---------------------------------------------------------------- T0 foundation hardening (F6)
+
+use crate::managers::vault_context::build_vault_block_with_cap;
+
+#[test]
+fn hard_cap_never_exceeds_3000_for_long_input() {
+    let raw = pack_of(20_000);
+    let out = build_vault_block_with_cap(&raw, 3000).expect("long pack keeps whole lines");
+    assert!(
+        out.chars().count() <= 3000,
+        "block is {} chars",
+        out.chars().count()
+    );
+}
+
+#[test]
+fn hard_cap_drops_a_single_line_too_long_to_fit_whole() {
+    let raw = "x".repeat(10_000);
+    match build_vault_block_with_cap(&raw, 3000) {
+        None => {}
+        Some(block) => {
+            assert!(block.chars().count() <= 3000);
+            assert!(!block.contains('x'), "no partial line may be kept");
+        }
+    }
+}
+
+#[test]
+fn hard_cap_many_short_lines_stay_within_cap_and_keep_whole_lines() {
+    let mut raw = String::new();
+    for i in 0..5000 {
+        raw.push_str(&format!("line {i:05}\n"));
+    }
+    let out = build_vault_block_with_cap(&raw, 3000).expect("short lines keep some lines");
+    assert!(out.chars().count() <= 3000);
+    for line in out.lines().filter(|l| l.starts_with("line ")) {
+        assert_eq!(line.chars().count(), 10, "kept line is whole: {line:?}");
+    }
+}
+
+#[test]
+fn hard_cap_honours_small_caps() {
+    let raw = pack_of(5000);
+    if let Some(block) = build_vault_block_with_cap(&raw, 500) {
+        assert!(block.chars().count() <= 500);
+    }
+}
+
+#[test]
+fn hard_cap_is_none_for_blank_input() {
+    for raw in ["", "  ", "\n\t\n", " \r\n "] {
+        assert_eq!(build_vault_block_with_cap(raw, 3000), None, "raw {raw:?}");
+    }
+}
+
+#[test]
+fn hard_build_vault_block_is_the_6000_cap() {
+    let samples = [
+        "- short line\n".to_string(),
+        pack_of(9000),
+        "y".repeat(7000),
+        format!("{}\n{}", pack_of(5000), "z".repeat(8000)),
+    ];
+    for raw in &samples {
+        assert_eq!(
+            build_vault_block(raw),
+            build_vault_block_with_cap(raw, MAX_VAULT_CONTEXT_CHARS),
+            "build_vault_block must equal the 6000 cap for this input"
+        );
+    }
+}
