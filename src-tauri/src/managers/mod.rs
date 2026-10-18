@@ -91,3 +91,8 @@ mod natural_test_support;
 pub mod tts_serial;
 #[cfg(test)]
 mod natural_engine_tests;
+#[cfg(target_os = "macos")]
+pub mod natural_kokoro;
+#[cfg(all(test, target_os = "macos"))]
+mod natural_kokoro_tests;
+pub mod natural_voices;
