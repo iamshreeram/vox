@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { commands } from "@/bindings";
+import { commands, type TtsEngine } from "@/bindings";
 import { Button } from "../ui/Button";
 import { Dropdown } from "../ui/Dropdown";
 import { Input } from "../ui/Input";
@@ -8,6 +8,15 @@ import { SettingContainer } from "../ui/SettingContainer";
 import { Slider } from "../ui/Slider";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
+import { useNaturalVoice } from "../../hooks/useNaturalVoice";
+import {
+  NATURAL_MODEL_SIZE_BYTES,
+  downloadPercent,
+  failureI18nKey,
+  formatMegabytes,
+  naturalRowState,
+  selectedEngineNeedsModel,
+} from "./naturalVoiceState";
 import {
   buildVoiceOptions,
   voiceValueToSetting,
@@ -22,6 +31,245 @@ interface TtsSettingsProps {
 }
 
 const DEFAULT_RATE_WPM = 180;
+
+interface NaturalVoiceSectionProps {
+  descriptionMode: "inline" | "tooltip";
+  grouped: boolean;
+}
+
+/**
+ * Natural voice controls: engine choice, voice picker with preview, and the
+ * model download row. Hidden until status loads and on unsupported platforms.
+ */
+const NaturalVoiceSection: React.FC<NaturalVoiceSectionProps> = ({
+  descriptionMode,
+  grouped,
+}) => {
+  const { t } = useTranslation();
+  const { getSetting, updateSetting, isUpdating } = useSettings();
+  const { status, voices, error, download, cancel, remove, retry } =
+    useNaturalVoice();
+  const [pending, setPending] = useState(false);
+
+  const row = naturalRowState(status);
+  if (row === "hidden" || status === null) return null;
+
+  const engine: TtsEngine =
+    getSetting("tts_engine") === "natural" ? "natural" : "system";
+  const naturalVoice = getSetting("tts_natural_voice") ?? "";
+  const selectedVoice = voices.some((voice) => voice.id === naturalVoice)
+    ? naturalVoice
+    : (voices[0]?.id ?? "");
+
+  const withPending = async (action: () => Promise<void>) => {
+    setPending(true);
+    try {
+      await action();
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const handlePreview = () =>
+    withPending(async () => {
+      const result = await commands.ttsSpeakTest(
+        t("settings.advanced.tts.natural.previewText"),
+      );
+      if (result.status === "error") {
+        console.warn("Natural voice preview failed:", result.error);
+      }
+    });
+
+  const percent = downloadPercent(status.downloaded, status.total);
+
+  return (
+    <>
+      <SettingContainer
+        title={t("settings.advanced.tts.natural.engine.label")}
+        description={t("settings.advanced.tts.natural.engine.description")}
+        descriptionMode={descriptionMode}
+        grouped={grouped}
+      >
+        <Dropdown
+          options={[
+            {
+              value: "system",
+              label: t("settings.advanced.tts.natural.engine.system"),
+            },
+            {
+              value: "natural",
+              label: t("settings.advanced.tts.natural.engine.natural"),
+            },
+          ]}
+          selectedValue={engine}
+          onSelect={(value) => {
+            if (value === engine) return;
+            updateSetting("tts_engine", value as TtsEngine);
+          }}
+          disabled={isUpdating("tts_engine")}
+          className="flex-1 min-w-[360px]"
+        />
+      </SettingContainer>
+      {engine === "natural" && (
+        <SettingContainer
+          title={t("settings.advanced.tts.natural.voice.label")}
+          description={t("settings.advanced.tts.natural.voice.description")}
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+        >
+          <div className="flex items-center gap-2">
+            <Dropdown
+              options={voices.map((voice) => ({
+                value: voice.id,
+                label: t("settings.advanced.tts.natural.voice.option", {
+                  name: voice.name,
+                  accent: t(
+                    `settings.advanced.tts.natural.accent.${voice.accent}`,
+                  ),
+                  gender: t(
+                    `settings.advanced.tts.natural.gender.${voice.gender}`,
+                  ),
+                }),
+              }))}
+              selectedValue={selectedVoice}
+              onSelect={(value) => {
+                if (value === naturalVoice) return;
+                updateSetting("tts_natural_voice", value);
+              }}
+              disabled={voices.length === 0 || isUpdating("tts_natural_voice")}
+              className="flex-1 min-w-[280px]"
+            />
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={handlePreview}
+              disabled={pending}
+            >
+              {t("settings.advanced.tts.natural.preview")}
+            </Button>
+          </div>
+        </SettingContainer>
+      )}
+      <SettingContainer
+        title={t("settings.advanced.tts.natural.model.label")}
+        description={t("settings.advanced.tts.natural.notice.firstSpeech")}
+        descriptionMode={descriptionMode}
+        grouped={grouped}
+        layout="stacked"
+      >
+        <div className="flex flex-col gap-2">
+          {row === "download" && (
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm">
+                {t("settings.advanced.tts.natural.model.notInstalled", {
+                  size: formatMegabytes(NATURAL_MODEL_SIZE_BYTES),
+                })}
+              </p>
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => withPending(download)}
+                disabled={pending}
+              >
+                {t("settings.advanced.tts.natural.model.download")}
+              </Button>
+            </div>
+          )}
+          {row === "downloading" && (
+            <div className="flex items-center gap-3">
+              <div className="flex flex-1 flex-col gap-1">
+                <span className="text-sm">
+                  {t("settings.advanced.tts.natural.model.downloading", {
+                    percent,
+                  })}
+                </span>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-mid-gray/20">
+                  <div
+                    className="h-full rounded-full bg-logo-primary transition-all"
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+              </div>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => withPending(cancel)}
+                disabled={pending}
+              >
+                {t("settings.advanced.tts.natural.model.cancel")}
+              </Button>
+            </div>
+          )}
+          {row === "working" && (
+            <span className="text-sm text-mid-gray">
+              {t("settings.advanced.tts.natural.model.working")}
+            </span>
+          )}
+          {row === "ready" && (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm">
+                {t("settings.advanced.tts.natural.model.ready")}
+              </span>
+              <Button
+                variant="danger-ghost"
+                size="md"
+                onClick={() => withPending(remove)}
+                disabled={pending}
+              >
+                {t("settings.advanced.tts.natural.model.delete")}
+              </Button>
+            </div>
+          )}
+          {row === "failed" && (
+            <div className="flex flex-col gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3">
+              <p className="text-sm">
+                {t("settings.advanced.tts.natural.failure.banner")}
+              </p>
+              <p className="text-xs text-mid-gray">
+                {t(failureI18nKey(status.failure))}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="warning"
+                  size="md"
+                  onClick={() => withPending(retry)}
+                  disabled={pending}
+                >
+                  {t("settings.advanced.tts.natural.failure.retry")}
+                </Button>
+                <Button
+                  variant="danger-ghost"
+                  size="md"
+                  onClick={() => withPending(remove)}
+                  disabled={pending}
+                >
+                  {t("settings.advanced.tts.natural.model.delete")}
+                </Button>
+              </div>
+            </div>
+          )}
+          {selectedEngineNeedsModel(engine, status) && (
+            <p className="text-xs text-mid-gray">
+              {t("settings.advanced.tts.natural.model.needed")}
+            </p>
+          )}
+          {error !== null && (
+            <p className="text-xs text-red-400">
+              {status.model === "not_installed"
+                ? t("settings.advanced.tts.natural.model.downloadFailed", {
+                    message: error,
+                  })
+                : error}
+            </p>
+          )}
+          <p className="text-xs text-mid-gray">
+            {t("settings.advanced.tts.natural.notice.limitations")}
+          </p>
+        </div>
+      </SettingContainer>
+    </>
+  );
+};
 
 /**
  * Spoken replies: an opt-in toggle, the voice name, the speaking rate, and
@@ -104,6 +352,10 @@ export const TtsSettings: React.FC<TtsSettingsProps> = React.memo(
           descriptionMode={descriptionMode}
           grouped={grouped}
           tooltipPosition="bottom"
+        />
+        <NaturalVoiceSection
+          descriptionMode={descriptionMode}
+          grouped={grouped}
         />
         <SettingContainer
           title={t("settings.advanced.tts.voiceLabel")}

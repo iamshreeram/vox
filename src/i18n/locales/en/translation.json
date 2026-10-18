@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "Voice engine",
+            "description": "Choose how spoken replies sound.",
+            "system": "System voice",
+            "natural": "Natural voice (beta)"
+          },
+          "voice": {
+            "label": "Natural voice",
+            "description": "Pick the voice used for natural speech.",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "American",
+            "British": "British"
+          },
+          "gender": {
+            "Female": "female",
+            "Male": "male"
+          },
+          "preview": "Preview",
+          "previewText": "Hello! This is how the natural voice sounds.",
+          "model": {
+            "label": "Natural voice model",
+            "notInstalled": "Not downloaded. One-time download of about {{size}}; speech is generated on this device and your text is never sent anywhere.",
+            "download": "Download",
+            "cancel": "Cancel",
+            "delete": "Delete",
+            "downloading": "Downloading… {{percent}}%",
+            "working": "Working…",
+            "ready": "Installed",
+            "needed": "Download the model to use the natural voice. Until then the system voice is used.",
+            "downloadFailed": "Download failed: {{message}}"
+          },
+          "failure": {
+            "banner": "The natural voice stopped working, so the system voice is being used.",
+            "retry": "Retry",
+            "load": "The model could not be loaded.",
+            "synth": "Speech could not be generated.",
+            "sink": "The audio output failed. Check your output device.",
+            "worker_exit": "The speech engine stopped unexpectedly.",
+            "unknown": "An unknown problem occurred."
+          },
+          "notice": {
+            "firstSpeech": "The first sentence can take a few seconds while the model loads.",
+            "limitations": "English only. Sentences in other scripts are spoken by the system voice."
+          }
         }
       },
       "lazyStreamClose": {

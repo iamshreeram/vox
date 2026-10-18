@@ -41,7 +41,9 @@ const scenarios: Record<string, () => void> = {
   "the row follows the model state": () => {
     assert.equal(naturalRowState(status()), "download");
     assert.equal(
-      naturalRowState(status({ model: "downloading", downloaded: 5, total: 10 })),
+      naturalRowState(
+        status({ model: "downloading", downloaded: 5, total: 10 }),
+      ),
       "downloading",
     );
     for (const model of ["verifying", "installing", "deleting", "loading"]) {
@@ -51,25 +53,43 @@ const scenarios: Record<string, () => void> = {
   },
   "a failure only matters once the model is installed": () => {
     assert.equal(
-      naturalRowState(status({ model: "ready", health: "failed", failure: "load" })),
+      naturalRowState(
+        status({ model: "ready", health: "failed", failure: "load" }),
+      ),
       "failed",
     );
     assert.equal(
-      naturalRowState(status({ model: "not_installed", health: "failed", failure: "load" })),
+      naturalRowState(
+        status({ model: "not_installed", health: "failed", failure: "load" }),
+      ),
       "download",
     );
     assert.equal(
-      naturalRowState(status({ model: "downloading", health: "failed", failure: "sink" })),
+      naturalRowState(
+        status({ model: "downloading", health: "failed", failure: "sink" }),
+      ),
       "downloading",
     );
   },
   "failure codes map to stable i18n keys": () => {
     for (const code of ["load", "synth", "sink", "worker_exit"]) {
-      assert.equal(failureI18nKey(code), `settings.tts.natural.failure.${code}`);
+      assert.equal(
+        failureI18nKey(code),
+        `settings.advanced.tts.natural.failure.${code}`,
+      );
     }
-    assert.equal(failureI18nKey(null), "settings.tts.natural.failure.unknown");
-    assert.equal(failureI18nKey("???"), "settings.tts.natural.failure.unknown");
-    assert.equal(failureI18nKey(""), "settings.tts.natural.failure.unknown");
+    assert.equal(
+      failureI18nKey(null),
+      "settings.advanced.tts.natural.failure.unknown",
+    );
+    assert.equal(
+      failureI18nKey("???"),
+      "settings.advanced.tts.natural.failure.unknown",
+    );
+    assert.equal(
+      failureI18nKey(""),
+      "settings.advanced.tts.natural.failure.unknown",
+    );
   },
   "sizes are shown in whole megabytes": () => {
     assert.equal(formatMegabytes(0), "0 MB");
@@ -78,23 +98,24 @@ const scenarios: Record<string, () => void> = {
     assert.equal(formatMegabytes(-1), "0 MB");
     assert.equal(formatMegabytes(Number.NaN), "0 MB");
   },
-  "the missing-model hint only shows when natural is selected, supported and absent": () => {
-    assert.equal(selectedEngineNeedsModel("natural", status()), true);
-    assert.equal(
-      selectedEngineNeedsModel("natural", status({ model: "downloading" })),
-      true,
-    );
-    assert.equal(
-      selectedEngineNeedsModel("natural", status({ model: "ready" })),
-      false,
-    );
-    assert.equal(selectedEngineNeedsModel("system", status()), false);
-    assert.equal(
-      selectedEngineNeedsModel("natural", status({ supported: false })),
-      false,
-    );
-    assert.equal(selectedEngineNeedsModel("natural", null), false);
-  },
+  "the missing-model hint only shows when natural is selected, supported and absent":
+    () => {
+      assert.equal(selectedEngineNeedsModel("natural", status()), true);
+      assert.equal(
+        selectedEngineNeedsModel("natural", status({ model: "downloading" })),
+        true,
+      );
+      assert.equal(
+        selectedEngineNeedsModel("natural", status({ model: "ready" })),
+        false,
+      );
+      assert.equal(selectedEngineNeedsModel("system", status()), false);
+      assert.equal(
+        selectedEngineNeedsModel("natural", status({ supported: false })),
+        false,
+      );
+      assert.equal(selectedEngineNeedsModel("natural", null), false);
+    },
 };
 
 let failed = 0;
