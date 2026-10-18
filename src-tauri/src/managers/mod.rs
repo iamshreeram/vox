@@ -89,3 +89,5 @@ mod natural_sink_tests;
 #[cfg(test)]
 mod natural_test_support;
 pub mod tts_serial;
+#[cfg(test)]
+mod natural_engine_tests;
