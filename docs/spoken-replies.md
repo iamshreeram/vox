@@ -171,11 +171,16 @@ Measured on an Apple-silicon Mac with a release build:
 - The first sentence after a cold start (model not yet loaded) began playing
   after about 3 seconds. Checking the downloaded files takes about half a
   second of that.
+- When the model is already loaded, the first sentence of a reply began
+  playing after about 1.5 seconds.
 - Memory use peaked at about 700 MB while the engine is loaded. The engine
   unloads itself after 5 minutes without speech.
 - Starting to record silences speech within a few milliseconds.
-- A sentence that is already being generated cannot be aborted, so the reply
-  that follows an interruption can start a little late.
+- A sentence that is already being generated cannot be aborted. In the
+  measured run, the replacement after an interruption began about 2.3 seconds
+  later.
+
+These are single measurements on one machine, not guarantees.
 
 ### Limitations
 
