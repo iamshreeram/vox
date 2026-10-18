@@ -287,3 +287,40 @@ fn dropping_the_worker_joins_its_thread() {
         "dropping the worker must join the vault-io thread before returning"
     );
 }
+
+// ---------------------------------------------------------------- T0 foundation hardening (F5)
+
+#[test]
+fn hard_drop_is_bounded() {
+    let worker = VaultIoWorker::start();
+    let (started_tx, started_rx) = mpsc::channel::<()>();
+    let (release_tx, release_rx) = mpsc::channel::<()>();
+    // Barrier job holds the worker. Zero deadline: submit returns TimedOut at once and the job
+    // keeps running on the worker thread.
+    let outcome = worker.submit(
+        boxed(move || {
+            let _ = started_tx.send(());
+            let _ = release_rx.recv_timeout(Duration::from_secs(20));
+            0u8
+        }),
+        Duration::ZERO,
+    );
+    assert_eq!(outcome, Err(IoError::TimedOut), "barrier job is running");
+    started_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("barrier job started");
+
+    let (took_tx, took_rx) = mpsc::channel::<Duration>();
+    let dropper = thread::spawn(move || {
+        let began = Instant::now();
+        drop(worker);
+        let _ = took_tx.send(began.elapsed());
+    });
+    let verdict = took_rx.recv_timeout(Duration::from_millis(2500));
+    // Release the barrier in every case so no thread outlives the test.
+    release_tx.send(()).expect("release barrier job");
+    dropper.join().expect("dropper thread");
+    let took =
+        verdict.expect("dropping the worker with a barrier-held job must return within 2.5 s");
+    assert!(took < Duration::from_millis(2500), "drop took {took:?}");
+}

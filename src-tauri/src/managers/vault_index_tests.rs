@@ -1106,3 +1106,293 @@ fn idx_index_manager_is_send_and_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<IndexManager>();
 }
+
+// ---------------------------------------------------------------- T0 foundation hardening (DESIGN 3.0 F1-F4)
+
+use crate::managers::vault_index::{ProjectKey, SearchOpts};
+use std::thread;
+use std::time::Instant;
+
+/// Pause after a background call is started, so the call has passed its generation check and
+/// queued its job before the test reconfigures. Timing assumption, not a synchronisation point.
+const SETTLE: Duration = Duration::from_millis(200);
+
+/// Writes a real note under `root` (for tests that go through the real `VaultSource`).
+fn write_real(root: &Path, rel: &str, text: &str) {
+    let path = root.join(rel);
+    std::fs::create_dir_all(path.parent().expect("note has a parent")).expect("mkdir");
+    std::fs::write(path, text).expect("write note");
+}
+
+/// Holds the single IO worker on a barrier job. Returns once the job has started, plus the
+/// sender that releases it and the thread that owns the submission.
+fn hold_worker(io: &Arc<VaultIoWorker>) -> (Sender<()>, thread::JoinHandle<()>) {
+    let (started_tx, started_rx) = channel::<()>();
+    let (release_tx, release_rx) = channel::<()>();
+    let io = Arc::clone(io);
+    let handle = thread::spawn(move || {
+        let job: Box<dyn FnOnce() -> u8 + Send> = Box::new(move || {
+            let _ = started_tx.send(());
+            let _ = release_rx.recv_timeout(PAUSE_WAIT);
+            0u8
+        });
+        let _ = io.submit(job, Duration::from_secs(60));
+    });
+    started_rx
+        .recv_timeout(PAUSE_WAIT)
+        .expect("worker is held by the barrier job");
+    (release_tx, handle)
+}
+
+fn plain_opts(limit: usize) -> SearchOpts {
+    SearchOpts {
+        folder: None,
+        since_days: None,
+        limit,
+    }
+}
+
+#[test]
+fn hard_stale_refresh_is_bound_to_submit_time_config() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root_a = tempfile::tempdir().expect("root a");
+    let root_b = tempfile::tempdir().expect("root b");
+    write_real(
+        root_a.path(),
+        "Projects/alpha-a.md",
+        "# Alpha A\nSTALEROW body\n",
+    );
+    let io = Arc::new(VaultIoWorker::start());
+    let m = IndexManager::new(dir.path().to_path_buf(), Arc::clone(&io));
+    m.configure(Some(root_a.path().to_path_buf()), vec!["Projects".into()]);
+    let (release, holder) = hold_worker(&io);
+    let b_src = FakeNoteSource::new();
+    b_src.put("Projects/beta-b.md", "# Beta B\nBRANDB body\n");
+    thread::scope(|s| {
+        // Queues a refresh bound to vault A (root captured at submit), behind the barrier job.
+        let queued = s.spawn(|| m.request_refresh(BUDGET));
+        thread::sleep(SETTLE);
+        m.configure(Some(root_b.path().to_path_buf()), vec!["Projects".into()]);
+        m.refresh_with(&b_src, BUDGET);
+        release.send(()).expect("release worker");
+        queued.join().expect("request_refresh thread");
+    });
+    holder.join().expect("holder thread");
+    let d = m.debug_rows();
+    assert!(
+        !all_text(&d).contains("STALEROW"),
+        "stale refresh of vault A wrote rows into vault B"
+    );
+    assert!(note_row(&d, "Projects/alpha-a.md").is_none());
+    assert!(note_row(&d, "Projects/beta-b.md").is_some());
+    assert_eq!(
+        m.status().last_error_kind,
+        None,
+        "stale job must not touch last_error_kind"
+    );
+}
+
+#[test]
+fn hard_stale_refresh_does_not_set_last_error_kind() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root_a = tempfile::tempdir().expect("root a");
+    let root_b = tempfile::tempdir().expect("root b");
+    write_real(root_a.path(), "Projects/alpha-a.md", "# Alpha A\nbody\n");
+    let io = Arc::new(VaultIoWorker::start());
+    let m = IndexManager::new(dir.path().to_path_buf(), Arc::clone(&io));
+    m.configure(Some(root_a.path().to_path_buf()), vec!["Projects".into()]);
+    let (release, holder) = hold_worker(&io);
+    let b_src = FakeNoteSource::new();
+    b_src.put("Projects/beta-b.md", "# Beta B\nbody\n");
+    thread::scope(|s| {
+        let queued = s.spawn(|| m.request_refresh(BUDGET));
+        thread::sleep(SETTLE);
+        m.configure(Some(root_b.path().to_path_buf()), vec!["Projects".into()]);
+        m.refresh_with(&b_src, BUDGET);
+        // Vault A disappears before the stale job runs: its walk would fail.
+        let _ = std::fs::remove_dir_all(root_a.path());
+        release.send(()).expect("release worker");
+        queued.join().expect("request_refresh thread");
+    });
+    holder.join().expect("holder thread");
+    assert_eq!(
+        m.status().last_error_kind,
+        None,
+        "a stale job for vault A must not set last_error_kind on vault B"
+    );
+}
+
+#[test]
+fn hard_read_finishing_after_reconfigure_is_discarded() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root_a = tempfile::tempdir().expect("root a");
+    let root_b = tempfile::tempdir().expect("root b");
+    write_real(root_a.path(), "Projects/note.md", "# Note\nREADBODY text\n");
+    let io = Arc::new(VaultIoWorker::start());
+    let m = IndexManager::new(dir.path().to_path_buf(), Arc::clone(&io));
+    let gen_a = m.configure(Some(root_a.path().to_path_buf()), vec!["Projects".into()]);
+    let (release, holder) = hold_worker(&io);
+    let outcome = thread::scope(|s| {
+        // The read passes its generation check, then waits behind the barrier job.
+        let reader = s.spawn(|| m.read(gen_a, "Projects/note.md", None));
+        thread::sleep(SETTLE);
+        let gen_b = m.configure(Some(root_b.path().to_path_buf()), vec!["Projects".into()]);
+        assert_ne!(gen_a, gen_b, "configure bumps the generation");
+        release.send(()).expect("release worker");
+        reader.join().expect("read thread")
+    });
+    holder.join().expect("holder thread");
+    match outcome {
+        // DESIGN F2: discarded as Unavailable (GenerationMismatch is accepted as Unavailable-style).
+        Err(RagError::Unavailable) | Err(RagError::GenerationMismatch) => {}
+        Ok(_) => panic!("a read that finished after configure must not return note text"),
+        Err(other) => panic!("expected an Unavailable-style error, got {other:?}"),
+    }
+}
+
+#[test]
+fn hard_generation_readable_while_configure_is_busy() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = tempfile::tempdir().expect("root");
+    let m = manager(dir.path());
+    let gen_before = m.generation();
+    let (reached_tx, reached_rx) = channel::<()>();
+    let (release_tx, release_rx) = channel::<()>();
+    let root_path = root.path().to_path_buf();
+    let m_ref = &m;
+    thread::scope(|s| {
+        // configure is held inside its filesystem step by the test hook.
+        let busy = s.spawn(move || {
+            let mut hook = move || {
+                let _ = reached_tx.send(());
+                let _ = release_rx.recv_timeout(PAUSE_WAIT);
+            };
+            m_ref.configure_hooked(Some(root_path), vec!["Projects".into()], &mut hook)
+        });
+        reached_rx
+            .recv_timeout(PAUSE_WAIT)
+            .expect("configure reached its filesystem step");
+        let (gen_tx, gen_rx) = channel::<u64>();
+        let reader = s.spawn(move || {
+            let _ = gen_tx.send(m_ref.generation());
+        });
+        let began = Instant::now();
+        let during = gen_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("generation() returned while configure was busy");
+        let took = began.elapsed();
+        assert!(
+            took < Duration::from_millis(200),
+            "generation() waited {took:?} behind configure"
+        );
+        assert!(
+            during > gen_before,
+            "configure bumps the generation before its filesystem work"
+        );
+        release_tx.send(()).expect("release configure");
+        let after = busy.join().expect("configure thread");
+        assert_eq!(after, during);
+        reader.join().expect("generation reader");
+    });
+}
+
+#[test]
+fn hard_search_any_relaxed_or() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = tempfile::tempdir().expect("root");
+    let src = FakeNoteSource::new();
+    src.put("Projects/alpha.md", "# Alpha\nalpha notes about the plan\n");
+    let (m, gen) = configured(dir.path(), root.path());
+    m.refresh_with(&src, BUDGET);
+    let query = "notes about alpha and zebra";
+    let strict = m
+        .search(gen, query, &plain_opts(5))
+        .expect("AND search runs");
+    assert!(
+        strict.is_empty(),
+        "AND search needs every term; zebra is missing"
+    );
+    let relaxed = m
+        .search_any(gen, query, &plain_opts(5))
+        .expect("OR search runs");
+    assert!(
+        relaxed.iter().any(|h| h.rel == "Projects/alpha.md"),
+        "OR search finds the alpha note"
+    );
+}
+
+#[test]
+fn hard_search_any_sanitises_operators_and_caps_terms() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = tempfile::tempdir().expect("root");
+    let src = FakeNoteSource::new();
+    src.put("Projects/alpha.md", "# Alpha\nalpha body text\n");
+    src.put("Projects/seventh.md", "# Seventh\nseventhword body text\n");
+    let (m, gen) = configured(dir.path(), root.path());
+    m.refresh_with(&src, BUDGET);
+    let opts = plain_opts(5);
+    for hostile in [
+        "\"alpha\" OR NOT (zebra) * ^ NEAR(alpha, 2) \"",
+        "AND OR NOT",
+        "\"\"\"",
+        "*** ((( ",
+        "alpha\"; DROP TABLE chunks; --",
+        "",
+        "   ",
+    ] {
+        assert!(
+            m.search_any(gen, hostile, &opts).is_ok(),
+            "hostile query {hostile:?} must not error"
+        );
+    }
+    let last_prefix = m.search_any(gen, "zebra alp", &opts).expect("search runs");
+    assert!(
+        last_prefix.iter().any(|h| h.rel == "Projects/alpha.md"),
+        "the last term gets a prefix star"
+    );
+    let not_last = m.search_any(gen, "alp zebra", &opts).expect("search runs");
+    assert!(not_last.is_empty(), "a non-last term is exact only");
+    let six = m
+        .search_any(gen, "t1 t2 t3 t4 t5 seventhword", &opts)
+        .expect("search runs");
+    assert!(
+        six.iter().any(|h| h.rel == "Projects/seventh.md"),
+        "six terms are all used"
+    );
+    let seven = m
+        .search_any(gen, "t1 t2 t3 t4 t5 t6 seventhword", &opts)
+        .expect("search runs");
+    assert!(
+        seven.is_empty(),
+        "terms beyond six are dropped, so the seventh term cannot match"
+    );
+}
+
+#[test]
+fn hard_project_keys() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = tempfile::tempdir().expect("root");
+    let src = FakeNoteSource::new();
+    src.put("Projects/Atlas.md", "# Migration\nAtlas body text\n");
+    src.put("People/Sam.md", "# Sam Person\nbody\n");
+    src.put("Notes/Loose.md", "# Loose Idea\nbody\n");
+    let (m, gen) = configured(dir.path(), root.path());
+    m.refresh_with(&src, BUDGET);
+    let keys = m.project_keys(gen).expect("project keys");
+    let atlas = ProjectKey {
+        title: "Migration".into(),
+        stem: "Atlas".into(),
+        rel: "Projects/Atlas.md".into(),
+    };
+    assert!(keys.contains(&atlas), "Projects/Atlas.md is a project key");
+    assert!(
+        keys.iter().all(|k| k.rel.starts_with("Projects/")),
+        "only Projects/ notes are keys"
+    );
+    assert!(
+        !keys
+            .iter()
+            .any(|k| k.rel.starts_with("People/") || k.rel.starts_with("Notes/")),
+        "People/ and outside-folder notes are absent"
+    );
+}
