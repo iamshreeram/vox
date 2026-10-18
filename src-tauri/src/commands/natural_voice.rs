@@ -1,7 +1,6 @@
 //! Natural voice: data shapes and pure mappers for the settings UI (model status, voice list,
 //! user-safe error messages). The Tauri command functions and app wiring live in this module's
 //! second half (added in step S5c); everything here is deterministic and unit tested.
-#![allow(dead_code)]
 
 use crate::managers::natural_engine::{FailureReason, HealthState};
 use crate::managers::natural_model::{DownloadProgress, ModelError, ModelState};

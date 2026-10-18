@@ -1043,8 +1043,6 @@ pub fn change_tts_rate_setting(app: AppHandle, rate: u32) -> Result<(), String> 
 
 /// After a spoken-replies engine/voice change: stop current speech and let a failed natural
 /// voice retry (best effort; both managers may be absent).
-// TODO(S5c-2): drop once registered in lib.rs.
-#[allow(dead_code)]
 fn reset_spoken_replies(app: &AppHandle) {
     if let Some(tts) = app.try_state::<Arc<crate::managers::tts::TtsManager>>() {
         let _ = tts.stop();
@@ -1054,8 +1052,6 @@ fn reset_spoken_replies(app: &AppHandle) {
     }
 }
 
-// TODO(S5c-2): drop once registered in lib.rs.
-#[allow(dead_code)]
 #[tauri::command]
 #[specta::specta]
 pub fn change_tts_engine_setting(
@@ -1069,8 +1065,6 @@ pub fn change_tts_engine_setting(
     Ok(())
 }
 
-// TODO(S5c-2): drop once registered in lib.rs.
-#[allow(dead_code)]
 #[tauri::command]
 #[specta::specta]
 pub fn change_tts_natural_voice_setting(app: AppHandle, voice: String) -> Result<(), String> {

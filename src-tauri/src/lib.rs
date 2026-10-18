@@ -376,10 +376,39 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(ambient_coordinator);
     app_handle.manage(ambient_listener.clone());
     app_handle.manage(SourceUpdateRuntime::new());
+    // Natural voice: model files coordinator and health, managed on every platform so the
+    // settings commands answer everywhere. Nothing is created on disk and the model is NOT
+    // loaded here: the first natural spoken reply loads it lazily.
+    let natural_coordinator = Arc::new(managers::natural_model::ModelCoordinator::new(
+        portable::app_data_dir(app_handle)
+            .expect("Failed to resolve app data dir")
+            .join("tts_models"),
+        managers::natural_model::kokoro_assets(),
+        vec![managers::natural_model::KOKORO_URL_PREFIX.to_string()],
+    ));
+    let natural_health = managers::natural_engine::NaturalHealth::new(
+        managers::natural_engine::DEFAULT_AUTO_RETRY_COOLDOWN,
+    );
+    {
+        let event_handle = app_handle.clone();
+        natural_health.set_event_sink(Box::new(move |reason| {
+            let _ = event_handle.emit(
+                "natural-voice-error",
+                commands::natural_voice::failure_name(reason).to_string(),
+            );
+        }));
+    }
+    app_handle.manage(natural_coordinator.clone());
+    app_handle.manage(natural_health.clone());
     // Spoken replies: one shared manager, managed before any event listener
     // that might speak. Event listeners are registered in `register_tts_listeners`.
     #[cfg(target_os = "macos")]
     let tts_manager = {
+        use managers::natural_router::{EngineBackend, RouterChoice, RouterConfig};
+        use managers::tts_queue::{QueueBackend, SharedCore, SpeakerCore};
+        use std::sync::Mutex;
+        use std::time::Duration;
+
         let settings_handle = app_handle.clone();
         let pick_fast: Arc<dyn Fn() -> bool + Send + Sync> = Arc::new(move || {
             managers::realtime_config::RealtimeConfig::from_settings(&get_settings(
@@ -387,9 +416,58 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             ))
             .fast_voice
         });
-        Arc::new(managers::tts::TtsManager::new(
-            managers::tts_av::default_backend_with(pick_fast),
-        ))
+        let system = managers::tts_av::default_backend_with(pick_fast);
+        let system_queue: Box<dyn managers::tts::SpeechBackend> = Box::new(
+            managers::tts_serial::SerializedQueue::new(Box::new(managers::tts::SayBackend)),
+        );
+
+        let loader_coordinator = natural_coordinator.clone();
+        let loader = managers::natural_kokoro::KokoroLoader::new(Box::new(move || {
+            loader_coordinator
+                .load_verified_bytes()
+                .map_err(|e| e.to_string())
+        }));
+        let device_handle = app_handle.clone();
+        let sink = Arc::new(managers::natural_sink::ManagedSink::new(
+            Arc::new(
+                managers::natural_sink::CpalStreamFactory::with_device_source(Arc::new(
+                    move || get_settings(&device_handle).selected_output_device,
+                )),
+            ),
+            Duration::from_secs(3),
+        ));
+        let synth = managers::natural_engine::NaturalSynth::new(
+            Box::new(loader),
+            sink,
+            natural_health.clone(),
+            managers::natural_engine::NaturalConfig::default(),
+        );
+        let core: SharedCore<_> = Arc::new(Mutex::new(SpeakerCore::new(synth)));
+        let natural: Box<dyn managers::tts::SpeechBackend> = Box::new(QueueBackend::new(core));
+
+        let choice_handle = app_handle.clone();
+        let ready_coordinator = natural_coordinator.clone();
+        let router = EngineBackend::new(
+            system,
+            system_queue,
+            Some(natural),
+            natural_health.clone(),
+            RouterConfig {
+                choice: Arc::new(move || {
+                    let s = get_settings(&choice_handle);
+                    RouterChoice {
+                        natural: s.tts_engine == settings::TtsEngine::Natural,
+                        voice: managers::natural_voices::normalize_natural_voice(
+                            &s.tts_natural_voice,
+                        ),
+                    }
+                }),
+                model_ready: Arc::new(move || {
+                    ready_coordinator.state() == managers::natural_model::ModelState::Ready
+                }),
+            },
+        );
+        Arc::new(managers::tts::TtsManager::new(Box::new(router)))
     };
     #[cfg(not(target_os = "macos"))]
     let tts_manager = Arc::new(managers::tts::TtsManager::new(
@@ -924,6 +1002,14 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_tts_enabled_setting,
             shortcut::change_tts_voice_setting,
             shortcut::change_tts_rate_setting,
+            shortcut::change_tts_engine_setting,
+            shortcut::change_tts_natural_voice_setting,
+            commands::natural_voice::natural_voice_status,
+            commands::natural_voice::natural_voice_download,
+            commands::natural_voice::natural_voice_cancel_download,
+            commands::natural_voice::natural_voice_delete,
+            commands::natural_voice::natural_voice_retry,
+            commands::natural_voice::list_natural_voices,
             shortcut::tts_speak_test,
             shortcut::tts_stop,
             shortcut::change_post_process_base_url_setting,
@@ -1054,6 +1140,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         .typ::<managers::wakeword::WakeWordDetection>()
         .typ::<commands::ambient::AmbientAddressedPayload>()
         .typ::<managers::converse_platform::ConverseStateEvent>()
+        .typ::<commands::natural_voice::NaturalVoiceDownloadProgress>()
+        .typ::<commands::natural_voice::NaturalVoiceDownloadFinished>()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
