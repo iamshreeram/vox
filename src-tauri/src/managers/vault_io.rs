@@ -143,15 +143,32 @@ impl VaultIoWorker {
     }
 }
 
+/// Longest time `Drop` waits for the `vault-io` thread before detaching it (DESIGN 3.0 F5).
+const DROP_WAIT: Duration = Duration::from_secs(2);
+
+/// Waits up to `budget` for `handle`'s thread to finish, then joins it if it has. When the
+/// budget passes first the handle is dropped, which detaches the thread: a wedged job can
+/// never block the owner's drop.
+fn join_within(handle: JoinHandle<()>, budget: Duration) {
+    let deadline = Instant::now() + budget;
+    while !handle.is_finished() {
+        if Instant::now() >= deadline {
+            return;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    let _ = handle.join();
+}
+
 impl Drop for VaultIoWorker {
-    /// Closes the queue and joins the `vault-io` thread. Drop waits for a job that is still
-    /// running to finish, so it can block for as long as that job takes.
+    /// Closes the queue, waits at most 2 s for the `vault-io` thread, then detaches it if a
+    /// job is still running. Drop never blocks longer than that budget.
     fn drop(&mut self) {
         let (idle, _) = mpsc::sync_channel::<Job>(1);
         // Replacing the sender drops the last live sender, which ends the worker loop.
         drop(std::mem::replace(&mut self.jobs, idle));
         if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
+            join_within(handle, DROP_WAIT);
         }
     }
 }

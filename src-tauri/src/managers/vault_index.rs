@@ -13,7 +13,7 @@ use std::fmt::{self, Write as _};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -367,6 +367,17 @@ pub struct Hit {
     pub score: f64,
 }
 
+/// A project note eligible for project matching (DESIGN 3.4 F4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectKey {
+    /// Title shown for the note (frontmatter, then first heading, then file stem).
+    pub title: String,
+    /// File name without the `.md` extension.
+    pub stem: String,
+    /// Vault-relative path of the note.
+    pub rel: String,
+}
+
 /// One recent note (DESIGN 3.5).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecentNote {
@@ -496,6 +507,23 @@ pub struct IndexManager {
     inner: Arc<Mutex<Inner>>,
     /// True while a refresh pass is running (shared with queued refresh jobs).
     refreshing: Arc<AtomicBool>,
+    /// Lock-free mirror of `Inner::generation`, bumped first by `configure` (DESIGN 3.0 F3).
+    generation_atomic: AtomicU64,
+}
+
+#[cfg(test)]
+impl IndexManager {
+    /// T0 TEST SEAM (DESIGN 3.0 F3, hard_generation_readable_while_configure_is_busy).
+    /// Behaves like `configure` and calls `fs_hook` once from inside configure's
+    /// filesystem step (when a root is given), so a test can hold configure there.
+    pub(crate) fn configure_hooked(
+        &self,
+        root: Option<PathBuf>,
+        allowed_folders: Vec<String>,
+        fs_hook: &mut dyn FnMut(),
+    ) -> u64 {
+        self.configure_locked(root, allowed_folders, fs_hook)
+    }
 }
 
 /// Locks a mutex, recovering the value if a previous holder panicked.
@@ -954,11 +982,20 @@ fn begin_refresh(flag: &AtomicBool) -> bool {
         .is_ok()
 }
 
-/// Runs one refresh pass (DESIGN 3.4). The caller holds the `refreshing` flag.
+/// True while the index is still at generation `gen` (the generation a job was bound to).
+fn generation_is(inner: &Mutex<Inner>, gen: u64) -> bool {
+    lock(inner).generation == gen
+}
+
+/// Runs one refresh pass for the bound `folders` and generation `gen` (DESIGN 3.0 F1, 3.4).
+/// The caller holds the `refreshing` flag. A pass whose generation is no longer current returns
+/// at once without any mutation, including `last_error_kind`.
 fn run_refresh(
     inner: &Mutex<Inner>,
     source: &dyn NoteSource,
     budget: Duration,
+    folders: Vec<String>,
+    gen: u64,
     after_pending: &mut dyn FnMut(),
 ) -> RefreshReport {
     let started = std::time::Instant::now();
@@ -971,10 +1008,9 @@ fn run_refresh(
         already_running: false,
         walk_complete: false,
     };
-    let (folders, gen) = {
-        let g = lock(inner);
-        (g.folders.clone(), g.generation)
-    };
+    if !generation_is(inner, gen) {
+        return report;
+    }
     let limits = crate::managers::vault::WalkLimits {
         allowed_roots: folders.clone(),
         ..Default::default()
@@ -982,7 +1018,10 @@ fn run_refresh(
     let walk = match source.walk(&limits) {
         Ok(w) => w,
         Err(_) => {
-            lock(inner).last_error_kind = Some("walk".to_string());
+            let mut g = lock(inner);
+            if g.generation == gen {
+                g.last_error_kind = Some("walk".to_string());
+            }
             return report;
         }
     };
@@ -1207,18 +1246,23 @@ const READ_DEADLINE: Duration = Duration::from_secs(4);
 /// ?3 folder prefix pattern, ?4 cutoff in ms (the recency timestamp must be greater).
 const SCOPE_SQL: &str = "(?2 = '' OR n.rel = ?2 OR n.rel LIKE ?3 ESCAPE '\\') AND MAX(COALESCE(n.note_ts, 0), n.mtime_ms) > ?4";
 
-/// Builds the FTS5 MATCH expression for `query`, or `None` when it has no terms (DESIGN 3.5).
-/// Terms are maximal runs of alphanumerics, so no quote, operator or column filter survives.
-/// Each term is a quoted phrase; the last one also gets a prefix star. With `column`, every term
-/// is restricted to that FTS column.
-fn fts_match(query: &str, column: Option<&str>) -> Option<String> {
+/// Most query terms for `search_any` (DESIGN 3.0 F4).
+const ANY_TERMS_MAX: usize = 6;
+
+/// Sanitised query terms: maximal alphanumeric runs, at most `max_terms` of them, each cut to
+/// `TERM_MAX_CHARS`, read from the first `QUERY_MAX_CHARS` characters.
+fn query_terms(query: &str, max_terms: usize) -> Vec<String> {
     let head: String = query.chars().take(QUERY_MAX_CHARS).collect();
-    let terms: Vec<String> = head
-        .split(|c: char| !c.is_alphanumeric())
+    head.split(|c: char| !c.is_alphanumeric())
         .filter(|t| !t.is_empty())
-        .take(TERMS_MAX)
+        .take(max_terms)
         .map(|t| t.chars().take(TERM_MAX_CHARS).collect())
-        .collect();
+        .collect()
+}
+
+/// Joins quoted terms with `joiner`. The last term gets the prefix star. With `column`, every
+/// term is restricted to that FTS column. `None` when there are no terms.
+fn match_expr(terms: &[String], column: Option<&str>, joiner: &str) -> Option<String> {
     let last = terms.len().checked_sub(1)?;
     let parts: Vec<String> = terms
         .iter()
@@ -1231,7 +1275,20 @@ fn fts_match(query: &str, column: Option<&str>) -> Option<String> {
             }
         })
         .collect();
-    Some(parts.join(" "))
+    Some(parts.join(joiner))
+}
+
+/// Builds the FTS5 MATCH expression for `query`, or `None` when it has no terms (DESIGN 3.5).
+/// Terms are maximal runs of alphanumerics, so no quote, operator or column filter survives.
+/// Each term is a quoted phrase; the last one also gets a prefix star. With `column`, every term
+/// is restricted to that FTS column.
+fn fts_match(query: &str, column: Option<&str>) -> Option<String> {
+    match_expr(&query_terms(query, TERMS_MAX), column, " ")
+}
+
+/// Like `fts_match` with OR between terms and at most `ANY_TERMS_MAX` terms (DESIGN 3.0 F4).
+fn fts_match_any(query: &str) -> Option<String> {
+    match_expr(&query_terms(query, ANY_TERMS_MAX), None, " OR ")
 }
 
 /// Escapes `%`, `_` and `\` so a folder prefix matches literally in `LIKE ... ESCAPE '\'`.
@@ -1774,14 +1831,29 @@ impl IndexManager {
             io,
             inner: Arc::new(Mutex::new(Inner::default())),
             refreshing: Arc::new(AtomicBool::new(false)),
+            generation_atomic: AtomicU64::new(0),
         }
     }
 
     /// Sets the vault root and allowed folders, bumps the generation and returns the new
     /// generation (DESIGN 3.3).
     pub fn configure(&self, root: Option<PathBuf>, allowed_folders: Vec<String>) -> u64 {
+        self.configure_locked(root, allowed_folders, &mut || {})
+    }
+
+    /// Shared body of `configure`. The generation is bumped first, before any filesystem or
+    /// SQLite work, so lock-free readers see the new generation at once. `fs_hook` runs inside
+    /// the filesystem step (a no-op outside tests).
+    fn configure_locked(
+        &self,
+        root: Option<PathBuf>,
+        allowed_folders: Vec<String>,
+        fs_hook: &mut dyn FnMut(),
+    ) -> u64 {
         let mut inner = lock(&self.inner);
         inner.generation = inner.generation.wrapping_add(1);
+        self.generation_atomic
+            .store(inner.generation, Ordering::SeqCst);
         inner.conn = None;
         inner.id = None;
         inner.last_error_kind = None;
@@ -1791,6 +1863,7 @@ impl IndexManager {
         inner.folders = folders;
         inner.root = root.clone();
         if let Some(root) = root {
+            fs_hook();
             match VaultIdentity::for_root(&root) {
                 Ok(identity) => {
                     delete_other_caches(&self.data_dir, &cache_name(&identity.id));
@@ -1803,9 +1876,10 @@ impl IndexManager {
         inner.generation
     }
 
-    /// The current generation (DESIGN 3.3).
+    /// The current generation (DESIGN 3.3). Reads a lock-free mirror, so it never waits for a
+    /// `configure` that is still running.
     pub fn generation(&self) -> u64 {
-        lock(&self.inner).generation
+        self.generation_atomic.load(Ordering::SeqCst)
     }
 
     /// Snapshot of the index counters and last refresh state (DESIGN 3.8).
@@ -1862,31 +1936,38 @@ impl IndexManager {
                 walk_complete: false,
             };
         }
-        let report = run_refresh(&self.inner, source, budget, after_pending);
+        let (folders, gen) = {
+            let g = lock(&self.inner);
+            (g.folders.clone(), g.generation)
+        };
+        let report = run_refresh(&self.inner, source, budget, folders, gen, after_pending);
         self.refreshing.store(false, Ordering::SeqCst);
         report
     }
 
-    /// Enqueues a refresh on the vault-IO worker with a `VaultSource` (DESIGN 3.3).
+    /// Enqueues a refresh on the vault-IO worker with a `VaultSource` (DESIGN 3.3, 3.0 F1).
     ///
-    /// The refresh runs on the worker thread, but this call waits up to `budget` for the worker
-    /// to take the job and finish it, so it is not "fire and forget": do not call it from async
-    /// or UI code without moving it onto a blocking task. If the worker queue is full the
-    /// refresh is dropped without an error.
+    /// The root, allowed folders and generation are captured now, at submit, and the job runs
+    /// against them. If the index is reconfigured before the job runs, the job does nothing.
+    /// This call blocks the calling thread for up to `budget` while the job runs on the worker,
+    /// so it is not "fire and forget": do not call it from async or UI code without moving it
+    /// onto a blocking task. If the worker queue is full the refresh is dropped without an error.
     pub fn request_refresh(&self, budget: Duration) {
+        let (root, folders, gen) = {
+            let g = lock(&self.inner);
+            let Some(root) = g.root.clone() else {
+                return;
+            };
+            (root, g.folders.clone(), g.generation)
+        };
         let inner = Arc::clone(&self.inner);
         let refreshing = Arc::clone(&self.refreshing);
-        let root = lock(&self.inner).root.clone();
-        let Some(root) = root else {
-            return;
-        };
-        let folders = lock(&self.inner).folders.clone();
         let job = Box::new(move || {
             if !begin_refresh(&refreshing) {
                 return;
             }
-            let source = crate::managers::vault::VaultSource::new(root, folders);
-            let _ = run_refresh(&inner, &source, budget, &mut || {});
+            let source = crate::managers::vault::VaultSource::new(root, folders.clone());
+            let _ = run_refresh(&inner, &source, budget, folders, gen, &mut || {});
             refreshing.store(false, Ordering::SeqCst);
         });
         let _ = self.io.submit(job, budget);
@@ -1895,8 +1976,29 @@ impl IndexManager {
     /// Search at generation `gen` (DESIGN 3.5). Returns at most `opts.limit` hits (default 5,
     /// max 8), at most two per note, best first.
     pub fn search(&self, gen: u64, q: &str, opts: &SearchOpts) -> Result<Vec<Hit>, RagError> {
+        self.search_matching(gen, fts_match(q, None), opts)
+    }
+
+    /// Search like `search`, but the terms are joined with OR, at most six of them (DESIGN 3.0
+    /// F4). Ranking, limits, folder scope and generation checks are the same as `search`.
+    pub fn search_any(
+        &self,
+        gen: u64,
+        query: &str,
+        opts: &SearchOpts,
+    ) -> Result<Vec<Hit>, RagError> {
+        self.search_matching(gen, fts_match_any(query), opts)
+    }
+
+    /// Runs a prepared FTS expression at generation `gen`. `None` means no usable terms.
+    fn search_matching(
+        &self,
+        gen: u64,
+        matching: Option<String>,
+        opts: &SearchOpts,
+    ) -> Result<Vec<Hit>, RagError> {
         let found = with_conn(&self.inner, gen, |conn, folders| {
-            let Some(matching) = fts_match(q, None) else {
+            let Some(matching) = matching else {
                 return Ok(Vec::new());
             };
             let (exact, prefix) = folder_scope(opts.folder.as_deref(), folders)?;
@@ -2014,6 +2116,39 @@ impl IndexManager {
         Ok(found?.unwrap_or_default())
     }
 
+    /// Eligible `Projects/` notes at generation `gen` (DESIGN 3.0 F4), ordered by path. Only
+    /// current notes under an allowed `Projects/` folder count; People/ and other folders never do.
+    pub fn project_keys(&self, gen: u64) -> Result<Vec<ProjectKey>, RagError> {
+        let found = with_conn(&self.inner, gen, |conn, folders| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT rel, title FROM notes
+                     WHERE state = 'current' AND folder = 'Projects'
+                     ORDER BY rel LIMIT 500",
+                )
+                .map_err(map_sql)?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(map_sql)?;
+            let mut keys = Vec::new();
+            for row in rows {
+                let (rel, title) = row.map_err(map_sql)?;
+                if !rel.starts_with("Projects/") || !allowed(&rel, folders) {
+                    continue;
+                }
+                keys.push(ProjectKey {
+                    title: clean_text(&title, 200),
+                    stem: stem_of(&rel).to_string(),
+                    rel,
+                });
+            }
+            Ok(keys)
+        });
+        Ok(found?.unwrap_or_default())
+    }
+
     /// Reads one note through the IO worker at generation `gen` (DESIGN 3.5). A wedged worker
     /// or a missing vault is `Unavailable`; `heading` selects one section, case-insensitively.
     pub fn read(&self, gen: u64, rel: &str, heading: Option<&str>) -> Result<ReadResult, RagError> {
@@ -2074,11 +2209,18 @@ impl IndexManager {
             crate::managers::vault::NoteSource::read(&source, &owned)
         });
         match self.io.submit(job, READ_DEADLINE) {
-            Ok(Ok(note)) => Ok(note),
+            Ok(Ok(note)) => {
+                // DESIGN 3.0 F2: a reconfigure while the read was in flight makes the text stale.
+                if gen != self.generation() {
+                    return Err(RagError::GenerationMismatch);
+                }
+                Ok(note)
+            }
             Ok(Err(e)) => Err(map_vault(e)),
             Err(_) => Err(RagError::Unavailable),
         }
     }
+
     /// SQLite file so tests can assert what was persisted.
     pub(crate) fn debug_rows(&self) -> DebugDump {
         let inner = lock(&self.inner);
