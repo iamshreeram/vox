@@ -368,3 +368,64 @@ fn natural_live_manager_end_to_end() {
     mgr.note_recording_stopped();
     assert!(health.is_ready());
 }
+
+/// Captures every `log` record so a test can prove what the engine emits.
+struct CaptureLogger(std::sync::Mutex<Vec<(String, String)>>);
+
+impl log::Log for CaptureLogger {
+    fn enabled(&self, _: &log::Metadata) -> bool {
+        true
+    }
+    fn log(&self, record: &log::Record) {
+        self.0
+            .lock()
+            .unwrap()
+            .push((record.target().to_string(), record.args().to_string()));
+    }
+    fn flush(&self) {}
+}
+
+/// PRIVACY. Run ALONE (it installs the process-wide logger):
+/// `cargo test --lib natural_live_synthesis_logs_only_suppressed_targets -- --ignored`.
+/// Raw, un-normalised text with digits and symbols goes straight into the Kokoro crate, which
+/// is known to log out-of-vocabulary characters. Every record emitted during synthesis must
+/// come from a target that `lib.rs` suppresses, and no record from any OTHER target may contain
+/// the spoken text.
+#[test]
+#[ignore]
+fn natural_live_synthesis_logs_only_suppressed_targets() {
+    use crate::managers::natural_voices::SUPPRESSED_LOG_TARGETS;
+    static CAPTURE: CaptureLogger = CaptureLogger(std::sync::Mutex::new(Vec::new()));
+    log::set_logger(&CAPTURE).expect("run this test alone");
+    log::set_max_level(log::LevelFilter::Trace);
+
+    let mut engine = load_live();
+    for text in [
+        "Your code is 4821 and the total is 50% of #77 at 3:30pm.",
+        "Cafe Deja Vu costs $12.50 & more, at me@home.",
+    ] {
+        let _ = engine.synth(text, "af_heart", 1.0);
+    }
+    let records = CAPTURE.0.lock().unwrap().clone();
+    println!("captured {} log records", records.len());
+    let is_suppressed = |target: &str| {
+        SUPPRESSED_LOG_TARGETS
+            .iter()
+            .any(|t| target == *t || target.starts_with(&format!("{t}::")))
+    };
+    assert!(
+        records.iter().any(|(target, _)| is_suppressed(target)),
+        "sensitivity check: the crate is expected to log unknown characters for raw digits"
+    );
+    for (target, message) in &records {
+        if is_suppressed(target) {
+            continue;
+        }
+        for secret in ["4821", "12.50", "me@home", "Deja", "Cafe", "#77", "3:30"] {
+            assert!(
+                !message.contains(secret),
+                "unsuppressed target {target:?} logged spoken text: {message:?}"
+            );
+        }
+    }
+}

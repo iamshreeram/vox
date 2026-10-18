@@ -800,6 +800,36 @@ fn a_device_error_fails_health_drains_and_recover_restores_playback() {
 }
 
 #[test]
+fn numbers_and_symbols_are_spelled_out_before_synthesis() {
+    // The Kokoro crate mangles digits (first number read as Chinese numerals, later digits
+    // dropped and logged), so the engine must hand it plain English words.
+    let mut r = rig(Script::default());
+    r.say("I have 3 apples and 50% off.");
+    assert!(r.wait_idle(5));
+    let texts: Vec<String> = r.calls().into_iter().map(|c| c.text).collect();
+    assert_eq!(texts, vec!["I have three apples and fifty percent off."]);
+    for t in &texts {
+        assert!(!t.chars().any(|c| c.is_ascii_digit() || c == '%'), "{t:?}");
+    }
+}
+
+#[test]
+fn text_that_normalises_to_nothing_is_ignored_without_failing() {
+    let mut r = rig(Script::default());
+    r.say("*** ~~~ ___");
+    assert!(r.wait_idle(3));
+    assert!(
+        r.calls().is_empty(),
+        "nothing speakable, nothing synthesised"
+    );
+    assert_eq!(r.health.state(), HealthState::Ready);
+    // and the engine still works afterwards
+    r.say(SHORT);
+    assert!(r.wait_idle(5));
+    assert_eq!(r.calls().len(), 1);
+}
+
+#[test]
 fn a_health_bump_alone_makes_the_next_speak_recover_by_itself() {
     // Recovery triggers (retry button, settings change, download, auto-retry) only bump the
     // health revision: the synth must notice and recover on the next speak without any call.

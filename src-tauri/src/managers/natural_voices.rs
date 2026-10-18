@@ -149,3 +149,8 @@ mod tests {
         }
     }
 }
+
+/// Log targets that must never reach any log sink (file, console, webview). The Kokoro crate
+/// logs every out-of-vocabulary character it meets (`Unknown phone <char>`), which is spoken
+/// text; speech content must never be logged. `lib.rs` turns each of these targets off.
+pub const SUPPRESSED_LOG_TARGETS: &[&str] = &["kokoro_tts"];
