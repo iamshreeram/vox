@@ -164,15 +164,16 @@ anywhere and is never logged.
 
 ### Performance
 
-Measured on an Apple-silicon Mac in a development build:
+Measured on an Apple-silicon Mac with a release build:
 
-- The first sentence after a cold start takes roughly 3 to 5 seconds.
-- Later sentences start in about 2 to 3 seconds.
-- Memory use is about 700 MB while the engine is loaded. The engine unloads
-  itself after 5 minutes without speech.
-- After you interrupt speech, the next reply can take up to about 6 seconds
-  to start, because a sentence that is already being generated cannot be
-  aborted.
+- The first sentence after a cold start (model not yet loaded) began playing
+  after about 3 seconds. Checking the downloaded files takes about half a
+  second of that.
+- Memory use peaked at about 700 MB while the engine is loaded. The engine
+  unloads itself after 5 minutes without speech.
+- Starting to record silences speech within a few milliseconds.
+- A sentence that is already being generated cannot be aborted, so the reply
+  that follows an interruption can start a little late.
 
 ### Limitations
 

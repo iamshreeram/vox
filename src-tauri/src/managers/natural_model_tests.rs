@@ -531,3 +531,35 @@ async fn stale_staging_dirs_are_removed_on_start_and_an_unready_install_is_repla
     assert_eq!(coord.state(), ModelState::Ready);
     assert_eq!(f.names(), vec![KOKORO_DIR_NAME.to_string()]);
 }
+
+/// NETWORK. The real production download: pinned GitHub URLs -> staged -> SHA-256 verified ->
+/// published -> verified in-memory load. Proves the shipped URLs, sizes and hashes agree.
+#[tokio::test]
+#[ignore]
+async fn natural_live_real_download_verifies_and_loads() {
+    let tmp = TempDir::new().unwrap();
+    let coord = ModelCoordinator::new(
+        tmp.path().join("tts_models"),
+        kokoro_assets(),
+        vec![KOKORO_URL_PREFIX.to_string()],
+    );
+    assert_eq!(coord.state(), ModelState::NotInstalled);
+    let started = Instant::now();
+    let last = Arc::new(Mutex::new(DownloadProgress::default()));
+    let l = last.clone();
+    coord
+        .download(&move |p| *l.lock().unwrap() = p)
+        .await
+        .expect("the real download must verify against the pinned sizes and hashes");
+    let progress = *last.lock().unwrap();
+    println!(
+        "REAL DOWNLOAD ok in {:.1?}: {} / {} bytes",
+        started.elapsed(),
+        progress.downloaded,
+        progress.total
+    );
+    assert_eq!(progress.downloaded, progress.total);
+    assert_eq!(coord.state(), ModelState::Ready);
+    let bytes = coord.load_verified_bytes().expect("verified load");
+    drop(bytes);
+}
