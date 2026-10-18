@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "语音引擎",
+            "description": "选择语音回复的声音。",
+            "system": "系统语音",
+            "natural": "自然语音（测试版）"
+          },
+          "voice": {
+            "label": "自然语音",
+            "description": "选择用于自然语音的声音。",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "美式",
+            "British": "英式"
+          },
+          "gender": {
+            "Female": "女声",
+            "Male": "男声"
+          },
+          "preview": "试听",
+          "previewText": "你好！这就是自然语音的声音。",
+          "model": {
+            "label": "自然语音模型",
+            "notInstalled": "尚未下载。仅需一次性下载约 {{size}}；语音在本设备上生成，你的文本绝不会被发送到任何地方。",
+            "download": "下载",
+            "cancel": "取消",
+            "delete": "删除",
+            "downloading": "正在下载… {{percent}}%",
+            "working": "正在处理…",
+            "ready": "已安装",
+            "needed": "下载模型后即可使用自然语音。在此之前将使用系统语音。",
+            "downloadFailed": "下载失败：{{message}}"
+          },
+          "failure": {
+            "banner": "自然语音已停止工作，因此正在使用系统语音。",
+            "retry": "重试",
+            "load": "无法加载模型。",
+            "synth": "无法生成语音。",
+            "sink": "音频输出失败。请检查你的输出设备。",
+            "worker_exit": "语音引擎意外停止。",
+            "unknown": "发生未知问题。"
+          },
+          "notice": {
+            "firstSpeech": "加载模型时，第一句话可能需要几秒钟。",
+            "limitations": "仅支持英语。其他文字的句子将由系统语音朗读。"
+          }
         }
       },
       "lazyStreamClose": {

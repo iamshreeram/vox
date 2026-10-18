@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "Motor de veu",
+            "description": "Trieu com sonen les respostes parlades.",
+            "system": "Veu del sistema",
+            "natural": "Veu natural (beta)"
+          },
+          "voice": {
+            "label": "Veu natural",
+            "description": "Trieu la veu que s'utilitza per a la parla natural.",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "americà",
+            "British": "britànic"
+          },
+          "gender": {
+            "Female": "femenina",
+            "Male": "masculina"
+          },
+          "preview": "Escolta",
+          "previewText": "Hola! Així sona la veu natural.",
+          "model": {
+            "label": "Model de veu natural",
+            "notInstalled": "No baixat. Baixada única d'uns {{size}}; la parla es genera en aquest dispositiu i el vostre text no s'envia mai enlloc.",
+            "download": "Baixa",
+            "cancel": "Cancel·la",
+            "delete": "Suprimeix",
+            "downloading": "S'està baixant… {{percent}}%",
+            "working": "S'està processant…",
+            "ready": "Instal·lat",
+            "needed": "Baixeu el model per utilitzar la veu natural. Mentrestant s'utilitza la veu del sistema.",
+            "downloadFailed": "La baixada ha fallat: {{message}}"
+          },
+          "failure": {
+            "banner": "La veu natural ha deixat de funcionar, per això s'utilitza la veu del sistema.",
+            "retry": "Torna-ho a provar",
+            "load": "No s'ha pogut carregar el model.",
+            "synth": "No s'ha pogut generar la parla.",
+            "sink": "La sortida d'àudio ha fallat. Comproveu el dispositiu de sortida.",
+            "worker_exit": "El motor de veu s'ha aturat inesperadament.",
+            "unknown": "S'ha produït un problema desconegut."
+          },
+          "notice": {
+            "firstSpeech": "La primera frase pot trigar uns segons mentre es carrega el model.",
+            "limitations": "Només en anglès. Les frases en altres escriptures les llegeix la veu del sistema."
+          }
         }
       },
       "lazyStreamClose": {

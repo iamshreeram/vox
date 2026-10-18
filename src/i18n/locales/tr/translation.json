@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "Ses motoru",
+            "description": "Sesli yanıtların nasıl duyulacağını seçin.",
+            "system": "Sistem sesi",
+            "natural": "Doğal ses (beta)"
+          },
+          "voice": {
+            "label": "Doğal ses",
+            "description": "Doğal konuşma için kullanılacak sesi seçin.",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "Amerikan",
+            "British": "İngiliz"
+          },
+          "gender": {
+            "Female": "kadın",
+            "Male": "erkek"
+          },
+          "preview": "Önizle",
+          "previewText": "Merhaba! Doğal ses böyle duyulur.",
+          "model": {
+            "label": "Doğal ses modeli",
+            "notInstalled": "İndirilmedi. Yaklaşık {{size}} boyutunda tek seferlik indirme; konuşma bu cihazda üretilir ve metniniz hiçbir yere gönderilmez.",
+            "download": "İndir",
+            "cancel": "İptal",
+            "delete": "Sil",
+            "downloading": "İndiriliyor… %{{percent}}",
+            "working": "İşleniyor…",
+            "ready": "Yüklendi",
+            "needed": "Doğal sesi kullanmak için modeli indirin. O zamana kadar sistem sesi kullanılır.",
+            "downloadFailed": "İndirme başarısız: {{message}}"
+          },
+          "failure": {
+            "banner": "Doğal ses çalışmayı durdurdu, bu nedenle sistem sesi kullanılıyor.",
+            "retry": "Yeniden dene",
+            "load": "Model yüklenemedi.",
+            "synth": "Konuşma üretilemedi.",
+            "sink": "Ses çıkışı başarısız oldu. Çıkış aygıtınızı kontrol edin.",
+            "worker_exit": "Konuşma motoru beklenmedik şekilde durdu.",
+            "unknown": "Bilinmeyen bir sorun oluştu."
+          },
+          "notice": {
+            "firstSpeech": "Model yüklenirken ilk cümle birkaç saniye sürebilir.",
+            "limitations": "Yalnızca İngilizce. Başka yazı sistemlerindeki cümleler sistem sesiyle okunur."
+          }
         }
       },
       "lazyStreamClose": {

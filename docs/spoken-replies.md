@@ -125,3 +125,57 @@ depends on the voice. Some voices change very little.
     was skipped.
 - **Errors under a field** come from the settings save. The field goes back
   to its saved value.
+
+## Natural voice (macOS, optional)
+
+The natural voice is a local neural voice (Kokoro) that can read spoken
+replies instead of the system voice. It speaks English only and offers 28
+voices with American and British accents.
+
+### Turning it on
+
+1. Open Settings, Advanced, Spoken replies.
+2. In "Voice engine", choose "Natural voice (beta)".
+3. Pick a voice.
+4. Press Download.
+
+### The one-time download
+
+- The download is about 115 MB: an 88 MB model and a 27 MB voice pack.
+- Both files come from a public GitHub release. Vox checks the size and the
+  SHA-256 checksum of each file before it uses them.
+- Nothing else is downloaded.
+- The model is stored in the app data folder, in `tts_models/kokoro-v1.0`.
+  You can delete it from the same settings screen.
+
+### Privacy
+
+Speech is generated on this computer. The text that is spoken is never sent
+anywhere and is never logged.
+
+### Behaviour
+
+- The system voice stays the default. The natural voice is used only when
+  you choose it.
+- If the model is missing or fails, or a sentence is not in Latin script, the
+  system voice speaks instead.
+- After a failure, a Retry button appears in the settings.
+- Starting to record stops speech immediately.
+
+### Performance
+
+Measured on an Apple-silicon Mac in a development build:
+
+- The first sentence after a cold start takes roughly 3 to 5 seconds.
+- Later sentences start in about 2 to 3 seconds.
+- Memory use is about 700 MB while the engine is loaded. The engine unloads
+  itself after 5 minutes without speech.
+- After you interrupt speech, the next reply can take up to about 6 seconds
+  to start, because a sentence that is already being generated cannot be
+  aborted.
+
+### Limitations
+
+- English only.
+- Emotion and pitch hints from the composer are ignored by the natural voice.
+- The speaking rate follows the existing "Speaking rate" setting.

@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "Motore vocale",
+            "description": "Scegli come suonano le risposte vocali.",
+            "system": "Voce di sistema",
+            "natural": "Voce naturale (beta)"
+          },
+          "voice": {
+            "label": "Voce naturale",
+            "description": "Scegli la voce usata per il parlato naturale.",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "americano",
+            "British": "britannico"
+          },
+          "gender": {
+            "Female": "femminile",
+            "Male": "maschile"
+          },
+          "preview": "Anteprima",
+          "previewText": "Ciao! Ecco come suona la voce naturale.",
+          "model": {
+            "label": "Modello della voce naturale",
+            "notInstalled": "Non scaricato. Download unico di circa {{size}}; il parlato viene generato su questo dispositivo e il tuo testo non viene mai inviato altrove.",
+            "download": "Scarica",
+            "cancel": "Annulla",
+            "delete": "Elimina",
+            "downloading": "Download in corso… {{percent}}%",
+            "working": "Elaborazione…",
+            "ready": "Installato",
+            "needed": "Scarica il modello per usare la voce naturale. Fino ad allora viene usata la voce di sistema.",
+            "downloadFailed": "Download non riuscito: {{message}}"
+          },
+          "failure": {
+            "banner": "La voce naturale ha smesso di funzionare, quindi viene usata la voce di sistema.",
+            "retry": "Riprova",
+            "load": "Impossibile caricare il modello.",
+            "synth": "Impossibile generare il parlato.",
+            "sink": "L'uscita audio non è riuscita. Controlla il dispositivo di uscita.",
+            "worker_exit": "Il motore vocale si è arrestato in modo imprevisto.",
+            "unknown": "Si è verificato un problema sconosciuto."
+          },
+          "notice": {
+            "firstSpeech": "La prima frase può richiedere alcuni secondi mentre il modello si carica.",
+            "limitations": "Solo inglese. Le frasi in altri sistemi di scrittura vengono lette dalla voce di sistema."
+          }
         }
       },
       "lazyStreamClose": {

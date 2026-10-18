@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "Motor de voz",
+            "description": "Elige cómo suenan las respuestas habladas.",
+            "system": "Voz del sistema",
+            "natural": "Voz natural (beta)"
+          },
+          "voice": {
+            "label": "Voz natural",
+            "description": "Elige la voz utilizada para el habla natural.",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "estadounidense",
+            "British": "británico"
+          },
+          "gender": {
+            "Female": "femenina",
+            "Male": "masculina"
+          },
+          "preview": "Escuchar",
+          "previewText": "¡Hola! Así suena la voz natural.",
+          "model": {
+            "label": "Modelo de voz natural",
+            "notInstalled": "No descargado. Descarga única de unos {{size}}; la voz se genera en este dispositivo y tu texto nunca se envía a ningún sitio.",
+            "download": "Descargar",
+            "cancel": "Cancelar",
+            "delete": "Eliminar",
+            "downloading": "Descargando… {{percent}}%",
+            "working": "Procesando…",
+            "ready": "Instalado",
+            "needed": "Descarga el modelo para usar la voz natural. Mientras tanto se usa la voz del sistema.",
+            "downloadFailed": "Error en la descarga: {{message}}"
+          },
+          "failure": {
+            "banner": "La voz natural dejó de funcionar, así que se está usando la voz del sistema.",
+            "retry": "Reintentar",
+            "load": "No se pudo cargar el modelo.",
+            "synth": "No se pudo generar la voz.",
+            "sink": "Falló la salida de audio. Comprueba tu dispositivo de salida.",
+            "worker_exit": "El motor de voz se detuvo inesperadamente.",
+            "unknown": "Se produjo un problema desconocido."
+          },
+          "notice": {
+            "firstSpeech": "La primera frase puede tardar unos segundos mientras se carga el modelo.",
+            "limitations": "Solo en inglés. Las frases en otros sistemas de escritura las lee la voz del sistema."
+          }
         }
       },
       "lazyStreamClose": {
