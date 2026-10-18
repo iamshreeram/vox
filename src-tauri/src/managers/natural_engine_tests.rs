@@ -716,3 +716,22 @@ fn a_device_error_fails_health_drains_and_recover_restores_playback() {
     assert_eq!(r.factory.opens(), 2, "stream re-created");
     assert_eq!(r.events().len(), 1);
 }
+
+#[test]
+fn a_health_bump_alone_makes_the_next_speak_recover_by_itself() {
+    // Recovery triggers (retry button, settings change, download, auto-retry) only bump the
+    // health revision: the synth must notice and recover on the next speak without any call.
+    let mut r = rig(Script::default());
+    let text = [sentence("alpha", 48), sentence("bravo", 66), sentence("charlie", 66)].join(" ");
+    r.say(&text);
+    assert!(wait_until(Duration::from_secs(5), || r.nonzero() > 0));
+    r.factory.ctl().unwrap().fail();
+    assert!(wait_until(Duration::from_secs(2), || r.health.state() == HealthState::Failed(FailureReason::Sink)));
+    assert!(r.wait_idle(3));
+    r.health.bump(); // no synth.recover() call
+    let before = r.nonzero();
+    r.say(SHORT);
+    assert!(r.wait_idle(5));
+    assert!(r.nonzero() >= before + samples_for(SHORT), "the next speak must play");
+    assert_eq!(r.factory.opens(), 2);
+}
