@@ -68,11 +68,11 @@ mod natural_router_tests;
 pub mod natural_sink;
 #[cfg(test)]
 mod natural_sink_tests;
+#[cfg(test)]
+mod natural_test_support;
 pub mod natural_text;
 #[cfg(test)]
 mod natural_text_tests;
-#[cfg(test)]
-mod natural_test_support;
 pub mod natural_voices;
 pub mod ownership;
 pub mod realtime_complete;

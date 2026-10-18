@@ -1,8 +1,7 @@
 //! Synthesis engine core of the natural voice: a `Synth` (see `tts_queue::Synth`) that runs a
 //! neural engine on ONE worker thread and plays through an `AudioSink`.
 //!
-//! Spec = `natural_engine_tests.rs`. STUB: bodies are `todo!()` until step S3. Signatures and
-//! doc contracts are binding. DESIGN.md D2 (engine) and D7 (health) describe the intent.
+//! Spec = `natural_engine_tests.rs`. Signatures and doc contracts are binding. DESIGN.md D2 (engine) and D7 (health) describe the intent.
 #![allow(dead_code)]
 
 use crate::managers::natural_audio::{resample_mono, trim_silence, wpm_to_speed};
@@ -10,6 +9,7 @@ use crate::managers::natural_chunk::{
     split_for_synthesis, synth_with_overflow_retry, RetryOutcome, NATURAL_MAX_CHARS,
 };
 use crate::managers::natural_sink::{AudioSink, CommitResult, FlushOutcome};
+use crate::managers::natural_text::normalize_for_speech;
 use crate::managers::tts_queue::{StopOutcome, Synth};
 use std::collections::VecDeque;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -614,7 +614,10 @@ impl Synth for NaturalSynth {
         if self.inner.health.revision() != self.seen_revision {
             self.recover();
         }
-        let chunks = split_for_synthesis(text, NATURAL_MAX_CHARS);
+        // Spell out numbers and symbols first: the Kokoro crate mangles digits and logs
+        // unknown characters (spoken text) otherwise.
+        let text = normalize_for_speech(text);
+        let chunks = split_for_synthesis(&text, NATURAL_MAX_CHARS);
         if chunks.is_empty() {
             return;
         }

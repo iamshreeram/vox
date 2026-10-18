@@ -80,6 +80,15 @@ fn level_filter_from_u8(value: u8) -> log::LevelFilter {
     }
 }
 
+/// Turns off every log target in `natural_voices::SUPPRESSED_LOG_TARGETS` (third-party crates
+/// that would log spoken text) for all sinks: stdout/stderr, file and webview.
+fn with_suppressed_log_targets(mut builder: LogBuilder) -> LogBuilder {
+    for target in managers::natural_voices::SUPPRESSED_LOG_TARGETS {
+        builder = builder.level_for(*target, log::LevelFilter::Off);
+    }
+    builder
+}
+
 fn build_console_filter() -> env_filter::Filter {
     let mut builder = EnvFilterBuilder::new();
 
@@ -1204,7 +1213,7 @@ pub fn run(cli_args: CliArgs) {
         .device_event_filter(tauri::DeviceEventFilter::Always)
         .plugin(tauri_plugin_dialog::init())
         .plugin(
-            LogBuilder::new()
+            with_suppressed_log_targets(LogBuilder::new())
                 .level(log::LevelFilter::Trace) // Set to most verbose level globally
                 .max_file_size(500_000)
                 .rotation_strategy(RotationStrategy::KeepOne)

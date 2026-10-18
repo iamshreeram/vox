@@ -577,8 +577,13 @@ fn pending_chunks_are_capped_and_the_excess_is_counted() {
         cfg,
         false, // no device needed: only synthesis is checked
     );
+    // Digit-free markers: the engine spells digits out, which would lengthen each chunk.
+    let letter = |n: usize| (b'a' + (n % 26) as u8) as char;
     let text: Vec<String> = (0..100)
-        .map(|i| sentence(&format!("s{i:03}"), 66))
+        .map(|i| {
+            let marker = format!("s{}{}{}", letter(i / 676), letter(i / 26), letter(i));
+            sentence(&marker, 66)
+        })
         .collect();
     let text = text.join(" ");
     let total = split_for_synthesis(&text, NATURAL_MAX_CHARS).len();

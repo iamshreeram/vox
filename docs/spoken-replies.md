@@ -157,8 +157,10 @@ anywhere and is never logged.
 
 - The system voice stays the default. The natural voice is used only when
   you choose it.
-- If the model is missing or fails, or a sentence is not in Latin script, the
-  system voice speaks instead.
+- If the model is missing or fails, the system voice speaks instead. A reply
+  that starts in another script is spoken by the system voice; a sentence in
+  another script inside a reply the natural voice is already speaking is
+  skipped.
 - After a failure, a Retry button appears in the settings.
 - Starting to record stops speech immediately.
 
@@ -180,3 +182,5 @@ Measured on an Apple-silicon Mac with a release build:
 - English only.
 - Emotion and pitch hints from the composer are ignored by the natural voice.
 - The speaking rate follows the existing "Speaking rate" setting.
+- Numbers, percentages, currency, ordinals and times are spoken out in English
+  words; other symbols are read as words or skipped.
