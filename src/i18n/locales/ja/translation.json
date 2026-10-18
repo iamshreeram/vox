@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "音声エンジン",
+            "description": "読み上げの音声を選択します。",
+            "system": "システムの音声",
+            "natural": "自然な音声（ベータ）"
+          },
+          "voice": {
+            "label": "自然な音声",
+            "description": "自然な読み上げに使う音声を選択します。",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "アメリカ英語",
+            "British": "イギリス英語"
+          },
+          "gender": {
+            "Female": "女性",
+            "Male": "男性"
+          },
+          "preview": "試聴",
+          "previewText": "こんにちは！これが自然な音声です。",
+          "model": {
+            "label": "自然な音声モデル",
+            "notInstalled": "未ダウンロード。約{{size}}の初回のみのダウンロードです。音声はこのデバイス上で生成され、テキストが外部に送信されることはありません。",
+            "download": "ダウンロード",
+            "cancel": "キャンセル",
+            "delete": "削除",
+            "downloading": "ダウンロード中… {{percent}}%",
+            "working": "処理中…",
+            "ready": "インストール済み",
+            "needed": "自然な音声を使うにはモデルをダウンロードしてください。それまではシステムの音声が使われます。",
+            "downloadFailed": "ダウンロードに失敗しました: {{message}}"
+          },
+          "failure": {
+            "banner": "自然な音声が動作しなくなったため、システムの音声を使用しています。",
+            "retry": "再試行",
+            "load": "モデルを読み込めませんでした。",
+            "synth": "音声を生成できませんでした。",
+            "sink": "オーディオ出力に失敗しました。出力デバイスを確認してください。",
+            "worker_exit": "音声エンジンが予期せず停止しました。",
+            "unknown": "不明な問題が発生しました。"
+          },
+          "notice": {
+            "firstSpeech": "モデルの読み込み中は、最初の文に数秒かかることがあります。",
+            "limitations": "英語のみ。他の文字体系の文はシステムの音声で読み上げられます。"
+          }
         }
       },
       "lazyStreamClose": {

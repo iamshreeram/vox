@@ -46,6 +46,34 @@ pub mod media_control;
 pub mod memory;
 pub mod model;
 pub mod model_capabilities;
+pub mod natural_audio;
+#[cfg(test)]
+mod natural_audio_tests;
+pub mod natural_chunk;
+#[cfg(test)]
+mod natural_chunk_tests;
+pub mod natural_engine;
+#[cfg(test)]
+mod natural_engine_tests;
+#[cfg(target_os = "macos")]
+pub mod natural_kokoro;
+#[cfg(all(test, target_os = "macos"))]
+mod natural_kokoro_tests;
+pub mod natural_model;
+#[cfg(test)]
+mod natural_model_tests;
+pub mod natural_router;
+#[cfg(test)]
+mod natural_router_tests;
+pub mod natural_sink;
+#[cfg(test)]
+mod natural_sink_tests;
+#[cfg(test)]
+mod natural_test_support;
+pub mod natural_text;
+#[cfg(test)]
+mod natural_text_tests;
+pub mod natural_voices;
 pub mod ownership;
 pub mod realtime_complete;
 pub mod realtime_config;
@@ -63,6 +91,9 @@ pub mod tts;
 #[cfg(target_os = "macos")]
 pub mod tts_av;
 pub mod tts_queue;
+pub mod tts_serial;
+#[cfg(test)]
+mod tts_serial_tests;
 pub mod tts_voices;
 pub mod vault;
 pub mod vault_context;

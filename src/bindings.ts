@@ -69,6 +69,14 @@ async changeThemeSetting(theme: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Validates and persists a custom color palette, re-applying native window
+ * chrome if `Custom` is the currently active theme. `colors` is already
+ * guaranteed to contain only valid `#rrggbb` hex strings by its own
+ * `Deserialize` impl (see `settings::CustomThemeColors`) -- IPC deserialization
+ * rejects an invalid payload before this command body ever runs, so there is
+ * nothing left to re-validate here.
+ */
 async updateCustomThemeColors(colors: CustomThemeColors) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("update_custom_theme_colors", { colors }) };
@@ -235,6 +243,330 @@ async changePostProcessEnabledSetting(enabled: boolean) : Promise<Result<null, s
 async changeExperimentalEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_experimental_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeVoiceCommandsSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_voice_commands_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeMemoryEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_memory_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Turns conversation records (SQLite) on or off. Off by default.
+ */
+async changeConversationRecordsSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_conversation_records_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Also write a Markdown note into the vault for each saved record. Off by default.
+ */
+async changeConversationRecordsToVaultSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_conversation_records_to_vault_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Use the vault's context pack as background for the conversation. Off by default.
+ */
+async changeVaultContextSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_vault_context_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Sets the vault folder path. Empty clears it. Invalid input is refused with a fixed message.
+ */
+async changeVaultPathSetting(path: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_vault_path_setting", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Lists saved conversations, newest first. `limit` is clamped by the store (1..=200, default 50).
+ */
+async listConversationRecords(limit: number | null) : Promise<Result<ConversationRecordSummaryDto[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_conversation_records", { limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Turns the read-only voice agent tools on or off. Off by default.
+ */
+async changeAgentToolsSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_tools_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Blocks model-planned paste and command after project data was read. On by default.
+ */
+async changeAgentToolsGuardActionsSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_tools_guard_actions_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Sets the project folder list. Invalid input is refused with a fixed message.
+ */
+async changeAgentProjectRootsSetting(roots: string[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_project_roots_setting", { roots }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Turns the confirmation prompt before model-planned actions on or off. On by default.
+ */
+async changeAgentConfirmActions(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_confirm_actions", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Turns coding jobs on or off. Off by default.
+ */
+async changeAgentJobsEnabled(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_jobs_enabled", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Sets the coding job time limit in minutes. The stored value is clamped to 1..=120.
+ */
+async changeAgentJobsTimeoutMinutes(minutes: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_jobs_timeout_minutes", { minutes }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stores the cleaned coding agent allowlist and returns the cleaned list (M4).
+ */
+async changeAgentJobsAgents(agents: string[]) : Promise<string[]> {
+    return await TAURI_INVOKE("change_agent_jobs_agents", { agents });
+},
+/**
+ * Stores the flag that passes the selected agent name to the coding CLI (M4).
+ * An invalid flag is rejected with `Invalid agent flag.` and the old value is kept.
+ */
+async changeAgentJobsAgentFlag(flag: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_jobs_agent_flag", { flag }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Turns ask mode on or off (M4). Off by default.
+ */
+async changeAgentJobsAskEnabled(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_jobs_ask_enabled", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Reports the coding job state for the Settings status card.
+ */
+async agentJobStatus() : Promise<AgentJobStatusDto> {
+    return await TAURI_INVOKE("agent_job_status");
+},
+/**
+ * Cancels the running coding job. Returns false when nothing is running.
+ */
+async agentJobCancel() : Promise<boolean> {
+    return await TAURI_INVOKE("agent_job_cancel");
+},
+async changeAgentBridgeEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_bridge_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeAgentBridgeBinaryPathSetting(path: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_bridge_binary_path_setting", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Persists the `voice_media_controls_enabled` setting (opt-in media control
+ * phrases such as "pause" or "volume 40"; only effective while Voice
+ * Commands is on).
+ */
+async changeVoiceMediaControlsSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_voice_media_controls_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsVoiceSetting(voice: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_voice_setting", { voice }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsRateSetting(rate: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_rate_setting", { rate }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsEngineSetting(engine: TtsEngine) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_engine_setting", { engine }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsNaturalVoiceSetting(voice: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_natural_voice_setting", { voice }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async naturalVoiceStatus() : Promise<Result<NaturalVoiceStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("natural_voice_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Starts the model download in the background and returns immediately. Progress and the
+ * result are reported through events.
+ */
+async naturalVoiceDownload() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("natural_voice_download") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async naturalVoiceCancelDownload() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("natural_voice_cancel_download") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stops speech, removes the model, then lets the natural voice re-evaluate its health.
+ */
+async naturalVoiceDelete() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("natural_voice_delete") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Retry button: a health bump makes the next spoken reply recover the natural voice.
+ */
+async naturalVoiceRetry() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("natural_voice_retry") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listNaturalVoices() : Promise<NaturalVoiceOption[]> {
+    return await TAURI_INVOKE("list_natural_voices");
+},
+/**
+ * Speaks a short test phrase with the saved voice and rate. Works even when
+ * spoken replies are disabled so the user can audition a voice first. The
+ * text is never logged.
+ */
+async ttsSpeakTest(text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_speak_test", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stops any spoken output that is currently playing.
+ */
+async ttsStop() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_stop") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -543,6 +875,10 @@ async showMainWindowCommand() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Overlay Cancel button. An active conversation session takes the press and
+ * is stopped exactly as `converse_stop` does; otherwise dictation cancel runs.
+ */
 async cancelOperation() : Promise<void> {
     await TAURI_INVOKE("cancel_operation");
 },
@@ -560,9 +896,15 @@ async isPortable() : Promise<boolean> {
 async isUpdateChecksLocked() : Promise<boolean> {
     return await TAURI_INVOKE("is_update_checks_locked");
 },
+/**
+ * Which update flow the footer should use for this running build.
+ */
 async getUpdateMode() : Promise<SourceUpdateMode> {
     return await TAURI_INVOKE("get_update_mode");
 },
+/**
+ * Check GitHub now (manual check; honours the short debounce).
+ */
 async checkSourceUpdate() : Promise<Result<SourceUpdateInfo, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("check_source_update") };
@@ -571,12 +913,21 @@ async checkSourceUpdate() : Promise<Result<SourceUpdateInfo, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * The last published check result, if any.
+ */
 async getCachedSourceUpdate() : Promise<SourceUpdateInfo | null> {
     return await TAURI_INVOKE("get_cached_source_update");
 },
+/**
+ * Why an install cannot start right now, or `None` when it can.
+ */
 async getSourceUpdateInstallBlocker() : Promise<string | null> {
     return await TAURI_INVOKE("get_source_update_install_blocker");
 },
+/**
+ * Open Terminal running the update script.
+ */
 async startSourceUpdate() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("start_source_update") };
@@ -865,60 +1216,6 @@ async getClamshellMicrophone() : Promise<Result<string, string>> {
 async isRecording() : Promise<boolean> {
     return await TAURI_INVOKE("is_recording");
 },
-async changeConverseSilenceMsSetting(value: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_converse_silence_ms_setting", { value }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeConverseMaxIdleTurnsSetting(value: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_converse_max_idle_turns_setting", { value }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeConverseContextTurnsSetting(value: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_converse_context_turns_setting", { value }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async converseStart() : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("converse_start") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async converseStop() : Promise<boolean> {
-    return await TAURI_INVOKE("converse_stop");
-},
-async converseStatus() : Promise<string> {
-    return await TAURI_INVOKE("converse_status");
-},
-async changeExpRtBoolSetting(key: ExpRtBool, value: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_exp_rt_bool_setting", { key, value }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeExpRtTextSetting(key: ExpRtText, value: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_exp_rt_text_setting", { key, value }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async getMicrophoneChannels(deviceName: string) : Promise<Result<number, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_microphone_channels", { deviceName }) };
@@ -957,6 +1254,18 @@ async unloadModelManually() : Promise<Result<null, string>> {
 async getHistoryEntries(cursor: number | null, limit: number | null) : Promise<Result<PaginatedHistory, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_history_entries", { cursor, limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Searches transcription, post-processed text and title. Matching is
+ * ASCII-case-insensitive (SQLite `LIKE`); results are newest first.
+ */
+async searchHistoryEntries(query: string, limit: number | null) : Promise<Result<HistoryEntry[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("search_history_entries", { query, limit }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1010,6 +1319,42 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Persist FIRST, then invalidate pending speech so any in-flight exchange
+ * is cancelled and the next one sees the new settings.
+ */
+async changeTtsComposerSettings(patch: TtsComposerSettingsPatch) : Promise<Result<TtsComposerSettings, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_composer_settings", { patch }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Providers the composer can use (the UI shows each endpoint).
+ */
+async listTtsComposerProviders() : Promise<ComposerProviderInfo[]> {
+    return await TAURI_INVOKE("list_tts_composer_providers");
+},
+/**
+ * Compose a fixed sample with the CURRENT configuration and speak it when
+ * spoken replies are enabled.
+ */
+async previewSpeechComposer() : Promise<Result<ComposerPreview, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("preview_speech_composer") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Voices installed on this Mac for the Spoken replies dropdown (empty off macOS).
+ */
+async listTtsVoices() : Promise<TtsVoice[]> {
+    return await TAURI_INVOKE("list_tts_voices");
+},
 async memoryRemember(text: string) : Promise<Result<number, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("memory_remember", { text }) };
@@ -1050,6 +1395,29 @@ async memorySetEnabled(enabled: boolean) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Persists the `agent_context_enabled` setting. Turning it off also clears the
+ * in-memory conversation log so re-enabling cannot resurrect old turns.
+ */
+async changeAgentContextSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_context_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Clears the in-memory agent conversation history.
+ */
+async agentClearConversation() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("agent_clear_conversation") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async ambientSetEnabled(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("ambient_set_enabled", { enabled }) };
@@ -1077,205 +1445,13 @@ async wakewordSetEnabled(enabled: boolean) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async changeVoiceCommandsSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_voice_commands_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeMemoryEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_memory_enabled_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 /**
- * Turns conversation records (SQLite) on or off. Off by default.
+ * Validates and persists the full list of voice shortcuts.
+ * 
+ * The whole list is validated before anything is written: if any entry is
+ * invalid (or the list has duplicate phrases or exceeds the cap), `Err` is
+ * returned and the stored settings are left untouched.
  */
-async changeConversationRecordsSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_conversation_records_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Also write a Markdown note into the vault for each saved record. Off by default.
- */
-async changeConversationRecordsToVaultSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_conversation_records_to_vault_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Use the vault's context pack as background for the conversation. Off by default.
- */
-async changeVaultContextSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_vault_context_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Sets the vault folder path. Empty clears it. Invalid input is refused with a fixed message.
- */
-async changeVaultPathSetting(path: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_vault_path_setting", { path }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeAgentToolsSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_agent_tools_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Blocks model-planned paste and command after project data was read. On by default.
- */
-async changeAgentToolsGuardActionsSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_agent_tools_guard_actions_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Sets the project folder list. Invalid input is refused with a fixed message.
- */
-async changeAgentProjectRootsSetting(roots: string[]) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_agent_project_roots_setting", { roots }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Turns the confirmation prompt before model-planned actions on or off. On by default.
- */
-async changeAgentConfirmActions(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_agent_confirm_actions", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Turns coding jobs on or off. Off by default.
- */
-async changeAgentJobsEnabled(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_agent_jobs_enabled", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Sets the coding job time limit in minutes. The stored value is clamped to 1..=120.
- */
-async changeAgentJobsTimeoutMinutes(minutes: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_agent_jobs_timeout_minutes", { minutes }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Stores the coding agent allowlist (M4). Scaffolding: the raw list is stored and returned.
- */
-async changeAgentJobsAgents(agents: string[]) : Promise<string[]> {
-    return await TAURI_INVOKE("change_agent_jobs_agents", { agents });
-},
-/**
- * Stores the flag that passes the selected agent name to the coding CLI (M4).
- * Scaffolding: the raw flag is stored and returned.
- */
-async changeAgentJobsAgentFlag(flag: string) : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_agent_jobs_agent_flag", { flag }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Turns ask mode on or off (M4). Off by default. Scaffolding: stores the raw value.
- */
-async changeAgentJobsAskEnabled(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_agent_jobs_ask_enabled", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Reports the coding job state for the Settings status card.
- */
-async agentJobStatus() : Promise<AgentJobStatusDto> {
-    return await TAURI_INVOKE("agent_job_status");
-},
-/**
- * Cancels the running coding job. Returns false when nothing is running.
- */
-async agentJobCancel() : Promise<boolean> {
-    return await TAURI_INVOKE("agent_job_cancel");
-},
-/**
- * Lists saved conversations, newest first. `limit` is clamped by the store (1..=200, default 50).
- */
-async listConversationRecords(limit: number | null) : Promise<Result<ConversationRecordSummaryDto[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("list_conversation_records", { limit }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeAgentBridgeEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_agent_bridge_enabled_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeAgentBridgeBinaryPathSetting(path: string | null) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_agent_bridge_binary_path_setting", { path }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async searchHistoryEntries(query: string, limit: number | null) : Promise<Result<HistoryEntry[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("search_history_entries", { query, limit }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async setVoiceShortcuts(shortcuts: VoiceShortcut[]) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_voice_shortcuts", { shortcuts }) };
@@ -1284,101 +1460,80 @@ async setVoiceShortcuts(shortcuts: VoiceShortcut[]) : Promise<Result<null, strin
     else return { status: "error", error: e  as any };
 }
 },
-async changeVoiceMediaControlsSetting(enabled: boolean) : Promise<Result<null, string>> {
+/**
+ * Persist the silence length (ms) that ends a turn. Clamped to 600..=4000.
+ */
+async changeConverseSilenceMsSetting(value: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("change_voice_media_controls_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeAgentContextSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_agent_context_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async agentClearConversation() : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("agent_clear_conversation") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeTtsEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_tts_enabled_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeTtsVoiceSetting(voice: string | null) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_tts_voice_setting", { voice }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeTtsRateSetting(rate: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_tts_rate_setting", { rate }) };
+    return { status: "ok", data: await TAURI_INVOKE("change_converse_silence_ms_setting", { value }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Persist FIRST, then invalidate pending speech so any in-flight exchange
- * is cancelled and the next one sees the new settings.
+ * Persist the idle turns before a conversation ends. Clamped to 1..=5.
  */
-async changeTtsComposerSettings(patch: TtsComposerSettingsPatch) : Promise<Result<TtsComposerSettings, string>> {
+async changeConverseMaxIdleTurnsSetting(value: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("change_tts_composer_settings", { patch }) };
+    return { status: "ok", data: await TAURI_INVOKE("change_converse_max_idle_turns_setting", { value }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Providers the composer can use (the UI shows each endpoint).
+ * Persist the number of prior turns sent as context. Clamped to 0..=12.
  */
-async listTtsComposerProviders() : Promise<ComposerProviderInfo[]> {
-    return await TAURI_INVOKE("list_tts_composer_providers");
-},
-/**
- * Compose a fixed sample with the CURRENT configuration and speak it when
- * spoken replies are enabled.
- */
-async previewSpeechComposer() : Promise<Result<ComposerPreview, string>> {
+async changeConverseContextTurnsSetting(value: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("preview_speech_composer") };
+    return { status: "ok", data: await TAURI_INVOKE("change_converse_context_turns_setting", { value }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Voices installed on this Mac for the Spoken replies dropdown (empty off macOS).
+ * Start a conversation session. `Err(message)` carries the human reason.
  */
-async listTtsVoices() : Promise<TtsVoice[]> {
-    return await TAURI_INVOKE("list_tts_voices");
-},
-async ttsSpeakTest(text: string) : Promise<Result<null, string>> {
+async converseStart() : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("tts_speak_test", { text }) };
+    return { status: "ok", data: await TAURI_INVOKE("converse_start") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async ttsStop() : Promise<Result<null, string>> {
+/**
+ * Ask the running session to stop. True when a running session was asked.
+ */
+async converseStop() : Promise<boolean> {
+    return await TAURI_INVOKE("converse_stop");
+},
+/**
+ * "idle" | "running" | "stopping".
+ */
+async converseStatus() : Promise<string> {
+    return await TAURI_INVOKE("converse_status");
+},
+/**
+ * Persist one realtime toggle. Read-modify-write through `apply_exp_rt_bool`.
+ */
+async changeExpRtBoolSetting(key: ExpRtBool, value: boolean) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("tts_stop") };
+    return { status: "ok", data: await TAURI_INVOKE("change_exp_rt_bool_setting", { key, value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Persist one realtime text field. Read-modify-write through `apply_exp_rt_text`,
+ * which trims and validates; on refusal the settings are left unchanged.
+ */
+async changeExpRtTextSetting(key: ExpRtText, value: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_exp_rt_text_setting", { key, value }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1419,6 +1574,29 @@ streamTextEvent: "stream-text-event"
 
 /** user-defined types **/
 
+/**
+ * Read-only status of the coding job, for the Settings status card and the tray.
+ * 
+ * `state` is one of `idle`, `running`, `succeeded`, `failed`, `cancelled`, `timed_out` or
+ * `spawn_failed`. The DTO never carries job output.
+ */
+export type AgentJobStatusDto = { 
+/**
+ * Current job state name.
+ */
+state: string; 
+/**
+ * Project the job runs in, when a job exists.
+ */
+project: string | null; 
+/**
+ * Whole seconds since the job started (0 when idle).
+ */
+elapsed_secs: number; 
+/**
+ * M4: the captured result text of the job, when one is held (scaffolding: always None).
+ */
+result: string | null }
 export type AmbientAddressedPayload = { extracted_request: string }
 /**
  * The container-level `serde(default)` (backed by the `Default` impl below)
@@ -1460,7 +1638,58 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
  */
-selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; memory_enabled?: boolean; ambient_mode_enabled?: boolean; ambient_wake_name?: string; ambient_window_ms?: number; voice_commands_enabled?: boolean; agent_bridge_enabled?: boolean; agent_bridge_binary_path?: string | null; agent_bridge_prompt_flag?: string; agent_bridge_timeout_secs?: number; wake_word_enabled?: boolean; wake_word_model_name?: string; wake_word_confidence_threshold?: number; wake_word_cooldown_ms?: number; wake_word_silence_timeout_ms?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; custom_theme_colors?: CustomThemeColors; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
+selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; memory_enabled?: boolean; 
+/**
+ * Prepend remembered facts (when `memory_enabled`) and the last few
+ * exchanges to agent-bridge prompts. Opt-in: it sends more data to the
+ * user-configured external agent. Turning it off clears the in-memory log.
+ */
+agent_context_enabled?: boolean; ambient_mode_enabled?: boolean; ambient_wake_name?: string; ambient_window_ms?: number; voice_commands_enabled?: boolean; 
+/**
+ * Whole-utterance media phrases ("pause", "next track", "volume 40").
+ * Opt-in and only effective while `voice_commands_enabled` is on.
+ */
+voice_media_controls_enabled?: boolean; agent_bridge_enabled?: boolean; agent_bridge_binary_path?: string | null; agent_bridge_prompt_flag?: string; agent_bridge_timeout_secs?: number; 
+/**
+ * Speak agent replies and a generic confirmation/failure phrase aloud.
+ * Opt-in: spoken output audibly exposes agent reply content.
+ */
+tts_enabled?: boolean; 
+/**
+ * Optional macOS voice name (validated against a strict allowlist).
+ */
+tts_voice?: string | null; tts_rate_wpm?: number; 
+/**
+ * Which engine speaks replies. `natural` needs the downloaded neural model (macOS only);
+ * when it is unavailable replies fall back to the system voice.
+ */
+tts_engine?: TtsEngine; 
+/**
+ * Curated natural voice id (see `managers::natural_voices`); unknown ids mean the default.
+ */
+tts_natural_voice?: string; 
+/**
+ * Speech composer (spoken-reply summarizer). See docs/spoken-replies.md.
+ */
+tts_composer_mode?: TtsComposerMode; tts_composer_provider_id?: string; tts_composer_model?: string; tts_composer_command_path?: string; tts_composer_command_args?: string; tts_composer_prompt_flag?: string; 
+/**
+ * The exact normalized (path, args, flag) tuple the user acknowledged.
+ */
+tts_composer_command_ack?: string; tts_composer_timeout_secs?: number; tts_composer_style?: string; tts_composer_send_user_utterance?: boolean; tts_composer_fallback?: TtsComposerFallback; wake_word_enabled?: boolean; wake_word_model_name?: string; wake_word_confidence_threshold?: number; wake_word_cooldown_ms?: number; 
+/**
+ * User-defined spoken phrase -> open URL / folder / app. Validated when
+ * saved (`set_voice_shortcuts`) and again at match time.
+ */
+voice_shortcuts?: VoiceShortcut[]; 
+/**
+ * How long (ms) of sustained mic silence after a wake-word-triggered
+ * recording auto-finishes it (transcribe + route, same as pressing
+ * the hotkey again) -- without this, a locked wake-word session waits
+ * forever for a manual second press. 0 disables the behavior entirely
+ * (falls back to manual-press-to-finish). Hotkey-triggered recordings
+ * are completely unaffected by this setting.
+ */
+wake_word_silence_timeout_ms?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; custom_theme_colors?: CustomThemeColors; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
 /**
  * Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
  * after the target app actually reads the transcript, instead of after a
@@ -1487,33 +1716,83 @@ vad_backend?: VadBackend;
  * not gated on this — that follows model capability. Migrated from the old
  * `overlay_position` (position `none` → style `None`).
  */
-overlay_style?: OverlayStyle 
-voice_shortcuts?: VoiceShortcut[];
-voice_media_controls_enabled?: boolean;
-agent_context_enabled?: boolean;
-tts_enabled?: boolean;
-tts_voice?: string | null;
-tts_rate_wpm?: number;
+overlay_style?: OverlayStyle; 
 /**
- * Speech composer (spoken-reply summarizer). See docs/spoken-replies.md.
+ * Silence that ends a conversation utterance (clamped 600..=4000 when used).
  */
-tts_composer_mode?: TtsComposerMode; tts_composer_provider_id?: string; tts_composer_model?: string; tts_composer_command_path?: string; tts_composer_command_args?: string; tts_composer_prompt_flag?: string;
+converse_silence_ms?: number; 
 /**
- * The exact normalized (path, args, flag) tuple the user acknowledged.
+ * Idle turns before a conversation ends (clamped 1..=5 when used).
  */
-tts_composer_command_ack?: string; tts_composer_timeout_secs?: number; tts_composer_style?: string; tts_composer_send_user_utterance?: boolean; tts_composer_fallback?: TtsComposerFallback;
-converse_silence_ms?: number; converse_max_idle_turns?: number; converse_context_turns?: number;
-exp_rt_enabled?: boolean; exp_rt_direct_endpoint?: boolean; exp_rt_endpoint_url?: string; exp_rt_model?: string; exp_rt_token?: SecretString; exp_rt_stream_reply?: boolean; exp_rt_early_speech?: boolean; exp_rt_fast_voice?: boolean; exp_rt_ack?: boolean; exp_rt_prewarm?: boolean; exp_rt_auto_proxy?: boolean; exp_rt_proxy_enabled?: boolean; exp_rt_proxy_url?: string; exp_rt_timing_log?: boolean; conversation_records_enabled?: boolean; conversation_records_to_vault?: boolean; vault_path?: string; vault_context_enabled?: boolean; agent_tools_enabled?: boolean; agent_tools_guard_actions?: boolean; agent_project_roots?: string[]; agent_confirm_actions?: boolean; agent_jobs_enabled?: boolean; agent_jobs_timeout_minutes?: number; agent_jobs_agents?: string[]; agent_jobs_agent_flag?: string; agent_jobs_ask_enabled?: boolean;
-}
-export type ExpRtBool = "enabled" | "direct_endpoint" | "stream_reply" | "early_speech" | "fast_voice" | "ack" | "prewarm" | "auto_proxy" | "proxy_enabled" | "timing_log"
-export type ExpRtText = "endpoint_url" | "model" | "token" | "proxy_url"
+converse_max_idle_turns?: number; 
 /**
- * A single secret value (API token). Serialized as a plain string so it persists,
- * but `Debug` never prints it.
+ * Prior turns sent as context (clamped 0..=12 when used).
  */
-export type SecretString = string
-export type VoiceShortcut = { phrase: string; action: VoiceShortcutAction }
-export type VoiceShortcutAction = { type: "open_url"; url: string } | { type: "open_path"; path: string } | { type: "open_app"; name: string }
+converse_context_turns?: number; 
+/**
+ * MASTER switch. Off => the conversation behaves exactly as before.
+ */
+exp_rt_enabled?: boolean; 
+/**
+ * Use the Anthropic-style endpoint below for replies instead of the speech composer.
+ */
+exp_rt_direct_endpoint?: boolean; exp_rt_endpoint_url?: string; exp_rt_model?: string; 
+/**
+ * Entered manually in the UI; never logged.
+ */
+exp_rt_token?: SecretString; exp_rt_stream_reply?: boolean; exp_rt_early_speech?: boolean; exp_rt_fast_voice?: boolean; exp_rt_ack?: boolean; exp_rt_prewarm?: boolean; exp_rt_auto_proxy?: boolean; exp_rt_proxy_enabled?: boolean; exp_rt_proxy_url?: string; exp_rt_timing_log?: boolean; 
+/**
+ * Save each finished hands-free conversation to Vox's own conversation database.
+ */
+conversation_records_enabled?: boolean; 
+/**
+ * Also write a Markdown note into the vault (needs `conversation_records_enabled`).
+ */
+conversation_records_to_vault?: boolean; 
+/**
+ * Absolute path of the notes vault folder used for notes and vault context.
+ */
+vault_path?: string; 
+/**
+ * Give the conversation model bounded, redacted vault notes as background (answer-only).
+ */
+vault_context_enabled?: boolean; 
+/**
+ * Let the voice conversation call read-only project tools (needs the Experimental master).
+ */
+agent_tools_enabled?: boolean; 
+/**
+ * Block model-planned paste/command after the session has read project data.
+ */
+agent_tools_guard_actions?: boolean; 
+/**
+ * Absolute folders whose immediate subfolders the project tools may read.
+ */
+agent_project_roots?: string[]; 
+/**
+ * Ask aloud before a model-planned paste, command or job runs (when an agent feature is on).
+ */
+agent_confirm_actions?: boolean; 
+/**
+ * Master switch for coding jobs run through the configured coding CLI.
+ */
+agent_jobs_enabled?: boolean; 
+/**
+ * Hard time limit for one coding job, in minutes (clamped to 1..=120 on write and use).
+ */
+agent_jobs_timeout_minutes?: number; 
+/**
+ * Allowlist of coding CLI agent names a job may select (M4). Empty disables selection.
+ */
+agent_jobs_agents?: string[]; 
+/**
+ * Flag that passes the selected agent name to the coding CLI (M4). Used only with a selection.
+ */
+agent_jobs_agent_flag?: string; 
+/**
+ * Turns ask mode on: a question to a coding agent whose summary is spoken (M4). Off by default.
+ */
+agent_jobs_ask_enabled?: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1528,7 +1807,36 @@ export type ChineseScript =
  */
 "as_transcribed" | "simplified" | "traditional"
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
+export type ComposerPreview = { speech: string; emotion: Emotion }
+export type ComposerProviderInfo = { id: string; label: string; base_url: string }
+/**
+ * One saved conversation as listed in the UI. The transcript is not included.
+ */
+export type ConversationRecordSummaryDto = { id: number; started_at: number; ended_at: number; end_reason: string; summary: string; turns: number; vault_note: string | null }
+/**
+ * Payload of the `converse-state` event (`state` and `end` are static labels).
+ */
+export type ConverseStateEvent = { state: string; end: string | null }
 export type CustomSounds = { start: boolean; stop: boolean }
+/**
+ * A user-editable color palette for `Theme::Custom`. Every field is a
+ * validated `#rrggbb` hex string -- once a value of this type exists, it is
+ * guaranteed valid by construction (see the `TryFrom` impl below), so
+ * nothing downstream (CSS injection, the `update_custom_theme_colors`
+ * command) needs to re-validate.
+ * 
+ * `#[serde(try_from = ...)]`: deserializing goes through `RawCustomThemeColors`
+ * (per-field defaults for missing fields) and then this type's `TryFrom`
+ * (whole-object hex validation). If ANY present field is invalid hex, the
+ * whole `CustomThemeColors` fails to deserialize -- which makes the
+ * *top-level* `AppSettings.custom_theme_colors` field fail too, which is
+ * exactly what `salvage_settings` (see below) already knows how to handle:
+ * it drops just that one top-level field back to its full default and logs
+ * a warning, leaving every other setting untouched. No new salvage code
+ * needed -- this reuses that existing mechanism on purpose.
+ */
+export type CustomThemeColors = { text: string; background: string; accent: string; accent_secondary: string; warning: string; error: string }
+export type Emotion = "neutral" | "cheerful" | "excited" | "calm" | "concerned" | "apologetic" | "serious"
 export type EngineType = 
 /**
  * Any GGML/GGUF model loaded through transcribe-cpp (Whisper, Parakeet,
@@ -1536,63 +1844,8 @@ export type EngineType =
  * the file, so this one variant covers the whole transcribe-cpp family.
  */
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere"
-export type ComposerPreview = { speech: string; emotion: Emotion }
-export type ComposerProviderInfo = { id: string; label: string; base_url: string }
-/**
- * One saved conversation as listed in the UI. The transcript is not included.
- */
-export type ConversationRecordSummaryDto = { id: number; started_at: number; ended_at: number; end_reason: string; summary: string; turns: number; vault_note: string | null }
-export type Emotion = "neutral" | "cheerful" | "excited" | "calm" | "concerned" | "apologetic" | "serious"
-export type TtsComposerFallback = 
-/**
- * Speak a fixed short sentence when composition fails.
- */
-"short_notice" | 
-/**
- * Speak the (capped) reply verbatim when composition fails.
- */
-"verbatim" | 
-/**
- * Say nothing when composition fails.
- */
-"silent"
-export type TtsComposerMode = 
-/**
- * Legacy behavior: speak the reply text as-is.
- */
-"off" | 
-/**
- * Ask an OpenAI-compatible provider already configured in settings.
- */
-"model" | 
-/**
- * Run a user-configured local command.
- */
-"command"
-export type TtsComposerSettings = { mode: TtsComposerMode; provider_id: string; model: string; command_path: string; command_args: string; prompt_flag: string; command_ack: string; timeout_secs: number; style: string; send_user_utterance: boolean; fallback: TtsComposerFallback }
-/**
- * Partial update. `None` = untouched. For strings `Some("")` CLEARS (for
- * `prompt_flag` it resets to the default `-p`; for `provider_id` an empty
- * string is invalid).
- */
-export type TtsComposerSettingsPatch = { mode: TtsComposerMode | null; provider_id: string | null; model: string | null; command_path: string | null; command_args: string | null; prompt_flag: string | null; timeout_secs: number | null; style: string | null; send_user_utterance: boolean | null; fallback: TtsComposerFallback | null; 
-/**
- * Honored ONLY when the same patch also supplies command_path,
- * command_args and prompt_flag.
- */
-acknowledge_command: boolean | null }
-/**
- * One installed speech voice, as reported by `say -v '?'`.
- */
-export type TtsVoice = { 
-/**
- * Voice name exactly as `say -v` accepts it (passes `sanitize_voice`).
- */
-name: string; 
-/**
- * Locale code such as `en_US` or `es_419`.
- */
-locale: string }
+export type ExpRtBool = "enabled" | "direct_endpoint" | "stream_reply" | "early_speech" | "fast_voice" | "ack" | "prewarm" | "auto_proxy" | "proxy_enabled" | "timing_log"
+export type ExpRtText = "endpoint_url" | "model" | "token" | "proxy_url"
 export type Fact = { id: number; text: string; source_transcript: string; created_at: number }
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
@@ -1642,6 +1895,46 @@ sha256: string | null } } |
  */
 "Local"
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15"
+/**
+ * Payload of `natural-voice-download-finished`. `message` is UI-safe (see `error_message`).
+ */
+export type NaturalVoiceDownloadFinished = { ok: boolean; message: string | null }
+/**
+ * Payload of `natural-voice-download-progress`.
+ */
+export type NaturalVoiceDownloadProgress = { downloaded: number; total: number }
+/**
+ * One entry of the natural voice picker.
+ */
+export type NaturalVoiceOption = { id: string; name: string; 
+/**
+ * `American` | `British`
+ */
+accent: string; 
+/**
+ * `Female` | `Male`
+ */
+gender: string }
+/**
+ * Everything the Spoken Replies settings row needs in one call.
+ */
+export type NaturalVoiceStatus = { 
+/**
+ * False off macOS: the section is hidden and downloads are refused.
+ */
+supported: boolean; 
+/**
+ * `not_installed` | `downloading` | `verifying` | `installing` | `deleting` | `loading` | `ready`
+ */
+model: string; downloaded: number; total: number; 
+/**
+ * `ready` | `failed`
+ */
+health: string; 
+/**
+ * When `health == "failed"`: `load` | `synth` | `sink` | `worker_exit`.
+ */
+failure: string | null }
 export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm"
 export type OverlayPosition = "top" | "bottom"
 /**
@@ -1651,19 +1944,17 @@ export type OverlayPosition = "top" | "bottom"
  * streaming mode (that is driven purely by model capability).
  */
 export type OverlayStyle = "none" | "minimal" | "live"
-/**
- * Read-only status of the coding job, for the Settings status card and the tray.
- *
- * `state` is one of `idle`, `running`, `succeeded`, `failed`, `cancelled`, `timed_out` or
- * `spawn_failed`. The DTO never carries job output.
- */
-export type AgentJobStatusDto = { state: string; project: string | null; elapsed_secs: number; result: string | null }
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type SecretMap = Partial<{ [key in string]: string }>
+/**
+ * A single secret value (API token). Serialized as a plain string so it persists,
+ * but `Debug` never prints it.
+ */
+export type SecretString = string
 export type SecureInputStatus = { 
 /**
  * Secure input is currently enabled (live check)
@@ -1716,9 +2007,54 @@ export type ShortcutActivation =
 "hold_or_toggle"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
-export type SourceUpdateInfo = { state: SourceUpdateState; current_commit: string; latest_commit: string; behind_by: number; changes: string[]; compare_url: string; note: string | null; can_install: boolean; install_blocker: string | null }
-export type SourceUpdateMode = "source" | "plugin"
-export type SourceUpdateState = "up_to_date" | "available" | "untracked"
+export type SourceUpdateInfo = { state: SourceUpdateState; 
+/**
+ * First 7 hex characters of the commit this build was made from.
+ */
+current_commit: string; 
+/**
+ * First 7 hex characters of the newest `main` commit.
+ */
+latest_commit: string; 
+/**
+ * Number of commits `main` is ahead of this build.
+ */
+behind_by: number; 
+/**
+ * Up to [`MAX_CHANGES`] newest-first commit subjects.
+ */
+changes: string[]; 
+/**
+ * GitHub compare page built locally from validated full SHAs.
+ */
+compare_url: string; 
+/**
+ * Human explanation for `Untracked`.
+ */
+note: string | null; 
+/**
+ * Filled in by the caller from [`install_blocker`]; `evaluate_*` leave it
+ * `false`/`None`.
+ */
+can_install: boolean; install_blocker: string | null }
+/**
+ * Which update flow the footer should use.
+ */
+export type SourceUpdateMode = 
+/**
+ * Rebuild-from-checkout flow (this module).
+ */
+"source" | 
+/**
+ * The pre-existing Tauri updater-plugin flow, untouched.
+ */
+"plugin"
+export type SourceUpdateState = "up_to_date" | "available" | 
+/**
+ * The build cannot be related to `main` (history rewritten, commit not on
+ * GitHub, diverged). Never installable, never prompts automatically.
+ */
+"untracked"
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */
@@ -1747,32 +2083,90 @@ kind?: StreamWorkKind | null }
  * volatile suffix the model may still rewrite.
  */
 export type StreamTextEvent = { committed: string; tentative: string }
-export type ConverseStateEvent = { state: string; end: string | null }
 /**
  * Semantic kind of "working" phase, used to localize the spinner label.
  */
 export type StreamWorkKind = "transcribing" | "polishing"
 /**
  * UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
- * and `Dark` force one of the two palettes Vox already ships.
+ * and `Dark` force one of the two palettes Vox already ships. `Aurora` is a
+ * third, non-adaptive accent palette (teal/violet on deep slate) a user can
+ * opt into explicitly -- it never changes what `System`/`Light`/`Dark` look
+ * like and is not anyone's default.
  */
-export type Theme = "system" | "light" | "dark" | "aurora" | "custom"
-
+export type Theme = "system" | "light" | "dark" | "aurora" | 
 /**
- * A user-editable color palette for the `custom` theme. Every field is a
- * validated `#rrggbb` hex string.
+ * User-edited palette, see `CustomThemeColors`.
  */
-export type CustomThemeColors = {
-text: string;
-background: string;
-accent: string;
-accent_secondary: string;
-warning: string;
-error: string
-}
+"custom"
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
+export type TtsComposerFallback = 
+/**
+ * Speak a fixed short sentence when composition fails.
+ */
+"short_notice" | 
+/**
+ * Speak the (capped) reply verbatim when composition fails.
+ */
+"verbatim" | 
+/**
+ * Say nothing when composition fails.
+ */
+"silent"
+export type TtsComposerMode = 
+/**
+ * Legacy behavior: speak the reply text as-is.
+ */
+"off" | 
+/**
+ * Ask an OpenAI-compatible provider already configured in settings.
+ */
+"model" | 
+/**
+ * Run a user-configured local command.
+ */
+"command"
+export type TtsComposerSettings = { mode: TtsComposerMode; provider_id: string; model: string; command_path: string; command_args: string; prompt_flag: string; command_ack: string; timeout_secs: number; style: string; send_user_utterance: boolean; fallback: TtsComposerFallback }
+/**
+ * Partial update. `None` = untouched. For strings `Some("")` CLEARS (for
+ * `prompt_flag` it resets to the default `-p`; for `provider_id` an empty
+ * string is invalid).
+ */
+export type TtsComposerSettingsPatch = { mode: TtsComposerMode | null; provider_id: string | null; model: string | null; command_path: string | null; command_args: string | null; prompt_flag: string | null; timeout_secs: number | null; style: string | null; send_user_utterance: boolean | null; fallback: TtsComposerFallback | null; 
+/**
+ * Honored ONLY when the same patch also supplies command_path,
+ * command_args and prompt_flag.
+ */
+acknowledge_command: boolean | null }
+/**
+ * Which engine speaks spoken replies.
+ */
+export type TtsEngine = 
+/**
+ * The local neural voice (needs a one-time model download).
+ */
+"natural" | 
+/**
+ * The operating system voice (default). Also what any unrecognised stored value means, so a
+ * bad settings file can never stop the app from loading.
+ */
+"system"
+/**
+ * One installed speech voice, as reported by `say -v '?'`.
+ */
+export type TtsVoice = { 
+/**
+ * Voice name exactly as `say -v` accepts it (passes `sanitize_voice`).
+ */
+name: string; 
+/**
+ * Locale code such as `en_US` or `es_419`.
+ */
+locale: string }
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
+export type VoiceShortcut = { phrase: string; action: VoiceShortcutAction }
+export type VoiceShortcutAction = { type: "open_url"; url: string } | { type: "open_path"; path: string } | { type: "open_app"; name: string }
 /**
  * A wake-word detection emitted by an engine. Must be Serialize/Type so it
  * can be sent as a Tauri event payload (see `commands/wakeword.rs`'s

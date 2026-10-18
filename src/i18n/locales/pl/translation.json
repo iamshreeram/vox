@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "Silnik mowy",
+            "description": "Wybierz, jak brzmią odpowiedzi głosowe.",
+            "system": "Głos systemowy",
+            "natural": "Naturalny głos (beta)"
+          },
+          "voice": {
+            "label": "Naturalny głos",
+            "description": "Wybierz głos używany do naturalnej mowy.",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "amerykański",
+            "British": "brytyjski"
+          },
+          "gender": {
+            "Female": "kobiecy",
+            "Male": "męski"
+          },
+          "preview": "Odsłuchaj",
+          "previewText": "Cześć! Tak brzmi naturalny głos.",
+          "model": {
+            "label": "Model naturalnego głosu",
+            "notInstalled": "Nie pobrano. Jednorazowe pobranie około {{size}}; mowa jest generowana na tym urządzeniu, a Twój tekst nigdy nie jest nigdzie wysyłany.",
+            "download": "Pobierz",
+            "cancel": "Anuluj",
+            "delete": "Usuń",
+            "downloading": "Pobieranie… {{percent}}%",
+            "working": "Przetwarzanie…",
+            "ready": "Zainstalowano",
+            "needed": "Pobierz model, aby używać naturalnego głosu. Do tego czasu używany jest głos systemowy.",
+            "downloadFailed": "Pobieranie nie powiodło się: {{message}}"
+          },
+          "failure": {
+            "banner": "Naturalny głos przestał działać, więc używany jest głos systemowy.",
+            "retry": "Ponów",
+            "load": "Nie udało się załadować modelu.",
+            "synth": "Nie udało się wygenerować mowy.",
+            "sink": "Wyjście audio nie działa. Sprawdź urządzenie wyjściowe.",
+            "worker_exit": "Silnik mowy nieoczekiwanie się zatrzymał.",
+            "unknown": "Wystąpił nieznany problem."
+          },
+          "notice": {
+            "firstSpeech": "Pierwsze zdanie może potrwać kilka sekund, gdy model się ładuje.",
+            "limitations": "Tylko angielski. Zdania w innych pismach odczytuje głos systemowy."
+          }
         }
       },
       "lazyStreamClose": {

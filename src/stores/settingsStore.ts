@@ -10,6 +10,7 @@ import type {
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
   ShortcutActivation,
+  TtsEngine,
   VadBackend,
 } from "@/bindings";
 import { commands } from "@/bindings";
@@ -284,6 +285,9 @@ const settingUpdaters: {
   tts_enabled: (value) => commands.changeTtsEnabledSetting(value as boolean),
   tts_voice: (value) => commands.changeTtsVoiceSetting(value as string | null),
   tts_rate_wpm: (value) => commands.changeTtsRateSetting(value as number),
+  tts_engine: (value) => commands.changeTtsEngineSetting(value as TtsEngine),
+  tts_natural_voice: (value) =>
+    commands.changeTtsNaturalVoiceSetting(value as string),
   converse_silence_ms: (value) =>
     commands.changeConverseSilenceMsSetting(value as number),
   converse_max_idle_turns: (value) =>

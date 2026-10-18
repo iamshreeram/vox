@@ -125,3 +125,67 @@ depends on the voice. Some voices change very little.
     was skipped.
 - **Errors under a field** come from the settings save. The field goes back
   to its saved value.
+
+## Natural voice (macOS, optional)
+
+The natural voice is a local neural voice (Kokoro) that can read spoken
+replies instead of the system voice. It speaks English only and offers 28
+voices with American and British accents.
+
+### Turning it on
+
+1. Open Settings, Advanced, Spoken replies.
+2. In "Voice engine", choose "Natural voice (beta)".
+3. Pick a voice.
+4. Press Download.
+
+### The one-time download
+
+- The download is about 115 MB: an 88 MB model and a 27 MB voice pack.
+- Both files come from a public GitHub release. Vox checks the size and the
+  SHA-256 checksum of each file before it uses them.
+- Nothing else is downloaded.
+- The model is stored in the app data folder, in `tts_models/kokoro-v1.0`.
+  You can delete it from the same settings screen.
+
+### Privacy
+
+Speech is generated on this computer. The text that is spoken is never sent
+anywhere and is never logged.
+
+### Behaviour
+
+- The system voice stays the default. The natural voice is used only when
+  you choose it.
+- If the model is missing or fails, the system voice speaks instead. A reply
+  that starts in another script is spoken by the system voice; a sentence in
+  another script inside a reply the natural voice is already speaking is
+  skipped.
+- After a failure, a Retry button appears in the settings.
+- Starting to record stops speech immediately.
+
+### Performance
+
+Measured on an Apple-silicon Mac with a release build:
+
+- The first sentence after a cold start (model not yet loaded) began playing
+  after about 3 seconds. Checking the downloaded files takes about half a
+  second of that.
+- When the model is already loaded, the first sentence of a reply began
+  playing after about 1.5 seconds.
+- Memory use peaked at about 700 MB while the engine is loaded. The engine
+  unloads itself after 5 minutes without speech.
+- Starting to record silences speech within a few milliseconds.
+- A sentence that is already being generated cannot be aborted. In the
+  measured run, the replacement after an interruption began about 2.3 seconds
+  later.
+
+These are single measurements on one machine, not guarantees.
+
+### Limitations
+
+- English only.
+- Emotion and pitch hints from the composer are ignored by the natural voice.
+- The speaking rate follows the existing "Speaking rate" setting.
+- Numbers, percentages, currency, ordinals and times are spoken out in English
+  words; other symbols are read as words or skipped.

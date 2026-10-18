@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "Moteur vocal",
+            "description": "Choisissez le son des réponses vocales.",
+            "system": "Voix du système",
+            "natural": "Voix naturelle (bêta)"
+          },
+          "voice": {
+            "label": "Voix naturelle",
+            "description": "Choisissez la voix utilisée pour la synthèse naturelle.",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "américain",
+            "British": "britannique"
+          },
+          "gender": {
+            "Female": "féminine",
+            "Male": "masculine"
+          },
+          "preview": "Écouter un aperçu",
+          "previewText": "Bonjour ! Voici comment sonne la voix naturelle.",
+          "model": {
+            "label": "Modèle de voix naturelle",
+            "notInstalled": "Non téléchargé. Téléchargement unique d'environ {{size}} ; la parole est générée sur cet appareil et votre texte n'est jamais envoyé nulle part.",
+            "download": "Télécharger",
+            "cancel": "Annuler",
+            "delete": "Supprimer",
+            "downloading": "Téléchargement… {{percent}} %",
+            "working": "Traitement…",
+            "ready": "Installé",
+            "needed": "Téléchargez le modèle pour utiliser la voix naturelle. En attendant, la voix du système est utilisée.",
+            "downloadFailed": "Échec du téléchargement : {{message}}"
+          },
+          "failure": {
+            "banner": "La voix naturelle a cessé de fonctionner, la voix du système est donc utilisée.",
+            "retry": "Réessayer",
+            "load": "Le modèle n'a pas pu être chargé.",
+            "synth": "La parole n'a pas pu être générée.",
+            "sink": "La sortie audio a échoué. Vérifiez votre périphérique de sortie.",
+            "worker_exit": "Le moteur vocal s'est arrêté de manière inattendue.",
+            "unknown": "Un problème inconnu est survenu."
+          },
+          "notice": {
+            "firstSpeech": "La première phrase peut prendre quelques secondes pendant le chargement du modèle.",
+            "limitations": "Anglais uniquement. Les phrases dans d'autres écritures sont lues par la voix du système."
+          }
         }
       },
       "lazyStreamClose": {

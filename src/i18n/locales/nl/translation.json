@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "Spraakengine",
+            "description": "Kies hoe gesproken antwoorden klinken.",
+            "system": "Systeemstem",
+            "natural": "Natuurlijke stem (bèta)"
+          },
+          "voice": {
+            "label": "Natuurlijke stem",
+            "description": "Kies de stem voor natuurlijke spraak.",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "Amerikaans",
+            "British": "Brits"
+          },
+          "gender": {
+            "Female": "vrouwelijk",
+            "Male": "mannelijk"
+          },
+          "preview": "Voorbeeld",
+          "previewText": "Hallo! Zo klinkt de natuurlijke stem.",
+          "model": {
+            "label": "Model voor natuurlijke stem",
+            "notInstalled": "Niet gedownload. Eenmalige download van ongeveer {{size}}; spraak wordt op dit apparaat gegenereerd en je tekst wordt nergens naartoe gestuurd.",
+            "download": "Downloaden",
+            "cancel": "Annuleren",
+            "delete": "Verwijderen",
+            "downloading": "Downloaden… {{percent}}%",
+            "working": "Bezig…",
+            "ready": "Geïnstalleerd",
+            "needed": "Download het model om de natuurlijke stem te gebruiken. Tot die tijd wordt de systeemstem gebruikt.",
+            "downloadFailed": "Downloaden mislukt: {{message}}"
+          },
+          "failure": {
+            "banner": "De natuurlijke stem werkt niet meer, daarom wordt de systeemstem gebruikt.",
+            "retry": "Opnieuw proberen",
+            "load": "Het model kon niet worden geladen.",
+            "synth": "De spraak kon niet worden gegenereerd.",
+            "sink": "De audio-uitvoer is mislukt. Controleer je uitvoerapparaat.",
+            "worker_exit": "De spraakengine is onverwacht gestopt.",
+            "unknown": "Er is een onbekend probleem opgetreden."
+          },
+          "notice": {
+            "firstSpeech": "De eerste zin kan een paar seconden duren terwijl het model wordt geladen.",
+            "limitations": "Alleen Engels. Zinnen in andere schriften worden door de systeemstem uitgesproken."
+          }
         }
       },
       "lazyStreamClose": {

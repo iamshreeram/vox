@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "Stemmemotor",
+            "description": "Vælg, hvordan talte svar lyder.",
+            "system": "Systemstemme",
+            "natural": "Naturlig stemme (beta)"
+          },
+          "voice": {
+            "label": "Naturlig stemme",
+            "description": "Vælg den stemme, der bruges til naturlig tale.",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "amerikansk",
+            "British": "britisk"
+          },
+          "gender": {
+            "Female": "kvindelig",
+            "Male": "mandlig"
+          },
+          "preview": "Afspil prøve",
+          "previewText": "Hej! Sådan lyder den naturlige stemme.",
+          "model": {
+            "label": "Model til naturlig stemme",
+            "notInstalled": "Ikke downloadet. Engangsdownload på ca. {{size}}; talen genereres på denne enhed, og din tekst sendes aldrig nogen steder hen.",
+            "download": "Download",
+            "cancel": "Annuller",
+            "delete": "Slet",
+            "downloading": "Downloader… {{percent}} %",
+            "working": "Arbejder…",
+            "ready": "Installeret",
+            "needed": "Download modellen for at bruge den naturlige stemme. Indtil da bruges systemstemmen.",
+            "downloadFailed": "Download mislykkedes: {{message}}"
+          },
+          "failure": {
+            "banner": "Den naturlige stemme holdt op med at virke, så systemstemmen bruges.",
+            "retry": "Prøv igen",
+            "load": "Modellen kunne ikke indlæses.",
+            "synth": "Talen kunne ikke genereres.",
+            "sink": "Lydudgangen fejlede. Kontrollér din outputenhed.",
+            "worker_exit": "Talemotoren stoppede uventet.",
+            "unknown": "Der opstod et ukendt problem."
+          },
+          "notice": {
+            "firstSpeech": "Den første sætning kan tage nogle sekunder, mens modellen indlæses.",
+            "limitations": "Kun engelsk. Sætninger i andre skriftsystemer læses op af systemstemmen."
+          }
         }
       },
       "lazyStreamClose": {

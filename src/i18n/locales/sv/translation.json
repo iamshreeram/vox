@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "Röstmotor",
+            "description": "Välj hur talade svar låter.",
+            "system": "Systemröst",
+            "natural": "Naturlig röst (beta)"
+          },
+          "voice": {
+            "label": "Naturlig röst",
+            "description": "Välj rösten som används för naturligt tal.",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "amerikansk",
+            "British": "brittisk"
+          },
+          "gender": {
+            "Female": "kvinnlig",
+            "Male": "manlig"
+          },
+          "preview": "Förhandslyssna",
+          "previewText": "Hej! Så här låter den naturliga rösten.",
+          "model": {
+            "label": "Modell för naturlig röst",
+            "notInstalled": "Inte nedladdad. Engångsnedladdning på cirka {{size}}; talet skapas på den här enheten och din text skickas aldrig någonstans.",
+            "download": "Ladda ned",
+            "cancel": "Avbryt",
+            "delete": "Radera",
+            "downloading": "Laddar ned… {{percent}} %",
+            "working": "Arbetar…",
+            "ready": "Installerad",
+            "needed": "Ladda ned modellen för att använda den naturliga rösten. Tills dess används systemrösten.",
+            "downloadFailed": "Nedladdningen misslyckades: {{message}}"
+          },
+          "failure": {
+            "banner": "Den naturliga rösten slutade fungera, så systemrösten används.",
+            "retry": "Försök igen",
+            "load": "Modellen kunde inte läsas in.",
+            "synth": "Talet kunde inte skapas.",
+            "sink": "Ljudutgången misslyckades. Kontrollera din utenhet.",
+            "worker_exit": "Talmotorn stoppades oväntat.",
+            "unknown": "Ett okänt problem uppstod."
+          },
+          "notice": {
+            "firstSpeech": "Den första meningen kan ta några sekunder medan modellen läses in.",
+            "limitations": "Endast engelska. Meningar i andra skriftsystem läses upp av systemrösten."
+          }
         }
       },
       "lazyStreamClose": {

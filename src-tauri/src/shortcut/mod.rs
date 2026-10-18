@@ -1041,6 +1041,40 @@ pub fn change_tts_rate_setting(app: AppHandle, rate: u32) -> Result<(), String> 
     Ok(())
 }
 
+/// After a spoken-replies engine/voice change: stop current speech and let a failed natural
+/// voice retry (best effort; both managers may be absent).
+fn reset_spoken_replies(app: &AppHandle) {
+    if let Some(tts) = app.try_state::<Arc<crate::managers::tts::TtsManager>>() {
+        let _ = tts.stop();
+    }
+    if let Some(health) = app.try_state::<Arc<crate::managers::natural_engine::NaturalHealth>>() {
+        health.bump();
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_engine_setting(
+    app: AppHandle,
+    engine: crate::settings::TtsEngine,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_engine = engine;
+    settings::write_settings(&app, settings);
+    reset_spoken_replies(&app);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_natural_voice_setting(app: AppHandle, voice: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_natural_voice = crate::managers::natural_voices::normalize_natural_voice(&voice);
+    settings::write_settings(&app, settings);
+    reset_spoken_replies(&app);
+    Ok(())
+}
+
 /// Speaks a short test phrase with the saved voice and rate. Works even when
 /// spoken replies are disabled so the user can audition a voice first. The
 /// text is never logged.

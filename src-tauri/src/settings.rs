@@ -672,6 +672,13 @@ pub struct AppSettings {
     pub tts_voice: Option<String>,
     #[serde(default = "default_tts_rate_wpm")]
     pub tts_rate_wpm: u32,
+    /// Which engine speaks replies. `natural` needs the downloaded neural model (macOS only);
+    /// when it is unavailable replies fall back to the system voice.
+    #[serde(default)]
+    pub tts_engine: TtsEngine,
+    /// Curated natural voice id (see `managers::natural_voices`); unknown ids mean the default.
+    #[serde(default = "default_tts_natural_voice")]
+    pub tts_natural_voice: String,
     /// Speech composer (spoken-reply summarizer). See docs/spoken-replies.md.
     #[serde(default)]
     pub tts_composer_mode: crate::managers::composer_config::TtsComposerMode,
@@ -1010,6 +1017,23 @@ fn default_agent_bridge_timeout_secs() -> u64 {
 
 fn default_tts_rate_wpm() -> u32 {
     crate::managers::tts::DEFAULT_RATE_WPM
+}
+
+fn default_tts_natural_voice() -> String {
+    crate::managers::natural_engine::DEFAULT_NATURAL_VOICE.to_string()
+}
+
+/// Which engine speaks spoken replies.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TtsEngine {
+    /// The local neural voice (needs a one-time model download).
+    Natural,
+    /// The operating system voice (default). Also what any unrecognised stored value means, so a
+    /// bad settings file can never stop the app from loading.
+    #[default]
+    #[serde(other)]
+    System,
 }
 
 fn default_tts_composer_provider_id() -> String {
@@ -1526,6 +1550,8 @@ pub fn get_default_settings() -> AppSettings {
         tts_enabled: false,
         tts_voice: None,
         tts_rate_wpm: default_tts_rate_wpm(),
+        tts_engine: TtsEngine::default(),
+        tts_natural_voice: default_tts_natural_voice(),
         tts_composer_mode: Default::default(),
         tts_composer_provider_id: default_tts_composer_provider_id(),
         tts_composer_model: String::new(),
@@ -2267,6 +2293,53 @@ mod tests {
         assert!(!settings.tts_enabled);
         assert_eq!(settings.tts_voice, None);
         assert_eq!(settings.tts_rate_wpm, 180);
+    }
+
+    #[test]
+    fn the_natural_voice_is_opt_in_and_defaults_to_af_heart() {
+        let settings = get_default_settings();
+        assert_eq!(settings.tts_engine, TtsEngine::System);
+        assert_eq!(settings.tts_natural_voice, "af_heart");
+    }
+
+    #[test]
+    fn natural_voice_settings_default_when_missing_from_legacy_settings() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        let object = settings.as_object_mut().unwrap();
+        object.remove("tts_engine");
+        object.remove("tts_natural_voice");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert_eq!(loaded.tts_engine, TtsEngine::System);
+        assert_eq!(loaded.tts_natural_voice, "af_heart");
+    }
+
+    #[test]
+    fn tts_engine_uses_snake_case_and_an_unknown_value_never_breaks_loading() {
+        assert_eq!(serde_json::to_value(TtsEngine::Natural).unwrap(), "natural");
+        assert_eq!(serde_json::to_value(TtsEngine::System).unwrap(), "system");
+        for (stored, want) in [
+            ("natural", TtsEngine::Natural),
+            ("system", TtsEngine::System),
+            ("bogus", TtsEngine::System),
+            ("", TtsEngine::System),
+        ] {
+            let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+            settings["tts_engine"] = serde_json::Value::String(stored.to_string());
+            let loaded: AppSettings = serde_json::from_value(settings)
+                .unwrap_or_else(|e| panic!("{stored:?} must not break settings: {e}"));
+            assert_eq!(loaded.tts_engine, want, "{stored:?}");
+        }
+    }
+
+    #[test]
+    fn natural_voice_settings_round_trip() {
+        let mut settings = get_default_settings();
+        settings.tts_engine = TtsEngine::Natural;
+        settings.tts_natural_voice = "bf_emma".to_string();
+        let loaded: AppSettings =
+            serde_json::from_value(serde_json::to_value(settings).unwrap()).unwrap();
+        assert_eq!(loaded.tts_engine, TtsEngine::Natural);
+        assert_eq!(loaded.tts_natural_voice, "bf_emma");
     }
 
     #[test]

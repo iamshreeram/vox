@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "Công cụ giọng nói",
+            "description": "Chọn cách các câu trả lời được đọc lên.",
+            "system": "Giọng hệ thống",
+            "natural": "Giọng tự nhiên (beta)"
+          },
+          "voice": {
+            "label": "Giọng tự nhiên",
+            "description": "Chọn giọng dùng cho giọng đọc tự nhiên.",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "Mỹ",
+            "British": "Anh"
+          },
+          "gender": {
+            "Female": "nữ",
+            "Male": "nam"
+          },
+          "preview": "Nghe thử",
+          "previewText": "Xin chào! Đây là giọng tự nhiên.",
+          "model": {
+            "label": "Mô hình giọng tự nhiên",
+            "notInstalled": "Chưa tải xuống. Tải xuống một lần khoảng {{size}}; giọng nói được tạo trên thiết bị này và văn bản của bạn không bao giờ được gửi đi đâu.",
+            "download": "Tải xuống",
+            "cancel": "Hủy",
+            "delete": "Xóa",
+            "downloading": "Đang tải xuống… {{percent}}%",
+            "working": "Đang xử lý…",
+            "ready": "Đã cài đặt",
+            "needed": "Tải mô hình xuống để dùng giọng tự nhiên. Trong lúc chờ, giọng hệ thống sẽ được dùng.",
+            "downloadFailed": "Tải xuống thất bại: {{message}}"
+          },
+          "failure": {
+            "banner": "Giọng tự nhiên đã ngừng hoạt động nên giọng hệ thống đang được dùng.",
+            "retry": "Thử lại",
+            "load": "Không thể tải mô hình.",
+            "synth": "Không thể tạo giọng nói.",
+            "sink": "Đầu ra âm thanh bị lỗi. Hãy kiểm tra thiết bị đầu ra.",
+            "worker_exit": "Công cụ giọng nói đã dừng đột ngột.",
+            "unknown": "Đã xảy ra sự cố không xác định."
+          },
+          "notice": {
+            "firstSpeech": "Câu đầu tiên có thể mất vài giây trong khi mô hình đang tải.",
+            "limitations": "Chỉ tiếng Anh. Các câu viết bằng hệ chữ khác sẽ do giọng hệ thống đọc."
+          }
         }
       },
       "lazyStreamClose": {

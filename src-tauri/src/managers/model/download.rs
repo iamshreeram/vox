@@ -48,7 +48,79 @@ enum HttpDownloadEvent<'a> {
     VerificationCompleted,
 }
 
+/// Notifications from [`ModelManager::download_verified_file`] (Tauri-free).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileDownloadEvent {
+    Progress { downloaded: u64, total: u64 },
+    VerificationStarted,
+    VerificationCompleted,
+}
+
+impl FileDownloadEvent {
+    /// `(downloaded, total)` for a `Progress` event. `download` is a private module, so
+    /// callers outside `model` cannot name the variants; this accessor keeps them usable.
+    pub(crate) fn progress(&self) -> Option<(u64, u64)> {
+        match self {
+            FileDownloadEvent::Progress { downloaded, total } => Some((*downloaded, *total)),
+            _ => None,
+        }
+    }
+}
+
+/// How [`ModelManager::download_verified_file`] ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileDownloadOutcome {
+    Completed,
+    Cancelled,
+}
+
+impl FileDownloadOutcome {
+    /// True for `Cancelled` (see [`FileDownloadEvent::progress`] for why this exists).
+    pub(crate) fn is_cancelled(&self) -> bool {
+        matches!(self, FileDownloadOutcome::Cancelled)
+    }
+}
+
 impl ModelManager {
+    /// Narrow crate-wide entry point onto the resumable downloader for a file with a pinned
+    /// size and SHA-256. On `Completed` the verified bytes are left in `partial_path`
+    /// (renaming is the caller's job); on `Cancelled` the partial is kept.
+    pub(crate) async fn download_verified_file(
+        label: &str,
+        url: &str,
+        partial_path: &Path,
+        expected_size: u64,
+        expected_sha256: &str,
+        cancel: &CancellationToken,
+        emit: &(dyn Fn(FileDownloadEvent) + Send + Sync),
+    ) -> Result<FileDownloadOutcome> {
+        let outcome = Self::download_http_resumable_with_events(
+            label,
+            url,
+            partial_path,
+            Some(expected_size),
+            Some(expected_sha256),
+            cancel,
+            &|event| match event {
+                HttpDownloadEvent::Progress(p) => emit(FileDownloadEvent::Progress {
+                    downloaded: p.downloaded,
+                    total: p.total,
+                }),
+                HttpDownloadEvent::VerificationStarted => {
+                    emit(FileDownloadEvent::VerificationStarted)
+                }
+                HttpDownloadEvent::VerificationCompleted => {
+                    emit(FileDownloadEvent::VerificationCompleted)
+                }
+            },
+        )
+        .await?;
+        Ok(match outcome {
+            HttpDownloadOutcome::Completed => FileDownloadOutcome::Completed,
+            HttpDownloadOutcome::Cancelled => FileDownloadOutcome::Cancelled,
+        })
+    }
+
     /// Verifies the SHA256 of `path` against `expected_sha256` (if provided).
     /// On mismatch or read error the partial file is deleted and an error is returned,
     /// so the next download attempt always starts from a clean state.

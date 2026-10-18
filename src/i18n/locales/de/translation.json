@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "Sprachausgabe-Engine",
+            "description": "Wählen Sie, wie gesprochene Antworten klingen.",
+            "system": "Systemstimme",
+            "natural": "Natürliche Stimme (Beta)"
+          },
+          "voice": {
+            "label": "Natürliche Stimme",
+            "description": "Wählen Sie die Stimme für die natürliche Sprachausgabe.",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "Amerikanisch",
+            "British": "Britisch"
+          },
+          "gender": {
+            "Female": "weiblich",
+            "Male": "männlich"
+          },
+          "preview": "Vorhören",
+          "previewText": "Hallo! So klingt die natürliche Stimme.",
+          "model": {
+            "label": "Modell für natürliche Stimme",
+            "notInstalled": "Nicht heruntergeladen. Einmaliger Download von etwa {{size}}; die Sprache wird auf diesem Gerät erzeugt und Ihr Text wird nirgendwohin gesendet.",
+            "download": "Herunterladen",
+            "cancel": "Abbrechen",
+            "delete": "Löschen",
+            "downloading": "Wird heruntergeladen… {{percent}}%",
+            "working": "Wird bearbeitet…",
+            "ready": "Installiert",
+            "needed": "Laden Sie das Modell herunter, um die natürliche Stimme zu verwenden. Bis dahin wird die Systemstimme verwendet.",
+            "downloadFailed": "Download fehlgeschlagen: {{message}}"
+          },
+          "failure": {
+            "banner": "Die natürliche Stimme funktioniert nicht mehr, daher wird die Systemstimme verwendet.",
+            "retry": "Erneut versuchen",
+            "load": "Das Modell konnte nicht geladen werden.",
+            "synth": "Die Sprache konnte nicht erzeugt werden.",
+            "sink": "Die Audioausgabe ist fehlgeschlagen. Überprüfen Sie Ihr Ausgabegerät.",
+            "worker_exit": "Die Sprachausgabe-Engine wurde unerwartet beendet.",
+            "unknown": "Ein unbekanntes Problem ist aufgetreten."
+          },
+          "notice": {
+            "firstSpeech": "Der erste Satz kann einige Sekunden dauern, während das Modell geladen wird.",
+            "limitations": "Nur Englisch. Sätze in anderen Schriften werden von der Systemstimme gesprochen."
+          }
         }
       },
       "lazyStreamClose": {

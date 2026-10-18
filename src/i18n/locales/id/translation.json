@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "Mesin suara",
+            "description": "Pilih bagaimana balasan lisan terdengar.",
+            "system": "Suara sistem",
+            "natural": "Suara alami (beta)"
+          },
+          "voice": {
+            "label": "Suara alami",
+            "description": "Pilih suara yang digunakan untuk ucapan alami.",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "Amerika",
+            "British": "Inggris"
+          },
+          "gender": {
+            "Female": "perempuan",
+            "Male": "laki-laki"
+          },
+          "preview": "Pratinjau",
+          "previewText": "Halo! Beginilah suara alami terdengar.",
+          "model": {
+            "label": "Model suara alami",
+            "notInstalled": "Belum diunduh. Unduhan satu kali sekitar {{size}}; ucapan dibuat di perangkat ini dan teks Anda tidak pernah dikirim ke mana pun.",
+            "download": "Unduh",
+            "cancel": "Batal",
+            "delete": "Hapus",
+            "downloading": "Mengunduh… {{percent}}%",
+            "working": "Memproses…",
+            "ready": "Terpasang",
+            "needed": "Unduh model untuk menggunakan suara alami. Sampai saat itu, suara sistem digunakan.",
+            "downloadFailed": "Unduhan gagal: {{message}}"
+          },
+          "failure": {
+            "banner": "Suara alami berhenti berfungsi, jadi suara sistem digunakan.",
+            "retry": "Coba lagi",
+            "load": "Model tidak dapat dimuat.",
+            "synth": "Ucapan tidak dapat dibuat.",
+            "sink": "Keluaran audio gagal. Periksa perangkat keluaran Anda.",
+            "worker_exit": "Mesin ucapan berhenti secara tak terduga.",
+            "unknown": "Terjadi masalah yang tidak diketahui."
+          },
+          "notice": {
+            "firstSpeech": "Kalimat pertama dapat memerlukan beberapa detik saat model dimuat.",
+            "limitations": "Hanya bahasa Inggris. Kalimat dalam aksara lain diucapkan oleh suara sistem."
+          }
         }
       },
       "lazyStreamClose": {

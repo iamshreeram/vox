@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "Hlasový modul",
+            "description": "Vyberte, jak zní mluvené odpovědi.",
+            "system": "Systémový hlas",
+            "natural": "Přirozený hlas (beta)"
+          },
+          "voice": {
+            "label": "Přirozený hlas",
+            "description": "Vyberte hlas pro přirozenou řeč.",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "americký",
+            "British": "britský"
+          },
+          "gender": {
+            "Female": "ženský",
+            "Male": "mužský"
+          },
+          "preview": "Přehrát ukázku",
+          "previewText": "Dobrý den! Takto zní přirozený hlas.",
+          "model": {
+            "label": "Model přirozeného hlasu",
+            "notInstalled": "Nestaženo. Jednorázové stažení asi {{size}}; řeč se vytváří v tomto zařízení a váš text se nikam neodesílá.",
+            "download": "Stáhnout",
+            "cancel": "Zrušit",
+            "delete": "Smazat",
+            "downloading": "Stahování… {{percent}} %",
+            "working": "Zpracování…",
+            "ready": "Nainstalováno",
+            "needed": "Stáhněte model, abyste mohli používat přirozený hlas. Do té doby se používá systémový hlas.",
+            "downloadFailed": "Stažení se nezdařilo: {{message}}"
+          },
+          "failure": {
+            "banner": "Přirozený hlas přestal fungovat, proto se používá systémový hlas.",
+            "retry": "Zkusit znovu",
+            "load": "Model se nepodařilo načíst.",
+            "synth": "Řeč se nepodařilo vytvořit.",
+            "sink": "Zvukový výstup selhal. Zkontrolujte výstupní zařízení.",
+            "worker_exit": "Hlasový modul se neočekávaně zastavil.",
+            "unknown": "Došlo k neznámému problému."
+          },
+          "notice": {
+            "firstSpeech": "První věta může trvat několik sekund, než se model načte.",
+            "limitations": "Pouze angličtina. Věty v jiných písmech čte systémový hlas."
+          }
         }
       },
       "lazyStreamClose": {

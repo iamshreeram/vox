@@ -8,6 +8,7 @@ pub mod converse;
 pub mod history;
 pub mod memory;
 pub mod models;
+pub mod natural_voice;
 pub mod realtime;
 pub mod source_update;
 pub mod transcription;

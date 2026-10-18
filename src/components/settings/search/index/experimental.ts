@@ -148,6 +148,7 @@ const VOICE_SHORTCUTS_SOURCE =
 const REALTIME_SOURCE = "src/components/settings/RealtimeSection.tsx";
 const CONVERSATION_SOURCE = "src/components/settings/ConversationSection.tsx";
 const JOBS_SOURCE = "src/components/settings/JobsSettings.tsx";
+const TTS_SOURCE = "src/components/settings/TtsSettings.tsx";
 
 export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   // ----- engine -----
@@ -469,6 +470,48 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
       "test phrase",
       "stop speech",
       "stop",
+    ],
+  ),
+  row(
+    "ttsEngine",
+    "spokenReplies",
+    "settings.advanced.tts.natural.engine.label",
+    "settings.advanced.tts.natural.engine.description",
+    [
+      "engine",
+      "voice engine",
+      "natural voice",
+      "neural voice",
+      "system voice",
+      "realistic voice",
+    ],
+  ),
+  row(
+    "ttsNaturalVoice",
+    "spokenReplies",
+    "settings.advanced.tts.natural.voice.label",
+    "settings.advanced.tts.natural.voice.description",
+    [
+      "natural voice",
+      "neural voice",
+      "accent",
+      "american",
+      "british",
+      "preview",
+    ],
+  ),
+  row(
+    "ttsNaturalModel",
+    "spokenReplies",
+    "settings.advanced.tts.natural.model.label",
+    undefined,
+    [
+      "natural voice model",
+      "download voice",
+      "voice model",
+      "delete model",
+      "retry",
+      "offline speech",
     ],
   ),
 
@@ -1023,6 +1066,12 @@ export const EXPERIMENTAL_EXCLUDED: Readonly<Record<string, string>> = {
 };
 
 export const EXPERIMENTAL_DYNAMIC: readonly DynamicFamily[] = [
+  {
+    source: TTS_SOURCE,
+    prefix: "settings.advanced.tts.natural.",
+    ids: [],
+    note: "Natural voice option labels (accent./gender. parts), the failure.<code> detail text from failureI18nKey and the system voice description key from buildVoiceOptions are inline text inside the indexed ttsVoice / ttsNaturalVoice / ttsNaturalModel rows, not separate settings.",
+  },
   {
     source: EXPERIMENTAL_SOURCE,
     prefix: "settings.experimental.groups.",

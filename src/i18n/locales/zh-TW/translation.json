@@ -459,6 +459,54 @@
             "superseded": "A newer reply replaced this one.",
             "unknown": "Unknown outcome."
           }
+        },
+        "natural": {
+          "engine": {
+            "label": "語音引擎",
+            "description": "選擇語音回覆的聲音。",
+            "system": "系統語音",
+            "natural": "自然語音（測試版）"
+          },
+          "voice": {
+            "label": "自然語音",
+            "description": "選擇用於自然語音的聲音。",
+            "option": "{{name}} ({{accent}}, {{gender}})"
+          },
+          "accent": {
+            "American": "美式",
+            "British": "英式"
+          },
+          "gender": {
+            "Female": "女聲",
+            "Male": "男聲"
+          },
+          "preview": "試聽",
+          "previewText": "你好！這就是自然語音的聲音。",
+          "model": {
+            "label": "自然語音模型",
+            "notInstalled": "尚未下載。只需一次性下載約 {{size}}；語音在此裝置上產生，你的文字絕不會傳送到任何地方。",
+            "download": "下載",
+            "cancel": "取消",
+            "delete": "刪除",
+            "downloading": "正在下載… {{percent}}%",
+            "working": "正在處理…",
+            "ready": "已安裝",
+            "needed": "下載模型後即可使用自然語音。在此之前會使用系統語音。",
+            "downloadFailed": "下載失敗：{{message}}"
+          },
+          "failure": {
+            "banner": "自然語音已停止運作，因此正在使用系統語音。",
+            "retry": "重試",
+            "load": "無法載入模型。",
+            "synth": "無法產生語音。",
+            "sink": "音訊輸出失敗。請檢查你的輸出裝置。",
+            "worker_exit": "語音引擎意外停止。",
+            "unknown": "發生未知問題。"
+          },
+          "notice": {
+            "firstSpeech": "載入模型時，第一句話可能需要幾秒鐘。",
+            "limitations": "僅支援英文。其他文字的句子將由系統語音朗讀。"
+          }
         }
       },
       "lazyStreamClose": {
