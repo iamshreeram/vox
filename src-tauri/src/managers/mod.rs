@@ -74,3 +74,18 @@ pub mod voice_common;
 pub mod voice_shortcuts;
 pub mod wakeword;
 pub mod wakeword_listener;
+pub mod natural_audio;
+#[cfg(test)]
+mod natural_audio_tests;
+pub mod natural_chunk;
+#[cfg(test)]
+mod natural_chunk_tests;
+pub mod natural_engine;
+pub mod natural_model;
+pub mod natural_router;
+pub mod natural_sink;
+#[cfg(test)]
+mod natural_sink_tests;
+#[cfg(test)]
+mod natural_test_support;
+pub mod tts_serial;
