@@ -98,3 +98,5 @@ mod natural_kokoro_tests;
 pub mod natural_voices;
 #[cfg(test)]
 mod natural_model_tests;
+#[cfg(test)]
+mod tts_serial_tests;
