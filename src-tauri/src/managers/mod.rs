@@ -96,3 +96,5 @@ pub mod natural_kokoro;
 #[cfg(all(test, target_os = "macos"))]
 mod natural_kokoro_tests;
 pub mod natural_voices;
+#[cfg(test)]
+mod natural_model_tests;
