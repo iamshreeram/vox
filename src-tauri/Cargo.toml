@@ -169,6 +169,8 @@ objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-app-kit = "0.3"
 objc2-service-management = "0.3.2"
+# Local neural TTS (opt-in "natural voice"); macOS only, loads models from verified bytes.
+kokoro-tts = "0.3.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8", features = ["v0_6"] }
