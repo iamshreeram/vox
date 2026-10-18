@@ -17,6 +17,7 @@
     "test": "vitest run src/overlay/epoch.test.ts",
     "test:keyboard": "bun src/lib/utils/keyboard.test.ts",
     "test:source-update": "bun src/components/update-checker/sourceUpdateState.test.ts",
+    "test:natural-voice": "bun src/components/settings/naturalVoiceState.test.ts",
     "test:theme": "bun src/styles/theme.test.ts",
     "test:theme-utils": "bun src/lib/utils/theme.test.ts",
     "test:sidebar-theme": "bun src/components/sidebarTheme.test.ts",
