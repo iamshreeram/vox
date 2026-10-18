@@ -106,6 +106,143 @@ pub fn error_message(error: &ModelError) -> String {
     .to_string()
 }
 
+// ---------------------------------------------------------------------------------------------
+// Tauri commands (S5c). Never log speech text, URLs or error bodies.
+// ---------------------------------------------------------------------------------------------
+
+use crate::managers::natural_engine::NaturalHealth;
+use crate::managers::natural_model::ModelCoordinator;
+use crate::managers::tts::TtsManager;
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager};
+
+const UNAVAILABLE: &str = "Natural voice is not available";
+const PROGRESS_EVENT: &str = "natural-voice-download-progress";
+const FINISHED_EVENT: &str = "natural-voice-download-finished";
+
+/// Payload of `natural-voice-download-progress`.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq, Type)]
+pub struct NaturalVoiceDownloadProgress {
+    pub downloaded: u64,
+    pub total: u64,
+}
+
+/// Payload of `natural-voice-download-finished`. `message` is UI-safe (see `error_message`).
+#[derive(Serialize, Debug, Clone, PartialEq, Eq, Type)]
+pub struct NaturalVoiceDownloadFinished {
+    pub ok: bool,
+    pub message: Option<String>,
+}
+
+fn coordinator(app: &AppHandle) -> Result<Arc<ModelCoordinator>, String> {
+    app.try_state::<Arc<ModelCoordinator>>()
+        .map(|state| state.inner().clone())
+        .ok_or_else(|| UNAVAILABLE.to_string())
+}
+
+fn health(app: &AppHandle) -> Result<Arc<NaturalHealth>, String> {
+    app.try_state::<Arc<NaturalHealth>>()
+        .map(|state| state.inner().clone())
+        .ok_or_else(|| UNAVAILABLE.to_string())
+}
+
+fn is_busy(state: ModelState) -> bool {
+    !matches!(state, ModelState::NotInstalled | ModelState::Ready)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn natural_voice_status(app: AppHandle) -> Result<NaturalVoiceStatus, String> {
+    let coordinator = coordinator(&app)?;
+    let health = health(&app)?;
+    Ok(build_status(
+        cfg!(target_os = "macos"),
+        coordinator.state(),
+        coordinator.progress(),
+        health.state(),
+    ))
+}
+
+/// Starts the model download in the background and returns immediately. Progress and the
+/// result are reported through events.
+#[tauri::command]
+#[specta::specta]
+pub async fn natural_voice_download(app: AppHandle) -> Result<(), String> {
+    if !cfg!(target_os = "macos") {
+        return Err(UNAVAILABLE.to_string());
+    }
+    let coordinator = coordinator(&app)?;
+    let health = health(&app)?;
+    if is_busy(coordinator.state()) {
+        return Err(error_message(&ModelError::Busy));
+    }
+    tauri::async_runtime::spawn(async move {
+        let progress_app = app.clone();
+        let on_progress = move |p: DownloadProgress| {
+            let _ = progress_app.emit(
+                PROGRESS_EVENT,
+                NaturalVoiceDownloadProgress {
+                    downloaded: p.downloaded,
+                    total: p.total,
+                },
+            );
+        };
+        let result = coordinator.download(&on_progress).await;
+        let payload = match &result {
+            Ok(()) => NaturalVoiceDownloadFinished {
+                ok: true,
+                message: None,
+            },
+            Err(err) => NaturalVoiceDownloadFinished {
+                ok: false,
+                message: Some(error_message(err)),
+            },
+        };
+        if result.is_ok() {
+            health.bump();
+        } else {
+            log::warn!("natural voice: model download did not complete");
+        }
+        let _ = app.emit(FINISHED_EVENT, payload);
+    });
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn natural_voice_cancel_download(app: AppHandle) -> Result<(), String> {
+    coordinator(&app)?.cancel();
+    Ok(())
+}
+
+/// Stops speech, removes the model, then lets the natural voice re-evaluate its health.
+#[tauri::command]
+#[specta::specta]
+pub fn natural_voice_delete(app: AppHandle) -> Result<(), String> {
+    let coordinator = coordinator(&app)?;
+    let health = health(&app)?;
+    if let Some(tts) = app.try_state::<Arc<TtsManager>>() {
+        let _ = tts.stop();
+    }
+    coordinator.delete().map_err(|e| error_message(&e))?;
+    health.bump();
+    Ok(())
+}
+
+/// Retry button: a health bump makes the next spoken reply recover the natural voice.
+#[tauri::command]
+#[specta::specta]
+pub fn natural_voice_retry(app: AppHandle) -> Result<(), String> {
+    health(&app)?.bump();
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn list_natural_voices() -> Vec<NaturalVoiceOption> {
+    voice_options()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,7 +343,9 @@ mod tests {
                 gender: "Female".into(),
             }
         );
-        assert!(voices.iter().any(|v| v.id == "bm_george" && v.accent == "British" && v.gender == "Male"));
+        assert!(voices
+            .iter()
+            .any(|v| v.id == "bm_george" && v.accent == "British" && v.gender == "Male"));
     }
 
     #[test]
@@ -224,9 +363,14 @@ mod tests {
             let message = error_message(&error);
             assert!(!message.is_empty());
             for leaked in ["http", "github", "token", "/Users", "secret"] {
-                assert!(!message.contains(leaked), "{error:?} leaks {leaked:?}: {message}");
+                assert!(
+                    !message.contains(leaked),
+                    "{error:?} leaks {leaked:?}: {message}"
+                );
             }
         }
-        assert!(error_message(&ModelError::Corrupt(String::new())).contains("download the model again"));
+        assert!(
+            error_message(&ModelError::Corrupt(String::new())).contains("download the model again")
+        );
     }
 }

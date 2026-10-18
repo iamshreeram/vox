@@ -665,19 +665,33 @@ const TAIL_PUBLISH_EVERY: Duration = Duration::from_secs(1);
 
 /// `StreamFactory` over the real cpal output device chosen by the `selected_output_device`
 /// setting (`None` / `"Default"` / unknown name -> the default output device).
+/// The device is resolved every time a stream is built, so a settings change takes effect on
+/// the next stream.
 pub struct CpalStreamFactory {
-    device_name: Option<String>,
+    device_source: DeviceSource,
 }
 
+/// Returns the currently selected output device name (`None` / `"Default"` -> default device).
+pub type DeviceSource = Arc<dyn Fn() -> Option<String> + Send + Sync>;
+
 impl CpalStreamFactory {
+    /// Fixed device name.
     pub fn new(device_name: Option<String>) -> Self {
-        Self { device_name }
+        Self::with_device_source(Arc::new(move || device_name.clone()))
+    }
+
+    /// Device name read from `source` each time a stream is built.
+    pub fn with_device_source(source: DeviceSource) -> Self {
+        Self {
+            device_source: source,
+        }
     }
 
     /// Same resolution as `audio_feedback::play_audio_file`.
     fn resolve_device(&self) -> Result<cpal::Device, String> {
         let host = crate::audio_toolkit::get_cpal_host();
-        if let Some(name) = self.device_name.as_deref().filter(|n| *n != "Default") {
+        let device_name = (self.device_source)();
+        if let Some(name) = device_name.as_deref().filter(|n| *n != "Default") {
             match host.output_devices() {
                 Ok(devices) => {
                     for device in devices {
@@ -705,14 +719,14 @@ impl StreamFactory for CpalStreamFactory {
     }
 
     fn open(&self, ctl: Arc<PlaybackCtl>) -> Result<Box<dyn Send>, String> {
-        let device_name = self.device_name.clone();
+        let device_source = self.device_source.clone();
         let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<(), String>>(1);
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
         let handle = std::thread::Builder::new()
             .name("natural-voice-out".into())
             .spawn(move || {
                 // The cpal `Stream` lives and dies on this thread (not `Send` everywhere).
-                let factory = CpalStreamFactory::new(device_name);
+                let factory = CpalStreamFactory::with_device_source(device_source);
                 let stream = match factory.build_stream(ctl) {
                     Ok(stream) => stream,
                     Err(e) => {

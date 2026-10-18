@@ -197,6 +197,8 @@ impl Default for NaturalConfig {
 pub struct NaturalSynth {
     inner: Arc<Inner>,
     worker: Option<JoinHandle<()>>,
+    /// Health revision this synth last recovered under; a bump makes the next speak recover.
+    seen_revision: u64,
 }
 
 /// Bounded wait for the worker when the synth is dropped.
@@ -512,6 +514,7 @@ impl NaturalSynth {
         config: NaturalConfig,
     ) -> Self {
         let generation = sink.generation();
+        let seen_revision = health.revision();
         let inner = Arc::new(Inner {
             acct: Mutex::new(Acct {
                 generation,
@@ -533,6 +536,7 @@ impl NaturalSynth {
         Self {
             inner,
             worker: None,
+            seen_revision,
         }
     }
 
@@ -544,6 +548,7 @@ impl NaturalSynth {
     /// Retry path: clears accounting and the sink error (`sink.recover()`), restarts the worker
     /// if it exited. Does NOT touch health (the caller bumps the revision).
     pub fn recover(&mut self) {
+        self.seen_revision = self.inner.health.revision();
         self.inner.sink.recover();
         let needs_worker = {
             let mut acct = self.inner.lock();
@@ -605,6 +610,10 @@ impl NaturalSynth {
 impl Synth for NaturalSynth {
     fn speak(&mut self, text: &str, voice: Option<&str>, rate_wpm: Option<u32>, pitch: f32) {
         let _ = pitch;
+        // Recovery triggers only bump the health revision: notice it and recover by ourselves.
+        if self.inner.health.revision() != self.seen_revision {
+            self.recover();
+        }
         let chunks = split_for_synthesis(text, NATURAL_MAX_CHARS);
         if chunks.is_empty() {
             return;
