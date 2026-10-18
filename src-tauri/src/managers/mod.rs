@@ -68,8 +68,18 @@ pub mod vault;
 pub mod vault_context;
 #[cfg(test)]
 mod vault_context_tests;
+pub mod vault_index;
+#[cfg(test)]
+mod vault_index_tests;
+pub mod vault_io;
+#[cfg(test)]
+mod vault_io_tests;
+#[cfg(test)]
+mod vault_query_tests;
 #[cfg(test)]
 mod vault_tests;
+#[cfg(test)]
+mod vault_walk_tests;
 pub mod voice_common;
 pub mod voice_shortcuts;
 pub mod wakeword;
