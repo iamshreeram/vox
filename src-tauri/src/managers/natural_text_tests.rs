@@ -190,3 +190,23 @@ fn a_huge_digit_string_is_bounded_and_fast() {
     assert!(out.split(' ').all(|w| w == "nine"));
     assert_eq!(out.split(' ').count(), 5_000);
 }
+
+/// PRIVACY GUARD. The Kokoro crate logs unknown characters (spoken text). The fix is only real
+/// while `lib.rs` applies `SUPPRESSED_LOG_TARGETS` to the app logger, so removing that wiring
+/// must fail a test, not just silently re-open the leak.
+#[test]
+fn log_suppression_stays_wired_into_the_app_logger() {
+    let lib = include_str!("../lib.rs");
+    assert!(
+        lib.contains("with_suppressed_log_targets(LogBuilder::new())"),
+        "lib.rs must build the app logger through with_suppressed_log_targets"
+    );
+    assert!(
+        lib.contains("SUPPRESSED_LOG_TARGETS") && lib.contains("log::LevelFilter::Off"),
+        "the helper must switch every suppressed target off"
+    );
+    assert!(
+        crate::managers::natural_voices::SUPPRESSED_LOG_TARGETS.contains(&"kokoro_tts"),
+        "the kokoro_tts target must stay suppressed"
+    );
+}
