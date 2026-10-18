@@ -134,7 +134,12 @@ impl SynthEngine for FakeEngine {
         if fail_word.is_some_and(|w| text.contains(&w)) {
             return Err("scripted word failure".into());
         }
-        self.shared.log.lock().unwrap().successes.push(text.to_string());
+        self.shared
+            .log
+            .lock()
+            .unwrap()
+            .successes
+            .push(text.to_string());
         Ok(vec![amp; fixed.unwrap_or_else(|| samples_for(text))])
     }
 }
@@ -303,7 +308,10 @@ fn health_ignores_stale_revision_failures_and_bump_recovers() {
     let old = h.revision();
     let new = h.bump();
     assert!(new > old);
-    assert!(!h.report_failure(old, FailureReason::Sink), "stale revision");
+    assert!(
+        !h.report_failure(old, FailureReason::Sink),
+        "stale revision"
+    );
     assert!(h.is_ready());
     assert!(events.lock().unwrap().is_empty());
     assert!(h.report_failure(new, FailureReason::Sink));
@@ -338,7 +346,10 @@ fn speak_returns_immediately_even_while_synthesis_blocks_and_counts_as_speaking(
     let started = Instant::now();
     r.say(SHORT);
     assert!(started.elapsed() < ms(100), "speak must not block");
-    assert!(r.synth.is_speaking(), "speaking from acceptance (start watchdog)");
+    assert!(
+        r.synth.is_speaking(),
+        "speaking from acceptance (start watchdog)"
+    );
     assert!(wait_until(Duration::from_secs(2), || gate.entered() >= 1));
     assert!(r.synth.is_speaking());
     gate.release();
@@ -449,7 +460,10 @@ fn stop_during_playback_silences_quickly_and_discards_everything_pending() {
     let calls_at_stop = r.calls().len();
     std::thread::sleep(ms(400));
     assert_eq!(r.nonzero(), played, "no audio after a confirmed stop");
-    assert!(r.calls().len() <= calls_at_stop + 1, "no new synthesis after stop");
+    assert!(
+        r.calls().len() <= calls_at_stop + 1,
+        "no new synthesis after stop"
+    );
 }
 
 #[test]
@@ -470,15 +484,26 @@ fn stale_synthesis_is_discarded_and_the_replacement_plays_without_flicker() {
     gate.release();
     let until = Instant::now() + ms(100);
     while Instant::now() < until {
-        assert!(r.synth.is_speaking(), "stale completion must not clear the new busy state");
+        assert!(
+            r.synth.is_speaking(),
+            "stale completion must not clear the new busy state"
+        );
         std::thread::sleep(ms(5));
     }
     assert!(r.wait_idle(5));
     let calls = r.calls();
-    assert_eq!(calls.len(), 2, "no retry for the stale chunk: {:?}", calls.iter().map(|c| &c.text).collect::<Vec<_>>());
+    assert_eq!(
+        calls.len(),
+        2,
+        "no retry for the stale chunk: {:?}",
+        calls.iter().map(|c| &c.text).collect::<Vec<_>>()
+    );
     assert_eq!(calls[1].text, "Second one here.");
     let played = r.device.as_ref().unwrap().rendered();
-    assert!(played.iter().all(|s| *s == 0.0 || *s == 0.5), "old-generation audio leaked");
+    assert!(
+        played.iter().all(|s| *s == 0.0 || *s == 0.5),
+        "old-generation audio leaked"
+    );
     assert_eq!(r.nonzero(), samples_for("Second one here."));
 }
 
@@ -501,7 +526,10 @@ fn a_stale_error_result_does_not_trigger_recursive_synthesis_or_failure() {
     let calls = r.calls();
     assert_eq!(calls.len(), 2, "old chunk must not be retried after stop");
     assert_eq!(calls[1].text, "Second one here.");
-    assert!(r.health.is_ready(), "a cancelled failure is not a health failure");
+    assert!(
+        r.health.is_ready(),
+        "a cancelled failure is not a health failure"
+    );
     assert!(r.events().is_empty());
 }
 
@@ -509,7 +537,12 @@ fn a_stale_error_result_does_not_trigger_recursive_synthesis_or_failure() {
 fn stop_is_failed_while_the_acoustic_tail_is_longer_than_the_budget_then_recovers() {
     // C3: never claim silence while old audio may be audible; recover once the tail drained.
     let mut r = rig(Script::default());
-    let text = [sentence("alpha", 48), sentence("bravo", 66), sentence("charlie", 66)].join(" ");
+    let text = [
+        sentence("alpha", 48),
+        sentence("bravo", 66),
+        sentence("charlie", 66),
+    ]
+    .join(" ");
     r.say(&text);
     assert!(wait_until(Duration::from_secs(5), || r.nonzero() > 0));
     r.factory.ctl().unwrap().set_tail_bound(ms(300));
@@ -517,8 +550,15 @@ fn stop_is_failed_while_the_acoustic_tail_is_longer_than_the_budget_then_recover
     let t = Instant::now();
     assert_eq!(r.synth.stop_immediate(), StopOutcome::Failed);
     assert!(t.elapsed() < ms(300));
-    assert!(wait_until(Duration::from_secs(2), || !r.synth.is_speaking()), "tail must drain");
-    assert_eq!(r.synth.stop_immediate(), StopOutcome::AlreadyIdle, "recovers without a poll");
+    assert!(
+        wait_until(Duration::from_secs(2), || !r.synth.is_speaking()),
+        "tail must drain"
+    );
+    assert_eq!(
+        r.synth.stop_immediate(),
+        StopOutcome::AlreadyIdle,
+        "recovers without a poll"
+    );
 }
 
 // ---- bounds (C6) ---------------------------------------------------------------------------------------
@@ -537,7 +577,9 @@ fn pending_chunks_are_capped_and_the_excess_is_counted() {
         cfg,
         false, // no device needed: only synthesis is checked
     );
-    let text: Vec<String> = (0..100).map(|i| sentence(&format!("s{i:03}"), 66)).collect();
+    let text: Vec<String> = (0..100)
+        .map(|i| sentence(&format!("s{i:03}"), 66))
+        .collect();
     let text = text.join(" ");
     let total = split_for_synthesis(&text, NATURAL_MAX_CHARS).len();
     assert!(total > 100);
@@ -546,7 +588,11 @@ fn pending_chunks_are_capped_and_the_excess_is_counted() {
     gate.release();
     assert!(wait_until(Duration::from_secs(10), || r.calls().len() == 5));
     std::thread::sleep(ms(200));
-    assert_eq!(r.calls().len(), 5, "only the accepted chunks are synthesised");
+    assert_eq!(
+        r.calls().len(),
+        5,
+        "only the accepted chunks are synthesised"
+    );
     r.synth.stop_immediate();
 }
 
@@ -567,7 +613,12 @@ fn backpressure_wait_is_cancel_aware_and_the_worker_stays_usable() {
         test_config(),
         false, // no device: nothing drains the queue
     );
-    let text = [sentence("alpha", 48), sentence("bravo", 59), sentence("charlie", 66)].join(" ");
+    let text = [
+        sentence("alpha", 48),
+        sentence("bravo", 59),
+        sentence("charlie", 66),
+    ]
+    .join(" ");
     r.say(&text);
     assert!(wait_until(Duration::from_secs(3), || r.calls().len() >= 2));
     std::thread::sleep(ms(300)); // second commit is Full: the worker waits, no third synthesis
@@ -580,7 +631,11 @@ fn backpressure_wait_is_cancel_aware_and_the_worker_stays_usable() {
     r.start_device();
     r.say("Hi there friend.");
     assert!(r.wait_idle(5));
-    assert_eq!(r.nonzero(), samples_for("Hi there friend."), "only the new utterance was played");
+    assert_eq!(
+        r.nonzero(),
+        samples_for("Hi there friend."),
+        "only the new utterance was played"
+    );
 }
 
 #[test]
@@ -632,7 +687,11 @@ fn load_failure_marks_health_failed_once_and_the_accounting_drains() {
     assert_eq!(r.health.state(), HealthState::Failed(FailureReason::Load));
     r.say(SHORT);
     assert!(r.wait_idle(3));
-    assert_eq!(r.events(), vec![FailureReason::Load], "one event per transition");
+    assert_eq!(
+        r.events(),
+        vec![FailureReason::Load],
+        "one event per transition"
+    );
 }
 
 #[test]
@@ -653,16 +712,27 @@ fn a_later_chunk_failure_drops_the_rest_of_that_submission_but_stays_ready() {
         fail_word: Some("omega".into()),
         ..Script::default()
     });
-    let text = format!("{} {} {}", sentence("alpha", 48), omega(), sentence("third", 66));
+    let text = format!(
+        "{} {} {}",
+        sentence("alpha", 48),
+        omega(),
+        sentence("third", 66)
+    );
     r.say(&text);
     assert!(r.wait_idle(5));
-    assert!(!r.calls().iter().any(|c| c.text.contains("third")), "rest of the submission dropped");
+    assert!(
+        !r.calls().iter().any(|c| c.text.contains("third")),
+        "rest of the submission dropped"
+    );
     assert_eq!(r.successes().len(), 1);
     assert!(r.health.is_ready());
     r.shared.script.lock().unwrap().fail_word = None;
     r.say(SHORT);
     assert!(r.wait_idle(5));
-    assert!(r.successes().contains(&SHORT.to_string()), "still works afterwards");
+    assert!(
+        r.successes().contains(&SHORT.to_string()),
+        "still works afterwards"
+    );
 }
 
 #[test]
@@ -676,7 +746,10 @@ fn three_consecutive_later_chunk_failures_mark_health_failed() {
         r.say(&text);
         assert!(r.wait_idle(5), "round {round}");
         if round < 3 {
-            assert!(r.health.is_ready(), "still ready after {round} later-chunk failures");
+            assert!(
+                r.health.is_ready(),
+                "still ready after {round} later-chunk failures"
+            );
         }
     }
     assert_eq!(r.health.state(), HealthState::Failed(FailureReason::Synth));
@@ -693,17 +766,26 @@ fn a_worker_that_dies_drains_the_accounting_and_fails_health() {
     assert!(r.wait_idle(3), "dead worker must not leave the synth busy");
     assert!(matches!(r.health.state(), HealthState::Failed(_)));
     r.say(SHORT);
-    assert!(r.wait_idle(3), "still not busy forever after a second speak");
+    assert!(
+        r.wait_idle(3),
+        "still not busy forever after a second speak"
+    );
 }
 
 #[test]
 fn a_device_error_fails_health_drains_and_recover_restores_playback() {
     let mut r = rig(Script::default());
-    let text = [sentence("alpha", 48), sentence("bravo", 66), sentence("charlie", 66)].join(" ");
+    let text = [
+        sentence("alpha", 48),
+        sentence("bravo", 66),
+        sentence("charlie", 66),
+    ]
+    .join(" ");
     r.say(&text);
     assert!(wait_until(Duration::from_secs(5), || r.nonzero() > 0));
     r.factory.ctl().unwrap().fail(); // what the cpal error callback does
-    assert!(wait_until(Duration::from_secs(2), || r.health.state() == HealthState::Failed(FailureReason::Sink)));
+    assert!(wait_until(Duration::from_secs(2), || r.health.state()
+        == HealthState::Failed(FailureReason::Sink)));
     assert!(r.wait_idle(3), "no permanently busy route");
     assert_eq!(r.events(), vec![FailureReason::Sink]);
     // Recovery trigger: the caller bumps health and asks the synth to recover.
@@ -722,16 +804,25 @@ fn a_health_bump_alone_makes_the_next_speak_recover_by_itself() {
     // Recovery triggers (retry button, settings change, download, auto-retry) only bump the
     // health revision: the synth must notice and recover on the next speak without any call.
     let mut r = rig(Script::default());
-    let text = [sentence("alpha", 48), sentence("bravo", 66), sentence("charlie", 66)].join(" ");
+    let text = [
+        sentence("alpha", 48),
+        sentence("bravo", 66),
+        sentence("charlie", 66),
+    ]
+    .join(" ");
     r.say(&text);
     assert!(wait_until(Duration::from_secs(5), || r.nonzero() > 0));
     r.factory.ctl().unwrap().fail();
-    assert!(wait_until(Duration::from_secs(2), || r.health.state() == HealthState::Failed(FailureReason::Sink)));
+    assert!(wait_until(Duration::from_secs(2), || r.health.state()
+        == HealthState::Failed(FailureReason::Sink)));
     assert!(r.wait_idle(3));
     r.health.bump(); // no synth.recover() call
     let before = r.nonzero();
     r.say(SHORT);
     assert!(r.wait_idle(5));
-    assert!(r.nonzero() >= before + samples_for(SHORT), "the next speak must play");
+    assert!(
+        r.nonzero() >= before + samples_for(SHORT),
+        "the next speak must play"
+    );
     assert_eq!(r.factory.opens(), 2);
 }

@@ -204,12 +204,18 @@ fn fail_clears_the_queue_rejects_commits_keeps_the_tail_and_recover_restores() {
     assert!(ctl.is_errored());
     assert_eq!(ctl.queued_secs(), 0.0);
     assert!(ctl.generation() > g0);
-    assert_eq!(ctl.commit(ctl.generation(), vec![0.5; 10]), CommitResult::Errored);
+    assert_eq!(
+        ctl.commit(ctl.generation(), vec![0.5; 10]),
+        CommitResult::Errored
+    );
     assert!(ctl.audible(t0 + ms(50)), "in-flight tail is still honest");
     assert!(!ctl.audible(t0 + ms(115)), "but bounded by the tail");
     ctl.recover();
     assert!(!ctl.is_errored());
-    assert_eq!(ctl.commit(ctl.generation(), vec![0.5; 10]), CommitResult::Accepted);
+    assert_eq!(
+        ctl.commit(ctl.generation(), vec![0.5; 10]),
+        CommitResult::Accepted
+    );
     assert_eq!(ctl.commit(g0, vec![0.5; 10]), CommitResult::Stale);
 }
 
@@ -235,13 +241,19 @@ fn render_never_blocks_when_the_lock_is_contended() {
     drop(guard);
     let mut out = [9.0f32; 4];
     ctl.render(&mut out, Instant::now());
-    assert_eq!(out, [0.5; 4], "queued audio is still there once the lock is free");
+    assert_eq!(
+        out, [0.5; 4],
+        "queued audio is still there once the lock is free"
+    );
 }
 
 #[test]
 fn stalled_needs_queued_audio_and_a_silent_callback() {
     let ctl = PlaybackCtl::new(1000);
-    assert!(!ctl.stalled(Instant::now() + Duration::from_secs(10)), "nothing queued");
+    assert!(
+        !ctl.stalled(Instant::now() + Duration::from_secs(10)),
+        "nothing queued"
+    );
     let g = ctl.generation();
     ctl.commit(g, vec![0.5; 1_000]);
     assert!(!ctl.stalled(Instant::now() + ms(100)));
@@ -341,7 +353,10 @@ fn sink_open_failure_is_errored_and_recovers_when_the_device_is_back() {
     factory.set_fail_open(false);
     sink.recover();
     assert!(!sink.is_errored());
-    assert_eq!(sink.commit(sink.generation(), vec![0.5; 10]), CommitResult::Accepted);
+    assert_eq!(
+        sink.commit(sink.generation(), vec![0.5; 10]),
+        CommitResult::Accepted
+    );
     assert_eq!(factory.opens(), 1);
 }
 
@@ -354,13 +369,22 @@ fn sink_device_error_with_queued_audio_fails_cleanly_and_the_stream_is_recreated
     assert_eq!(factory.opens(), 1);
     factory.ctl().unwrap().fail(); // what the cpal error callback does
     assert!(sink.is_errored());
-    assert_eq!(sink.commit(sink.generation(), vec![0.5; 10]), CommitResult::Errored);
-    assert!(!sink.audible(), "queued audio of the dead stream is gone and nothing rendered");
+    assert_eq!(
+        sink.commit(sink.generation(), vec![0.5; 10]),
+        CommitResult::Errored
+    );
+    assert!(
+        !sink.audible(),
+        "queued audio of the dead stream is gone and nothing rendered"
+    );
     assert_eq!(sink.queued_secs(), 0.0);
     sink.recover();
     assert!(sink.generation() > g0);
     assert_eq!(sink.commit(g0, vec![0.5; 10]), CommitResult::Stale);
-    assert_eq!(sink.commit(sink.generation(), vec![0.5; 10]), CommitResult::Accepted);
+    assert_eq!(
+        sink.commit(sink.generation(), vec![0.5; 10]),
+        CommitResult::Accepted
+    );
     assert_eq!(factory.opens(), 2);
     assert!(factory.closes() >= 1);
 }
@@ -376,7 +400,10 @@ fn sink_maintain_closes_an_idle_stream_and_the_next_commit_reopens() {
     assert_eq!(factory.closes(), 0, "not idle long enough");
     sink.maintain(Instant::now() + Duration::from_secs(2));
     assert_eq!(factory.closes(), 1, "idle stream closed");
-    assert_eq!(sink.commit(sink.generation(), vec![0.5; 100]), CommitResult::Accepted);
+    assert_eq!(
+        sink.commit(sink.generation(), vec![0.5; 100]),
+        CommitResult::Accepted
+    );
     assert_eq!(factory.opens(), 2);
 }
 

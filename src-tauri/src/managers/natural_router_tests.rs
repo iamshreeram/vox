@@ -88,16 +88,33 @@ impl Fake {
 }
 
 impl SpeechBackend for Fake {
-    fn spawn(&self, text: &str, voice: Option<&str>, rate: Option<u32>) -> io::Result<Box<dyn SpeechHandle>> {
+    fn spawn(
+        &self,
+        text: &str,
+        voice: Option<&str>,
+        rate: Option<u32>,
+    ) -> io::Result<Box<dyn SpeechHandle>> {
         self.record("spawn", text, voice, rate, Emotion::Neutral)
     }
-    fn spawn_styled(&self, text: &str, voice: Option<&str>, rate: Option<u32>, e: Emotion) -> io::Result<Box<dyn SpeechHandle>> {
+    fn spawn_styled(
+        &self,
+        text: &str,
+        voice: Option<&str>,
+        rate: Option<u32>,
+        e: Emotion,
+    ) -> io::Result<Box<dyn SpeechHandle>> {
         self.record("styled", text, voice, rate, e)
     }
     fn supports_queue(&self) -> bool {
         self.0.queue.load(Ordering::SeqCst)
     }
-    fn enqueue_styled(&self, text: &str, voice: Option<&str>, rate: Option<u32>, e: Emotion) -> io::Result<Box<dyn SpeechHandle>> {
+    fn enqueue_styled(
+        &self,
+        text: &str,
+        voice: Option<&str>,
+        rate: Option<u32>,
+        e: Emotion,
+    ) -> io::Result<Box<dyn SpeechHandle>> {
         if !self.supports_queue() {
             return Err(io::Error::from(io::ErrorKind::Unsupported));
         }
@@ -181,14 +198,17 @@ fn rig() -> Rig {
 
 impl Rig {
     fn fail_health(&self) {
-        self.health.report_failure(self.health.revision(), FailureReason::Synth);
+        self.health
+            .report_failure(self.health.revision(), FailureReason::Synth);
         assert!(matches!(self.health.state(), HealthState::Failed(_)));
     }
     fn speak(&self, text: &str) -> io::Result<Box<dyn SpeechHandle>> {
-        self.router.spawn_styled(text, Some("Samantha"), Some(200), Emotion::Calm)
+        self.router
+            .spawn_styled(text, Some("Samantha"), Some(200), Emotion::Calm)
     }
     fn append(&self, text: &str) -> io::Result<Box<dyn SpeechHandle>> {
-        self.router.enqueue_styled(text, Some("Samantha"), Some(200), Emotion::Calm)
+        self.router
+            .enqueue_styled(text, Some("Samantha"), Some(200), Emotion::Calm)
     }
 }
 
@@ -205,13 +225,17 @@ fn system_mode_is_a_pure_passthrough() {
     assert_eq!(r.system.calls()[0].kind, "spawn");
     assert_eq!(r.system.calls()[0].voice.as_deref(), Some("Samantha"));
     assert_eq!(r.system.calls()[0].rate, Some(200));
-    r.router.spawn_styled("Second.", None, None, Emotion::Excited).unwrap();
+    r.router
+        .spawn_styled("Second.", None, None, Emotion::Excited)
+        .unwrap();
     assert_eq!(r.system.calls()[1].kind, "styled");
     assert_eq!(r.system.calls()[1].emotion, Emotion::Excited);
     assert!(!r.router.supports_queue(), "follows the system backend");
     r.system.queue.store(true, Ordering::SeqCst);
     assert!(r.router.supports_queue());
-    r.router.enqueue_styled("Third.", None, None, Emotion::Neutral).unwrap();
+    r.router
+        .enqueue_styled("Third.", None, None, Emotion::Neutral)
+        .unwrap();
     assert_eq!(r.system.calls()[2].kind, "enqueue");
     assert!(r.natural.calls().is_empty() && r.fallback.calls().is_empty());
     assert!(h.kill());
@@ -221,7 +245,9 @@ fn system_mode_is_a_pure_passthrough() {
 #[test]
 fn without_a_natural_route_everything_goes_to_the_system_backend() {
     let r = rig_with(true, false, Duration::from_secs(300));
-    r.router.spawn_styled(LATIN, Some("Samantha"), None, Emotion::Neutral).unwrap();
+    r.router
+        .spawn_styled(LATIN, Some("Samantha"), None, Emotion::Neutral)
+        .unwrap();
     assert_eq!(r.system.texts(), vec![LATIN]);
     assert!(r.fallback.calls().is_empty());
 }
@@ -234,12 +260,19 @@ fn a_latin_burst_goes_to_the_natural_route_with_the_natural_voice() {
     let h = r.speak(LATIN).unwrap();
     let c = r.natural.calls();
     assert_eq!(c.len(), 1);
-    assert_eq!(c[0].voice.as_deref(), Some("bf_emma"), "natural voice, not the system voice");
+    assert_eq!(
+        c[0].voice.as_deref(),
+        Some("bf_emma"),
+        "natural voice, not the system voice"
+    );
     assert_eq!(c[0].rate, Some(200));
     assert_eq!(c[0].emotion, Emotion::Calm);
     assert!(r.system.calls().is_empty() && r.fallback.calls().is_empty());
     assert!(h.queue_capable());
-    assert!(r.router.supports_queue(), "queue-capable for every text while Natural is selected");
+    assert!(
+        r.router.supports_queue(),
+        "queue-capable for every text while Natural is selected"
+    );
 }
 
 #[test]
@@ -265,9 +298,16 @@ fn fallbacks_use_the_original_voice_and_the_right_system_route() {
             let other = if system_queue { &r.fallback } else { &r.system };
             let c = target.calls();
             assert_eq!(c.len(), 1, "{case}/{system_queue}");
-            assert_eq!(c[0].voice.as_deref(), Some("Samantha"), "system voice untouched");
+            assert_eq!(
+                c[0].voice.as_deref(),
+                Some("Samantha"),
+                "system voice untouched"
+            );
             assert!(other.calls().is_empty(), "{case}/{system_queue}");
-            assert!(r.router.supports_queue(), "still queue-capable while Natural is selected");
+            assert!(
+                r.router.supports_queue(),
+                "still queue-capable while Natural is selected"
+            );
         }
     }
 }
@@ -279,7 +319,11 @@ fn settings_are_read_on_every_call() {
     h.kill();
     r.choice.lock().unwrap().voice = "am_adam".into();
     r.speak(LATIN).unwrap();
-    assert_eq!(r.natural.calls()[1].voice.as_deref(), Some("am_adam"), "voice change applies at once");
+    assert_eq!(
+        r.natural.calls()[1].voice.as_deref(),
+        Some("am_adam"),
+        "voice change applies at once"
+    );
     r.router.stop_all();
     r.choice.lock().unwrap().natural = false;
     r.speak(LATIN).unwrap();
@@ -295,7 +339,11 @@ fn a_failed_health_recovers_through_the_automatic_retry() {
     r.router.stop_all();
     std::thread::sleep(Duration::from_millis(120));
     r.speak(LATIN).unwrap();
-    assert_eq!(r.natural.calls().len(), 1, "after the cooldown natural is tried again");
+    assert_eq!(
+        r.natural.calls().len(),
+        1,
+        "after the cooldown natural is tried again"
+    );
     assert!(r.health.is_ready());
 }
 
@@ -309,7 +357,11 @@ fn a_natural_start_refusal_falls_back_but_would_block_is_propagated() {
     *r.natural.fail_next.lock().unwrap() = Some(io::ErrorKind::WouldBlock);
     let err = r.speak(LATIN).err().expect("propagated");
     assert_eq!(err.kind(), io::ErrorKind::WouldBlock);
-    assert_eq!(r.fallback.calls().len(), 1, "no fallback when the previous stop is unconfirmed");
+    assert_eq!(
+        r.fallback.calls().len(),
+        1,
+        "no fallback when the previous stop is unconfirmed"
+    );
 }
 
 // ---- derived pin ------------------------------------------------------------------------------------------
@@ -334,7 +386,11 @@ fn the_pin_does_not_stick_after_the_route_drains() {
     r.natural.set_running(false); // drained
     r.append(CHINESE).unwrap();
     assert_eq!(r.natural.calls().len(), 1);
-    assert_eq!(r.fallback.calls().len(), 1, "idle: chosen afresh, non-Latin goes to the system voice");
+    assert_eq!(
+        r.fallback.calls().len(),
+        1,
+        "idle: chosen afresh, non-Latin goes to the system voice"
+    );
     assert_eq!(r.router.dropped_non_latin(), 0);
 }
 
@@ -375,7 +431,11 @@ fn kill_stops_every_route_and_is_true_only_if_all_confirmed() {
     r.natural.set_running(true);
     r.natural.kill_ok.store(false, Ordering::SeqCst);
     assert!(!h.kill());
-    assert_eq!(r.fallback.kills(), 1, "no early return after the first failure");
+    assert_eq!(
+        r.fallback.kills(),
+        1,
+        "no early return after the first failure"
+    );
     assert!(h.is_running(), "still audible on the unconfirmed route");
 }
 
@@ -444,10 +504,16 @@ fn manager(r: Rig) -> (TtsManager, Rig) {
 fn the_manager_appends_to_the_same_route_and_stop_silences_it() {
     let (mgr, o) = manager(rig());
     let epoch = mgr.begin_utterance().unwrap();
-    mgr.speak_queued_if_current(epoch, "First sentence here.", None, None, Emotion::Neutral).unwrap();
-    mgr.speak_queued_if_current(epoch, "Second sentence here.", None, None, Emotion::Neutral).unwrap();
+    mgr.speak_queued_if_current(epoch, "First sentence here.", None, None, Emotion::Neutral)
+        .unwrap();
+    mgr.speak_queued_if_current(epoch, "Second sentence here.", None, None, Emotion::Neutral)
+        .unwrap();
     assert_eq!(o.natural.texts().len(), 2);
-    assert_eq!(o.natural.kills(), 0, "queued appends never kill earlier speech");
+    assert_eq!(
+        o.natural.kills(),
+        0,
+        "queued appends never kill earlier speech"
+    );
     assert!(mgr.is_speaking());
     assert!(mgr.stop());
     assert!(!o.natural.running());
@@ -458,7 +524,8 @@ fn the_manager_appends_to_the_same_route_and_stop_silences_it() {
 fn the_manager_keeps_tracking_when_the_route_drains_between_its_check_and_the_append() {
     let (mgr, o) = manager(rig());
     let epoch = mgr.begin_utterance().unwrap();
-    mgr.speak_queued_if_current(epoch, "First sentence here.", None, None, Emotion::Neutral).unwrap();
+    mgr.speak_queued_if_current(epoch, "First sentence here.", None, None, Emotion::Neutral)
+        .unwrap();
     // The manager's live-queue check polls `is_running()`: the hook makes natural drain and
     // fail right after that poll answered "running", before the router appends.
     let (natural, health) = (o.natural.clone(), o.health.clone());
@@ -466,12 +533,25 @@ fn the_manager_keeps_tracking_when_the_route_drains_between_its_check_and_the_ap
         natural.set_running(false);
         health.report_failure(health.revision(), FailureReason::Synth);
     }));
-    mgr.speak_queued_if_current(epoch, "Second sentence here.", None, None, Emotion::Neutral).unwrap();
+    mgr.speak_queued_if_current(epoch, "Second sentence here.", None, None, Emotion::Neutral)
+        .unwrap();
     assert_eq!(o.natural.texts().len(), 1);
-    assert_eq!(o.fallback.texts().len(), 1, "the append went to the fallback");
-    assert!(mgr.is_speaking(), "the manager's (router-wide) handle sees the fallback");
-    mgr.speak_queued_if_current(epoch, "Third sentence here.", None, None, Emotion::Neutral).unwrap();
-    assert_eq!(o.fallback.texts().len(), 2, "third append sticks to the running fallback");
+    assert_eq!(
+        o.fallback.texts().len(),
+        1,
+        "the append went to the fallback"
+    );
+    assert!(
+        mgr.is_speaking(),
+        "the manager's (router-wide) handle sees the fallback"
+    );
+    mgr.speak_queued_if_current(epoch, "Third sentence here.", None, None, Emotion::Neutral)
+        .unwrap();
+    assert_eq!(
+        o.fallback.texts().len(),
+        2,
+        "third append sticks to the running fallback"
+    );
     assert_eq!(o.natural.texts().len(), 1);
     assert!(mgr.stop());
     assert!(!o.fallback.running());
@@ -481,11 +561,16 @@ fn the_manager_keeps_tracking_when_the_route_drains_between_its_check_and_the_ap
 fn recording_start_stops_natural_speech_and_blocks_new_speech() {
     let (mgr, o) = manager(rig());
     let epoch = mgr.begin_utterance().unwrap();
-    mgr.speak_queued_if_current(epoch, "First sentence here.", None, None, Emotion::Neutral).unwrap();
+    mgr.speak_queued_if_current(epoch, "First sentence here.", None, None, Emotion::Neutral)
+        .unwrap();
     mgr.note_recording_started();
-    assert!(!o.natural.running(), "recording start must silence the natural voice");
+    assert!(
+        !o.natural.running(),
+        "recording start must silence the natural voice"
+    );
     assert!(!mgr.is_speaking());
-    let blocked = mgr.speak_queued_if_current(epoch, "Second sentence here.", None, None, Emotion::Neutral);
+    let blocked =
+        mgr.speak_queued_if_current(epoch, "Second sentence here.", None, None, Emotion::Neutral);
     assert!(blocked.is_err());
     assert_eq!(o.natural.texts().len(), 1);
 }

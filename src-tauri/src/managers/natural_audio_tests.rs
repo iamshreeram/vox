@@ -21,8 +21,15 @@ fn trim_removes_leading_and_trailing_silence_but_keeps_a_pad() {
     clip.extend_from_slice(&tone);
     clip.extend(vec![0.0f32; 9_000]);
     let trimmed = trim_silence(&clip, sr);
-    assert!(trimmed.len() >= tone.len(), "must keep every audible sample");
-    assert!(trimmed.len() <= tone.len() + 2 * pad + 2, "len {}", trimmed.len());
+    assert!(
+        trimmed.len() >= tone.len(),
+        "must keep every audible sample"
+    );
+    assert!(
+        trimmed.len() <= tone.len() + 2 * pad + 2,
+        "len {}",
+        trimmed.len()
+    );
     assert!(trimmed.iter().any(|s| s.abs() > 0.4));
 }
 

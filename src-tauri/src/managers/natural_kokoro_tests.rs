@@ -15,13 +15,24 @@ use std::time::{Duration, Instant};
 #[test]
 fn every_curated_voice_resolves_to_a_crate_voice() {
     for v in NATURAL_VOICES {
-        assert!(voice_from_id(v.id, 1.0).is_some(), "no crate voice for {}", v.id);
+        assert!(
+            voice_from_id(v.id, 1.0).is_some(),
+            "no crate voice for {}",
+            v.id
+        );
     }
 }
 
 #[test]
 fn unknown_voice_ids_are_none() {
-    for bad in ["", "nope", "AF_HEART", "af_heart ", "zf_xiaoni", "../af_heart"] {
+    for bad in [
+        "",
+        "nope",
+        "AF_HEART",
+        "af_heart ",
+        "zf_xiaoni",
+        "../af_heart",
+    ] {
         assert!(voice_from_id(bad, 1.0).is_none(), "{bad:?}");
     }
 }
@@ -84,8 +95,15 @@ fn load_live() -> Box<dyn SynthEngine> {
 fn natural_live_basic_synthesis() {
     let mut engine = load_live();
     let t = Instant::now();
-    let samples = engine.synth("Hello there.", "af_heart", 1.0).expect("synth");
-    println!("basic: {} samples ({:.2} s audio) in {:.2?}", samples.len(), samples.len() as f32 / 24_000.0, t.elapsed());
+    let samples = engine
+        .synth("Hello there.", "af_heart", 1.0)
+        .expect("synth");
+    println!(
+        "basic: {} samples ({:.2} s audio) in {:.2?}",
+        samples.len(),
+        samples.len() as f32 / 24_000.0,
+        t.elapsed()
+    );
     assert!(samples.len() > 12_000, "at least half a second of audio");
     assert!(samples.iter().all(|s| s.is_finite()));
     assert!(t.elapsed() < Duration::from_secs(8));
@@ -100,7 +118,12 @@ fn natural_live_every_curated_voice_synthesises() {
         let samples = engine
             .synth("Hi there.", v.id, 1.0)
             .unwrap_or_else(|e| panic!("{}: {e}", v.id));
-        println!("{}: {:.2} s audio in {:.2?}", v.id, samples.len() as f32 / 24_000.0, t.elapsed());
+        println!(
+            "{}: {:.2} s audio in {:.2?}",
+            v.id,
+            samples.len() as f32 / 24_000.0,
+            t.elapsed()
+        );
         assert!(samples.len() > 6_000, "{}", v.id);
     }
 }
@@ -111,7 +134,10 @@ fn natural_live_overflow_text_is_an_error_not_a_panic() {
     let mut engine = load_live();
     let long = "word ".repeat(250); // far above the 510-token limit
     let out = engine.synth(&long, "af_heart", 1.0);
-    println!("overflow: {:?}", out.as_ref().map(|s| s.len()).map_err(|e| e.clone()));
+    println!(
+        "overflow: {:?}",
+        out.as_ref().map(|s| s.len()).map_err(|e| e.clone())
+    );
     assert!(out.is_err(), "must be refused, never a panic");
     // The engine is still usable afterwards.
     assert!(engine.synth("Still alive.", "af_heart", 1.0).is_ok());
@@ -168,14 +194,29 @@ fn natural_live_speaks_through_the_real_stack() {
     let outcome = synth.stop_immediate();
     let stop_took = t.elapsed();
     println!("STOP outcome {outcome:?} in {stop_took:.2?}");
-    assert!(matches!(outcome, StopOutcome::Stopped | StopOutcome::Failed));
-    assert!(stop_took < Duration::from_millis(400), "stop took {stop_took:?}");
+    assert!(matches!(
+        outcome,
+        StopOutcome::Stopped | StopOutcome::Failed
+    ));
+    assert!(
+        stop_took < Duration::from_millis(400),
+        "stop took {stop_took:?}"
+    );
 
     // 3. Replacement latency right after a stop (a stale synth may still be running).
-    synth.speak("Okay, that was the replacement.", Some("af_heart"), None, 0.0);
-    let repl = wait_for(Duration::from_secs(15), || sink.audible()).expect("replacement must start");
+    synth.speak(
+        "Okay, that was the replacement.",
+        Some("af_heart"),
+        None,
+        0.0,
+    );
+    let repl =
+        wait_for(Duration::from_secs(15), || sink.audible()).expect("replacement must start");
     println!("REPLACEMENT first audio after {repl:.2?} (declared worst case 6.0 s)");
-    assert!(repl < Duration::from_secs(6), "replacement latency {repl:?}");
+    assert!(
+        repl < Duration::from_secs(6),
+        "replacement latency {repl:?}"
+    );
 
     // 4. Warm start after full silence.
     assert!(wait_for(Duration::from_secs(20), || !synth.is_speaking()).is_some());
@@ -218,17 +259,27 @@ fn natural_live_manager_end_to_end() {
     assert_eq!(coordinator.state(), ModelState::Ready);
     let tv = Instant::now();
     let _verified = coordinator.load_verified_bytes().expect("verified load");
-    println!("STACK verified load (read + SHA-256 of ~120 MB) took {:.2?} [debug build: SHA is slow]", tv.elapsed());
+    println!(
+        "STACK verified load (read + SHA-256 of ~120 MB) took {:.2?} [debug build: SHA is slow]",
+        tv.elapsed()
+    );
     drop(_verified);
 
     let health = NaturalHealth::new(DEFAULT_AUTO_RETRY_COOLDOWN);
     let c = coordinator.clone();
-    let loader = KokoroLoader::new(Box::new(move || c.load_verified_bytes().map_err(|e| e.to_string())));
+    let loader = KokoroLoader::new(Box::new(move || {
+        c.load_verified_bytes().map_err(|e| e.to_string())
+    }));
     let sink = Arc::new(ManagedSink::new(
         Arc::new(CpalStreamFactory::new(None)),
         Duration::from_secs(3),
     ));
-    let synth = NaturalSynth::new(Box::new(loader), sink.clone(), health.clone(), NaturalConfig::default());
+    let synth = NaturalSynth::new(
+        Box::new(loader),
+        sink.clone(),
+        health.clone(),
+        NaturalConfig::default(),
+    );
     let core = Arc::new(Mutex::new(SpeakerCore::new(synth)));
     let natural: Box<dyn crate::managers::tts::SpeechBackend> = Box::new(QueueBackend::new(core));
     let c2 = coordinator.clone();
@@ -251,34 +302,65 @@ fn natural_live_manager_end_to_end() {
     // 1. A two-sentence burst through the manager's queued path.
     let epoch = mgr.begin_utterance().unwrap();
     let t0 = Instant::now();
-    mgr.speak_queued_if_current(epoch, "Hello, this is the full stack test.", None, Some(180), Emotion::Neutral)
-        .expect("natural route must accept the first sentence");
-    mgr.speak_queued_if_current(epoch, "And this second sentence is appended to the same queue.", None, Some(180), Emotion::Neutral)
-        .expect("append");
+    mgr.speak_queued_if_current(
+        epoch,
+        "Hello, this is the full stack test.",
+        None,
+        Some(180),
+        Emotion::Neutral,
+    )
+    .expect("natural route must accept the first sentence");
+    mgr.speak_queued_if_current(
+        epoch,
+        "And this second sentence is appended to the same queue.",
+        None,
+        Some(180),
+        Emotion::Neutral,
+    )
+    .expect("append");
     let first = wait_for(Duration::from_secs(20), || sink.audible()).expect("audio must start");
     println!("STACK first audio after {first:.2?} (cold)");
     // Debug build (unoptimised hashing/inference): loose bound here; the release figure is
     // measured in the final verification.
-    assert!(first < Duration::from_secs(12), "cold first audio {first:?}");
-    assert!(wait_for(Duration::from_secs(40), || !mgr.is_speaking()).is_some(), "burst must finish");
+    assert!(
+        first < Duration::from_secs(12),
+        "cold first audio {first:?}"
+    );
+    assert!(
+        wait_for(Duration::from_secs(40), || !mgr.is_speaking()).is_some(),
+        "burst must finish"
+    );
     println!("STACK burst finished after {:.1?}", t0.elapsed());
-    assert!(t0.elapsed() > Duration::from_secs(4), "two sentences take real time to speak");
+    assert!(
+        t0.elapsed() > Duration::from_secs(4),
+        "two sentences take real time to speak"
+    );
     assert!(health.is_ready());
 
     // 2. Recording start interrupts speech immediately.
     let epoch = mgr.begin_utterance().unwrap();
-    mgr.speak_queued_if_current(epoch, "This sentence should be cut off when recording starts, because the user begins to talk.", None, Some(180), Emotion::Neutral)
-        .expect("accepted");
+    mgr.speak_queued_if_current(
+        epoch,
+        "This sentence should be cut off when recording starts, because the user begins to talk.",
+        None,
+        Some(180),
+        Emotion::Neutral,
+    )
+    .expect("accepted");
     assert!(wait_for(Duration::from_secs(20), || sink.audible()).is_some());
     std::thread::sleep(Duration::from_millis(1_200));
     let t = Instant::now();
     mgr.note_recording_started();
     let stop = t.elapsed();
-    println!("STACK recording-start stop took {stop:.2?}; speaking={}", mgr.is_speaking());
+    println!(
+        "STACK recording-start stop took {stop:.2?}; speaking={}",
+        mgr.is_speaking()
+    );
     assert!(stop < Duration::from_millis(400), "stop took {stop:?}");
     assert!(!mgr.is_speaking());
     assert!(
-        mgr.speak_queued_if_current(epoch, "Should be refused.", None, None, Emotion::Neutral).is_err(),
+        mgr.speak_queued_if_current(epoch, "Should be refused.", None, None, Emotion::Neutral)
+            .is_err(),
         "speech is blocked while recording"
     );
     std::thread::sleep(Duration::from_millis(400));

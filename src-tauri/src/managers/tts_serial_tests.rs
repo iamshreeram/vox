@@ -52,7 +52,12 @@ impl Inner {
         })
     }
     fn texts(&self) -> Vec<String> {
-        self.calls.lock().unwrap().iter().map(|c| c.text.clone()).collect()
+        self.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|c| c.text.clone())
+            .collect()
     }
     fn finish_current(&self) {
         self.finish.store(true, Ordering::SeqCst);
@@ -94,7 +99,12 @@ impl SpeechHandle for FakeChild {
 struct FakeSay(Arc<Inner>);
 
 impl SpeechBackend for FakeSay {
-    fn spawn(&self, text: &str, voice: Option<&str>, rate: Option<u32>) -> io::Result<Box<dyn SpeechHandle>> {
+    fn spawn(
+        &self,
+        text: &str,
+        voice: Option<&str>,
+        rate: Option<u32>,
+    ) -> io::Result<Box<dyn SpeechHandle>> {
         self.spawn_styled(text, voice, rate, Emotion::Neutral)
     }
     fn spawn_styled(
@@ -130,11 +140,15 @@ impl SpeechBackend for FakeSay {
 
 fn queue() -> (SerializedQueue, Arc<Inner>) {
     let inner = Inner::new();
-    (SerializedQueue::new(Box::new(FakeSay(inner.clone()))), inner)
+    (
+        SerializedQueue::new(Box::new(FakeSay(inner.clone()))),
+        inner,
+    )
 }
 
 fn add(q: &SerializedQueue, text: &str) -> Box<dyn SpeechHandle> {
-    q.enqueue_styled(text, None, None, Emotion::Neutral).expect("accepted")
+    q.enqueue_styled(text, None, None, Emotion::Neutral)
+        .expect("accepted")
 }
 
 fn wait_until(timeout: Duration, mut cond: impl FnMut() -> bool) -> bool {
@@ -156,11 +170,14 @@ fn it_is_queue_capable_and_every_entry_point_appends() {
     assert!(h.queue_capable());
     let h2 = q.spawn_styled("two", None, None, Emotion::Calm).unwrap();
     assert!(h2.queue_capable());
-    let h3 = q.enqueue_styled("three", None, None, Emotion::Neutral).unwrap();
+    let h3 = q
+        .enqueue_styled("three", None, None, Emotion::Neutral)
+        .unwrap();
     assert!(h3.queue_capable());
     assert!(wait_until(ms(500), || inner.texts() == vec!["one"]));
     *inner.child_ms.lock().unwrap() = 20;
-    assert!(wait_until(Duration::from_secs(3), || inner.texts() == vec!["one", "two", "three"]));
+    assert!(wait_until(Duration::from_secs(3), || inner.texts()
+        == vec!["one", "two", "three"]));
 }
 
 #[test]
@@ -172,7 +189,11 @@ fn items_run_strictly_one_at_a_time_in_order() {
     add(&q, "c");
     assert!(wait_until(Duration::from_secs(3), || !h.is_running()));
     assert_eq!(inner.texts(), vec!["a", "b", "c"]);
-    assert_eq!(inner.max_running.load(Ordering::SeqCst), 1, "never two children at once");
+    assert_eq!(
+        inner.max_running.load(Ordering::SeqCst),
+        1,
+        "never two children at once"
+    );
 }
 
 #[test]
@@ -226,12 +247,19 @@ fn a_failed_child_kill_is_reported_and_the_queue_is_still_cleared() {
     add(&q, "b");
     assert!(wait_until(ms(500), || inner.texts() == vec!["a"]));
     inner.kill_ok.store(false, Ordering::SeqCst);
-    assert!(!h.kill(), "unconfirmed stop must not be reported as stopped");
+    assert!(
+        !h.kill(),
+        "unconfirmed stop must not be reported as stopped"
+    );
     assert!(h.is_running(), "the child is still alive");
     inner.kill_ok.store(true, Ordering::SeqCst);
     inner.finish_current();
     std::thread::sleep(ms(100));
-    assert_eq!(inner.texts(), vec!["a"], "FIFO was cleared even though the kill failed");
+    assert_eq!(
+        inner.texts(),
+        vec!["a"],
+        "FIFO was cleared even though the kill failed"
+    );
 }
 
 #[test]
@@ -240,12 +268,22 @@ fn an_item_still_starting_when_kill_runs_is_killed_as_soon_as_it_has_started() {
     inner.start_gated.store(true, Ordering::SeqCst);
     inner.start_gate.store(false, Ordering::SeqCst);
     let mut h = add(&q, "a");
-    assert!(wait_until(ms(500), || inner.texts() == vec!["a"]), "start is blocked inside the inner spawn");
+    assert!(
+        wait_until(ms(500), || inner.texts() == vec!["a"]),
+        "start is blocked inside the inner spawn"
+    );
     h.kill();
     inner.start_gate.store(true, Ordering::SeqCst);
-    assert!(wait_until(Duration::from_secs(1), || inner.running.load(Ordering::SeqCst) == 0));
+    assert!(wait_until(Duration::from_secs(1), || inner
+        .running
+        .load(Ordering::SeqCst)
+        == 0));
     std::thread::sleep(ms(100));
-    assert_eq!(inner.running.load(Ordering::SeqCst), 0, "the late child must not keep speaking");
+    assert_eq!(
+        inner.running.load(Ordering::SeqCst),
+        0,
+        "the late child must not keep speaking"
+    );
     assert!(!h.is_running());
 }
 
@@ -264,12 +302,18 @@ fn a_start_failure_skips_only_that_item() {
 fn the_fifo_is_bounded_and_refuses_with_would_block() {
     let (q, inner) = queue();
     add(&q, "first");
-    assert!(wait_until(ms(500), || inner.texts() == vec!["first"]), "first is being spoken");
+    assert!(
+        wait_until(ms(500), || inner.texts() == vec!["first"]),
+        "first is being spoken"
+    );
     for i in 0..SERIAL_MAX_PENDING {
         q.enqueue_styled(&format!("w{i}"), None, None, Emotion::Neutral)
             .unwrap_or_else(|e| panic!("waiting item {i} must be accepted: {e}"));
     }
-    let err = q.enqueue_styled("overflow", None, None, Emotion::Neutral).err().expect("refused");
+    let err = q
+        .enqueue_styled("overflow", None, None, Emotion::Neutral)
+        .err()
+        .expect("refused");
     assert_eq!(err.kind(), io::ErrorKind::WouldBlock);
     let err = q.spawn("overflow", None, None).err().expect("refused");
     assert_eq!(err.kind(), io::ErrorKind::WouldBlock);
@@ -278,7 +322,8 @@ fn the_fifo_is_bounded_and_refuses_with_would_block() {
 #[test]
 fn voice_rate_and_emotion_are_forwarded_unchanged() {
     let (q, inner) = queue();
-    q.enqueue_styled("hello", Some("Samantha"), Some(210), Emotion::Excited).unwrap();
+    q.enqueue_styled("hello", Some("Samantha"), Some(210), Emotion::Excited)
+        .unwrap();
     assert!(wait_until(ms(500), || inner.calls.lock().unwrap().len() == 1));
     assert_eq!(
         inner.calls.lock().unwrap()[0],
@@ -297,5 +342,8 @@ fn dropping_the_adapter_kills_a_running_child() {
     add(&q, "a");
     assert!(wait_until(ms(500), || inner.running.load(Ordering::SeqCst) == 1));
     drop(q);
-    assert!(wait_until(Duration::from_secs(1), || inner.running.load(Ordering::SeqCst) == 0));
+    assert!(wait_until(Duration::from_secs(1), || inner
+        .running
+        .load(Ordering::SeqCst)
+        == 0));
 }

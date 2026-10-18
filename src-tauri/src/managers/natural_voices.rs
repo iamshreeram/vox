@@ -132,8 +132,20 @@ mod tests {
     fn normalize_keeps_known_ids_and_defaults_everything_else() {
         assert_eq!(normalize_natural_voice("bf_emma"), "bf_emma");
         assert_eq!(normalize_natural_voice("  am_adam \n"), "am_adam");
-        for bad in ["", " ", "AF_HEART", "af_heart; rm -rf /", "../../etc/passwd", "zf_xiaoni", "af_"] {
-            assert_eq!(normalize_natural_voice(bad), DEFAULT_NATURAL_VOICE, "{bad:?}");
+        for bad in [
+            "",
+            " ",
+            "AF_HEART",
+            "af_heart; rm -rf /",
+            "../../etc/passwd",
+            "zf_xiaoni",
+            "af_",
+        ] {
+            assert_eq!(
+                normalize_natural_voice(bad),
+                DEFAULT_NATURAL_VOICE,
+                "{bad:?}"
+            );
         }
     }
 }

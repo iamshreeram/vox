@@ -39,7 +39,11 @@ fn short_sentence_is_one_chunk() {
 fn caps_hold_first_chunk_is_short_and_no_text_is_lost() {
     let text = prose(12);
     let chunks = split_for_synthesis(&text, NATURAL_MAX_CHARS);
-    assert!(chunks.len() > 5, "expected many chunks, got {}", chunks.len());
+    assert!(
+        chunks.len() > 5,
+        "expected many chunks, got {}",
+        chunks.len()
+    );
     assert!(chunks[0].chars().count() <= NATURAL_FIRST_CHUNK_CHARS);
     for c in &chunks {
         assert!(!c.trim().is_empty());
@@ -80,7 +84,9 @@ fn ten_thousand_chars_all_chunks_within_cap() {
     assert!(text.chars().count() > 10_000);
     let chunks = split_for_synthesis(&text, NATURAL_MAX_CHARS);
     assert!(chunks.len() >= 125);
-    assert!(chunks.iter().all(|c| c.chars().count() <= NATURAL_MAX_CHARS));
+    assert!(chunks
+        .iter()
+        .all(|c| c.chars().count() <= NATURAL_MAX_CHARS));
     assert_eq!(squash(&chunks.concat()), squash(&text));
 }
 
@@ -90,7 +96,9 @@ fn unbroken_token_is_hard_split() {
     let chunks = split_for_synthesis(&text, NATURAL_MAX_CHARS);
     assert!(chunks.len() >= 5);
     assert!(chunks[0].chars().count() <= NATURAL_FIRST_CHUNK_CHARS);
-    assert!(chunks.iter().all(|c| c.chars().count() <= NATURAL_MAX_CHARS));
+    assert!(chunks
+        .iter()
+        .all(|c| c.chars().count() <= NATURAL_MAX_CHARS));
     assert_eq!(chunks.concat(), text);
 }
 
@@ -98,7 +106,9 @@ fn unbroken_token_is_hard_split() {
 fn multibyte_chars_are_counted_as_chars_not_bytes() {
     let text = "\u{e9}".repeat(400);
     let chunks = split_for_synthesis(&text, NATURAL_MAX_CHARS);
-    assert!(chunks.iter().all(|c| c.chars().count() <= NATURAL_MAX_CHARS));
+    assert!(chunks
+        .iter()
+        .all(|c| c.chars().count() <= NATURAL_MAX_CHARS));
     assert_eq!(chunks.concat(), text);
 }
 
@@ -107,7 +117,10 @@ fn markup_and_control_characters_are_removed() {
     let chunks = split_for_synthesis("[[slnc 500]]hello\u{7} wor\nld \t again", NATURAL_MAX_CHARS);
     let all = chunks.concat();
     assert!(!all.contains("[[") && !all.contains("]]"));
-    assert!(all.chars().all(|c| !c.is_control()), "control char left in {all:?}");
+    assert!(
+        all.chars().all(|c| !c.is_control()),
+        "control char left in {all:?}"
+    );
     assert!(squash(&all).contains("hello"));
     assert!(squash(&all).contains("world"));
 }
@@ -125,7 +138,10 @@ fn a_small_custom_cap_is_honoured_including_the_first_chunk() {
 #[test]
 fn unicode_text_survives_intact() {
     let chunks = split_for_synthesis("H\u{e9}llo w\u{f6}rld. \u{c7}a va?", NATURAL_MAX_CHARS);
-    assert_eq!(squash(&chunks.concat()), squash("H\u{e9}llo w\u{f6}rld. \u{c7}a va?"));
+    assert_eq!(
+        squash(&chunks.concat()),
+        squash("H\u{e9}llo w\u{f6}rld. \u{c7}a va?")
+    );
 }
 
 #[test]
@@ -135,7 +151,9 @@ fn latin_gate_matrix() {
     assert!(is_mostly_latin("Hello world \u{4f60}")); // 10 of 11 alphabetic chars are Latin
     assert!(!is_mostly_latin("Hello \u{4f60}\u{597d}")); // 5 of 7
     assert!(!is_mostly_latin("\u{4f60}\u{597d}\u{4e16}\u{754c}"));
-    assert!(!is_mostly_latin("\u{41f}\u{440}\u{438}\u{432}\u{435}\u{442} \u{43c}\u{438}\u{440}"));
+    assert!(!is_mostly_latin(
+        "\u{41f}\u{440}\u{438}\u{432}\u{435}\u{442} \u{43c}\u{438}\u{440}"
+    ));
     assert!(!is_mostly_latin(""));
     assert!(!is_mostly_latin("12345 !!!"));
 }
@@ -216,7 +234,13 @@ fn retry_treats_too_short_audio_as_truncation() {
     };
     let out = synth_with_overflow_retry(&mut synth, &long_text(), SR, &|| true);
     assert_eq!(calls.get(), 3);
-    assert!(matches!(out, RetryOutcome::Audio { dropped_pieces: 0, .. }));
+    assert!(matches!(
+        out,
+        RetryOutcome::Audio {
+            dropped_pieces: 0,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -257,7 +281,11 @@ fn retry_keeps_good_pieces_and_counts_the_dropped_one() {
     };
     let text = "aaaa bbbb cccc dddd eeee ffff gggg BAD hhhh iiii jjjj kkkk";
     let out = synth_with_overflow_retry(&mut synth, text, SR, &|| true);
-    assert_eq!(calls.get(), 5, "1 + 2 halves + 2 quarters of the failing half");
+    assert_eq!(
+        calls.get(),
+        5,
+        "1 + 2 halves + 2 quarters of the failing half"
+    );
     match out {
         RetryOutcome::Audio {
             samples,

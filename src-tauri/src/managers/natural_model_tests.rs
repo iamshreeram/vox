@@ -124,7 +124,10 @@ impl TestServer {
         format!("http://{}/", self.addr)
     }
     fn put(&self, name: &str, bytes: &[u8]) {
-        self.files.lock().unwrap().insert(name.to_string(), bytes.to_vec());
+        self.files
+            .lock()
+            .unwrap()
+            .insert(name.to_string(), bytes.to_vec());
     }
     fn set_mode(&self, mode: Mode) {
         *self.mode.lock().unwrap() = mode;
@@ -154,7 +157,11 @@ impl Fx {
     }
     fn names(&self) -> Vec<String> {
         let mut v: Vec<String> = std::fs::read_dir(self.root())
-            .map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect())
+            .map(|rd| {
+                rd.flatten()
+                    .map(|e| e.file_name().to_string_lossy().to_string())
+                    .collect()
+            })
             .unwrap_or_default();
         v.sort();
         v
@@ -221,12 +228,26 @@ fn production_assets_are_pinned() {
     let a = kokoro_assets();
     assert_eq!(a.len(), 2);
     assert_eq!(a[0].file, KOKORO_MODEL_FILE);
-    assert_eq!((a[0].size, a[0].sha256.as_str()), (92_361_271, "6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb"));
+    assert_eq!(
+        (a[0].size, a[0].sha256.as_str()),
+        (
+            92_361_271,
+            "6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb"
+        )
+    );
     assert_eq!(a[1].file, KOKORO_VOICES_FILE);
-    assert_eq!((a[1].size, a[1].sha256.as_str()), (28_311_781, "988549ccf1d68a80a31de1b9d00ac59d5dceb69743cbc607d1de17c7c4cdccf4"));
+    assert_eq!(
+        (a[1].size, a[1].sha256.as_str()),
+        (
+            28_311_781,
+            "988549ccf1d68a80a31de1b9d00ac59d5dceb69743cbc607d1de17c7c4cdccf4"
+        )
+    );
     let prefixes = vec![KOKORO_URL_PREFIX.to_string()];
     for asset in &a {
-        assert!(asset.url.starts_with("https://github.com/mzdk100/kokoro/releases/download/V1.0/"));
+        assert!(asset
+            .url
+            .starts_with("https://github.com/mzdk100/kokoro/releases/download/V1.0/"));
         assert!(url_allowed(&asset.url, &prefixes), "{}", asset.url);
     }
 }
@@ -256,7 +277,10 @@ fn url_allowlist_rejects_lookalikes_downgrades_and_traversal() {
 async fn an_empty_root_is_not_installed() {
     let f = fx().await;
     assert_eq!(f.coord.state(), ModelState::NotInstalled);
-    assert!(matches!(f.coord.load_verified_bytes(), Err(ModelError::NotInstalled)));
+    assert!(matches!(
+        f.coord.load_verified_bytes(),
+        Err(ModelError::NotInstalled)
+    ));
     assert_eq!(f.coord.delete(), Ok(()), "delete is idempotent");
 }
 
@@ -265,17 +289,36 @@ async fn download_installs_both_files_ready_marker_last_with_monotonic_progress(
     let f = fx().await;
     let seen = Arc::new(Mutex::new(Vec::<DownloadProgress>::new()));
     let s = seen.clone();
-    f.coord.download(&move |p| s.lock().unwrap().push(p)).await.unwrap();
+    f.coord
+        .download(&move |p| s.lock().unwrap().push(p))
+        .await
+        .unwrap();
     assert_eq!(f.coord.state(), ModelState::Ready);
-    assert_eq!(f.names(), vec![KOKORO_DIR_NAME.to_string()], "no staging left");
+    assert_eq!(
+        f.names(),
+        vec![KOKORO_DIR_NAME.to_string()],
+        "no staging left"
+    );
     assert!(f.install().join(READY_MARKER).is_file());
-    assert_eq!(std::fs::read(f.install().join(KOKORO_MODEL_FILE)).unwrap(), f.model);
-    assert_eq!(std::fs::read(f.install().join(KOKORO_VOICES_FILE)).unwrap(), f.voices);
+    assert_eq!(
+        std::fs::read(f.install().join(KOKORO_MODEL_FILE)).unwrap(),
+        f.model
+    );
+    assert_eq!(
+        std::fs::read(f.install().join(KOKORO_VOICES_FILE)).unwrap(),
+        f.voices
+    );
     let seen = seen.lock().unwrap();
     assert!(!seen.is_empty());
     let total = (f.model.len() + f.voices.len()) as u64;
-    assert!(seen.iter().all(|p| p.total == total), "total is cumulative over both files");
-    assert!(seen.windows(2).all(|w| w[0].downloaded <= w[1].downloaded), "monotonic");
+    assert!(
+        seen.iter().all(|p| p.total == total),
+        "total is cumulative over both files"
+    );
+    assert!(
+        seen.windows(2).all(|w| w[0].downloaded <= w[1].downloaded),
+        "monotonic"
+    );
     assert_eq!(seen.last().unwrap().downloaded, total);
 }
 
@@ -286,7 +329,11 @@ async fn load_verified_bytes_returns_the_exact_bytes() {
     let bytes = f.coord.load_verified_bytes().unwrap();
     assert_eq!(bytes.model, f.model);
     assert_eq!(bytes.voices, f.voices);
-    assert_eq!(f.coord.state(), ModelState::Ready, "loading leaves the state Ready");
+    assert_eq!(
+        f.coord.state(),
+        ModelState::Ready,
+        "loading leaves the state Ready"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -298,13 +345,18 @@ async fn a_hash_mismatch_is_rejected_and_nothing_is_published() {
     let err = f.dl().await.unwrap_err();
     assert!(matches!(err, ModelError::Download(_)), "{err:?}");
     assert_eq!(f.coord.state(), ModelState::NotInstalled);
-    assert!(f.names().is_empty(), "nothing published, staging cleaned: {:?}", f.names());
+    assert!(
+        f.names().is_empty(),
+        "nothing published, staging cleaned: {:?}",
+        f.names()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_size_mismatch_is_rejected() {
     let f = fx().await;
-    f.server.put(KOKORO_MODEL_FILE, &f.model[..f.model.len() - 1000]);
+    f.server
+        .put(KOKORO_MODEL_FILE, &f.model[..f.model.len() - 1000]);
     assert!(f.dl().await.is_err());
     assert_eq!(f.coord.state(), ModelState::NotInstalled);
     assert!(f.names().is_empty());
@@ -316,8 +368,15 @@ async fn a_url_outside_the_allowlist_is_refused_before_any_network_io() {
     let mut a = assets(&f.server, &f.model, &f.voices);
     a[1].url = "http://127.0.0.1:9/voices.bin".into();
     let coord = ModelCoordinator::new(f.root(), a, vec![f.server.prefix()]);
-    assert_eq!(coord.download(&|_| {}).await, Err(ModelError::UrlNotAllowed));
-    assert_eq!(f.server.hits(), 0, "not even the allowed asset may be fetched first");
+    assert_eq!(
+        coord.download(&|_| {}).await,
+        Err(ModelError::UrlNotAllowed)
+    );
+    assert_eq!(
+        f.server.hits(),
+        0,
+        "not even the allowed asset may be fetched first"
+    );
     assert!(f.names().is_empty());
 }
 
@@ -337,10 +396,17 @@ async fn a_second_operation_while_downloading_is_busy() {
     f.server.set_mode(Mode::Gated);
     let c = f.coord.clone();
     let first = tokio::spawn(async move { c.download(&|_| {}).await });
-    assert!(wait_for(Duration::from_secs(3), || f.coord.state() == ModelState::Downloading).await);
+    assert!(
+        wait_for(Duration::from_secs(3), || f.coord.state()
+            == ModelState::Downloading)
+        .await
+    );
     assert_eq!(f.dl().await, Err(ModelError::Busy));
     assert_eq!(f.coord.delete(), Err(ModelError::Busy));
-    assert!(matches!(f.coord.load_verified_bytes(), Err(ModelError::Busy) | Err(ModelError::NotInstalled)));
+    assert!(matches!(
+        f.coord.load_verified_bytes(),
+        Err(ModelError::Busy) | Err(ModelError::NotInstalled)
+    ));
     f.server.release();
     first.await.unwrap().unwrap();
     assert_eq!(f.coord.state(), ModelState::Ready);
@@ -352,11 +418,17 @@ async fn cancel_stops_a_stalled_download_cleans_staging_and_a_retry_succeeds() {
     f.server.set_mode(Mode::StallAfter(1000));
     let c = f.coord.clone();
     let task = tokio::spawn(async move { c.download(&|_| {}).await });
-    assert!(wait_for(Duration::from_secs(3), || f.coord.state() == ModelState::Downloading).await);
+    assert!(
+        wait_for(Duration::from_secs(3), || f.coord.state()
+            == ModelState::Downloading)
+        .await
+    );
     tokio::time::sleep(Duration::from_millis(300)).await;
     let t = Instant::now();
     f.coord.cancel();
-    let out = tokio::time::timeout(Duration::from_secs(3), task).await.expect("cancel must be prompt");
+    let out = tokio::time::timeout(Duration::from_secs(3), task)
+        .await
+        .expect("cancel must be prompt");
     assert_eq!(out.unwrap(), Err(ModelError::Cancelled));
     assert!(t.elapsed() < Duration::from_secs(3));
     assert_eq!(f.coord.state(), ModelState::NotInstalled);
@@ -384,7 +456,10 @@ async fn delete_removes_the_install_and_is_idempotent() {
     assert_eq!(f.coord.state(), ModelState::NotInstalled);
     assert!(!f.install().exists());
     assert_eq!(f.coord.delete(), Ok(()));
-    assert!(matches!(f.coord.load_verified_bytes(), Err(ModelError::NotInstalled)));
+    assert!(matches!(
+        f.coord.load_verified_bytes(),
+        Err(ModelError::NotInstalled)
+    ));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -396,7 +471,10 @@ async fn a_tampered_file_is_detected_at_load_and_the_marker_removed() {
     tampered[5] ^= 0x01;
     std::fs::write(&path, tampered).unwrap(); // same size: only the hash can tell
     assert_eq!(f.coord.state(), ModelState::Ready, "state() does not hash");
-    assert!(matches!(f.coord.load_verified_bytes(), Err(ModelError::Corrupt(_))));
+    assert!(matches!(
+        f.coord.load_verified_bytes(),
+        Err(ModelError::Corrupt(_))
+    ));
     assert_eq!(f.coord.state(), ModelState::NotInstalled);
     assert!(!f.install().join(READY_MARKER).exists());
     f.dl().await.expect("re-download repairs it");
@@ -444,7 +522,11 @@ async fn stale_staging_dirs_are_removed_on_start_and_an_unready_install_is_repla
         vec![f.server.prefix()],
     ));
     assert!(!stale.exists(), "stale staging removed by new()");
-    assert_eq!(coord.state(), ModelState::NotInstalled, "no READY marker: never Ready");
+    assert_eq!(
+        coord.state(),
+        ModelState::NotInstalled,
+        "no READY marker: never Ready"
+    );
     coord.download(&|_| {}).await.unwrap();
     assert_eq!(coord.state(), ModelState::Ready);
     assert_eq!(f.names(), vec![KOKORO_DIR_NAME.to_string()]);
