@@ -372,6 +372,7 @@ impl ModelCoordinator {
                         on_progress(snapshot);
                     }
                 },
+                None,
             )
             .await
             .map_err(|e| ModelError::Download(e.to_string()))?;
