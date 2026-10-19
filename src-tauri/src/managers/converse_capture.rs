@@ -574,12 +574,14 @@ impl Worker {
                 cfg,
                 reply,
             } => {
-                // A stale listen's outcome is written before the new listen clears the slot.
-                self.drop_state();
-                self.clear_timing();
                 if listen_id <= self.floor.load(Ordering::SeqCst) {
+                    // Stale: answered and ignored, exactly as before the voice features.
                     let _ = reply.send(ListenOutcome::Aborted);
                 } else {
+                    // Accepted: end whatever is in flight (its outcome is written before
+                    // the new listen clears the slot), then clear the per-listen state.
+                    self.drop_state();
+                    self.clear_timing();
                     let cfg = self.with_policy(cfg);
                     let now = Instant::now();
                     self.attempt(Pending {
@@ -2139,3 +2141,8 @@ mod tests {
 #[cfg(test)]
 #[path = "converse_capture_voice_tests.rs"]
 mod voice_tests;
+
+// V2: a stale listen is ignored exactly as in the baseline.
+#[cfg(test)]
+#[path = "converse_capture_stale_tests.rs"]
+mod stale_tests;
