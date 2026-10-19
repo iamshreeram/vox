@@ -236,6 +236,11 @@ impl RecorderPort for AudioRecorderPort {
         let rm = self.app.state::<Arc<AudioRecordingManager>>();
         let _ = rm.cancel_recording_if_binding(CONVERSE_BINDING);
     }
+
+    fn set_raw_tap(&self, tap: Option<Arc<dyn Fn(&[f32]) + Send + Sync>>) {
+        let rm = self.app.state::<Arc<AudioRecordingManager>>();
+        rm.set_converse_raw_tap(tap);
+    }
 }
 
 /// The transcription timing line, or `None` when timing is disabled. `audio_ms` is the clip
@@ -300,6 +305,12 @@ impl Ears for RealEars {
             let cfg = endpoint_config(&get_settings(&self.app));
             self.capture.listen(cfg).await
         })
+    }
+
+    /// Timing of the listen that just returned. Listens of one session are sequential,
+    /// so the most recent listen id is the one the loop is asking about.
+    fn take_timing(&self) -> Option<crate::managers::converse_latency::ListenTiming> {
+        self.capture.take_timing(self.capture.last_listen_id())
     }
 }
 

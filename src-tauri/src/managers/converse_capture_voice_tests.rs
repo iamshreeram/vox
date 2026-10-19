@@ -871,8 +871,13 @@ async fn gate_blocking_past_its_deadline_still_completes_with_its_verdict() {
     let rig = make_rig();
     let g = gate_with(Verdict::Accept, None, Duration::from_millis(600), false);
     let h = spawn_with(&rig, None, Some(Arc::clone(&g)));
-    let turn = run_turn(&h, &rig, false).await;
-    assert_eq!(turn.outcome, utterance());
+    // The gate blocks 600 ms of REAL time while the 4000 ms of virtual audio is fed in about
+    // 0.3 s, so the listen legitimately outlives the feed window. Feed all the audio, then wait
+    // for the listen (settle() still fails the test on a hang after 3 s).
+    let run = Run::start(&h, &rig, cfg(), TURN).await;
+    let _ = run.feed(0, 4000).await;
+    let outcome = run.settle().await;
+    assert_eq!(outcome, utterance());
     assert_eq!(rig.transcribe_calls(), 1);
     h.shutdown();
 }
