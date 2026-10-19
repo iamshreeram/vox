@@ -5,6 +5,7 @@
 use crate::managers::aux_model::{
     aux_spec, production_policy, AuxError, AuxKind, AuxModelManager, AuxProgress, AuxState,
 };
+use crate::managers::voice_runtime::{self, VoiceRuntime};
 use serde::Serialize;
 use specta::Type;
 use std::path::PathBuf;
@@ -141,6 +142,22 @@ impl ProgressThrottle {
     }
 }
 
+/// Startup: installs every kind whose model is Ready into the inference service. Nothing is
+/// downloaded here; a kind that is not Ready is left uninstalled.
+pub fn startup_sync(runtime: &VoiceRuntime, models: &AuxModels) {
+    for kind in [AuxKind::SmartTurn, AuxKind::SpeakerResnet34] {
+        let manager = models.for_kind(kind);
+        voice_runtime::apply_kind(runtime, kind, manager.state(), manager.path_if_ready());
+    }
+}
+
+/// Pushes one kind's state into the voice runtime. A no-op when the runtime is not managed.
+fn sync_runtime(app: &AppHandle, kind: AuxKind, state: AuxState, ready_path: Option<PathBuf>) {
+    if let Some(runtime) = app.try_state::<Arc<VoiceRuntime>>() {
+        voice_runtime::apply_kind(runtime.inner(), kind, state, ready_path);
+    }
+}
+
 fn models(app: &AppHandle) -> Result<Arc<AuxModels>, AuxError> {
     // Missing state means the app data dir could not be resolved at startup.
     app.try_state::<Arc<AuxModels>>()
@@ -181,6 +198,8 @@ pub async fn aux_model_download(app: AppHandle, kind: AuxKind) -> Result<(), Aux
             }
         };
         let result = manager.download(&on_progress).await;
+        // The manager's own state is the truth: install when Ready, uninstall otherwise.
+        sync_runtime(&app, kind, manager.state(), manager.path_if_ready());
         let finished = finished_event(kind, manager.state(), result);
         let _ = app.emit(AUX_FINISHED_EVENT, finished);
     });
@@ -199,7 +218,9 @@ pub fn aux_model_cancel(app: AppHandle, kind: AuxKind) -> Result<(), AuxError> {
 #[tauri::command]
 #[specta::specta]
 pub fn aux_model_delete(app: AppHandle, kind: AuxKind) -> Result<(), AuxError> {
-    models(&app)?.for_kind(kind).delete()
+    models(&app)?.for_kind(kind).delete()?;
+    sync_runtime(&app, kind, AuxState::NotInstalled, None);
+    Ok(())
 }
 
 #[cfg(test)]
