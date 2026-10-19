@@ -108,7 +108,7 @@ fn field_stats(mut values: Vec<u32>) -> FieldStats {
     values.sort_unstable();
     // median = sorted[(n-1)/2]; p90 = sorted[ceil(0.9*n)-1] = sorted[(9n+9)/10 - 1]
     let median_idx = (n - 1) / 2;
-    let p90_idx = (9 * n + 9) / 10 - 1;
+    let p90_idx = (9 * n).div_ceil(10) - 1;
     FieldStats {
         median: values.get(median_idx).copied(),
         p90: values.get(p90_idx).copied(),
@@ -147,10 +147,12 @@ impl RollingStats {
         }
     }
 
+    #[cfg(test)]
     pub fn reset(&mut self) {
         self.reports.clear();
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.reports.len()
     }

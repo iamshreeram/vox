@@ -88,6 +88,8 @@ impl ModelManager {
     /// Narrow crate-wide entry point onto the resumable downloader for a file with a pinned
     /// size and SHA-256. On `Completed` the verified bytes are left in `partial_path`
     /// (renaming is the caller's job); on `Cancelled` the partial is kept.
+    // Legacy-compatible signature: existing callers and tests depend on these exact args.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn download_verified_file(
         label: &str,
         url: &str,
@@ -289,6 +291,8 @@ impl ModelManager {
     ///   at the first excess byte, not trusted until it closes the stream
     /// - the final bytes are checked against `expected_size` (catalog, or
     ///   content-length when unknown) and `expected_sha256` before returning
+    // Legacy-compatible signature: existing callers and tests depend on these exact args.
+    #[allow(clippy::too_many_arguments)]
     async fn download_http_resumable_with_policy(
         model_id: &str,
         url: &str,

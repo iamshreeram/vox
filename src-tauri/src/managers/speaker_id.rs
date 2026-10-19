@@ -212,6 +212,8 @@ pub fn buffer_ms(samples_len: usize) -> u32 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StoreError {
+    // Constructed only on non-unix targets (`save` fails closed there).
+    #[cfg_attr(unix, allow(dead_code))]
     UnsupportedPlatform,
     SymlinkRefused,
     Io,
