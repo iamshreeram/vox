@@ -233,6 +233,9 @@ fn restore_mute(prev_muted: Option<bool>) {
 
 const WHISPER_SAMPLE_RATE: usize = 16000;
 
+/// Per-frame callback type of the converse pre-VAD tap.
+type RawTapCallback = Arc<dyn Fn(&[f32]) + Send + Sync>;
+
 /* ──────────────────────────────────────────────────────────────── */
 
 #[derive(Clone, Debug)]
@@ -1001,6 +1004,20 @@ impl AudioRecordingManager {
 
     /// Invalidate pending first-sample UI and audio-feedback work immediately.
     /// Called at the beginning of stop, before the slower capture drain starts.
+    /// Smart Turn (T9b): installs (`Some`) or clears (`None`) the pre-VAD tap on the shared
+    /// recorder. A tap is per recorder instance: a recorder replaced mid-listen loses it
+    /// (the detector then gets no tail and falls back to the fixed endpoint).
+    pub fn set_converse_raw_tap(&self, tap: Option<RawTapCallback>) {
+        if let Some(rec) = self
+            .recorder
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
+            rec.set_raw_tap(tap);
+        }
+    }
+
     pub fn invalidate_recording_readiness(&self) {
         self.capture_generation.fetch_add(1, Ordering::AcqRel);
     }

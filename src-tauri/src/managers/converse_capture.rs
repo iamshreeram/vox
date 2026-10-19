@@ -5,10 +5,15 @@
 //! AMENDMENTS section (Revision 4).
 
 use crate::managers::converse::{ListenFailure, ListenOutcome};
-use crate::managers::converse_audio::{EndpointConfig, EndpointEvent, Endpointer};
+use crate::managers::converse_audio::{EndpointConfig, EndpointEvent, Endpointer, SmartTurnPolicy};
+use crate::managers::converse_latency::{EndpointMode, ListenTiming};
+use crate::managers::smart_turn::{TurnDetector, DECISION_DEADLINE, DONE_THRESHOLD, RING_SAMPLES};
+use crate::managers::speaker_id::{GateResult, SpeakerGate, Verdict};
+use std::collections::VecDeque;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, PoisonError, TryLockError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
@@ -32,6 +37,10 @@ pub trait RecorderPort: Send + Sync + 'static {
     fn stop(&self) -> Option<Vec<f32>>;
     /// Discard OUR recording; must never touch a foreign recording.
     fn cancel(&self);
+    /// Smart Turn (T9b): install (`Some`) or clear (`None`) a PRE-VAD tap that receives
+    /// every post-resample 16 kHz frame, speech or not. Default: no-op, so ports without
+    /// a pre-VAD hook are unchanged (their detector tail stays empty).
+    fn set_raw_tap(&self, _tap: Option<Arc<dyn Fn(&[f32]) + Send + Sync>>) {}
 }
 
 pub trait Transcriber: Send + Sync + 'static {
@@ -64,6 +73,15 @@ impl Default for CaptureTimings {
     }
 }
 
+/// Optional voice features of one worker. `Default` (both None) is today's behaviour.
+#[derive(Clone, Default)]
+pub struct CaptureOptions {
+    /// Smart Turn end-of-turn detector. When Some, the endpointer runs the Smart Turn policy.
+    pub turn_detector: Option<Arc<dyn TurnDetector>>,
+    /// Speaker filter, run after `stop()` and before transcription.
+    pub speaker_gate: Option<Arc<dyn SpeakerGate>>,
+}
+
 /// Cloneable handle to the worker thread. Implementers may change the private
 /// fields freely; the public methods are the contract.
 #[derive(Clone)]
@@ -81,6 +99,30 @@ struct Inner {
     /// queued, so the worker sees it even while `start()` is blocked.
     floor: Arc<AtomicU64>,
     join: Mutex<Option<JoinHandle<()>>>,
+    /// Counters and the A7 timing slot, shared with the worker and its helpers.
+    #[cfg_attr(not(test), allow(dead_code))]
+    shared: Arc<Shared>,
+}
+
+/// State shared between the worker, its helper threads and the handle.
+#[derive(Default)]
+struct Shared {
+    /// Pre-VAD taps installed (cumulative, one per listen with a detector).
+    #[cfg_attr(not(test), allow(dead_code))]
+    tap_installed: AtomicU64,
+    /// Samples currently held by the pre-VAD ring.
+    #[cfg_attr(not(test), allow(dead_code))]
+    ring_len: AtomicU64,
+    #[cfg_attr(not(test), allow(dead_code))]
+    ring_allocated: AtomicBool,
+    /// Decision helper threads created (cumulative).
+    #[cfg_attr(not(test), allow(dead_code))]
+    decider_spawned: AtomicU64,
+    /// Decision helper threads that have not finished yet.
+    #[cfg_attr(not(test), allow(dead_code))]
+    decider_live: AtomicU64,
+    /// T9b (A7): timing of the last listen that ended, keyed by listen id.
+    timing_slot: Mutex<Option<(u64, ListenTiming)>>,
 }
 
 impl Inner {
@@ -96,6 +138,228 @@ const QUEUE_CAPACITY: usize = 1024;
 /// A VAD speech frame keeps speech "active" for this long. Speech frames
 /// arrive about every 30 ms, so this is more than 4 frames of slack.
 const SPEECH_GAP_MS: u64 = 150;
+
+/// Pre-VAD ring (T9b): the newest RING_SAMPLES of raw 16 kHz audio. The recorder's
+/// tap writes it with `try_lock` only (a contended frame is dropped and counted);
+/// the worker reads and clears it.
+struct Ring {
+    state: Mutex<RingState>,
+    dropped: AtomicU64,
+    shared: Arc<Shared>,
+}
+
+struct RingState {
+    samples: VecDeque<f32>,
+    /// False once the listen ended: late frames are ignored.
+    active: bool,
+}
+
+impl Ring {
+    fn new(shared: Arc<Shared>) -> Ring {
+        Ring {
+            state: Mutex::new(RingState {
+                samples: VecDeque::with_capacity(RING_SAMPLES),
+                active: true,
+            }),
+            dropped: AtomicU64::new(0),
+            shared,
+        }
+    }
+
+    /// Audio-thread entry point: never blocks, never grows past RING_SAMPLES.
+    fn push(&self, frame: &[f32]) {
+        let mut guard = match self.state.try_lock() {
+            Ok(guard) => guard,
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(TryLockError::WouldBlock) => {
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+                return;
+            }
+        };
+        if !guard.active {
+            return;
+        }
+        let frame = &frame[frame.len().saturating_sub(RING_SAMPLES)..];
+        let state = &mut *guard;
+        let overflow = (state.samples.len() + frame.len()).saturating_sub(RING_SAMPLES);
+        state.samples.drain(..overflow);
+        state.samples.extend(frame.iter().copied());
+        self.shared
+            .ring_len
+            .store(state.samples.len() as u64, Ordering::SeqCst);
+    }
+
+    /// The newest audio (at most RING_SAMPLES), copied for the decider.
+    fn tail(&self) -> Vec<f32> {
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.samples.iter().copied().collect()
+    }
+
+    /// Ends the ring: later frames are ignored and the samples are released.
+    fn close(&self) {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.active = false;
+        state.samples.clear();
+        self.shared.ring_len.store(0, Ordering::SeqCst);
+        drop(state);
+        let dropped = self.dropped.load(Ordering::Relaxed);
+        if dropped > 0 {
+            log::debug!("converse pre-VAD ring: {dropped} frames skipped under contention");
+        }
+    }
+}
+
+/// A per-frame callback (the pre-VAD tap).
+type FrameTap = Arc<dyn Fn(&[f32]) + Send + Sync>;
+
+/// The callback the recorder runs for every 16 kHz frame. A panic is contained here so
+/// a bad tap cannot reach the audio thread.
+fn raw_tap(ring: Arc<Ring>) -> FrameTap {
+    Arc::new(move |frame: &[f32]| {
+        let _ = catch_unwind(AssertUnwindSafe(|| ring.push(frame)));
+    })
+}
+
+/// Single-slot hand-off between the worker and one listen's decision helper.
+struct DeciderShared {
+    state: Mutex<DeciderState>,
+    wake: Condvar,
+}
+
+#[derive(Default)]
+struct DeciderState {
+    /// The one request not yet taken by the helper (a newer one replaces it).
+    request: Option<(u32, Vec<f32>)>,
+    /// The last answer: (pause id, probability or None when unavailable).
+    reply: Option<(u32, Option<f32>)>,
+    /// Set when the listen ended: the helper exits once no request is pending.
+    closed: bool,
+}
+
+/// Per-listen helper thread that runs the Smart Turn detector off the tick loop.
+struct Decider {
+    shared: Arc<DeciderShared>,
+    cancel: Arc<AtomicBool>,
+}
+
+/// Decrements the live-helper count when the helper thread exits, on every path.
+struct LiveGuard(Arc<Shared>);
+
+impl Drop for LiveGuard {
+    fn drop(&mut self) {
+        self.0.decider_live.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+impl Decider {
+    /// Starts the helper. None when the thread cannot start (the caller then treats
+    /// every answer as unavailable).
+    fn spawn(detector: Arc<dyn TurnDetector>, telemetry: &Arc<Shared>) -> Option<Decider> {
+        let shared = Arc::new(DeciderShared {
+            state: Mutex::new(DeciderState::default()),
+            wake: Condvar::new(),
+        });
+        let cancel = Arc::new(AtomicBool::new(false));
+        telemetry.decider_live.fetch_add(1, Ordering::SeqCst);
+        let live = LiveGuard(Arc::clone(telemetry));
+        let thread_shared = Arc::clone(&shared);
+        let thread_cancel = Arc::clone(&cancel);
+        let spawned = std::thread::Builder::new()
+            .name("converse-decider".into())
+            .spawn(move || {
+                let _live = live;
+                decider_loop(detector.as_ref(), &thread_shared, &thread_cancel);
+            });
+        match spawned {
+            Ok(_) => {
+                telemetry.decider_spawned.fetch_add(1, Ordering::SeqCst);
+                Some(Decider { shared, cancel })
+            }
+            Err(_) => None,
+        }
+    }
+
+    /// Hands one request over, replacing an unanswered one. Never blocks.
+    fn submit(&self, pause_id: u32, tail: Vec<f32>) {
+        let mut state = self
+            .shared
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        state.request = Some((pause_id, tail));
+        drop(state);
+        self.shared.wake.notify_one();
+    }
+
+    /// The answer for `pause_id` if the helper has produced it (taken once).
+    fn take_reply(&self, pause_id: u32) -> Option<Option<f32>> {
+        let mut state = self
+            .shared
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let reply = state.reply;
+        match reply {
+            Some((id, answer)) if id == pause_id => {
+                state.reply = None;
+                Some(answer)
+            }
+            _ => None,
+        }
+    }
+}
+
+impl Drop for Decider {
+    /// Ends the helper: it exits after the detector returns (the detector is told to
+    /// cancel). Never joins, so the tick loop cannot wait on it.
+    fn drop(&mut self) {
+        self.cancel.store(true, Ordering::SeqCst);
+        let mut state = self
+            .shared
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        state.closed = true;
+        drop(state);
+        self.shared.wake.notify_all();
+    }
+}
+
+/// Helper body: runs each request through the detector, containing panics (an
+/// unavailable answer). A request taken before the listen ended is still answered.
+fn decider_loop(detector: &dyn TurnDetector, shared: &DeciderShared, cancel: &AtomicBool) {
+    loop {
+        let (pause_id, tail) = {
+            let mut state = shared.state.lock().unwrap_or_else(PoisonError::into_inner);
+            loop {
+                if let Some(request) = state.request.take() {
+                    break request;
+                }
+                if state.closed {
+                    return;
+                }
+                state = shared
+                    .wake
+                    .wait(state)
+                    .unwrap_or_else(PoisonError::into_inner);
+            }
+        };
+        let answer = catch_unwind(AssertUnwindSafe(|| {
+            detector.done_probability(&tail, DECISION_DEADLINE, cancel)
+        }))
+        .ok()
+        .flatten();
+        let mut state = shared.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.reply = Some((pause_id, answer));
+    }
+}
+
+/// Smart Turn decision the endpointer is waiting for.
+#[derive(Clone, Copy)]
+struct Outstanding {
+    pause_id: u32,
+    issued: Instant,
+}
 
 enum Command {
     Listen {
@@ -151,23 +415,58 @@ struct Pending {
     next_at: Instant,
 }
 
-struct Recording {
+/// Identity and diagnostics of one listen, carried to its end.
+struct Meta {
     id: u64,
     reply: oneshot::Sender<ListenOutcome>,
     started_at: Instant,
+    /// Number of VAD speech frames accepted for this listen (diagnostic).
+    speech_frames: u32,
+}
+
+struct Recording {
+    meta: Meta,
     abs_deadline: Duration,
     endpointer: Endpointer,
     heard: bool,
     /// Latest VAD speech frame time for this listen (None until one arrives).
     last_speech_ms: Option<u64>,
-    /// Number of VAD speech frames accepted for this listen (diagnostic).
-    speech_frames: u32,
+    /// Smart Turn: the pre-VAD ring (None without a detector).
+    ring: Option<Arc<Ring>>,
+    /// Smart Turn: the pre-VAD tap is installed on the port for this listen.
+    tap_on: bool,
+    /// Smart Turn: the decision helper, spawned at most once per listen.
+    decider: Option<Decider>,
+    decider_tried: bool,
+    /// Smart Turn: the decision waiting for an answer.
+    outstanding: Option<Outstanding>,
+    /// A decision was asked for in this listen (timing mode).
+    decision_asked: bool,
+    /// A real answer (complete or not) reached the endpointer (timing mode).
+    answered: bool,
+}
+
+/// A speaker check running on its helper thread. The utterance waits for it.
+struct Gating {
+    meta: Meta,
+    endpoint_wait_ms: Option<u32>,
+    mode: EndpointMode,
+    cancel: Arc<AtomicBool>,
+    result: Arc<Mutex<Option<GateReply>>>,
+}
+
+/// What the gate helper hands back: the samples (for transcription) and the verdict.
+/// `result` is None when the gate panicked, which counts as Accept.
+struct GateReply {
+    samples: Vec<f32>,
+    result: Option<GateResult>,
 }
 
 enum State {
     Idle,
     Waiting(Pending),
     Recording(Recording),
+    Gating(Gating),
 }
 
 struct Worker {
@@ -177,6 +476,11 @@ struct Worker {
     capture_active: Arc<AtomicBool>,
     floor: Arc<AtomicU64>,
     state: State,
+    /// T9b: Smart Turn detector (None = fixed endpoint only).
+    turn_detector: Option<Arc<dyn TurnDetector>>,
+    /// T9b: speaker gate (None = no filter).
+    speaker_gate: Option<Arc<dyn SpeakerGate>>,
+    shared: Arc<Shared>,
 }
 
 pub struct CaptureWorker;
@@ -188,9 +492,20 @@ impl CaptureWorker {
         transcriber: Arc<dyn Transcriber>,
         timings: CaptureTimings,
     ) -> CaptureHandle {
+        Self::spawn_with_options(port, transcriber, timings, CaptureOptions::default())
+    }
+
+    /// Spawn the worker thread with the optional voice features (T9b contract).
+    pub fn spawn_with_options(
+        port: Arc<dyn RecorderPort>,
+        transcriber: Arc<dyn Transcriber>,
+        timings: CaptureTimings,
+        options: CaptureOptions,
+    ) -> CaptureHandle {
         let (tx, rx) = mpsc::sync_channel::<Command>(QUEUE_CAPACITY);
         let capture_active = Arc::new(AtomicBool::new(false));
         let floor = Arc::new(AtomicU64::new(0));
+        let shared = Arc::new(Shared::default());
         let worker = Worker {
             port,
             transcriber,
@@ -198,6 +513,9 @@ impl CaptureWorker {
             capture_active: Arc::clone(&capture_active),
             floor: Arc::clone(&floor),
             state: State::Idle,
+            turn_detector: options.turn_detector,
+            speaker_gate: options.speaker_gate,
+            shared: Arc::clone(&shared),
         };
         // If the thread cannot be spawned, `rx` is dropped with the closure, so
         // every later command sees a closed channel and listens resolve Aborted.
@@ -213,6 +531,7 @@ impl CaptureWorker {
                 capture_active,
                 floor,
                 join: Mutex::new(join),
+                shared,
             }),
         }
     }
@@ -247,10 +566,13 @@ impl Worker {
                 cfg,
                 reply,
             } => {
+                // A stale listen's outcome is written before the new listen clears the slot.
+                self.drop_state();
+                self.clear_timing();
                 if listen_id <= self.floor.load(Ordering::SeqCst) {
                     let _ = reply.send(ListenOutcome::Aborted);
                 } else {
-                    self.drop_state();
+                    let cfg = self.with_policy(cfg);
                     let now = Instant::now();
                     self.attempt(Pending {
                         id: listen_id,
@@ -275,6 +597,18 @@ impl Worker {
         None
     }
 
+    /// Smart Turn: with a detector, the endpoint runs the Smart Turn policy.
+    fn with_policy(&self, cfg: EndpointConfig) -> EndpointConfig {
+        if self.turn_detector.is_some() {
+            EndpointConfig {
+                smart_turn: Some(SmartTurnPolicy::default_policy()),
+                ..cfg
+            }
+        } else {
+            cfg
+        }
+    }
+
     /// One `start()` attempt for `p`. Amendment A1: the capture flag is raised
     /// BEFORE `start()` so a dictation start that checks it after this point is
     /// refused (a start that already passed its check loses harmlessly at the
@@ -290,10 +624,13 @@ impl Worker {
                     self.set_inactive();
                     let _ = p.reply.send(ListenOutcome::Aborted);
                 } else {
-                    self.state = State::Recording(Recording {
-                        id: p.id,
-                        reply: p.reply,
-                        started_at: Instant::now(),
+                    let mut recording = Recording {
+                        meta: Meta {
+                            id: p.id,
+                            reply: p.reply,
+                            started_at: Instant::now(),
+                            speech_frames: 0,
+                        },
                         abs_deadline: Duration::from_millis(
                             p.cfg
                                 .initial_grace_ms
@@ -302,8 +639,18 @@ impl Worker {
                         endpointer: Endpointer::new(p.cfg),
                         heard: false,
                         last_speech_ms: None,
-                        speech_frames: 0,
-                    });
+                        ring: None,
+                        tap_on: false,
+                        decider: None,
+                        decider_tried: false,
+                        outstanding: None,
+                        decision_asked: false,
+                        answered: false,
+                    };
+                    if self.turn_detector.is_some() {
+                        self.install_tap(&mut recording);
+                    }
+                    self.state = State::Recording(recording);
                 }
             }
             Err(StartError::Busy) => {
@@ -334,7 +681,17 @@ impl Worker {
         }
     }
 
-    /// Timer work: busy retries and the readiness / absolute watchdogs.
+    /// Smart Turn: allocates this listen's ring and installs the pre-VAD tap.
+    fn install_tap(&self, r: &mut Recording) {
+        let ring = Arc::new(Ring::new(Arc::clone(&self.shared)));
+        self.shared.ring_allocated.store(true, Ordering::SeqCst);
+        self.shared.tap_installed.fetch_add(1, Ordering::SeqCst);
+        self.port.set_raw_tap(Some(raw_tap(Arc::clone(&ring))));
+        r.ring = Some(ring);
+        r.tap_on = true;
+    }
+
+    /// Timer work: busy retries, speaker checks and the readiness / absolute watchdogs.
     fn poll(&mut self) {
         match std::mem::replace(&mut self.state, State::Idle) {
             State::Idle => {}
@@ -347,8 +704,9 @@ impl Worker {
                     self.state = State::Waiting(p);
                 }
             }
+            State::Gating(g) => self.poll_gate(g),
             State::Recording(r) => {
-                let elapsed = r.started_at.elapsed();
+                let elapsed = r.meta.started_at.elapsed();
                 if !r.heard && elapsed >= self.timings.readiness_deadline {
                     self.end_with_cancel(r, ListenOutcome::Failed(ListenFailure::NoMicrophone));
                 } else if elapsed >= r.abs_deadline {
@@ -364,12 +722,12 @@ impl Worker {
     /// accepts it; speech for any other (or no) listen is ignored.
     fn on_speech(&mut self, listen_id: u64, now_ms: u64) {
         if let State::Recording(r) = &mut self.state {
-            if r.id == listen_id {
+            if r.meta.id == listen_id {
                 r.last_speech_ms = Some(match r.last_speech_ms {
                     Some(prev) => prev.max(now_ms),
                     None => now_ms,
                 });
-                r.speech_frames = r.speech_frames.saturating_add(1);
+                r.meta.speech_frames = r.meta.speech_frames.saturating_add(1);
             }
         }
     }
@@ -379,24 +737,33 @@ impl Worker {
     /// level-driven endpointing never detects the end of speech.
     fn on_levels(&mut self, listen_id: u64, now_ms: u64, _levels: &[f32]) {
         match std::mem::replace(&mut self.state, State::Idle) {
-            State::Recording(mut r) if r.id == listen_id => {
+            State::Recording(mut r) if r.meta.id == listen_id => {
                 r.heard = true;
                 let speech_active = r
                     .last_speech_ms
                     .is_some_and(|t| now_ms.saturating_sub(t) <= SPEECH_GAP_MS);
+                if speech_active {
+                    // Speech resumed: an open pause and its answer are stale.
+                    r.outstanding = None;
+                }
                 match r.endpointer.feed_activity(now_ms, speech_active) {
-                    None => self.state = State::Recording(r),
+                    None => {
+                        if self.apply_answer(&mut r, now_ms) {
+                            self.finish_speech(r, now_ms);
+                        } else {
+                            self.state = State::Recording(r);
+                        }
+                    }
                     Some(EndpointEvent::NoSpeech) => {
                         self.end_with_cancel(r, ListenOutcome::NoSpeech)
                     }
                     Some(EndpointEvent::MaxLength) => {
                         self.end_with_cancel(r, ListenOutcome::TooLong)
                     }
-                    Some(EndpointEvent::SpeechEnded) => self.finish_speech(r),
-                    // Smart Turn is not wired into capture yet (policy is None
-                    // everywhere), so a pending decision keeps listening.
-                    Some(EndpointEvent::NeedTurnDecision { .. }) => {
-                        self.state = State::Recording(r)
+                    Some(EndpointEvent::SpeechEnded) => self.finish_speech(r, now_ms),
+                    Some(EndpointEvent::NeedTurnDecision { pause_id }) => {
+                        self.ask_decision(&mut r, pause_id, now_ms);
+                        self.state = State::Recording(r);
                     }
                 }
             }
@@ -404,19 +771,204 @@ impl Worker {
         }
     }
 
-    fn finish_speech(&mut self, r: Recording) {
-        let samples = self.port.stop();
-        self.set_inactive();
-        let outcome = match samples {
-            None => ListenOutcome::Aborted,
-            Some(samples) => self.transcribe(samples),
-        };
-        log_listen_end(end_reason(&outcome), &r);
-        let _ = r.reply.send(outcome);
+    /// Asks the helper about pause `pause_id`. The helper is spawned at most once per listen.
+    fn ask_decision(&self, r: &mut Recording, pause_id: u32, now_ms: u64) {
+        r.decision_asked = true;
+        if r.decider.is_none() && !r.decider_tried {
+            r.decider_tried = true;
+            if let Some(detector) = self.turn_detector.as_ref() {
+                r.decider = Decider::spawn(Arc::clone(detector), &self.shared);
+            }
+        }
+        match r.decider.as_ref() {
+            Some(decider) => {
+                let tail = r.ring.as_ref().map(|ring| ring.tail()).unwrap_or_default();
+                r.outstanding = Some(Outstanding {
+                    pause_id,
+                    issued: Instant::now(),
+                });
+                decider.submit(pause_id, tail);
+            }
+            None => {
+                let _ = r.endpointer.answer_unavailable(pause_id, now_ms);
+            }
+        }
     }
 
-    fn transcribe(&self, samples: Vec<f32>) -> ListenOutcome {
-        match self.transcriber.transcribe(samples) {
+    /// Applies the helper's answer (or the deadline lapse) to the endpointer. Returns
+    /// true when the answer ends the utterance now.
+    fn apply_answer(&self, r: &mut Recording, now_ms: u64) -> bool {
+        let Some(outstanding) = r.outstanding else {
+            return false;
+        };
+        let reply = r
+            .decider
+            .as_ref()
+            .and_then(|decider| decider.take_reply(outstanding.pause_id));
+        match reply {
+            Some(answer) => {
+                r.outstanding = None;
+                match answer.filter(|p| p.is_finite()) {
+                    Some(p) => {
+                        r.answered = true;
+                        matches!(
+                            r.endpointer.answer_turn(
+                                outstanding.pause_id,
+                                p >= DONE_THRESHOLD,
+                                now_ms
+                            ),
+                            Some(EndpointEvent::SpeechEnded)
+                        )
+                    }
+                    None => {
+                        let _ = r
+                            .endpointer
+                            .answer_unavailable(outstanding.pause_id, now_ms);
+                        false
+                    }
+                }
+            }
+            None if outstanding.issued.elapsed() >= DECISION_DEADLINE => {
+                r.outstanding = None;
+                let _ = r
+                    .endpointer
+                    .answer_unavailable(outstanding.pause_id, now_ms);
+                false
+            }
+            None => false,
+        }
+    }
+
+    /// The utterance ended after VAD speech: stop the recorder, then either run the
+    /// speaker gate (off-thread) or transcribe straight away.
+    fn finish_speech(&mut self, mut r: Recording, now_ms: u64) {
+        let samples = self.port.stop();
+        self.release_listen(&mut r);
+        self.set_inactive();
+        let endpoint_wait_ms = r.last_speech_ms.map(|t| ms_u32(now_ms.saturating_sub(t)));
+        let mode = endpoint_mode(&r);
+        let meta = r.meta;
+        match samples {
+            None => self.conclude(
+                meta,
+                ListenOutcome::Aborted,
+                ListenTiming {
+                    endpoint_wait_ms,
+                    transcribe_ms: None,
+                    verify_ms: None,
+                    mode,
+                },
+            ),
+            Some(samples) => match self.speaker_gate.clone() {
+                None => {
+                    let (outcome, transcribe_ms) = self.transcribe(samples);
+                    self.conclude(
+                        meta,
+                        outcome,
+                        ListenTiming {
+                            endpoint_wait_ms,
+                            transcribe_ms,
+                            verify_ms: None,
+                            mode,
+                        },
+                    );
+                }
+                Some(gate) => self.start_gate(meta, samples, gate, endpoint_wait_ms, mode),
+            },
+        }
+    }
+
+    /// Runs the speaker gate on its own helper thread so cancel and the tick loop
+    /// are never held by it.
+    fn start_gate(
+        &mut self,
+        meta: Meta,
+        samples: Vec<f32>,
+        gate: Arc<dyn SpeakerGate>,
+        endpoint_wait_ms: Option<u32>,
+        mode: EndpointMode,
+    ) {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let result: Arc<Mutex<Option<GateReply>>> = Arc::new(Mutex::new(None));
+        let thread_cancel = Arc::clone(&cancel);
+        let thread_result = Arc::clone(&result);
+        let spawned = std::thread::Builder::new()
+            .name("converse-speaker-gate".into())
+            .spawn(move || {
+                let verdict =
+                    catch_unwind(AssertUnwindSafe(|| gate.check(&samples, &thread_cancel))).ok();
+                *thread_result.lock().unwrap_or_else(PoisonError::into_inner) = Some(GateReply {
+                    samples,
+                    result: verdict,
+                });
+            });
+        match spawned {
+            Ok(_) => {
+                self.state = State::Gating(Gating {
+                    meta,
+                    endpoint_wait_ms,
+                    mode,
+                    cancel,
+                    result,
+                })
+            }
+            Err(_) => {
+                // No thread: the samples are gone with the closure, so the utterance
+                // can be neither checked nor transcribed.
+                self.conclude(
+                    meta,
+                    ListenOutcome::Failed(ListenFailure::Other),
+                    ListenTiming {
+                        endpoint_wait_ms,
+                        transcribe_ms: None,
+                        verify_ms: None,
+                        mode,
+                    },
+                );
+            }
+        }
+    }
+
+    fn poll_gate(&mut self, g: Gating) {
+        let reply = g
+            .result
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        match reply {
+            Some(reply) => self.finish_gate(g, reply),
+            None => self.state = State::Gating(g),
+        }
+    }
+
+    /// Reject => Ignored with no transcription; anything else is transcribed.
+    /// A gate failure already returns Accept (its contract), and a panic counts as Accept.
+    fn finish_gate(&mut self, g: Gating, reply: GateReply) {
+        let GateReply { samples, result } = reply;
+        let verify_ms = result.and_then(|r| r.verify_ms);
+        let verdict = result.map_or(Verdict::Accept, |r| r.verdict);
+        let (outcome, transcribe_ms) = if verdict == Verdict::Reject {
+            (ListenOutcome::Ignored, None)
+        } else {
+            self.transcribe(samples)
+        };
+        self.conclude(
+            g.meta,
+            outcome,
+            ListenTiming {
+                endpoint_wait_ms: g.endpoint_wait_ms,
+                transcribe_ms,
+                verify_ms,
+                mode: g.mode,
+            },
+        );
+    }
+
+    /// Transcribes the samples and returns the outcome with the transcription time.
+    fn transcribe(&self, samples: Vec<f32>) -> (ListenOutcome, Option<u32>) {
+        let started = Instant::now();
+        let result = self.transcriber.transcribe(samples);
+        let outcome = match result {
             Ok(text) => {
                 let trimmed = text.trim();
                 if trimmed.is_empty() {
@@ -426,7 +978,8 @@ impl Worker {
                 }
             }
             Err(_) => ListenOutcome::Failed(ListenFailure::ModelUnavailable),
-        }
+        };
+        (outcome, Some(duration_ms_u32(started.elapsed())))
     }
 
     fn cancel_upto(&mut self, upto: u64) {
@@ -434,12 +987,15 @@ impl Worker {
             State::Waiting(p) if p.id <= upto => {
                 let _ = p.reply.send(ListenOutcome::Aborted);
             }
-            State::Recording(r) if r.id <= upto => self.end_with_cancel(r, ListenOutcome::Aborted),
+            State::Recording(r) if r.meta.id <= upto => {
+                self.end_with_cancel(r, ListenOutcome::Aborted)
+            }
+            State::Gating(g) if g.meta.id <= upto => self.abort_gate(g),
             other => self.state = other,
         }
     }
 
-    /// Ends whatever is pending or recording, used on shutdown and new listens.
+    /// Ends whatever is pending, recording or checking, used on shutdown and new listens.
     fn drop_state(&mut self) {
         match std::mem::replace(&mut self.state, State::Idle) {
             State::Idle => {}
@@ -447,20 +1003,95 @@ impl Worker {
                 let _ = p.reply.send(ListenOutcome::Aborted);
             }
             State::Recording(r) => self.end_with_cancel(r, ListenOutcome::Aborted),
+            State::Gating(g) => self.abort_gate(g),
         }
     }
 
+    /// Aborts a speaker check in progress: the helper is told to stop, nothing is transcribed.
+    fn abort_gate(&self, g: Gating) {
+        g.cancel.store(true, Ordering::SeqCst);
+        let timing = ListenTiming {
+            endpoint_wait_ms: g.endpoint_wait_ms,
+            transcribe_ms: None,
+            verify_ms: None,
+            mode: g.mode,
+        };
+        self.conclude(g.meta, ListenOutcome::Aborted, timing);
+    }
+
     /// Cancels the recording this worker started and answers its listen.
-    fn end_with_cancel(&mut self, r: Recording, outcome: ListenOutcome) {
+    fn end_with_cancel(&mut self, mut r: Recording, outcome: ListenOutcome) {
         self.port.cancel();
+        self.release_listen(&mut r);
         self.set_inactive();
-        log_listen_end(end_reason(&outcome), &r);
-        let _ = r.reply.send(outcome);
+        let timing = ListenTiming {
+            endpoint_wait_ms: None,
+            transcribe_ms: None,
+            verify_ms: None,
+            mode: endpoint_mode(&r),
+        };
+        self.conclude(r.meta, outcome, timing);
+    }
+
+    /// Releases the tap, the ring and the helper of one listen. Called on every end path.
+    fn release_listen(&self, r: &mut Recording) {
+        if r.tap_on {
+            self.port.set_raw_tap(None);
+            r.tap_on = false;
+        }
+        if let Some(ring) = r.ring.take() {
+            ring.close();
+            self.shared.ring_allocated.store(false, Ordering::SeqCst);
+        }
+        // Dropping the helper cancels it and lets it exit.
+        r.decider = None;
+        r.outstanding = None;
+    }
+
+    /// Ends one listen: the timing slot is written BEFORE the outcome is sent (A7).
+    fn conclude(&self, meta: Meta, outcome: ListenOutcome, timing: ListenTiming) {
+        log_listen_end(end_reason(&outcome), &meta);
+        *self
+            .shared
+            .timing_slot
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some((meta.id, timing));
+        let _ = meta.reply.send(outcome);
+    }
+
+    /// A7: the timing slot is cleared at the start of every listen.
+    fn clear_timing(&self) {
+        *self
+            .shared
+            .timing_slot
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = None;
     }
 
     fn set_inactive(&self) {
         self.capture_active.store(false, Ordering::SeqCst);
     }
+}
+
+/// The endpoint mode of a listen: SmartTurn when an answer was applied, Fallback when a
+/// decision was asked but never answered in time, Fixed otherwise.
+fn endpoint_mode(r: &Recording) -> EndpointMode {
+    if r.answered {
+        EndpointMode::SmartTurn
+    } else if r.decision_asked {
+        EndpointMode::SmartTurnFallback
+    } else {
+        EndpointMode::Fixed
+    }
+}
+
+/// Milliseconds as u32, saturating (timing numbers only).
+fn ms_u32(ms: u64) -> u32 {
+    u32::try_from(ms).unwrap_or(u32::MAX)
+}
+
+fn duration_ms_u32(d: Duration) -> u32 {
+    u32::try_from(d.as_millis()).unwrap_or(u32::MAX)
 }
 
 /// Short, fixed reason for the end of a listen (diagnostic log only).
@@ -477,12 +1108,12 @@ fn end_reason(outcome: &ListenOutcome) -> &'static str {
 
 /// F4 diagnostic: one numeric/enum-only line per ended listen. Never audio,
 /// text, device names, ids or paths.
-fn log_listen_end(reason: &str, r: &Recording) {
+fn log_listen_end(reason: &str, meta: &Meta) {
     log::info!(
         "converse capture ended: reason={} dur_ms={} speech_frames={}",
         reason,
-        r.started_at.elapsed().as_millis(),
-        r.speech_frames
+        meta.started_at.elapsed().as_millis(),
+        meta.speech_frames
     );
 }
 
@@ -566,6 +1197,63 @@ impl CaptureHandle {
     /// `start()` and the end of that recording).
     pub fn capture_active(&self) -> bool {
         self.inner.capture_active.load(Ordering::SeqCst)
+    }
+
+    /// Id of the most recent listen started on this handle (0 = none yet).
+    // Used by the converse wiring (RealEars::take_timing); not yet reachable in lib builds.
+    #[allow(dead_code)]
+    pub fn last_listen_id(&self) -> u64 {
+        self.inner.next_id.load(Ordering::SeqCst)
+    }
+
+    /// T9b test-only: number of pre-VAD taps the worker installed (cumulative).
+    #[cfg(test)]
+    pub fn tap_installed_count(&self) -> usize {
+        self.inner.shared.tap_installed.load(Ordering::SeqCst) as usize
+    }
+
+    /// T9b test-only: samples currently held by the pre-VAD ring.
+    #[cfg(test)]
+    pub fn ring_len(&self) -> usize {
+        self.inner.shared.ring_len.load(Ordering::SeqCst) as usize
+    }
+
+    /// T9b test-only: whether the pre-VAD ring buffer is allocated.
+    #[cfg(test)]
+    pub fn ring_allocated(&self) -> bool {
+        self.inner.shared.ring_allocated.load(Ordering::SeqCst)
+    }
+
+    /// T9b test-only: decider (helper) threads created so far (cumulative).
+    #[cfg(test)]
+    pub fn decider_threads_spawned(&self) -> usize {
+        self.inner.shared.decider_spawned.load(Ordering::SeqCst) as usize
+    }
+
+    /// T9b test-only: decider threads that have not finished yet.
+    #[cfg(test)]
+    pub fn decider_threads_live(&self) -> usize {
+        self.inner.shared.decider_live.load(Ordering::SeqCst) as usize
+    }
+
+    /// T9b (A7): the timing of listen `listen_id` if it is the last listen that ended.
+    /// Returns it only for the matching id and clears the slot (a second take is None).
+    #[allow(dead_code)]
+    pub fn take_timing(&self, listen_id: u64) -> Option<ListenTiming> {
+        let mut slot = self
+            .inner
+            .shared
+            .timing_slot
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let current = *slot;
+        match current {
+            Some((id, timing)) if id == listen_id => {
+                *slot = None;
+                Some(timing)
+            }
+            _ => None,
+        }
     }
 
     /// Cancel any active recording, answer any pending listen with `Aborted`,
@@ -1437,3 +2125,8 @@ mod tests {
         h.shutdown();
     }
 }
+
+// T9a: integration contract for Smart Turn and the speaker gate (red until T9b).
+#[cfg(test)]
+#[path = "converse_capture_voice_tests.rs"]
+mod voice_tests;

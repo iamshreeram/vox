@@ -1,6 +1,7 @@
 use super::{
     is_microphone_access_denied, is_no_input_device_error, run_consumer, AudioRecorder,
-    CaptureProcessor, CaptureTransportState, ChunkDisposition, Cmd, VadConfig, VadPolicy,
+    CaptureProcessor, CaptureTransportState, ChunkDisposition, Cmd, RawTapSlot, VadConfig,
+    VadPolicy,
 };
 use crate::audio_toolkit::vad::{VadFrame, VoiceActivityDetector};
 use rtrb::RingBuffer;
@@ -415,4 +416,82 @@ fn detects_coreaudio_config_error() {
 fn does_not_match_other_errors_for_no_device() {
     assert!(!is_no_input_device_error("permission denied"));
     assert!(!is_no_input_device_error("device not found"));
+}
+
+/// Pass-through detector that drops every frame, so only the raw tap can see audio.
+struct DropAllVad(usize);
+
+impl VoiceActivityDetector for DropAllVad {
+    fn push_frame<'a>(&'a mut self, _frame: &'a [f32]) -> anyhow::Result<VadFrame<'a>> {
+        Ok(VadFrame::Noise)
+    }
+
+    fn frame_samples(&self) -> usize {
+        self.0
+    }
+}
+
+/// Pre-VAD tap (T9b): every 16 kHz frame reaches the tap before the VAD decides, even
+/// when the VAD drops it; the VAD-kept callback sees nothing.
+#[test]
+fn raw_tap_sees_every_frame_before_the_vad_decides() {
+    let frame_samples = 256;
+    let vad = VadConfig {
+        detector: Arc::new(Mutex::new(Box::new(DropAllVad(frame_samples)))),
+        frame_samples,
+        offline_hangover_frames: 0,
+        streaming_hangover_frames: 0,
+    };
+    let tapped = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&tapped);
+    let slot = Arc::new(RawTapSlot::default());
+    slot.set(Some(Arc::new(move |frame: &[f32]| {
+        seen.lock().unwrap().push(frame.len())
+    })));
+    let kept = Arc::new(Mutex::new(0usize));
+    let kept_seen = Arc::clone(&kept);
+    let mut processor = CaptureProcessor::new(
+        16_000,
+        Some(vad),
+        None,
+        Some(Arc::new(move |_: &[f32]| *kept_seen.lock().unwrap() += 1)),
+        Instant::now(),
+    )
+    .with_raw_tap(Arc::clone(&slot));
+
+    let (ready_tx, _ready_rx) = mpsc::channel();
+    processor.begin_recording(VadPolicy::Offline, ready_tx);
+    processor.process_raw_chunk(&[0.0; 1024], ChunkDisposition::Capture);
+
+    assert_eq!(*tapped.lock().unwrap(), vec![frame_samples; 4]);
+    assert_eq!(*kept.lock().unwrap(), 0, "the VAD dropped every frame");
+    assert_eq!(slot.skipped(), 0);
+}
+
+/// A panicking tap is contained: the recording continues, and a cleared tap is silent.
+#[test]
+fn raw_tap_panic_is_contained_and_clearing_the_tap_stops_delivery() {
+    let slot = Arc::new(RawTapSlot::default());
+    slot.set(Some(Arc::new(|_: &[f32]| -> () {
+        panic!("tap panic (test)")
+    })));
+    let mut processor = CaptureProcessor::new(16_000, None, None, None, Instant::now())
+        .with_raw_tap(Arc::clone(&slot));
+    let (ready_tx, _ready_rx) = mpsc::channel();
+    processor.begin_recording(VadPolicy::Disabled, ready_tx);
+    processor.process_raw_chunk(&[0.5; 480], ChunkDisposition::Capture);
+    slot.set(None);
+    processor.process_raw_chunk(&[0.5; 480], ChunkDisposition::Capture);
+    assert_eq!(processor.finish_recording().len(), 960);
+}
+
+/// A frame that finds the slot busy is skipped and counted, never waited for.
+#[test]
+fn raw_tap_skips_and_counts_a_frame_while_the_slot_is_busy() {
+    let slot = RawTapSlot::default();
+    slot.set(Some(Arc::new(|_: &[f32]| {})));
+    let held = slot.callback.lock().unwrap();
+    slot.deliver(&[0.0; 4]);
+    drop(held);
+    assert_eq!(slot.skipped(), 1);
 }
