@@ -1516,6 +1516,128 @@ async converseStop() : Promise<boolean> {
 async converseStatus() : Promise<string> {
     return await TAURI_INVOKE("converse_status");
 },
+async auxModelStatus(kind: AuxKind) : Promise<AuxStatus> {
+    return await TAURI_INVOKE("aux_model_status", { kind });
+},
+/**
+ * Starts the download in the background and returns once it is accepted.
+ * Progress and the result arrive as `aux-model-progress` and `aux-model-finished`.
+ */
+async auxModelDownload(kind: AuxKind) : Promise<Result<null, AuxError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("aux_model_download", { kind }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Cancels the running download of `kind`. A no-op when none is running.
+ */
+async auxModelCancel(kind: AuxKind) : Promise<Result<null, AuxError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("aux_model_cancel", { kind }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Removes the installed `kind`. Idempotent. `Busy` while an operation runs.
+ */
+async auxModelDelete(kind: AuxKind) : Promise<Result<null, AuxError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("aux_model_delete", { kind }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listPersonas() : Promise<PersonaView[]> {
+    return await TAURI_INVOKE("list_personas");
+},
+async savePersona(persona: Persona) : Promise<Result<Persona, PersonaError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_persona", { persona }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deletePersona(id: string) : Promise<Result<null, PersonaError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_persona", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async applyPersona(id: string) : Promise<Result<null, PersonaError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("apply_persona", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async speakerStatus() : Promise<SpeakerStatus> {
+    return await TAURI_INVOKE("speaker_status");
+},
+async speakerEnrollBegin() : Promise<Result<number, SpeakerCmdError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("speaker_enroll_begin") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Blocking window work runs on the blocking pool. A panicked step is reported as `Cancelled`.
+ */
+async speakerEnrollStep(sessionId: number, step: number) : Promise<Result<StepResult, SpeakerCmdError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("speaker_enroll_step", { sessionId, step }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async speakerEnrollCancel(sessionId: number) : Promise<Result<null, SpeakerCmdError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("speaker_enroll_cancel", { sessionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async speakerEnrollFinish(sessionId: number) : Promise<Result<null, SpeakerCmdError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("speaker_enroll_finish", { sessionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async speakerDeleteVoiceprint() : Promise<Result<null, SpeakerCmdError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("speaker_delete_voiceprint") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeConverseSmartTurnSetting(enabled: boolean) : Promise<void> {
+    await TAURI_INVOKE("change_converse_smart_turn_setting", { enabled });
+},
+async changeConverseLatencyPanelSetting(enabled: boolean) : Promise<void> {
+    await TAURI_INVOKE("change_converse_latency_panel_setting", { enabled });
+},
+async changeSpeakerFilterEnabledSetting(enabled: boolean) : Promise<void> {
+    await TAURI_INVOKE("change_speaker_filter_enabled_setting", { enabled });
+},
+async changeSpeakerFilterSensitivitySetting(sensitivity: SpeakerSensitivity) : Promise<void> {
+    await TAURI_INVOKE("change_speaker_filter_sensitivity_setting", { sensitivity });
+},
 /**
  * Persist one realtime toggle. Read-modify-write through `apply_exp_rt_bool`.
  */
@@ -1730,6 +1852,23 @@ converse_max_idle_turns?: number;
  */
 converse_context_turns?: number; 
 /**
+ * Use the Smart Turn model to end an utterance sooner (needs the model installed).
+ */
+converse_smart_turn?: boolean; 
+/**
+ * Show the live per-turn latency panel in the Conversation settings.
+ */
+converse_latency_panel?: boolean; 
+/**
+ * Ignore utterances that do not sound like the enrolled voice (convenience
+ * filter, NOT authentication; needs the model and an enrolled voice).
+ */
+speaker_filter_enabled?: boolean; speaker_filter_sensitivity?: SpeakerSensitivity; 
+/**
+ * User-defined personas (the built-ins live in code).
+ */
+personas?: Persona[]; 
+/**
  * MASTER switch. Off => the conversation behaves exactly as before.
  */
 exp_rt_enabled?: boolean; 
@@ -1795,6 +1934,24 @@ agent_jobs_agent_flag?: string;
 agent_jobs_ask_enabled?: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
+export type AuxError = "busy" | "cancelled" | "not_installed" | "corrupt" | "url_not_allowed" | "download" | "io"
+/**
+ * Payload of `aux-model-finished`: the state after the attempt and the reason, if any.
+ */
+export type AuxFinishedEvent = { kind: AuxKind; state: AuxState; error: AuxError | null }
+/**
+ * The optional model kinds. Directory name = snake_case serde name.
+ */
+export type AuxKind = "smart_turn" | "speaker_resnet_34"
+/**
+ * Payload of `aux-model-progress`: numbers and the kind only.
+ */
+export type AuxProgressEvent = { kind: AuxKind; downloaded: number; total: number }
+export type AuxState = "not_installed" | "downloading" | "verifying" | "ready" | "error"
+/**
+ * Answer of `aux_model_status`: numbers and enums only.
+ */
+export type AuxStatus = { kind: AuxKind; state: AuxState; size_bytes: number }
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 /**
@@ -1837,6 +1994,10 @@ export type CustomSounds = { start: boolean; stop: boolean }
  */
 export type CustomThemeColors = { text: string; background: string; accent: string; accent_secondary: string; warning: string; error: string }
 export type Emotion = "neutral" | "cheerful" | "excited" | "calm" | "concerned" | "apologetic" | "serious"
+/**
+ * Endpointing mode used for a listen. Serialized as "fixed" | "smart_turn" | "smart_turn_fallback".
+ */
+export type EndpointMode = "fixed" | "smart_turn" | "smart_turn_fallback"
 export type EngineType = 
 /**
  * Any GGML/GGUF model loaded through transcribe-cpp (Whisper, Parakeet,
@@ -1844,9 +2005,17 @@ export type EngineType =
  * the file, so this one variant covers the whole transcribe-cpp family.
  */
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere"
+/**
+ * Enrollment failures. Serialized to the UI as a bare variant name.
+ */
+export type EnrollError = "Busy" | "StaleSession" | "NoActiveSession" | "BadStep" | "TooLittleSpeech" | "EmbedFailed" | "NotEnoughSteps" | "Inconsistent" | "UnsupportedPlatform" | "StoreFailed" | "Cancelled"
 export type ExpRtBool = "enabled" | "direct_endpoint" | "stream_reply" | "early_speech" | "fast_voice" | "ack" | "prewarm" | "auto_proxy" | "proxy_enabled" | "timing_log"
 export type ExpRtText = "endpoint_url" | "model" | "token" | "proxy_url"
 export type Fact = { id: number; text: string; source_transcript: string; created_at: number }
+/**
+ * Median and p90 for one field over the window (None when no Some values).
+ */
+export type FieldStats = { median: number | null; p90: number | null }
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
@@ -1865,6 +2034,18 @@ export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_
 key_down: number; key_up: number; flags_changed: number; mouse: number; duration_ms: number }
 export type KeyboardImplementation = "tauri" | "handy_keys"
 export type LLMPrompt = { id: string; name: string; prompt: string }
+/**
+ * Payload of the tauri event [`EVENT_NAME`].
+ */
+export type LatencyEvent = { report: LatencyReport; stats: LatencyStats }
+/**
+ * One completed turn's latency. Numbers and enums only (no text fields).
+ */
+export type LatencyReport = { turn: number; endpoint_wait_ms: number | null; transcribe_ms: number | null; verify_ms: number | null; brain_ms: number | null; to_speech_ms: number | null; total_ms: number | null; mode: EndpointMode }
+/**
+ * Per-field statistics over the rolling window.
+ */
+export type LatencyStats = { endpoint_wait: FieldStats; transcribe: FieldStats; verify: FieldStats; brain: FieldStats; to_speech: FieldStats; total: FieldStats; samples: number }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
@@ -1947,6 +2128,27 @@ export type OverlayStyle = "none" | "minimal" | "live"
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
+/**
+ * A persona. `style` feeds `tts_composer_style`; `voice` (a curated natural
+ * voice id) feeds `tts_natural_voice` when present.
+ */
+export type Persona = { id: string; name: string; style: string; voice?: string | null }
+/**
+ * Why a persona operation was rejected. Carries no text payloads.
+ */
+export type PersonaError = "NameEmpty" | "NameTooLong" | "StyleEmpty" | "StyleTooLong" | "ControlChars" | "UnknownVoice" | "ReservedId" | "BuiltinImmutable" | "LimitReached" | "NotFound"
+/**
+ * One entry of the Personas card: the persona plus what the UI needs to show.
+ */
+export type PersonaView = { persona: Persona; 
+/**
+ * True for the five built-ins (read-only).
+ */
+builtin: boolean; 
+/**
+ * True for the single persona that matches the current settings, if any.
+ */
+active: boolean }
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type SecretMap = Partial<{ [key in string]: string }>
@@ -2055,6 +2257,31 @@ export type SourceUpdateState = "up_to_date" | "available" |
  * GitHub, diverged). Never installable, never prompts automatically.
  */
 "untracked"
+/**
+ * Command failures. Serialized as enum tags only.
+ */
+export type SpeakerCmdError = 
+/**
+ * The Speaker model is not installed, so no enrollment can start.
+ */
+"ModelMissing" | { Enroll: EnrollError } | 
+/**
+ * The voiceprint store failed, or the runtime is not available.
+ */
+"StoreFailed"
+/**
+ * How strict the optional speaker filter is (design A8). Thresholds live with
+ * the speaker model constants, not here.
+ */
+export type SpeakerSensitivity = "lenient" | "balanced" | "strict"
+/**
+ * Numbers and booleans only.
+ */
+export type SpeakerStatus = { enrolled: boolean; enrollment_active: boolean; model_ready: boolean }
+/**
+ * Result of one counted step. Numbers and booleans only.
+ */
+export type StepResult = { speech_ms: number; ok: boolean }
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */
