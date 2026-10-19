@@ -330,6 +330,9 @@ pub trait FrontmostProbe: Send + Sync {
     fn frontmost_bundle(&self) -> Option<String>;
 }
 
+/// The paste callback handed to [`guarded_paste`]; it receives the `pre_chord` gate.
+type DoPaste<'a> = dyn FnMut(&mut dyn FnMut() -> bool) -> Result<(), String> + 'a;
+
 /// Run a generated-text paste under a focus guard.
 /// 1. probe once; `!paste_allowed` => `Err` and `do_paste` is NOT called;
 /// 2. call `do_paste(pre_chord)`: `pre_chord` re-probes and returns true only
@@ -341,7 +344,7 @@ pub trait FrontmostProbe: Send + Sync {
 pub fn guarded_paste(
     probe: &dyn FrontmostProbe,
     text: &str,
-    do_paste: &mut dyn FnMut(&mut dyn FnMut() -> bool) -> Result<(), String>,
+    do_paste: &mut DoPaste<'_>,
 ) -> Result<(), String> {
     const REFUSED: &str = "paste refused: frontmost app is not safe for this text";
     const GUARD_SKIPPED: &str = "paste aborted: focus guard was not consulted";

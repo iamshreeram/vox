@@ -11,7 +11,7 @@ use crate::managers::converse::{
 use crate::managers::converse_capture::CaptureHandle;
 use crate::managers::converse_confirm::PolicySource;
 use crate::managers::converse_hooks;
-use crate::managers::converse_latency::{LatencyEvent, LatencyReport, LatencyStats};
+use crate::managers::converse_latency::{event_enabled, LatencyEvent, LatencyReport, LatencyStats};
 use futures_util::FutureExt;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -120,7 +120,7 @@ pub fn make_latency_sink(
     panel_on: Arc<dyn Fn() -> bool + Send + Sync>,
 ) -> LatencySink {
     Arc::new(move |report, stats| {
-        if panel_on() {
+        if event_enabled(panel_on(), true) {
             emit(LatencyEvent {
                 report: report.clone(),
                 stats: stats.clone(),

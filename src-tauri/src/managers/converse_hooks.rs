@@ -42,7 +42,8 @@ pub fn install_capture(handle: Option<CaptureHandle>) {
 }
 
 /// True only while the installed capture worker owns the recorder.
-/// False when nothing is installed.
+/// False when nothing is installed. Test-only: production code does not read it.
+#[cfg(test)]
 pub fn capture_active() -> bool {
     #[cfg(test)]
     if FORCE_CAPTURE_ACTIVE.load(Ordering::SeqCst) {

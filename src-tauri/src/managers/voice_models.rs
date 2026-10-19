@@ -12,9 +12,12 @@ use std::collections::{HashMap, HashSet};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+#[cfg(test)]
+use std::sync::mpsc::RecvTimeoutError;
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::{JoinHandle, ThreadId};
+#[cfg(test)]
 use std::time::Duration;
 
 /// Longest input kept for one inference; longer input keeps its last samples.
@@ -124,8 +127,11 @@ fn lock_state(mutex: &Mutex<State>) -> MutexGuard<'_, State> {
 /// Single-owner inference service. One worker thread owns every session.
 pub struct VoiceModelService {
     shared: Arc<Shared>,
+    // Kept to own the worker thread; only the test-only `shutdown_and_join` reads these.
+    #[allow(dead_code)]
     worker: Mutex<Option<JoinHandle<()>>>,
     /// Disconnects when the worker thread exits (the worker holds the sender).
+    #[allow(dead_code)]
     done: Mutex<Receiver<()>>,
 }
 
@@ -247,6 +253,7 @@ impl VoiceModelService {
         }
     }
 
+    #[cfg(test)]
     pub fn reload_count(&self, kind: ModelKind) -> u8 {
         lock_state(&self.shared.state)
             .reloads
@@ -255,26 +262,31 @@ impl VoiceModelService {
             .unwrap_or(0)
     }
 
+    #[cfg(test)]
     pub fn is_latched_unavailable(&self, kind: ModelKind) -> bool {
         lock_state(&self.shared.state).latched.contains(&kind)
     }
 
     /// True while any request is outstanding (submit until the thread finished it).
+    #[cfg(test)]
     pub fn outstanding(&self) -> bool {
         lock_state(&self.shared.state).outstanding
     }
 
     /// Diagnostic: distinct thread ids that ever ran a session. Must stay 1.
+    #[cfg(test)]
     pub fn worker_thread_ids_seen(&self) -> usize {
         lock_state(&self.shared.state).worker_ids.len()
     }
 
     /// Diagnostic: number of reply slots currently holding a reply (0 or 1).
+    #[cfg(test)]
     pub fn stored_replies(&self) -> usize {
         usize::from(lock_state(&self.shared.state).reply.is_some())
     }
 
     /// Test helper: sets shutdown, waits up to `timeout` for the worker to exit.
+    #[cfg(test)]
     pub fn shutdown_and_join(self, timeout: Duration) -> bool {
         self.request_shutdown();
         let exited = {
@@ -366,10 +378,7 @@ fn load_session(
     kind: ModelKind,
     path: &Path,
 ) -> Option<Box<dyn ModelSession>> {
-    match catch_unwind(AssertUnwindSafe(|| loader.load(kind, path))) {
-        Ok(session) => session,
-        Err(_) => None,
-    }
+    catch_unwind(AssertUnwindSafe(|| loader.load(kind, path))).unwrap_or_default()
 }
 
 /// Serves one taken request: start check, lazy load, re-check, run, finish.
@@ -391,16 +400,13 @@ fn serve(
     if matches!(sessions.get(&kind), Some(c) if c.generation != generation) {
         sessions.remove(&kind);
     }
-    if !sessions.contains_key(&kind) {
+    if let std::collections::hash_map::Entry::Vacant(slot) = sessions.entry(kind) {
         match load_session(loader, kind, &path) {
             Some(session) => {
-                sessions.insert(
-                    kind,
-                    Cached {
-                        generation,
-                        session,
-                    },
-                );
+                slot.insert(Cached {
+                    generation,
+                    session,
+                });
             }
             None => {
                 finish(shared, Some(Reply::Failed(ErrKind::LoadFailed)), true);

@@ -29,6 +29,9 @@ pub enum StartError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TranscribeFailure;
 
+/// Pre-VAD frame tap installed via [`RecorderPort::set_raw_tap`].
+pub type RawTap = Arc<dyn Fn(&[f32]) + Send + Sync>;
+
 /// Hardware port. Real impl: AudioRecordingManager with binding "converse".
 pub trait RecorderPort: Send + Sync + 'static {
     /// Begin recording. Only ever succeeds when the recorder was idle.
@@ -40,7 +43,7 @@ pub trait RecorderPort: Send + Sync + 'static {
     /// Smart Turn (T9b): install (`Some`) or clear (`None`) a PRE-VAD tap that receives
     /// every post-resample 16 kHz frame, speech or not. Default: no-op, so ports without
     /// a pre-VAD hook are unchanged (their detector tail stays empty).
-    fn set_raw_tap(&self, _tap: Option<Arc<dyn Fn(&[f32]) + Send + Sync>>) {}
+    fn set_raw_tap(&self, _tap: Option<RawTap>) {}
 }
 
 pub trait Transcriber: Send + Sync + 'static {
@@ -94,6 +97,8 @@ struct Inner {
     /// Id of the armed listen (0 = none). Read by the audio thread.
     armed: AtomicU64,
     next_id: AtomicU64,
+    // Read only by the test-only `CaptureHandle::capture_active` accessor.
+    #[cfg(test)]
     capture_active: Arc<AtomicBool>,
     /// Highest cancelled listen id. Raised by the caller before the Cancel is
     /// queued, so the worker sees it even while `start()` is blocked.
@@ -486,7 +491,9 @@ struct Worker {
 pub struct CaptureWorker;
 
 impl CaptureWorker {
-    /// Spawn the worker thread.
+    /// Spawn the worker thread with default options (test helper; production
+    /// uses `spawn_with_options`).
+    #[cfg(test)]
     pub fn spawn(
         port: Arc<dyn RecorderPort>,
         transcriber: Arc<dyn Transcriber>,
@@ -528,6 +535,7 @@ impl CaptureWorker {
                 tx,
                 armed: AtomicU64::new(0),
                 next_id: AtomicU64::new(0),
+                #[cfg(test)]
                 capture_active,
                 floor,
                 join: Mutex::new(join),
@@ -1195,6 +1203,7 @@ impl CaptureHandle {
 
     /// True while the worker owns the recorder (between a successful
     /// `start()` and the end of that recording).
+    #[cfg(test)]
     pub fn capture_active(&self) -> bool {
         self.inner.capture_active.load(Ordering::SeqCst)
     }
