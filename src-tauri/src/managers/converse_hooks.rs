@@ -180,6 +180,7 @@ mod tests {
                 max_utterance_ms: 5000,
                 min_speech_ms: 50,
                 floor: 0.02,
+                smart_turn: None,
             })
             .await
         });

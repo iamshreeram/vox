@@ -393,6 +393,11 @@ impl Worker {
                         self.end_with_cancel(r, ListenOutcome::TooLong)
                     }
                     Some(EndpointEvent::SpeechEnded) => self.finish_speech(r),
+                    // Smart Turn is not wired into capture yet (policy is None
+                    // everywhere), so a pending decision keeps listening.
+                    Some(EndpointEvent::NeedTurnDecision { .. }) => {
+                        self.state = State::Recording(r)
+                    }
                 }
             }
             other => self.state = other,
@@ -703,6 +708,7 @@ mod tests {
             max_utterance_ms: 5000,
             min_speech_ms: 100,
             floor: 0.02,
+            smart_turn: None,
         }
     }
 
