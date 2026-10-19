@@ -1221,6 +1221,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "Funzioni vocali",
+      "intro": "Componenti aggiuntivi facoltativi per la conversazione a mani libere. Ognuno resta disattivato finché non lo attivi, e ogni download avviene solo quando premi Scarica.",
+      "model": {
+        "checking": "Verifica in corso...",
+        "state": {
+          "not_installed": "Non scaricato",
+          "downloading": "Download in corso... {{percent}}%",
+          "verifying": "Verifica del file in corso...",
+          "ready": "Installato",
+          "error": "Ultimo tentativo non riuscito."
+        },
+        "download": "Scarica",
+        "cancel": "Annulla",
+        "delete": "Elimina",
+        "error": {
+          "busy": "Un altro download di modello è già in corso.",
+          "corrupt": "Il file scaricato non corrisponde alla dimensione o al checksum previsti. Scaricalo di nuovo.",
+          "url_not_allowed": "L'indirizzo di download non è nell'elenco consentito.",
+          "download": "Download non riuscito. Controlla la connessione e riprova.",
+          "io": "Impossibile salvare il file su questo computer.",
+          "not_installed": "Il modello non è installato.",
+          "unknown": "Si è verificato un problema con il modello."
+        }
+      },
+      "smartTurn": {
+        "heading": "Rilevamento intelligente del turno",
+        "label": "Rilevamento intelligente del turno",
+        "description": "Usa un piccolo modello per capire quando hai finito di parlare, così Vox può rispondere prima. L'audio resta in memoria durante un turno e non viene salvato.",
+        "fallbackNote": "Il modello non è installato, quindi Vox usa la regola di silenzio fissa.",
+        "modelLabel": "Modello per il turno intelligente",
+        "modelDescription": "Download una tantum di circa {{size}}. Viene eseguito su questo computer.",
+        "modelDescriptionPending": "Download una tantum. Viene eseguito su questo computer."
+      },
+      "latency": {
+        "heading": "Pannello della latenza",
+        "label": "Mostra il pannello della latenza",
+        "description": "Mostra i tempi di ogni turno di una conversazione. Solo numeri: non viene salvato alcun audio o testo.",
+        "placeholder": "In attesa del primo turno della conversazione.",
+        "turn": "Ultimo turno: {{turn}}",
+        "samples": "Mediana e 90° percentile degli ultimi {{count}} turni.",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "Fase",
+          "last": "Ultimo",
+          "median": "Mediana",
+          "p90": "90° percentile"
+        },
+        "stage": {
+          "waitForSpeech": "Attesa della fine del parlato",
+          "transcription": "Trascrizione",
+          "thinking": "Elaborazione",
+          "toFirstSpeech": "Tempo fino al primo parlato",
+          "speakerCheck": "Verifica del parlante"
+        }
+      },
+      "persona": {
+        "heading": "Personas",
+        "label": "Persona",
+        "description": "Un preset di stile di risposta e voce. Applicare una persona imposta entrambi insieme.",
+        "activeOption": "{{name}} (attiva)",
+        "apply": "Applica",
+        "customHeading": "Personas personalizzate",
+        "customEmpty": "Nessuna persona personalizzata per ora.",
+        "builtinTag": "Predefinita",
+        "builtinLocked": "Le personas predefinite sono di sola lettura.",
+        "new": "Nuova persona",
+        "edit": "Modifica",
+        "delete": "Elimina",
+        "nameLabel": "Nome",
+        "styleLabel": "Stile",
+        "charCount": "{{count}} di {{max}} caratteri",
+        "voiceLabel": "Voce",
+        "noVoice": "Mantieni la mia voce attuale",
+        "save": "Salva",
+        "cancel": "Annulla",
+        "error": {
+          "name_empty": "Inserisci un nome.",
+          "name_too_long": "Il nome può contenere al massimo {{max}} caratteri.",
+          "style_empty": "Inserisci uno stile.",
+          "style_too_long": "Lo stile può contenere al massimo {{max}} caratteri.",
+          "control_chars": "Rimuovi i caratteri di controllo nascosti.",
+          "unknown_voice": "Scegli una voce dall'elenco.",
+          "limit_reached": "Puoi salvare fino a {{max}} personas personalizzate. Eliminane una per aggiungerne un'altra.",
+          "builtin_immutable": "Le personas predefinite non possono essere modificate.",
+          "generic": "Impossibile salvare la persona. Riprova."
+        }
+      },
+      "speaker": {
+        "heading": "Filtro del parlante",
+        "label": "Filtro del parlante",
+        "description": "Ignora il parlato che non somiglia alla tua voce registrata.",
+        "disclosure": {
+          "lead": "Il filtro del parlante è un filtro di comodità. Non è sicurezza e non è autenticazione.",
+          "detail": "Può ignorare per errore la tua stessa voce, e una registrazione o una voce simile può passare. La tua impronta vocale resta su questo computer, in un file che solo il tuo account può leggere. Nessun audio viene conservato. Il filtro è disattivato per impostazione predefinita."
+        },
+        "inactiveNote": "Il filtro resta inattivo finché il modello del parlante non è installato e la tua voce non è registrata.",
+        "sensitivityLabel": "Sensibilità",
+        "sensitivityDescription": "Quanto severamente viene escluso il parlato di altre voci.",
+        "sensitivity": {
+          "lenient": "Permissiva",
+          "balanced": "Bilanciata",
+          "strict": "Severa",
+          "lenientHint": "Lascia passare più voci e ti ignora per errore meno spesso.",
+          "balancedHint": "Impostazione predefinita, un compromesso tra le due.",
+          "strictHint": "Esclude più altre voci, ma ti ignora per errore più spesso."
+        },
+        "modelLabel": "Modello del parlante",
+        "modelDescription": "Download una tantum di circa {{size}}. Viene eseguito su questo computer.",
+        "enrolled": "La tua voce è registrata.",
+        "notEnrolled": "La tua voce non è ancora registrata.",
+        "enroll": {
+          "label": "Registra la tua voce",
+          "description": "Tre brevi registrazioni di circa 6 secondi ciascuna. Parla normalmente in un luogo tranquillo.",
+          "intro": "Leggerai tre brevi gruppi di frasi. Viene conservata solo l'impronta vocale, mai l'audio.",
+          "needModel": "Installa prima il modello del parlante.",
+          "start": "Avvia la registrazione",
+          "starting": "Avvio in corso...",
+          "cancel": "Annulla",
+          "progress": "{{done}} registrazioni su {{total}} completate",
+          "stepTitle": "Registrazione {{step}} di {{total}}",
+          "readThese": "Leggi queste frasi con la tua voce normale:",
+          "record": "Avvia la registrazione di questo passaggio",
+          "recording": "Registrazione in corso. Restano {{seconds}} secondi.",
+          "allRecorded": "Tutte e tre le registrazioni sono state acquisite. Termina per salvare la tua impronta vocale.",
+          "finish": "Termina la registrazione",
+          "done": "La tua voce è registrata.",
+          "messages": {
+            "busy": "Interrompi prima la conversazione o la dettatura.",
+            "too_little_speech": "Parla un po' più a lungo. Vox richiede almeno 2 secondi di parlato per ogni registrazione.",
+            "inconsistent": "Le tre registrazioni non suonavano simili. Ricominciamo dalla prima registrazione.",
+            "model_missing": "Installa prima il modello del parlante.",
+            "session_ended": "La registrazione è terminata. Riavviala quando sei pronto.",
+            "generic": "La registrazione non è riuscita. Riprova."
+          },
+          "prompts": {
+            "s1a": "La volpe marrone veloce salta sopra il cane pigro.",
+            "s1b": "Per favore apri il mio calendario e dimmi cosa c'è oggi.",
+            "s1c": "Che tempo farà questo pomeriggio?",
+            "s2a": "Per favore abbassa un po' il volume.",
+            "s2b": "Dimmi un breve fatto sulla luna.",
+            "s2c": "Vorrei una tazza di tè vicino alla finestra.",
+            "s3a": "Ricordami di chiamare mia sorella domani mattina.",
+            "s3b": "Leggimi l'ultimo messaggio del mio team.",
+            "s3c": "Grazie, per ora è tutto."
+          }
+        },
+        "deleteLabel": "Impronta vocale",
+        "deleteDescription": "Rimuove l'impronta vocale salvata. Senza di essa, il filtro del parlante non può funzionare.",
+        "deleteButton": "Elimina impronta vocale",
+        "deleteConfirm": "Eliminare l'impronta vocale? Dovrai registrarti di nuovo per usare il filtro.",
+        "deleteConfirmButton": "Sì, elimina",
+        "deleteKeep": "Conservala",
+        "deleteError": "Impossibile eliminare l'impronta vocale. Riprova."
+      }
     }
   }
 }
