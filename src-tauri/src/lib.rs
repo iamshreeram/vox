@@ -1173,6 +1173,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         .typ::<managers::converse_platform::ConverseStateEvent>()
         .typ::<commands::natural_voice::NaturalVoiceDownloadProgress>()
         .typ::<commands::natural_voice::NaturalVoiceDownloadFinished>()
+        .typ::<commands::aux_model::AuxProgressEvent>()
+        .typ::<commands::aux_model::AuxFinishedEvent>()
+        .typ::<managers::converse_latency::LatencyEvent>()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
