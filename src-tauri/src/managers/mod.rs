@@ -68,6 +68,7 @@ pub mod speaker_enroll;
 pub mod speaker_enroll_adapters;
 pub mod speaker_id;
 pub mod voice_models;
+pub mod voice_runtime;
 #[cfg(test)]
 mod natural_model_tests;
 pub mod natural_router;

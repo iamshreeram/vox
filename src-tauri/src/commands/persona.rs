@@ -52,6 +52,25 @@ pub fn delete_in(settings: &mut AppSettings, id: &str) -> Result<(), PersonaErro
     Ok(())
 }
 
+/// What applying a persona changed that the runtime must react to (S12).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ApplyEffect {
+    /// True when the natural voice actually changed (same voice or no voice => false).
+    pub voice_changed: bool,
+}
+
+/// `apply_in` that also reports whether the natural voice changed. Same write and same errors.
+pub fn apply_with_effect(
+    settings: &mut AppSettings,
+    id: &str,
+) -> Result<ApplyEffect, PersonaError> {
+    let before = settings.tts_natural_voice.clone();
+    apply_in(settings, id)?;
+    Ok(ApplyEffect {
+        voice_changed: settings.tts_natural_voice != before,
+    })
+}
+
 /// Copy-on-apply of the persona `id` (built-in or custom). `NotFound` leaves settings unchanged.
 pub fn apply_in(settings: &mut AppSettings, id: &str) -> Result<(), PersonaError> {
     let persona = store::all(&settings.personas)
@@ -90,9 +109,57 @@ pub fn delete_persona(app: AppHandle, id: String) -> Result<(), PersonaError> {
 #[specta::specta]
 pub fn apply_persona(app: AppHandle, id: String) -> Result<(), PersonaError> {
     let mut current = settings::get_settings(&app);
-    apply_in(&mut current, &id)?;
+    let effect = apply_with_effect(&mut current, &id)?;
     settings::write_settings(&app, current);
+    if effect.voice_changed {
+        // Same reset as `change_tts_natural_voice_setting`: stop speech, retry a failed voice.
+        crate::shortcut::reset_spoken_replies(&app);
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod voice_effect_tests {
+    use super::*;
+    use crate::settings::get_default_settings;
+
+    #[test]
+    fn a_different_persona_voice_reports_a_change() {
+        let mut s = get_default_settings();
+        s.tts_natural_voice = "af_heart".to_string();
+        let effect = apply_with_effect(&mut s, "builtin-concise").expect("apply");
+        assert!(effect.voice_changed);
+        assert_eq!(s.tts_natural_voice, "af_sky");
+    }
+
+    #[test]
+    fn the_same_persona_voice_reports_no_change() {
+        let mut s = get_default_settings();
+        s.tts_natural_voice = "af_sky".to_string();
+        let effect = apply_with_effect(&mut s, "builtin-concise").expect("apply");
+        assert!(!effect.voice_changed);
+        assert_eq!(s.tts_natural_voice, "af_sky");
+    }
+
+    #[test]
+    fn a_persona_without_a_voice_reports_no_change() {
+        let mut s = get_default_settings();
+        s.tts_natural_voice = "bm_lewis".to_string();
+        let effect = apply_with_effect(&mut s, "builtin-default").expect("apply");
+        assert!(!effect.voice_changed);
+        assert_eq!(s.tts_natural_voice, "bm_lewis");
+    }
+
+    #[test]
+    fn an_unknown_persona_reports_nothing_and_changes_nothing() {
+        let mut s = get_default_settings();
+        let before = s.clone();
+        assert_eq!(
+            apply_with_effect(&mut s, "no-such-persona"),
+            Err(PersonaError::NotFound)
+        );
+        assert_eq!(s.tts_natural_voice, before.tts_natural_voice);
+    }
 }
 
 #[cfg(test)]
