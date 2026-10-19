@@ -1221,6 +1221,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "Stemmefunktioner",
+      "intro": "Valgfrie tilføjelser til håndfri samtale. Hver enkelt er slået fra, indtil du tænder den, og hver hentning sker først, når du trykker på Hent.",
+      "model": {
+        "checking": "Kontrollerer...",
+        "state": {
+          "not_installed": "Ikke hentet",
+          "downloading": "Henter... {{percent}} %",
+          "verifying": "Kontrollerer filen...",
+          "ready": "Installeret",
+          "error": "Sidste forsøg lykkedes ikke."
+        },
+        "download": "Hent",
+        "cancel": "Annuller",
+        "delete": "Slet",
+        "error": {
+          "busy": "Der kører allerede en anden modelhentning.",
+          "corrupt": "Den hentede fil passer ikke med den forventede størrelse eller checksum. Hent den igen.",
+          "url_not_allowed": "Hentningsadressen står ikke på listen over tilladte adresser.",
+          "download": "Hentningen mislykkedes. Tjek din forbindelse, og prøv igen.",
+          "io": "Filen kunne ikke gemmes på denne computer.",
+          "not_installed": "Modellen er ikke installeret.",
+          "unknown": "Der opstod en fejl med modellen."
+        }
+      },
+      "smartTurn": {
+        "heading": "Smart registrering af talepause",
+        "label": "Smart registrering af talepause",
+        "description": "Bruger en lille model til at afgøre, hvornår du er færdig med at tale, så Vox kan svare hurtigere. Lyd holdes i hukommelsen under en tur og gemmes ikke.",
+        "fallbackNote": "Modellen er ikke installeret, så Vox bruger den faste stilhedsregel.",
+        "modelLabel": "Model til registrering af talepause",
+        "modelDescription": "Engangshentning på ca. {{size}}. Den kører på denne computer.",
+        "modelDescriptionPending": "Engangshentning. Den kører på denne computer."
+      },
+      "latency": {
+        "heading": "Latenspanel",
+        "label": "Vis latenspanel",
+        "description": "Viser tidstal for hver tur i en samtale. Kun tal: der gemmes hverken lyd eller tekst.",
+        "placeholder": "Venter på den første tur i en samtale.",
+        "turn": "Sidste tur: {{turn}}",
+        "samples": "Median og 90. percentil for de sidste {{count}} ture.",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "Trin",
+          "last": "Sidste",
+          "median": "Median",
+          "p90": "90. percentil"
+        },
+        "stage": {
+          "waitForSpeech": "Vent på talens afslutning",
+          "transcription": "Transskription",
+          "thinking": "Tænker",
+          "toFirstSpeech": "Tid til første tale",
+          "speakerCheck": "Talerkontrol"
+        }
+      },
+      "persona": {
+        "heading": "Personas",
+        "label": "Persona",
+        "description": "En forudindstilling af svarstil og stemme. Når en persona anvendes, sættes begge på én gang.",
+        "activeOption": "{{name}} (aktiv)",
+        "apply": "Anvend",
+        "customHeading": "Egne personas",
+        "customEmpty": "Ingen egne personas endnu.",
+        "builtinTag": "Indbygget",
+        "builtinLocked": "Indbyggede personas kan ikke redigeres.",
+        "new": "Ny persona",
+        "edit": "Rediger",
+        "delete": "Slet",
+        "nameLabel": "Navn",
+        "styleLabel": "Stil",
+        "charCount": "{{count}} af {{max}} tegn",
+        "voiceLabel": "Stemme",
+        "noVoice": "Behold min nuværende stemme",
+        "save": "Gem",
+        "cancel": "Annuller",
+        "error": {
+          "name_empty": "Indtast et navn.",
+          "name_too_long": "Navnet må højst være {{max}} tegn.",
+          "style_empty": "Indtast en stil.",
+          "style_too_long": "Stilen må højst være {{max}} tegn.",
+          "control_chars": "Fjern de skjulte kontroltegn.",
+          "unknown_voice": "Vælg en stemme fra listen.",
+          "limit_reached": "Du kan gemme op til {{max}} egne personas. Slet en for at tilføje en ny.",
+          "builtin_immutable": "Indbyggede personas kan ikke ændres.",
+          "generic": "Personaen kunne ikke gemmes. Prøv igen."
+        }
+      },
+      "speaker": {
+        "heading": "Talerfilter",
+        "label": "Talerfilter",
+        "description": "Ignorerer tale, der ikke lyder som din indlæste stemme.",
+        "disclosure": {
+          "lead": "Talerfilteret er et bekvemmelighedsfilter. Det er ikke sikkerhed, og det er ikke autentificering.",
+          "detail": "Det kan fejlagtigt ignorere din egen stemme, og en optagelse eller en lignende stemme kan slippe igennem. Dit stemmeaftryk bliver på denne computer, i en fil som kun din konto kan læse. Der gemmes ingen lyd. Filteret er slået fra som standard."
+        },
+        "inactiveNote": "Filteret forbliver inaktivt, indtil talermodellen er installeret, og din stemme er indlæst.",
+        "sensitivityLabel": "Følsomhed",
+        "sensitivityDescription": "Hvor strengt tale fra andre stemmer holdes ude.",
+        "sensitivity": {
+          "lenient": "Mild",
+          "balanced": "Balanceret",
+          "strict": "Streng",
+          "lenientHint": "Lader flere stemmer slippe igennem og ignorerer dig fejlagtigt sjældnere.",
+          "balancedHint": "Standardindstillingen, en mellemvej mellem de to.",
+          "strictHint": "Holder flere andre stemmer ude og ignorerer dig fejlagtigt oftere."
+        },
+        "modelLabel": "Talermodel",
+        "modelDescription": "Engangshentning på ca. {{size}}. Den kører på denne computer.",
+        "enrolled": "Din stemme er indlæst.",
+        "notEnrolled": "Din stemme er endnu ikke indlæst.",
+        "enroll": {
+          "label": "Indlæs din stemme",
+          "description": "Tre korte optagelser på ca. 6 sekunder hver. Tal normalt på et roligt sted.",
+          "intro": "Du læser tre korte sæt sætninger op. Kun stemmeaftrykket gemmes, aldrig lyden.",
+          "needModel": "Installer talermodellen først.",
+          "start": "Start indlæsning",
+          "starting": "Starter...",
+          "cancel": "Annuller",
+          "progress": "{{done}} af {{total}} optagelser er færdige",
+          "stepTitle": "Optagelse {{step}} af {{total}}",
+          "readThese": "Læs disse sætninger op med din normale stemme:",
+          "record": "Optag dette trin",
+          "recording": "Optager. {{seconds}} sekunder tilbage.",
+          "allRecorded": "Alle tre optagelser er klar. Afslut for at gemme dit stemmeaftryk.",
+          "finish": "Afslut indlæsning",
+          "done": "Din stemme er indlæst.",
+          "messages": {
+            "busy": "Stop samtalen eller diktatet først.",
+            "too_little_speech": "Tal lidt længere. Vox har brug for mindst 2 sekunders tale for hver optagelse.",
+            "inconsistent": "De tre optagelser lød ikke ens. Starter forfra fra den første optagelse.",
+            "model_missing": "Installer talermodellen først.",
+            "session_ended": "Indlæsningen blev afbrudt. Start forfra, når du er klar.",
+            "generic": "Indlæsningen virkede ikke. Prøv igen."
+          },
+          "prompts": {
+            "s1a": "Quizdeltagerne spiste jordbær med fløde og chokolade.",
+            "s1b": "Åbn venligst min kalender, og fortæl mig, hvad der står på i dag.",
+            "s1c": "Hvordan bliver vejret i eftermiddag?",
+            "s2a": "Skru lidt ned for lyden, tak.",
+            "s2b": "Fortæl mig en kort og sjov kendsgerning om månen.",
+            "s2c": "Jeg vil gerne have en kop te ved vinduet.",
+            "s3a": "Mind mig om at ringe til min søster i morgen tidlig.",
+            "s3b": "Læs den seneste besked fra mit team op.",
+            "s3c": "Tak, det var alt for nu."
+          }
+        },
+        "deleteLabel": "Stemmeaftryk",
+        "deleteDescription": "Fjerner det gemte stemmeaftryk. Uden det kan talerfilteret ikke køre.",
+        "deleteButton": "Slet stemmeaftryk",
+        "deleteConfirm": "Slet stemmeaftrykket? Du skal indlæse din stemme igen for at bruge filteret.",
+        "deleteConfirmButton": "Ja, slet det",
+        "deleteKeep": "Behold det",
+        "deleteError": "Stemmeaftrykket kunne ikke slettes. Prøv igen."
+      }
     }
   }
 }
