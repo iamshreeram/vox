@@ -33,6 +33,9 @@ pub trait EnrollRecorder: Send + Sync {
     fn start(&self) -> Result<(), RecorderBusy>;
     /// Stops this enrollment's recording and returns its VAD-kept 16 kHz mono samples.
     fn stop(&self) -> Vec<f32>;
+    /// Asks a `start` that is still waiting for readiness to give up (called by `cancel` while a
+    /// step is in flight). Default: nothing to abort.
+    fn abort_start(&self) {}
 }
 
 /// Turns one VAD-kept 16 kHz buffer into a speaker embedding (256-dim). `None` when the model
@@ -227,6 +230,7 @@ impl EnrollmentController {
             session.cancelled = true;
             session.cancel.store(true, Ordering::SeqCst);
             session.embeddings.clear();
+            self.recorder.abort_start();
             return Ok(());
         }
         *guard = None;

@@ -9,7 +9,8 @@
 #![allow(dead_code)]
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard, PoisonError};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::audio_toolkit::VadPolicy;
@@ -20,13 +21,19 @@ use crate::managers::voice_models::{ModelKind, Reply, VoiceModelService};
 
 /// Admission binding id of enrollment recordings (distinct from dictation and conversation).
 pub const ENROLL_BINDING: &str = "speaker_enroll";
-/// Speech policy of enrollment windows: the policy the conversation capture path uses
-/// (`converse_platform::conversation_vad_policy`, which is private there and always `Offline`).
+/// Speech policy of enrollment windows. MUST stay equal to the policy the conversation capture
+/// path uses: `converse_platform::conversation_vad_policy` (private there, always `Offline`).
+/// Not pinned by a test: that function is private and converse_platform.rs is out of scope.
 const ENROLL_VAD_POLICY: VadPolicy = VadPolicy::Offline;
 /// Longest wait for one speaker embedding before the request is abandoned.
 const EMBED_DEADLINE: Duration = Duration::from_secs(3);
 /// Poll interval while waiting for an embedding (keeps cancel latency under 20 ms).
 const EMBED_POLL_SLICE: Duration = Duration::from_millis(20);
+/// Longest wait for the recorder to report first samples. A capture that delivers nothing in
+/// this time is released, so `step` never blocks on a dead microphone.
+pub(crate) const READINESS_TIMEOUT: Duration = Duration::from_secs(3);
+/// Poll interval while waiting for readiness; an abort is honoured within one slice.
+pub(crate) const READINESS_POLL_SLICE: Duration = Duration::from_millis(20);
 
 fn lock_generation(slot: &Mutex<Option<u64>>) -> MutexGuard<'_, Option<u64>> {
     slot.lock().unwrap_or_else(PoisonError::into_inner)
@@ -93,11 +100,109 @@ fn await_reply(
     }
 }
 
+/// Outcome of waiting for the first samples of an admitted recording.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReadinessOutcome {
+    /// First samples arrived in time.
+    Ready,
+    /// The capture ended without delivering samples.
+    Failed,
+    /// No samples before the deadline.
+    TimedOut,
+    /// The controller aborted the pending start.
+    Aborted,
+}
+
+/// Decision logic of the bounded readiness wait, free of threads and real time. `poll` returns
+/// `None` while the helper has not reported; a report wins over the deadline. `aborted` is
+/// checked every slice, so an abort is seen within one `slice`.
+pub(crate) fn await_readiness(
+    mut poll: impl FnMut() -> Option<bool>,
+    aborted: impl Fn() -> bool,
+    elapsed: impl Fn() -> Duration,
+    mut pause: impl FnMut(Duration),
+    timeout: Duration,
+    slice: Duration,
+) -> ReadinessOutcome {
+    loop {
+        if let Some(ready) = poll() {
+            return if ready {
+                ReadinessOutcome::Ready
+            } else {
+                ReadinessOutcome::Failed
+            };
+        }
+        if aborted() {
+            return ReadinessOutcome::Aborted;
+        }
+        let waited = elapsed();
+        if waited >= timeout {
+            return ReadinessOutcome::TimedOut;
+        }
+        pause(slice.min(timeout - waited));
+    }
+}
+
+/// Admitted-start orchestration. `wait` (the manager's blocking readiness wait) runs on a
+/// short-lived helper thread; this thread polls its report with a bounded deadline and the
+/// abort flag. Any outcome other than `Ready` calls `release` exactly once, which must end the
+/// admission so that a blocked `wait` returns. A late report from the helper is discarded.
+pub(crate) fn start_with_readiness(
+    wait: impl FnOnce() -> bool + Send + 'static,
+    aborted: impl Fn() -> bool,
+    release: impl FnOnce(),
+    timeout: Duration,
+    slice: Duration,
+) -> Result<(), RecorderBusy> {
+    let (report_tx, report_rx) = mpsc::channel::<bool>();
+    let spawned = thread::Builder::new()
+        .name("speaker-enroll-readiness".to_owned())
+        .spawn(move || {
+            let ready = wait();
+            let _ = report_tx.send(ready);
+        });
+    if spawned.is_err() {
+        release();
+        return Err(RecorderBusy);
+    }
+    let started = Instant::now();
+    let outcome = await_readiness(
+        || match report_rx.try_recv() {
+            Ok(ready) => Some(ready),
+            Err(mpsc::TryRecvError::Empty) => None,
+            // The helper ended without reporting: it panicked, so the capture is unusable.
+            Err(mpsc::TryRecvError::Disconnected) => Some(false),
+        },
+        aborted,
+        || started.elapsed(),
+        thread::sleep,
+        timeout,
+        slice,
+    );
+    match outcome {
+        ReadinessOutcome::Ready => Ok(()),
+        ReadinessOutcome::Failed | ReadinessOutcome::TimedOut | ReadinessOutcome::Aborted => {
+            release();
+            Err(RecorderBusy)
+        }
+    }
+}
+
+/// Releases this enrollment's admission after a start that never became ready. Cancels only
+/// the `speaker_enroll` binding (never another owner's recording); the cancel drops the
+/// capture's readiness sender, so a blocked readiness wait returns.
+fn release_admission(manager: &AudioRecordingManager, captured: &Mutex<Option<u64>>) {
+    let _ = take_generation(captured);
+    let _ = manager.cancel_recording_if_binding(ENROLL_BINDING);
+}
+
 /// Recorder over the shared `AudioRecordingManager`, always under binding `speaker_enroll`.
 pub struct ManagerEnrollRecorder {
     manager: Arc<AudioRecordingManager>,
     /// Cancel generation captured by the last successful start; consumed by `stop`.
     captured: Mutex<Option<u64>>,
+    /// Set by `abort_start` while a start waits for readiness.
+    aborted: AtomicBool,
 }
 
 impl ManagerEnrollRecorder {
@@ -105,12 +210,15 @@ impl ManagerEnrollRecorder {
         Self {
             manager,
             captured: Mutex::new(None),
+            aborted: AtomicBool::new(false),
         }
     }
 }
 
 impl EnrollRecorder for ManagerEnrollRecorder {
     fn start(&self) -> Result<(), RecorderBusy> {
+        // A stale abort from an earlier step must not cancel this start.
+        self.aborted.store(false, Ordering::SeqCst);
         let generation = self.manager.cancel_generation();
         let readiness: RecordingReadiness = self
             .manager
@@ -118,14 +226,17 @@ impl EnrollRecorder for ManagerEnrollRecorder {
             .map_err(map_admission_error)?;
         // The admission succeeded: a later `stop` must match this generation.
         *lock_generation(&self.captured) = Some(generation);
-        if let Err(busy) = first_sample_or_busy(readiness.wait()) {
-            // Admitted but the capture died before any sample. Discard the recording so the
-            // admission slot is released; this is not a stop of a failed start.
-            let _ = take_generation(&self.captured);
-            let _ = self.manager.stop_recording(ENROLL_BINDING, generation);
-            return Err(busy);
-        }
-        Ok(())
+        start_with_readiness(
+            move || readiness.wait(),
+            || self.aborted.load(Ordering::SeqCst),
+            || release_admission(&self.manager, &self.captured),
+            READINESS_TIMEOUT,
+            READINESS_POLL_SLICE,
+        )
+    }
+
+    fn abort_start(&self) {
+        self.aborted.store(true, Ordering::SeqCst);
     }
 
     fn stop(&self) -> Vec<f32> {

@@ -3,11 +3,26 @@
 //! pure helpers are tested here. Every wait is bounded by `EMBED_DEADLINE`.
 
 use super::*;
+use crate::managers::ownership::OwnershipGate;
+use crate::managers::speaker_enroll::{
+    EnrollClock, EnrollConfig, EnrollEmbedder, EnrollError, EnrollRecorder, EnrollmentController,
+};
+use crate::managers::speaker_id::VoiceprintStore;
 use crate::managers::voice_models::{ErrKind, ModelSession, SessionLoader};
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicUsize;
-use std::sync::Condvar;
+use std::sync::{mpsc, Condvar};
+use std::thread;
 use std::time::Duration;
+use tempfile::TempDir;
+
+fn join_or_resume<T>(handle: thread::JoinHandle<T>) -> T {
+    match handle.join() {
+        Ok(value) => value,
+        Err(payload) => std::panic::resume_unwind(payload),
+    }
+}
 
 type Script = Arc<dyn Fn(&[f32]) -> Option<Vec<f32>> + Send + Sync>;
 
@@ -283,5 +298,402 @@ fn embedder_cancel_stops_waiting_early() {
     assert!(
         elapsed < EMBED_DEADLINE,
         "cancel must end the wait well before the deadline, waited {elapsed:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Bounded readiness wait: pure decision logic on a virtual clock
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn readiness_arriving_in_time_is_ready() {
+    let now = Cell::new(Duration::ZERO);
+    let polls = Cell::new(0_u32);
+    let outcome = await_readiness(
+        || {
+            polls.set(polls.get() + 1);
+            (polls.get() >= 4).then_some(true)
+        },
+        || false,
+        || now.get(),
+        |d| now.set(now.get() + d),
+        READINESS_TIMEOUT,
+        READINESS_POLL_SLICE,
+    );
+    assert_eq!(outcome, ReadinessOutcome::Ready);
+    assert!(now.get() < READINESS_TIMEOUT, "ready before the deadline");
+}
+
+#[test]
+fn readiness_that_never_arrives_times_out_at_the_deadline() {
+    let now = Cell::new(Duration::ZERO);
+    let outcome = await_readiness(
+        || None,
+        || false,
+        || now.get(),
+        |d| now.set(now.get() + d),
+        READINESS_TIMEOUT,
+        READINESS_POLL_SLICE,
+    );
+    assert_eq!(outcome, ReadinessOutcome::TimedOut);
+    assert_eq!(now.get(), READINESS_TIMEOUT);
+}
+
+#[test]
+fn abort_while_waiting_is_seen_within_one_slice() {
+    let now = Cell::new(Duration::ZERO);
+    let outcome = await_readiness(
+        || None,
+        || now.get() >= Duration::from_millis(50),
+        || now.get(),
+        |d| now.set(now.get() + d),
+        READINESS_TIMEOUT,
+        READINESS_POLL_SLICE,
+    );
+    assert_eq!(outcome, ReadinessOutcome::Aborted);
+    assert!(now.get() <= Duration::from_millis(50) + READINESS_POLL_SLICE);
+}
+
+#[test]
+fn a_failed_readiness_report_is_failed() {
+    let now = Cell::new(Duration::ZERO);
+    let outcome = await_readiness(
+        || Some(false),
+        || false,
+        || now.get(),
+        |d| now.set(now.get() + d),
+        READINESS_TIMEOUT,
+        READINESS_POLL_SLICE,
+    );
+    assert_eq!(outcome, ReadinessOutcome::Failed);
+}
+
+#[test]
+fn readiness_reported_exactly_at_the_deadline_still_counts() {
+    let now = Cell::new(Duration::ZERO);
+    let outcome = await_readiness(
+        || (now.get() >= READINESS_TIMEOUT).then_some(true),
+        || false,
+        || now.get(),
+        |d| now.set(now.get() + d),
+        READINESS_TIMEOUT,
+        READINESS_POLL_SLICE,
+    );
+    assert_eq!(
+        outcome,
+        ReadinessOutcome::Ready,
+        "the poll precedes the deadline check"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Bounded readiness wait: real helper thread (manager stand-in)
+// ---------------------------------------------------------------------------------------------
+
+/// Counts live readiness helpers. The count drops when the helper's closure returns, also on
+/// unwinding, so a leaked helper stays visible.
+struct LiveCount {
+    live: Arc<AtomicUsize>,
+}
+
+impl LiveCount {
+    fn enter(live: &Arc<AtomicUsize>, max: &Arc<AtomicUsize>) -> Self {
+        let now = live.fetch_add(1, Ordering::SeqCst) + 1;
+        max.fetch_max(now, Ordering::SeqCst);
+        LiveCount {
+            live: Arc::clone(live),
+        }
+    }
+}
+
+impl Drop for LiveCount {
+    fn drop(&mut self) {
+        self.live.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Polls `live` until it reaches zero or one second passes.
+fn wait_until_no_helpers(live: &AtomicUsize) -> bool {
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(1) {
+        if live.load(Ordering::SeqCst) == 0 {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+    live.load(Ordering::SeqCst) == 0
+}
+
+#[test]
+fn ready_recording_starts_without_releasing_anything() {
+    let releases = Arc::new(AtomicUsize::new(0));
+    let r = Arc::clone(&releases);
+    let result = start_with_readiness(
+        || true,
+        || false,
+        move || {
+            r.fetch_add(1, Ordering::SeqCst);
+        },
+        READINESS_TIMEOUT,
+        READINESS_POLL_SLICE,
+    );
+    assert_eq!(result, Ok(()));
+    assert_eq!(releases.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn readiness_that_never_arrives_fails_within_the_bound_and_releases_once() {
+    let (tx, rx) = mpsc::channel::<()>();
+    let releases = Arc::new(AtomicUsize::new(0));
+    let r = Arc::clone(&releases);
+    // The stand-in for the manager: its cancel makes the blocked wait return (false).
+    let wait = move || {
+        let _ = rx.recv();
+        false
+    };
+    let release = move || {
+        r.fetch_add(1, Ordering::SeqCst);
+        let _ = tx.send(());
+    };
+    let started = Instant::now();
+    let result = start_with_readiness(
+        wait,
+        || false,
+        release,
+        READINESS_TIMEOUT,
+        READINESS_POLL_SLICE,
+    );
+    let elapsed = started.elapsed();
+    assert_eq!(result, Err(RecorderBusy));
+    assert!(elapsed >= READINESS_TIMEOUT, "waited {elapsed:?}");
+    assert!(
+        elapsed < READINESS_TIMEOUT + Duration::from_millis(60),
+        "must fail within the bound, took {elapsed:?}"
+    );
+    assert_eq!(
+        releases.load(Ordering::SeqCst),
+        1,
+        "the admission is released exactly once"
+    );
+}
+
+#[test]
+fn abort_while_waiting_fails_within_40_ms_and_releases_once() {
+    let (tx, rx) = mpsc::channel::<()>();
+    let releases = Arc::new(AtomicUsize::new(0));
+    let r = Arc::clone(&releases);
+    let wait = move || {
+        let _ = rx.recv();
+        false
+    };
+    let release = move || {
+        r.fetch_add(1, Ordering::SeqCst);
+        let _ = tx.send(());
+    };
+    let abort = Arc::new(AtomicBool::new(false));
+    let abort_flag = Arc::clone(&abort);
+    let set_at = Arc::new(Mutex::new(None::<Instant>));
+    let set_at_writer = Arc::clone(&set_at);
+    let setter = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(100));
+        *lock(&set_at_writer) = Some(Instant::now());
+        abort_flag.store(true, Ordering::SeqCst);
+    });
+    let result = start_with_readiness(
+        wait,
+        move || abort.load(Ordering::SeqCst),
+        release,
+        READINESS_TIMEOUT,
+        READINESS_POLL_SLICE,
+    );
+    let returned = Instant::now();
+    join_or_resume(setter);
+    assert_eq!(result, Err(RecorderBusy));
+    let raised = lock(&set_at).expect("the abort was raised");
+    let latency = returned.duration_since(raised);
+    assert!(
+        latency < Duration::from_millis(40),
+        "abort must be honoured within 40 ms, took {latency:?}"
+    );
+    assert_eq!(releases.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn readiness_reporting_failure_releases_once_without_waiting() {
+    let releases = Arc::new(AtomicUsize::new(0));
+    let r = Arc::clone(&releases);
+    let started = Instant::now();
+    let result = start_with_readiness(
+        || false,
+        || false,
+        move || {
+            r.fetch_add(1, Ordering::SeqCst);
+        },
+        READINESS_TIMEOUT,
+        READINESS_POLL_SLICE,
+    );
+    assert_eq!(result, Err(RecorderBusy));
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "a failed capture is not waited out"
+    );
+    assert_eq!(releases.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn late_readiness_after_the_timeout_neither_starts_nor_releases_again() {
+    let (tx, rx) = mpsc::channel::<()>();
+    let releases = Arc::new(AtomicUsize::new(0));
+    let r = Arc::clone(&releases);
+    // The helper reports "ready" only after the release has already been issued.
+    let wait = move || {
+        let _ = rx.recv();
+        true
+    };
+    let release = move || {
+        r.fetch_add(1, Ordering::SeqCst);
+        let _ = tx.send(());
+    };
+    let result = start_with_readiness(
+        wait,
+        || false,
+        release,
+        Duration::from_millis(100),
+        READINESS_POLL_SLICE,
+    );
+    assert_eq!(result, Err(RecorderBusy), "a timed-out start stays failed");
+    thread::sleep(Duration::from_millis(50));
+    assert_eq!(
+        releases.load(Ordering::SeqCst),
+        1,
+        "no second release for the late report"
+    );
+}
+
+#[test]
+fn ten_timed_out_attempts_never_leave_more_than_one_helper_alive() {
+    let live = Arc::new(AtomicUsize::new(0));
+    let max = Arc::new(AtomicUsize::new(0));
+    for attempt in 0..10 {
+        let (tx, rx) = mpsc::channel::<()>();
+        let (l, m) = (Arc::clone(&live), Arc::clone(&max));
+        let wait = move || {
+            let _count = LiveCount::enter(&l, &m);
+            let _ = rx.recv();
+            false
+        };
+        let release = move || {
+            let _ = tx.send(());
+        };
+        let result = start_with_readiness(
+            wait,
+            || false,
+            release,
+            Duration::from_millis(100),
+            READINESS_POLL_SLICE,
+        );
+        assert_eq!(result, Err(RecorderBusy), "attempt {attempt}");
+        assert!(
+            wait_until_no_helpers(&live),
+            "attempt {attempt}: the helper must end after the release"
+        );
+    }
+    assert_eq!(
+        max.load(Ordering::SeqCst),
+        1,
+        "at most one helper per attempt"
+    );
+    assert_eq!(
+        live.load(Ordering::SeqCst),
+        0,
+        "none after the attempts end"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Controller: cancel during a pending start
+// ---------------------------------------------------------------------------------------------
+
+/// A recorder whose start parks until `abort_start` is called, then reports busy.
+#[derive(Default)]
+struct ParkedRecorder {
+    entered: AtomicUsize,
+    aborted: AtomicBool,
+    stops: AtomicUsize,
+}
+
+impl EnrollRecorder for ParkedRecorder {
+    fn start(&self) -> Result<(), RecorderBusy> {
+        self.entered.fetch_add(1, Ordering::SeqCst);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !self.aborted.load(Ordering::SeqCst) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(2));
+        }
+        Err(RecorderBusy)
+    }
+
+    fn stop(&self) -> Vec<f32> {
+        self.stops.fetch_add(1, Ordering::SeqCst);
+        Vec::new()
+    }
+
+    fn abort_start(&self) {
+        self.aborted.store(true, Ordering::SeqCst);
+    }
+}
+
+struct NeverEmbedder;
+
+impl EnrollEmbedder for NeverEmbedder {
+    fn embed(&self, _buffer16k: &[f32], _cancel: &AtomicBool) -> Option<Vec<f32>> {
+        None
+    }
+}
+
+#[test]
+fn cancel_during_a_pending_start_ends_the_step_as_cancelled_and_frees_the_lease() {
+    let dir = TempDir::new().expect("temp dir");
+    let gate = OwnershipGate::new();
+    let recorder = Arc::new(ParkedRecorder::default());
+    let controller = Arc::new(EnrollmentController::new(
+        Arc::clone(&gate),
+        Arc::clone(&recorder) as Arc<dyn EnrollRecorder>,
+        Arc::new(NeverEmbedder) as Arc<dyn EnrollEmbedder>,
+        Arc::new(VoiceprintStore::new(dir.path().join("voiceprint"))),
+        Arc::new(SystemEnrollClock::new()) as Arc<dyn EnrollClock>,
+        EnrollConfig::default(),
+    ));
+    let id = controller.begin().expect("begin");
+    let worker = {
+        let controller = Arc::clone(&controller);
+        thread::spawn(move || controller.step(id, 0))
+    };
+    let started = Instant::now();
+    while recorder.entered.load(Ordering::SeqCst) == 0 && started.elapsed() < Duration::from_secs(2)
+    {
+        thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(
+        recorder.entered.load(Ordering::SeqCst),
+        1,
+        "the start must be pending"
+    );
+    assert_eq!(controller.cancel(id), Ok(()));
+    let result = join_or_resume(worker);
+    assert_eq!(
+        result,
+        Err(EnrollError::Cancelled),
+        "the pending start was aborted"
+    );
+    assert!(!controller.has_session());
+    assert_eq!(
+        gate.current(),
+        None,
+        "the lease is released with the session"
+    );
+    assert_eq!(
+        recorder.stops.load(Ordering::SeqCst),
+        0,
+        "a start that never succeeded is not stopped"
     );
 }
