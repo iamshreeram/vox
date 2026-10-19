@@ -9,6 +9,8 @@ use crate::managers::tts::sanitize_speech_text;
 
 pub const MAX_INPUT_CHARS: usize = 4000;
 pub const MAX_COMPOSED_CHARS: usize = 400;
+/// The prompt asks for one or two short spoken sentences; the code enforces it.
+pub const MAX_COMPOSED_SENTENCES: usize = 2;
 pub const MAX_UTTERANCE_CHARS: usize = 500;
 /// A JSON candidate longer than this is abandoned (bounds the parser's work).
 pub const MAX_CANDIDATE_CHARS: usize = 2048;
@@ -240,12 +242,100 @@ fn non_empty_str(value: Option<&serde_json::Value>) -> Option<&str> {
         .filter(|s| !s.trim().is_empty())
 }
 
-/// Speech sanitizing shared with TTS, then the composed-length cap.
+/// Speech sanitizing shared with TTS, then the sentence limit, then the
+/// composed-length cap.
 fn speakable(speech: &str) -> Result<String, ComposeError> {
     match sanitize_speech_text(speech) {
-        Some(text) => Ok(text.chars().take(MAX_COMPOSED_CHARS).collect()),
+        Some(text) => {
+            let limited = limit_sentences(&text, MAX_COMPOSED_SENTENCES);
+            Ok(limited.chars().take(MAX_COMPOSED_CHARS).collect())
+        }
         None => Err(ComposeError::Empty),
     }
+}
+
+/// Keeps the first `max_sentences` sentences, joined by one space. A sentence
+/// ends at an ASCII `.` `!` `?`, an ellipsis character, or a CJK full stop,
+/// exclamation or question mark, keeping any closing quote or bracket right
+/// after it. An ASCII terminator must be followed by whitespace or the end of
+/// text; a CJK terminator needs no space. A split is refused when the next
+/// non-space character is a lowercase letter or an ASCII digit, so `2.4`,
+/// `v1.2` and `e.g. the` stay intact. Text with fewer sentences than the limit
+/// is returned unchanged, so text without a terminator is unchanged too.
+pub(crate) fn limit_sentences(text: &str, max_sentences: usize) -> String {
+    let max_sentences = max_sentences.max(1);
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let mut kept: Vec<&str> = Vec::new();
+    let mut start = 0usize;
+    let mut i = 0usize;
+    while i < chars.len() {
+        let c = chars[i].1;
+        if !is_sentence_terminator(c) {
+            i += 1;
+            continue;
+        }
+        let mut j = i + 1;
+        while j < chars.len() && is_closing_mark(chars[j].1) {
+            j += 1;
+        }
+        if !is_sentence_boundary(&chars, c, j) {
+            i += 1;
+            continue;
+        }
+        let end = chars.get(j).map_or(text.len(), |&(b, _)| b);
+        kept.push(text[start..end].trim());
+        if kept.len() == max_sentences {
+            return kept.join(" ");
+        }
+        let mut k = j;
+        while k < chars.len() && chars[k].1.is_whitespace() {
+            k += 1;
+        }
+        start = chars.get(k).map_or(text.len(), |&(b, _)| b);
+        i = k;
+    }
+    text.to_string()
+}
+
+fn is_sentence_terminator(c: char) -> bool {
+    matches!(
+        c,
+        '.' | '!' | '?' | '\u{2026}' | '\u{3002}' | '\u{ff01}' | '\u{ff1f}'
+    )
+}
+
+fn is_cjk_terminator(c: char) -> bool {
+    matches!(c, '\u{3002}' | '\u{ff01}' | '\u{ff1f}')
+}
+
+fn is_closing_mark(c: char) -> bool {
+    matches!(
+        c,
+        '"' | '\''
+            | ')'
+            | ']'
+            | '}'
+            | '\u{bb}'
+            | '\u{2019}'
+            | '\u{201d}'
+            | '\u{3011}'
+            | '\u{300d}'
+            | '\u{300f}'
+            | '\u{ff09}'
+    )
+}
+
+/// `terminator` ends at index `j - 1` of `chars` after its closing marks;
+/// `j` is the index of the first character after them.
+fn is_sentence_boundary(chars: &[(usize, char)], terminator: char, j: usize) -> bool {
+    if j < chars.len() && !is_cjk_terminator(terminator) && !chars[j].1.is_whitespace() {
+        return false;
+    }
+    let next = chars[j..]
+        .iter()
+        .map(|&(_, c)| c)
+        .find(|c| !c.is_whitespace());
+    !matches!(next, Some(c) if c.is_lowercase() || c.is_ascii_digit())
 }
 
 /// Plain-text mode: only when the normalized text has no `{`.
@@ -820,5 +910,132 @@ mod tests {
             ok("/bin/agent", "", "-p", "a\u{0}b"),
             Err(ComposeError::BadConfig)
         );
+    }
+
+    // ---- spoken sentence limit ----
+
+    fn lim(text: &str) -> String {
+        limit_sentences(text, MAX_COMPOSED_SENTENCES)
+    }
+
+    #[test]
+    fn spoken_limit_keeps_the_first_two_sentences() {
+        assert_eq!(MAX_COMPOSED_SENTENCES, 2);
+        assert_eq!(lim("One. Two. Three. Four."), "One. Two.");
+        assert_eq!(lim("One. Two."), "One. Two.");
+        assert_eq!(lim("One."), "One.");
+    }
+
+    #[test]
+    fn spoken_limit_leaves_text_without_a_terminator_unchanged() {
+        assert_eq!(
+            lim("no terminator here and more words"),
+            "no terminator here and more words"
+        );
+        assert_eq!(lim("Alpha beta. gamma delta"), "Alpha beta. gamma delta");
+    }
+
+    #[test]
+    fn spoken_limit_never_splits_decimals_versions_or_lowercase_continuations() {
+        assert_eq!(
+            lim("It is about 2.4 kilobytes and has 96 lines. Done. Extra one."),
+            "It is about 2.4 kilobytes and has 96 lines. Done."
+        );
+        assert_eq!(
+            lim("Upgraded to v1.2 today. Restart now. Thanks."),
+            "Upgraded to v1.2 today. Restart now."
+        );
+        assert_eq!(
+            lim("Use e.g. the cache. Then retry. Finally wait."),
+            "Use e.g. the cache. Then retry."
+        );
+        assert_eq!(
+            lim("Pi is 3.5 exactly. Done. Bye."),
+            "Pi is 3.5 exactly. Done."
+        );
+    }
+
+    #[test]
+    fn spoken_limit_counts_question_and_exclamation_marks() {
+        assert_eq!(lim("Ready? Yes! Start now. Later."), "Ready? Yes!");
+        assert_eq!(lim("Really? Sure. Fine."), "Really? Sure.");
+    }
+
+    #[test]
+    fn spoken_limit_keeps_closing_quotes_and_brackets_with_their_sentence() {
+        assert_eq!(
+            lim("He said \"stop.\" Then left. Later."),
+            "He said \"stop.\" Then left."
+        );
+        assert_eq!(
+            lim("See (the log.) Then retry. Later."),
+            "See (the log.) Then retry."
+        );
+        assert_eq!(
+            lim("He said \"stop.\"then left. Later. End."),
+            "He said \"stop.\"then left. Later."
+        );
+    }
+
+    #[test]
+    fn spoken_limit_uses_cjk_terminators_without_needing_a_space() {
+        assert_eq!(lim("已完成。请重启。谢谢。"), "已完成。 请重启。");
+        assert_eq!(lim("完成！好的？是。"), "完成！ 好的？");
+    }
+
+    #[test]
+    fn spoken_limit_handles_the_ellipsis_character() {
+        assert_eq!(lim("Wait… Then go… Done."), "Wait… Then go…");
+        assert_eq!(lim("Wait…then go. Done. X."), "Wait…then go. Done.");
+    }
+
+    #[test]
+    fn spoken_limit_keeps_emoji_and_combining_marks_intact() {
+        let out = lim("Done \u{1f600}. Café e\u{301} ok. Third.");
+        assert_eq!(out, "Done \u{1f600}. Café e\u{301} ok.");
+        assert!(out.contains('\u{301}'));
+    }
+
+    #[test]
+    fn spoken_limit_never_empties_non_empty_input_and_never_panics() {
+        assert_eq!(lim(""), "");
+        assert_eq!(lim("   "), "   ");
+        for t in [".", "? !", "。", "…", "日本語。テスト！ok？", ". . ."] {
+            assert!(!lim(t).is_empty(), "{t:?}");
+        }
+        assert_eq!(lim("é。 Ü。 Ö。 Ñ。"), "é。 Ü。");
+    }
+
+    #[test]
+    fn spoken_limit_runs_before_the_char_cap_and_the_cap_still_holds() {
+        let long = format!("{}. {}.", "a".repeat(300), "b".repeat(300));
+        let out = speech(&format!("{{\"speech\":\"{long}\"}}"));
+        assert_eq!(out.chars().count(), MAX_COMPOSED_CHARS);
+        assert!(out.starts_with("aaaa"));
+        assert!(out.ends_with('b'));
+    }
+
+    #[test]
+    fn json_and_plain_speech_are_limited_to_two_sentences() {
+        assert_eq!(
+            speech(r#"{"speech":"One. Two. Three. Four.","emotion":"calm"}"#),
+            "One. Two."
+        );
+        assert_eq!(
+            speech("Alpha is set. Beta is set. Gamma is set. Delta is set."),
+            "Alpha is set. Beta is set."
+        );
+        assert_eq!(
+            speech("It is about 2.4 kilobytes. Done. Extra one."),
+            "It is about 2.4 kilobytes. Done."
+        );
+    }
+
+    #[test]
+    fn ansi_noisy_command_output_with_label_speaks_exactly_two_sentences() {
+        let raw = "\u{1b}]11;#1a1b26\u{7}\u{1b}[1m\n{\"speech\": \"Build done. Three tests failed. Check the logs. Then retry the run.\", \"emotion\": \"concerned\"}\u{1b}[0m\n\u{1b}]104\u{7}";
+        let c = parse(raw).unwrap();
+        assert_eq!(c.speech, "Build done. Three tests failed.");
+        assert_eq!(c.emotion, Emotion::Concerned);
     }
 }
