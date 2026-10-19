@@ -1221,6 +1221,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "Ses özellikleri",
+      "intro": "Elleriniz serbestken sohbet etmek için isteğe bağlı eklentiler. Her biri siz açana kadar kapalıdır ve her indirme yalnızca İndir düğmesine bastığınızda başlar.",
+      "model": {
+        "checking": "Denetleniyor...",
+        "state": {
+          "not_installed": "İndirilmedi",
+          "downloading": "İndiriliyor... {{percent}}%",
+          "verifying": "Dosya denetleniyor...",
+          "ready": "Yüklü",
+          "error": "Son deneme başarısız oldu."
+        },
+        "download": "İndir",
+        "cancel": "İptal",
+        "delete": "Sil",
+        "error": {
+          "busy": "Başka bir model indirmesi zaten çalışıyor.",
+          "corrupt": "İndirilen dosya beklenen boyut veya sağlama toplamıyla eşleşmiyor. Lütfen yeniden indirin.",
+          "url_not_allowed": "İndirme adresi izin verilenler listesinde değil.",
+          "download": "İndirme başarısız oldu. Bağlantınızı kontrol edip yeniden deneyin.",
+          "io": "Dosya bu bilgisayara kaydedilemedi.",
+          "not_installed": "Model yüklü değil.",
+          "unknown": "Model ile ilgili bir sorun oluştu."
+        }
+      },
+      "smartTurn": {
+        "heading": "Akıllı konuşma sırası algılama",
+        "label": "Akıllı konuşma sırası algılama",
+        "description": "Konuşmayı ne zaman bitirdiğinizi anlamak için küçük bir model kullanır; böylece Vox daha hızlı yanıt verebilir. Ses, bir konuşma sırası boyunca bellekte tutulur ve kaydedilmez.",
+        "fallbackNote": "Model yüklü olmadığı için Vox sabit sessizlik kuralını kullanıyor.",
+        "modelLabel": "Akıllı konuşma sırası modeli",
+        "modelDescription": "Tek seferlik yaklaşık {{size}} indirme. Bu bilgisayarda çalışır.",
+        "modelDescriptionPending": "Tek seferlik indirme. Bu bilgisayarda çalışır."
+      },
+      "latency": {
+        "heading": "Gecikme paneli",
+        "label": "Gecikme panelini göster",
+        "description": "Bir sohbetteki her konuşma sırası için zamanlama sayılarını gösterir. Yalnızca sayılar: ses veya metin kaydedilmez.",
+        "placeholder": "Bir sohbetin ilk konuşma sırası bekleniyor.",
+        "turn": "Son sıra: {{turn}}",
+        "samples": "Son {{count}} sıranın medyanı ve 90. yüzdeliği.",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "Aşama",
+          "last": "Son",
+          "median": "Medyan",
+          "p90": "90. yüzdelik"
+        },
+        "stage": {
+          "waitForSpeech": "Konuşmanın bitmesi bekleniyor",
+          "transcription": "Metne dökme",
+          "thinking": "Düşünme",
+          "toFirstSpeech": "İlk konuşmaya kadar geçen süre",
+          "speakerCheck": "Konuşmacı kontrolü"
+        }
+      },
+      "persona": {
+        "heading": "Kişilikler",
+        "label": "Kişilik",
+        "description": "Yanıt tarzı ve ses için hazır bir ayar. Bir kişilik uygulandığında ikisi birlikte ayarlanır.",
+        "activeOption": "{{name}} (etkin)",
+        "apply": "Uygula",
+        "customHeading": "Özel kişilikler",
+        "customEmpty": "Henüz özel kişilik yok.",
+        "builtinTag": "Yerleşik",
+        "builtinLocked": "Yerleşik kişilikler salt okunurdur.",
+        "new": "Yeni kişilik",
+        "edit": "Düzenle",
+        "delete": "Sil",
+        "nameLabel": "Ad",
+        "styleLabel": "Tarz",
+        "charCount": "{{count}} / {{max}} karakter",
+        "voiceLabel": "Ses",
+        "noVoice": "Mevcut sesimi koru",
+        "save": "Kaydet",
+        "cancel": "İptal",
+        "error": {
+          "name_empty": "Bir ad girin.",
+          "name_too_long": "Ad en fazla {{max}} karakter olabilir.",
+          "style_empty": "Bir tarz girin.",
+          "style_too_long": "Tarz en fazla {{max}} karakter olabilir.",
+          "control_chars": "Gizli denetim karakterlerini kaldırın.",
+          "unknown_voice": "Listeden bir ses seçin.",
+          "limit_reached": "En fazla {{max}} özel kişilik kaydedebilirsiniz. Yenisini eklemek için birini silin.",
+          "builtin_immutable": "Yerleşik kişilikler değiştirilemez.",
+          "generic": "Kişilik kaydedilemedi. Yeniden deneyin."
+        }
+      },
+      "speaker": {
+        "heading": "Konuşmacı filtresi",
+        "label": "Konuşmacı filtresi",
+        "description": "Kayıtlı sesinize benzemeyen konuşmaları yok say.",
+        "disclosure": {
+          "lead": "Konuşmacı filtresi bir kolaylık filtresidir. Güvenlik değildir ve kimlik doğrulama değildir.",
+          "detail": "Kendi sesinizi yanlışlıkla yok sayabilir; bir kayıt veya benzer bir ses ise geçebilir. Ses izniz bu bilgisayarda kalır; yalnızca hesabınızın okuyabildiği bir dosyada tutulur. Hiçbir ses kaydedilmez. Filtre varsayılan olarak kapalıdır."
+        },
+        "inactiveNote": "Konuşmacı modeli yüklenip sesiniz kaydedilene kadar filtre etkin olmaz.",
+        "sensitivityLabel": "Hassasiyet",
+        "sensitivityDescription": "Diğer seslerdeki konuşmaların ne kadar sıkı biçimde dışarıda tutulacağı.",
+        "sensitivity": {
+          "lenient": "Esnek",
+          "balanced": "Dengeli",
+          "strict": "Sıkı",
+          "lenientHint": "Daha fazla sesi geçirir ve sizi yanlışlıkla daha az yok sayar.",
+          "balancedHint": "Varsayılan, ikisi arasında bir orta yol.",
+          "strictHint": "Diğer sesleri daha fazla dışarıda tutar ve sizi yanlışlıkla daha sık yok sayar."
+        },
+        "modelLabel": "Konuşmacı modeli",
+        "modelDescription": "Tek seferlik yaklaşık {{size}} indirme. Bu bilgisayarda çalışır.",
+        "enrolled": "Sesiniz kaydedildi.",
+        "notEnrolled": "Sesiniz henüz kaydedilmedi.",
+        "enroll": {
+          "label": "Sesinizi kaydedin",
+          "description": "Her biri yaklaşık 6 saniyelik üç kısa kayıt. Sessiz bir yerde normal şekilde konuşun.",
+          "intro": "Üç kısa cümle grubunu okuyacaksınız. Yalnızca ses izi saklanır, ses asla saklanmaz.",
+          "needModel": "Önce konuşmacı modelini yükleyin.",
+          "start": "Kaydı başlat",
+          "starting": "Başlatılıyor...",
+          "cancel": "İptal",
+          "progress": "{{total}} kayıttan {{done}} tanesi tamamlandı",
+          "stepTitle": "{{total}} kayıttan {{step}}. kayıt",
+          "readThese": "Bu cümleleri normal sesinizle okuyun:",
+          "record": "Bu adımın kaydını başlat",
+          "recording": "Kaydediliyor. {{seconds}} saniye kaldı.",
+          "allRecorded": "Üç kayıt da tamam. Ses izinizi kaydetmek için bitirin.",
+          "finish": "Kaydı bitir",
+          "done": "Sesiniz kaydedildi.",
+          "messages": {
+            "busy": "Önce sohbeti veya dikteyi durdurun.",
+            "too_little_speech": "Biraz daha uzun konuşun. Vox her kayıtta en az 2 saniye konuşma ister.",
+            "inconsistent": "Üç kayıt birbirine benzemedi. İlk kayıttan yeniden başlanıyor.",
+            "model_missing": "Önce konuşmacı modelini yükleyin.",
+            "session_ended": "Kayıt sona erdi. Hazır olduğunuzda yeniden başlatın.",
+            "generic": "Kayıt çalışmadı. Yeniden deneyin."
+          },
+          "prompts": {
+            "s1a": "Hızlı kahverengi tilki tembel köpeğin üzerinden atlar.",
+            "s1b": "Lütfen takvimimi açın ve bugün neler olduğunu söyleyin.",
+            "s1c": "Bu öğleden sonra hava nasıl olacak?",
+            "s2a": "Sesi biraz kısar mısınız, lütfen?",
+            "s2b": "Ay hakkında kısa bir bilgi verir misiniz?",
+            "s2c": "Pencerenin yanında bir fincan çay istiyorum.",
+            "s3a": "Yarın sabah kız kardeşimi aramamı hatırlatır mısınız?",
+            "s3b": "Ekibimden gelen son mesajı okur musunuz?",
+            "s3c": "Teşekkürler, şimdilik hepsi bu."
+          }
+        },
+        "deleteLabel": "Ses izi",
+        "deleteDescription": "Kayıtlı ses izini kaldırır. Ses izi olmadan konuşmacı filtresi çalışamaz.",
+        "deleteButton": "Ses izini sil",
+        "deleteConfirm": "Ses izi silinsin mi? Filtreyi kullanmak için yeniden kayıt yaptırmanız gerekir.",
+        "deleteConfirmButton": "Evet, sil",
+        "deleteKeep": "Sakla",
+        "deleteError": "Ses izi silinemedi. Yeniden deneyin."
+      }
     }
   }
 }

@@ -1221,6 +1221,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "Röstfunktioner",
+      "intro": "Valfria tillägg för samtal utan att använda händerna. Varje tillägg är avstängt tills du slår på det, och varje nedladdning startar först när du trycker på Ladda ner.",
+      "model": {
+        "checking": "Kontrollerar...",
+        "state": {
+          "not_installed": "Inte nedladdad",
+          "downloading": "Laddar ner... {{percent}} %",
+          "verifying": "Kontrollerar filen...",
+          "ready": "Installerad",
+          "error": "Det senaste försöket fungerade inte."
+        },
+        "download": "Ladda ner",
+        "cancel": "Avbryt",
+        "delete": "Ta bort",
+        "error": {
+          "busy": "En annan modellnedladdning pågår redan.",
+          "corrupt": "Den nedladdade filen stämmer inte med förväntad storlek eller kontrollsumma. Ladda ner den igen.",
+          "url_not_allowed": "Nedladdningsadressen finns inte på listan över tillåtna adresser.",
+          "download": "Nedladdningen misslyckades. Kontrollera anslutningen och försök igen.",
+          "io": "Filen kunde inte sparas på den här datorn.",
+          "not_installed": "Modellen är inte installerad.",
+          "unknown": "Något gick fel med modellen."
+        }
+      },
+      "smartTurn": {
+        "heading": "Smart detektering av talturer",
+        "label": "Smart detektering av talturer",
+        "description": "Använder en liten modell för att avgöra när du har talat klart, så att Vox kan svara snabbare. Ljud hålls i minnet under en tur och sparas inte.",
+        "fallbackNote": "Modellen är inte installerad, så Vox använder den fasta tystnadsregeln.",
+        "modelLabel": "Modell för smart detektering av talturer",
+        "modelDescription": "Engångsnedladdning på cirka {{size}}. Körs på den här datorn.",
+        "modelDescriptionPending": "Engångsnedladdning. Körs på den här datorn."
+      },
+      "latency": {
+        "heading": "Latenspanel",
+        "label": "Visa latenspanel",
+        "description": "Visar tidsmätningar för varje tur i ett samtal. Endast siffror: ingen ljud- eller textdata sparas.",
+        "placeholder": "Väntar på den första turen i ett samtal.",
+        "turn": "Senaste tur: {{turn}}",
+        "samples": "Median och 90:e percentilen under de senaste {{count}} turerna.",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "Steg",
+          "last": "Senaste",
+          "median": "Median",
+          "p90": "90:e percentilen"
+        },
+        "stage": {
+          "waitForSpeech": "Väntan på slut på tal",
+          "transcription": "Transkribering",
+          "thinking": "Tänker",
+          "toFirstSpeech": "Tid till första talet",
+          "speakerCheck": "Talarkontroll"
+        }
+      },
+      "persona": {
+        "heading": "Personor",
+        "label": "Persona",
+        "description": "En förinställning för svarsstil och röst. Om du väljer en persona ställs båda in samtidigt.",
+        "activeOption": "{{name}} (aktiv)",
+        "apply": "Använd",
+        "customHeading": "Egna personor",
+        "customEmpty": "Inga egna personor ännu.",
+        "builtinTag": "Inbyggd",
+        "builtinLocked": "Inbyggda personor kan inte ändras.",
+        "new": "Ny persona",
+        "edit": "Redigera",
+        "delete": "Ta bort",
+        "nameLabel": "Namn",
+        "styleLabel": "Stil",
+        "charCount": "{{count}} av {{max}} tecken",
+        "voiceLabel": "Röst",
+        "noVoice": "Behåll min nuvarande röst",
+        "save": "Spara",
+        "cancel": "Avbryt",
+        "error": {
+          "name_empty": "Ange ett namn.",
+          "name_too_long": "Namnet får vara högst {{max}} tecken.",
+          "style_empty": "Ange en stil.",
+          "style_too_long": "Stilen får vara högst {{max}} tecken.",
+          "control_chars": "Ta bort de dolda styrtecknen.",
+          "unknown_voice": "Välj en röst från listan.",
+          "limit_reached": "Du kan spara upp till {{max}} egna personor. Ta bort en för att lägga till en ny.",
+          "builtin_immutable": "Inbyggda personor kan inte ändras.",
+          "generic": "Personan kunde inte sparas. Försök igen."
+        }
+      },
+      "speaker": {
+        "heading": "Talarfilter",
+        "label": "Talarfilter",
+        "description": "Ignorera tal som inte låter som din registrerade röst.",
+        "disclosure": {
+          "lead": "Talarfiltret är ett bekvämlighetsfilter. Det är inte säkerhet och det är inte autentisering.",
+          "detail": "Det kan felaktigt ignorera din egen röst, och en inspelning eller en liknande röst kan släppas igenom. Ditt röstavtryck stannar på den här datorn, i en fil som bara ditt konto kan läsa. Inget ljud sparas. Filtret är avstängt som standard."
+        },
+        "inactiveNote": "Filtret är inaktivt tills talarmodellen är installerad och din röst är registrerad.",
+        "sensitivityLabel": "Känslighet",
+        "sensitivityDescription": "Hur strikt tal från andra röster sorteras bort.",
+        "sensitivity": {
+          "lenient": "Mild",
+          "balanced": "Balanserad",
+          "strict": "Sträng",
+          "lenientHint": "Släpper igenom fler röster och ignorerar dig mindre ofta felaktigt.",
+          "balancedHint": "Standardinställningen, en medelväg mellan de två.",
+          "strictHint": "Sorterar bort fler andra röster och ignorerar dig oftare felaktigt."
+        },
+        "modelLabel": "Talarmodell",
+        "modelDescription": "Engångsnedladdning på cirka {{size}}. Körs på den här datorn.",
+        "enrolled": "Din röst är registrerad.",
+        "notEnrolled": "Din röst är inte registrerad än.",
+        "enroll": {
+          "label": "Registrera din röst",
+          "description": "Tre korta inspelningar på cirka 6 sekunder vardera. Tala normalt på en tyst plats.",
+          "intro": "Du läser tre korta uppsättningar meningar. Endast röstavtrycket sparas, aldrig ljudet.",
+          "needModel": "Installera talarmodellen först.",
+          "start": "Starta registrering",
+          "starting": "Startar...",
+          "cancel": "Avbryt",
+          "progress": "{{done}} av {{total}} inspelningar klara",
+          "stepTitle": "Inspelning {{step}} av {{total}}",
+          "readThese": "Läs dessa meningar med din vanliga röst:",
+          "record": "Starta inspelning av detta steg",
+          "recording": "Spelar in. {{seconds}} sekunder kvar.",
+          "allRecorded": "Alla tre inspelningarna är klara. Slutför för att spara ditt röstavtryck.",
+          "finish": "Slutför registrering",
+          "done": "Din röst är registrerad.",
+          "messages": {
+            "busy": "Avsluta samtalet eller diktatet först.",
+            "too_little_speech": "Tala lite längre. Vox behöver minst 2 sekunders tal i varje inspelning.",
+            "inconsistent": "De tre inspelningarna lät inte likadana. Vi börjar om från första inspelningen.",
+            "model_missing": "Installera talarmodellen först.",
+            "session_ended": "Registreringen avslutades. Starta igen när du är redo.",
+            "generic": "Registreringen fungerade inte. Försök igen."
+          },
+          "prompts": {
+            "s1a": "Den snabba bruna räven hoppar över den lata hunden.",
+            "s1b": "Öppna min kalender och säg vad jag har att göra idag.",
+            "s1c": "Hur blir vädret i eftermiddag?",
+            "s2a": "Sänk volymen lite, tack.",
+            "s2b": "Berätta en kort fakta om månen.",
+            "s2c": "Jag skulle vilja ha en kopp te vid fönstret.",
+            "s3a": "Påminn mig om att ringa min syster i morgon bitti.",
+            "s3b": "Läs det senaste meddelandet från mitt team.",
+            "s3c": "Tack, det var allt för nu."
+          }
+        },
+        "deleteLabel": "Röstavtryck",
+        "deleteDescription": "Tar bort det sparade röstavtrycket. Utan det kan talarfiltret inte köras.",
+        "deleteButton": "Ta bort röstavtryck",
+        "deleteConfirm": "Ta bort röstavtrycket? Du behöver registrera dig igen för att använda filtret.",
+        "deleteConfirmButton": "Ja, ta bort det",
+        "deleteKeep": "Behåll det",
+        "deleteError": "Röstavtrycket kunde inte tas bort. Försök igen."
+      }
     }
   }
 }

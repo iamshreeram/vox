@@ -1221,6 +1221,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "语音功能",
+      "intro": "用于免手持对话的可选附加功能。每项在您开启之前都处于关闭状态，且只有点击“下载”后才会开始下载。",
+      "model": {
+        "checking": "正在检查...",
+        "state": {
+          "not_installed": "未下载",
+          "downloading": "正在下载... {{percent}}%",
+          "verifying": "正在检查文件...",
+          "ready": "已安装",
+          "error": "上次尝试未成功。"
+        },
+        "download": "下载",
+        "cancel": "取消",
+        "delete": "删除",
+        "error": {
+          "busy": "已有另一个模型正在下载。",
+          "corrupt": "下载的文件与预期的大小或校验和不符。请重新下载。",
+          "url_not_allowed": "下载地址不在允许列表中。",
+          "download": "下载失败。请检查网络连接后重试。",
+          "io": "无法将文件保存到此计算机上。",
+          "not_installed": "模型未安装。",
+          "unknown": "模型出现问题。"
+        }
+      },
+      "smartTurn": {
+        "heading": "智能轮次检测",
+        "label": "智能轮次检测",
+        "description": "使用一个小模型判断您何时说完，让 Vox 能更快地回复。音频在一轮对话期间只保存在内存中，不会被保存。",
+        "fallbackNote": "模型未安装，因此 Vox 使用固定的静音规则。",
+        "modelLabel": "智能轮次模型",
+        "modelDescription": "一次性下载，约 {{size}}。在本机上运行。",
+        "modelDescriptionPending": "一次性下载。在本机上运行。"
+      },
+      "latency": {
+        "heading": "延迟面板",
+        "label": "显示延迟面板",
+        "description": "显示对话中每一轮的耗时数字。仅显示数字：不存储任何音频或文本。",
+        "placeholder": "等待对话的第一轮。",
+        "turn": "上一轮：{{turn}}",
+        "samples": "最近 {{count}} 轮的中位数和第 90 百分位数。",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "阶段",
+          "last": "最近",
+          "median": "中位数",
+          "p90": "第 90 百分位"
+        },
+        "stage": {
+          "waitForSpeech": "等待说话结束",
+          "transcription": "转录",
+          "thinking": "思考",
+          "toFirstSpeech": "到首次语音的时间",
+          "speakerCheck": "说话人检查"
+        }
+      },
+      "persona": {
+        "heading": "人设",
+        "label": "人设",
+        "description": "回复风格和语音的预设组合。应用人设会同时设置两者。",
+        "activeOption": "{{name}}（当前）",
+        "apply": "应用",
+        "customHeading": "自定义人设",
+        "customEmpty": "还没有自定义人设。",
+        "builtinTag": "内置",
+        "builtinLocked": "内置人设为只读。",
+        "new": "新建人设",
+        "edit": "编辑",
+        "delete": "删除",
+        "nameLabel": "名称",
+        "styleLabel": "风格",
+        "charCount": "{{count}} / {{max}} 个字符",
+        "voiceLabel": "语音",
+        "noVoice": "保持我当前的语音",
+        "save": "保存",
+        "cancel": "取消",
+        "error": {
+          "name_empty": "请输入名称。",
+          "name_too_long": "名称最多 {{max}} 个字符。",
+          "style_empty": "请输入风格。",
+          "style_too_long": "风格最多 {{max}} 个字符。",
+          "control_chars": "请删除隐藏的控制字符。",
+          "unknown_voice": "请从列表中选择一种语音。",
+          "limit_reached": "最多可保存 {{max}} 个自定义人设。删除一个后才能添加新的。",
+          "builtin_immutable": "无法更改内置人设。",
+          "generic": "无法保存人设，请重试。"
+        }
+      },
+      "speaker": {
+        "heading": "说话人过滤",
+        "label": "说话人过滤",
+        "description": "忽略听起来不像您已录入声音的语音。",
+        "disclosure": {
+          "lead": "说话人过滤是一个便利性过滤器。它不是安全功能，也不是身份验证。",
+          "detail": "它可能会错误地忽略您自己的声音，而录音或相似的声音可能会被放行。您的声纹只保存在这台计算机上，存放在只有您的账户可以读取的文件中。不保留任何音频。该过滤器默认关闭。"
+        },
+        "inactiveNote": "在安装说话人模型并录入您的声音之前，过滤器不会生效。",
+        "sensitivityLabel": "灵敏度",
+        "sensitivityDescription": "阻挡其他声音语音的严格程度。",
+        "sensitivity": {
+          "lenient": "宽松",
+          "balanced": "均衡",
+          "strict": "严格",
+          "lenientHint": "放行更多声音，较少误忽略您的声音。",
+          "balancedHint": "默认设置，介于两者之间。",
+          "strictHint": "阻挡更多其他声音，但更常误忽略您的声音。"
+        },
+        "modelLabel": "说话人模型",
+        "modelDescription": "一次性下载，约 {{size}}。在本机上运行。",
+        "enrolled": "您的声音已录入。",
+        "notEnrolled": "您的声音尚未录入。",
+        "enroll": {
+          "label": "录入您的声音",
+          "description": "三段简短录音，每段约 6 秒。请在安静的地方以正常语速说话。",
+          "intro": "您将朗读三组简短的句子。只保存声纹，绝不保存音频。",
+          "needModel": "请先安装说话人模型。",
+          "start": "开始录入",
+          "starting": "正在启动...",
+          "cancel": "取消",
+          "progress": "已完成 {{done}} / {{total}} 段录音",
+          "stepTitle": "第 {{step}} / {{total}} 段录音",
+          "readThese": "请用您平时的声音朗读以下句子：",
+          "record": "开始录制此步骤",
+          "recording": "正在录音。还剩 {{seconds}} 秒。",
+          "allRecorded": "三段录音均已完成。点击完成以保存您的声纹。",
+          "finish": "完成录入",
+          "done": "您的声音已录入。",
+          "messages": {
+            "busy": "请先停止对话或听写。",
+            "too_little_speech": "请再说长一点。Vox 每段录音至少需要 2 秒的语音。",
+            "inconsistent": "三段录音听起来不一致。将从第一段录音重新开始。",
+            "model_missing": "请先安装说话人模型。",
+            "session_ended": "录入已结束。准备好后请重新开始。",
+            "generic": "录入失败，请重试。"
+          },
+          "prompts": {
+            "s1a": "敏捷的棕色狐狸跳过了懒狗。",
+            "s1b": "请打开我的日历，告诉我今天有什么安排。",
+            "s1c": "今天下午天气怎么样？",
+            "s2a": "请把音量稍微调低一点。",
+            "s2b": "给我讲一个关于月亮的小知识。",
+            "s2c": "我想要一杯茶，放在窗边。",
+            "s3a": "提醒我明天早上给家人打个电话。",
+            "s3b": "读一下我团队发来的最新消息。",
+            "s3c": "谢谢，目前就这些了。"
+          }
+        },
+        "deleteLabel": "声纹",
+        "deleteDescription": "删除已保存的声纹。没有声纹，说话人过滤就无法运行。",
+        "deleteButton": "删除声纹",
+        "deleteConfirm": "删除声纹？要再次使用过滤器，您需要重新录入。",
+        "deleteConfirmButton": "是，删除",
+        "deleteKeep": "保留",
+        "deleteError": "无法删除声纹，请重试。"
+      }
     }
   }
 }

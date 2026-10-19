@@ -1221,6 +1221,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "Tính năng giọng nói",
+      "intro": "Tiện ích tùy chọn để trò chuyện rảnh tay. Mỗi tính năng đều tắt cho đến khi bạn bật, và mỗi lần tải xuống chỉ bắt đầu khi bạn nhấn Tải xuống.",
+      "model": {
+        "checking": "Đang kiểm tra...",
+        "state": {
+          "not_installed": "Chưa tải xuống",
+          "downloading": "Đang tải xuống... {{percent}}%",
+          "verifying": "Đang kiểm tra tệp...",
+          "ready": "Đã cài đặt",
+          "error": "Lần thử gần nhất không thành công."
+        },
+        "download": "Tải xuống",
+        "cancel": "Hủy",
+        "delete": "Xóa",
+        "error": {
+          "busy": "Đang có một lượt tải xuống mô hình khác.",
+          "corrupt": "Tệp đã tải xuống không khớp với kích thước hoặc checksum mong đợi. Vui lòng tải lại.",
+          "url_not_allowed": "Địa chỉ tải xuống không nằm trong danh sách cho phép.",
+          "download": "Tải xuống không thành công. Kiểm tra kết nối và thử lại.",
+          "io": "Không thể lưu tệp trên máy tính này.",
+          "not_installed": "Mô hình chưa được cài đặt.",
+          "unknown": "Đã xảy ra lỗi với mô hình."
+        }
+      },
+      "smartTurn": {
+        "heading": "Nhận biết lượt nói thông minh",
+        "label": "Nhận biết lượt nói thông minh",
+        "description": "Dùng một mô hình nhỏ để xác định khi nào bạn nói xong, giúp Vox trả lời nhanh hơn. Âm thanh được giữ trong bộ nhớ trong một lượt nói và không được lưu.",
+        "fallbackNote": "Mô hình chưa được cài đặt, nên Vox dùng quy tắc im lặng cố định.",
+        "modelLabel": "Mô hình nhận biết lượt nói",
+        "modelDescription": "Tải xuống một lần, khoảng {{size}}. Chạy trên máy tính này.",
+        "modelDescriptionPending": "Tải xuống một lần. Chạy trên máy tính này."
+      },
+      "latency": {
+        "heading": "Bảng độ trễ",
+        "label": "Hiện bảng độ trễ",
+        "description": "Hiển thị số liệu thời gian cho từng lượt trong cuộc trò chuyện. Chỉ có số liệu: không lưu âm thanh hay văn bản.",
+        "placeholder": "Đang chờ lượt đầu tiên của cuộc trò chuyện.",
+        "turn": "Lượt gần nhất: {{turn}}",
+        "samples": "Trung vị và phân vị thứ 90 của {{count}} lượt gần nhất.",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "Giai đoạn",
+          "last": "Gần nhất",
+          "median": "Trung vị",
+          "p90": "Phân vị thứ 90"
+        },
+        "stage": {
+          "waitForSpeech": "Chờ kết thúc lời nói",
+          "transcription": "Chuyển thành văn bản",
+          "thinking": "Suy nghĩ",
+          "toFirstSpeech": "Thời gian đến lời nói đầu tiên",
+          "speakerCheck": "Kiểm tra người nói"
+        }
+      },
+      "persona": {
+        "heading": "Persona",
+        "label": "Persona",
+        "description": "Cấu hình sẵn về phong cách trả lời và giọng nói. Áp dụng persona sẽ đặt cả hai cùng lúc.",
+        "activeOption": "{{name}} (đang dùng)",
+        "apply": "Áp dụng",
+        "customHeading": "Persona tùy chỉnh",
+        "customEmpty": "Chưa có persona tùy chỉnh nào.",
+        "builtinTag": "Có sẵn",
+        "builtinLocked": "Persona có sẵn chỉ có thể xem.",
+        "new": "Persona mới",
+        "edit": "Chỉnh sửa",
+        "delete": "Xóa",
+        "nameLabel": "Tên",
+        "styleLabel": "Phong cách",
+        "charCount": "{{count}} / {{max}} ký tự",
+        "voiceLabel": "Giọng nói",
+        "noVoice": "Giữ giọng hiện tại của tôi",
+        "save": "Lưu",
+        "cancel": "Hủy",
+        "error": {
+          "name_empty": "Nhập tên.",
+          "name_too_long": "Tên có tối đa {{max}} ký tự.",
+          "style_empty": "Nhập phong cách.",
+          "style_too_long": "Phong cách có tối đa {{max}} ký tự.",
+          "control_chars": "Xóa các ký tự điều khiển ẩn.",
+          "unknown_voice": "Chọn một giọng nói trong danh sách.",
+          "limit_reached": "Bạn có thể lưu tối đa {{max}} persona tùy chỉnh. Xóa một persona để thêm persona khác.",
+          "builtin_immutable": "Không thể thay đổi persona có sẵn.",
+          "generic": "Không thể lưu persona. Vui lòng thử lại."
+        }
+      },
+      "speaker": {
+        "heading": "Bộ lọc người nói",
+        "label": "Bộ lọc người nói",
+        "description": "Bỏ qua lời nói không giống giọng đã đăng ký của bạn.",
+        "disclosure": {
+          "lead": "Bộ lọc người nói là bộ lọc tiện ích. Nó không phải là bảo mật và cũng không phải là xác thực.",
+          "detail": "Bộ lọc có thể bỏ qua nhầm giọng nói của chính bạn, và một bản ghi âm hoặc giọng nói giống bạn có thể lọt qua. Dấu vân giọng nói của bạn chỉ được lưu trên máy tính này, trong một tệp mà chỉ tài khoản của bạn mới đọc được. Không lưu âm thanh nào. Bộ lọc mặc định được tắt."
+        },
+        "inactiveNote": "Bộ lọc vẫn không hoạt động cho đến khi cài đặt mô hình người nói và đăng ký giọng nói của bạn.",
+        "sensitivityLabel": "Độ nhạy",
+        "sensitivityDescription": "Mức độ loại trừ lời nói từ các giọng khác nghiêm ngặt đến đâu.",
+        "sensitivity": {
+          "lenient": "Dễ dãi",
+          "balanced": "Cân bằng",
+          "strict": "Nghiêm ngặt",
+          "lenientHint": "Cho qua nhiều giọng hơn và ít khi bỏ qua nhầm giọng bạn hơn.",
+          "balancedHint": "Mặc định, điểm cân bằng giữa hai mức.",
+          "strictHint": "Loại trừ nhiều giọng khác hơn nhưng thường bỏ qua nhầm giọng bạn hơn."
+        },
+        "modelLabel": "Mô hình người nói",
+        "modelDescription": "Tải xuống một lần, khoảng {{size}}. Chạy trên máy tính này.",
+        "enrolled": "Giọng nói của bạn đã được đăng ký.",
+        "notEnrolled": "Giọng nói của bạn chưa được đăng ký.",
+        "enroll": {
+          "label": "Đăng ký giọng nói của bạn",
+          "description": "Ba đoạn ghi âm ngắn, mỗi đoạn khoảng 6 giây. Hãy nói tự nhiên ở nơi yên tĩnh.",
+          "intro": "Bạn sẽ đọc ba nhóm câu ngắn. Chỉ dấu vân giọng nói được lưu, không bao giờ lưu âm thanh.",
+          "needModel": "Hãy cài đặt mô hình người nói trước.",
+          "start": "Bắt đầu đăng ký",
+          "starting": "Đang bắt đầu...",
+          "cancel": "Hủy",
+          "progress": "Đã hoàn thành {{done}} / {{total}} đoạn ghi âm",
+          "stepTitle": "Đoạn ghi âm {{step}} / {{total}}",
+          "readThese": "Đọc các câu sau bằng giọng nói bình thường của bạn:",
+          "record": "Bắt đầu ghi âm bước này",
+          "recording": "Đang ghi âm. Còn {{seconds}} giây.",
+          "allRecorded": "Đã có đủ ba đoạn ghi âm. Hoàn tất để lưu dấu vân giọng nói.",
+          "finish": "Hoàn tất đăng ký",
+          "done": "Giọng nói của bạn đã được đăng ký.",
+          "messages": {
+            "busy": "Hãy dừng cuộc trò chuyện hoặc đọc chính tả trước.",
+            "too_little_speech": "Hãy nói dài hơn một chút. Vox cần ít nhất 2 giây lời nói cho mỗi đoạn ghi âm.",
+            "inconsistent": "Ba đoạn ghi âm nghe không giống nhau. Bắt đầu lại từ đoạn đầu tiên.",
+            "model_missing": "Hãy cài đặt mô hình người nói trước.",
+            "session_ended": "Quá trình đăng ký đã kết thúc. Hãy bắt đầu lại khi sẵn sàng.",
+            "generic": "Đăng ký không thành công. Vui lòng thử lại."
+          },
+          "prompts": {
+            "s1a": "Con cáo nâu nhanh nhẹn nhảy qua con chó lười.",
+            "s1b": "Hãy mở lịch của tôi và cho tôi biết hôm nay có gì.",
+            "s1c": "Chiều nay thời tiết thế nào?",
+            "s2a": "Làm ơn giảm âm lượng xuống một chút.",
+            "s2b": "Hãy kể một sự thật ngắn về mặt trăng.",
+            "s2c": "Tôi muốn một tách trà bên cửa sổ.",
+            "s3a": "Nhắc tôi gọi cho chị gái vào sáng mai.",
+            "s3b": "Hãy đọc tin nhắn mới nhất từ nhóm của tôi.",
+            "s3c": "Cảm ơn, hiện tại thế là đủ."
+          }
+        },
+        "deleteLabel": "Dấu vân giọng nói",
+        "deleteDescription": "Xóa dấu vân giọng nói đã lưu. Nếu không có, bộ lọc người nói không thể hoạt động.",
+        "deleteButton": "Xóa dấu vân giọng nói",
+        "deleteConfirm": "Xóa dấu vân giọng nói? Bạn sẽ cần đăng ký lại để sử dụng bộ lọc.",
+        "deleteConfirmButton": "Có, xóa",
+        "deleteKeep": "Giữ lại",
+        "deleteError": "Không thể xóa dấu vân giọng nói. Vui lòng thử lại."
+      }
     }
   }
 }
