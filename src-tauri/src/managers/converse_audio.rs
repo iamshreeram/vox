@@ -21,6 +21,8 @@ pub struct EndpointConfig {
     pub min_speech_ms: u64,
     /// A level at or below this is silence.
     pub floor: f32,
+    /// Smart Turn policy (DESIGN.md D3c / A4'). `None` = today's fixed rule.
+    pub smart_turn: Option<SmartTurnPolicy>,
 }
 
 impl EndpointConfig {
@@ -31,6 +33,27 @@ impl EndpointConfig {
             max_utterance_ms: 30_000,
             min_speech_ms: 150,
             floor: 0.02,
+            smart_turn: None,
+        }
+    }
+}
+
+/// Smart Turn endpoint policy (DESIGN.md D3c / A4'). All deadlines are
+/// measured from `last_loud`, the timestamp of the last speech-active feed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SmartTurnPolicy {
+    /// Silence after `last_loud` at which `NeedTurnDecision` is issued.
+    pub min_silence_ms: u64,
+    /// Silence after `last_loud` that ends the turn after a `done=false` answer
+    /// (never below `silence_ms`).
+    pub incomplete_wait_ms: u64,
+}
+
+impl SmartTurnPolicy {
+    pub const fn default_policy() -> Self {
+        SmartTurnPolicy {
+            min_silence_ms: 200,
+            incomplete_wait_ms: 2500,
         }
     }
 }
@@ -40,6 +63,10 @@ pub enum EndpointEvent {
     SpeechEnded,
     NoSpeech,
     MaxLength,
+    /// Smart Turn asks for a done/not-done decision for pause `pause_id`.
+    NeedTurnDecision {
+        pause_id: u32,
+    },
 }
 
 /// Decides when an utterance is over from a stream of level buckets.
@@ -73,6 +100,33 @@ pub struct Endpointer {
 }
 
 impl Endpointer {
+    /// True only when a Smart Turn policy is configured AND active: the policy
+    /// is inert (today's fixed rule) unless `silence_ms >= min_silence_ms + 250`.
+    fn smart_turn_active(&self) -> bool {
+        self.cfg
+            .smart_turn
+            .is_some_and(|policy| self.cfg.silence_ms >= policy.min_silence_ms.saturating_add(250))
+    }
+
+    /// Smart Turn answer for pause `pause_id` (DESIGN.md A4'). Not implemented
+    /// yet (T5 red).
+    pub fn answer_turn(
+        &mut self,
+        _pause_id: u32,
+        _done: bool,
+        _now_ms: u64,
+    ) -> Option<EndpointEvent> {
+        todo!("T5 red: Smart Turn answer_turn is not implemented yet")
+    }
+
+    /// Smart Turn unavailable (timeout, no answer, error) for pause `pause_id`:
+    /// today's fixed rule applies. Not implemented yet (T5 red).
+    pub fn answer_unavailable(&mut self, _pause_id: u32, _now_ms: u64) -> Option<EndpointEvent> {
+        todo!("T5 red: Smart Turn answer_unavailable is not implemented yet")
+    }
+}
+
+impl Endpointer {
     pub fn new(cfg: EndpointConfig) -> Self {
         Endpointer {
             cfg,
@@ -96,6 +150,9 @@ impl Endpointer {
     pub fn feed_activity(&mut self, now_ms: u64, speech_active: bool) -> Option<EndpointEvent> {
         if self.finished {
             return None;
+        }
+        if self.smart_turn_active() {
+            todo!("T5 red: Smart Turn NeedTurnDecision is not implemented yet");
         }
         let t0 = *self.t0.get_or_insert(now_ms);
         let loud = speech_active;
@@ -834,3 +891,7 @@ mod tests {
         assert_eq!(restrict_model_action(&matched(a.clone())), Some(a));
     }
 }
+
+#[cfg(test)]
+#[path = "converse_audio_policy_tests.rs"]
+mod smart_turn_policy_tests;
