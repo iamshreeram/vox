@@ -42,6 +42,8 @@ pub mod history;
 pub mod job_announcer;
 pub mod job_speaker;
 pub mod job_summary;
+#[cfg(test)]
+mod live_acceptance_tests;
 pub mod llm_stream;
 pub mod llm_tools;
 pub mod media_control;
@@ -49,8 +51,6 @@ pub mod memory;
 pub mod model;
 pub mod model_capabilities;
 pub mod natural_audio;
-#[cfg(test)]
-mod live_acceptance_tests;
 #[cfg(test)]
 mod natural_audio_tests;
 pub mod natural_chunk;
