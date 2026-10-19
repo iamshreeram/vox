@@ -200,3 +200,10 @@ Notes on the table:
   values. A file that does not match is not used.
 - Until the model is installed, the feature runs in its fallback mode. Other
   features are not affected.
+
+## Credits and licences
+
+Vox does not ship the optional voice models. You download one only when you choose to install it, and you can uninstall it at any time. Full sources and checksums are in [model-provenance.md](model-provenance.md). Notices are in [NOTICE.md](NOTICE.md).
+
+- **Smart Turn v3.2** (`smart-turn-v3.2-cpu.onnx`, pipecat-ai): BSD 2-Clause License, Copyright (c) 2024–2025, Daily. Checked against the smart-turn repository LICENSE and the model card.
+- **WeSpeaker ResNet34, trained on VoxCeleb** (`wespeaker_en_voxceleb_resnet34.onnx`, from sherpa-onnx): licence **not verified**. The upstream sources conflict (CC BY 4.0 vs Apache-2.0), and the VoxCeleb terms could not be read. Open question for the maintainer.
