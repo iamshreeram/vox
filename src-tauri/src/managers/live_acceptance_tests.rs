@@ -20,7 +20,7 @@ use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-const DEFAULT_CODE_PUPPY: &str = "/Users/s0v06yb/.code-puppy-venv/bin/code-puppy";
+const CODE_PUPPY_BIN_NAME: &str = "code-puppy";
 const MODEL_ARGS: &str = "--model claude-haiku-5-5 --no-tools";
 const STYLE: &str = "brief and friendly";
 const SAY: &str = "/usr/bin/say";
@@ -43,11 +43,23 @@ error[E0425]: cannot find value `cfg` in this scope
   --> src/managers/converse.rs:412:9
 Error: process exited with code 101";
 
-/// The binary path from `VOX_LIVE_CODE_PUPPY` (non-empty), else the default.
+/// The first executable file named `name` on `PATH`, if any.
+fn find_on_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(name))
+        .find(|candidate| candidate.is_file())
+}
+
+/// The binary path from `VOX_LIVE_CODE_PUPPY` (non-empty), else the first
+/// `code-puppy` found on `PATH`. When neither exists the returned name is not
+/// a file, so `require_code_puppy` fails with `GATE UNMET`.
 fn code_puppy_path() -> String {
     match std::env::var("VOX_LIVE_CODE_PUPPY") {
         Ok(v) if !v.trim().is_empty() => v,
-        _ => DEFAULT_CODE_PUPPY.to_string(),
+        _ => find_on_path(CODE_PUPPY_BIN_NAME)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| CODE_PUPPY_BIN_NAME.to_string()),
     }
 }
 
@@ -56,7 +68,7 @@ fn require_code_puppy() -> String {
     let bin = code_puppy_path();
     if !Path::new(&bin).is_file() {
         panic!(
-            "GATE UNMET: code-puppy binary not found at {bin} (set VOX_LIVE_CODE_PUPPY to its absolute path)"
+            "GATE UNMET: code-puppy binary not found at {bin} (put it on PATH or set VOX_LIVE_CODE_PUPPY to its absolute path)"
         );
     }
     bin

@@ -12,8 +12,9 @@ runs them.
   a build that lists `--model` and `--no-tools` in `--help`.
 - A network connection and a model the agent can reach (the tests use
   `claude-haiku-5-5`).
-- Optional: `VOX_LIVE_CODE_PUPPY=/absolute/path/to/agent` if the binary is not at
-  the default path.
+- The agent binary is named `code-puppy` and is found on `PATH`. Set
+  `VOX_LIVE_CODE_PUPPY=/absolute/path/to/agent` to use a different location. If
+  neither exists the tests fail with `GATE UNMET`; they never skip silently.
 
 If a prerequisite is missing, each test fails with `GATE UNMET: <what>`. No test
 skips silently.
@@ -82,13 +83,13 @@ change any of the three, the app asks for acknowledgement again.
 
 ## Known results
 
-- Run with the default binary on the day the tests were written:
-  A2, A3, B, C1 and C2 pass; A1 fails on the technical reply, which came back as
-  four sentences in two separate runs (the other two cases passed).
-  The production parser does not count sentences; it only caps characters at
-  400 (`speech_compose.rs`, `MAX_COMPOSED_CHARS`). The one-or-two-sentence rule
-  is only in the prompt. This is a model-compliance gap, not a code bug in the
-  test, so the assertion was kept as written.
+- All six live tests pass (A1, A2, A3, B, C1, C2). An earlier run found that
+  the model sometimes returned four sentences for a long technical reply,
+  because the two-sentence rule was only in the prompt. The parser now enforces
+  it (`speech_compose.rs`, `MAX_COMPOSED_SENTENCES`), and A1 passes with it.
+- Latency with a command-line agent is dominated by process start-up and the
+  model call: about 16 to 35 seconds per composed reply in the recorded runs.
+  Speaking the composed sentence took 4 to 14 seconds.
 - A3 returns `Backend`, not `BadConfig` or `NotConfigured`. The production
   runner documents a spawn failure as `Backend` (`speech_backends.rs`,
   `run_command` doc comment). The assertion follows production. Whether a
