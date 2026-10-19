@@ -81,6 +81,7 @@ pub mod natural_text;
 #[cfg(test)]
 mod natural_text_tests;
 pub mod natural_voices;
+pub mod ort_sessions;
 pub mod ownership;
 pub mod realtime_complete;
 pub mod realtime_config;
@@ -118,6 +119,7 @@ mod vault_query_tests;
 mod vault_tests;
 #[cfg(test)]
 mod vault_walk_tests;
+pub mod voice_adapters;
 pub mod voice_common;
 pub mod voice_shortcuts;
 pub mod wakeword;
