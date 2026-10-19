@@ -14,4 +14,4 @@ Vox does not ship the models listed here. They are downloaded only when you choo
 - **Project:** WeSpeaker (https://github.com/wenet-e2e/wespeaker), ONNX file published in sherpa-onnx (https://github.com/k2-fsa/sherpa-onnx)
 - **Licence:** UNVERIFIED. No licence could be established for this model. See the open questions in [model-provenance.md](model-provenance.md).
 - **Links:** https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-recongition-models
-- **Attribution:** UNVERIFIED. No attribution line is given until the licence is settled.
+- **Attribution:** WeSpeaker ResNet34 speaker model, trained on VoxCeleb, by the WeSpeaker authors (https://github.com/wenet-e2e/wespeaker). The ONNX file is published by the sherpa-onnx project (https://github.com/k2-fsa/sherpa-onnx). This credit names the authors and states no licence; the licence is still being settled (see above).
