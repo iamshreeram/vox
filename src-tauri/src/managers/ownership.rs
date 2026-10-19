@@ -19,6 +19,10 @@ pub enum Owner {
     Dictation,
     /// A hands-free conversation session, listening through draining.
     Conversation,
+    /// Speaker enrollment wizard. Holds the gate across its recording windows
+    /// (design A3'): dictation and conversation are refused until it finishes,
+    /// is cancelled, expires or is dropped.
+    Enrollment,
 }
 
 /// Returned when another owner already holds the gate. Carries the holder.
@@ -230,6 +234,104 @@ mod tests {
         assert_eq!(gate.current(), Some(Owner::Conversation));
         drop(conversation);
         assert_eq!(gate.current(), None);
+    }
+
+    /// Every owner, for exhaustive checks.
+    const ALL_OWNERS: [Owner; 3] = [Owner::Dictation, Owner::Conversation, Owner::Enrollment];
+
+    // O8 (design A3'): Enrollment is mutually exclusive with both other owners.
+    #[test]
+    fn o8_enrollment_is_mutually_exclusive_with_dictation() {
+        let gate = OwnershipGate::new();
+        let enrollment = gate.try_acquire(Owner::Enrollment).expect("enrollment");
+        assert_eq!(
+            gate.try_acquire(Owner::Dictation).err(),
+            Some(Busy(Owner::Enrollment))
+        );
+        drop(enrollment);
+        let dictation = gate.try_acquire(Owner::Dictation).expect("dictation");
+        assert_eq!(
+            gate.try_acquire(Owner::Enrollment).err(),
+            Some(Busy(Owner::Dictation))
+        );
+        assert_eq!(gate.current(), Some(Owner::Dictation));
+        drop(dictation);
+    }
+
+    #[test]
+    fn o8_enrollment_is_mutually_exclusive_with_conversation() {
+        let gate = OwnershipGate::new();
+        let enrollment = gate.try_acquire(Owner::Enrollment).expect("enrollment");
+        assert_eq!(
+            gate.try_acquire(Owner::Conversation).err(),
+            Some(Busy(Owner::Enrollment))
+        );
+        drop(enrollment);
+        let conversation = gate.try_acquire(Owner::Conversation).expect("conversation");
+        assert_eq!(
+            gate.try_acquire(Owner::Enrollment).err(),
+            Some(Busy(Owner::Conversation))
+        );
+        assert_eq!(gate.current(), Some(Owner::Conversation));
+        drop(conversation);
+    }
+
+    #[test]
+    fn o8_enrollment_lease_releases_on_drop() {
+        let gate = OwnershipGate::new();
+        let enrollment = gate.try_acquire(Owner::Enrollment).expect("enrollment");
+        assert_eq!(gate.current(), Some(Owner::Enrollment));
+        drop(enrollment);
+        assert_eq!(gate.current(), None);
+        assert!(gate.try_acquire(Owner::Dictation).is_ok());
+    }
+
+    #[test]
+    fn o8_enrollment_lease_releases_on_panic_unwind() {
+        let gate = OwnershipGate::new();
+        let outcome = catch_unwind(AssertUnwindSafe(|| {
+            let _lease = gate
+                .try_acquire(Owner::Enrollment)
+                .expect("acquire before panic");
+            panic!("simulated wizard failure");
+        }));
+        assert!(outcome.is_err(), "the closure must panic");
+        assert_eq!(
+            gate.current(),
+            None,
+            "panic must release the enrollment lease"
+        );
+        assert!(gate.try_acquire(Owner::Conversation).is_ok());
+    }
+
+    // O8: for every held owner and every requester (including the same owner), the
+    // refusal names the current holder, and the gate is unchanged.
+    #[test]
+    fn o8_busy_names_the_current_owner_for_every_pair() {
+        for held in ALL_OWNERS {
+            for requester in ALL_OWNERS {
+                let gate = OwnershipGate::new();
+                let _lease = gate.try_acquire(held).expect("first acquire");
+                assert_eq!(
+                    gate.try_acquire(requester).err(),
+                    Some(Busy(held)),
+                    "held={held:?} requester={requester:?}"
+                );
+                assert_eq!(gate.current(), Some(held));
+            }
+        }
+    }
+
+    #[test]
+    fn o8_every_owner_can_acquire_once_the_gate_is_free() {
+        for owner in ALL_OWNERS {
+            let gate = OwnershipGate::new();
+            let lease = gate.try_acquire(owner);
+            assert!(lease.is_ok(), "{owner:?} must acquire a free gate");
+            assert_eq!(gate.current(), Some(owner));
+            drop(lease);
+            assert_eq!(gate.current(), None);
+        }
     }
 
     #[test]
