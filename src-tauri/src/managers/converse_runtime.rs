@@ -11,6 +11,7 @@ use crate::managers::converse::{
 use crate::managers::converse_capture::CaptureHandle;
 use crate::managers::converse_confirm::PolicySource;
 use crate::managers::converse_hooks;
+use crate::managers::converse_latency::{LatencyEvent, LatencyReport, LatencyStats};
 use futures_util::FutureExt;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -100,6 +101,30 @@ pub fn state_label(state: SessionState) -> &'static str {
 struct ForwardReporter {
     platform: Arc<dyn Platform>,
     transcript: Option<Arc<dyn TranscriptSink>>,
+    /// T9b: receives each latency report (numbers only). Default None (no-op).
+    #[allow(dead_code)]
+    latency_sink: Option<LatencySink>,
+}
+
+/// T9b: receives one latency report and the session's rolling stats per completed turn.
+#[allow(dead_code)]
+pub type LatencySink = Arc<dyn Fn(&LatencyReport, &LatencyStats) + Send + Sync>;
+
+/// T9b: builds a sink that emits `converse-latency` (`LatencyEvent`) only while
+/// `panel_on()` is true at the moment of the call.
+#[allow(dead_code)]
+pub fn make_latency_sink(
+    emit: Arc<dyn Fn(LatencyEvent) + Send + Sync>,
+    panel_on: Arc<dyn Fn() -> bool + Send + Sync>,
+) -> LatencySink {
+    Arc::new(move |report, stats| {
+        if panel_on() {
+            emit(LatencyEvent {
+                report: report.clone(),
+                stats: stats.clone(),
+            });
+        }
+    })
 }
 
 impl Reporter for ForwardReporter {
@@ -112,6 +137,12 @@ impl Reporter for ForwardReporter {
     fn transcript(&self, ev: TranscriptEvent) {
         if let Some(sink) = self.transcript.as_ref() {
             sink.record(ev);
+        }
+    }
+
+    fn latency(&self, report: &LatencyReport, stats: &LatencyStats) {
+        if let Some(sink) = self.latency_sink.as_ref() {
+            sink(report, stats);
         }
     }
 }
@@ -218,6 +249,7 @@ impl ConverseController {
                 let reporter = ForwardReporter {
                     platform: platform.clone(),
                     transcript,
+                    latency_sink: None,
                 };
                 let deps = Deps {
                     policy: policy.as_deref(),
@@ -1022,3 +1054,7 @@ mod tests {
 #[cfg(test)]
 #[path = "converse_hooks_tests.rs"]
 mod hooks_tests;
+
+#[cfg(test)]
+#[path = "converse_latency_wiring_tests.rs"]
+mod latency_wiring_tests;
