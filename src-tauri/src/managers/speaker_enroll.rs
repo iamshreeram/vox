@@ -12,6 +12,7 @@
 
 #![allow(dead_code)]
 
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -197,12 +198,25 @@ impl EnrollmentController {
     /// Recorder busy => `Busy` (session kept). Embedder `None` => `EmbedFailed` (not counted).
     pub fn step(&self, session_id: u64, step: u8) -> Result<StepResult, EnrollError> {
         let cancel = self.claim_step(session_id, step)?;
+        // Unwinding out of this step (a panic in the recorder, the clock or the embedder) runs
+        // the guard: it stops a recording this step started and clears `stepping`.
+        let mut window = StepWindow {
+            controller: self,
+            session_id,
+            recording: false,
+            settled: false,
+        };
         if self.recorder.start().is_err() {
-            return self.settle(session_id, Err(EnrollError::Busy));
+            let result = self.settle(session_id, Err(EnrollError::Busy));
+            window.settled = true;
+            return result;
         }
+        window.recording = true;
         // The window is measured around this sleep only; the recorder's own stop work is not
         // part of it.
         self.clock.sleep_ms(self.cfg.window_ms);
+        // Cleared before the stop call: a panic inside `stop` is still exactly one stop.
+        window.recording = false;
         let buffer = self.recorder.stop();
         let speech_ms = speaker_id::buffer_ms(buffer.len());
         let outcome = if speech_ms < self.cfg.min_speech_ms {
@@ -214,7 +228,9 @@ impl EnrollmentController {
                 .map(|embedding| (speech_ms, embedding))
         };
         drop(buffer);
-        self.settle(session_id, outcome)
+        let result = self.settle(session_id, outcome);
+        window.settled = true;
+        result
     }
 
     /// Cancels the session: clears the in-memory embeddings and drops the lease. A step in
@@ -322,6 +338,20 @@ impl EnrollmentController {
         Ok(Arc::clone(&session.cancel))
     }
 
+    /// Ends a step that unwound before `settle`: clears `stepping`, and drops the session if it
+    /// was cancelled meanwhile (the same end as `settle`). Otherwise the session stays, so the
+    /// caller can retry the step or cancel.
+    fn abandon_step(&self, session_id: u64) {
+        let mut guard = lock_session(&self.state);
+        let Some(session) = guard.as_mut().filter(|s| s.id == session_id) else {
+            return;
+        };
+        session.stepping = false;
+        if session.cancelled {
+            *guard = None;
+        }
+    }
+
     /// Ends a step: clears `stepping`, then either drops the session (cancelled meanwhile) or
     /// counts the embedded window. `outcome` carries `(speech_ms, embedding)` on success.
     fn settle(
@@ -351,6 +381,36 @@ impl EnrollmentController {
     }
 }
 
+/// Panic guard for one `step`. Armed from the moment the step claims the session until `settle`
+/// returns. If the step unwinds first, `drop` stops the recording this step started (once) and
+/// clears `stepping`, so cancel and expiry keep working and the lease can still be released.
+struct StepWindow<'a> {
+    controller: &'a EnrollmentController,
+    session_id: u64,
+    /// This step started a recording and has not stopped it yet.
+    recording: bool,
+    /// The step reached `settle`, which already ended it.
+    settled: bool,
+}
+
+impl Drop for StepWindow<'_> {
+    fn drop(&mut self) {
+        if self.settled {
+            return;
+        }
+        if self.recording {
+            self.recording = false;
+            // A panic here during unwinding would abort the process: contain it.
+            let _ = catch_unwind(AssertUnwindSafe(|| self.controller.recorder.stop()));
+        }
+        self.controller.abandon_step(self.session_id);
+    }
+}
+
 #[cfg(test)]
 #[path = "speaker_enroll_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "speaker_enroll_panic_tests.rs"]
+mod panic_tests;

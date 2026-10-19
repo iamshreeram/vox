@@ -65,6 +65,11 @@ pub trait Platform: Send + Sync + 'static {
     fn admit(&self) -> Result<Box<dyn AdmissionGuard>, String> {
         Ok(Box::new(NoopGuard))
     }
+    /// Receives each completed turn's latency report and stats (T9b). Attached to the session
+    /// reporter by `start`. Default: no sink.
+    fn latency_sink(&self) -> Option<LatencySink> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,17 +107,14 @@ struct ForwardReporter {
     platform: Arc<dyn Platform>,
     transcript: Option<Arc<dyn TranscriptSink>>,
     /// T9b: receives each latency report (numbers only). Default None (no-op).
-    #[allow(dead_code)]
     latency_sink: Option<LatencySink>,
 }
 
 /// T9b: receives one latency report and the session's rolling stats per completed turn.
-#[allow(dead_code)]
 pub type LatencySink = Arc<dyn Fn(&LatencyReport, &LatencyStats) + Send + Sync>;
 
 /// T9b: builds a sink that emits `converse-latency` (`LatencyEvent`) only while
 /// `panel_on()` is true at the moment of the call.
-#[allow(dead_code)]
 pub fn make_latency_sink(
     emit: Arc<dyn Fn(LatencyEvent) + Send + Sync>,
     panel_on: Arc<dyn Fn() -> bool + Send + Sync>,
@@ -230,6 +232,7 @@ impl ConverseController {
 
         let platform = self.platform.clone();
         let registry = self.registry.clone();
+        let latency_sink = self.platform.latency_sink();
         tauri::async_runtime::spawn(async move {
             let SessionParts {
                 ears,
@@ -249,7 +252,7 @@ impl ConverseController {
                 let reporter = ForwardReporter {
                     platform: platform.clone(),
                     transcript,
-                    latency_sink: None,
+                    latency_sink,
                 };
                 let deps = Deps {
                     policy: policy.as_deref(),
@@ -1058,3 +1061,7 @@ mod hooks_tests;
 #[cfg(test)]
 #[path = "converse_latency_wiring_tests.rs"]
 mod latency_wiring_tests;
+
+#[cfg(test)]
+#[path = "converse_runtime_sink_tests.rs"]
+mod runtime_sink_tests;
