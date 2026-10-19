@@ -69,6 +69,7 @@ In short: you talk, Vox types what you said. With the optional features below it
 - **Spoken replies.** Vox reads answers aloud using the system voice, with a voice and speed you can choose.
 - **Short spoken summaries.** Instead of reading a long answer word for word, Vox can ask a model, or a command-line tool you configure, to boil it down to a sentence or two first.
 - **Hands-free conversation.** One shortcut (`Control+Option+C` on macOS, `Ctrl+Alt+C` elsewhere), the tray menu, or Settings starts a back-and-forth: Vox listens, answers out loud, then listens again. Say "stop", "bye", or "that's all" to end it. You can tune how long it waits for silence and how many earlier turns it remembers.
+- **Optional voice features (off by default).** Smart turn detection, a latency panel, personas, and a speaker filter for conversations. See [`docs/voice-features.md`](docs/voice-features.md).
 - **Realtime voice** _(experimental)_. A faster direct-to-model route for conversations. It has been tested only against mock servers so far.
 
 ### Memory and notes (off by default)
