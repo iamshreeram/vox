@@ -10,6 +10,7 @@ import type {
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
   ShortcutActivation,
+  SpeakerSensitivity,
   TtsEngine,
   VadBackend,
 } from "@/bindings";
@@ -294,6 +295,14 @@ const settingUpdaters: {
     commands.changeConverseMaxIdleTurnsSetting(value as number),
   converse_context_turns: (value) =>
     commands.changeConverseContextTurnsSetting(value as number),
+  converse_smart_turn: (value) =>
+    commands.changeConverseSmartTurnSetting(value as boolean),
+  converse_latency_panel: (value) =>
+    commands.changeConverseLatencyPanelSetting(value as boolean),
+  speaker_filter_enabled: (value) =>
+    commands.changeSpeakerFilterEnabledSetting(value as boolean),
+  speaker_filter_sensitivity: (value) =>
+    commands.changeSpeakerFilterSensitivitySetting(value as SpeakerSensitivity),
   exp_rt_enabled: (value) =>
     commands.changeExpRtBoolSetting("enabled", value as boolean),
   exp_rt_direct_endpoint: (value) =>

@@ -1221,6 +1221,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "Voice features",
+      "intro": "Optional add-ons for hands-free conversation. Each one is off until you turn it on, and each download happens only when you press Download.",
+      "model": {
+        "checking": "Checking...",
+        "state": {
+          "not_installed": "Not downloaded",
+          "downloading": "Downloading... {{percent}}%",
+          "verifying": "Checking the file...",
+          "ready": "Installed",
+          "error": "The last attempt did not work."
+        },
+        "download": "Download",
+        "cancel": "Cancel",
+        "delete": "Delete",
+        "error": {
+          "busy": "Another model download is already running.",
+          "corrupt": "The downloaded file did not match its expected size or checksum. Download it again.",
+          "url_not_allowed": "The download address is not on the allowed list.",
+          "download": "The download failed. Check your connection and try again.",
+          "io": "The file could not be saved on this computer.",
+          "not_installed": "The model is not installed.",
+          "unknown": "Something went wrong with the model."
+        }
+      },
+      "smartTurn": {
+        "heading": "Smart turn detection",
+        "label": "Smart turn detection",
+        "description": "Uses a small model to decide when you have finished speaking, so Vox can reply sooner. Audio is held in memory during a turn and is not saved.",
+        "fallbackNote": "The model is not installed, so Vox uses the fixed silence rule.",
+        "modelLabel": "Smart turn model",
+        "modelDescription": "One-time download of about {{size}}. It runs on this computer.",
+        "modelDescriptionPending": "One-time download. It runs on this computer."
+      },
+      "latency": {
+        "heading": "Latency panel",
+        "label": "Show latency panel",
+        "description": "Shows timing numbers for each turn of a conversation. Numbers only: no audio or text is stored.",
+        "placeholder": "Waiting for the first turn of a conversation.",
+        "turn": "Last turn: {{turn}}",
+        "samples": "Median and 90th percentile over the last {{count}} turns.",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "Stage",
+          "last": "Last",
+          "median": "Median",
+          "p90": "90th percentile"
+        },
+        "stage": {
+          "waitForSpeech": "Wait for end of speech",
+          "transcription": "Transcription",
+          "thinking": "Thinking",
+          "toFirstSpeech": "Time to first speech",
+          "speakerCheck": "Speaker check"
+        }
+      },
+      "persona": {
+        "heading": "Personas",
+        "label": "Persona",
+        "description": "A preset of reply style and voice. Applying a persona sets both at once.",
+        "activeOption": "{{name}} (active)",
+        "apply": "Apply",
+        "customHeading": "Custom personas",
+        "customEmpty": "No custom personas yet.",
+        "builtinTag": "Built-in",
+        "builtinLocked": "Built-in personas are read-only.",
+        "new": "New persona",
+        "edit": "Edit",
+        "delete": "Delete",
+        "nameLabel": "Name",
+        "styleLabel": "Style",
+        "charCount": "{{count}} of {{max}} characters",
+        "voiceLabel": "Voice",
+        "noVoice": "Keep my current voice",
+        "save": "Save",
+        "cancel": "Cancel",
+        "error": {
+          "name_empty": "Enter a name.",
+          "name_too_long": "The name can be at most {{max}} characters.",
+          "style_empty": "Enter a style.",
+          "style_too_long": "The style can be at most {{max}} characters.",
+          "control_chars": "Remove the hidden control characters.",
+          "unknown_voice": "Choose a voice from the list.",
+          "limit_reached": "You can save up to {{max}} custom personas. Delete one to add another.",
+          "builtin_immutable": "Built-in personas cannot be changed.",
+          "generic": "The persona could not be saved. Try again."
+        }
+      },
+      "speaker": {
+        "heading": "Speaker filter",
+        "label": "Speaker filter",
+        "description": "Ignore speech that does not sound like your enrolled voice.",
+        "disclosure": {
+          "lead": "The speaker filter is a convenience filter. It is not security and it is not authentication.",
+          "detail": "It can wrongly ignore your own voice, and a recording or a similar voice can get through. Your voiceprint stays on this computer, in a file only your account can read. No audio is kept. The filter is off by default."
+        },
+        "inactiveNote": "The filter stays inactive until the speaker model is installed and your voice is enrolled.",
+        "sensitivityLabel": "Sensitivity",
+        "sensitivityDescription": "How strictly speech from other voices is kept out.",
+        "sensitivity": {
+          "lenient": "Lenient",
+          "balanced": "Balanced",
+          "strict": "Strict",
+          "lenientHint": "Lets more voices through, and wrongly ignores you less often.",
+          "balancedHint": "The default, a middle ground between the two.",
+          "strictHint": "Keeps out more other voices, and wrongly ignores you more often."
+        },
+        "modelLabel": "Speaker model",
+        "modelDescription": "One-time download of about {{size}}. It runs on this computer.",
+        "enrolled": "Your voice is enrolled.",
+        "notEnrolled": "Your voice is not enrolled yet.",
+        "enroll": {
+          "label": "Enroll your voice",
+          "description": "Three short recordings of about 6 seconds each. Speak normally in a quiet place.",
+          "intro": "You will read three short sets of sentences. Only the voiceprint is kept, never the audio.",
+          "needModel": "Install the speaker model first.",
+          "start": "Start enrollment",
+          "starting": "Starting...",
+          "cancel": "Cancel",
+          "progress": "{{done}} of {{total}} recordings done",
+          "stepTitle": "Recording {{step}} of {{total}}",
+          "readThese": "Read these sentences in your normal voice:",
+          "record": "Start recording this step",
+          "recording": "Recording. {{seconds}} seconds left.",
+          "allRecorded": "All three recordings are in. Finish to save your voiceprint.",
+          "finish": "Finish enrollment",
+          "done": "Your voice is enrolled.",
+          "messages": {
+            "busy": "Stop the conversation or dictation first.",
+            "too_little_speech": "Speak a little longer. Vox needs at least 2 seconds of speech for each recording.",
+            "inconsistent": "The three recordings did not sound alike. Starting again from the first recording.",
+            "model_missing": "Install the speaker model first.",
+            "session_ended": "The enrollment ended. Start again when you are ready.",
+            "generic": "Enrollment did not work. Try again."
+          },
+          "prompts": {
+            "s1a": "The quick brown fox jumps over the lazy dog.",
+            "s1b": "Please open my calendar and tell me what is on today.",
+            "s1c": "What is the weather like this afternoon?",
+            "s2a": "Turn the volume down a little, please.",
+            "s2b": "Tell me a short fact about the moon.",
+            "s2c": "I would like a cup of tea by the window.",
+            "s3a": "Remind me to call my sister tomorrow morning.",
+            "s3b": "Read the latest message from my team.",
+            "s3c": "Thank you, that is all for now."
+          }
+        },
+        "deleteLabel": "Voiceprint",
+        "deleteDescription": "Removes the stored voiceprint. Without one, the speaker filter cannot run.",
+        "deleteButton": "Delete voiceprint",
+        "deleteConfirm": "Delete the voiceprint? You will need to enroll again to use the filter.",
+        "deleteConfirmButton": "Yes, delete it",
+        "deleteKeep": "Keep it",
+        "deleteError": "The voiceprint could not be deleted. Try again."
+      }
     }
   }
 }
