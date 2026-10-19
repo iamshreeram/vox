@@ -72,6 +72,8 @@ fn conversation_vad_policy(_vad_enabled: bool) -> VadPolicy {
 pub const CONVERSE_STATE_EVENT: &str = "converse-state";
 /// Refusal when dictation owns the microphone or is still processing.
 pub const DICTATION_BUSY: &str = "Finish the current dictation before starting a conversation.";
+/// Refusal when voice enrollment holds the microphone (design A3').
+pub const ENROLLMENT_BUSY: &str = "Finish voice enrollment before starting a conversation.";
 
 /// The lease is the admission guard the controller holds for a session.
 impl AdmissionGuard for Lease {}
@@ -905,6 +907,7 @@ impl Platform for RealPlatform {
             Ok(lease) => Ok(Box::new(lease)),
             Err(Busy(Owner::Dictation)) => Err(DICTATION_BUSY.to_string()),
             Err(Busy(Owner::Conversation)) => Err(ALREADY_RUNNING.to_string()),
+            Err(Busy(Owner::Enrollment)) => Err(ENROLLMENT_BUSY.to_string()),
         }
     }
 
