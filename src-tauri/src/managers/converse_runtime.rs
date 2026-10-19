@@ -107,15 +107,24 @@ struct ForwardReporter {
 }
 
 /// T9b: receives one latency report and the session's rolling stats per completed turn.
+#[allow(dead_code)]
 pub type LatencySink = Arc<dyn Fn(&LatencyReport, &LatencyStats) + Send + Sync>;
 
-/// T9b stub: builds a sink that emits `converse-latency` (`LatencyEvent`) only while
+/// T9b: builds a sink that emits `converse-latency` (`LatencyEvent`) only while
 /// `panel_on()` is true at the moment of the call.
+#[allow(dead_code)]
 pub fn make_latency_sink(
-    _emit: Arc<dyn Fn(LatencyEvent) + Send + Sync>,
-    _panel_on: Arc<dyn Fn() -> bool + Send + Sync>,
+    emit: Arc<dyn Fn(LatencyEvent) + Send + Sync>,
+    panel_on: Arc<dyn Fn() -> bool + Send + Sync>,
 ) -> LatencySink {
-    todo!("T9b: latency sink")
+    Arc::new(move |report, stats| {
+        if panel_on() {
+            emit(LatencyEvent {
+                report: report.clone(),
+                stats: stats.clone(),
+            });
+        }
+    })
 }
 
 impl Reporter for ForwardReporter {
@@ -131,9 +140,10 @@ impl Reporter for ForwardReporter {
         }
     }
 
-    fn latency(&self, _report: &LatencyReport, _stats: &LatencyStats) {
-        // T9b stub: forward to `latency_sink` when present; no sink is a no-op.
-        todo!("T9b: forward latency to the sink")
+    fn latency(&self, report: &LatencyReport, stats: &LatencyStats) {
+        if let Some(sink) = self.latency_sink.as_ref() {
+            sink(report, stats);
+        }
     }
 }
 

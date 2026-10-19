@@ -12,6 +12,7 @@ use crate::managers::converse_context::{
     compose, neutralize, note_command, note_delivery_failed, note_failed, note_incomplete,
     note_interrupted, note_paste, note_paste_failed, CommandNote,
 };
+use crate::managers::converse_latency::{LatencyReport, ListenTiming, RollingStats};
 use crate::managers::converse_local::{classify_local_with, LocalIntent};
 use crate::managers::converse_plan::{
     PlanError, PlanInput, PlanKind, TurnPlan, MAX_UTTERANCE_CHARS,
@@ -906,6 +907,45 @@ struct Carry {
     last_ack: Option<&'static str>,
     /// Full utterance of the last recorded `failed` entry (see `record_turn`).
     last_failed: Option<String>,
+    /// Latency instants of the utterance in progress (reset before each dispatch).
+    clock: TurnClock,
+}
+
+/// Consecutive `Ignored` listens that count as one idle turn (T9b).
+const IGNORED_STREAK_LIMIT: u8 = 5;
+
+/// Loop-measured instants of one brain turn (T9b, D4). Numbers only.
+#[derive(Default)]
+struct TurnClock {
+    /// Just before the plan request is issued.
+    plan_requested: Option<Instant>,
+    /// When the plan request returned (ok or failed).
+    plan_ready: Option<Instant>,
+    /// The plan request succeeded.
+    plan_ok: bool,
+    /// When speech was first handed to the voice (queued, or the first `say` was issued).
+    speech_at: Option<Instant>,
+}
+
+impl TurnClock {
+    /// `(brain_ms, to_speech_ms)` when the turn is complete: the plan succeeded and speech was
+    /// handed to the voice. `to_speech_ms` saturates to 0 when speech started during streaming.
+    fn completed(&self) -> Option<(u32, u32)> {
+        if !self.plan_ok {
+            return None;
+        }
+        let requested = self.plan_requested?;
+        let ready = self.plan_ready?;
+        let speech = self.speech_at?;
+        Some((
+            millis_u32(ready.saturating_duration_since(requested)),
+            millis_u32(speech.saturating_duration_since(ready)),
+        ))
+    }
+}
+
+fn millis_u32(elapsed: Duration) -> u32 {
+    u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX)
 }
 
 /// The acknowledgement for a turn: its delay and text. `None` when acknowledgements are off.
@@ -1057,6 +1097,7 @@ fn ms_since(base: Instant, at: Option<Instant>) -> String {
 struct TimedMouth<'a> {
     inner: &'a dyn Mouth,
     first_speech: Mutex<Option<Instant>>,
+    first_call: Mutex<Option<Instant>>,
 }
 
 impl<'a> TimedMouth<'a> {
@@ -1064,6 +1105,7 @@ impl<'a> TimedMouth<'a> {
         Self {
             inner,
             first_speech: Mutex::new(None),
+            first_call: Mutex::new(None),
         }
     }
 
@@ -1074,12 +1116,24 @@ impl<'a> TimedMouth<'a> {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+
+    /// The instant the first say was issued, if any (T9b: speech handed to the voice).
+    fn first_call(&self) -> Option<Instant> {
+        *self
+            .first_call
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 }
 
 impl Mouth for TimedMouth<'_> {
     fn say<'b>(&'b self, text: &'b str, emotion: Emotion) -> BoxFuture<'b, SayOutcome> {
         let inner = self.inner;
         Box::pin(async move {
+            self.first_call
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .get_or_insert_with(Instant::now);
             let outcome = inner.say(text, emotion).await;
             if outcome != SayOutcome::Failed {
                 let mut first = self
@@ -1163,6 +1217,19 @@ async fn brain_turn(
     carry: &mut Carry,
 ) -> Result<Option<String>, SessionEnd> {
     let tier_start = Instant::now();
+    // Timing only: the mouth is wrapped so the turn's speech is timed. Every call still
+    // reaches the real mouth in the same order.
+    let timed = TimedMouth::new(deps.mouth);
+    let timed_deps = Deps {
+        mouth: &timed,
+        ears: deps.ears,
+        hands: deps.hands,
+        brain: deps.brain,
+        reporter: deps.reporter,
+        policy: deps.policy,
+        announcer: deps.announcer,
+    };
+    let deps = &timed_deps;
     let start = history.len().saturating_sub(cfg.context_turns);
     let input = PlanInput {
         utterance,
@@ -1181,26 +1248,18 @@ async fn brain_turn(
         None
     };
     let Some(queue) = queue else {
+        carry.clock.plan_requested = Some(Instant::now());
         let Some(planned) = race(cancel, deps.brain.plan(input)).await else {
             return Err(SessionEnd::Cancelled);
         };
         let plan_at = Instant::now();
-        // Timing only: the mouth is wrapped so the first accepted reply is timed. Every call
-        // still reaches the real mouth in the same order.
-        let timed = TimedMouth::new(deps.mouth);
-        let timed_deps = Deps {
-            mouth: &timed,
-            ears: deps.ears,
-            hands: deps.hands,
-            brain: deps.brain,
-            reporter: deps.reporter,
-            policy: deps.policy,
-            announcer: deps.announcer,
-        };
+        carry.clock.plan_ready = Some(plan_at);
+        carry.clock.plan_ok = planned.is_ok();
         let turn = match planned {
-            Ok(plan) => gate_and_run(&timed_deps, cfg, cancel, plan, carry).await,
-            Err(err) => plan_failed(&timed_deps, cfg, cancel, err, &[], &carry.journal).await,
+            Ok(plan) => gate_and_run(deps, cfg, cancel, plan, carry).await,
+            Err(err) => plan_failed(deps, cfg, cancel, err, &[], &carry.journal).await,
         };
+        carry.clock.speech_at = timed.first_call();
         log_timing(
             deps.reporter,
             cfg,
@@ -1217,6 +1276,7 @@ async fn brain_turn(
         ..Early::default()
     });
     let stream_cancel = cancel.clone();
+    carry.clock.plan_requested = Some(Instant::now());
     let planned = race(
         cancel,
         stream_plan(
@@ -1231,6 +1291,8 @@ async fn brain_turn(
     )
     .await;
     let plan_at = Instant::now();
+    carry.clock.plan_ready = Some(plan_at);
+    carry.clock.plan_ok = matches!(planned, Some(Ok(_)));
     let mut early = take_early(early);
     carry.last_ack = early.ack.or(carry.last_ack);
     let turn = match planned {
@@ -1254,6 +1316,7 @@ async fn brain_turn(
             }
         }
     };
+    carry.clock.speech_at = early.first_speech.or_else(|| timed.first_call());
     log_timing(
         deps.reporter,
         cfg,
@@ -1561,7 +1624,11 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
     let mut carry = Carry::default();
     let mut idle_turns: u32 = 0;
     let mut consecutive_too_long: u32 = 0;
+    let mut consecutive_ignored: u8 = 0;
     let mut turns: usize = 0;
+    // T9b: completed turns (report numbering) and the session's rolling latency window.
+    let mut completed_turns: u32 = 0;
+    let mut rolling = RollingStats::new();
     // Every speech line handed to the mouth is journaled for the transcript (DESIGN 8.2).
     let tap = JournalMouth {
         inner: outer.mouth,
@@ -1591,10 +1658,16 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
         }
 
         deps.reporter.state(SessionState::Listening);
-        let heard = match race(cancel, deps.ears.listen()).await {
+        let heard = race(cancel, deps.ears.listen()).await;
+        // Timing of this listen, taken exactly once right after it returns (every outcome).
+        let listen_timing: Option<ListenTiming> = deps.ears.take_timing();
+        let heard = match heard {
             None => return SessionEnd::Cancelled,
             Some(outcome) => outcome,
         };
+        if !matches!(heard, ListenOutcome::Ignored) {
+            consecutive_ignored = 0;
+        }
         let utterance = match heard {
             ListenOutcome::Aborted => return SessionEnd::Cancelled,
             ListenOutcome::Failed(_) => {
@@ -1620,8 +1693,18 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
                 continue;
             }
             ListenOutcome::NoSpeech => String::new(),
-            // T9b stub: Ignored handling (no idle count, consecutive_ignored, no turn budget).
-            ListenOutcome::Ignored => todo!("T9b: ignored-utterance loop handling"),
+            ListenOutcome::Ignored => {
+                // A foreign voice: no turn budget, no brain, no speech, not a too-long streak.
+                turns -= 1;
+                consecutive_too_long = 0;
+                consecutive_ignored += 1;
+                if consecutive_ignored < IGNORED_STREAK_LIMIT {
+                    continue;
+                }
+                // The fifth in a row counts exactly like NoSpeech.
+                consecutive_ignored = 0;
+                String::new()
+            }
             ListenOutcome::Utterance(text) => text,
         };
         // Any capture that did not report TooLong breaks the streak.
@@ -1649,7 +1732,22 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
 
         // Accepted for dispatch: exactly one transcript event follows (DESIGN 8.2).
         let log = UtteranceLog::new(deps.reporter, &utterance, &carry.journal);
-        match dispatch_utterance(deps, cfg, cancel, &utterance, &history, &mut carry).await {
+        carry.clock = TurnClock::default();
+        let dispatched =
+            dispatch_utterance(deps, cfg, cancel, &utterance, &history, &mut carry).await;
+        // T9b: one latency report per completed turn (plan succeeded, speech handed to the voice).
+        if let Some((brain_ms, to_speech_ms)) = carry.clock.completed() {
+            completed_turns += 1;
+            let report = LatencyReport::build(
+                completed_turns,
+                listen_timing.as_ref(),
+                Some(brain_ms),
+                Some(to_speech_ms),
+            );
+            rolling.push(&report);
+            deps.reporter.latency(&report, &rolling.stats());
+        }
+        match dispatched {
             Err(end) => {
                 log.finish(end == SessionEnd::Cancelled);
                 return end;
