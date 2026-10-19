@@ -4,6 +4,7 @@
 //! source-specific orchestration and finalization remain in the parent module.
 
 use super::{DownloadProgress, ModelManager};
+use crate::managers::aux_model::DownloadPolicy;
 use anyhow::Result;
 use futures_util::StreamExt;
 use hf_hub::api::tokio::CancellationToken;
@@ -93,7 +94,13 @@ impl ModelManager {
         expected_sha256: &str,
         cancel: &CancellationToken,
         emit: &(dyn Fn(FileDownloadEvent) + Send + Sync),
+        policy: Option<&DownloadPolicy>,
     ) -> Result<FileDownloadOutcome> {
+        // `None` = legacy behavior (default reqwest redirect policy), unchanged.
+        // `Some` = aux downloader policy (A1); not implemented yet (T3 stub).
+        if policy.is_some() {
+            todo!("policy-aware download_verified_file is not implemented yet (T3 stub)");
+        }
         let outcome = Self::download_http_resumable_with_events(
             label,
             url,
