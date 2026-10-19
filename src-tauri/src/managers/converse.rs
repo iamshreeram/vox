@@ -1620,8 +1620,8 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
                 continue;
             }
             ListenOutcome::NoSpeech => String::new(),
-            // Placeholder until the speaker-filter loop step: behaves like NoSpeech.
-            ListenOutcome::Ignored => String::new(),
+            // T9b stub: Ignored handling (no idle count, consecutive_ignored, no turn budget).
+            ListenOutcome::Ignored => todo!("T9b: ignored-utterance loop handling"),
             ListenOutcome::Utterance(text) => text,
         };
         // Any capture that did not report TooLong breaks the streak.
@@ -3155,3 +3155,7 @@ mod converse_gate_m4_tests;
 #[cfg(test)]
 #[path = "converse_timing_m4_tests.rs"]
 mod converse_timing_m4_tests;
+
+#[cfg(test)]
+#[path = "converse_loop_voice_tests.rs"]
+mod loop_voice_tests;

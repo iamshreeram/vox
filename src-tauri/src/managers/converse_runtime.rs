@@ -11,6 +11,7 @@ use crate::managers::converse::{
 use crate::managers::converse_capture::CaptureHandle;
 use crate::managers::converse_confirm::PolicySource;
 use crate::managers::converse_hooks;
+use crate::managers::converse_latency::{LatencyEvent, LatencyReport, LatencyStats};
 use futures_util::FutureExt;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -100,6 +101,21 @@ pub fn state_label(state: SessionState) -> &'static str {
 struct ForwardReporter {
     platform: Arc<dyn Platform>,
     transcript: Option<Arc<dyn TranscriptSink>>,
+    /// T9b: receives each latency report (numbers only). Default None (no-op).
+    #[allow(dead_code)]
+    latency_sink: Option<LatencySink>,
+}
+
+/// T9b: receives one latency report and the session's rolling stats per completed turn.
+pub type LatencySink = Arc<dyn Fn(&LatencyReport, &LatencyStats) + Send + Sync>;
+
+/// T9b stub: builds a sink that emits `converse-latency` (`LatencyEvent`) only while
+/// `panel_on()` is true at the moment of the call.
+pub fn make_latency_sink(
+    _emit: Arc<dyn Fn(LatencyEvent) + Send + Sync>,
+    _panel_on: Arc<dyn Fn() -> bool + Send + Sync>,
+) -> LatencySink {
+    todo!("T9b: latency sink")
 }
 
 impl Reporter for ForwardReporter {
@@ -113,6 +129,11 @@ impl Reporter for ForwardReporter {
         if let Some(sink) = self.transcript.as_ref() {
             sink.record(ev);
         }
+    }
+
+    fn latency(&self, _report: &LatencyReport, _stats: &LatencyStats) {
+        // T9b stub: forward to `latency_sink` when present; no sink is a no-op.
+        todo!("T9b: forward latency to the sink")
     }
 }
 
@@ -218,6 +239,7 @@ impl ConverseController {
                 let reporter = ForwardReporter {
                     platform: platform.clone(),
                     transcript,
+                    latency_sink: None,
                 };
                 let deps = Deps {
                     policy: policy.as_deref(),
@@ -1022,3 +1044,7 @@ mod tests {
 #[cfg(test)]
 #[path = "converse_hooks_tests.rs"]
 mod hooks_tests;
+
+#[cfg(test)]
+#[path = "converse_latency_wiring_tests.rs"]
+mod latency_wiring_tests;
