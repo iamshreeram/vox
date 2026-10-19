@@ -1,0 +1,295 @@
+{
+ "version": 1,
+ "files": [
+  {
+   "path": "gen/common.py",
+   "bytes": 7260,
+   "sha256": "f9cf0356bde95ade3a9c06eee570acdbe46f4975245b9d8108942d93c781b7e7"
+  },
+  {
+   "path": "gen/make_audio2.sh",
+   "bytes": 2786,
+   "sha256": "52e92a965319b9168e81e2071fa97ae825abf83f9c68fb69446015269fdac244"
+  },
+  {
+   "path": "gen/make_capture_matrix.py",
+   "bytes": 23779,
+   "sha256": "13a3e524645839be48807458b391cd16f6e1c0ca76338d677900affef7273539"
+  },
+  {
+   "path": "gen/make_fixtures.py",
+   "bytes": 23942,
+   "sha256": "ab8a8583ab0f40996e1c8c594382813bb23fbfad1a7608e441c39e9f4ed1bc53"
+  },
+  {
+   "path": "smartturn/c1.mel.f32",
+   "bytes": 256000,
+   "sha256": "f3d7f222e8eb29be57edc7791bcef90acd218593717eacb90702886f817bd519"
+  },
+  {
+   "path": "smartturn/c1.prob.txt",
+   "bytes": 11,
+   "sha256": "dd91b6f53041ac6ca0ebac4b7417e80e8e6966eca3a3939df96ceb613a85059b"
+  },
+  {
+   "path": "smartturn/c1.wav",
+   "bytes": 84282,
+   "sha256": "57fbdd03d646d763c8493457fdb563cb6917358f79ac2d362d180cad724d0824"
+  },
+  {
+   "path": "smartturn/c2.prob.txt",
+   "bytes": 11,
+   "sha256": "3fc3e9c10be0e8b6165098d84ace45b091f92d09b7fdd0afabab0108cd23f2d6"
+  },
+  {
+   "path": "smartturn/exact_8s.input.f32",
+   "bytes": 512000,
+   "sha256": "6e1f7b884a52799b0f3ec368ba98f1c9a16975441251f34a81f162680d805b69"
+  },
+  {
+   "path": "smartturn/exact_8s.mel.f32",
+   "bytes": 256000,
+   "sha256": "252b84b965d2403ce8ee82c28b00ac2501125c6e5473387d3e2900863cc273dd"
+  },
+  {
+   "path": "smartturn/i1.prob.txt",
+   "bytes": 11,
+   "sha256": "cb54e2b09ae4bf3eef7c1ebcab85ffa951fb8f075b1079eeb1674eb80d136cb9"
+  },
+  {
+   "path": "smartturn/i2.mel.f32",
+   "bytes": 256000,
+   "sha256": "1a513e90ae813f3dd555264d42a97e14b51fcaee0f07720aa1b45644a7ecbc65"
+  },
+  {
+   "path": "smartturn/i2.prob.txt",
+   "bytes": 11,
+   "sha256": "3be987b535a827442eb8509033b34ec72ab8356fc1c8e27ae9c5517abb50b86a"
+  },
+  {
+   "path": "smartturn/i2.wav",
+   "bytes": 46156,
+   "sha256": "8c53d4c2e821f63e6b486bd4db36f4a8f5d65fa0559854a83d0ae8b555fd1a6c"
+  },
+  {
+   "path": "smartturn/i3.prob.txt",
+   "bytes": 11,
+   "sha256": "aa9e08c53cec0561228ce87b913df53e6f8555a6402b799e771672e301d7ef94"
+  },
+  {
+   "path": "smartturn/long_10s.input.f32",
+   "bytes": 640000,
+   "sha256": "92cfa0bd204e8d209e31c26ec23cfe3942ac43b5cc4bfa04b7f101bc95cbb47b"
+  },
+  {
+   "path": "smartturn/long_10s.mel.f32",
+   "bytes": 256000,
+   "sha256": "064784816b8438a48a55ce4ebad83825d641e1fe30bc4b9a6b53a9f7886bcd32"
+  },
+  {
+   "path": "smartturn/nan_input.input.f32",
+   "bytes": 160372,
+   "sha256": "47ddcebfe20373788f92a5e7bad3dbfc2ee37612603592b8044d9d12f106817f"
+  },
+  {
+   "path": "smartturn/nan_input.mel.f32",
+   "bytes": 256000,
+   "sha256": "bb62936c20a58d52a9c83fc1dcaf87604093e534e58fa836c5833af1aab23433"
+  },
+  {
+   "path": "smartturn/negative/c1__no_waveform_norm.mel.f32",
+   "bytes": 256000,
+   "sha256": "fc69e11d71805190a886286fcc5b9ac196d19ef0562db58b558800007ed01b65"
+  },
+  {
+   "path": "smartturn/negative/c1__right_pad.mel.f32",
+   "bytes": 256000,
+   "sha256": "0362c2dcd8bcd8bb969f782eb9bc570b706624814ccd8004ab66e8379ec1d8de"
+  },
+  {
+   "path": "smartturn/negative/c1__symmetric_hann.mel.f32",
+   "bytes": 256000,
+   "sha256": "f1e03227dbf70b3a268a35b667a91c6e2cf64a892229282f6b5f4a0cb570bbf1"
+  },
+  {
+   "path": "smartturn/reversed_c1.input.f32",
+   "bytes": 160372,
+   "sha256": "41af4a1eec3e82eccfd58f16f1f1f9cf0a187f246067f042c248813efc91e70d"
+  },
+  {
+   "path": "smartturn/reversed_c1.mel.f32",
+   "bytes": 256000,
+   "sha256": "dd666798f11e6f584939665a5d60b43070d46b3de3a30b2c439822ca762a313a"
+  },
+  {
+   "path": "smartturn/short_0.5s.input.f32",
+   "bytes": 32000,
+   "sha256": "39002847b7083353f7d9bc52d1a4d60914fb6b5a18908fbd3f2e5ab2dd35d030"
+  },
+  {
+   "path": "smartturn/short_0.5s.mel.f32",
+   "bytes": 256000,
+   "sha256": "4fe47773dc7aa1c60d43d138693184316d01ff8951f6e6aa5a649693cae929b3"
+  },
+  {
+   "path": "smartturn/silence_1s.input.f32",
+   "bytes": 64000,
+   "sha256": "4f7988030a00d082fe445e00a2ac5dab502300ff1b80e8592dd569867b60ef74"
+  },
+  {
+   "path": "smartturn/silence_1s.mel.f32",
+   "bytes": 256000,
+   "sha256": "c4a1d90bbbdc1c49cf89b8f73360019b1b0fe01ae48a9dfd6fc2c4a3228b8859"
+  },
+  {
+   "path": "speaker/inputs/s1a_2.0s.input.f32",
+   "bytes": 128000,
+   "sha256": "9f66b52e901c296c657ed82b738d1d5d4df39350ac7d20c94b4e866be4ca820d"
+  },
+  {
+   "path": "speaker/inputs/s2a_1.5s.input.f32",
+   "bytes": 96000,
+   "sha256": "cd8b7562e1378cc59179c7708058c2145bc20a5c21acfe73abc93639d6fccca4"
+  },
+  {
+   "path": "speaker/inputs/s3a_3.0s.input.f32",
+   "bytes": 192000,
+   "sha256": "e417054715f16f2182752a638505a634ad577bf8a0db4bef6138a528324bc376"
+  },
+  {
+   "path": "speaker/inputs/silence_0.5s.input.f32",
+   "bytes": 32000,
+   "sha256": "0c92bddb4e96f3ea9ec9f0f64a668255a6c15527ac09f6f119cafde60c7c4a39"
+  },
+  {
+   "path": "speaker/inputs/tone_16000.input.f32",
+   "bytes": 64000,
+   "sha256": "1989821fd02a74a337a77c6ac3e5a0a56390ae36d6e146083f33933c629e46b5"
+  },
+  {
+   "path": "speaker/inputs/tone_399.input.f32",
+   "bytes": 1596,
+   "sha256": "f43bdb6c46ac9cf89c0b79ed278c44bd6e77802feefb9a4c9f0288ab14e1f7bf"
+  },
+  {
+   "path": "speaker/inputs/tone_400.input.f32",
+   "bytes": 1600,
+   "sha256": "977d2b44701bd0f54af1b97c14283db4af67a1ce3594cd710278a0c0d23e10a3"
+  },
+  {
+   "path": "speaker/inputs/tone_401.input.f32",
+   "bytes": 1604,
+   "sha256": "2031038c8064952590120fade6b7db986d8a2f75d3ed2d545e0d92dccf301b28"
+  },
+  {
+   "path": "speaker/negative_controls/s1a_2.0s__campplus__hamming_window.embedding.f32",
+   "bytes": 2048,
+   "sha256": "c59f74a549e2502a8ef2dd68117ceb79e30972925e3973025ba9b4c0c324248a"
+  },
+  {
+   "path": "speaker/negative_controls/s1a_2.0s__campplus__int16_scale.embedding.f32",
+   "bytes": 2048,
+   "sha256": "4b58a06024f615687d406219e673113b57308d7c1cbe75f7d0b3a85b79fde892"
+  },
+  {
+   "path": "speaker/negative_controls/s1a_2.0s__campplus__no_globalmean.embedding.f32",
+   "bytes": 2048,
+   "sha256": "a62b2b5e8d549e8506721b35d4db4b473a466a094876e782242a10b2d9772977"
+  },
+  {
+   "path": "speaker/negative_controls/s1a_2.0s__resnet34__no_cmn.embedding.f32",
+   "bytes": 1024,
+   "sha256": "75565569ec5aa0328c0b4768a82f066691cb234bee768bc7a33318376f6787ce"
+  },
+  {
+   "path": "speaker/negative_controls/s1a_2.0s__resnet34__scale_1.embedding.f32",
+   "bytes": 1024,
+   "sha256": "aed1381fe9bfafa40aad9400cba0230ce59f3cced50ac2bde4ee5697e6fa1b39"
+  },
+  {
+   "path": "speaker/negative_controls/s1a_2.0s__resnet34__scale_1_no_cmn.embedding.f32",
+   "bytes": 1024,
+   "sha256": "64b2ab5516e7b14e2d1a161089c784404e5ac21de06cf910af21e29480eccadd"
+  },
+  {
+   "path": "speaker/resnet34__wespeaker_ref/s1a_2.0s.embedding.f32",
+   "bytes": 1024,
+   "sha256": "971726126700301cb7d4c0f24942eb25f4749d2c1970fd8469c6e535192e2d41"
+  },
+  {
+   "path": "speaker/resnet34__wespeaker_ref/s1a_2.0s.fbank.f32",
+   "bytes": 63360,
+   "sha256": "eb3b187356c0541d3518063b612d3963430af519179f0cabf44039e02c0c2494"
+  },
+  {
+   "path": "speaker/resnet34__wespeaker_ref/s2a_1.5s.embedding.f32",
+   "bytes": 1024,
+   "sha256": "1a250d6ef97183d73f87fcc7ad4468726b26e5c72c434628cbd52694849b0b89"
+  },
+  {
+   "path": "speaker/resnet34__wespeaker_ref/s2a_1.5s.fbank.f32",
+   "bytes": 47360,
+   "sha256": "24b7c6fc6839bd8e60222d58bff2c605f0bac195539dac9c8a7f9d2e661dc177"
+  },
+  {
+   "path": "speaker/resnet34__wespeaker_ref/s3a_3.0s.embedding.f32",
+   "bytes": 1024,
+   "sha256": "8f51012787f97f8375ebcda6458a6cffeed8efb0f4e5037c49f8eb60d2caafa6"
+  },
+  {
+   "path": "speaker/resnet34__wespeaker_ref/s3a_3.0s.fbank.f32",
+   "bytes": 95360,
+   "sha256": "c36501b6dd3dcc3448c5203ec1734f79f99b89a902981d4b765b3ae12416a431"
+  },
+  {
+   "path": "speaker/resnet34__wespeaker_ref/silence_0.5s.embedding.f32",
+   "bytes": 1024,
+   "sha256": "064c04d9d30e60fb39aae6155a1795c35dd0df7b182db54c01466d49b798dd43"
+  },
+  {
+   "path": "speaker/resnet34__wespeaker_ref/silence_0.5s.fbank.f32",
+   "bytes": 15360,
+   "sha256": "f07472e43292dd53b08d4f2e611ecc23e6dfdb798cdf0f05cb8a9ce8d17f65dd"
+  },
+  {
+   "path": "speaker/resnet34__wespeaker_ref/tone_16000.embedding.f32",
+   "bytes": 1024,
+   "sha256": "753bd61f0a58c1ff05e51cc37ffdad61dd11f380dc315401dcf3fded4e98026f"
+  },
+  {
+   "path": "speaker/resnet34__wespeaker_ref/tone_16000.fbank.f32",
+   "bytes": 31360,
+   "sha256": "c5cf8f17cebbfc624e8d0efe6b5000e65bc7625d4584c8b046ddcaeae60c57d2"
+  },
+  {
+   "path": "speaker/resnet34__wespeaker_ref/tone_399.expected_error.json",
+   "bytes": 239,
+   "sha256": "07e1be28f808d7f0cf6b0fa459e397e5a7f4d9554f7eef718ed443ac6eebdc32"
+  },
+  {
+   "path": "speaker/resnet34__wespeaker_ref/tone_400.embedding.f32",
+   "bytes": 1024,
+   "sha256": "1acc0ecb837a5149d3109aff169efc58877cc84412fd50ced7893e2f12f275b2"
+  },
+  {
+   "path": "speaker/resnet34__wespeaker_ref/tone_400.fbank.f32",
+   "bytes": 320,
+   "sha256": "7b6436b0c98f62380866d9432c2af0ee08ce16a171bda6951aecd95ee1307d61"
+  },
+  {
+   "path": "speaker/resnet34__wespeaker_ref/tone_401.embedding.f32",
+   "bytes": 1024,
+   "sha256": "1acc0ecb837a5149d3109aff169efc58877cc84412fd50ced7893e2f12f275b2"
+  },
+  {
+   "path": "speaker/resnet34__wespeaker_ref/tone_401.fbank.f32",
+   "bytes": 320,
+   "sha256": "7b6436b0c98f62380866d9432c2af0ee08ce16a171bda6951aecd95ee1307d61"
+  },
+  {
+   "path": "speaker_capture_matrix.json",
+   "bytes": 85520,
+   "sha256": "9b44ebf2bd1c13c80621745425d970511ba5477125c9815372f464ebb6b0f84f"
+  }
+ ]
+}

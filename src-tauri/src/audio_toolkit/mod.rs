@@ -3,6 +3,7 @@ pub mod constants;
 pub mod lang_id;
 pub mod text;
 pub mod utils;
+pub mod dsp;
 pub mod vad;
 
 pub use audio::{

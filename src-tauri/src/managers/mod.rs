@@ -59,7 +59,14 @@ mod natural_engine_tests;
 pub mod natural_kokoro;
 #[cfg(all(test, target_os = "macos"))]
 mod natural_kokoro_tests;
+pub mod aux_model;
+pub mod converse_latency;
 pub mod natural_model;
+pub mod persona;
+pub mod smart_turn;
+pub mod speaker_enroll;
+pub mod speaker_id;
+pub mod voice_models;
 #[cfg(test)]
 mod natural_model_tests;
 pub mod natural_router;

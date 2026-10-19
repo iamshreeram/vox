@@ -1,0 +1,6 @@
+{
+  "error_type": "AssertionError",
+  "input_samples": 399,
+  "message": "choose a window size 400 that is [2, 399]",
+  "reason": "torchaudio.compliance.kaldi.fbank asserts window_size(400) <= len(waveform); no fbank/embedding produced"
+}
