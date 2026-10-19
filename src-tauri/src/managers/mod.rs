@@ -65,6 +65,7 @@ pub mod natural_model;
 pub mod persona;
 pub mod smart_turn;
 pub mod speaker_enroll;
+pub mod speaker_enroll_adapters;
 pub mod speaker_id;
 pub mod voice_models;
 #[cfg(test)]
