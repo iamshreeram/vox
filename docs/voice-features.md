@@ -174,6 +174,12 @@ Notes on the table:
 - When you use personas, the style text is part of the instructions given to the
   reply backend during a conversation, and to the spoken reply composer if it is
   turned on. This is the only way a persona reaches another program.
+- With every feature off, a conversation behaves as it did before. The app
+  still starts two small idle helper threads at launch (one that would run the
+  models, and one that expires an unfinished speaker enrollment) and creates an
+  empty private folder for voiceprints. No model is loaded, no audio is read
+  for these features, and nothing touches the network until you turn a feature
+  on.
 
 ## 6. Troubleshooting
 
