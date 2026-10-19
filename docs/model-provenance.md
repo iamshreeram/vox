@@ -80,7 +80,7 @@ The BSD 2-Clause licence requires that redistributed copies keep the copyright n
 
 ### Required attribution (speaker model)
 
-**UNVERIFIED: no attribution line is given for this model.** The line depends on the licence in question 1 above. Do not show a credit line for this model until the maintainer settles the licence.
+**UNVERIFIED: the licence-specific attribution wording for this model.** It depends on the licence in question 1 above. [NOTICE.md](NOTICE.md) carries a neutral credit that names the WeSpeaker authors and the sherpa-onnx project and states no licence. The licence-specific wording waits until the maintainer settles question 1.
 
 ## How to verify a downloaded file
 
