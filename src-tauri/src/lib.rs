@@ -409,6 +409,15 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     }
     app_handle.manage(natural_coordinator.clone());
     app_handle.manage(natural_health.clone());
+    // Optional model downloads (design D2): both kinds in one state, rooted at
+    // <app data>/aux_models. Nothing is downloaded here; only the user's Download starts one.
+    if let Ok(app_data) = portable::app_data_dir(app_handle) {
+        app_handle.manage(Arc::new(commands::aux_model::AuxModels::new(
+            app_data.join("aux_models"),
+        )));
+    } else {
+        log::warn!("optional models: app data dir unavailable");
+    }
     // Spoken replies: one shared manager, managed before any event listener
     // that might speak. Event listeners are registered in `register_tts_listeners`.
     #[cfg(target_os = "macos")]
@@ -1136,6 +1145,19 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::converse::converse_start,
             commands::converse::converse_stop,
             commands::converse::converse_status,
+            // optional voice features
+            commands::aux_model::aux_model_status,
+            commands::aux_model::aux_model_download,
+            commands::aux_model::aux_model_cancel,
+            commands::aux_model::aux_model_delete,
+            commands::persona::list_personas,
+            commands::persona::save_persona,
+            commands::persona::delete_persona,
+            commands::persona::apply_persona,
+            commands::converse_extras::change_converse_smart_turn_setting,
+            commands::converse_extras::change_converse_latency_panel_setting,
+            commands::converse_extras::change_speaker_filter_enabled_setting,
+            commands::converse_extras::change_speaker_filter_sensitivity_setting,
             commands::realtime::change_exp_rt_bool_setting,
             commands::realtime::change_exp_rt_text_setting,
             helpers::clamshell::is_laptop,
