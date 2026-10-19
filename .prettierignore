@@ -19,3 +19,9 @@ src-tauri/src/catalog/catalog.json
 # Misc
 .DS_Store
 *.log
+
+# Hash-pinned voice test fixtures must stay byte-exact (see their manifest.json)
+src-tauri/tests/fixtures/voice
+
+# Local task-tracking notes (never committed)
+.ram-status
