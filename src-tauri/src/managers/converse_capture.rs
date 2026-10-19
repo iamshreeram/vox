@@ -6,6 +6,9 @@
 
 use crate::managers::converse::{ListenFailure, ListenOutcome};
 use crate::managers::converse_audio::{EndpointConfig, EndpointEvent, Endpointer};
+use crate::managers::converse_latency::ListenTiming;
+use crate::managers::smart_turn::TurnDetector;
+use crate::managers::speaker_id::SpeakerGate;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -32,6 +35,10 @@ pub trait RecorderPort: Send + Sync + 'static {
     fn stop(&self) -> Option<Vec<f32>>;
     /// Discard OUR recording; must never touch a foreign recording.
     fn cancel(&self);
+    /// Smart Turn (T9b): install (`Some`) or clear (`None`) a PRE-VAD tap that receives
+    /// every post-resample 16 kHz frame, speech or not. Default: no-op, so ports without
+    /// a pre-VAD hook are unchanged (their detector tail stays empty).
+    fn set_raw_tap(&self, _tap: Option<Arc<dyn Fn(&[f32]) + Send + Sync>>) {}
 }
 
 pub trait Transcriber: Send + Sync + 'static {
@@ -64,6 +71,15 @@ impl Default for CaptureTimings {
     }
 }
 
+/// Optional voice features of one worker. `Default` (both None) is today's behaviour.
+#[derive(Clone, Default)]
+pub struct CaptureOptions {
+    /// Smart Turn end-of-turn detector. When Some, the endpointer runs the Smart Turn policy.
+    pub turn_detector: Option<Arc<dyn TurnDetector>>,
+    /// Speaker filter, run after `stop()` and before transcription.
+    pub speaker_gate: Option<Arc<dyn SpeakerGate>>,
+}
+
 /// Cloneable handle to the worker thread. Implementers may change the private
 /// fields freely; the public methods are the contract.
 #[derive(Clone)]
@@ -81,6 +97,20 @@ struct Inner {
     /// queued, so the worker sees it even while `start()` is blocked.
     floor: Arc<AtomicU64>,
     join: Mutex<Option<JoinHandle<()>>>,
+    /// T9b test-only counters (never written by the stub).
+    #[cfg_attr(not(test), allow(dead_code))]
+    tap_installed: AtomicU64,
+    #[cfg_attr(not(test), allow(dead_code))]
+    ring_len: AtomicU64,
+    #[cfg_attr(not(test), allow(dead_code))]
+    ring_allocated: AtomicBool,
+    #[cfg_attr(not(test), allow(dead_code))]
+    decider_spawned: AtomicU64,
+    #[cfg_attr(not(test), allow(dead_code))]
+    decider_live: AtomicU64,
+    /// T9b (A7): timing of the last listen that ended, keyed by listen id.
+    #[cfg_attr(not(test), allow(dead_code))]
+    timing_slot: Mutex<Option<(u64, ListenTiming)>>,
 }
 
 impl Inner {
@@ -177,6 +207,10 @@ struct Worker {
     capture_active: Arc<AtomicBool>,
     floor: Arc<AtomicU64>,
     state: State,
+    /// T9b: Smart Turn detector (None = fixed endpoint only).
+    turn_detector: Option<Arc<dyn TurnDetector>>,
+    /// T9b: speaker gate (None = no filter).
+    speaker_gate: Option<Arc<dyn SpeakerGate>>,
 }
 
 pub struct CaptureWorker;
@@ -188,6 +222,16 @@ impl CaptureWorker {
         transcriber: Arc<dyn Transcriber>,
         timings: CaptureTimings,
     ) -> CaptureHandle {
+        Self::spawn_with_options(port, transcriber, timings, CaptureOptions::default())
+    }
+
+    /// Spawn the worker thread with the optional voice features (T9b contract).
+    pub fn spawn_with_options(
+        port: Arc<dyn RecorderPort>,
+        transcriber: Arc<dyn Transcriber>,
+        timings: CaptureTimings,
+        options: CaptureOptions,
+    ) -> CaptureHandle {
         let (tx, rx) = mpsc::sync_channel::<Command>(QUEUE_CAPACITY);
         let capture_active = Arc::new(AtomicBool::new(false));
         let floor = Arc::new(AtomicU64::new(0));
@@ -198,6 +242,8 @@ impl CaptureWorker {
             capture_active: Arc::clone(&capture_active),
             floor: Arc::clone(&floor),
             state: State::Idle,
+            turn_detector: options.turn_detector,
+            speaker_gate: options.speaker_gate,
         };
         // If the thread cannot be spawned, `rx` is dropped with the closure, so
         // every later command sees a closed channel and listens resolve Aborted.
@@ -213,6 +259,12 @@ impl CaptureWorker {
                 capture_active,
                 floor,
                 join: Mutex::new(join),
+                tap_installed: AtomicU64::new(0),
+                ring_len: AtomicU64::new(0),
+                ring_allocated: AtomicBool::new(false),
+                decider_spawned: AtomicU64::new(0),
+                decider_live: AtomicU64::new(0),
+                timing_slot: Mutex::new(None),
             }),
         }
     }
@@ -250,6 +302,9 @@ impl Worker {
                 if listen_id <= self.floor.load(Ordering::SeqCst) {
                     let _ = reply.send(ListenOutcome::Aborted);
                 } else {
+                    if self.turn_detector.is_some() {
+                        todo!("T9b: EndpointConfig.smart_turn = Some(default_policy) when a detector is configured; tap + decider");
+                    }
                     self.drop_state();
                     let now = Instant::now();
                     self.attempt(Pending {
@@ -409,7 +464,14 @@ impl Worker {
         self.set_inactive();
         let outcome = match samples {
             None => ListenOutcome::Aborted,
-            Some(samples) => self.transcribe(samples),
+            Some(samples) => {
+                if self.speaker_gate.is_some() {
+                    todo!(
+                        "T9b: speaker gate after stop(), before transcription (Reject => Ignored)"
+                    );
+                }
+                self.transcribe(samples)
+            }
         };
         log_listen_end(end_reason(&outcome), &r);
         let _ = r.reply.send(outcome);
@@ -566,6 +628,43 @@ impl CaptureHandle {
     /// `start()` and the end of that recording).
     pub fn capture_active(&self) -> bool {
         self.inner.capture_active.load(Ordering::SeqCst)
+    }
+
+    /// T9b test-only: number of pre-VAD taps the worker installed (cumulative).
+    #[cfg(test)]
+    pub fn tap_installed_count(&self) -> usize {
+        self.inner.tap_installed.load(Ordering::SeqCst) as usize
+    }
+
+    /// T9b test-only: samples currently held by the pre-VAD ring.
+    #[cfg(test)]
+    pub fn ring_len(&self) -> usize {
+        self.inner.ring_len.load(Ordering::SeqCst) as usize
+    }
+
+    /// T9b test-only: whether the pre-VAD ring buffer is allocated.
+    #[cfg(test)]
+    pub fn ring_allocated(&self) -> bool {
+        self.inner.ring_allocated.load(Ordering::SeqCst)
+    }
+
+    /// T9b test-only: decider (helper) threads created so far (cumulative).
+    #[cfg(test)]
+    pub fn decider_threads_spawned(&self) -> usize {
+        self.inner.decider_spawned.load(Ordering::SeqCst) as usize
+    }
+
+    /// T9b test-only: decider threads that have not finished yet.
+    #[cfg(test)]
+    pub fn decider_threads_live(&self) -> usize {
+        self.inner.decider_live.load(Ordering::SeqCst) as usize
+    }
+
+    /// T9b (A7): the timing of listen `listen_id` if it is the last listen that ended.
+    /// Returns it only for the matching id and clears the slot (a second take is None).
+    #[allow(dead_code)]
+    pub fn take_timing(&self, _listen_id: u64) -> Option<ListenTiming> {
+        todo!("T9b: timing slot (A7): clear at listen start, write before ListenOutcome, match id, take once")
     }
 
     /// Cancel any active recording, answer any pending listen with `Aborted`,
@@ -1437,3 +1536,8 @@ mod tests {
         h.shutdown();
     }
 }
+
+// T9a: integration contract for Smart Turn and the speaker gate (red until T9b).
+#[cfg(test)]
+#[path = "converse_capture_voice_tests.rs"]
+mod voice_tests;
