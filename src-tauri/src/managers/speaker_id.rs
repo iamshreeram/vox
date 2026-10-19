@@ -459,6 +459,26 @@ pub fn accept_after(started_generation: u64, store: &VoiceprintStore, verdict: V
     !(verdict == Verdict::Reject && store.generation() == started_generation && store.is_enrolled())
 }
 
+/// How long the capture worker waits for one speaker check before it accepts the utterance.
+pub const VERIFY_DEADLINE: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Outcome of one speaker check: the policy verdict and how long the check took (numbers only).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GateResult {
+    pub verdict: Verdict,
+    pub verify_ms: Option<u32>,
+}
+
+/// The seam the capture worker uses for the optional speaker filter. Implemented over the
+/// inference service by step S8b; faked in tests.
+pub trait SpeakerGate: Send + Sync {
+    /// `buffer16k` is the VAD-kept 16 kHz mono buffer of ONE utterance (preroll + speech +
+    /// hangover). Blocks at most `VERIFY_DEADLINE`. Any failure, timeout, cancellation, missing
+    /// model or missing voiceprint must return `Verdict::Accept`. Must never panic and never
+    /// keep or log the audio or the embedding.
+    fn check(&self, buffer16k: &[f32], cancel: &std::sync::atomic::AtomicBool) -> GateResult;
+}
+
 #[cfg(test)]
 #[path = "speaker_id_tests.rs"]
 mod tests;

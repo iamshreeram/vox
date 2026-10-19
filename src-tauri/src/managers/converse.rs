@@ -45,6 +45,9 @@ pub enum ListenOutcome {
     TooLong,
     Aborted,
     Failed(ListenFailure),
+    /// The optional speaker filter heard a voice that is not the enrolled one: the audio was
+    /// NOT transcribed and nothing about it is kept. Only produced when the filter is enabled.
+    Ignored,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +94,13 @@ pub enum SessionEnd {
 
 pub trait Ears: Send + Sync {
     fn listen(&self) -> BoxFuture<'_, ListenOutcome>;
+
+    /// Timing numbers of the listen that just returned (numbers/enums only), or `None` when
+    /// the ears do not measure it. The loop calls this exactly once right after `listen`.
+    /// Default: `None`, so existing ears and fakes are unchanged.
+    fn take_timing(&self) -> Option<crate::managers::converse_latency::ListenTiming> {
+        None
+    }
 }
 
 pub trait Mouth: Send + Sync {
@@ -415,6 +425,15 @@ pub trait Reporter: Send + Sync {
     /// M4: receives one timing line (observability only). Default: written to the log at info.
     fn timing_line(&self, line: &str) {
         log::info!("{line}");
+    }
+
+    /// Receives one latency report (numbers/enums only) per completed turn, together with the
+    /// rolling statistics of the session. Default: ignored.
+    fn latency(
+        &self,
+        _report: &crate::managers::converse_latency::LatencyReport,
+        _stats: &crate::managers::converse_latency::LatencyStats,
+    ) {
     }
 }
 
@@ -1601,6 +1620,8 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
                 continue;
             }
             ListenOutcome::NoSpeech => String::new(),
+            // Placeholder until the speaker-filter loop step: behaves like NoSpeech.
+            ListenOutcome::Ignored => String::new(),
             ListenOutcome::Utterance(text) => text,
         };
         // Any capture that did not report TooLong breaks the streak.

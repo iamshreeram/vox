@@ -471,6 +471,7 @@ fn end_reason(outcome: &ListenOutcome) -> &'static str {
         ListenOutcome::TooLong => "too_long",
         ListenOutcome::Aborted => "aborted",
         ListenOutcome::Failed(_) => "failed",
+        ListenOutcome::Ignored => "ignored",
     }
 }
 
