@@ -896,7 +896,6 @@ pub(crate) fn job_parts(
 /// The app-backed `Platform` used by `ConverseController`.
 /// Builds the latency sink: each report is emitted only while `panel_on()` is true at the
 /// moment that report is produced.
-#[allow(dead_code)] // Not attached to the reporter yet; see `latency_sink_for_app`.
 pub(crate) fn build_latency_sink(
     emit: Arc<dyn Fn(LatencyEvent) + Send + Sync>,
     panel_on: Arc<dyn Fn() -> bool + Send + Sync>,
@@ -905,9 +904,7 @@ pub(crate) fn build_latency_sink(
 }
 
 /// The app-bound latency sink: `converse-latency` through the app, gated on the live
-/// `converse_latency_panel` setting. Not attached yet: `ForwardReporter` is built in
-/// `converse_runtime.rs` with no sink, and `Platform` has no hook for one.
-#[allow(dead_code)]
+/// `converse_latency_panel` setting. Attached by `RealPlatform::latency_sink`.
 pub(crate) fn latency_sink_for_app(app: &AppHandle) -> LatencySink {
     let emitter = app.clone();
     let settings_app = app.clone();
@@ -942,6 +939,10 @@ impl RealPlatform {
 }
 
 impl Platform for RealPlatform {
+    fn latency_sink(&self) -> Option<LatencySink> {
+        Some(latency_sink_for_app(&self.app))
+    }
+
     fn admit(&self) -> Result<Box<dyn AdmissionGuard>, String> {
         match ownership::global().try_acquire(Owner::Conversation) {
             Ok(lease) => Ok(Box::new(lease)),
