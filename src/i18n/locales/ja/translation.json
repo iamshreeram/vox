@@ -1221,6 +1221,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "音声機能",
+      "intro": "ハンズフリー会話のためのオプション機能です。それぞれ有効にするまではオフのままで、ダウンロードは「ダウンロード」を押したときだけ行われます。",
+      "model": {
+        "checking": "確認中...",
+        "state": {
+          "not_installed": "未ダウンロード",
+          "downloading": "ダウンロード中... {{percent}}%",
+          "verifying": "ファイルを確認中...",
+          "ready": "インストール済み",
+          "error": "前回の試行は失敗しました。"
+        },
+        "download": "ダウンロード",
+        "cancel": "キャンセル",
+        "delete": "削除",
+        "error": {
+          "busy": "別のモデルのダウンロードが既に実行中です。",
+          "corrupt": "ダウンロードしたファイルがサイズまたはチェックサムの想定と一致しません。もう一度ダウンロードしてください。",
+          "url_not_allowed": "ダウンロード先のアドレスが許可リストにありません。",
+          "download": "ダウンロードに失敗しました。接続を確認して、もう一度お試しください。",
+          "io": "このコンピューターにファイルを保存できませんでした。",
+          "not_installed": "モデルがインストールされていません。",
+          "unknown": "モデルで問題が発生しました。"
+        }
+      },
+      "smartTurn": {
+        "heading": "スマートターン検出",
+        "label": "スマートターン検出",
+        "description": "小さなモデルを使って話し終わったタイミングを判断し、Vox がより早く応答できるようにします。音声はターン中のみメモリに保持され、保存されません。",
+        "fallbackNote": "モデルがインストールされていないため、Vox は固定の無音ルールを使用します。",
+        "modelLabel": "スマートターンモデル",
+        "modelDescription": "約 {{size}} の初回のみのダウンロードです。このコンピューター上で動作します。",
+        "modelDescriptionPending": "初回のみのダウンロードです。このコンピューター上で動作します。"
+      },
+      "latency": {
+        "heading": "レイテンシーパネル",
+        "label": "レイテンシーパネルを表示",
+        "description": "会話の各ターンにかかった時間を数値で表示します。数値のみで、音声もテキストも保存されません。",
+        "placeholder": "会話の最初のターンを待っています。",
+        "turn": "直前のターン: {{turn}}",
+        "samples": "直近 {{count}} ターンの中央値と 90 パーセンタイルです。",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "段階",
+          "last": "直前",
+          "median": "中央値",
+          "p90": "90 パーセンタイル"
+        },
+        "stage": {
+          "waitForSpeech": "発話終了の待機",
+          "transcription": "文字起こし",
+          "thinking": "思考",
+          "toFirstSpeech": "最初の発話までの時間",
+          "speakerCheck": "話者チェック"
+        }
+      },
+      "persona": {
+        "heading": "ペルソナ",
+        "label": "ペルソナ",
+        "description": "応答のスタイルと声をまとめたプリセットです。ペルソナを適用すると両方が同時に設定されます。",
+        "activeOption": "{{name}}（使用中）",
+        "apply": "適用",
+        "customHeading": "カスタムペルソナ",
+        "customEmpty": "カスタムペルソナはまだありません。",
+        "builtinTag": "組み込み",
+        "builtinLocked": "組み込みのペルソナは読み取り専用です。",
+        "new": "新しいペルソナ",
+        "edit": "編集",
+        "delete": "削除",
+        "nameLabel": "名前",
+        "styleLabel": "スタイル",
+        "charCount": "{{max}} 文字中 {{count}} 文字",
+        "voiceLabel": "声",
+        "noVoice": "現在の声を維持",
+        "save": "保存",
+        "cancel": "キャンセル",
+        "error": {
+          "name_empty": "名前を入力してください。",
+          "name_too_long": "名前は最大 {{max}} 文字までです。",
+          "style_empty": "スタイルを入力してください。",
+          "style_too_long": "スタイルは最大 {{max}} 文字までです。",
+          "control_chars": "非表示の制御文字を削除してください。",
+          "unknown_voice": "リストから声を選択してください。",
+          "limit_reached": "カスタムペルソナは最大 {{max}} 件まで保存できます。新しく追加するには、いずれかを削除してください。",
+          "builtin_immutable": "組み込みのペルソナは変更できません。",
+          "generic": "ペルソナを保存できませんでした。もう一度お試しください。"
+        }
+      },
+      "speaker": {
+        "heading": "話者フィルター",
+        "label": "話者フィルター",
+        "description": "登録済みの声に似ていない話し声を無視します。",
+        "disclosure": {
+          "lead": "話者フィルターは利便性のためのフィルターです。セキュリティではなく、認証でもありません。",
+          "detail": "ご自身の声を誤って無視することがあり、録音や似た声が通過することもあります。声紋はこのコンピューター上に、アカウントだけが読める形式のファイルとして保存されます。音声は保存されません。フィルターは初期状態ではオフです。"
+        },
+        "inactiveNote": "話者モデルがインストールされ、声が登録されるまで、フィルターは有効になりません。",
+        "sensitivityLabel": "感度",
+        "sensitivityDescription": "他の声の話し声をどの程度厳しく除外するかを設定します。",
+        "sensitivity": {
+          "lenient": "緩め",
+          "balanced": "バランス",
+          "strict": "厳しめ",
+          "lenientHint": "他の声も多く通しますが、ご自身の声を誤って無視することは少なくなります。",
+          "balancedHint": "初期設定です。両者の中間です。",
+          "strictHint": "他の声をより多く除外しますが、ご自身の声を誤って無視することが増えます。"
+        },
+        "modelLabel": "話者モデル",
+        "modelDescription": "約 {{size}} の初回のみのダウンロードです。このコンピューター上で動作します。",
+        "enrolled": "声が登録されています。",
+        "notEnrolled": "声はまだ登録されていません。",
+        "enroll": {
+          "label": "声を登録する",
+          "description": "約 6 秒ずつの短い録音を 3 回行います。静かな場所で普段通りに話してください。",
+          "intro": "短い文章のセットを 3 つ読み上げていただきます。保存されるのは声紋のみで、音声は保存されません。",
+          "needModel": "先に話者モデルをインストールしてください。",
+          "start": "登録を開始",
+          "starting": "開始中...",
+          "cancel": "キャンセル",
+          "progress": "{{total}} 件中 {{done}} 件の録音が完了",
+          "stepTitle": "録音 {{total}} 件中 {{step}} 件目",
+          "readThese": "これらの文を普段の声で読んでください:",
+          "record": "この段階の録音を開始",
+          "recording": "録音中。残り {{seconds}} 秒。",
+          "allRecorded": "3 件すべての録音が完了しました。「登録を完了」で声紋を保存します。",
+          "finish": "登録を完了",
+          "done": "声が登録されました。",
+          "messages": {
+            "busy": "先に会話または音声入力を停止してください。",
+            "too_little_speech": "もう少し長く話してください。Vox は録音ごとに少なくとも 2 秒の発話が必要です。",
+            "inconsistent": "3 件の録音の声が似ていないようです。最初の録音からやり直します。",
+            "model_missing": "先に話者モデルをインストールしてください。",
+            "session_ended": "登録が終了しました。準備ができたら、もう一度開始してください。",
+            "generic": "登録できませんでした。もう一度お試しください。"
+          },
+          "prompts": {
+            "s1a": "素早い茶色のキツネが、怠けた犬を飛び越えます。",
+            "s1b": "カレンダーを開いて、今日の予定を教えてください。",
+            "s1c": "今日の午後の天気はどうなりますか?",
+            "s2a": "音量を少し下げてください。",
+            "s2b": "月についての短い豆知識を教えてください。",
+            "s2c": "窓際で一杯のお茶が飲みたいです。",
+            "s3a": "明日の朝、姉に電話するようリマインドしてください。",
+            "s3b": "チームの最新のメッセージを読んでください。",
+            "s3c": "ありがとう。今はこれで全部です。"
+          }
+        },
+        "deleteLabel": "声紋",
+        "deleteDescription": "保存されている声紋を削除します。声紋がないと、話者フィルターは動作できません。",
+        "deleteButton": "声紋を削除",
+        "deleteConfirm": "声紋を削除しますか? フィルターを使うには、もう一度声を登録する必要があります。",
+        "deleteConfirmButton": "はい、削除します",
+        "deleteKeep": "保持する",
+        "deleteError": "声紋を削除できませんでした。もう一度お試しください。"
+      }
     }
   }
 }
