@@ -865,6 +865,12 @@ pub struct AppSettings {
     /// Give the conversation model bounded, redacted vault notes as background (answer-only).
     #[serde(default)]
     pub vault_context_enabled: bool,
+    /// Search the vault index for the voice conversation (DESIGN Rev 5, 3.1). Opt-in: off.
+    #[serde(default)]
+    pub vault_rag_enabled: bool,
+    /// Comma-separated vault folders the index may read (DESIGN Rev 5, 3.1).
+    #[serde(default = "default_vault_rag_folders")]
+    pub vault_rag_folders: String,
     // ---- Agent tools (M2, DESIGN Rev 4 R4-1). Opt-in: tools off by default.
     /// Let the voice conversation call read-only project tools (needs the Experimental master).
     #[serde(default)]
@@ -894,6 +900,53 @@ pub struct AppSettings {
     /// Turns ask mode on: a question to a coding agent whose summary is spoken (M4). Off by default.
     #[serde(default)]
     pub agent_jobs_ask_enabled: bool,
+}
+
+/// Default vault folders for the RAG index (DESIGN Rev 5, 3.1).
+pub fn default_vault_rag_folders() -> String {
+    "Projects,Daily,Memory,Meetings,Resources".to_string()
+}
+
+/// Longest accepted folder name, in characters (DESIGN Rev 5, 3.1).
+const RAG_FOLDER_MAX_CHARS: usize = 64;
+/// Most distinct folders accepted (DESIGN Rev 5, 3.1).
+const RAG_FOLDER_MAX_COUNT: usize = 16;
+const RAG_FOLDER_INVALID: &str =
+    "folder names must be plain names: no /, \\, .., leading dot, or more than 64 characters";
+const RAG_FOLDERS_TOO_MANY: &str = "choose at most 16 folders";
+
+/// True when a folder name is a plain single component (DESIGN Rev 5, 3.1).
+fn rag_folder_is_plain(name: &str) -> bool {
+    name.chars().count() <= RAG_FOLDER_MAX_CHARS
+        && !name.contains(['/', '\\', '\0'])
+        && !name.contains("..")
+        && !name.starts_with('.')
+}
+
+/// Parses the folder list from the settings form (DESIGN Rev 5, 3.1): split on commas, trim,
+/// drop empty entries, reject unsafe names, dedupe keeping the first occurrence, at most 16.
+pub fn parse_rag_folders(raw: &str) -> Result<Vec<String>, String> {
+    let mut folders: Vec<String> = Vec::new();
+    for part in raw.split(',') {
+        let name = part.trim();
+        if name.is_empty() {
+            continue;
+        }
+        if !rag_folder_is_plain(name) {
+            return Err(RAG_FOLDER_INVALID.to_string());
+        }
+        if folders.iter().any(|kept| kept == name) {
+            continue;
+        }
+        if folders.len() == RAG_FOLDER_MAX_COUNT {
+            return Err(RAG_FOLDERS_TOO_MANY.to_string());
+        }
+        folders.push(name.to_string());
+    }
+    if folders.is_empty() {
+        return Err("choose at least one folder".to_string());
+    }
+    Ok(folders)
 }
 
 fn default_agent_jobs_agent_flag() -> String {
@@ -1626,6 +1679,8 @@ pub fn get_default_settings() -> AppSettings {
         conversation_records_to_vault: false,
         vault_path: String::new(),
         vault_context_enabled: false,
+        vault_rag_enabled: false,
+        vault_rag_folders: default_vault_rag_folders(),
         agent_tools_enabled: false,
         agent_tools_guard_actions: true,
         agent_project_roots: Vec::new(),

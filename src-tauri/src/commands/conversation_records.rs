@@ -73,9 +73,9 @@ pub fn change_vault_context_setting(app: AppHandle, enabled: bool) -> Result<(),
 #[tauri::command]
 #[specta::specta]
 pub fn change_vault_path_setting(app: AppHandle, path: String) -> Result<(), String> {
-    let validated = validate_vault_path(&path).map_err(str::to_string)?;
     let mut current = settings::get_settings(&app);
-    current.vault_path = validated;
+    let runtime = crate::commands::vault_rag::runtime_of(&app);
+    crate::commands::vault_rag::change_vault_path_inner(&mut current, runtime.as_deref(), &path)?;
     settings::write_settings(&app, current);
     Ok(())
 }

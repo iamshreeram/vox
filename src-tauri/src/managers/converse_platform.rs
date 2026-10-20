@@ -526,14 +526,9 @@ impl Hands for RealHands {
 
 struct RealBrain {
     app: AppHandle,
-    /// Vault context block for this session (set by `prepare`, read on every plan call).
-    vault_block: Arc<std::sync::Mutex<Option<String>>>,
-    /// True only for the HTTP model routes. Command and agent-bridge routes must never carry
-    /// vault text (argv is visible in the process list), so they never read the slot.
-    vault_route: bool,
-    /// Sticky taint for this session (DESIGN R4-2). `RealPlatform::parts` builds one brain per
-    /// session, so a new session always starts clean.
-    taint: TaintState,
+    /// Per-session state: the M1 vault block slot, the vault route flag, the sticky taint and the
+    /// pinned RAG session (DESIGN 3.2, 3.3). A new session always starts with a fresh one.
+    core: BrainCore,
 }
 
 /// Appended to the planner system prompt on a tool-enabled turn only (DESIGN D3).
@@ -551,7 +546,7 @@ const TOOL_PROXY_BUDGET: Duration = Duration::from_secs(3);
 /// The direct-endpoint route to use for a tool-enabled turn, or `None` for the existing path.
 /// Needs the tools flag (master and `agent_tools_enabled`), the direct endpoint, and a
 /// prepared Anthropic route. Any missing piece falls back to today's behaviour.
-fn tool_route(settings: &AppSettings) -> Option<Prepared> {
+pub(crate) fn tool_route(settings: &AppSettings) -> Option<Prepared> {
     let cfg = RealtimeConfig::from_settings(settings);
     if !(cfg.agent_tools && cfg.direct_endpoint) {
         return None;
@@ -611,7 +606,7 @@ impl ToolModel for DirectToolModel {
 
 /// Proxy resolution off the async workers, bounded by `TOOL_PROXY_BUDGET`. Falls back to the
 /// library default on timeout. Mirrors the streaming route; never logs the value.
-async fn resolve_tool_proxy(settings: &AppSettings) -> ProxyMode {
+pub(crate) async fn resolve_tool_proxy(settings: &AppSettings) -> ProxyMode {
     let cfg = RealtimeConfig::from_settings(settings);
     let manual = cfg.manual_proxy.clone();
     let auto = cfg.auto_proxy;
@@ -683,46 +678,16 @@ pub(crate) async fn plan_with_tools(
     Ok(guard_plan(plan, taint, guard_actions))
 }
 
-impl RealBrain {
-    /// The session's vault block, if `prepare` loaded one and the route is an HTTP model route.
-    /// The route is re-checked against the current settings on every call: the session-start
-    /// flag alone would let a mid-session switch to a command route carry vault text.
-    /// A poisoned lock reads as none.
-    fn vault_context(&self, settings: &AppSettings) -> Option<String> {
-        if !self.vault_route || !vault_text_allowed(settings) {
-            return None;
-        }
-        self.vault_block.lock().ok().and_then(|slot| slot.clone())
-    }
-}
-
 impl Brain for RealBrain {
     fn plan<'a>(&'a self, input: PlanInput<'a>) -> BoxFuture<'a, Result<TurnPlan, PlanError>> {
         Box::pin(async move {
             let settings = get_settings(&self.app);
-            let block = self.vault_context(&settings);
-            let input = PlanInput {
-                vault_context: block.as_deref(),
-                ..input
-            };
-            if let Some(prepared) = tool_route(&settings) {
-                let make_exec = |s: &AppSettings| build_tauri_executor(&self.app, s);
-                return plan_with_tools(&settings, prepared, &input, &self.taint, &make_exec).await;
-            }
-            let deadline = effective_deadline(&settings);
-            let policy = job_parse_policy(&settings);
-            let prompt = planner_prompt_for_policy(&input, &policy);
-            let raw = complete(&settings, &prompt.system, &prompt.combined, deadline)
-                .await
-                .map_err(map_compose_error)?;
-            let plan = crate::managers::converse_plan::parse_plan_with_job_policy(
-                &raw,
-                &prompt.combined,
-                &policy,
-            )?;
+            let make_exec = |s: &AppSettings| build_tauri_executor(&self.app, s);
+            let plan = plan_turn_core(&self.core, &settings, input, &make_exec, None).await?;
+            // Defence in depth: the core already applied the guard. Guarding again is a no-op.
             Ok(guard_plan(
                 plan,
-                &self.taint,
+                &self.core.taint,
                 settings.agent_tools_guard_actions,
             ))
         })
@@ -735,36 +700,13 @@ impl Brain for RealBrain {
     ) -> BoxFuture<'a, Result<TurnPlan, PlanError>> {
         Box::pin(async move {
             let settings = get_settings(&self.app);
-            // A tool-enabled turn never streams early speech: the final JSON is only known
-            // after the loop, so it goes through `plan` (DESIGN D3).
-            if tool_route(&settings).is_some() {
-                return self.plan(input).await;
-            }
-            let deadline = effective_deadline(&settings);
-            let block = self.vault_context(&settings);
-            let input = PlanInput {
-                vault_context: block.as_deref(),
-                ..input
-            };
-            let policy = job_parse_policy(&settings);
-            let prompt = planner_prompt_for_policy(&input, &policy);
-            let raw = complete_streaming(
-                &settings,
-                &prompt.system,
-                &prompt.combined,
-                deadline,
-                on_text,
-            )
-            .await
-            .map_err(map_compose_error)?;
-            let plan = crate::managers::converse_plan::parse_plan_with_job_policy(
-                &raw,
-                &prompt.combined,
-                &policy,
-            )?;
+            let make_exec = |s: &AppSettings| build_tauri_executor(&self.app, s);
+            let plan =
+                plan_turn_core(&self.core, &settings, input, &make_exec, Some(on_text)).await?;
+            // Defence in depth: the core already applied the guard. Guarding again is a no-op.
             Ok(guard_plan(
                 plan,
-                &self.taint,
+                &self.core.taint,
                 settings.agent_tools_guard_actions,
             ))
         })
@@ -807,7 +749,7 @@ fn is_http_model_route(settings: &AppSettings) -> bool {
 /// True when vault text may be sent with the current settings: only on an HTTP model route.
 /// Checked on every plan call, not just at session start, so a mid-session switch to a command
 /// or agent-bridge route stops vault text at once.
-fn vault_text_allowed(settings: &AppSettings) -> bool {
+pub(crate) fn vault_text_allowed(settings: &AppSettings) -> bool {
     is_http_model_route(settings)
 }
 
@@ -934,6 +876,14 @@ impl Platform for RealPlatform {
         let records_on = save.records_enabled;
         let vault_on = vault_context_active(&settings);
         let vault_route = is_http_model_route(&settings);
+        // The RAG session is pinned here, from atomics only, and only when RAG may be used
+        // (DESIGN 3.1, 3.2). Off or ineligible sessions carry no session at all.
+        let rag = if rag_possible(&settings) {
+            crate::commands::vault_rag::runtime_of(&self.app)
+                .map(|runtime| runtime.session(&settings))
+        } else {
+            None
+        };
 
         let vault_block: Arc<std::sync::Mutex<Option<String>>> =
             Arc::new(std::sync::Mutex::new(None));
@@ -1002,9 +952,15 @@ impl Platform for RealPlatform {
             }),
             brain: Box::new(RealBrain {
                 app: self.app.clone(),
-                vault_block,
-                vault_route,
-                taint: TaintState::new(),
+                core: BrainCore {
+                    vault_block,
+                    vault_route,
+                    taint: TaintState::new(),
+                    rag,
+                    retrieval_deadline: RETRIEVAL_DEADLINE,
+                    #[cfg(test)]
+                    after_retrieve: None,
+                },
             }),
             cfg: SessionConfig::from_settings(&settings),
             transcript,
@@ -1532,3 +1488,409 @@ mod converse_platform_policy_tests;
 #[cfg(test)]
 #[path = "converse_platform_m4_tests.rs"]
 mod converse_platform_m4_tests;
+
+// ---------------------------------------------------------------------
+// Vault RAG wiring, tool probe and the BrainCore seam (DESIGN Rev 5, 3.2, 3.3, 3.6).
+// ---------------------------------------------------------------------
+
+use crate::managers::conversation_save::rag_possible;
+use crate::managers::redact::redact;
+use crate::managers::tool_loop::ToolOutput;
+use crate::managers::vault_context::build_vault_block_with_cap;
+use crate::managers::vault_index::IndexManager;
+use crate::managers::vault_rag::{
+    pre_retrieve, render_block, vault_intent, ComposedExecutor, Intent, Retrieval, VaultTools,
+};
+use crate::managers::vault_rag_runtime::RagSession;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Per-turn budget for the RAG retrieval, gate wait included (DESIGN 3.3).
+const RETRIEVAL_DEADLINE: Duration = Duration::from_secs(2);
+
+/// Fixed system prompt of the tool probe (DESIGN 3.6).
+const PROBE_SYSTEM: &str = "You are a connectivity check.";
+/// Fixed user prompt of the tool probe (DESIGN 3.6).
+const PROBE_PROMPT: &str =
+    "Call the vox_probe_echo tool with the word \"ping\", then reply with the single word it returns.";
+/// Name of the probe echo tool (DESIGN 3.6).
+const PROBE_TOOL: &str = "vox_probe_echo";
+/// Refusal when tool support cannot be tested (DESIGN 3.6).
+const PROBE_NO_ROUTE_ERR: &str =
+    "tool support can only be tested when agent tools are enabled with a direct model route";
+/// Largest M1 block kept when RAG evidence is merged in (DESIGN 3.3).
+const RAG_M1_CAP_CHARS: usize = 3_000;
+/// Speech of the tool loop's fixed fallback plan (`tool_loop::FALLBACK_SPEECH`, private there).
+const LOOP_FALLBACK_SPEECH: &str = "I couldn't finish looking that up.";
+
+/// Counts the probe echo calls and the calls whose word is "ping" (trim, case-insensitive).
+struct ProbeWatch {
+    inner: Arc<dyn ToolExecutor>,
+    calls: AtomicUsize,
+    pings: AtomicUsize,
+}
+
+impl ToolExecutor for ProbeWatch {
+    fn specs(&self) -> Vec<ToolSpec> {
+        self.inner.specs()
+    }
+
+    fn call<'a>(&'a self, name: &'a str, input: &'a Value) -> BoxFuture<'a, ToolOutput> {
+        if name == PROBE_TOOL {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if input["word"]
+                .as_str()
+                .is_some_and(|word| word.trim().eq_ignore_ascii_case("ping"))
+            {
+                self.pings.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        self.inner.call(name, input)
+    }
+}
+
+/// Tool-support classification for one route (DESIGN 3.6 probe).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ToolSupport {
+    Untested,
+    Supported,
+    Unsupported,
+    Unknown,
+}
+
+impl ToolSupport {
+    /// Fixed label: `untested | supported | unsupported | unknown`.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            ToolSupport::Untested => "untested",
+            ToolSupport::Supported => "supported",
+            ToolSupport::Unsupported => "unsupported",
+            ToolSupport::Unknown => "unknown",
+        }
+    }
+}
+
+/// Identity of a model route (provider kind, endpoint, model name), held in memory only.
+/// `Debug` prints no field value (DESIGN 3.6: route keys are never logged).
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct RouteKey {
+    kind: String,
+    endpoint: String,
+    model: String,
+}
+
+impl RouteKey {
+    pub(crate) fn new(kind: &str, endpoint: &str, model: &str) -> Self {
+        RouteKey {
+            kind: kind.to_string(),
+            endpoint: endpoint.to_string(),
+            model: model.to_string(),
+        }
+    }
+}
+
+impl std::fmt::Debug for RouteKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RouteKey(..)")
+    }
+}
+
+/// Key of a prepared tool route (kind from its protocol, endpoint = base URL, model name).
+pub(crate) fn route_key_of(prepared: &Prepared) -> RouteKey {
+    let kind = match prepared.protocol {
+        Protocol::AnthropicMessages => "anthropic",
+        Protocol::OpenAiChat => "openai-chat",
+    };
+    RouteKey::new(kind, &prepared.base_url, &prepared.model)
+}
+
+/// Connectivity probe for tool support (DESIGN 3.6 "Probe (frozen)"). `route` is what
+/// `tool_route(settings)` returned; `None` means tools are unavailable: Err and no network call.
+/// Any probe failure (transport, HTTP status, malformed, timeout) is `Ok(ToolSupport::Unknown)`.
+#[cfg(test)]
+pub(crate) async fn run_probe(
+    route: Option<Prepared>,
+    deadline: Duration,
+    exec: Arc<dyn ToolExecutor>,
+) -> Result<ToolSupport, String> {
+    run_probe_with_proxy(route, deadline, exec, ProxyMode::SystemDefault).await
+}
+
+/// The probe body with an explicit proxy, as a real turn resolves it (`resolve_tool_proxy`).
+pub(crate) async fn run_probe_with_proxy(
+    route: Option<Prepared>,
+    deadline: Duration,
+    exec: Arc<dyn ToolExecutor>,
+    proxy: ProxyMode,
+) -> Result<ToolSupport, String> {
+    let Some(prepared) = route else {
+        return Err(PROBE_NO_ROUTE_ERR.to_string());
+    };
+    let watch = ProbeWatch {
+        inner: exec,
+        calls: AtomicUsize::new(0),
+        pings: AtomicUsize::new(0),
+    };
+    let cfg = LoopConfig {
+        max_model_calls: 2,
+        turn_deadline: deadline,
+        ..LoopConfig::default()
+    };
+    // The probe uses the same proxy a real tool turn would (resolved by the caller).
+    let opts = StreamOpts {
+        overall: deadline,
+        first_text: FIRST_TEXT_DEADLINE,
+        proxy,
+    };
+    let model = DirectToolModel { prepared, opts };
+    let taint = TaintState::new();
+    let outcome = run_tool_loop(
+        &model,
+        &watch,
+        PROBE_PROMPT.to_string(),
+        PROBE_SYSTEM.to_string(),
+        &cfg,
+        &taint,
+    )
+    .await;
+    let calls = watch.calls.load(Ordering::SeqCst);
+    let pings = watch.pings.load(Ordering::SeqCst);
+    // The loop answers a failed turn (for example a malformed tool call) with its fixed fallback
+    // plan and no error. That is a failed probe, never a classification (DESIGN 3.6).
+    let fallback =
+        serde_json::json!({"kind": "answer", "speech": LOOP_FALLBACK_SPEECH}).to_string();
+    Ok(match outcome {
+        Err(_) => ToolSupport::Unknown,
+        Ok(done) if done.final_text == fallback => ToolSupport::Unknown,
+        Ok(_) if calls == 0 => ToolSupport::Unsupported,
+        Ok(_) if calls == 1 && pings == 1 => ToolSupport::Supported,
+        Ok(_) => ToolSupport::Unknown,
+    })
+}
+
+/// Test-only hook type: runs inside the gated retrieval closure, after retrieval and readiness reads.
+#[cfg(test)]
+pub(crate) type RetrieveHook = Arc<dyn Fn() + Send + Sync>;
+
+/// The per-session brain state without the app handle. `RealBrain` holds one; `plan` and
+/// `plan_streaming` delegate to `plan_turn_core`. Tests build it with a struct literal.
+pub(crate) struct BrainCore {
+    /// M1 vault block loaded by `prepare` (same slot as `RealBrain::vault_block`).
+    pub(crate) vault_block: Arc<std::sync::Mutex<Option<String>>>,
+    /// True only for the HTTP model routes (same meaning as `RealBrain::vault_route`).
+    pub(crate) vault_route: bool,
+    /// Sticky session taint.
+    pub(crate) taint: TaintState,
+    /// RAG session pinned at start; `None` when the session was not built with RAG.
+    pub(crate) rag: Option<RagSession>,
+    /// Per-turn retrieval deadline (DESIGN 3.3: 2 s; tests inject a shorter one).
+    pub(crate) retrieval_deadline: Duration,
+    /// Test-only: runs inside the gated retrieval closure, after retrieval and the readiness read.
+    #[cfg(test)]
+    pub(crate) after_retrieve: Option<RetrieveHook>,
+}
+
+/// Plans one turn (DESIGN 3.3, 3.5). The tool route is `tool_route(settings)`; `make_exec` builds
+/// the executor for it; `on_text` receives streamed deltas on the plain route only. Applies the
+/// final-speech redaction in RAG-latched sessions before returning.
+pub(crate) async fn plan_turn_core(
+    core: &BrainCore,
+    settings: &AppSettings,
+    input: PlanInput<'_>,
+    make_exec: &(dyn Fn(&AppSettings) -> Arc<dyn ToolExecutor> + Sync),
+    on_text: Option<&mut (dyn FnMut(&str) + Send)>,
+) -> Result<TurnPlan, PlanError> {
+    let rag_block = prepare_rag_evidence(core, settings, input.utterance).await;
+    let block = merge_vault_context(m1_context(core, settings), rag_block.as_deref());
+    let input = PlanInput {
+        vault_context: block.as_deref(),
+        ..input
+    };
+    let live = core
+        .rag
+        .as_ref()
+        .is_some_and(|s| s.latched && s.still_allowed(settings));
+    let plan = match tool_route(settings) {
+        Some(prepared) if !(live && probe_is_unsupported(core, &prepared)) => {
+            let build = |s: &AppSettings| tool_executor(core, s, make_exec, live);
+            plan_with_tools(settings, prepared, &input, &core.taint, &build).await?
+        }
+        _ => plan_plain(settings, &input, &core.taint, on_text).await?,
+    };
+    let latched = core.rag.as_ref().is_some_and(|s| s.latched);
+    // A RAG-latched session refuses Paste, Command and Job after Evidence whatever the guard
+    // setting says (DESIGN 3.2: answer-only RAG sessions).
+    let mut plan = if latched {
+        guard_plan(plan, &core.taint, true)
+    } else {
+        plan
+    };
+    // Every plan kind's speech reaches the Mouth and history, so a latched session scrubs all of it.
+    if latched {
+        plan.speech = redact(&plan.speech);
+    }
+    Ok(plan)
+}
+
+/// The M1 vault block for this turn, under the same route rule as `RealBrain::vault_context`.
+fn m1_context(core: &BrainCore, settings: &AppSettings) -> Option<String> {
+    if !core.vault_route || !vault_text_allowed(settings) {
+        return None;
+    }
+    core.vault_block.lock().ok().and_then(|slot| slot.clone())
+}
+
+/// Merges the M1 block with the RAG block (DESIGN 3.3). Without RAG the M1 block is unchanged;
+/// with RAG the M1 block is capped to 3000 characters first, so the RAG block always fits.
+fn merge_vault_context(m1: Option<String>, rag: Option<&str>) -> Option<String> {
+    let Some(rag) = rag else {
+        return m1;
+    };
+    let m1 = m1.and_then(|block| build_vault_block_with_cap(&block, RAG_M1_CAP_CHARS));
+    Some(match m1 {
+        Some(block) => format!("{block}\n\n{rag}"),
+        None => rag.to_string(),
+    })
+}
+
+/// True when the probe state for this tool route is Unsupported (DESIGN 3.1 fallback).
+fn probe_is_unsupported(core: &BrainCore, prepared: &Prepared) -> bool {
+    core.rag
+        .as_ref()
+        .is_some_and(|s| s.probe_state(&route_key_of(prepared)) == ToolSupport::Unsupported)
+}
+
+/// The executor for a tool turn: the primary tools, plus the vault tools when they are allowed
+/// (`live`: latched, still allowed, manager present; DESIGN 3.1, 3.5).
+fn tool_executor(
+    core: &BrainCore,
+    settings: &AppSettings,
+    make_exec: &(dyn Fn(&AppSettings) -> Arc<dyn ToolExecutor> + Sync),
+    live: bool,
+) -> Arc<dyn ToolExecutor> {
+    let primary = make_exec(settings);
+    match vault_tools(core, settings, live) {
+        Some(vault) => Arc::new(ComposedExecutor::new(primary, vault)),
+        None => primary,
+    }
+}
+
+/// The vault tools bound to the pinned session, or `None` when they are not offered.
+fn vault_tools(
+    core: &BrainCore,
+    settings: &AppSettings,
+    live: bool,
+) -> Option<Arc<dyn ToolExecutor>> {
+    if !live {
+        return None;
+    }
+    let session = core.rag.as_ref()?;
+    let manager: Arc<IndexManager> = session.manager.clone()?;
+    let owned = session.clone();
+    let fresh = settings.clone();
+    let still_allowed: Arc<dyn Fn() -> bool + Send + Sync> =
+        Arc::new(move || owned.still_allowed(&fresh));
+    let vault: Arc<dyn ToolExecutor> = Arc::new(VaultTools::new(
+        manager,
+        session.generation,
+        session.gate.clone(),
+        still_allowed,
+    ));
+    Some(vault)
+}
+
+/// The plain completion path: one request, evidence in the system prompt (text route and the
+/// unsupported-tools fallback). Streams deltas when `on_text` is given.
+async fn plan_plain(
+    settings: &AppSettings,
+    input: &PlanInput<'_>,
+    taint: &TaintState,
+    on_text: Option<&mut (dyn FnMut(&str) + Send)>,
+) -> Result<TurnPlan, PlanError> {
+    let deadline = effective_deadline(settings);
+    let policy = job_parse_policy(settings);
+    let prompt = planner_prompt_for_policy(input, &policy);
+    let raw = match on_text {
+        Some(on_text) => {
+            complete_streaming(
+                settings,
+                &prompt.system,
+                &prompt.combined,
+                deadline,
+                on_text,
+            )
+            .await
+        }
+        None => complete(settings, &prompt.system, &prompt.combined, deadline).await,
+    }
+    .map_err(map_compose_error)?;
+    let plan = crate::managers::converse_plan::parse_plan_with_job_policy(
+        &raw,
+        &prompt.combined,
+        &policy,
+    )?;
+    Ok(guard_plan(plan, taint, settings.agent_tools_guard_actions))
+}
+
+/// Per-turn RAG evidence (DESIGN 3.3 + outcome rule 3.2). Uses `core.rag` (session), `core.taint`
+/// and `core.retrieval_deadline`. Returns the RAG block to send, or `None` when nothing is sent
+/// (feature off, or intent None). Marks the taint before returning an Evidence block.
+/// Unavailable/Empty return their fixed sentences and do not taint. A session without a concrete
+/// manager is Unavailable.
+pub(crate) async fn prepare_rag_evidence(
+    core: &BrainCore,
+    settings: &AppSettings,
+    utterance: &str,
+) -> Option<String> {
+    let session = core.rag.as_ref()?;
+    if !(session.latched && rag_possible(settings)) {
+        return None;
+    }
+    if !session.still_allowed(settings) {
+        return render_block(&Retrieval::Unavailable);
+    }
+    let Some(manager) = session.manager.clone() else {
+        return render_block(&Retrieval::Unavailable);
+    };
+    let owned = session.clone();
+    let fresh = settings.clone();
+    let text = utterance.to_string();
+    #[cfg(test)]
+    let hook = core.after_retrieve.clone();
+    let work = move || -> Option<Retrieval> {
+        let names: Vec<String> = match manager.project_keys(owned.generation) {
+            Ok(keys) => keys
+                .into_iter()
+                .flat_map(|key| [key.title, key.stem])
+                .collect(),
+            Err(_) => return Some(Retrieval::Unavailable),
+        };
+        let intent = vault_intent(&text, &names);
+        if intent == Intent::None {
+            return None;
+        }
+        let found = pre_retrieve(&manager, owned.generation, &text, &intent);
+        #[cfg(test)]
+        if let Some(run) = &hook {
+            run();
+        }
+        if owned.still_allowed(&fresh) {
+            Some(found)
+        } else {
+            Some(Retrieval::Unavailable)
+        }
+    };
+    let found = match session.gate.run(core.retrieval_deadline, work).await {
+        Ok(Some(found)) => found,
+        Ok(None) => return None,
+        Err(_) => Retrieval::Unavailable,
+    };
+    let found = if session.still_allowed(settings) {
+        found
+    } else {
+        Retrieval::Unavailable
+    };
+    if matches!(found, Retrieval::Evidence(_)) {
+        core.taint.mark();
+    }
+    render_block(&found)
+}

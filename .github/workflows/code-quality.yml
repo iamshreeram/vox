@@ -61,6 +61,9 @@ jobs:
       - name: Test keyboard utilities
         run: bun run test:keyboard
 
+      - name: Test vault RAG settings
+        run: bun run test:vault-rag
+
       - name: Run ESLint
         run: bun run lint
 

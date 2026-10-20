@@ -900,6 +900,27 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
       "use notes",
     ],
   ),
+  row(
+    "vaultRagEnable",
+    "conversationMemory",
+    "settings.experimental.vaultRag.enable.label",
+    "settings.experimental.vaultRag.enable.description",
+    ["vault", "obsidian", "notes", "search", "retrieval", "rag", "markdown"],
+  ),
+  row(
+    "vaultRagFolders",
+    "conversationMemory",
+    "settings.experimental.vaultRag.folders.label",
+    "settings.experimental.vaultRag.folders.description",
+    ["vault folders", "folders", "obsidian", "notes", "index", "markdown"],
+  ),
+  row(
+    "vaultRagStatus",
+    "conversationMemory",
+    "settings.experimental.vaultRag.title",
+    "settings.experimental.vaultRag.description",
+    ["vault status", "reindex", "re-index", "tool support", "retrieval", "rag"],
+  ),
 
   // ----- agent tools -----
   row(

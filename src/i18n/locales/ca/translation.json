@@ -995,6 +995,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "Cerca a les notes del magatzem",
+        "description": "Permet que l'assistent de veu trobi fragments rellevants de les teves notes i els faci servir per respondre. Desactivat per defecte.",
+        "enable": {
+          "label": "Cerca a les meves notes del magatzem",
+          "description": "Crea un índex local de paraules clau de les carpetes següents. Quan fas una pregunta, els fragments coincidents s'envien al proveïdor del model. Cal una carpeta del magatzem i la ruta del model en temps real."
+        },
+        "needsVaultPath": "Defineix primer una carpeta del magatzem a Memòria de converses.",
+        "folders": {
+          "label": "Carpetes del magatzem a indexar",
+          "description": "Noms de carpetes dins del magatzem, separats per comes. Només noms senzills: sense barres, sense \"..\" i sense punt inicial. Fins a 16 carpetes.",
+          "placeholder": "Projectes, Diari, Memòria"
+        },
+        "status": {
+          "off": "Desactivat.",
+          "indexing": "S'estan indexant les teves notes...",
+          "ready": "Preparat.",
+          "unavailable": "No disponible. Prova de tornar a indexar o revisa la carpeta del magatzem.",
+          "busy": "Ocupat. L'índex s'està fent servir; torna-ho a provar d'aquí a poc.",
+          "counts": "{{notes}} notes, {{chunks}} seccions cercables, {{skipped}} omeses"
+        },
+        "reindex": {
+          "button": "Torna a indexar ara"
+        },
+        "probe": {
+          "button": "Prova el suport d'eines",
+          "results": {
+            "supported": "Suport d'eines: funciona amb la ruta del model actual.",
+            "unsupported": "Suport d'eines: no disponible. Les sessions del magatzem només fan servir evidències, sense eines.",
+            "unknown": "Suport d'eines: el resultat de la prova no és clar."
+          }
+        },
+        "preview": {
+          "label": "Vista prèvia de la cerca",
+          "placeholder": "Escriu una paraula per cercar",
+          "empty": "No hi ha notes coincidents."
+        },
+        "disclosure": {
+          "folders": "La cerca a les notes del magatzem només llegeix les carpetes indicades i no envia res mentre està desactivada. L'interruptor separat de context del magatzem té el seu propi comportament.",
+          "sentToProvider": "La teva pregunta, els torns recents, els fragments de notes coincidents, els arguments de les eines i els resultats de les eines s'envien al proveïdor del model configurat.",
+          "bestEffortRedaction": "L'ocultació de secrets a les notes es fa com millor es pot. Pot deixar-ne passar alguns, així que no hi confiïs del tot.",
+          "notesMayInstruct": "Les notes poden contenir instruccions que el model podria repetir a la resposta. Per això, les sessions del magatzem només responen: no poden enganxar text ni obrir res.",
+          "spokenAloud": "Les respostes es diuen en veu alta, així que les persones que hi ha a prop poden sentir el contingut de les notes.",
+          "toolsRequirement": "Les eines del magatzem són només de lectura. Només s'executen quan les eines de l'agent estan activades i s'usa la ruta directa al model.",
+          "unsupportedFallback": "Si la prova d'eines indica que no són compatibles, les sessions del magatzem en aquesta ruta passen a usar només evidències, sense eines.",
+          "localCache": "L'índex és un fitxer de memòria cau local a la carpeta de dades de l'aplicació. El pots esborrar en qualsevol moment; esborrar-lo no canvia les teves notes."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

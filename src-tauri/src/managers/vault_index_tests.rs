@@ -1396,3 +1396,59 @@ fn hard_project_keys() {
         "People/ and outside-folder notes are absent"
     );
 }
+
+// ---------------------------------------------------------------- S3 direct checks (DESIGN A6 m2, m5b)
+
+/// A configured index refreshed over one allowed note, so queries reach the database.
+fn refreshed_index(dir: &Path) -> (IndexManager, u64) {
+    let root = dir.join("vault");
+    std::fs::create_dir_all(root.join("Projects")).expect("mkdir");
+    std::fs::write(root.join("Projects/a.md"), "# A\n\nalpha body\n").expect("write");
+    let (m, gen) = configured(dir, &root);
+    let folders = vec!["Projects".to_string(), "Daily".to_string()];
+    let source = crate::managers::vault::VaultSource::new(root, folders);
+    let _report = m.refresh_with(&source, Duration::from_secs(5));
+    (m, gen)
+}
+
+#[test]
+fn index_search_rejects_disallowed_folder_query() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (m, gen) = refreshed_index(dir.path());
+    assert!(
+        m.search(gen, "alpha", &plain_opts(5)).is_ok(),
+        "precondition: an allowed query at the current generation succeeds"
+    );
+    // People is not an allowed folder: the index itself refuses the scope, whatever the vault holds.
+    let refused = m.search(
+        gen,
+        "alpha",
+        &SearchOpts {
+            folder: Some("People".into()),
+            since_days: None,
+            limit: 5,
+        },
+    );
+    assert_eq!(refused, Err(RagError::Forbidden));
+}
+
+#[test]
+fn index_rejects_stale_generation() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (m, gen) = refreshed_index(dir.path());
+    assert!(
+        m.search(gen, "alpha", &plain_opts(5)).is_ok(),
+        "precondition: the current generation is served"
+    );
+    let stale = gen.wrapping_sub(1);
+    assert_eq!(
+        m.search(stale, "alpha", &plain_opts(5)),
+        Err(RagError::GenerationMismatch),
+        "a stale search is refused by the index"
+    );
+    assert_eq!(
+        m.read(stale, "Projects/a.md", None),
+        Err(RagError::GenerationMismatch),
+        "a stale read is refused by the index"
+    );
+}
