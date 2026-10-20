@@ -995,6 +995,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "搜索笔记库中的笔记",
+        "description": "让语音助手在你的笔记库中查找相关段落并用于回答。默认关闭。",
+        "enable": {
+          "label": "搜索我的笔记库",
+          "description": "为下方文件夹建立本地关键词索引。提问时，匹配的段落会发送给你的模型提供方。需要设置笔记库文件夹，并使用实时模型路线。"
+        },
+        "needsVaultPath": "请先在对话记忆中设置笔记库文件夹。",
+        "folders": {
+          "label": "要建立索引的笔记库文件夹",
+          "description": "笔记库内的文件夹名称，用逗号分隔。仅限简单名称：不能包含斜杠、\"..\" 或以点开头。最多 16 个文件夹。",
+          "placeholder": "项目, 日记, 记忆"
+        },
+        "status": {
+          "off": "已关闭。",
+          "indexing": "正在为笔记建立索引...",
+          "ready": "就绪。",
+          "unavailable": "不可用。请尝试重新索引，或检查笔记库文件夹。",
+          "busy": "忙碌中。索引正在使用，请稍后再试。",
+          "counts": "{{notes}} 篇笔记，{{chunks}} 个可搜索片段，{{skipped}} 个已跳过"
+        },
+        "reindex": {
+          "button": "立即重新索引"
+        },
+        "probe": {
+          "button": "测试工具支持",
+          "results": {
+            "supported": "工具支持：当前模型路线可用。",
+            "unsupported": "工具支持：不可用。笔记库会话仅使用依据，不使用工具。",
+            "unknown": "工具支持：测试结果不明确。"
+          }
+        },
+        "preview": {
+          "label": "搜索预览",
+          "placeholder": "输入要搜索的词",
+          "empty": "没有匹配的笔记。"
+        },
+        "disclosure": {
+          "folders": "笔记库搜索只读取列出的文件夹，关闭时不发送任何内容。单独的笔记库上下文开关有其自己的行为。",
+          "sentToProvider": "你的问题、最近几轮对话、匹配的笔记片段、工具参数和工具结果都会发送给已配置的模型提供方。",
+          "bestEffortRedaction": "对笔记中敏感信息的隐藏只是尽力而为。可能会漏掉一些，请不要只依赖它。",
+          "notesMayInstruct": "笔记中可能包含指令，模型可能会在回答中重复这些内容。因此笔记库会话只用于回答：不能粘贴文本，也不能打开任何内容。",
+          "spokenAloud": "回答会被朗读出声，因此附近的人可能听到笔记内容。",
+          "toolsRequirement": "笔记库工具只读。只有在开启代理工具并使用直连模型路线时才会运行。",
+          "unsupportedFallback": "如果工具测试显示不支持工具，该路线上的笔记库会话会切换为仅使用依据、不使用工具。",
+          "localCache": "索引是应用数据文件夹中的本地缓存文件。你可以随时删除；删除索引不会改变你的笔记。"
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

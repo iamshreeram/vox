@@ -20,6 +20,7 @@ import {
   ConversationVaultPathField,
   ConversationVaultToggle,
 } from "../ConversationMemorySettings";
+import { VaultRagSettings } from "../VaultRagSettings";
 import { AgentToolsSettings } from "../AgentToolsSettings";
 import { JobsSettings } from "../JobsSettings";
 import { TtsSettings } from "../TtsSettings";
@@ -126,6 +127,7 @@ export const ExperimentalSettings: React.FC = () => {
           descriptionMode="tooltip"
           grouped={true}
         />
+        <VaultRagSettings descriptionMode="tooltip" grouped={true} />
       </CollapsibleSettingsGroup>
       <CollapsibleSettingsGroup
         id="agentTools"

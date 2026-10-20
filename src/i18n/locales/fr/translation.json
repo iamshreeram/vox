@@ -995,6 +995,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "Recherche dans les notes du coffre",
+        "description": "Permet à l'assistant vocal de trouver des passages pertinents dans les notes de votre coffre et de les utiliser pour répondre. Désactivé par défaut.",
+        "enable": {
+          "label": "Rechercher dans les notes de mon coffre",
+          "description": "Crée un index local de mots-clés pour les dossiers ci-dessous. Lors d'une question, les passages correspondants sont envoyés à votre fournisseur de modèle. Nécessite un dossier de coffre et la route de modèle en temps réel."
+        },
+        "needsVaultPath": "Définissez d'abord un dossier de coffre dans Mémoire de conversation.",
+        "folders": {
+          "label": "Dossiers du coffre à indexer",
+          "description": "Noms de dossiers du coffre, séparés par des virgules. Noms simples uniquement : pas de barres obliques, pas de \"..\" et pas de point au début. Jusqu'à 16 dossiers.",
+          "placeholder": "Projets, Journal, Mémoire"
+        },
+        "status": {
+          "off": "Désactivé.",
+          "indexing": "Indexation de vos notes...",
+          "ready": "Prêt.",
+          "unavailable": "Indisponible. Essayez de réindexer ou vérifiez le dossier du coffre.",
+          "busy": "Occupé. L'index est utilisé ; réessayez dans un instant.",
+          "counts": "{{notes}} notes, {{chunks}} sections consultables, {{skipped}} ignorées"
+        },
+        "reindex": {
+          "button": "Réindexer maintenant"
+        },
+        "probe": {
+          "button": "Tester la prise en charge des outils",
+          "results": {
+            "supported": "Prise en charge des outils : fonctionne avec la route de modèle actuelle.",
+            "unsupported": "Prise en charge des outils : indisponible. Les sessions du coffre n'utilisent que des éléments de preuve, sans outils.",
+            "unknown": "Prise en charge des outils : le résultat du test n'était pas clair."
+          }
+        },
+        "preview": {
+          "label": "Aperçu de recherche",
+          "placeholder": "Saisissez un mot à rechercher",
+          "empty": "Aucune note correspondante."
+        },
+        "disclosure": {
+          "folders": "La recherche dans les notes du coffre ne lit que les dossiers listés et n'envoie rien lorsqu'elle est désactivée. L'interrupteur séparé de contexte du coffre a son propre fonctionnement.",
+          "sentToProvider": "Votre question, les derniers échanges, les extraits de notes correspondants, les arguments des outils et leurs résultats sont envoyés au fournisseur de modèle configuré.",
+          "bestEffortRedaction": "Le masquage des secrets dans les notes se fait au mieux. Certains peuvent échapper au filtre : ne vous y fiez pas seul.",
+          "notesMayInstruct": "Les notes peuvent contenir des instructions que le modèle pourrait répéter dans sa réponse. Les sessions du coffre sont donc réservées aux réponses : elles ne peuvent ni coller de texte ni ouvrir quoi que ce soit.",
+          "spokenAloud": "Les réponses sont lues à voix haute, donc les personnes à proximité peuvent entendre le contenu des notes.",
+          "toolsRequirement": "Les outils du coffre sont en lecture seule. Ils ne fonctionnent que si les outils de l'agent sont activés et que la route directe vers le modèle est utilisée.",
+          "unsupportedFallback": "Si le test d'outils indique qu'ils ne sont pas pris en charge, les sessions du coffre sur cette route passent aux seuls éléments de preuve, sans outils.",
+          "localCache": "L'index est un fichier de cache local dans le dossier de données de l'application. Vous pouvez le supprimer à tout moment ; cela ne modifie pas vos notes."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

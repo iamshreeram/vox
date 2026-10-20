@@ -713,7 +713,6 @@ async fn save_report_carries_no_transcript_summary_or_path_text() {
 // c) load_vault_block
 // ---------------------------------------------------------------------------
 
-const PACK_REL: &str = "Memory/Code-Puppy/CONTEXT-PACK.md";
 const HEADER_START: &str = "REFERENCE NOTES FROM THE USER'S VAULT";
 
 fn write_pack(root: &std::path::Path, body: &str) {
@@ -829,6 +828,28 @@ fn vault_context_active_truth_table_adds_the_realtime_master() {
             }
         }
     }
+}
+
+#[test]
+fn rag_only_config_is_answer_only_but_not_m1_context() {
+    // The RAG switch alone makes the session answer-only; it never turns on the M1 block.
+    let mut s = settings_with(false, "/x", true);
+    s.vault_rag_enabled = true;
+    assert!(answer_only_for(&s));
+    assert!(!vault_context_active(&s));
+}
+
+#[test]
+fn m1_config_is_answer_only_and_m1_context_active() {
+    let s = settings_with(true, "/x", true);
+    assert!(answer_only_for(&s));
+    assert!(vault_context_active(&s));
+}
+
+#[test]
+fn m1_config_with_realtime_off_is_not_m1_context() {
+    let s = settings_with(true, "/x", false);
+    assert!(!vault_context_active(&s));
 }
 
 // ---------------------------------------------------------------------------
