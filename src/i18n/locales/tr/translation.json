@@ -995,6 +995,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "Kasa notlarında arama",
+        "description": "Sesli asistanın kasadaki notlarınızdan ilgili bölümleri bulup yanıtlarda kullanmasını sağlar. Varsayılan olarak kapalıdır.",
+        "enable": {
+          "label": "Kasa notlarımda ara",
+          "description": "Aşağıdaki klasörler için yerel bir anahtar kelime dizini oluşturur. Bir soru sorduğunuzda eşleşen bölümler model sağlayıcınıza gönderilir. Bir kasa klasörü ve gerçek zamanlı model yolu gerekir."
+        },
+        "needsVaultPath": "Önce Konuşma belleğinde bir kasa klasörü ayarlayın.",
+        "folders": {
+          "label": "Dizinlenecek kasa klasörleri",
+          "description": "Kasa içindeki klasör adları, virgülle ayrılmış. Yalnızca basit adlar: eğik çizgi, \"..\" ve baştaki nokta kullanılamaz. En fazla 16 klasör.",
+          "placeholder": "Projeler, Günlük, Bellek"
+        },
+        "status": {
+          "off": "Kapalı.",
+          "indexing": "Notlarınız dizinleniyor...",
+          "ready": "Hazır.",
+          "unavailable": "Kullanılamıyor. Yeniden dizinlemeyi deneyin veya kasa klasörünü kontrol edin.",
+          "busy": "Meşgul. Dizin kullanımda; biraz sonra yeniden deneyin.",
+          "counts": "{{notes}} not, {{chunks}} aranabilir bölüm, {{skipped}} atlandı"
+        },
+        "reindex": {
+          "button": "Şimdi yeniden dizinle"
+        },
+        "probe": {
+          "button": "Araç desteğini test et",
+          "results": {
+            "supported": "Araç desteği: geçerli model yolunda çalışıyor.",
+            "unsupported": "Araç desteği: kullanılamıyor. Kasa oturumları araç kullanmadan yalnızca kanıt kullanır.",
+            "unknown": "Araç desteği: test sonucu net değildi."
+          }
+        },
+        "preview": {
+          "label": "Arama önizlemesi",
+          "placeholder": "Aramak için bir kelime yazın",
+          "empty": "Eşleşen not yok."
+        },
+        "disclosure": {
+          "folders": "Kasa notlarında arama yalnızca listelenen klasörleri okur ve kapalıyken hiçbir şey göndermez. Ayrı kasa bağlamı anahtarının kendi davranışı vardır.",
+          "sentToProvider": "Sorunuz, son konuşma turları, eşleşen not parçaları, araç argümanları ve araç sonuçları yapılandırılmış model sağlayıcısına gönderilir.",
+          "bestEffortRedaction": "Notlardaki gizli bilgilerin gizlenmesi en iyi çabayla yapılır. Bazıları kaçabilir, bu yüzden yalnızca buna güvenmeyin.",
+          "notesMayInstruct": "Notlar, modelin yanıtında tekrarlayabileceği talimatlar içerebilir. Bu nedenle kasa oturumları yalnızca yanıt verir: metin yapıştıramaz veya bir şeyi açamaz.",
+          "spokenAloud": "Yanıtlar sesli okunur, bu nedenle yakındaki kişiler not içeriğini duyabilir.",
+          "toolsRequirement": "Kasa araçları salt okunurdur. Yalnızca ajan araçları açıkken ve doğrudan model yolu kullanılırken çalışırlar.",
+          "unsupportedFallback": "Araç testi araçların desteklenmediğini bildirirse, o yoldaki kasa oturumları araç kullanmadan yalnızca kanıta geçer.",
+          "localCache": "Dizin, uygulamanın veri klasöründe yerel bir önbellek dosyasıdır. İstediğiniz zaman silebilirsiniz; silmek notlarınızı değiştirmez."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

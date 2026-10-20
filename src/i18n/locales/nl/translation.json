@@ -995,6 +995,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "Zoeken in vaultnotities",
+        "description": "Laat de spraakassistent relevante passages in je vaultnotities vinden en gebruiken om te antwoorden. Standaard uit.",
+        "enable": {
+          "label": "Mijn vaultnotities doorzoeken",
+          "description": "Maakt een lokale trefwoordindex van de mappen hieronder. Bij een vraag worden overeenkomende passages naar je modelprovider gestuurd. Vereist een vaultmap en de realtime modelroute."
+        },
+        "needsVaultPath": "Stel eerst een vaultmap in bij Gespreksgeheugen.",
+        "folders": {
+          "label": "Vaultmappen om te indexeren",
+          "description": "Mapnamen binnen de vault, gescheiden door komma's. Alleen eenvoudige namen: geen schuine strepen, geen \"..\" en geen punt vooraan. Maximaal 16 mappen.",
+          "placeholder": "Projecten, Dagboek, Geheugen"
+        },
+        "status": {
+          "off": "Uit.",
+          "indexing": "Je notities worden geïndexeerd...",
+          "ready": "Klaar.",
+          "unavailable": "Niet beschikbaar. Probeer opnieuw te indexeren of controleer de vaultmap.",
+          "busy": "Bezig. De index wordt gebruikt; probeer het zo nog eens.",
+          "counts": "{{notes}} notities, {{chunks}} doorzoekbare delen, {{skipped}} overgeslagen"
+        },
+        "reindex": {
+          "button": "Nu opnieuw indexeren"
+        },
+        "probe": {
+          "button": "Ondersteuning voor tools testen",
+          "results": {
+            "supported": "Toolondersteuning: werkt op de huidige modelroute.",
+            "unsupported": "Toolondersteuning: niet beschikbaar. Vaultsessies gebruiken alleen bewijs, zonder tools.",
+            "unknown": "Toolondersteuning: het testresultaat was niet duidelijk."
+          }
+        },
+        "preview": {
+          "label": "Zoekvoorbeeld",
+          "placeholder": "Typ een woord om te zoeken",
+          "empty": "Geen overeenkomende notities."
+        },
+        "disclosure": {
+          "folders": "Zoeken in vaultnotities leest alleen de vermelde mappen en stuurt niets terwijl het uit staat. De aparte schakelaar voor vaultcontext heeft een eigen gedrag.",
+          "sentToProvider": "Je vraag, recente beurten, overeenkomende notitiefragmenten, toolargumenten en toolresultaten worden naar de ingestelde modelprovider gestuurd.",
+          "bestEffortRedaction": "Geheimen in notities verbergen gebeurt naar beste vermogen. Sommige kunnen worden gemist, dus vertrouw er niet alleen op.",
+          "notesMayInstruct": "Notities kunnen instructies bevatten die het model in zijn antwoord kan herhalen. Vaultsessies zijn daarom alleen voor antwoorden: ze kunnen geen tekst plakken of iets openen.",
+          "spokenAloud": "Antwoorden worden hardop voorgelezen, dus mensen in de buurt kunnen de inhoud van notities horen.",
+          "toolsRequirement": "Vaulttools zijn alleen-lezen. Ze werken alleen als agenttools aan staan en de directe modelroute wordt gebruikt.",
+          "unsupportedFallback": "Als de tooltest meldt dat tools niet worden ondersteund, schakelen vaultsessies op die route over naar alleen bewijs, zonder tools.",
+          "localCache": "De index is een lokaal cachebestand in de datamap van de app. Je kunt het altijd verwijderen; dat verandert je notities niet."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

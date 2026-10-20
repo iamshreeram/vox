@@ -995,6 +995,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "Búsqueda en las notas de la bóveda",
+        "description": "Permite que el asistente de voz encuentre fragmentos relevantes de tus notas de la bóveda y los use para responder. Desactivado por defecto.",
+        "enable": {
+          "label": "Buscar en las notas de mi bóveda",
+          "description": "Crea un índice local de palabras clave de las carpetas indicadas abajo. Al hacer una pregunta, los fragmentos coincidentes se envían a tu proveedor de modelos. Requiere una carpeta de la bóveda y la ruta del modelo en tiempo real."
+        },
+        "needsVaultPath": "Primero define una carpeta de la bóveda en Memoria de conversación.",
+        "folders": {
+          "label": "Carpetas de la bóveda a indexar",
+          "description": "Nombres de carpetas dentro de la bóveda, separados por comas. Solo nombres sencillos: sin barras, sin \"..\" y sin punto al principio. Hasta 16 carpetas.",
+          "placeholder": "Proyectos, Diario, Memoria"
+        },
+        "status": {
+          "off": "Desactivado.",
+          "indexing": "Indexando tus notas...",
+          "ready": "Listo.",
+          "unavailable": "No disponible. Prueba a volver a indexar o revisa la carpeta de la bóveda.",
+          "busy": "Ocupado. El índice está en uso; inténtalo de nuevo en un momento.",
+          "counts": "{{notes}} notas, {{chunks}} secciones buscables, {{skipped}} omitidas"
+        },
+        "reindex": {
+          "button": "Volver a indexar ahora"
+        },
+        "probe": {
+          "button": "Probar compatibilidad con herramientas",
+          "results": {
+            "supported": "Compatibilidad con herramientas: funciona con la ruta de modelo actual.",
+            "unsupported": "Compatibilidad con herramientas: no disponible. Las sesiones de la bóveda usan solo pruebas, sin herramientas.",
+            "unknown": "Compatibilidad con herramientas: el resultado de la prueba no fue claro."
+          }
+        },
+        "preview": {
+          "label": "Vista previa de búsqueda",
+          "placeholder": "Escribe una palabra para buscar",
+          "empty": "No hay notas coincidentes."
+        },
+        "disclosure": {
+          "folders": "La búsqueda en las notas de la bóveda solo lee las carpetas indicadas y no envía nada mientras está desactivada. El interruptor separado de contexto de la bóveda tiene su propio comportamiento.",
+          "sentToProvider": "Tu pregunta, los turnos recientes, los fragmentos de notas coincidentes, los argumentos de las herramientas y sus resultados se envían al proveedor de modelos configurado.",
+          "bestEffortRedaction": "Ocultar secretos en las notas se hace con el mejor esfuerzo. Puede pasar por alto algunos, así que no confíes solo en ello.",
+          "notesMayInstruct": "Las notas pueden contener instrucciones que el modelo repita en su respuesta. Por eso las sesiones de la bóveda solo responden: no pueden pegar texto ni abrir nada.",
+          "spokenAloud": "Las respuestas se leen en voz alta, así que las personas cercanas pueden oír el contenido de las notas.",
+          "toolsRequirement": "Las herramientas de la bóveda son de solo lectura. Solo se ejecutan cuando las herramientas del agente están activadas y se usa la ruta directa al modelo.",
+          "unsupportedFallback": "Si la prueba de herramientas indica que no se admiten, las sesiones de la bóveda en esa ruta pasan a usar solo pruebas, sin herramientas.",
+          "localCache": "El índice es un archivo de caché local en la carpeta de datos de la aplicación. Puedes borrarlo en cualquier momento; borrarlo no cambia tus notas."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

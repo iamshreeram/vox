@@ -18,6 +18,9 @@ pub mod speaker;
 pub mod transcription;
 pub mod tts_composer;
 pub mod tts_voices;
+pub mod vault_rag;
+#[cfg(test)]
+mod vault_rag_tests;
 pub mod voice_shortcuts;
 pub mod wakeword;
 

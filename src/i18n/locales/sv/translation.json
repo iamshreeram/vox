@@ -995,6 +995,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "Sökning i valvets anteckningar",
+        "description": "Låter röstassistenten hitta relevanta avsnitt i dina valvanteckningar och använda dem i svar. Av som standard.",
+        "enable": {
+          "label": "Sök i mina valvanteckningar",
+          "description": "Bygger ett lokalt nyckelordsindex för mapparna nedan. När du ställer en fråga skickas matchande avsnitt till din modelleverantör. Kräver en valvmapp och realtidsmodellvägen."
+        },
+        "needsVaultPath": "Ange först en valvmapp under Konversationsminne.",
+        "folders": {
+          "label": "Valvmappar att indexera",
+          "description": "Mappnamn i valvet, separerade med kommatecken. Endast enkla namn: inga snedstreck, ingen \"..\" och ingen punkt först. Högst 16 mappar.",
+          "placeholder": "Projekt, Dagbok, Minne"
+        },
+        "status": {
+          "off": "Av.",
+          "indexing": "Indexerar dina anteckningar...",
+          "ready": "Redo.",
+          "unavailable": "Inte tillgänglig. Försök indexera om eller kontrollera valvmappen.",
+          "busy": "Upptagen. Indexet används; försök igen om en stund.",
+          "counts": "{{notes}} anteckningar, {{chunks}} sökbara avsnitt, {{skipped}} överhoppade"
+        },
+        "reindex": {
+          "button": "Indexera om nu"
+        },
+        "probe": {
+          "button": "Testa verktygsstöd",
+          "results": {
+            "supported": "Verktygsstöd: fungerar på den aktuella modellvägen.",
+            "unsupported": "Verktygsstöd: inte tillgängligt. Valvsessioner använder endast underlag, utan verktyg.",
+            "unknown": "Verktygsstöd: testresultatet var inte tydligt."
+          }
+        },
+        "preview": {
+          "label": "Sökförhandsvisning",
+          "placeholder": "Skriv ett ord att söka efter",
+          "empty": "Inga matchande anteckningar."
+        },
+        "disclosure": {
+          "folders": "Sökning i valvets anteckningar läser endast de angivna mapparna och skickar inget när den är av. Den separata växlingen för valvkontext har sitt eget beteende.",
+          "sentToProvider": "Din fråga, de senaste replikerna, matchande anteckningsutdrag, verktygsargument och verktygsresultat skickas till den konfigurerade modelleverantören.",
+          "bestEffortRedaction": "Dold hantering av hemligheter i anteckningar görs efter bästa förmåga. Vissa kan missas, så förlita dig inte bara på den.",
+          "notesMayInstruct": "Anteckningar kan innehålla instruktioner som modellen kan upprepa i sitt svar. Därför är valvsessioner endast för svar: de kan inte klistra in text eller öppna något.",
+          "spokenAloud": "Svar läses upp högt, så personer i närheten kan höra innehållet i anteckningarna.",
+          "toolsRequirement": "Valvverktygen är skrivskyddade. De körs endast när agentverktyg är på och den direkta modellvägen används.",
+          "unsupportedFallback": "Om verktygstestet visar att verktyg inte stöds, övergår valvsessioner på den vägen till endast underlag, utan verktyg.",
+          "localCache": "Indexet är en lokal cachefil i appens datamapp. Du kan radera den när som helst; det ändrar inte dina anteckningar."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

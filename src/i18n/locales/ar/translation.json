@@ -969,6 +969,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "بحث في ملاحظات الخزنة",
+        "description": "يتيح للمساعد الصوتي إيجاد المقاطع ذات الصلة في ملاحظات خزنتك واستخدامها في الإجابة. متوقف افتراضياً.",
+        "enable": {
+          "label": "البحث في ملاحظات الخزنة",
+          "description": "يُنشئ فهرساً محلياً للكلمات المفتاحية للمجلدات أدناه. عند طرح سؤال، تُرسل المقاطع المطابقة إلى مزوّد النموذج. يحتاج إلى مجلد للخزنة ومسار النموذج الفوري."
+        },
+        "needsVaultPath": "حدّد مجلد الخزنة في ذاكرة المحادثة أولاً.",
+        "folders": {
+          "label": "مجلدات الخزنة للفهرسة",
+          "description": "أسماء مجلدات داخل الخزنة مفصولة بفواصل. أسماء بسيطة فقط: بلا شرطات مائلة أو \"..\" أو نقطة في البداية. حتى 16 مجلداً.",
+          "placeholder": "مشاريع، يومية، ذاكرة"
+        },
+        "status": {
+          "off": "متوقف.",
+          "indexing": "جارٍ فهرسة ملاحظاتك...",
+          "ready": "جاهز.",
+          "unavailable": "غير متاح. جرّب إعادة الفهرسة أو تحقّق من مجلد الخزنة.",
+          "busy": "مشغول. الفهرس قيد الاستخدام؛ حاول مجدداً بعد قليل.",
+          "counts": "{{notes}} ملاحظة، {{chunks}} مقطعاً قابلاً للبحث، {{skipped}} متجاوَزة"
+        },
+        "reindex": {
+          "button": "إعادة الفهرسة الآن"
+        },
+        "probe": {
+          "button": "اختبار دعم الأدوات",
+          "results": {
+            "supported": "دعم الأدوات: يعمل على مسار النموذج الحالي.",
+            "unsupported": "دعم الأدوات: غير متاح. تستخدم جلسات الخزنة الأدلة فقط دون أدوات.",
+            "unknown": "دعم الأدوات: نتيجة الاختبار غير واضحة."
+          }
+        },
+        "preview": {
+          "label": "معاينة البحث",
+          "placeholder": "اكتب كلمة للبحث",
+          "empty": "لا توجد ملاحظات مطابقة."
+        },
+        "disclosure": {
+          "folders": "يقرأ البحث في ملاحظات الخزنة المجلدات المدرجة فقط، ولا يرسل شيئاً وهو متوقف. لمفتاح سياق الخزنة المنفصل سلوكه الخاص.",
+          "sentToProvider": "يُرسل سؤالك والأدوار الأخيرة ومقاطع الملاحظات المطابقة ووسائط الأدوات ونتائجها إلى مزوّد النموذج المُعدّ.",
+          "bestEffortRedaction": "إخفاء الأسرار في الملاحظات يتم بأفضل جهد ممكن. قد يفوّت بعضها، فلا تعتمد عليه وحده.",
+          "notesMayInstruct": "قد تحتوي الملاحظات على تعليمات يكررها النموذج في ردّه. لذلك جلسات الخزنة للإجابة فقط: لا تستطيع لصق نصوص أو فتح أشياء.",
+          "spokenAloud": "تُنطق الردود بصوت مسموع، لذا قد يسمع الحاضرون محتوى الملاحظات.",
+          "toolsRequirement": "أدوات الخزنة للقراءة فقط. تعمل فقط عند تفعيل أدوات الوكيل واستخدام مسار النموذج المباشر.",
+          "unsupportedFallback": "إذا أفاد اختبار الأدوات بعدم دعمها، تنتقل جلسات الخزنة على ذلك المسار إلى الأدلة فقط دون أدوات.",
+          "localCache": "الفهرس ملف تخزين مؤقت محلي في مجلد بيانات التطبيق. يمكن حذفه في أي وقت؛ الحذف لا يغيّر ملاحظاتك."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",

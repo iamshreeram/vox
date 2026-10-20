@@ -309,6 +309,64 @@ async changeVaultPathSetting(path: string) : Promise<Result<null, string>> {
 }
 },
 /**
+ * Turns the RAG switch on or off (DESIGN 3.6).
+ */
+async changeVaultRagSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_vault_rag_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stores the vault folder list from the settings form (DESIGN 3.6).
+ */
+async changeVaultRagFoldersSetting(folders: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_vault_rag_folders_setting", { folders }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Index counters and the tool-support state for the settings page (DESIGN 3.6).
+ */
+async vaultIndexStatus() : Promise<VaultIndexStatusDto> {
+    return await TAURI_INVOKE("vault_index_status");
+},
+/**
+ * Asks for a refresh of the applied vault (DESIGN 3.6).
+ */
+async vaultReindex() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("vault_reindex") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Runs a preview search over the applied vault (DESIGN 3.6).
+ */
+async vaultSearchPreview(query: string) : Promise<Result<VaultHitDto[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("vault_search_preview", { query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async vaultRagProbe() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("vault_rag_probe") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Lists saved conversations, newest first. `limit` is clamped by the store (1..=200, default 50).
  */
 async listConversationRecords(limit: number | null) : Promise<Result<ConversationRecordSummaryDto[], string>> {
@@ -1897,6 +1955,14 @@ vault_path?: string;
  */
 vault_context_enabled?: boolean; 
 /**
+ * Search the vault index for the voice conversation (DESIGN Rev 5, 3.1). Opt-in: off.
+ */
+vault_rag_enabled?: boolean; 
+/**
+ * Comma-separated vault folders the index may read (DESIGN Rev 5, 3.1).
+ */
+vault_rag_folders?: string; 
+/**
  * Let the voice conversation call read-only project tools (needs the Experimental master).
  */
 agent_tools_enabled?: boolean; 
@@ -2392,6 +2458,18 @@ name: string;
 locale: string }
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
+/**
+ * One preview hit (DESIGN Rev 5, 3.6). Plain text fields only.
+ */
+export type VaultHitDto = { rel: string; heading: string; snippet: string; note_date: string | null }
+/**
+ * Status DTO for the settings UI (DESIGN Rev 5, 3.6). `tool_support` is a plain string here.
+ */
+export type VaultIndexStatusDto = { notes: number; chunks: number; skipped: number; last_refresh_ms: number | null; refreshing: boolean; last_error_kind: string | null; 
+/**
+ * untested | supported | unsupported | unknown, for the current route key.
+ */
+tool_support: string }
 export type VoiceShortcut = { phrase: string; action: VoiceShortcutAction }
 export type VoiceShortcutAction = { type: "open_url"; url: string } | { type: "open_path"; path: string } | { type: "open_app"; name: string }
 /**

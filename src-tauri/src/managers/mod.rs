@@ -34,6 +34,10 @@ pub mod converse_plan;
 mod converse_plan_vault_tests;
 pub mod converse_platform;
 pub mod converse_queue;
+#[cfg(test)]
+mod converse_rag_probe_tests;
+#[cfg(test)]
+mod converse_rag_tests;
 pub mod converse_runtime;
 pub mod converse_stream;
 pub mod emotion;
@@ -117,6 +121,16 @@ pub mod vault_io;
 mod vault_io_tests;
 #[cfg(test)]
 mod vault_query_tests;
+pub mod vault_rag;
+pub mod vault_rag_runtime;
+#[cfg(test)]
+mod vault_rag_runtime_tests;
+#[cfg(test)]
+mod vault_rag_settings_tests;
+#[cfg(test)]
+mod vault_rag_tests;
+#[cfg(test)]
+mod vault_rag_tools_tests;
 #[cfg(test)]
 mod vault_tests;
 #[cfg(test)]

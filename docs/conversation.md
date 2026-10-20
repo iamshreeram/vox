@@ -38,6 +38,9 @@ Vox keeps the last N exchanges (the "turns kept in context" setting) and
 sends them with each new turn. Older turns are dropped. The memory is in RAM
 only and is cleared when the conversation ends.
 
+Vault notes search can add matching passages from your notes to the context.
+It is off by default; see [vault-rag.md](vault-rag.md).
+
 ## Privacy
 
 What you say and Vox's replies are sent to your configured reply backend. That

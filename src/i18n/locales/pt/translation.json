@@ -995,6 +995,54 @@
         "contextDescription": "While this is on, the conversation is answer-only: it cannot paste text or open things, and replies start slightly slower, until a confirmation feature exists. Command and agent-bridge backends do not get vault context or model summaries.",
         "groupDescription": "Opt-in records of your conversations, with optional vault notes and vault context."
       },
+      "vaultRag": {
+        "title": "Pesquisa nas notas do cofre",
+        "description": "Permite que o assistente de voz encontre trechos relevantes nas notas do seu cofre e os use nas respostas. Desativado por padrão.",
+        "enable": {
+          "label": "Pesquisar nas notas do meu cofre",
+          "description": "Cria um índice local de palavras-chave das pastas abaixo. Ao fazer uma pergunta, os trechos correspondentes são enviados ao seu provedor de modelo. Requer uma pasta do cofre e a rota de modelo em tempo real."
+        },
+        "needsVaultPath": "Defina primeiro uma pasta do cofre em Memória de conversa.",
+        "folders": {
+          "label": "Pastas do cofre para indexar",
+          "description": "Nomes de pastas dentro do cofre, separados por vírgulas. Somente nomes simples: sem barras, sem \"..\" e sem ponto no início. Até 16 pastas.",
+          "placeholder": "Projetos, Diário, Memória"
+        },
+        "status": {
+          "off": "Desativado.",
+          "indexing": "Indexando suas notas...",
+          "ready": "Pronto.",
+          "unavailable": "Indisponível. Tente indexar de novo ou verifique a pasta do cofre.",
+          "busy": "Ocupado. O índice está em uso; tente novamente em instantes.",
+          "counts": "{{notes}} notas, {{chunks}} trechos pesquisáveis, {{skipped}} ignoradas"
+        },
+        "reindex": {
+          "button": "Reindexar agora"
+        },
+        "probe": {
+          "button": "Testar suporte a ferramentas",
+          "results": {
+            "supported": "Suporte a ferramentas: funciona na rota de modelo atual.",
+            "unsupported": "Suporte a ferramentas: indisponível. As sessões do cofre usam apenas evidências, sem ferramentas.",
+            "unknown": "Suporte a ferramentas: o resultado do teste não ficou claro."
+          }
+        },
+        "preview": {
+          "label": "Prévia da pesquisa",
+          "placeholder": "Digite uma palavra para pesquisar",
+          "empty": "Nenhuma nota correspondente."
+        },
+        "disclosure": {
+          "folders": "A pesquisa nas notas do cofre lê somente as pastas listadas e não envia nada enquanto estiver desativada. A chave separada de contexto do cofre tem comportamento próprio.",
+          "sentToProvider": "Sua pergunta, as últimas trocas, os trechos de notas correspondentes, os argumentos das ferramentas e os resultados das ferramentas são enviados ao provedor de modelo configurado.",
+          "bestEffortRedaction": "A ocultação de segredos nas notas é feita da melhor forma possível. Alguns podem passar despercebidos, então não confie só nela.",
+          "notesMayInstruct": "As notas podem conter instruções que o modelo repita na resposta. Por isso as sessões do cofre servem apenas para responder: não podem colar texto nem abrir nada.",
+          "spokenAloud": "As respostas são faladas em voz alta, então pessoas por perto podem ouvir o conteúdo das notas.",
+          "toolsRequirement": "As ferramentas do cofre são somente leitura. Elas só funcionam quando as ferramentas do agente estão ativas e a rota direta para o modelo é usada.",
+          "unsupportedFallback": "Se o teste de ferramentas indicar que elas não são suportadas, as sessões do cofre nessa rota passam a usar apenas evidências, sem ferramentas.",
+          "localCache": "O índice é um arquivo de cache local na pasta de dados do aplicativo. Você pode excluí-lo a qualquer momento; excluir não altera suas notas."
+        }
+      },
       "agentTools": {
         "groupDescription": "Let the voice assistant read project status and files. Off by default.",
         "enabledLabel": "Voice agent tools",
