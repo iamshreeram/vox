@@ -507,6 +507,48 @@
             "firstSpeech": "Den første sætning kan tage nogle sekunder, mens modellen indlæses.",
             "limitations": "Kun engelsk. Sætninger i andre skriftsystemer læses op af systemstemmen."
           }
+        },
+        "engines": {
+          "fixedNote": "Alle stemmer kører på denne enhed. Modeller hentes kun én gang, og kun når du vælger det.",
+          "select": "Vælg",
+          "selected": "Valgt",
+          "unavailable": "Kun tilgængelig på macOS.",
+          "usingSystemVoice": "Systemstemmen bruges, indtil den er installeret",
+          "badge": {
+            "recommended": "Anbefalet",
+            "englishOnly": "Kun engelsk",
+            "size": "Download på ca. {{size}}",
+            "license": "Licens: {{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "Operativsystem"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "Hurtig, naturlig engelsk stemme, der kører helt på din computer.",
+            "help": "Phonon taler engelsk; svar, der ikke ligner engelsk, bruger systemstemmen. Registreringen er vejledende.",
+            "license": "Stemmemodel: {{license}}. Brug den ikke til at efterligne en rigtig person uden vedkommendes samtykke.",
+            "fixedVoiceRate": "Phonon bruger én indbygget stemme og en fast talehastighed.",
+            "model": {
+              "label": "Phonon-stemmemodel",
+              "description": "Engangsdownload på ca. {{size}}, kontrolleret med faste checksummer. Talen genereres på denne enhed."
+            }
+          },
+          "install": "Installer",
+          "installFromFolder": "Installer fra mappe",
+          "confirmDelete": "Slet Phonon-stemmemodellen? Du kan installere den igen senere.",
+          "error": {
+            "corrupt": "Stemmefilerne bestod ikke verificeringen. Installer stemmen igen.",
+            "disk": "Stemmefilerne kunne ikke skrives. Kontroller den ledige diskplads.",
+            "blocked": "Denne downloadadresse er ikke tilladt. Installer stemmen fra en mappe i stedet.",
+            "generic": "Stemmen kunne ikke installeres. Prøv igen.",
+            "proxy": "Downloadet blev blokeret af en netværksproxy, der kræver login."
+          },
+          "importHint": "Du kan også installere fra en mappe med de fire modelfiler.",
+          "proxyHint": "Blokeret af en proxy? Hent de fire filer et andet sted, og installer dem fra en mappe.",
+          "unsupportedSelected": "Ikke tilgængelig på denne platform. Systemstemmen bruges i stedet."
         }
       },
       "lazyStreamClose": {

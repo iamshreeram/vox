@@ -507,6 +507,48 @@
             "firstSpeech": "載入模型時，第一句話可能需要幾秒鐘。",
             "limitations": "僅支援英文。其他文字的句子將由系統語音朗讀。"
           }
+        },
+        "engines": {
+          "fixedNote": "所有語音都在此裝置上執行。模型僅在您選擇時下載一次。",
+          "select": "選擇",
+          "selected": "已選擇",
+          "unavailable": "僅在 macOS 上可用。",
+          "usingSystemVoice": "安裝前使用系統語音",
+          "badge": {
+            "recommended": "推薦",
+            "englishOnly": "僅英語",
+            "size": "約 {{size}} 下載",
+            "license": "授權：{{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "作業系統"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "快速、自然的英語語音，完全在您的電腦上執行。",
+            "help": "Phonon 只說英語；看起來不是英語的回覆會使用系統語音。偵測僅供參考。",
+            "license": "語音模型：{{license}}。未經本人同意，請勿用其模仿真實的人。",
+            "fixedVoiceRate": "Phonon 只使用一種內建語音和固定的語速。",
+            "model": {
+              "label": "Phonon 語音模型",
+              "description": "一次性下載約 {{size}}，並以固定的檢查碼驗證。語音在此裝置上產生。"
+            }
+          },
+          "install": "安裝",
+          "installFromFolder": "從資料夾安裝",
+          "confirmDelete": "刪除 Phonon 語音模型？您以後可以重新安裝。",
+          "error": {
+            "corrupt": "語音檔案未通過驗證。請重新安裝語音。",
+            "disk": "無法寫入語音檔案。請檢查磁碟可用空間。",
+            "blocked": "不允許使用此下載位址。請改從資料夾安裝語音。",
+            "generic": "無法安裝語音。請重試。",
+            "proxy": "下載被需要登入的網路代理伺服器阻擋。"
+          },
+          "importHint": "您也可以從包含四個模型檔案的資料夾安裝。",
+          "proxyHint": "被代理伺服器阻擋？請從其他位置下載這四個檔案，然後從資料夾安裝。",
+          "unsupportedSelected": "此平台不可用。將改用系統語音。"
         }
       },
       "lazyStreamClose": {

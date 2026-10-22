@@ -507,6 +507,48 @@
             "firstSpeech": "Der erste Satz kann einige Sekunden dauern, während das Modell geladen wird.",
             "limitations": "Nur Englisch. Sätze in anderen Schriften werden von der Systemstimme gesprochen."
           }
+        },
+        "engines": {
+          "fixedNote": "Alle Stimmen laufen auf diesem Gerät. Modelle werden nur einmal und nur auf Wunsch heruntergeladen.",
+          "select": "Auswählen",
+          "selected": "Ausgewählt",
+          "unavailable": "Nur unter macOS verfügbar.",
+          "usingSystemVoice": "Bis zur Installation wird die Systemstimme verwendet",
+          "badge": {
+            "recommended": "Empfohlen",
+            "englishOnly": "Nur Englisch",
+            "size": "Download etwa {{size}}",
+            "license": "Lizenz: {{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "Betriebssystem"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "Schnelle, natürliche englische Stimme, die vollständig auf deinem Computer läuft.",
+            "help": "Phonon spricht Englisch; Antworten, die nicht englisch wirken, werden mit der Systemstimme gesprochen. Die Erkennung ist nur eine Annäherung.",
+            "license": "Stimmmodell: {{license}}. Bitte verwende es nicht, um eine echte Person ohne deren Zustimmung nachzuahmen.",
+            "fixedVoiceRate": "Phonon verwendet eine eingebaute Stimme und eine feste Sprechgeschwindigkeit.",
+            "model": {
+              "label": "Phonon-Stimmmodell",
+              "description": "Einmaliger Download von etwa {{size}}, mit festen Prüfsummen geprüft. Die Sprache wird auf diesem Gerät erzeugt."
+            }
+          },
+          "install": "Installieren",
+          "installFromFolder": "Aus Ordner installieren",
+          "confirmDelete": "Phonon-Stimmmodell löschen? Du kannst es später erneut installieren.",
+          "error": {
+            "corrupt": "Die Stimmdateien haben die Prüfung nicht bestanden. Installiere die Stimme erneut.",
+            "disk": "Die Stimmdateien konnten nicht geschrieben werden. Prüfe den freien Speicherplatz.",
+            "blocked": "Die Download-Adresse ist nicht erlaubt. Installiere die Stimme stattdessen aus einem Ordner.",
+            "generic": "Die Stimme konnte nicht installiert werden. Versuche es erneut.",
+            "proxy": "Der Download wurde von einem Netzwerk-Proxy blockiert, der eine Anmeldung verlangt."
+          },
+          "importHint": "Du kannst auch aus einem Ordner mit den vier Modelldateien installieren.",
+          "proxyHint": "Durch einen Proxy blockiert? Lade die vier Dateien woanders herunter und installiere sie aus einem Ordner.",
+          "unsupportedSelected": "Auf dieser Plattform nicht verfügbar. Stattdessen wird die Systemstimme verwendet."
         }
       },
       "lazyStreamClose": {

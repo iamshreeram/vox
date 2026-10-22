@@ -30,6 +30,11 @@ export interface TauriMockOptions {
   settings?: MockSettings;
   /** When true, localStorage getItem/setItem throw (simulates a blocked storage). */
   storageThrows?: boolean;
+  /**
+   * Fixed raw results per command name, overriding the defaults (JSON-serializable).
+   * Use `setMockCommand` to change one at runtime.
+   */
+  commands?: Record<string, unknown>;
 }
 
 interface MockInitArg {
@@ -37,6 +42,7 @@ interface MockInitArg {
   defaults: MockSettings;
   settings: MockSettings;
   storageThrows: boolean;
+  commands: Record<string, unknown>;
 }
 
 export const DEFAULT_MOCK_SETTINGS: Readonly<MockSettings> = {
@@ -68,6 +74,7 @@ function installTauriMockInPage(arg: MockInitArg): void {
     __TAURI_OS_PLUGIN_INTERNALS__: unknown;
     __voxMock: {
       setSetting: (key: string, value: unknown) => void;
+      setCommand: (command: string, value: unknown) => void;
       emit: (eventName: string, payload: unknown) => void;
     };
   }
@@ -75,6 +82,7 @@ function installTauriMockInPage(arg: MockInitArg): void {
   const win = window as unknown as VoxMockWindow;
   const settings: MockSettings = { ...arg.settings };
   const defaults: MockSettings = { ...arg.defaults };
+  const overrides: Record<string, unknown> = { ...arg.commands };
   const callbacks = new Map<number, (message: unknown) => void>();
   const listeners: Listener[] = [];
   let nextId = 1;
@@ -94,6 +102,9 @@ function installTauriMockInPage(arg: MockInitArg): void {
     get_default_settings: () => clone(defaults),
     get_app_dir_path: () => "/tmp/vox-test",
     get_available_models: () => [],
+    list_personas: () => [],
+    list_tts_voices: () => [],
+    list_natural_voices: () => [],
     // Typed idle/empty answers for commands whose result the Experimental,
     // Advanced, Post Process and Debug pages dereference. Shapes follow
     // src/bindings.ts. Do NOT fall back to null for these.
@@ -134,6 +145,45 @@ function installTauriMockInPage(arg: MockInitArg): void {
     "plugin:macos-permissions|check_microphone_permission": () => true,
     "plugin:macos-permissions|request_accessibility_permission": () => true,
     "plugin:macos-permissions|request_microphone_permission": () => true,
+    // Engine catalog as the macOS backend reports it (same order as the Rust catalog).
+    list_tts_engines: () => [
+      {
+        id: "phonon",
+        recommended: true,
+        runtime: "pure_rust",
+        requires_download: true,
+        size_bytes: 65051089,
+        english_only: true,
+        supports_voice_choice: false,
+        supports_rate: false,
+        supported_on_platform: true,
+        license: "Apache-2.0",
+      },
+      {
+        id: "natural",
+        recommended: false,
+        runtime: "onnx_runtime",
+        requires_download: true,
+        size_bytes: 120673052,
+        english_only: false,
+        supports_voice_choice: true,
+        supports_rate: true,
+        supported_on_platform: true,
+        license: "Apache-2.0",
+      },
+      {
+        id: "system",
+        recommended: false,
+        runtime: "operating_system",
+        requires_download: false,
+        size_bytes: 0,
+        english_only: false,
+        supports_voice_choice: true,
+        supports_rate: true,
+        supported_on_platform: true,
+        license: "OS-provided",
+      },
+    ],
     "plugin:os|locale": () => "en-US",
     "plugin:event|listen": (args) => {
       const handlerId = Number(args.handler);
@@ -155,6 +205,9 @@ function installTauriMockInPage(arg: MockInitArg): void {
   ): Promise<unknown> => {
     if (command.startsWith("change_") && command.endsWith("_setting")) {
       return Promise.resolve(null);
+    }
+    if (command in overrides) {
+      return Promise.resolve(clone(overrides[command]));
     }
     const handler = handlers[command];
     return Promise.resolve(handler ? handler(args) : null);
@@ -210,6 +263,9 @@ function installTauriMockInPage(arg: MockInitArg): void {
         });
       }
     },
+    setCommand: (command: string, value: unknown) => {
+      overrides[command] = clone(value);
+    },
     emit: (eventName: string, payload: unknown) => {
       const notify = listeners
         .filter((l) => l.eventName === eventName)
@@ -233,8 +289,50 @@ export async function installTauriMock(
     defaults: { ...DEFAULT_MOCK_SETTINGS },
     settings: { ...DEFAULT_MOCK_SETTINGS, ...options.settings },
     storageThrows: options.storageThrows ?? false,
+    commands: { ...options.commands },
   };
   await page.addInitScript(installTauriMockInPage, arg);
+}
+
+/**
+ * Replaces the raw result of one command at runtime (for example a model status
+ * that changes after an install). Does not emit anything; pair it with `emitMockEvent`.
+ */
+export async function setMockCommand(
+  page: Page,
+  command: string,
+  value: unknown,
+): Promise<void> {
+  await page.evaluate(
+    ({ c, v }) => {
+      const mock = (
+        window as unknown as {
+          __voxMock: { setCommand: (c: string, v: unknown) => void };
+        }
+      ).__voxMock;
+      mock.setCommand(c, v);
+    },
+    { c: command, v: value },
+  );
+}
+
+/** Delivers a backend event to the frontend's `listen` subscribers. */
+export async function emitMockEvent(
+  page: Page,
+  eventName: string,
+  payload: unknown,
+): Promise<void> {
+  await page.evaluate(
+    ({ e, p }) => {
+      const mock = (
+        window as unknown as {
+          __voxMock: { emit: (e: string, p: unknown) => void };
+        }
+      ).__voxMock;
+      mock.emit(e, p);
+    },
+    { e: eventName, p: payload },
+  );
 }
 
 /**

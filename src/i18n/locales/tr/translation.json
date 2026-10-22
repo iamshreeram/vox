@@ -507,6 +507,48 @@
             "firstSpeech": "Model yüklenirken ilk cümle birkaç saniye sürebilir.",
             "limitations": "Yalnızca İngilizce. Başka yazı sistemlerindeki cümleler sistem sesiyle okunur."
           }
+        },
+        "engines": {
+          "fixedNote": "Tüm sesler bu cihazda çalışır. Modeller yalnızca siz seçtiğinizde, bir kez indirilir.",
+          "select": "Seç",
+          "selected": "Seçildi",
+          "unavailable": "Yalnızca macOS'ta kullanılabilir.",
+          "usingSystemVoice": "Kurulana kadar sistem sesi kullanılır",
+          "badge": {
+            "recommended": "Önerilen",
+            "englishOnly": "Yalnızca İngilizce",
+            "size": "Yaklaşık {{size}} indirme",
+            "license": "Lisans: {{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "İşletim sistemi"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "Tamamen bilgisayarınızda çalışan hızlı ve doğal bir İngilizce ses.",
+            "help": "Phonon İngilizce konuşur; İngilizceye benzemeyen yanıtlar sistem sesini kullanır. Algılama yaklaşık olarak yapılır.",
+            "license": "Ses modeli: {{license}}. Gerçek bir kişinin izni olmadan onu taklit etmek için kullanmayın.",
+            "fixedVoiceRate": "Phonon tek bir yerleşik ses ve sabit bir konuşma hızı kullanır.",
+            "model": {
+              "label": "Phonon ses modeli",
+              "description": "Yaklaşık {{size}} tutarındaki tek seferlik indirme, sabit sağlama toplamlarıyla denetlenir. Konuşma bu cihazda üretilir."
+            }
+          },
+          "install": "Kur",
+          "installFromFolder": "Klasörden kur",
+          "confirmDelete": "Phonon ses modeli silinsin mi? Daha sonra yeniden kurabilirsiniz.",
+          "error": {
+            "corrupt": "Ses dosyaları doğrulamayı geçemedi. Sesi yeniden kurun.",
+            "disk": "Ses dosyaları yazılamadı. Boş disk alanını kontrol edin.",
+            "blocked": "Bu indirme adresine izin verilmiyor. Bunun yerine sesi bir klasörden kurun.",
+            "generic": "Ses kurulamadı. Yeniden deneyin.",
+            "proxy": "İndirme, oturum açma gerektiren bir ağ proxy'si tarafından engellendi."
+          },
+          "importHint": "Dört model dosyasının bulunduğu bir klasörden de kurabilirsiniz.",
+          "proxyHint": "Bir proxy tarafından engellendi mi? Dört dosyayı başka bir yerden indirip bir klasörden kurun.",
+          "unsupportedSelected": "Bu platformda kullanılamaz. Bunun yerine sistem sesi kullanılır."
         }
       },
       "lazyStreamClose": {

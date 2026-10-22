@@ -507,6 +507,48 @@
             "firstSpeech": "Kalimat pertama dapat memerlukan beberapa detik saat model dimuat.",
             "limitations": "Hanya bahasa Inggris. Kalimat dalam aksara lain diucapkan oleh suara sistem."
           }
+        },
+        "engines": {
+          "fixedNote": "Semua suara berjalan di perangkat ini. Model hanya diunduh sekali, dan hanya jika Anda memilihnya.",
+          "select": "Pilih",
+          "selected": "Dipilih",
+          "unavailable": "Hanya tersedia di macOS.",
+          "usingSystemVoice": "Menggunakan suara sistem sampai terpasang",
+          "badge": {
+            "recommended": "Direkomendasikan",
+            "englishOnly": "Hanya bahasa Inggris",
+            "size": "Unduhan sekitar {{size}}",
+            "license": "Lisensi: {{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "Sistem operasi"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "Suara bahasa Inggris yang cepat dan alami, sepenuhnya berjalan di komputer Anda.",
+            "help": "Phonon berbicara dalam bahasa Inggris; balasan yang tidak terdengar seperti bahasa Inggris menggunakan suara sistem. Deteksinya bersifat perkiraan.",
+            "license": "Model suara: {{license}}. Jangan gunakan untuk meniru orang sungguhan tanpa persetujuannya.",
+            "fixedVoiceRate": "Phonon menggunakan satu suara bawaan dan kecepatan bicara yang tetap.",
+            "model": {
+              "label": "Model suara Phonon",
+              "description": "Unduhan sekali saja sekitar {{size}}, diperiksa dengan checksum tetap. Ucapan dibuat di perangkat ini."
+            }
+          },
+          "install": "Pasang",
+          "installFromFolder": "Pasang dari folder",
+          "confirmDelete": "Hapus model suara Phonon? Anda dapat memasangnya lagi nanti.",
+          "error": {
+            "corrupt": "File suara tidak lolos verifikasi. Pasang ulang suara.",
+            "disk": "File suara tidak dapat ditulis. Periksa ruang kosong di disk.",
+            "blocked": "Alamat unduhan ini tidak diizinkan. Pasang suara dari folder sebagai gantinya.",
+            "generic": "Suara tidak dapat dipasang. Coba lagi.",
+            "proxy": "Unduhan diblokir oleh proxy jaringan yang memerlukan masuk."
+          },
+          "importHint": "Anda juga dapat memasang dari folder yang berisi empat file model.",
+          "proxyHint": "Diblokir oleh proxy? Unduh empat file dari tempat lain dan pasang dari folder.",
+          "unsupportedSelected": "Tidak tersedia di platform ini. Suara sistem digunakan sebagai gantinya."
         }
       },
       "lazyStreamClose": {
