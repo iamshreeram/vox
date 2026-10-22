@@ -538,3 +538,27 @@ test.describe("Settings search: debug and language", () => {
     ).toBeVisible();
   });
 });
+
+test.describe("Settings search: new Experimental controls", () => {
+  test("(11) a control added in this change is found by search and rendered on the Experimental page", async ({
+    page,
+  }) => {
+    // Wake word cooldown is a slider on the Experimental page (WakeWordToggle).
+    const cooldownLabel = textAt(
+      translation("en"),
+      "settings.advanced.wakeWord.cooldownLabel",
+    );
+    await installTauriMock(page, { settings: { experimental_enabled: true } });
+    await page.goto("/");
+
+    await searchBox(page).fill("wake word cooldown");
+    await options(page).filter({ hasText: cooldownLabel }).first().click();
+
+    await expect(section(page, "experimental")).toBeVisible();
+    await expect(
+      section(page, "experimental")
+        .getByText(cooldownLabel, { exact: true })
+        .first(),
+    ).toBeVisible();
+  });
+});

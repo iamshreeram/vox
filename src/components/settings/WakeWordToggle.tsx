@@ -92,10 +92,7 @@ export const WakeWordToggle: React.FC<WakeWordToggleProps> = React.memo(
         <Slider
           value={silenceTimeoutMs}
           onChange={(next) =>
-            void updateSetting(
-              "wake_word_silence_timeout_ms",
-              Math.round(next),
-            )
+            void updateSetting("wake_word_silence_timeout_ms", Math.round(next))
           }
           min={0}
           max={SILENCE_TIMEOUT_MAX_MS}

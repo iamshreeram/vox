@@ -315,7 +315,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
       "voice trigger",
     ],
   ),
-row(
+  row(
     "wakeWordConfidence",
     "listening",
     "settings.advanced.wakeWord.confidenceLabel",
@@ -370,13 +370,7 @@ row(
     "listening",
     "settings.advanced.ambientMode.wakeNameLabel",
     "settings.advanced.ambientMode.wakeNameDescription",
-    [
-      "ambient wake name",
-      "wake name",
-      "address name",
-      "vox name",
-      "name",
-    ],
+    ["ambient wake name", "wake name", "address name", "vox name", "name"],
   ),
   row(
     "ambientWindow",

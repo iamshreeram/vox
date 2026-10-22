@@ -98,6 +98,12 @@ function installTauriMockInPage(arg: MockInitArg): void {
     // Advanced, Post Process and Debug pages dereference. Shapes follow
     // src/bindings.ts. Do NOT fall back to null for these.
     list_tts_composer_providers: () => [],
+    // Spoken Replies voice picker (TtsSettings) dereferences the list: an
+    // unhandled command resolves to null and crashes the Experimental page.
+    list_tts_voices: () => [],
+    // Settings store device lists (Vec<AudioDevice> payloads).
+    get_available_microphones: () => [],
+    get_available_output_devices: () => [],
     agent_job_status: () => ({
       state: "idle",
       project: null,
