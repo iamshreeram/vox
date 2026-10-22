@@ -527,7 +527,7 @@
           },
           "phonon": {
             "name": "Phonon",
-            "description": "Voz em inglês rápida e natural que roda inteiramente no seu computador.",
+            "description": "Voz em inglês natural que roda inteiramente no seu computador.",
             "help": "O Phonon fala inglês; respostas que não parecem estar em inglês usam a voz do sistema. A detecção é aproximada.",
             "license": "Modelo de voz: {{license}}. Não o use para imitar uma pessoa real sem o consentimento dela.",
             "fixedVoiceRate": "O Phonon usa uma voz integrada e uma velocidade de fala fixa.",

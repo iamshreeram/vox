@@ -496,6 +496,14 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             phonon_app_data.join("phonon_scratch"),
             phonon_factory,
         );
+        {
+            let phonon_event_handle = app_handle.clone();
+            phonon_health.set_event_sink(commands::phonon_voice::phonon_failure_sink(Arc::new(
+                move |name: &str, payload: serde_json::Value| {
+                    let _ = phonon_event_handle.emit(name, payload);
+                },
+            )));
+        }
         app_handle.manage(commands::phonon_voice::PhononCoordinator(
             phonon_coordinator.clone(),
         ));

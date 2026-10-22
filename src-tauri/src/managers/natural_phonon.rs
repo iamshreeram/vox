@@ -1,7 +1,7 @@
 //! Phonon TTS engine glue (macOS only). This is the ONLY module that names the `ptts` crate.
 //!
-//! Built exactly like the working probe (`ptts_explicit_voice_probe.rs.txt`): explicit
-//! `add_voice`, no `Checkpoint::resolve`, no directory scan, no hub or network. The weights are
+//! Built with explicit `add_voice` calls, no `Checkpoint::resolve`, no directory scan, no hub
+//! or network. The explicit-voice builder was verified against the pinned ptts source. The weights are
 //! loaded only from a verified private snapshot (see `natural_phonon_core::SnapshotLoader`).
 //! DESIGN.md Rev 4, section 3 P3. Spec = `natural_phonon_tests.rs`.
 

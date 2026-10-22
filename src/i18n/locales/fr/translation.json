@@ -527,7 +527,7 @@
           },
           "phonon": {
             "name": "Phonon",
-            "description": "Voix anglaise rapide et naturelle, entièrement exécutée sur votre ordinateur.",
+            "description": "Voix anglaise naturelle, entièrement exécutée sur votre ordinateur.",
             "help": "Phonon parle anglais ; les réponses qui ne semblent pas en anglais utilisent la voix du système. La détection est indicative.",
             "license": "Modèle vocal : {{license}}. Ne l'utilisez pas pour imiter une personne réelle sans son consentement.",
             "fixedVoiceRate": "Phonon utilise une seule voix intégrée et une vitesse de parole fixe.",

@@ -527,7 +527,7 @@
           },
           "phonon": {
             "name": "Phonon",
-            "description": "Snabb, naturlig engelsk röst som körs helt på din dator.",
+            "description": "Naturlig engelsk röst som körs helt på din dator.",
             "help": "Phonon talar engelska; svar som inte verkar vara på engelska använder systemrösten. Identifieringen är ungefärlig.",
             "license": "Röstmodell: {{license}}. Använd den inte för att härma en verklig person utan hens samtycke.",
             "fixedVoiceRate": "Phonon använder en inbyggd röst och en fast talhastighet.",

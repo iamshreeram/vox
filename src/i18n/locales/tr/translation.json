@@ -527,7 +527,7 @@
           },
           "phonon": {
             "name": "Phonon",
-            "description": "Tamamen bilgisayarınızda çalışan hızlı ve doğal bir İngilizce ses.",
+            "description": "Tamamen bilgisayarınızda çalışan doğal bir İngilizce ses.",
             "help": "Phonon İngilizce konuşur; İngilizceye benzemeyen yanıtlar sistem sesini kullanır. Algılama yaklaşık olarak yapılır.",
             "license": "Ses modeli: {{license}}. Gerçek bir kişinin izni olmadan onu taklit etmek için kullanmayın.",
             "fixedVoiceRate": "Phonon tek bir yerleşik ses ve sabit bir konuşma hızı kullanır.",

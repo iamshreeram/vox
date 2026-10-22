@@ -527,7 +527,7 @@
           },
           "phonon": {
             "name": "Phonon",
-            "description": "快速、自然的英語語音，完全在您的電腦上執行。",
+            "description": "自然的英語語音，完全在您的電腦上執行。",
             "help": "Phonon 只說英語；看起來不是英語的回覆會使用系統語音。偵測僅供參考。",
             "license": "語音模型：{{license}}。未經本人同意，請勿用其模仿真實的人。",
             "fixedVoiceRate": "Phonon 只使用一種內建語音和固定的語速。",

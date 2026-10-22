@@ -108,6 +108,18 @@ pub fn error_message(error: &ModelError) -> String {
     .to_string()
 }
 
+/// A message safe to show in the UI for a Phonon engine failure. It names no path, URL or hash
+/// and no internal reason name. Speech falls back to the system voice after any of them.
+pub fn phonon_failure_message(reason: FailureReason) -> String {
+    match reason {
+        FailureReason::Load => "The Phonon voice could not be loaded. Replies use the system voice for now.",
+        FailureReason::Synth => "The Phonon voice could not speak this text. Replies use the system voice for now.",
+        FailureReason::Sink => "The audio output failed while the Phonon voice was speaking. Replies use the system voice for now.",
+        FailureReason::WorkerExit => "The Phonon voice stopped unexpectedly. Replies use the system voice for now.",
+    }
+    .to_string()
+}
+
 // ---------------------------------------------------------------------------------------------
 // Tauri commands (S5c). Never log speech text, URLs or error bodies.
 // ---------------------------------------------------------------------------------------------

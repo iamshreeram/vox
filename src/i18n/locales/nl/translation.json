@@ -527,7 +527,7 @@
           },
           "phonon": {
             "name": "Phonon",
-            "description": "Snelle, natuurlijke Engelse stem die volledig op je computer draait.",
+            "description": "Natuurlijke Engelse stem die volledig op je computer draait.",
             "help": "Phonon spreekt Engels; antwoorden die niet Engels lijken, gebruiken de systeemstem. De detectie is indicatief.",
             "license": "Stemmodel: {{license}}. Gebruik het niet om een echt persoon na te bootsen zonder diens toestemming.",
             "fixedVoiceRate": "Phonon gebruikt één ingebouwde stem en een vaste spreeksnelheid.",

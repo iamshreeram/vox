@@ -1,7 +1,7 @@
 //! Spec for the macOS Phonon end-to-end path (DESIGN.md Rev 4, P4b + P9). Compiled on macOS
 //! tests only. (a) `an_empty_phonon_root_falls_back_to_the_system_voice_exactly_once` runs
 //! without a model. (b) `natural_phonon_e2e_live_*` is ignored and needs VOX_PHONON_DIR pointing
-//! at a folder with the four pinned files (e.g. /tmp/vox-work/phonon31).
+//! at `<folder with the four pinned files>`.
 //! Authoritative: do not weaken an assertion; if a test is wrong, report it instead.
 //!
 //! Stack under test: `build_phonon_stack` (the same parts lib.rs builds for Kokoro, with an

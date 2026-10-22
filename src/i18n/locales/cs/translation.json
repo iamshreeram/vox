@@ -527,7 +527,7 @@
           },
           "phonon": {
             "name": "Phonon",
-            "description": "Rychlý a přirozený anglický hlas, který běží plně ve vašem počítači.",
+            "description": "Přirozeně znějící anglický hlas, který běží plně ve vašem počítači.",
             "help": "Phonon mluví anglicky; odpovědi, které nevypadají jako angličtina, čte systémový hlas. Rozpoznání je pouze orientační.",
             "license": "Model hlasu: {{license}}. Nepoužívejte jej k napodobování skutečné osoby bez jejího souhlasu.",
             "fixedVoiceRate": "Phonon používá jeden vestavěný hlas a pevné tempo řeči.",

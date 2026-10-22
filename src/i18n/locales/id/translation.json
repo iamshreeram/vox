@@ -527,7 +527,7 @@
           },
           "phonon": {
             "name": "Phonon",
-            "description": "Suara bahasa Inggris yang cepat dan alami, sepenuhnya berjalan di komputer Anda.",
+            "description": "Suara bahasa Inggris yang alami, sepenuhnya berjalan di komputer Anda.",
             "help": "Phonon berbicara dalam bahasa Inggris; balasan yang tidak terdengar seperti bahasa Inggris menggunakan suara sistem. Deteksinya bersifat perkiraan.",
             "license": "Model suara: {{license}}. Jangan gunakan untuk meniru orang sungguhan tanpa persetujuannya.",
             "fixedVoiceRate": "Phonon menggunakan satu suara bawaan dan kecepatan bicara yang tetap.",

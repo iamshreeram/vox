@@ -527,7 +527,7 @@
           },
           "phonon": {
             "name": "Phonon",
-            "description": "Veu anglesa ràpida i natural que funciona íntegrament al teu ordinador.",
+            "description": "Veu anglesa natural que funciona íntegrament al teu ordinador.",
             "help": "Phonon parla anglès; les respostes que no semblen estar en anglès fan servir la veu del sistema. La detecció és orientativa.",
             "license": "Model de veu: {{license}}. No l'utilitzis per imitar una persona real sense el seu consentiment.",
             "fixedVoiceRate": "Phonon fa servir una única veu integrada i una velocitat de parla fixa.",

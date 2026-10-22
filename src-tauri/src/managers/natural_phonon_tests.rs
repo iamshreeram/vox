@@ -1,6 +1,6 @@
 //! Spec for the macOS Phonon glue (DESIGN.md Rev 4, P3 + P9). Compiled on macOS tests only.
 //! (a) runs without a model; (b) `natural_phonon_live_*` is ignored and needs VOX_PHONON_DIR
-//! pointing at a folder holding the four pinned files (e.g. /tmp/vox-work/phonon31).
+//! pointing at `<folder with the four pinned files>`.
 //! Authoritative: do not weaken an assertion; if a test is wrong, report it instead.
 
 use crate::managers::natural_engine::SynthEngine;

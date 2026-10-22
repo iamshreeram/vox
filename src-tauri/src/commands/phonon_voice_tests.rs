@@ -970,3 +970,287 @@ async fn phonon_voice_import_core_while_installing_is_busy_with_the_install_text
     phonon_voice_cancel_core(&coord).expect("cancel");
     let _ = finish(task).await;
 }
+
+// ---- Phonon load failure: one phonon-voice-error event and fallback routing (finding C1) ------
+//
+// Contract under test: `phonon_failure_sink(emit)` is the sink handed to the Phonon health
+// (`NaturalHealth::set_event_sink`). Each applied failure emits ONE `phonon-voice-error` whose
+// payload is the finished shape `{ "ok": false, "message": <user text> }`, which is what
+// `usePhononVoice.ts` reads (`payload.message`). The payload never carries a path, a URL or a
+// hash. `NaturalHealth` applies a failure only on a Ready -> Failed transition, so a repeat
+// while already failed emits nothing.
+
+/// The reasons `NaturalHealth` can report. The match makes a new variant a compile error here.
+fn c1_all_reasons() -> [crate::managers::natural_engine::FailureReason; 4] {
+    use crate::managers::natural_engine::FailureReason;
+    let all = [
+        FailureReason::Load,
+        FailureReason::Synth,
+        FailureReason::Sink,
+        FailureReason::WorkerExit,
+    ];
+    for reason in all {
+        match reason {
+            FailureReason::Load
+            | FailureReason::Synth
+            | FailureReason::Sink
+            | FailureReason::WorkerExit => {}
+        }
+    }
+    all
+}
+
+/// Checks one `phonon-voice-error` payload: exactly `ok: false` and a user message, and nothing
+/// that identifies a machine or a model file (no paths, URLs, hashes, or the given secrets).
+fn c1_assert_failure_payload(payload: &Value, secrets: &[String]) {
+    let object = payload
+        .as_object()
+        .unwrap_or_else(|| panic!("payload is not a JSON object: {payload}"));
+    let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["message", "ok"], "payload keys: {payload}");
+    assert_eq!(payload["ok"], Value::Bool(false), "payload: {payload}");
+    let message = payload["message"]
+        .as_str()
+        .unwrap_or_else(|| panic!("message is not a string: {payload}"));
+    assert!(!message.trim().is_empty(), "empty user message");
+    assert!(
+        !["load", "synth", "sink", "worker_exit"].contains(&message),
+        "the message is a raw reason name, not user text: {message}"
+    );
+    let text = payload.to_string();
+    for forbidden in ["/Users", "/tmp", "/var", "http", "sha"] {
+        assert!(
+            !text.contains(forbidden),
+            "payload leaks {forbidden:?}: {text}"
+        );
+    }
+    assert!(!has_hex_run(&text, 64), "payload carries a hash: {text}");
+    for secret in secrets {
+        assert!(
+            !text.contains(secret.as_str()),
+            "payload leaks a path: {text}"
+        );
+    }
+}
+
+/// Polls every 5 ms until `cond` holds or 30 s pass (no fixed sleep).
+fn c1_wait_until(mut cond: impl FnMut() -> bool) -> bool {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while std::time::Instant::now() < deadline {
+        if cond() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    cond()
+}
+
+/// The fallback system route: records what it was asked to say.
+#[derive(Default)]
+struct C1System {
+    texts: Mutex<Vec<String>>,
+}
+
+impl C1System {
+    fn texts(&self) -> Vec<String> {
+        self.texts.lock().unwrap().clone()
+    }
+}
+
+/// A finished handle for the recorded system route.
+struct C1Done;
+
+impl crate::managers::tts::SpeechHandle for C1Done {
+    fn kill(&mut self) -> bool {
+        true
+    }
+    fn is_running(&mut self) -> bool {
+        false
+    }
+}
+
+/// Adapter so the recorded system route can be handed to the router as a `SpeechBackend`.
+struct C1SystemRoute(Arc<C1System>);
+
+impl crate::managers::tts::SpeechBackend for C1SystemRoute {
+    fn spawn(
+        &self,
+        text: &str,
+        _voice: Option<&str>,
+        _rate_wpm: Option<u32>,
+    ) -> std::io::Result<Box<dyn crate::managers::tts::SpeechHandle>> {
+        self.0.texts.lock().unwrap().push(text.to_string());
+        Ok(Box::new(C1Done))
+    }
+    fn supports_queue(&self) -> bool {
+        true
+    }
+    fn enqueue_styled(
+        &self,
+        text: &str,
+        _voice: Option<&str>,
+        _rate_wpm: Option<u32>,
+        _emotion: crate::managers::emotion::Emotion,
+    ) -> std::io::Result<Box<dyn crate::managers::tts::SpeechHandle>> {
+        self.0.texts.lock().unwrap().push(text.to_string());
+        Ok(Box::new(C1Done))
+    }
+}
+
+/// A stream factory that must never be opened: a load failure never reaches the device.
+struct C1NoDevice;
+
+impl crate::managers::natural_sink::StreamFactory for C1NoDevice {
+    fn device_rate(&self) -> Result<u32, String> {
+        Ok(24_000)
+    }
+    fn open(
+        &self,
+        _ctl: Arc<crate::managers::natural_sink::PlaybackCtl>,
+    ) -> Result<Box<dyn Send>, String> {
+        Err("no output device in this test".to_string())
+    }
+}
+
+#[test]
+fn phonon_load_failure_reports_load_and_routes_next_burst_to_system() {
+    use crate::managers::emotion::Emotion;
+    use crate::managers::natural_engine::{FailureReason, HealthState};
+    use crate::managers::natural_router::{EngineBackend, RouterChoice, RouterConfig};
+    use crate::managers::tts::SpeechBackend as _;
+
+    // The real Phonon stack over an EMPTY model root, so the snapshot loader really fails.
+    // `phonon_ready` is forced true (lib.rs would gate on the coordinator) so the burst does
+    // reach the Phonon route and the LOAD is what fails, as after an installed model is damaged.
+    let work = TempDir::new().unwrap();
+    let root = work.path().join("tts_models");
+    let scratch = work.path().join("scratch");
+    let stack =
+        crate::managers::natural_phonon::build_phonon_stack(root, scratch, Arc::new(C1NoDevice));
+    let health = stack.health.clone();
+    let rec = Recorder::new();
+    health.set_event_sink(crate::commands::phonon_voice::phonon_failure_sink(
+        rec.sink(),
+    ));
+
+    let system = Arc::new(C1System::default());
+    let system_queue = Arc::new(C1System::default());
+    let router = EngineBackend::with_phonon(
+        Box::new(C1SystemRoute(system.clone())),
+        Box::new(C1SystemRoute(system_queue.clone())),
+        None,
+        crate::managers::natural_engine::NaturalHealth::new(Duration::from_secs(300)),
+        Some(stack.backend),
+        health.clone(),
+        RouterConfig {
+            choice: Arc::new(|| RouterChoice {
+                natural: false,
+                voice: String::new(),
+                phonon: true,
+            }),
+            model_ready: Arc::new(|| false),
+            phonon_ready: Arc::new(|| true),
+        },
+    );
+
+    let first_text = "Hello there, how are you today?";
+    let _first = router
+        .spawn_styled(first_text, Some("Samantha"), Some(200), Emotion::Calm)
+        .expect("the first burst is accepted by the Phonon route");
+
+    assert!(
+        c1_wait_until(|| health.state() == HealthState::Failed(FailureReason::Load)),
+        "the Phonon load failure must reach health within 30 s"
+    );
+    assert!(
+        c1_wait_until(|| rec.named(ERROR_EVENT).len() == 1),
+        "the load failure must reach the UI as phonon-voice-error within 30 s"
+    );
+    // Once failed, no further failure can be applied, so the count cannot grow later.
+    let errors = rec.named(ERROR_EVENT);
+    assert_eq!(
+        errors.len(),
+        1,
+        "exactly one phonon-voice-error: {errors:?}"
+    );
+    let secrets = [work.path().display().to_string()];
+    c1_assert_failure_payload(&errors[0], &secrets);
+
+    let second_text = "A second sentence after the failure.";
+    let _second = router
+        .spawn_styled(second_text, Some("Samantha"), Some(200), Emotion::Calm)
+        .expect("the next burst is accepted by the fallback");
+    assert_eq!(
+        system.texts(),
+        vec![second_text.to_string()],
+        "while Phonon health is failed the next burst goes to the system voice"
+    );
+    assert!(system_queue.texts().is_empty(), "no second fallback route");
+    assert_eq!(
+        rec.named(ERROR_EVENT).len(),
+        1,
+        "the routed burst adds no phonon-voice-error"
+    );
+}
+
+#[test]
+fn phonon_failure_sink_emits_one_user_safe_error_per_failure_kind() {
+    use crate::commands::phonon_voice::phonon_failure_sink;
+    use crate::managers::natural_engine::NaturalHealth;
+
+    for reason in c1_all_reasons() {
+        let health = NaturalHealth::new(Duration::from_secs(300));
+        let rec = Recorder::new();
+        health.set_event_sink(phonon_failure_sink(rec.sink()));
+        assert!(
+            health.report_failure(health.revision(), reason),
+            "{reason:?}: the first failure is applied"
+        );
+        assert_eq!(rec.count(), 1, "{reason:?}: exactly one event");
+        let errors = rec.named(ERROR_EVENT);
+        assert_eq!(errors.len(), 1, "{reason:?}: one phonon-voice-error");
+        c1_assert_failure_payload(&errors[0], &[]);
+    }
+}
+
+#[test]
+fn a_repeated_phonon_failure_while_failed_emits_no_second_event() {
+    use crate::commands::phonon_voice::phonon_failure_sink;
+    use crate::managers::natural_engine::{FailureReason, NaturalHealth};
+
+    let health = NaturalHealth::new(Duration::from_secs(300));
+    let rec = Recorder::new();
+    health.set_event_sink(phonon_failure_sink(rec.sink()));
+
+    let first = health.revision();
+    assert!(health.report_failure(first, FailureReason::Load));
+    for reason in c1_all_reasons() {
+        assert!(
+            !health.report_failure(health.revision(), reason),
+            "{reason:?}: a failure while already failed is not applied"
+        );
+    }
+    assert!(
+        !health.report_failure(first, FailureReason::Load),
+        "a stale revision is not applied"
+    );
+    assert_eq!(
+        rec.named(ERROR_EVENT).len(),
+        1,
+        "at most one event per failure transition"
+    );
+
+    // Recovery is a new transition, so the next failure emits again (once).
+    let recovered = health.bump();
+    assert!(health.report_failure(recovered, FailureReason::Synth));
+    let errors = rec.named(ERROR_EVENT);
+    assert_eq!(
+        errors.len(),
+        2,
+        "one more event after recovery and a new failure"
+    );
+    for payload in &errors {
+        c1_assert_failure_payload(payload, &[]);
+    }
+}

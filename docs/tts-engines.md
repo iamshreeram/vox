@@ -11,11 +11,11 @@ sources and checksums of the downloaded models, see
 
 ## The three engines
 
-| Engine            | What it is                                                                                                                         | Download                                                                                      | Platforms          |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------ |
-| **System voice**  | The voice built into macOS, spoken with the `say` command.                                                                         | None.                                                                                         | macOS              |
-| **Natural voice** | A local neural voice (Kokoro). English only, with 28 voices in American and British accents. Also shown as "Natural voice (beta)". | About 115 MB: an 88 MB model and a 27 MB voice pack. See [Spoken replies](spoken-replies.md). | macOS              |
-| **Phonon**        | A local neural text-to-speech model from the Gradium Phonon family. English only, one built-in voice.                              | About 65 MB, in four files. See below.                                                        | macOS only for now |
+| Engine            | What it is                                                                                                                                                                                                                                                                                                                                     | Download                                                                                      | Platforms          |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------ |
+| **System voice**  | The voice built into macOS, spoken with the `say` command.                                                                                                                                                                                                                                                                                     | None.                                                                                         | macOS              |
+| **Natural voice** | A local neural voice (Kokoro). It speaks English and other Latin-script text, with 28 voices in American and British accents. Sentences in other scripts are spoken by the system voice, except that a later sentence in another script within a reply the Natural voice is already speaking is skipped. Also shown as "Natural voice (beta)". | About 115 MB: an 88 MB model and a 27 MB voice pack. See [Spoken replies](spoken-replies.md). | macOS              |
+| **Phonon**        | A local neural text-to-speech model from the Gradium Phonon family. English only, one built-in voice.                                                                                                                                                                                                                                          | About 65 MB, in four files. See below.                                                        | macOS only for now |
 
 - **System voice is the default.** Vox uses it until you choose another engine.
 - **Phonon is marked "Recommended"** in the engine picker. It does not change the
@@ -83,8 +83,10 @@ the system voice. Other languages need another engine or the system voice.
 - Phonon is used only when it is selected, installed, healthy, and the text
   looks English.
 - A reply that is already being spoken does not switch engine part way through.
-- If Phonon fails once, the sentence is retried on the fallback voice (the
-  system voice).
+- A Phonon failure at submit time is retried once on the fallback voice (the
+  system voice). A sentence whose background synthesis fails later is skipped, as
+  with the Natural voice. The next sentences use the system voice while Phonon is
+  marked failed, and the Phonon card shows a message.
 - Pressing stop silences speech within about 11 ms. In testing with a fake
   output device, no stale audio played after the stop.
 - The first spoken reply after the app starts includes the model load, about 3

@@ -8,10 +8,10 @@
 //! Never log speech text, URLs or error bodies.
 
 use crate::commands::natural_voice::{
-    build_status, error_message, NaturalVoiceDownloadFinished, NaturalVoiceDownloadProgress,
-    NaturalVoiceStatus,
+    build_status, error_message, phonon_failure_message, NaturalVoiceDownloadFinished,
+    NaturalVoiceDownloadProgress, NaturalVoiceStatus,
 };
-use crate::managers::natural_engine::{HealthState, NaturalHealth};
+use crate::managers::natural_engine::{FailureReason, HealthState, NaturalHealth};
 use crate::managers::natural_model::{DownloadProgress, ModelCoordinator, ModelError, ModelState};
 use crate::managers::tts::TtsManager;
 use serde_json::Value;
@@ -50,6 +50,16 @@ fn progress_payload(progress: DownloadProgress) -> Value {
         total: progress.total,
     })
     .unwrap_or(Value::Null)
+}
+
+/// Sink for the Phonon health (`NaturalHealth::set_event_sink`). Each applied failure emits one
+/// `phonon-voice-error` whose payload is the finished shape with `ok: false` and a user-safe
+/// message. Only Phonon failures reach this sink; Kokoro keeps its own sink.
+pub fn phonon_failure_sink(emit: PhononEmit) -> Box<dyn Fn(FailureReason) + Send + Sync> {
+    Box::new(move |reason| {
+        let message = phonon_failure_message(reason);
+        emit(ERROR_EVENT, finished_payload(false, Some(message)));
+    })
 }
 
 /// Pure status for the Phonon row: model state and progress from the coordinator, health from

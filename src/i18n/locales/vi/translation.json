@@ -527,7 +527,7 @@
           },
           "phonon": {
             "name": "Phonon",
-            "description": "Giọng tiếng Anh nhanh và tự nhiên, chạy hoàn toàn trên máy tính của bạn.",
+            "description": "Giọng tiếng Anh tự nhiên, chạy hoàn toàn trên máy tính của bạn.",
             "help": "Phonon nói tiếng Anh; các câu trả lời không giống tiếng Anh sẽ dùng giọng hệ thống. Việc nhận diện chỉ mang tính tương đối.",
             "license": "Mô hình giọng nói: {{license}}. Không dùng để bắt chước một người thật khi chưa có sự đồng ý của họ.",
             "fixedVoiceRate": "Phonon dùng một giọng tích hợp sẵn và tốc độ nói cố định.",
