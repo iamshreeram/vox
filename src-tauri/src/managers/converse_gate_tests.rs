@@ -348,7 +348,7 @@ async fn run_gate(
     let brain = GateBrain { plan: plan.clone() };
     let announcer = Announcer::new(Arc::new(RecordingLowMouth { ev: ev.clone() }));
     let (_tx, rx) = watch::channel(false);
-    let mut cancel: CancelToken = rx;
+    let mut cancel: CancelToken = rx.into();
     let deps = Deps {
         ears: &ears,
         mouth: &mouth,
@@ -663,7 +663,7 @@ async fn default_invariance_paste_without_policy_runs_legacy_path() {
         plan: paste_plan("legacy text"),
     };
     let (_tx, rx) = watch::channel(false);
-    let mut cancel: CancelToken = rx;
+    let mut cancel: CancelToken = rx.into();
     let deps = Deps {
         ears: &ears,
         mouth: &mouth,

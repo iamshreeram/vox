@@ -3,6 +3,7 @@
 //! the traits below. Contract: DESIGN.md section 3.3 (Revision 4).
 
 use crate::managers::converse_ack::choose;
+use crate::managers::converse_barge::{BargeCapture, BargeIn, BargeWatch, ReplyGate};
 use crate::managers::converse_confirm::{
     confirm_action, confirmation_question, decline_message, fingerprint_for, prepare_action,
     ConfirmConfig, Decision, DeclineReason, DirFd, JobLaunch, JobStartOutcome, PinError,
@@ -27,8 +28,84 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-/// `true` means the session was cancelled.
-pub type CancelToken = tokio::sync::watch::Receiver<bool>;
+/// Cancellation seen by one step of a session: the session stop and, during a reply, the
+/// barge-in reply token (DESIGN 12.2.1). `true` on either side means cancelled. Clones share
+/// both channels.
+#[derive(Clone)]
+pub struct CancelToken {
+    session: tokio::sync::watch::Receiver<bool>,
+    reply: Option<tokio::sync::watch::Receiver<bool>>,
+}
+
+/// Both sides of a `CancelToken` are closed, so nothing can cancel it any more.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CancelClosed;
+
+impl From<tokio::sync::watch::Receiver<bool>> for CancelToken {
+    fn from(session: tokio::sync::watch::Receiver<bool>) -> Self {
+        CancelToken {
+            session,
+            reply: None,
+        }
+    }
+}
+
+impl CancelToken {
+    /// True when the session stop or the reply token is set. Both sides are read synchronously.
+    pub fn is_cancelled(&self) -> bool {
+        self.session_cancelled() || self.reply.as_ref().is_some_and(|reply| *reply.borrow())
+    }
+
+    /// True only when the session stop is set.
+    pub fn session_cancelled(&self) -> bool {
+        *self.session.borrow()
+    }
+
+    /// The same session with a reply token added. Any earlier reply token is replaced.
+    pub fn with_reply(&self, reply: tokio::sync::watch::Receiver<bool>) -> CancelToken {
+        CancelToken {
+            session: self.session.clone(),
+            reply: Some(reply),
+        }
+    }
+
+    /// The session side only. Kept for the pre-listen `prepare` step, which runs before any
+    /// reply token exists. Use `is_cancelled` for the full state.
+    pub fn borrow(&self) -> tokio::sync::watch::Ref<'_, bool> {
+        self.session.borrow()
+    }
+
+    /// Resolves `Ok` once `pred` holds for the full state (`is_cancelled`). A closed side never
+    /// fires: the wait goes on with the other live side. `Err` when both sides are closed and
+    /// the predicate still does not hold.
+    pub async fn wait_for(&mut self, pred: impl Fn(&bool) -> bool) -> Result<(), CancelClosed> {
+        loop {
+            if pred(&self.is_cancelled()) {
+                return Ok(());
+            }
+            let CancelToken { session, reply } = self;
+            let session_live = session.has_changed().is_ok();
+            let reply_live = reply.as_mut().is_some_and(|rx| rx.has_changed().is_ok());
+            if !session_live && !reply_live {
+                return Err(CancelClosed);
+            }
+            tokio::select! {
+                _ = session.changed(), if session_live => {}
+                _ = changed_or_pending(reply), if reply_live => {}
+            }
+        }
+    }
+}
+
+/// `changed()` on the reply side, or pending when there is no reply side.
+async fn changed_or_pending(reply: &mut Option<tokio::sync::watch::Receiver<bool>>) {
+    match reply {
+        Some(rx) => {
+            let _ = rx.changed().await;
+        }
+        None => std::future::pending::<()>().await,
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListenFailure {
@@ -100,6 +177,12 @@ pub trait Ears: Send + Sync {
     /// the ears do not measure it. The loop calls this exactly once right after `listen`.
     /// Default: `None`, so existing ears and fakes are unchanged.
     fn take_timing(&self) -> Option<crate::managers::converse_latency::ListenTiming> {
+        None
+    }
+
+    /// Barge-in monitor for this session (DESIGN 12.2.2). `None` (default): the loop behaves
+    /// exactly as before and no watch is armed.
+    fn barge_in(&self) -> Option<&dyn BargeIn> {
         None
     }
 }
@@ -252,6 +335,12 @@ impl Journal {
         lock_or_recover(&self.0.submitted).len()
     }
 
+    /// The submitted speech so far, joined, without taking it (`None` if nothing).
+    fn peek_submitted(&self) -> Option<String> {
+        let submitted = lock_or_recover(&self.0.submitted);
+        (!submitted.is_empty()).then(|| submitted.join(" "))
+    }
+
     /// Drops speech entries recorded after `len` (keeps confirmation speech out of the transcript).
     fn truncate_submitted(&self, len: usize) {
         lock_or_recover(&self.0.submitted).truncate(len);
@@ -374,6 +463,82 @@ impl Mouth for JournalMouth<'_> {
     }
 }
 
+/// Turn-scoped mouth for a reply that barge-in can cancel (DESIGN 12.7.C). Every admission
+/// (say, open_queue, queue push) takes the reply gate and runs the inner synchronous admission
+/// under it, so once the gate is closed the inner backend is never invoked again.
+pub(crate) struct GatedMouth<'m> {
+    pub(crate) inner: &'m dyn Mouth,
+    pub(crate) gate: Arc<ReplyGate>,
+}
+
+/// What a say admission produced: finished on its first poll, or still running.
+enum Admitted<'a> {
+    Done(SayOutcome),
+    Running(BoxFuture<'a, SayOutcome>),
+}
+
+impl Mouth for GatedMouth<'_> {
+    fn say<'a>(&'a self, text: &'a str, emotion: Emotion) -> BoxFuture<'a, SayOutcome> {
+        let admitted = self.gate.with_admission(|| {
+            let mut say = self.inner.say(text, emotion);
+            // The first poll is the admission: the inner say does its synchronous work (epoch
+            // reservation, speech submission) before its first await. The waker is not needed
+            // here; the caller awaits the future afterwards with its own waker.
+            let mut cx = std::task::Context::from_waker(futures_util::task::noop_waker_ref());
+            match say.as_mut().poll(&mut cx) {
+                std::task::Poll::Ready(outcome) => Admitted::Done(outcome),
+                std::task::Poll::Pending => Admitted::Running(say),
+            }
+        });
+        match admitted {
+            None => Box::pin(async { SayOutcome::Interrupted }),
+            Some(Admitted::Done(outcome)) => Box::pin(async move { outcome }),
+            Some(Admitted::Running(say)) => say,
+        }
+    }
+
+    fn wait_quiet(&self, max: Duration) -> BoxFuture<'_, QuietOutcome> {
+        self.inner.wait_quiet(max)
+    }
+
+    fn stop(&self) {
+        self.inner.stop();
+    }
+
+    fn open_queue(&self) -> Option<Arc<dyn SpeechQueue>> {
+        let queue = self
+            .gate
+            .with_admission(|| self.inner.open_queue())
+            .flatten()?;
+        Some(Arc::new(GatedQueue {
+            inner: queue,
+            gate: self.gate.clone(),
+        }))
+    }
+}
+
+/// The speech queue of a `GatedMouth`: every push is an admission under the reply gate.
+struct GatedQueue {
+    inner: Arc<dyn SpeechQueue>,
+    gate: Arc<ReplyGate>,
+}
+
+impl SpeechQueue for GatedQueue {
+    fn push(&self, text: &str, emotion: Emotion) -> bool {
+        self.gate
+            .with_admission(|| self.inner.push(text, emotion))
+            .unwrap_or(false)
+    }
+
+    fn abort(&self) {
+        self.inner.abort();
+    }
+
+    fn finish(&self) -> BoxFuture<'_, SayOutcome> {
+        self.inner.finish()
+    }
+}
+
 impl From<TurnOutcome> for crate::managers::conversation_record::TurnOutcomeLabel {
     fn from(outcome: TurnOutcome) -> Self {
         use crate::managers::conversation_record::TurnOutcomeLabel as L;
@@ -452,6 +617,24 @@ pub struct Deps<'a> {
     pub announcer: Option<&'a Announcer>,
 }
 
+impl<'a> Deps<'a> {
+    /// The same dependencies with another mouth (the turn-scoped barge-in gate).
+    fn with_mouth<'m>(&self, mouth: &'m dyn Mouth) -> Deps<'m>
+    where
+        'a: 'm,
+    {
+        Deps {
+            ears: self.ears,
+            mouth,
+            hands: self.hands,
+            brain: self.brain,
+            reporter: self.reporter,
+            policy: self.policy,
+            announcer: self.announcer,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SessionConfig {
     pub max_idle_turns: u8,
@@ -527,10 +710,15 @@ pub fn endpoint_config(
 }
 
 /// Run one conversation session to its end. Reports `Idle` exactly once on
-/// every exit path and calls `mouth.stop()` when the end is `Cancelled`.
-pub async fn run_session(deps: &Deps<'_>, cfg: &SessionConfig, cancel: CancelToken) -> SessionEnd {
+/// every exit path and calls `mouth.stop()` when the end is `Cancelled`. The cancel token may
+/// be a plain session receiver (converted here) or a composite `CancelToken`.
+pub async fn run_session(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: impl Into<CancelToken>,
+) -> SessionEnd {
     let _conversation = ConversationGuard::enter(deps.announcer);
-    let mut cancel = cancel;
+    let mut cancel: CancelToken = cancel.into();
     let end = run_turns(deps, cfg, &mut cancel).await;
     if end == SessionEnd::Cancelled {
         deps.mouth.stop();
@@ -599,7 +787,7 @@ enum SpeakResult {
 }
 
 fn is_cancelled(cancel: &CancelToken) -> bool {
-    *cancel.borrow()
+    cancel.is_cancelled()
 }
 
 /// Completes when the token reads `true`. A closed channel never cancels.
@@ -1629,6 +1817,8 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
     // T9b: completed turns (report numbering) and the session's rolling latency window.
     let mut completed_turns: u32 = 0;
     let mut rolling = RollingStats::new();
+    // Barge-in: the utterance a barge-in capture heard, which replaces the next listen (12.2.3).
+    let mut barge_next: Option<String> = None;
     // Every speech line handed to the mouth is journaled for the transcript (DESIGN 8.2).
     let tap = JournalMouth {
         inner: outer.mouth,
@@ -1658,9 +1848,16 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
         }
 
         deps.reporter.state(SessionState::Listening);
-        let heard = race(cancel, deps.ears.listen()).await;
-        // Timing of this listen, taken exactly once right after it returns (every outcome).
-        let listen_timing: Option<ListenTiming> = deps.ears.take_timing();
+        let (heard, listen_timing): (Option<ListenOutcome>, Option<ListenTiming>) =
+            match barge_next.take() {
+                // The barge-in capture already heard this turn: no listen (DESIGN 12.2.3).
+                Some(text) => (Some(ListenOutcome::Utterance(text)), None),
+                None => {
+                    let heard = race(cancel, deps.ears.listen()).await;
+                    // Timing of this listen, taken exactly once right after it returns (every outcome).
+                    (heard, deps.ears.take_timing())
+                }
+            };
         let heard = match heard {
             None => return SessionEnd::Cancelled,
             Some(outcome) => outcome,
@@ -1733,8 +1930,32 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
         // Accepted for dispatch: exactly one transcript event follows (DESIGN 8.2).
         let log = UtteranceLog::new(deps.reporter, &utterance, &carry.journal);
         carry.clock = TurnClock::default();
-        let dispatched =
-            dispatch_utterance(deps, cfg, cancel, &utterance, &history, &mut carry).await;
+        // Barge-in (DESIGN 12.2.3, 12.7.C): one watch per reply. Without a monitor, nothing here
+        // changes: the turn runs with the plain cancel token and the plain mouth.
+        let barge_watch = deps.ears.barge_in().and_then(|barge| barge.arm());
+        let reply_scope = barge_watch
+            .as_deref()
+            .map(|watch| (watch.reply_token(), watch.gate()));
+        let dispatched = match reply_scope {
+            None => dispatch_utterance(deps, cfg, cancel, &utterance, &history, &mut carry).await,
+            Some((reply, gate)) => {
+                let mut turn_cancel = cancel.with_reply(reply);
+                let gated = GatedMouth {
+                    inner: deps.mouth,
+                    gate,
+                };
+                let turn_deps = deps.with_mouth(&gated);
+                dispatch_utterance(
+                    &turn_deps,
+                    cfg,
+                    &mut turn_cancel,
+                    &utterance,
+                    &history,
+                    &mut carry,
+                )
+                .await
+            }
+        };
         // T9b: one latency report per completed turn (plan succeeded, speech handed to the voice).
         if let Some((brain_ms, to_speech_ms)) = carry.clock.completed() {
             completed_turns += 1;
@@ -1746,6 +1967,27 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
             );
             rolling.push(&report);
             deps.reporter.latency(&report, &rolling.stats());
+        }
+        // A latched barge-in wins over a normal finish, but never over the session stop (12.2.3).
+        let barged =
+            barge_watch.filter(|watch| !cancel.session_cancelled() && watch.cancel_latched());
+        if let Some(barge) = barged {
+            deps.mouth.stop();
+            // Built before `finish` consumes the journal: only the speech actually submitted.
+            let spoken = carry.journal.peek_submitted().unwrap_or_default();
+            log.finish(true);
+            record_turn(
+                &mut history,
+                &mut carry,
+                cfg,
+                &utterance,
+                &interrupted_summary(&spoken),
+            );
+            barge_next = match capture_barge(cancel, barge).await {
+                Ok(next) => next,
+                Err(end) => return end,
+            };
+            continue;
         }
         match dispatched {
             Err(end) => {
@@ -1852,6 +2094,34 @@ async fn dispatch_utterance(
     brain_turn(deps, cfg, cancel, utterance, history, carry).await
 }
 
+/// Barge-in capture of the interrupted reply's speech (DESIGN 12.2.3): the endpointer's maximum
+/// utterance (30 s) plus a 10 s speech-to-text allowance. Past it the loop listens normally.
+const BARGE_CAPTURE_BOUND: Duration = Duration::from_secs(40);
+
+/// History side of a reply cut short by a barge-in: the speech actually submitted plus the
+/// existing structured `interrupted` note (the same event the plain interrupted path uses), through
+/// the same neutralize and length cap as every other history entry.
+fn interrupted_summary(submitted: &str) -> String {
+    compose(submitted, &note_interrupted())
+}
+
+/// Waits for the barge-in capture of the interrupted reply (DESIGN 12.2.3). `Ok(Some(text))`
+/// is the utterance heard (no listen needed); `Ok(None)` means listen normally (no speech, or
+/// the bound passed). The session stop always wins. The watch is dropped on every path.
+async fn capture_barge(
+    cancel: &mut CancelToken,
+    mut barge: Box<dyn BargeWatch>,
+) -> Result<Option<String>, SessionEnd> {
+    let bounded = tokio::time::timeout(BARGE_CAPTURE_BOUND, barge.capture());
+    let captured = race(cancel, bounded).await;
+    drop(barge);
+    match captured {
+        None => Err(SessionEnd::Cancelled),
+        Some(Ok(BargeCapture::Utterance(text))) => Ok(Some(text)),
+        Some(_) => Ok(None),
+    }
+}
+
 /// Appends a turn to history (failure records are deduplicated on the full utterance) and keeps
 /// `last_draft` in step with `context_turns == 0`.
 fn record_turn(
@@ -1922,7 +2192,7 @@ impl SessionRegistry {
         let (tx, rx) = tokio::sync::watch::channel(false);
         inner.cancel_tx = Some(tx);
         inner.state = RegistryState::Running(id);
-        Some((id, rx))
+        Some((id, rx.into()))
     }
     /// Running -> Draining and send cancel (use `send_replace`: `send` drops the
     /// value when no receiver is alive). False when Idle or already Draining.

@@ -263,7 +263,7 @@ async fn run_m4_gate(
     let brain = M4Brain { plan: plan.clone() };
     let announcer = Announcer::new(Arc::new(M4LowMouth { log: log.clone() }));
     let (_tx, rx) = watch::channel(false);
-    let mut cancel: CancelToken = rx;
+    let mut cancel: CancelToken = rx.into();
     let deps = Deps {
         ears: &ears,
         mouth: &mouth,

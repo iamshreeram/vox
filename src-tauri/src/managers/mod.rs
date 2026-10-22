@@ -22,6 +22,11 @@ mod conversation_store_tests;
 pub mod converse;
 pub mod converse_ack;
 pub mod converse_audio;
+pub mod converse_barge;
+#[cfg(test)]
+mod converse_barge_loop_tests;
+#[cfg(test)]
+mod converse_barge_tests;
 pub mod converse_capture;
 pub mod converse_confirm;
 pub mod converse_context;

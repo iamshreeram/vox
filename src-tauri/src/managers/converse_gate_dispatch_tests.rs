@@ -28,7 +28,7 @@ async fn run_gate_say(
     let brain = GateBrain { plan: plan.clone() };
     let announcer = Announcer::new(Arc::new(RecordingLowMouth { ev: ev.clone() }));
     let (_tx, rx) = watch::channel(false);
-    let mut cancel: CancelToken = rx;
+    let mut cancel: CancelToken = rx.into();
     let deps = Deps {
         ears: &ears,
         mouth: &mouth,
