@@ -1083,6 +1083,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::natural_voice::list_natural_voices,
             commands::phonon_voice::phonon_voice_status,
             commands::phonon_voice::phonon_voice_install,
+            commands::phonon_voice::phonon_voice_import_folder,
             commands::phonon_voice::phonon_voice_cancel,
             commands::phonon_voice::phonon_voice_delete,
             commands::tts_engines::list_tts_engines,

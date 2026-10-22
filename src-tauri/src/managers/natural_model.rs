@@ -9,13 +9,16 @@
 
 use crate::managers::aux_model::{is_redirect_refused, DownloadPolicy, RedirectRefused};
 use crate::managers::model::ModelManager;
-use crate::managers::natural_snapshot::{snapshot_verified_with, Snapshot};
+use crate::managers::natural_snapshot::{
+    copy_and_verify, open_verified_source, snapshot_verified_with, Snapshot,
+};
 use crate::managers::natural_voices::ModelBytes;
 use hf_hub::api::tokio::CancellationToken;
 use log::{info, warn};
 use sha2::{Digest, Sha256};
 use std::fmt;
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
@@ -516,15 +519,7 @@ impl ModelCoordinator {
         if token.is_cancelled() || shared.generation.load(Ordering::SeqCst) != generation {
             return Err(ModelError::Cancelled);
         }
-        guard.set(Op::Installing);
-        let install = self.install_dir();
-        if fs::symlink_metadata(&install).is_ok() {
-            fs::remove_dir_all(&install).map_err(io_err)?;
-        }
-        fs::rename(staging, &install).map_err(io_err)?;
-        let marker = fs::File::create(install.join(READY_MARKER)).map_err(io_err)?;
-        let _ = marker.sync_all();
-        drop(marker);
+        self.publish(guard, staging)?;
 
         let done = DownloadProgress {
             downloaded: total,
@@ -533,6 +528,82 @@ impl ModelCoordinator {
         *lock(&shared.progress) = done;
         on_progress(done);
         Ok(())
+    }
+
+    /// Replaces the install with `staging` and writes the READY marker LAST. Shared by the
+    /// download and the folder import. The caller removes `staging` on any error.
+    fn publish(&self, guard: &OpGuard<'_>, staging: &Path) -> Result<(), ModelError> {
+        guard.set(Op::Installing);
+        let install = self.install_dir();
+        if fs::symlink_metadata(&install).is_ok() {
+            fs::remove_dir_all(&install).map_err(io_err)?;
+        }
+        fs::rename(staging, &install).map_err(io_err)?;
+        let marker = fs::File::create(install.join(READY_MARKER)).map_err(io_err)?;
+        let _ = marker.sync_all();
+        Ok(())
+    }
+
+    /// Installs the model from a local folder. Only the pinned asset names are read; every other
+    /// entry in `source` is ignored and never copied. `source` must be a real directory.
+    pub fn import_folder(&self, source: &Path) -> Result<(), ModelError> {
+        self.import_folder_with(source, &|_: &Path| {})
+    }
+
+    /// [`Self::import_folder`] with a hook called on each source path after it was inspected and
+    /// before it is copied (tests use it to swap a file under the import). Holds the single-flight
+    /// guard for its whole duration, so a concurrent download, delete, snapshot or import gets
+    /// `Busy`.
+    pub(crate) fn import_folder_with(
+        &self,
+        source: &Path,
+        before_copy: &dyn Fn(&Path),
+    ) -> Result<(), ModelError> {
+        let guard = OpGuard::acquire(&self.shared, Op::Installing)?;
+        let staging = self.root.join(staging_name());
+        let result = self.import_into(&guard, source, &staging, before_copy);
+        if result.is_err() {
+            let _ = fs::remove_dir_all(&staging);
+        }
+        if result.is_ok() {
+            info!("natural model: installed from a folder");
+        } else {
+            warn!("natural model: folder import failed");
+        }
+        drop(guard);
+        result
+    }
+
+    /// Body of [`Self::import_folder_with`]; the caller removes `staging` on any error.
+    fn import_into(
+        &self,
+        guard: &OpGuard<'_>,
+        source: &Path,
+        staging: &Path,
+        before_copy: &dyn Fn(&Path),
+    ) -> Result<(), ModelError> {
+        let source_meta = fs::symlink_metadata(source).map_err(io_err)?;
+        if !source_meta.file_type().is_dir() {
+            return Err(ModelError::Io("the chosen location is not a folder".into()));
+        }
+        fs::create_dir_all(&self.root).map_err(io_err)?;
+        fs::create_dir(staging).map_err(io_err)?;
+
+        for asset in &self.assets {
+            let from = source.join(&asset.file);
+            match fs::symlink_metadata(&from) {
+                Ok(_) => {}
+                Err(e) if e.kind() == ErrorKind::NotFound => {
+                    return Err(ModelError::Corrupt(format!("{} is missing", asset.file)));
+                }
+                Err(e) => return Err(io_err(e)),
+            }
+            let mut input = open_verified_source(&from, asset)?;
+            before_copy(&from);
+            copy_and_verify(&mut input, &staging.join(&asset.file), asset)?;
+        }
+
+        self.publish(guard, staging)
     }
 
     pub fn cancel(&self) {

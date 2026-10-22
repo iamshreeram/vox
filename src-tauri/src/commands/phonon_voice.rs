@@ -15,6 +15,7 @@ use crate::managers::natural_engine::{HealthState, NaturalHealth};
 use crate::managers::natural_model::{DownloadProgress, ModelCoordinator, ModelError, ModelState};
 use crate::managers::tts::TtsManager;
 use serde_json::Value;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -101,6 +102,34 @@ pub async fn phonon_voice_install_core(
     }
 }
 
+/// Installs the Phonon model from a local folder and reports through `emit`. A busy coordinator
+/// is refused with nothing emitted. A success emits the finished OK state and bumps the Phonon
+/// health once. A failure is reported on the error event with the user text. The source path is
+/// never put in a payload or a log line.
+pub fn phonon_voice_import_core(
+    coordinator: Arc<ModelCoordinator>,
+    health: Arc<NaturalHealth>,
+    path: &Path,
+    emit: PhononEmit,
+) -> Result<(), String> {
+    if is_busy(coordinator.state()) {
+        return Err(error_message(&ModelError::Busy));
+    }
+    match coordinator.import_folder(path) {
+        Ok(()) => {
+            health.bump();
+            emit(STATE_EVENT, finished_payload(true, None));
+            Ok(())
+        }
+        Err(error) => {
+            let message = error_message(&error);
+            log::warn!("phonon voice: folder import did not complete");
+            emit(ERROR_EVENT, finished_payload(false, Some(message.clone())));
+            Err(message)
+        }
+    }
+}
+
 /// Cancels a running Phonon download. Always Ok.
 pub fn phonon_voice_cancel_core(coordinator: &ModelCoordinator) -> Result<(), String> {
     coordinator.cancel();
@@ -165,6 +194,30 @@ pub async fn phonon_voice_install(app: AppHandle) -> Result<(), String> {
     });
     tauri::async_runtime::spawn(async move {
         let _ = phonon_voice_install_core(coordinator, health, emit).await;
+    });
+    Ok(())
+}
+
+/// Starts the Phonon import from `path` (a folder picked by the user) on a blocking task and
+/// returns at once. The result arrives as events, like the install.
+#[tauri::command]
+#[specta::specta]
+pub fn phonon_voice_import_folder(app: AppHandle, path: String) -> Result<(), String> {
+    if !cfg!(target_os = "macos") {
+        return Err(UNAVAILABLE.to_string());
+    }
+    let coordinator = coordinator(&app).ok_or_else(|| UNAVAILABLE.to_string())?;
+    let health = health(&app).ok_or_else(|| UNAVAILABLE.to_string())?;
+    if is_busy(coordinator.state()) {
+        return Err(error_message(&ModelError::Busy));
+    }
+    let emit_app = app.clone();
+    let emit: PhononEmit = Arc::new(move |name: &str, payload: Value| {
+        let _ = emit_app.emit(name, payload);
+    });
+    let source = PathBuf::from(path);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = phonon_voice_import_core(coordinator, health, &source, emit);
     });
     Ok(())
 }

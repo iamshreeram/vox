@@ -766,3 +766,207 @@ fn delete_of_an_absent_model_is_ok_like_kokoro() {
     phonon_voice_delete_core(&coord, &health, &|| {}).expect("idempotent delete");
     assert_eq!(coord.state(), ModelState::NotInstalled);
 }
+
+// ---- P7: install the Phonon voice from a folder (phonon_voice_import_core) ---------------------
+//
+// DESIGN.md Rev 4 section 3 P7. The import core is synchronous and platform-neutral. It returns
+// the user text on failure, emits `phonon-voice-state` (finished OK) on success and
+// `phonon-voice-error` on failure, bumps Phonon health once on success only, and never puts the
+// source folder, a temp path, a URL or a hash into any payload.
+
+/// The four tiny assets written under their real names into `<fixture>/source`.
+fn import_source_folder(fx: &Fixture) -> PathBuf {
+    let src = fx.dir.path().join("source");
+    fs::create_dir_all(&src).unwrap();
+    for (file, body) in TINY {
+        fs::write(src.join(file), body).unwrap();
+    }
+    src
+}
+
+fn all_payloads(rec: &Recorder) -> Vec<Value> {
+    rec.events
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(_, payload)| payload.clone())
+        .collect()
+}
+
+/// True when `text` holds a run of `len` hex digits (a SHA-256 when len is 64).
+fn has_hex_run(text: &str, len: usize) -> bool {
+    text.as_bytes()
+        .windows(len)
+        .any(|w| w.iter().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// No payload may carry the source folder, a temp path, a hash or any 64-digit hex run.
+fn assert_no_secret_text(payloads: &[Value], src: &Path) {
+    let folder = src.display().to_string();
+    for payload in payloads {
+        let text = payload.to_string();
+        assert!(
+            !text.contains(&folder),
+            "payload carries the source folder: {text}"
+        );
+        for forbidden in ["/tmp", "/Users", "sha"] {
+            assert!(
+                !text.contains(forbidden),
+                "payload carries {forbidden:?}: {text}"
+            );
+        }
+        assert!(!has_hex_run(&text, 64), "payload carries a hash: {text}");
+    }
+}
+
+/// Runs the import core on a folder the test has just corrupted, and checks the failure
+/// contract: the user text on the error event, no health bump, nothing published, no staging,
+/// and no secret in any payload.
+fn check_import_failure(corrupt: impl FnOnce(&Path)) {
+    let fx = Fixture::new();
+    let src = import_source_folder(&fx);
+    corrupt(&src);
+    let coord = Arc::new(loopback_coord(fx.root(), "http://127.0.0.1:9/"));
+    let health = NaturalHealth::new(Duration::from_secs(300));
+    let rec = Recorder::new();
+    let revision = health.revision();
+
+    let result = crate::commands::phonon_voice::phonon_voice_import_core(
+        coord.clone(),
+        health.clone(),
+        &src,
+        rec.sink(),
+    );
+
+    let text = error_message(&ModelError::Corrupt(String::new()));
+    assert_eq!(result, Err(text.clone()));
+    assert_eq!(rec.named(ERROR_EVENT), vec![finished(false, Some(text))]);
+    assert!(
+        rec.named(STATE_EVENT)
+            .iter()
+            .all(|p| *p != finished(true, None)),
+        "no success event on failure"
+    );
+    assert_eq!(
+        health.revision(),
+        revision,
+        "a failed import does not bump health"
+    );
+    assert_eq!(coord.state(), ModelState::NotInstalled);
+    assert!(!fx.install().exists(), "nothing published");
+    assert!(staging_entries(&fx.root()).is_empty(), "staging removed");
+    assert_no_secret_text(&all_payloads(&rec), &src);
+}
+
+#[test]
+fn phonon_voice_import_core_success_emits_ready_and_bumps_health_once() {
+    let fx = Fixture::new();
+    let src = import_source_folder(&fx);
+    let coord = Arc::new(loopback_coord(fx.root(), "http://127.0.0.1:9/"));
+    let health = NaturalHealth::new(Duration::from_secs(300));
+    let rec = Recorder::new();
+    let revision = health.revision();
+
+    crate::commands::phonon_voice::phonon_voice_import_core(
+        coord.clone(),
+        health.clone(),
+        &src,
+        rec.sink(),
+    )
+    .expect("import must succeed");
+
+    assert_eq!(coord.state(), ModelState::Ready);
+    assert_eq!(
+        health.revision(),
+        revision + 1,
+        "import invalidates the Phonon health exactly once"
+    );
+    let states = rec.named(STATE_EVENT);
+    assert_eq!(
+        states.last(),
+        Some(&finished(true, None)),
+        "the final state event is the finished OK shape"
+    );
+    assert_eq!(
+        states
+            .iter()
+            .filter(|p| **p == finished(true, None))
+            .count(),
+        1,
+        "exactly one OK finish"
+    );
+    assert!(rec.named(ERROR_EVENT).is_empty(), "no error on success");
+    assert_no_secret_text(&all_payloads(&rec), &src);
+}
+
+#[test]
+fn phonon_voice_import_core_missing_file_fails_with_the_verification_text() {
+    check_import_failure(|src| {
+        fs::remove_file(src.join("model.q8.gguf")).unwrap();
+    });
+}
+
+#[test]
+fn phonon_voice_import_core_wrong_hash_fails_with_the_verification_text() {
+    check_import_failure(|src| {
+        let path = src.join("tokenizer.json");
+        let mut bytes = fs::read(&path).unwrap();
+        bytes[0] ^= 0x01;
+        fs::write(&path, &bytes).unwrap();
+    });
+}
+
+#[cfg(unix)]
+#[test]
+fn phonon_voice_import_core_symlinked_asset_fails_with_the_verification_text() {
+    check_import_failure(|src| {
+        let elsewhere = src.parent().unwrap().join("elsewhere.json");
+        fs::write(&elsewhere, TINY[3].1).unwrap();
+        let link = src.join("config.json");
+        fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, &link).unwrap();
+    });
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn phonon_voice_import_core_while_installing_is_busy_with_the_install_text() {
+    let addr = spawn_stall_server(tiny_sizes()).await;
+    let prefix = format!("http://{addr}/");
+    let fx = Fixture::new();
+    let src = import_source_folder(&fx);
+    let coord = Arc::new(loopback_coord(fx.root(), &prefix));
+    let health = NaturalHealth::new(Duration::from_secs(300));
+    let task = tokio::spawn(phonon_voice_install_core(
+        coord.clone(),
+        health.clone(),
+        Recorder::new().sink(),
+    ));
+    assert!(wait_for(|| coord.state() == ModelState::Downloading).await);
+    let revision = health.revision();
+
+    let rec = Recorder::new();
+    let busy = crate::commands::phonon_voice::phonon_voice_import_core(
+        coord.clone(),
+        health.clone(),
+        &src,
+        rec.sink(),
+    )
+    .expect_err("an import while installing must be refused");
+
+    assert_eq!(busy, error_message(&ModelError::Busy));
+    assert_eq!(
+        health.revision(),
+        revision,
+        "a refused import does not bump health"
+    );
+    assert!(
+        rec.named(STATE_EVENT)
+            .iter()
+            .all(|p| *p != finished(true, None)),
+        "a refused import never reports success"
+    );
+    assert_no_secret_text(&all_payloads(&rec), &src);
+
+    phonon_voice_cancel_core(&coord).expect("cancel");
+    let _ = finish(task).await;
+}

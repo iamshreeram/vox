@@ -822,3 +822,473 @@ fn kokoro_coordinator_keeps_the_legacy_redirects_after_the_phonon_constructor_ex
     );
     assert!(!kokoro.has_download_policy());
 }
+
+// ---- P7: install the Phonon voice from a folder (ModelCoordinator::import_folder) ---------------
+//
+// DESIGN.md Rev 4 section 3 P7. Same strict checks as the snapshot: a real folder, only the pinned
+// names are read, each asset a regular non-symlink file whose size from the OPEN handle equals the
+// pin before any byte is read, SHA-256 over the bytes as written. Extra entries are ignored and
+// never copied. Everything runs under the op guard, and a failure never touches a Ready install.
+
+/// Pauses the first call of a before-copy hook until the test releases it. `entered` fires when
+/// the hook is reached. Every wait is bounded (30 s), so a test can never hang.
+fn pause_first_call() -> (mpsc::Receiver<()>, mpsc::Sender<()>, impl Fn(&Path)) {
+    let (entered_tx, entered_rx) = mpsc::channel::<()>();
+    let (release_tx, release_rx) = mpsc::channel::<()>();
+    let entered_tx = Mutex::new(entered_tx);
+    let release_rx = Mutex::new(release_rx);
+    let first = AtomicBool::new(true);
+    let hook = move |_: &Path| {
+        if first.swap(false, Ordering::SeqCst) {
+            let _ = entered_tx.lock().unwrap().send(());
+            let _ = release_rx
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(30));
+        }
+    };
+    (entered_rx, release_tx, hook)
+}
+
+fn name_of(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// Writes the four tiny assets under their real names into `<tmp>/source` and returns it.
+fn import_source(t: &Tiny) -> PathBuf {
+    let src = t.dir.path().join("source");
+    fs::create_dir_all(&src).unwrap();
+    for (file, body) in TINY {
+        fs::write(src.join(file), body).unwrap();
+    }
+    src
+}
+
+fn sorted_names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+fn staging_left(root: &Path) -> Vec<String> {
+    root_entries(root)
+        .into_iter()
+        .filter(|name| name.starts_with(".staging-"))
+        .collect()
+}
+
+/// The install holds exactly the four assets and READY, byte-equal to the source, and is Ready.
+fn assert_installed_exactly_tiny(t: &Tiny, coord: &ModelCoordinator) {
+    assert_eq!(coord.state(), ModelState::Ready);
+    let mut expected: Vec<String> = TINY.iter().map(|(file, _)| file.to_string()).collect();
+    expected.push(READY_MARKER.to_string());
+    expected.sort();
+    assert_eq!(
+        sorted_names(&t.install()),
+        expected,
+        "exactly the four assets and READY"
+    );
+    for (file, body) in TINY {
+        assert_eq!(
+            fs::read(t.install().join(file)).unwrap(),
+            body.as_bytes(),
+            "{file}"
+        );
+    }
+}
+
+/// A Corrupt error that names `file` and nothing else: no folder path, no other asset name.
+fn assert_corrupt_naming_only(err: &ModelError, file: &str, src: &Path) {
+    let ModelError::Corrupt(why) = err else {
+        panic!("expected Corrupt, got {err:?}");
+    };
+    assert!(why.contains(file), "message must name {file}: {why}");
+    assert!(
+        !why.contains(&src.display().to_string()),
+        "message must not carry the folder path: {why}"
+    );
+    assert!(
+        !why.contains('/') && !why.contains('\\'),
+        "message must carry no path at all: {why}"
+    );
+    for (other, _) in TINY {
+        if other != file {
+            assert!(!why.contains(other), "message must not name {other}: {why}");
+        }
+    }
+}
+
+/// After a refused import into a fresh root: not installed, nothing published, no staging.
+fn assert_nothing_installed(t: &Tiny, coord: &ModelCoordinator) {
+    assert_eq!(coord.state(), ModelState::NotInstalled);
+    assert!(!t.install().exists(), "nothing published");
+    assert!(
+        staging_left(&t.root()).is_empty(),
+        "no .staging-* left behind"
+    );
+}
+
+#[test]
+fn import_folder_publishes_exactly_the_four_assets_and_ignores_extras() {
+    let t = Tiny {
+        dir: TempDir::new().unwrap(),
+    };
+    let src = import_source(&t);
+    fs::write(src.join("README.md"), b"how to install").unwrap();
+    fs::create_dir_all(src.join("subdir")).unwrap();
+    fs::write(src.join("subdir").join("inner.txt"), b"nested").unwrap();
+    fs::write(src.join("decoy.bin"), b"decoy-bytes").unwrap();
+    let coord = t.coord();
+    coord
+        .import_folder(&src)
+        .expect("a complete folder imports");
+    assert_installed_exactly_tiny(&t, &coord);
+    assert!(staging_left(&t.root()).is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn import_folder_never_reads_or_copies_an_extra_symlink() {
+    let t = Tiny {
+        dir: TempDir::new().unwrap(),
+    };
+    let src = import_source(&t);
+    let elsewhere = t.dir.path().join("elsewhere.bin");
+    fs::write(&elsewhere, b"outside the folder").unwrap();
+    std::os::unix::fs::symlink(&elsewhere, src.join("link-to-elsewhere")).unwrap();
+    let coord = t.coord();
+    coord
+        .import_folder(&src)
+        .expect("an unpinned symlink is ignored, not an error");
+    assert_installed_exactly_tiny(&t, &coord);
+}
+
+#[cfg(unix)]
+#[test]
+fn import_folder_refuses_a_symlinked_source_folder_and_installs_nothing() {
+    let t = Tiny {
+        dir: TempDir::new().unwrap(),
+    };
+    let real = import_source(&t);
+    let link = t.dir.path().join("linked-source");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let coord = t.coord();
+    assert!(
+        coord.import_folder(&link).is_err(),
+        "a symlink to a folder is refused"
+    );
+    assert_nothing_installed(&t, &coord);
+}
+
+#[test]
+fn import_folder_refuses_a_missing_source_folder() {
+    let t = Tiny {
+        dir: TempDir::new().unwrap(),
+    };
+    let coord = t.coord();
+    let missing = t.dir.path().join("does-not-exist");
+    let err = coord.import_folder(&missing).unwrap_err();
+    assert!(
+        matches!(err, ModelError::Io(_) | ModelError::NotInstalled),
+        "a missing source is a not-found/io error, got {err:?}"
+    );
+    assert_nothing_installed(&t, &coord);
+}
+
+#[test]
+fn import_folder_refuses_a_source_that_is_a_file() {
+    let t = Tiny {
+        dir: TempDir::new().unwrap(),
+    };
+    let not_a_folder = t.dir.path().join("just-a-file.gguf");
+    fs::write(&not_a_folder, TINY[0].1).unwrap();
+    let coord = t.coord();
+    let err = coord.import_folder(&not_a_folder).unwrap_err();
+    assert!(
+        matches!(err, ModelError::Io(_) | ModelError::NotInstalled),
+        "a non-directory source is a not-found/io error, got {err:?}"
+    );
+    assert_nothing_installed(&t, &coord);
+}
+
+#[test]
+fn a_missing_asset_is_refused_and_only_its_name_is_reported() {
+    for (missing, _) in TINY {
+        let t = Tiny {
+            dir: TempDir::new().unwrap(),
+        };
+        let src = import_source(&t);
+        fs::remove_file(src.join(missing)).unwrap();
+        let coord = t.coord();
+        let err = coord.import_folder(&src).unwrap_err();
+        assert_corrupt_naming_only(&err, missing, &src);
+        assert_nothing_installed(&t, &coord);
+    }
+}
+
+#[test]
+fn a_truncated_asset_is_refused_before_any_byte_is_hashed() {
+    let t = Tiny {
+        dir: TempDir::new().unwrap(),
+    };
+    let src = import_source(&t);
+    let body = TINY[0].1.as_bytes();
+    fs::write(src.join("model.q8.gguf"), &body[..body.len() - 1]).unwrap();
+    let seen = Mutex::new(Vec::<String>::new());
+    let hook = |p: &Path| seen.lock().unwrap().push(name_of(p));
+    let coord = t.coord();
+    let err = coord.import_folder_with(&src, &hook).unwrap_err();
+    assert_corrupt_naming_only(&err, "model.q8.gguf", &src);
+    assert!(
+        seen.lock().unwrap().is_empty(),
+        "the wrong-size file is never handed to the copy step"
+    );
+    assert_nothing_installed(&t, &coord);
+}
+
+#[test]
+fn an_extended_asset_is_refused_before_any_byte_is_hashed() {
+    let t = Tiny {
+        dir: TempDir::new().unwrap(),
+    };
+    let src = import_source(&t);
+    let mut body = TINY[3].1.as_bytes().to_vec();
+    body.push(b'!');
+    fs::write(src.join("config.json"), &body).unwrap();
+    let seen = Mutex::new(Vec::<String>::new());
+    let hook = |p: &Path| seen.lock().unwrap().push(name_of(p));
+    let coord = t.coord();
+    let err = coord.import_folder_with(&src, &hook).unwrap_err();
+    assert_corrupt_naming_only(&err, "config.json", &src);
+    assert!(
+        !seen.lock().unwrap().iter().any(|n| n == "config.json"),
+        "the wrong-size file is never handed to the copy step"
+    );
+    assert_nothing_installed(&t, &coord);
+}
+
+#[test]
+fn a_same_size_wrong_byte_asset_is_refused_as_corrupt() {
+    let t = Tiny {
+        dir: TempDir::new().unwrap(),
+    };
+    let src = import_source(&t);
+    let path = src.join("default-voice.safetensors");
+    let mut bytes = fs::read(&path).unwrap();
+    bytes[0] ^= 0x01;
+    fs::write(&path, &bytes).unwrap();
+    let coord = t.coord();
+    let err = coord.import_folder(&src).unwrap_err();
+    assert_corrupt_naming_only(&err, "default-voice.safetensors", &src);
+    assert_nothing_installed(&t, &coord);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_asset_is_refused_as_corrupt() {
+    let t = Tiny {
+        dir: TempDir::new().unwrap(),
+    };
+    let src = import_source(&t);
+    let elsewhere = t.dir.path().join("elsewhere.json");
+    fs::write(&elsewhere, TINY[2].1).unwrap(); // identical bytes: only the link is wrong
+    fs::remove_file(src.join("tokenizer.json")).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, src.join("tokenizer.json")).unwrap();
+    let coord = t.coord();
+    let err = coord.import_folder(&src).unwrap_err();
+    assert_corrupt_naming_only(&err, "tokenizer.json", &src);
+    assert_nothing_installed(&t, &coord);
+}
+
+#[test]
+fn a_swap_after_inspection_is_refused_and_publishes_nothing() {
+    let t = Tiny {
+        dir: TempDir::new().unwrap(),
+    };
+    let src = import_source(&t);
+    let hook = |p: &Path| {
+        if name_of(p) == "tokenizer.json" {
+            // Same length, different bytes, after the source was inspected, before its copy.
+            let mut bytes = fs::read(p).unwrap();
+            bytes[0] ^= 0x01;
+            fs::write(p, &bytes).unwrap();
+        }
+    };
+    let coord = t.coord();
+    let err = coord.import_folder_with(&src, &hook).unwrap_err();
+    assert_corrupt_naming_only(&err, "tokenizer.json", &src);
+    assert_nothing_installed(&t, &coord);
+}
+
+#[test]
+fn a_failed_import_over_a_ready_install_leaves_it_byte_identical() {
+    let t = tiny_installed();
+    let coord = t.coord();
+    let src = import_source(&t);
+    let path = src.join("model.q8.gguf");
+    let mut bytes = fs::read(&path).unwrap();
+    bytes[0] ^= 0x01;
+    fs::write(&path, &bytes).unwrap();
+    let read_install = || -> Vec<Vec<u8>> {
+        TINY.iter()
+            .map(|(file, _)| fs::read(t.install().join(file)).unwrap())
+            .chain(std::iter::once(
+                fs::read(t.install().join(READY_MARKER)).unwrap(),
+            ))
+            .collect()
+    };
+    let before = read_install();
+    let err = coord.import_folder(&src).unwrap_err();
+    assert_corrupt_naming_only(&err, "model.q8.gguf", &src);
+    assert_eq!(read_install(), before, "the Ready install is untouched");
+    assert_eq!(coord.state(), ModelState::Ready);
+    assert!(staging_left(&t.root()).is_empty());
+}
+
+#[test]
+fn a_successful_import_replaces_a_ready_install_without_a_mixed_state() {
+    let t = Tiny {
+        dir: TempDir::new().unwrap(),
+    };
+    // A stale install with the right sizes but different bytes: Ready by size, not by hash.
+    fs::create_dir_all(t.install()).unwrap();
+    for (file, body) in TINY {
+        fs::write(t.install().join(file), vec![b'x'; body.len()]).unwrap();
+    }
+    fs::File::create(t.install().join(READY_MARKER)).unwrap();
+    let coord = t.coord();
+    assert_eq!(
+        coord.state(),
+        ModelState::Ready,
+        "the stale install is Ready"
+    );
+    let src = import_source(&t);
+
+    let all_old_each_time = Mutex::new(Vec::<bool>::new());
+    let hook = |_: &Path| {
+        let all_old = TINY.iter().all(|(file, body)| {
+            fs::read(t.install().join(file))
+                .map(|bytes| bytes == vec![b'x'; body.len()])
+                .unwrap_or(false)
+        });
+        all_old_each_time.lock().unwrap().push(all_old);
+    };
+    coord
+        .import_folder_with(&src, &hook)
+        .expect("the import replaces the install");
+    assert!(
+        all_old_each_time.lock().unwrap().iter().all(|old| *old),
+        "the old install stays whole until the publish step"
+    );
+    assert_installed_exactly_tiny(&t, &coord);
+    assert!(staging_left(&t.root()).is_empty());
+}
+
+#[test]
+fn an_import_while_a_snapshot_runs_is_busy_and_changes_nothing() {
+    let t = tiny_installed();
+    let coord = t.coord();
+    let scratch = t.scratch();
+    let src = import_source(&t);
+    let (entered, release, hook) = pause_first_call();
+
+    thread::scope(|s| {
+        let a = s.spawn(|| coord.snapshot_with(&scratch, &hook));
+        entered
+            .recv_timeout(Duration::from_secs(30))
+            .expect("the snapshot reached its copy step");
+        let busy = coord.import_folder(&src).unwrap_err();
+        assert_eq!(
+            busy,
+            ModelError::Busy,
+            "import while a snapshot holds the guard"
+        );
+        assert!(
+            !matches!(coord.state(), ModelState::Ready | ModelState::NotInstalled),
+            "the state reports the running snapshot"
+        );
+        let _ = release.send(());
+        let snap = a
+            .join()
+            .expect("the snapshot thread must not panic")
+            .expect("the snapshot returns Ok");
+        drop(snap);
+    });
+    assert_installed_exactly_tiny(&t, &coord);
+    assert!(staging_left(&t.root()).is_empty());
+}
+
+#[test]
+fn an_import_while_another_import_is_paused_is_busy() {
+    let t = Tiny {
+        dir: TempDir::new().unwrap(),
+    };
+    let coord = t.coord();
+    let src = import_source(&t);
+    let (entered, release, hook) = pause_first_call();
+
+    thread::scope(|s| {
+        let a = s.spawn(|| coord.import_folder_with(&src, &hook));
+        entered
+            .recv_timeout(Duration::from_secs(30))
+            .expect("the first import reached its copy step");
+        let busy = coord.import_folder(&src).unwrap_err();
+        assert_eq!(busy, ModelError::Busy, "a second import is refused");
+        let _ = release.send(());
+        a.join()
+            .expect("the first import must not panic")
+            .expect("the first import completes");
+    });
+    assert_installed_exactly_tiny(&t, &coord);
+}
+
+#[test]
+fn a_delete_during_a_paused_import_is_busy_and_keeps_the_files() {
+    let t = tiny_installed();
+    let coord = t.coord();
+    let src = import_source(&t);
+    let (entered, release, hook) = pause_first_call();
+
+    thread::scope(|s| {
+        let a = s.spawn(|| coord.import_folder_with(&src, &hook));
+        entered
+            .recv_timeout(Duration::from_secs(30))
+            .expect("the import reached its copy step");
+        let busy = coord.delete().unwrap_err();
+        assert_eq!(busy, ModelError::Busy, "delete is refused during an import");
+        for (file, body) in TINY {
+            assert_eq!(
+                fs::read(t.install().join(file)).unwrap(),
+                body.as_bytes(),
+                "{file} survives a delete that raced the import"
+            );
+        }
+        let _ = release.send(());
+        a.join()
+            .expect("the import must not panic")
+            .expect("the import completes");
+    });
+    assert_installed_exactly_tiny(&t, &coord);
+}
+
+#[test]
+fn two_successive_imports_both_succeed() {
+    let t = Tiny {
+        dir: TempDir::new().unwrap(),
+    };
+    let coord = t.coord();
+    let src = import_source(&t);
+    coord.import_folder(&src).expect("first import");
+    assert_installed_exactly_tiny(&t, &coord);
+    coord
+        .import_folder(&src)
+        .expect("second import over the first");
+    assert_installed_exactly_tiny(&t, &coord);
+    assert!(staging_left(&t.root()).is_empty());
+}

@@ -626,6 +626,18 @@ async phononVoiceInstall() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Starts the Phonon import from `path` (a folder picked by the user) on a blocking task and
+ * returns at once. The result arrives as events, like the install.
+ */
+async phononVoiceImportFolder(path: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("phonon_voice_import_folder", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async phononVoiceCancel() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("phonon_voice_cancel") };

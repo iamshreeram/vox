@@ -148,7 +148,7 @@ fn check_install_layout(install_dir: &Path, assets: &[AssetSpec]) -> Result<(), 
 
 /// Opens one source for copying. Refuses symlinks and any size other than the pin, measured on
 /// the open handle, before a single byte is read.
-fn open_verified_source(source: &Path, asset: &AssetSpec) -> Result<File, ModelError> {
+pub(crate) fn open_verified_source(source: &Path, asset: &AssetSpec) -> Result<File, ModelError> {
     let meta = fs::symlink_metadata(source).map_err(io_err)?;
     if !meta.file_type().is_file() {
         return Err(corrupt(format!("{} is not a regular file", asset.file)));
@@ -179,7 +179,7 @@ fn open_no_follow(path: &Path) -> std::io::Result<File> {
 
 /// Streams at most `asset.size` bytes from `input` into a new file at `destination`, hashing
 /// what was written. Errors if the size or the digest does not match the pin.
-fn copy_and_verify(
+pub(crate) fn copy_and_verify(
     input: &mut File,
     destination: &Path,
     asset: &AssetSpec,
