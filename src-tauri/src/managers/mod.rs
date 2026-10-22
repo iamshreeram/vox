@@ -56,6 +56,8 @@ pub mod model;
 pub mod model_capabilities;
 pub mod natural_audio;
 #[cfg(test)]
+mod wake_conversation_tests;
+#[cfg(test)]
 mod natural_audio_tests;
 pub mod natural_chunk;
 #[cfg(test)]
