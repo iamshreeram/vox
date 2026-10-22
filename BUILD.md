@@ -25,6 +25,10 @@ The Phonon TTS dependency (`ptts` / `xn`) needs a current stable Rust installed 
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
+Dev profile: `src-tauri/Cargo.toml` sets `opt-level = 3` for only the Phonon numeric crates (`ptts`, `xn`, `xn-gemm*`, `pulp`, `half`), because unoptimised ptts runs about 19x slower. There is no `"*"` wildcard.
+The live Phonon test is `#[ignore]`: run it with `VOX_PHONON_DIR=<folder with the four pinned files> cargo test --lib natural_phonon_live -- --ignored --nocapture`.
+It may also run with `--release`, which is slower to build but has the same assertions.
+
 ##### Intel Mac (x86_64)
 
 Prebuilt ONNX Runtime binaries are not available for Intel Macs. Install ONNX Runtime via Homebrew and link dynamically:

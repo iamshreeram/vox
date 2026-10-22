@@ -72,11 +72,17 @@ mod natural_lang_tests;
 pub mod natural_model;
 #[cfg(test)]
 mod natural_model_tests;
+#[cfg(target_os = "macos")]
+pub mod natural_phonon;
 pub mod natural_phonon_core;
 #[cfg(test)]
 mod natural_phonon_core_tests;
 #[cfg(test)]
+mod natural_phonon_loader_tests;
+#[cfg(test)]
 mod natural_phonon_model_tests;
+#[cfg(all(test, target_os = "macos"))]
+mod natural_phonon_tests;
 pub mod natural_router;
 #[cfg(test)]
 mod natural_router_tests;
