@@ -1269,6 +1269,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "Hlasové funkce",
+      "intro": "Volitelné doplňky pro konverzaci bez použití rukou. Každý je vypnutý, dokud ho nezapnete, a každé stažení proběhne až po stisknutí tlačítka Stáhnout.",
+      "model": {
+        "checking": "Kontrola...",
+        "state": {
+          "not_installed": "Nestaženo",
+          "downloading": "Stahování... {{percent}} %",
+          "verifying": "Kontrola souboru...",
+          "ready": "Nainstalováno",
+          "error": "Poslední pokus se nepodařil."
+        },
+        "download": "Stáhnout",
+        "cancel": "Zrušit",
+        "delete": "Smazat",
+        "error": {
+          "busy": "Stahování jiného modelu už běží.",
+          "corrupt": "Stažený soubor neodpovídá očekávané velikosti ani kontrolnímu součtu. Stáhněte jej znovu.",
+          "url_not_allowed": "Adresa ke stažení není na seznamu povolených adres.",
+          "download": "Stahování selhalo. Zkontrolujte připojení a zkuste to znovu.",
+          "io": "Soubor se na tomto počítači nepodařilo uložit.",
+          "not_installed": "Model není nainstalován.",
+          "unknown": "S modelem se něco pokazilo."
+        }
+      },
+      "smartTurn": {
+        "heading": "Chytré rozpoznání konce promluvy",
+        "label": "Chytré rozpoznání konce promluvy",
+        "description": "Malý model rozhoduje, kdy jste domluvili, aby Vox mohl odpovědět rychleji. Zvuk se během promluvy drží v paměti a neukládá se.",
+        "fallbackNote": "Model není nainstalován, takže Vox používá pevné pravidlo ticha.",
+        "modelLabel": "Model pro rozpoznání konce promluvy",
+        "modelDescription": "Jednorázové stažení přibližně {{size}}. Běží na tomto počítači.",
+        "modelDescriptionPending": "Jednorázové stažení. Běží na tomto počítači."
+      },
+      "latency": {
+        "heading": "Panel latence",
+        "label": "Zobrazit panel latence",
+        "description": "Zobrazuje časové údaje pro každou promluvu v konverzaci. Pouze čísla: neukládá se žádný zvuk ani text.",
+        "placeholder": "Čeká se na první promluvu konverzace.",
+        "turn": "Poslední promluva: {{turn}}",
+        "samples": "Medián a 90. percentil za posledních {{count}} promluv.",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "Fáze",
+          "last": "Poslední",
+          "median": "Medián",
+          "p90": "90. percentil"
+        },
+        "stage": {
+          "waitForSpeech": "Čekání na konec řeči",
+          "transcription": "Přepis",
+          "thinking": "Zpracování",
+          "toFirstSpeech": "Čas do první mluvené odpovědi",
+          "speakerCheck": "Kontrola mluvčího"
+        }
+      },
+      "persona": {
+        "heading": "Persony",
+        "label": "Persona",
+        "description": "Předvolba stylu odpovědí a hlasu. Použitím persony se nastaví obojí najednou.",
+        "activeOption": "{{name}} (aktivní)",
+        "apply": "Použít",
+        "customHeading": "Vlastní persony",
+        "customEmpty": "Zatím nejsou žádné vlastní persony.",
+        "builtinTag": "Vestavěná",
+        "builtinLocked": "Vestavěné persony jsou pouze pro čtení.",
+        "new": "Nová persona",
+        "edit": "Upravit",
+        "delete": "Smazat",
+        "nameLabel": "Název",
+        "styleLabel": "Styl",
+        "charCount": "{{count}} z {{max}} znaků",
+        "voiceLabel": "Hlas",
+        "noVoice": "Ponechat můj aktuální hlas",
+        "save": "Uložit",
+        "cancel": "Zrušit",
+        "error": {
+          "name_empty": "Zadejte název.",
+          "name_too_long": "Název může mít nejvýše {{max}} znaků.",
+          "style_empty": "Zadejte styl.",
+          "style_too_long": "Styl může mít nejvýše {{max}} znaků.",
+          "control_chars": "Odstraňte skryté řídicí znaky.",
+          "unknown_voice": "Vyberte hlas ze seznamu.",
+          "limit_reached": "Můžete uložit nejvýše {{max}} vlastních person. Pokud chcete přidat další, některou smažte.",
+          "builtin_immutable": "Vestavěné persony nelze měnit.",
+          "generic": "Personu se nepodařilo uložit. Zkuste to znovu."
+        }
+      },
+      "speaker": {
+        "heading": "Filtr mluvčího",
+        "label": "Filtr mluvčího",
+        "description": "Ignoruje řeč, která nezní jako váš zaregistrovaný hlas.",
+        "disclosure": {
+          "lead": "Filtr mluvčího je pohodlnostní filtr. Není to zabezpečení ani ověřování.",
+          "detail": "Může omylem ignorovat váš vlastní hlas a může projít nahrávka nebo podobný hlas. Váš hlasový otisk zůstává na tomto počítači, v souboru, který může číst jen váš účet. Žádný zvuk se neukládá. Filtr je ve výchozím nastavení vypnutý."
+        },
+        "inactiveNote": "Filtr zůstane neaktivní, dokud není nainstalován model mluvčího a zaregistrován váš hlas.",
+        "sensitivityLabel": "Citlivost",
+        "sensitivityDescription": "Jak přísně se odfiltrovává řeč jiných hlasů.",
+        "sensitivity": {
+          "lenient": "Mírná",
+          "balanced": "Vyvážená",
+          "strict": "Přísná",
+          "lenientHint": "Pustí více hlasů a méně často vás omylem ignoruje.",
+          "balancedHint": "Výchozí nastavení, střední cesta mezi oběma.",
+          "strictHint": "Odfiltruje více cizích hlasů a častěji vás omylem ignoruje."
+        },
+        "modelLabel": "Model mluvčího",
+        "modelDescription": "Jednorázové stažení přibližně {{size}}. Běží na tomto počítači.",
+        "enrolled": "Váš hlas je zaregistrován.",
+        "notEnrolled": "Váš hlas ještě není zaregistrován.",
+        "enroll": {
+          "label": "Zaregistrovat hlas",
+          "description": "Tři krátké nahrávky po zhruba 6 sekundách. Mluvte přirozeně na klidném místě.",
+          "intro": "Přečtete tři krátké sady vět. Ukládá se pouze hlasový otisk, nikdy zvuk.",
+          "needModel": "Nejprve nainstalujte model mluvčího.",
+          "start": "Spustit registraci",
+          "starting": "Spouštění...",
+          "cancel": "Zrušit",
+          "progress": "Hotovo {{done}} z {{total}} nahrávek",
+          "stepTitle": "Nahrávka {{step}} z {{total}}",
+          "readThese": "Přečtěte tyto věty svým běžným hlasem:",
+          "record": "Nahrát tento krok",
+          "recording": "Nahrávání. Zbývá {{seconds}} s.",
+          "allRecorded": "Všechny tři nahrávky jsou hotové. Dokončete registraci a uložte svůj hlasový otisk.",
+          "finish": "Dokončit registraci",
+          "done": "Váš hlas je zaregistrován.",
+          "messages": {
+            "busy": "Nejprve zastavte konverzaci nebo diktování.",
+            "too_little_speech": "Mluvte o něco déle. Vox potřebuje alespoň 2 sekundy řeči pro každou nahrávku.",
+            "inconsistent": "Tři nahrávky nezněly stejně. Začněte znovu od první nahrávky.",
+            "model_missing": "Nejprve nainstalujte model mluvčího.",
+            "session_ended": "Registrace skončila. Až budete připraveni, začněte znovu.",
+            "generic": "Registrace se nezdařila. Zkuste to znovu."
+          },
+          "prompts": {
+            "s1a": "Příliš žluťoučký kůň úpěl ďábelské ódy.",
+            "s1b": "Otevřete prosím můj kalendář a řekněte mi, co mám dnes v plánu.",
+            "s1c": "Jaké bude dnes odpoledne počasí?",
+            "s2a": "Prosím, trochu ztište hlasitost.",
+            "s2b": "Řekněte mi krátký zajímavý fakt o Měsíci.",
+            "s2c": "Rád bych šálek čaje u okna.",
+            "s3a": "Připomeňte mi, abych zítra ráno zavolal sestře.",
+            "s3b": "Přečtěte mi poslední zprávu od mého týmu.",
+            "s3c": "Děkuji, to je zatím vše."
+          }
+        },
+        "deleteLabel": "Hlasový otisk",
+        "deleteDescription": "Odstraní uložený hlasový otisk. Bez něj filtr mluvčího nemůže fungovat.",
+        "deleteButton": "Smazat hlasový otisk",
+        "deleteConfirm": "Smazat hlasový otisk? Chcete-li filtr znovu použít, budete muset hlas znovu zaregistrovat.",
+        "deleteConfirmButton": "Ano, smazat",
+        "deleteKeep": "Ponechat",
+        "deleteError": "Hlasový otisk se nepodařilo smazat. Zkuste to znovu."
+      }
     }
   }
 }

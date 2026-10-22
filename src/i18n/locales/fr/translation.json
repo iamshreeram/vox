@@ -1269,6 +1269,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "Fonctions vocales",
+      "intro": "Modules optionnels pour la conversation mains libres. Chacun reste désactivé tant que vous ne l'activez pas, et chaque téléchargement n'a lieu que lorsque vous appuyez sur Télécharger.",
+      "model": {
+        "checking": "Vérification...",
+        "state": {
+          "not_installed": "Non téléchargé",
+          "downloading": "Téléchargement... {{percent}} %",
+          "verifying": "Vérification du fichier...",
+          "ready": "Installé",
+          "error": "La dernière tentative a échoué."
+        },
+        "download": "Télécharger",
+        "cancel": "Annuler",
+        "delete": "Supprimer",
+        "error": {
+          "busy": "Un autre téléchargement de modèle est déjà en cours.",
+          "corrupt": "Le fichier téléchargé ne correspond pas à la taille ou à la somme de contrôle attendue. Téléchargez-le à nouveau.",
+          "url_not_allowed": "L'adresse de téléchargement ne figure pas dans la liste autorisée.",
+          "download": "Le téléchargement a échoué. Vérifiez votre connexion et réessayez.",
+          "io": "Le fichier n'a pas pu être enregistré sur cet ordinateur.",
+          "not_installed": "Le modèle n'est pas installé.",
+          "unknown": "Une erreur est survenue avec le modèle."
+        }
+      },
+      "smartTurn": {
+        "heading": "Détection intelligente de la fin de tour de parole",
+        "label": "Détection intelligente de la fin de tour de parole",
+        "description": "Un petit modèle détermine quand vous avez fini de parler, afin que Vox puisse répondre plus vite. L'audio est conservé en mémoire pendant un tour de parole et n'est pas enregistré.",
+        "fallbackNote": "Le modèle n'est pas installé : Vox utilise donc la règle de silence fixe.",
+        "modelLabel": "Modèle de détection de fin de tour",
+        "modelDescription": "Téléchargement unique d'environ {{size}}. Il fonctionne sur cet ordinateur.",
+        "modelDescriptionPending": "Téléchargement unique. Il fonctionne sur cet ordinateur."
+      },
+      "latency": {
+        "heading": "Panneau de latence",
+        "label": "Afficher le panneau de latence",
+        "description": "Affiche les délais de chaque tour d'une conversation. Chiffres uniquement : aucun audio ni texte n'est enregistré.",
+        "placeholder": "En attente du premier tour de la conversation.",
+        "turn": "Dernier tour : {{turn}}",
+        "samples": "Médiane et 90e centile sur les {{count}} derniers tours.",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "Étape",
+          "last": "Dernier",
+          "median": "Médiane",
+          "p90": "90e centile"
+        },
+        "stage": {
+          "waitForSpeech": "Attente de la fin de la parole",
+          "transcription": "Transcription",
+          "thinking": "Réflexion",
+          "toFirstSpeech": "Délai avant la première parole",
+          "speakerCheck": "Vérification du locuteur"
+        }
+      },
+      "persona": {
+        "heading": "Personnalités",
+        "label": "Personnalité",
+        "description": "Un préréglage de style de réponse et de voix. Appliquer une personnalité règle les deux en même temps.",
+        "activeOption": "{{name}} (active)",
+        "apply": "Appliquer",
+        "customHeading": "Personnalités personnalisées",
+        "customEmpty": "Aucune personnalité personnalisée pour l'instant.",
+        "builtinTag": "Intégrée",
+        "builtinLocked": "Les personnalités intégrées sont en lecture seule.",
+        "new": "Nouvelle personnalité",
+        "edit": "Modifier",
+        "delete": "Supprimer",
+        "nameLabel": "Nom",
+        "styleLabel": "Style",
+        "charCount": "{{count}} caractères sur {{max}}",
+        "voiceLabel": "Voix",
+        "noVoice": "Conserver ma voix actuelle",
+        "save": "Enregistrer",
+        "cancel": "Annuler",
+        "error": {
+          "name_empty": "Saisissez un nom.",
+          "name_too_long": "Le nom peut comporter au maximum {{max}} caractères.",
+          "style_empty": "Saisissez un style.",
+          "style_too_long": "Le style peut comporter au maximum {{max}} caractères.",
+          "control_chars": "Supprimez les caractères de contrôle cachés.",
+          "unknown_voice": "Choisissez une voix dans la liste.",
+          "limit_reached": "Vous pouvez enregistrer jusqu'à {{max}} personnalités personnalisées. Supprimez-en une pour en ajouter une autre.",
+          "builtin_immutable": "Les personnalités intégrées ne peuvent pas être modifiées.",
+          "generic": "La personnalité n'a pas pu être enregistrée. Réessayez."
+        }
+      },
+      "speaker": {
+        "heading": "Filtre de locuteur",
+        "label": "Filtre de locuteur",
+        "description": "Ignore la parole qui ne ressemble pas à votre voix enregistrée.",
+        "disclosure": {
+          "lead": "Le filtre de locuteur est un filtre de confort. Ce n'est ni une sécurité ni une authentification.",
+          "detail": "Il peut ignorer à tort votre propre voix, et un enregistrement ou une voix semblable peut passer. Votre empreinte vocale reste sur cet ordinateur, dans un fichier que seul votre compte peut lire. Aucun audio n'est conservé. Le filtre est désactivé par défaut."
+        },
+        "inactiveNote": "Le filtre reste inactif tant que le modèle de locuteur n'est pas installé et que votre voix n'est pas enregistrée.",
+        "sensitivityLabel": "Sensibilité",
+        "sensitivityDescription": "Le degré de rigueur avec lequel la parole d'autres voix est écartée.",
+        "sensitivity": {
+          "lenient": "Souple",
+          "balanced": "Équilibrée",
+          "strict": "Stricte",
+          "lenientHint": "Laisse passer davantage de voix, et vous ignore moins souvent à tort.",
+          "balancedHint": "La valeur par défaut, un compromis entre les deux.",
+          "strictHint": "Écarte davantage d'autres voix, et vous ignore plus souvent à tort."
+        },
+        "modelLabel": "Modèle de locuteur",
+        "modelDescription": "Téléchargement unique d'environ {{size}}. Il fonctionne sur cet ordinateur.",
+        "enrolled": "Votre voix est enregistrée.",
+        "notEnrolled": "Votre voix n'est pas encore enregistrée.",
+        "enroll": {
+          "label": "Enregistrer votre voix",
+          "description": "Trois courts enregistrements d'environ 6 secondes chacun. Parlez naturellement dans un endroit calme.",
+          "intro": "Vous lirez trois courts ensembles de phrases. Seule l'empreinte vocale est conservée, jamais l'audio.",
+          "needModel": "Installez d'abord le modèle de locuteur.",
+          "start": "Démarrer l'enregistrement",
+          "starting": "Démarrage...",
+          "cancel": "Annuler",
+          "progress": "{{done}} enregistrements sur {{total}} effectués",
+          "stepTitle": "Enregistrement {{step}} sur {{total}}",
+          "readThese": "Lisez ces phrases d'une voix normale :",
+          "record": "Enregistrer cette étape",
+          "recording": "Enregistrement en cours. Il reste {{seconds}} secondes.",
+          "allRecorded": "Les trois enregistrements sont terminés. Terminez pour enregistrer votre empreinte vocale.",
+          "finish": "Terminer l'enregistrement",
+          "done": "Votre voix est enregistrée.",
+          "messages": {
+            "busy": "Arrêtez d'abord la conversation ou la dictée.",
+            "too_little_speech": "Parlez un peu plus longtemps. Vox a besoin d'au moins 2 secondes de parole pour chaque enregistrement.",
+            "inconsistent": "Les trois enregistrements ne ressemblaient pas à la même voix. Reprise au premier enregistrement.",
+            "model_missing": "Installez d'abord le modèle de locuteur.",
+            "session_ended": "L'enregistrement s'est terminé. Recommencez quand vous êtes prêt.",
+            "generic": "L'enregistrement n'a pas fonctionné. Réessayez."
+          },
+          "prompts": {
+            "s1a": "Portez ce vieux whisky au juge blond qui fume.",
+            "s1b": "Veuillez ouvrir mon agenda et me dire ce qui est prévu aujourd'hui.",
+            "s1c": "Quel temps fera-t-il cet après-midi ?",
+            "s2a": "Baissez un peu le volume, s'il vous plaît.",
+            "s2b": "Dites-moi un bref fait amusant sur la Lune.",
+            "s2c": "Je voudrais une tasse de thé près de la fenêtre.",
+            "s3a": "Rappelez-moi d'appeler ma sœur demain matin.",
+            "s3b": "Lisez-moi le dernier message de mon équipe.",
+            "s3c": "Merci, c'est tout pour le moment."
+          }
+        },
+        "deleteLabel": "Empreinte vocale",
+        "deleteDescription": "Supprime l'empreinte vocale enregistrée. Sans elle, le filtre de locuteur ne peut pas fonctionner.",
+        "deleteButton": "Supprimer l'empreinte vocale",
+        "deleteConfirm": "Supprimer l'empreinte vocale ? Vous devrez à nouveau enregistrer votre voix pour utiliser le filtre.",
+        "deleteConfirmButton": "Oui, supprimer",
+        "deleteKeep": "Conserver",
+        "deleteError": "L'empreinte vocale n'a pas pu être supprimée. Réessayez."
+      }
     }
   }
 }

@@ -1269,6 +1269,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "Funcionalidades de voz",
+      "intro": "Extras opcionais para conversar sem usar as mãos. Cada um fica desativado até o ativar, e cada descarregamento só começa quando carrega em Descarregar.",
+      "model": {
+        "checking": "A verificar...",
+        "state": {
+          "not_installed": "Não descarregado",
+          "downloading": "A descarregar... {{percent}}%",
+          "verifying": "A verificar o ficheiro...",
+          "ready": "Instalado",
+          "error": "A última tentativa não funcionou."
+        },
+        "download": "Descarregar",
+        "cancel": "Cancelar",
+        "delete": "Eliminar",
+        "error": {
+          "busy": "Já está a decorrer o descarregamento de outro modelo.",
+          "corrupt": "O ficheiro descarregado não corresponde ao tamanho ou à soma de verificação esperados. Descarregue-o novamente.",
+          "url_not_allowed": "O endereço de descarregamento não está na lista de endereços permitidos.",
+          "download": "O descarregamento falhou. Verifique a ligação e tente novamente.",
+          "io": "Não foi possível guardar o ficheiro neste computador.",
+          "not_installed": "O modelo não está instalado.",
+          "unknown": "Ocorreu um erro com o modelo."
+        }
+      },
+      "smartTurn": {
+        "heading": "Deteção inteligente do fim de intervenção",
+        "label": "Deteção inteligente do fim de intervenção",
+        "description": "Usa um modelo pequeno para decidir quando terminou de falar, para que o Vox possa responder mais depressa. O áudio fica em memória durante cada intervenção e não é guardado.",
+        "fallbackNote": "O modelo não está instalado, por isso o Vox usa a regra de silêncio fixa.",
+        "modelLabel": "Modelo de deteção do fim de intervenção",
+        "modelDescription": "Descarregamento único de cerca de {{size}}. Funciona neste computador.",
+        "modelDescriptionPending": "Descarregamento único. Funciona neste computador."
+      },
+      "latency": {
+        "heading": "Painel de latência",
+        "label": "Mostrar painel de latência",
+        "description": "Mostra os tempos de cada intervenção de uma conversa. Apenas números: não é guardado áudio nem texto.",
+        "placeholder": "A aguardar a primeira intervenção de uma conversa.",
+        "turn": "Última intervenção: {{turn}}",
+        "samples": "Mediana e 90.º percentil das últimas {{count}} intervenções.",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "Etapa",
+          "last": "Última",
+          "median": "Mediana",
+          "p90": "90.º percentil"
+        },
+        "stage": {
+          "waitForSpeech": "Espera pelo fim da fala",
+          "transcription": "Transcrição",
+          "thinking": "Raciocínio",
+          "toFirstSpeech": "Tempo até à primeira fala",
+          "speakerCheck": "Verificação do orador"
+        }
+      },
+      "persona": {
+        "heading": "Personas",
+        "label": "Persona",
+        "description": "Uma predefinição de estilo de resposta e de voz. Aplicar uma persona define as duas em simultâneo.",
+        "activeOption": "{{name}} (ativa)",
+        "apply": "Aplicar",
+        "customHeading": "Personas personalizadas",
+        "customEmpty": "Ainda não há personas personalizadas.",
+        "builtinTag": "Incorporada",
+        "builtinLocked": "As personas incorporadas são só de leitura.",
+        "new": "Nova persona",
+        "edit": "Editar",
+        "delete": "Eliminar",
+        "nameLabel": "Nome",
+        "styleLabel": "Estilo",
+        "charCount": "{{count}} de {{max}} caracteres",
+        "voiceLabel": "Voz",
+        "noVoice": "Manter a minha voz atual",
+        "save": "Guardar",
+        "cancel": "Cancelar",
+        "error": {
+          "name_empty": "Introduza um nome.",
+          "name_too_long": "O nome pode ter no máximo {{max}} caracteres.",
+          "style_empty": "Introduza um estilo.",
+          "style_too_long": "O estilo pode ter no máximo {{max}} caracteres.",
+          "control_chars": "Remova os caracteres de controlo ocultos.",
+          "unknown_voice": "Escolha uma voz da lista.",
+          "limit_reached": "Pode guardar até {{max}} personas personalizadas. Elimine uma para adicionar outra.",
+          "builtin_immutable": "As personas incorporadas não podem ser alteradas.",
+          "generic": "Não foi possível guardar a persona. Tente novamente."
+        }
+      },
+      "speaker": {
+        "heading": "Filtro de orador",
+        "label": "Filtro de orador",
+        "description": "Ignorar a fala que não soa à sua voz registada.",
+        "disclosure": {
+          "lead": "O filtro de orador é um filtro de conveniência. Não é segurança nem autenticação.",
+          "detail": "Pode ignorar por engano a sua própria voz, e uma gravação ou uma voz semelhante pode passar. A sua impressão vocal fica neste computador, num ficheiro que só a sua conta pode ler. Nenhum áudio é guardado. O filtro vem desativado por predefinição."
+        },
+        "inactiveNote": "O filtro mantém-se inativo até o modelo de orador estar instalado e a sua voz estar registada.",
+        "sensitivityLabel": "Sensibilidade",
+        "sensitivityDescription": "O rigor com que a fala de outras vozes é excluída.",
+        "sensitivity": {
+          "lenient": "Permissiva",
+          "balanced": "Equilibrada",
+          "strict": "Rigorosa",
+          "lenientHint": "Deixa passar mais vozes e ignora-o por engano com menos frequência.",
+          "balancedHint": "A predefinição, um meio-termo entre as duas.",
+          "strictHint": "Exclui mais vozes de outras pessoas, mas ignora-o por engano com mais frequência."
+        },
+        "modelLabel": "Modelo de orador",
+        "modelDescription": "Descarregamento único de cerca de {{size}}. Funciona neste computador.",
+        "enrolled": "A sua voz está registada.",
+        "notEnrolled": "A sua voz ainda não está registada.",
+        "enroll": {
+          "label": "Registar a sua voz",
+          "description": "Três gravações curtas de cerca de 6 segundos cada. Fale normalmente, num local silencioso.",
+          "intro": "Vai ler três conjuntos curtos de frases. Só a impressão vocal é guardada, nunca o áudio.",
+          "needModel": "Instale primeiro o modelo de orador.",
+          "start": "Iniciar registo",
+          "starting": "A iniciar...",
+          "cancel": "Cancelar",
+          "progress": "{{done}} de {{total}} gravações concluídas",
+          "stepTitle": "Gravação {{step}} de {{total}}",
+          "readThese": "Leia estas frases com a sua voz normal:",
+          "record": "Começar a gravar este passo",
+          "recording": "A gravar. Faltam {{seconds}} segundos.",
+          "allRecorded": "As três gravações estão concluídas. Conclua para guardar a sua impressão vocal.",
+          "finish": "Concluir registo",
+          "done": "A sua voz está registada.",
+          "messages": {
+            "busy": "Pare primeiro a conversa ou o ditado.",
+            "too_little_speech": "Fale um pouco mais. O Vox precisa de pelo menos 2 segundos de fala em cada gravação.",
+            "inconsistent": "As três gravações não soaram semelhantes. Recomeçar a partir da primeira gravação.",
+            "model_missing": "Instale primeiro o modelo de orador.",
+            "session_ended": "O registo terminou. Comece de novo quando estiver pronto.",
+            "generic": "O registo não funcionou. Tente novamente."
+          },
+          "prompts": {
+            "s1a": "A raposa castanha rápida salta sobre o cão preguiçoso.",
+            "s1b": "Por favor, abra o meu calendário e diga-me o que tenho para hoje.",
+            "s1c": "Como está o tempo esta tarde?",
+            "s2a": "Baixe um pouco o volume, por favor.",
+            "s2b": "Diga-me um facto curto sobre a Lua.",
+            "s2c": "Gostava de uma chávena de chá junto à janela.",
+            "s3a": "Lembre-me de ligar à minha irmã amanhã de manhã.",
+            "s3b": "Leia a última mensagem da minha equipa.",
+            "s3c": "Obrigado, é tudo por agora."
+          }
+        },
+        "deleteLabel": "Impressão vocal",
+        "deleteDescription": "Remove a impressão vocal guardada. Sem ela, o filtro de orador não pode funcionar.",
+        "deleteButton": "Eliminar impressão vocal",
+        "deleteConfirm": "Eliminar a impressão vocal? Terá de a registar novamente para usar o filtro.",
+        "deleteConfirmButton": "Sim, eliminar",
+        "deleteKeep": "Manter",
+        "deleteError": "Não foi possível eliminar a impressão vocal. Tente novamente."
+      }
     }
   }
 }

@@ -1269,6 +1269,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "Funcions de veu",
+      "intro": "Complements opcionals per a la conversa manos lliures. Cadascun està desactivat fins que l'activeu, i cada descàrrega només es fa quan premeu Descarrega.",
+      "model": {
+        "checking": "S'està comprovant...",
+        "state": {
+          "not_installed": "No descarregat",
+          "downloading": "S'està descarregant... {{percent}} %",
+          "verifying": "S'està comprovant el fitxer...",
+          "ready": "Instal·lat",
+          "error": "El darrer intent no ha funcionat."
+        },
+        "download": "Descarrega",
+        "cancel": "Cancel·la",
+        "delete": "Suprimeix",
+        "error": {
+          "busy": "Ja hi ha una altra descàrrega de model en curs.",
+          "corrupt": "El fitxer descarregat no coincideix amb la mida o la suma de verificació esperades. Torneu-lo a descarregar.",
+          "url_not_allowed": "L'adreça de descàrrega no és a la llista d'adreces permeses.",
+          "download": "La descàrrega ha fallat. Comproveu la connexió i torneu-ho a provar.",
+          "io": "No s'ha pogut desar el fitxer en aquest ordinador.",
+          "not_installed": "El model no està instal·lat.",
+          "unknown": "Hi ha hagut un problema amb el model."
+        }
+      },
+      "smartTurn": {
+        "heading": "Detecció intel·ligent del final de torn",
+        "label": "Detecció intel·ligent del final de torn",
+        "description": "Fa servir un model petit per decidir quan heu acabat de parlar, perquè Vox pugui respondre abans. L'àudio es guarda a la memòria durant un torn i no s'emmagatzema.",
+        "fallbackNote": "El model no està instal·lat, així que Vox fa servir la regla de silenci fixa.",
+        "modelLabel": "Model de detecció del final de torn",
+        "modelDescription": "Descàrrega única d'uns {{size}}. S'executa en aquest ordinador.",
+        "modelDescriptionPending": "Descàrrega única. S'executa en aquest ordinador."
+      },
+      "latency": {
+        "heading": "Panell de latència",
+        "label": "Mostra el panell de latència",
+        "description": "Mostra els temps de cada torn d'una conversa. Només nombres: no s'emmagatzemen àudio ni text.",
+        "placeholder": "S'espera el primer torn d'una conversa.",
+        "turn": "Darrer torn: {{turn}}",
+        "samples": "Mediana i percentil 90 dels darrers {{count}} torns.",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "Fase",
+          "last": "Darrer",
+          "median": "Mediana",
+          "p90": "Percentil 90"
+        },
+        "stage": {
+          "waitForSpeech": "Espera al final de la parla",
+          "transcription": "Transcripció",
+          "thinking": "Raonament",
+          "toFirstSpeech": "Temps fins a la primera resposta parlada",
+          "speakerCheck": "Comprovació de la persona que parla"
+        }
+      },
+      "persona": {
+        "heading": "Personatges",
+        "label": "Personatge",
+        "description": "Una preconfiguració d'estil de resposta i de veu. En aplicar un personatge, es fixen les dues coses alhora.",
+        "activeOption": "{{name}} (actiu)",
+        "apply": "Aplica",
+        "customHeading": "Personatges personalitzats",
+        "customEmpty": "Encara no hi ha personatges personalitzats.",
+        "builtinTag": "Integrat",
+        "builtinLocked": "Els personatges integrats són de només lectura.",
+        "new": "Nou personatge",
+        "edit": "Edita",
+        "delete": "Suprimeix",
+        "nameLabel": "Nom",
+        "styleLabel": "Estil",
+        "charCount": "{{count}} de {{max}} caràcters",
+        "voiceLabel": "Veu",
+        "noVoice": "Mantén la meva veu actual",
+        "save": "Desa",
+        "cancel": "Cancel·la",
+        "error": {
+          "name_empty": "Escriviu un nom.",
+          "name_too_long": "El nom pot tenir com a màxim {{max}} caràcters.",
+          "style_empty": "Escriviu un estil.",
+          "style_too_long": "L'estil pot tenir com a màxim {{max}} caràcters.",
+          "control_chars": "Suprimiu els caràcters de control ocults.",
+          "unknown_voice": "Trieu una veu de la llista.",
+          "limit_reached": "Podeu desar fins a {{max}} personatges personalitzats. Suprimiu-ne un per afegir-ne un altre.",
+          "builtin_immutable": "Els personatges integrats no es poden modificar.",
+          "generic": "No s'ha pogut desar el personatge. Torneu-ho a provar."
+        }
+      },
+      "speaker": {
+        "heading": "Filtre de parlant",
+        "label": "Filtre de parlant",
+        "description": "Ignora la parla que no sona com la vostra veu registrada.",
+        "disclosure": {
+          "lead": "El filtre de parlant és un filtre de comoditat. No és seguretat ni autenticació.",
+          "detail": "Pot ignorar erròniament la vostra pròpia veu, i una gravació o una veu semblant hi pot passar. La vostra empremta vocal es queda en aquest ordinador, en un fitxer que només el vostre compte pot llegir. No es guarda cap àudio. El filtre està desactivat per defecte."
+        },
+        "inactiveNote": "El filtre es mantindrà inactiu fins que s'instal·li el model de parlant i la vostra veu quedi registrada.",
+        "sensitivityLabel": "Sensibilitat",
+        "sensitivityDescription": "Com d'estrictament es descarta la parla d'altres veus.",
+        "sensitivity": {
+          "lenient": "Flexible",
+          "balanced": "Equilibrada",
+          "strict": "Estricta",
+          "lenientHint": "Deixa passar més veus i us ignora erròniament amb menys freqüència.",
+          "balancedHint": "L'opció predeterminada, un punt intermedi entre les dues.",
+          "strictHint": "Descarta més veus alienes i us ignora erròniament amb més freqüència."
+        },
+        "modelLabel": "Model de parlant",
+        "modelDescription": "Descàrrega única d'uns {{size}}. S'executa en aquest ordinador.",
+        "enrolled": "La vostra veu està registrada.",
+        "notEnrolled": "La vostra veu encara no està registrada.",
+        "enroll": {
+          "label": "Registra la vostra veu",
+          "description": "Tres gravacions curtes d'uns 6 segons cadascuna. Parleu amb normalitat en un lloc tranquil.",
+          "intro": "Llegiu tres conjunts curts de frases. Només es guarda l'empremta vocal, mai l'àudio.",
+          "needModel": "Instal·leu primer el model de parlant.",
+          "start": "Inicia el registre",
+          "starting": "S'està iniciant...",
+          "cancel": "Cancel·la",
+          "progress": "{{done}} de {{total}} gravacions fetes",
+          "stepTitle": "Gravació {{step}} de {{total}}",
+          "readThese": "Llegiu aquestes frases amb la vostra veu habitual:",
+          "record": "Grava aquest pas",
+          "recording": "S'està gravant. Queden {{seconds}} segons.",
+          "allRecorded": "Les tres gravacions són fetes. Acabeu per desar la vostra empremta vocal.",
+          "finish": "Finalitza el registre",
+          "done": "La vostra veu està registrada.",
+          "messages": {
+            "busy": "Primer atureu la conversa o el dictat.",
+            "too_little_speech": "Parleu una mica més. Vox necessita almenys 2 segons de parla per a cada gravació.",
+            "inconsistent": "Les tres gravacions no sonaven igual. Es tornarà a començar per la primera gravació.",
+            "model_missing": "Instal·leu primer el model de parlant.",
+            "session_ended": "El registre ha finalitzat. Torneu a començar quan estigueu preparats.",
+            "generic": "El registre no ha funcionat. Torneu-ho a provar."
+          },
+          "prompts": {
+            "s1a": "El veloç mussol bru salta per sobre del gos mandrós.",
+            "s1b": "Si us plau, obriu el meu calendari i digueu-me què tinc avui.",
+            "s1c": "Com farà el temps aquesta tarda?",
+            "s2a": "Abaixeu una mica el volum, si us plau.",
+            "s2b": "Expliqueu-me un fet curiós i breu sobre la lluna.",
+            "s2c": "M'agradaria una tassa de té al costat de la finestra.",
+            "s3a": "Recordeu-me que demà al matí truqui a la meva germana.",
+            "s3b": "Llegiu-me l'últim missatge del meu equip.",
+            "s3c": "Gràcies, això és tot per ara."
+          }
+        },
+        "deleteLabel": "Empremta vocal",
+        "deleteDescription": "Elimina l'empremta vocal desada. Sense ella, el filtre de parlant no pot funcionar.",
+        "deleteButton": "Elimina l'empremta vocal",
+        "deleteConfirm": "Voleu eliminar l'empremta vocal? Caldrà que torneu a registrar la vostra veu per fer servir el filtre.",
+        "deleteConfirmButton": "Sí, elimina-la",
+        "deleteKeep": "Mantén-la",
+        "deleteError": "No s'ha pogut eliminar l'empremta vocal. Torneu-ho a provar."
+      }
     }
   }
 }

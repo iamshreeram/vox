@@ -483,6 +483,17 @@ pub enum OrtAcceleratorSetting {
     Rocm,
 }
 
+/// How strict the optional speaker filter is (design A8). Thresholds live with
+/// the speaker model constants, not here.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SpeakerSensitivity {
+    Lenient,
+    #[default]
+    Balanced,
+    Strict,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum VadBackend {
@@ -819,6 +830,23 @@ pub struct AppSettings {
     /// Prior turns sent as context (clamped 0..=12 when used).
     #[serde(default = "default_converse_context_turns")]
     pub converse_context_turns: u8,
+    // ---- Experimental voice features (design D3-D6). All default OFF / empty;
+    // absent in old stores => these defaults, today's behavior.
+    /// Use the Smart Turn model to end an utterance sooner (needs the model installed).
+    #[serde(default)]
+    pub converse_smart_turn: bool,
+    /// Show the live per-turn latency panel in the Conversation settings.
+    #[serde(default)]
+    pub converse_latency_panel: bool,
+    /// Ignore utterances that do not sound like the enrolled voice (convenience
+    /// filter, NOT authentication; needs the model and an enrolled voice).
+    #[serde(default)]
+    pub speaker_filter_enabled: bool,
+    #[serde(default)]
+    pub speaker_filter_sensitivity: SpeakerSensitivity,
+    /// User-defined personas (the built-ins live in code).
+    #[serde(default)]
+    pub personas: Vec<crate::managers::persona::Persona>,
     // ---- Experimental: realtime conversation (design R9). All toggles; the master
     // switch gates every sub-toggle. Absent in old stores => these defaults.
     /// MASTER switch. Off => the conversation behaves exactly as before.
@@ -1661,6 +1689,11 @@ pub fn get_default_settings() -> AppSettings {
         converse_silence_ms: default_converse_silence_ms(),
         converse_max_idle_turns: default_converse_max_idle_turns(),
         converse_context_turns: default_converse_context_turns(),
+        converse_smart_turn: false,
+        converse_latency_panel: false,
+        speaker_filter_enabled: false,
+        speaker_filter_sensitivity: SpeakerSensitivity::default(),
+        personas: Vec::new(),
         exp_rt_enabled: false,
         exp_rt_direct_endpoint: false,
         exp_rt_endpoint_url: String::new(),

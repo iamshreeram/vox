@@ -22,18 +22,21 @@ use crate::managers::converse::{
 };
 use crate::managers::converse_audio::{wait_for_speech_end, SpeechProbe, WaitOutcome};
 use crate::managers::converse_capture::{
-    CaptureHandle, CaptureTimings, CaptureWorker, RecorderPort, StartError, TranscribeFailure,
-    Transcriber,
+    CaptureHandle, CaptureOptions, CaptureTimings, CaptureWorker, RecorderPort, StartError,
+    TranscribeFailure, Transcriber,
 };
 use crate::managers::converse_confirm::{
     DirFd, JobLaunch, JobStartOutcome, PinError, PolicySource, ValidatedCommand,
 };
+use crate::managers::converse_latency::{LatencyEvent, EVENT_NAME};
 use crate::managers::converse_overlay::{OverlayDispatcher, ReadyGate};
 use crate::managers::converse_plan::{
     build_plan_prompt, JobParsePolicy, PlanError, PlanInput, PlanKind, PlanPrompt, TurnPlan,
 };
 use crate::managers::converse_queue::TtsQueueSession;
-use crate::managers::converse_runtime::{AdmissionGuard, Platform, SessionParts, ALREADY_RUNNING};
+use crate::managers::converse_runtime::{
+    make_latency_sink, AdmissionGuard, LatencySink, Platform, SessionParts, ALREADY_RUNNING,
+};
 use crate::managers::emotion::Emotion;
 use crate::managers::llm_stream::{resolve_proxy, Protocol, ProxyMode, StreamCall, StreamOpts};
 use crate::managers::llm_tools::{
@@ -50,6 +53,7 @@ use crate::managers::tool_loop::{
 };
 use crate::managers::transcription::TranscriptionManager;
 use crate::managers::tts::{TtsError, TtsManager};
+use crate::managers::voice_runtime::{capture_options, VoiceRuntime};
 use crate::overlay::{RealOverlayExecutor, RealOverlaySink};
 use crate::settings::{get_settings, AppSettings};
 use serde::{Deserialize, Serialize};
@@ -72,6 +76,8 @@ fn conversation_vad_policy(_vad_enabled: bool) -> VadPolicy {
 pub const CONVERSE_STATE_EVENT: &str = "converse-state";
 /// Refusal when dictation owns the microphone or is still processing.
 pub const DICTATION_BUSY: &str = "Finish the current dictation before starting a conversation.";
+/// Refusal when voice enrollment holds the microphone (design A3').
+pub const ENROLLMENT_BUSY: &str = "Finish voice enrollment before starting a conversation.";
 
 /// The lease is the admission guard the controller holds for a session.
 impl AdmissionGuard for Lease {}
@@ -236,6 +242,11 @@ impl RecorderPort for AudioRecorderPort {
         let rm = self.app.state::<Arc<AudioRecordingManager>>();
         let _ = rm.cancel_recording_if_binding(CONVERSE_BINDING);
     }
+
+    fn set_raw_tap(&self, tap: Option<Arc<dyn Fn(&[f32]) + Send + Sync>>) {
+        let rm = self.app.state::<Arc<AudioRecordingManager>>();
+        rm.set_converse_raw_tap(tap);
+    }
 }
 
 /// The transcription timing line, or `None` when timing is disabled. `audio_ms` is the clip
@@ -300,6 +311,12 @@ impl Ears for RealEars {
             let cfg = endpoint_config(&get_settings(&self.app));
             self.capture.listen(cfg).await
         })
+    }
+
+    /// Timing of the listen that just returned. Listens of one session are sequential,
+    /// so the most recent listen id is the one the loop is asking about.
+    fn take_timing(&self) -> Option<crate::managers::converse_latency::ListenTiming> {
+        self.capture.take_timing(self.capture.last_listen_id())
     }
 }
 
@@ -819,6 +836,28 @@ pub(crate) fn job_parts(
 }
 
 /// The app-backed `Platform` used by `ConverseController`.
+/// Builds the latency sink: each report is emitted only while `panel_on()` is true at the
+/// moment that report is produced.
+pub(crate) fn build_latency_sink(
+    emit: Arc<dyn Fn(LatencyEvent) + Send + Sync>,
+    panel_on: Arc<dyn Fn() -> bool + Send + Sync>,
+) -> LatencySink {
+    make_latency_sink(emit, panel_on)
+}
+
+/// The app-bound latency sink: `converse-latency` through the app, gated on the live
+/// `converse_latency_panel` setting. Attached by `RealPlatform::latency_sink`.
+pub(crate) fn latency_sink_for_app(app: &AppHandle) -> LatencySink {
+    let emitter = app.clone();
+    let settings_app = app.clone();
+    build_latency_sink(
+        Arc::new(move |event: LatencyEvent| {
+            let _ = emitter.emit(EVENT_NAME, event);
+        }),
+        Arc::new(move || get_settings(&settings_app).converse_latency_panel),
+    )
+}
+
 pub struct RealPlatform {
     pub app: AppHandle,
     /// `None` keeps the legacy behavior: no policy, no announcer, no job support.
@@ -842,11 +881,16 @@ impl RealPlatform {
 }
 
 impl Platform for RealPlatform {
+    fn latency_sink(&self) -> Option<LatencySink> {
+        Some(latency_sink_for_app(&self.app))
+    }
+
     fn admit(&self) -> Result<Box<dyn AdmissionGuard>, String> {
         match ownership::global().try_acquire(Owner::Conversation) {
             Ok(lease) => Ok(Box::new(lease)),
             Err(Busy(Owner::Dictation)) => Err(DICTATION_BUSY.to_string()),
             Err(Busy(Owner::Conversation)) => Err(ALREADY_RUNNING.to_string()),
+            Err(Busy(Owner::Enrollment)) => Err(ENROLLMENT_BUSY.to_string()),
         }
     }
 
@@ -855,7 +899,16 @@ impl Platform for RealPlatform {
     }
 
     fn capture(&self) -> CaptureHandle {
-        CaptureWorker::spawn(
+        // The worker lives for one session: `ConverseController::start` calls this once per
+        // session and shuts the worker down in the finalizer. The optional voice features are
+        // therefore read here, at session start, and a settings change applies from the next
+        // session.
+        let settings = get_settings(&self.app);
+        let options = match self.app.try_state::<Arc<VoiceRuntime>>() {
+            Some(runtime) => capture_options(&settings, runtime.inner()),
+            None => CaptureOptions::default(),
+        };
+        CaptureWorker::spawn_with_options(
             Arc::new(AudioRecorderPort {
                 app: self.app.clone(),
             }),
@@ -863,6 +916,7 @@ impl Platform for RealPlatform {
                 app: self.app.clone(),
             }),
             CaptureTimings::default(),
+            options,
         )
     }
 
@@ -1893,4 +1947,51 @@ pub(crate) async fn prepare_rag_evidence(
         core.taint.mark();
     }
     render_block(&found)
+}
+
+#[cfg(test)]
+mod voice_latency_sink_tests {
+    use super::*;
+    use crate::managers::converse_latency::{EndpointMode, LatencyReport, RollingStats};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    #[test]
+    fn latency_sink_emits_only_while_the_panel_is_on() {
+        let emitted = Arc::new(AtomicUsize::new(0));
+        let emit_count = Arc::clone(&emitted);
+        let panel = Arc::new(AtomicBool::new(false));
+        let panel_read = Arc::clone(&panel);
+        let sink = build_latency_sink(
+            Arc::new(move |_event: LatencyEvent| {
+                emit_count.fetch_add(1, Ordering::SeqCst);
+            }),
+            Arc::new(move || panel_read.load(Ordering::SeqCst)),
+        );
+        let report = LatencyReport {
+            turn: 1,
+            endpoint_wait_ms: None,
+            transcribe_ms: None,
+            verify_ms: None,
+            brain_ms: None,
+            to_speech_ms: None,
+            total_ms: None,
+            mode: EndpointMode::Fixed,
+        };
+        let stats = RollingStats::new().stats();
+
+        sink(&report, &stats);
+        assert_eq!(emitted.load(Ordering::SeqCst), 0, "panel off must not emit");
+
+        panel.store(true, Ordering::SeqCst);
+        sink(&report, &stats);
+        assert_eq!(emitted.load(Ordering::SeqCst), 1, "panel on must emit");
+
+        panel.store(false, Ordering::SeqCst);
+        sink(&report, &stats);
+        assert_eq!(
+            emitted.load(Ordering::SeqCst),
+            1,
+            "panel off again must not emit"
+        );
+    }
 }

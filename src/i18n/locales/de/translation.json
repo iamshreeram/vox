@@ -1269,6 +1269,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "Sprachfunktionen",
+      "intro": "Optionale Zusatzfunktionen für freihändige Gespräche. Jede ist ausgeschaltet, bis du sie einschaltest, und jeder Download startet nur, wenn du auf Herunterladen drückst.",
+      "model": {
+        "checking": "Wird geprüft...",
+        "state": {
+          "not_installed": "Nicht heruntergeladen",
+          "downloading": "Wird heruntergeladen... {{percent}} %",
+          "verifying": "Datei wird geprüft...",
+          "ready": "Installiert",
+          "error": "Der letzte Versuch war nicht erfolgreich."
+        },
+        "download": "Herunterladen",
+        "cancel": "Abbrechen",
+        "delete": "Löschen",
+        "error": {
+          "busy": "Ein anderer Modell-Download läuft bereits.",
+          "corrupt": "Die heruntergeladene Datei entspricht nicht der erwarteten Größe oder Prüfsumme. Lade sie erneut herunter.",
+          "url_not_allowed": "Die Download-Adresse steht nicht auf der Liste der erlaubten Adressen.",
+          "download": "Der Download ist fehlgeschlagen. Prüfe deine Verbindung und versuche es erneut.",
+          "io": "Die Datei konnte auf diesem Computer nicht gespeichert werden.",
+          "not_installed": "Das Modell ist nicht installiert.",
+          "unknown": "Beim Modell ist ein Fehler aufgetreten."
+        }
+      },
+      "smartTurn": {
+        "heading": "Intelligente Erkennung des Redeendes",
+        "label": "Intelligente Erkennung des Redeendes",
+        "description": "Ein kleines Modell entscheidet, wann du fertig gesprochen hast, damit Vox schneller antworten kann. Audio wird während eines Gesprächsbeitrags im Arbeitsspeicher gehalten und nicht gespeichert.",
+        "fallbackNote": "Das Modell ist nicht installiert, daher verwendet Vox die feste Regel für Stille.",
+        "modelLabel": "Modell für die Erkennung des Redeendes",
+        "modelDescription": "Einmaliger Download von etwa {{size}}. Es läuft auf diesem Computer.",
+        "modelDescriptionPending": "Einmaliger Download. Es läuft auf diesem Computer."
+      },
+      "latency": {
+        "heading": "Latenzanzeige",
+        "label": "Latenzanzeige einblenden",
+        "description": "Zeigt Zeitwerte für jeden Beitrag eines Gesprächs. Nur Zahlen: Es werden weder Audio noch Text gespeichert.",
+        "placeholder": "Warten auf den ersten Beitrag eines Gesprächs.",
+        "turn": "Letzter Beitrag: {{turn}}",
+        "samples": "Median und 90. Perzentil der letzten {{count}} Beiträge.",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "Phase",
+          "last": "Letzter",
+          "median": "Median",
+          "p90": "90. Perzentil"
+        },
+        "stage": {
+          "waitForSpeech": "Warten auf das Ende der Äußerung",
+          "transcription": "Transkription",
+          "thinking": "Verarbeitung",
+          "toFirstSpeech": "Zeit bis zur ersten Sprachausgabe",
+          "speakerCheck": "Sprecherprüfung"
+        }
+      },
+      "persona": {
+        "heading": "Persönlichkeiten",
+        "label": "Persönlichkeit",
+        "description": "Eine Voreinstellung für Antwortstil und Stimme. Beim Anwenden einer Persönlichkeit werden beide gleichzeitig gesetzt.",
+        "activeOption": "{{name}} (aktiv)",
+        "apply": "Anwenden",
+        "customHeading": "Eigene Persönlichkeiten",
+        "customEmpty": "Noch keine eigenen Persönlichkeiten.",
+        "builtinTag": "Integriert",
+        "builtinLocked": "Integrierte Persönlichkeiten sind schreibgeschützt.",
+        "new": "Neue Persönlichkeit",
+        "edit": "Bearbeiten",
+        "delete": "Löschen",
+        "nameLabel": "Name",
+        "styleLabel": "Stil",
+        "charCount": "{{count}} von {{max}} Zeichen",
+        "voiceLabel": "Stimme",
+        "noVoice": "Meine aktuelle Stimme beibehalten",
+        "save": "Speichern",
+        "cancel": "Abbrechen",
+        "error": {
+          "name_empty": "Gib einen Namen ein.",
+          "name_too_long": "Der Name darf höchstens {{max}} Zeichen lang sein.",
+          "style_empty": "Gib einen Stil ein.",
+          "style_too_long": "Der Stil darf höchstens {{max}} Zeichen lang sein.",
+          "control_chars": "Entferne die versteckten Steuerzeichen.",
+          "unknown_voice": "Wähle eine Stimme aus der Liste.",
+          "limit_reached": "Du kannst bis zu {{max}} eigene Persönlichkeiten speichern. Lösche eine, um eine neue hinzuzufügen.",
+          "builtin_immutable": "Integrierte Persönlichkeiten können nicht geändert werden.",
+          "generic": "Die Persönlichkeit konnte nicht gespeichert werden. Versuche es erneut."
+        }
+      },
+      "speaker": {
+        "heading": "Sprecherfilter",
+        "label": "Sprecherfilter",
+        "description": "Ignoriert Sprache, die nicht wie deine eingelernte Stimme klingt.",
+        "disclosure": {
+          "lead": "Der Sprecherfilter ist ein Komfortfilter. Er ist keine Sicherheitsfunktion und keine Authentifizierung.",
+          "detail": "Er kann deine eigene Stimme fälschlicherweise ignorieren, und eine Aufnahme oder eine ähnliche Stimme kann ihn passieren. Dein Stimmabdruck bleibt auf diesem Computer, in einer Datei, die nur dein Benutzerkonto lesen kann. Es wird kein Audio gespeichert. Der Filter ist standardmäßig ausgeschaltet."
+        },
+        "inactiveNote": "Der Filter bleibt inaktiv, bis das Sprechermodell installiert und deine Stimme eingelernt ist.",
+        "sensitivityLabel": "Empfindlichkeit",
+        "sensitivityDescription": "Wie strikt Sprache anderer Stimmen ausgeschlossen wird.",
+        "sensitivity": {
+          "lenient": "Nachsichtig",
+          "balanced": "Ausgewogen",
+          "strict": "Streng",
+          "lenientHint": "Lässt mehr Stimmen durch und ignoriert dich seltener fälschlicherweise.",
+          "balancedHint": "Die Standardeinstellung, ein Mittelweg zwischen beiden.",
+          "strictHint": "Hält mehr andere Stimmen fern und ignoriert dich dafür häufiger fälschlicherweise."
+        },
+        "modelLabel": "Sprechermodell",
+        "modelDescription": "Einmaliger Download von etwa {{size}}. Es läuft auf diesem Computer.",
+        "enrolled": "Deine Stimme ist eingelernt.",
+        "notEnrolled": "Deine Stimme ist noch nicht eingelernt.",
+        "enroll": {
+          "label": "Stimme einlernen",
+          "description": "Drei kurze Aufnahmen von je etwa 6 Sekunden. Sprich normal an einem ruhigen Ort.",
+          "intro": "Du liest drei kurze Gruppen von Sätzen vor. Nur der Stimmabdruck wird gespeichert, niemals das Audio.",
+          "needModel": "Installiere zuerst das Sprechermodell.",
+          "start": "Einlernen starten",
+          "starting": "Wird gestartet...",
+          "cancel": "Abbrechen",
+          "progress": "{{done}} von {{total}} Aufnahmen erledigt",
+          "stepTitle": "Aufnahme {{step}} von {{total}}",
+          "readThese": "Lies diese Sätze in deiner normalen Stimme vor:",
+          "record": "Diesen Schritt aufnehmen",
+          "recording": "Aufnahme läuft. Noch {{seconds}} Sekunden.",
+          "allRecorded": "Alle drei Aufnahmen sind vorhanden. Schließe das Einlernen ab, um deinen Stimmabdruck zu speichern.",
+          "finish": "Einlernen abschließen",
+          "done": "Deine Stimme ist eingelernt.",
+          "messages": {
+            "busy": "Beende zuerst das Gespräch oder das Diktat.",
+            "too_little_speech": "Sprich etwas länger. Vox braucht mindestens 2 Sekunden Sprache für jede Aufnahme.",
+            "inconsistent": "Die drei Aufnahmen klangen nicht gleich. Es wird wieder bei der ersten Aufnahme begonnen.",
+            "model_missing": "Installiere zuerst das Sprechermodell.",
+            "session_ended": "Das Einlernen wurde beendet. Starte neu, wenn du bereit bist.",
+            "generic": "Das Einlernen hat nicht funktioniert. Versuche es erneut."
+          },
+          "prompts": {
+            "s1a": "Der schnelle braune Fuchs springt über den faulen Hund.",
+            "s1b": "Bitte öffne meinen Kalender und sag mir, was heute ansteht.",
+            "s1c": "Wie wird das Wetter heute Nachmittag?",
+            "s2a": "Dreh bitte die Lautstärke ein wenig herunter.",
+            "s2b": "Erzähl mir eine kurze Tatsache über den Mond.",
+            "s2c": "Ich hätte gern eine Tasse Tee am Fenster.",
+            "s3a": "Erinnere mich morgen früh daran, meine Schwester anzurufen.",
+            "s3b": "Lies mir die neueste Nachricht aus meinem Team vor.",
+            "s3c": "Danke, das war's für jetzt."
+          }
+        },
+        "deleteLabel": "Stimmabdruck",
+        "deleteDescription": "Entfernt den gespeicherten Stimmabdruck. Ohne ihn kann der Sprecherfilter nicht arbeiten.",
+        "deleteButton": "Stimmabdruck löschen",
+        "deleteConfirm": "Den Stimmabdruck löschen? Du musst deine Stimme erneut einlernen, um den Filter zu nutzen.",
+        "deleteConfirmButton": "Ja, löschen",
+        "deleteKeep": "Behalten",
+        "deleteError": "Der Stimmabdruck konnte nicht gelöscht werden. Versuche es erneut."
+      }
     }
   }
 }

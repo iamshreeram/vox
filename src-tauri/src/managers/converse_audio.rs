@@ -21,6 +21,8 @@ pub struct EndpointConfig {
     pub min_speech_ms: u64,
     /// A level at or below this is silence.
     pub floor: f32,
+    /// Smart Turn policy (DESIGN.md D3c / A4'). `None` = today's fixed rule.
+    pub smart_turn: Option<SmartTurnPolicy>,
 }
 
 impl EndpointConfig {
@@ -31,6 +33,27 @@ impl EndpointConfig {
             max_utterance_ms: 30_000,
             min_speech_ms: 150,
             floor: 0.02,
+            smart_turn: None,
+        }
+    }
+}
+
+/// Smart Turn endpoint policy (DESIGN.md D3c / A4'). All deadlines are
+/// measured from `last_loud`, the timestamp of the last speech-active feed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SmartTurnPolicy {
+    /// Silence after `last_loud` at which `NeedTurnDecision` is issued.
+    pub min_silence_ms: u64,
+    /// Silence after `last_loud` that ends the turn after a `done=false` answer
+    /// (never below `silence_ms`).
+    pub incomplete_wait_ms: u64,
+}
+
+impl SmartTurnPolicy {
+    pub const fn default_policy() -> Self {
+        SmartTurnPolicy {
+            min_silence_ms: 200,
+            incomplete_wait_ms: 2500,
         }
     }
 }
@@ -40,6 +63,10 @@ pub enum EndpointEvent {
     SpeechEnded,
     NoSpeech,
     MaxLength,
+    /// Smart Turn asks for a done/not-done decision for pause `pause_id`.
+    NeedTurnDecision {
+        pause_id: u32,
+    },
 }
 
 /// Decides when an utterance is over from a stream of level buckets.
@@ -65,11 +92,29 @@ pub struct Endpointer {
     /// Timestamp of the first loud feed of the current loud run (reset by a
     /// silent feed while speech has not started).
     run_start: Option<u64>,
-    /// Timestamp of the most recent loud feed.
+    /// Timestamp of the most recent loud feed (the pause origin).
     last_loud: u64,
     speech_started: bool,
     /// Set once an event has fired; every later feed returns `None`.
     finished: bool,
+    /// Smart Turn state of the current pause (only ever leaves `Idle` when a
+    /// policy is active).
+    pause: Pause,
+    /// Id given to the next `NeedTurnDecision`.
+    next_pause_id: u32,
+}
+
+/// Smart Turn state of the current pause.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pause {
+    /// No decision asked for in this pause yet (or speech resumed).
+    Idle,
+    /// `NeedTurnDecision` was issued; no usable answer yet. The fixed rule
+    /// (`silence_ms` after `last_loud`) ends the turn.
+    Pending { pause_id: u32 },
+    /// The answer was `done=false`: the turn ends at
+    /// `last_loud + max(incomplete_wait_ms, silence_ms)`.
+    Waiting { pause_id: u32 },
 }
 
 impl Endpointer {
@@ -81,7 +126,55 @@ impl Endpointer {
             last_loud: 0,
             speech_started: false,
             finished: false,
+            pause: Pause::Idle,
+            next_pause_id: 0,
         }
+    }
+
+    /// The Smart Turn policy, but only when it is active: inert (today's fixed
+    /// rule) unless `silence_ms >= min_silence_ms + 250`.
+    fn active_policy(&self) -> Option<SmartTurnPolicy> {
+        self.cfg
+            .smart_turn
+            .filter(|policy| self.cfg.silence_ms >= policy.min_silence_ms.saturating_add(250))
+    }
+
+    /// True when `pause_id` names the pause that is currently open for an answer.
+    fn awaits(&self, pause_id: u32) -> bool {
+        match self.pause {
+            Pause::Idle => false,
+            Pause::Pending { pause_id: id } | Pause::Waiting { pause_id: id } => id == pause_id,
+        }
+    }
+
+    /// Smart Turn answer for pause `pause_id` (DESIGN.md A4'). A stale or
+    /// unknown id is ignored (`None`, no state change). `done=true` ends the
+    /// turn now; `done=false` moves to the incomplete wait.
+    pub fn answer_turn(
+        &mut self,
+        pause_id: u32,
+        done: bool,
+        _now_ms: u64,
+    ) -> Option<EndpointEvent> {
+        if self.finished || !self.awaits(pause_id) {
+            return None;
+        }
+        if done {
+            self.finished = true;
+            return Some(EndpointEvent::SpeechEnded);
+        }
+        self.pause = Pause::Waiting { pause_id };
+        None
+    }
+
+    /// Smart Turn unavailable (timeout, no answer, error) for pause `pause_id`:
+    /// today's fixed rule applies, so the turn ends at `silence_ms` after
+    /// `last_loud`. A stale or unknown id is ignored.
+    pub fn answer_unavailable(&mut self, pause_id: u32, _now_ms: u64) -> Option<EndpointEvent> {
+        if !self.finished && self.awaits(pause_id) {
+            self.pause = Pause::Pending { pause_id };
+        }
+        None
     }
 
     /// Level-based entry point (tests and level-only callers): a feed is loud
@@ -103,6 +196,8 @@ impl Endpointer {
         if loud {
             let start = *self.run_start.get_or_insert(now_ms);
             self.last_loud = now_ms;
+            // Speech resumed: any open pause (and its decision) is stale.
+            self.pause = Pause::Idle;
             if !self.speech_started && now_ms.saturating_sub(start) >= self.cfg.min_speech_ms {
                 self.speech_started = true;
             }
@@ -110,13 +205,35 @@ impl Endpointer {
             self.run_start = None;
         }
 
-        let event = if self.speech_started
-            && now_ms.saturating_sub(self.last_loud) >= self.cfg.silence_ms
-        {
+        let since_loud = now_ms.saturating_sub(self.last_loud);
+        let policy = self.active_policy();
+        if let Some(policy) = policy {
+            if self.speech_started
+                && self.pause == Pause::Idle
+                && since_loud >= policy.min_silence_ms
+            {
+                // Not an end: the turn stays open until the answer arrives.
+                let pause_id = self.next_pause_id;
+                self.next_pause_id = self.next_pause_id.wrapping_add(1);
+                self.pause = Pause::Pending { pause_id };
+                return Some(EndpointEvent::NeedTurnDecision { pause_id });
+            }
+        }
+        // Silence that ends the turn. Without an active policy the pause is
+        // always `Idle`, so this is exactly `silence_ms`.
+        let end_after = match (policy, self.pause) {
+            (Some(policy), Pause::Waiting { .. }) => {
+                policy.incomplete_wait_ms.max(self.cfg.silence_ms)
+            }
+            _ => self.cfg.silence_ms,
+        };
+
+        let since_t0 = now_ms.saturating_sub(t0);
+        let event = if self.speech_started && since_loud >= end_after {
             Some(EndpointEvent::SpeechEnded)
-        } else if !self.speech_started && now_ms.saturating_sub(t0) >= self.cfg.initial_grace_ms {
+        } else if !self.speech_started && since_t0 >= self.cfg.initial_grace_ms {
             Some(EndpointEvent::NoSpeech)
-        } else if now_ms.saturating_sub(t0) >= self.cfg.max_utterance_ms {
+        } else if since_t0 >= self.cfg.max_utterance_ms {
             Some(EndpointEvent::MaxLength)
         } else {
             None
@@ -213,6 +330,9 @@ pub trait FrontmostProbe: Send + Sync {
     fn frontmost_bundle(&self) -> Option<String>;
 }
 
+/// The paste callback handed to [`guarded_paste`]; it receives the `pre_chord` gate.
+type DoPaste<'a> = dyn FnMut(&mut dyn FnMut() -> bool) -> Result<(), String> + 'a;
+
 /// Run a generated-text paste under a focus guard.
 /// 1. probe once; `!paste_allowed` => `Err` and `do_paste` is NOT called;
 /// 2. call `do_paste(pre_chord)`: `pre_chord` re-probes and returns true only
@@ -224,7 +344,7 @@ pub trait FrontmostProbe: Send + Sync {
 pub fn guarded_paste(
     probe: &dyn FrontmostProbe,
     text: &str,
-    do_paste: &mut dyn FnMut(&mut dyn FnMut() -> bool) -> Result<(), String>,
+    do_paste: &mut DoPaste<'_>,
 ) -> Result<(), String> {
     const REFUSED: &str = "paste refused: frontmost app is not safe for this text";
     const GUARD_SKIPPED: &str = "paste aborted: focus guard was not consulted";
@@ -834,3 +954,7 @@ mod tests {
         assert_eq!(restrict_model_action(&matched(a.clone())), Some(a));
     }
 }
+
+#[cfg(test)]
+#[path = "converse_audio_policy_tests.rs"]
+mod smart_turn_policy_tests;

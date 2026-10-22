@@ -4,6 +4,9 @@
 //! source-specific orchestration and finalization remain in the parent module.
 
 use super::{DownloadProgress, ModelManager};
+use crate::managers::aux_model::{
+    redirect_policy, url_allowed_by, DownloadPolicy, RedirectRefused,
+};
 use anyhow::Result;
 use futures_util::StreamExt;
 use hf_hub::api::tokio::CancellationToken;
@@ -85,6 +88,8 @@ impl ModelManager {
     /// Narrow crate-wide entry point onto the resumable downloader for a file with a pinned
     /// size and SHA-256. On `Completed` the verified bytes are left in `partial_path`
     /// (renaming is the caller's job); on `Cancelled` the partial is kept.
+    // Legacy-compatible signature: existing callers and tests depend on these exact args.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn download_verified_file(
         label: &str,
         url: &str,
@@ -93,8 +98,17 @@ impl ModelManager {
         expected_sha256: &str,
         cancel: &CancellationToken,
         emit: &(dyn Fn(FileDownloadEvent) + Send + Sync),
+        policy: Option<&DownloadPolicy>,
     ) -> Result<FileDownloadOutcome> {
-        let outcome = Self::download_http_resumable_with_events(
+        // `None` = legacy behavior (default reqwest redirect policy), unchanged.
+        // `Some` = aux downloader policy (A1): the start URL is checked before any request,
+        // and every redirect hop is checked by the client's redirect policy.
+        if let Some(policy) = policy {
+            if !url_allowed_by(policy, url) {
+                return Err(anyhow::Error::new(RedirectRefused));
+            }
+        }
+        let outcome = Self::download_http_resumable_with_policy(
             label,
             url,
             partial_path,
@@ -113,6 +127,7 @@ impl ModelManager {
                     emit(FileDownloadEvent::VerificationCompleted)
                 }
             },
+            policy,
         )
         .await?;
         Ok(match outcome {
@@ -228,6 +243,29 @@ impl ModelManager {
         .await
     }
 
+    /// Legacy transport entry point: the default reqwest redirect policy, unchanged.
+    async fn download_http_resumable_with_events(
+        model_id: &str,
+        url: &str,
+        partial_path: &Path,
+        expected_size: Option<u64>,
+        expected_sha256: Option<&str>,
+        cancel_token: &CancellationToken,
+        emit: &(dyn Fn(HttpDownloadEvent<'_>) + Send + Sync),
+    ) -> Result<HttpDownloadOutcome> {
+        Self::download_http_resumable_with_policy(
+            model_id,
+            url,
+            partial_path,
+            expected_size,
+            expected_sha256,
+            cancel_token,
+            emit,
+            None,
+        )
+        .await
+    }
+
     /// The one resumable HTTP downloader, shared by the mirror fallback and
     /// URL-sourced models: fetch `url` into `partial_path`, resuming what's
     /// already there, and leave verified bytes in `partial_path` on success —
@@ -253,7 +291,9 @@ impl ModelManager {
     ///   at the first excess byte, not trusted until it closes the stream
     /// - the final bytes are checked against `expected_size` (catalog, or
     ///   content-length when unknown) and `expected_sha256` before returning
-    async fn download_http_resumable_with_events(
+    // Legacy-compatible signature: existing callers and tests depend on these exact args.
+    #[allow(clippy::too_many_arguments)]
+    async fn download_http_resumable_with_policy(
         model_id: &str,
         url: &str,
         partial_path: &Path,
@@ -261,6 +301,7 @@ impl ModelManager {
         expected_sha256: Option<&str>,
         cancel_token: &CancellationToken,
         emit: &(dyn Fn(HttpDownloadEvent<'_>) + Send + Sync),
+        redirect: Option<&DownloadPolicy>,
     ) -> Result<HttpDownloadOutcome> {
         let mut resume_from = partial_path.metadata().map(|m| m.len()).unwrap_or(0);
 
@@ -288,9 +329,17 @@ impl ModelManager {
             info!("Starting fresh download of {} from {}", model_id, url);
         }
 
-        let client = reqwest::Client::builder()
-            .connect_timeout(HTTP_CONNECT_TIMEOUT)
-            .build()?;
+        let client = match redirect {
+            // Legacy callers: default reqwest redirect policy, unchanged.
+            None => reqwest::Client::builder()
+                .connect_timeout(HTTP_CONNECT_TIMEOUT)
+                .build()?,
+            // Aux downloader (A1): every hop must pass the policy; hop limit enforced.
+            Some(policy) => reqwest::Client::builder()
+                .connect_timeout(HTTP_CONNECT_TIMEOUT)
+                .redirect(redirect_policy(policy.clone()))
+                .build()?,
+        };
         let mut request = client.get(url);
         if resume_from > 0 {
             request = request.header("Range", format!("bytes={}-", resume_from));

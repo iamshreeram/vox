@@ -409,6 +409,28 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     }
     app_handle.manage(natural_coordinator.clone());
     app_handle.manage(natural_health.clone());
+    // Optional model downloads (design D2): both kinds in one state, rooted at
+    // <app data>/aux_models. Nothing is downloaded here; only the user's Download starts one.
+    if let Ok(app_data) = portable::app_data_dir(app_handle) {
+        let aux_models = Arc::new(commands::aux_model::AuxModels::new(
+            app_data.join("aux_models"),
+        ));
+        app_handle.manage(Arc::clone(&aux_models));
+        // Voice features (S12): one runtime over the shared ownership gate and recording manager.
+        // Models already downloaded are installed here; nothing is downloaded.
+        let settings_handle = app_handle.clone();
+        let voice_runtime = Arc::new(managers::voice_runtime::VoiceRuntime::production(
+            &app_data,
+            managers::ownership::global().clone(),
+            recording_manager.clone(),
+            Arc::new(move || get_settings(&settings_handle)),
+        ));
+        commands::aux_model::startup_sync(&voice_runtime, &aux_models);
+        managers::voice_runtime::spawn_expiry_ticker(&voice_runtime);
+        app_handle.manage(voice_runtime);
+    } else {
+        log::warn!("optional models: app data dir unavailable");
+    }
     // Spoken replies: one shared manager, managed before any event listener
     // that might speak. Event listeners are registered in `register_tts_listeners`.
     #[cfg(target_os = "macos")]
@@ -1144,6 +1166,25 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::converse::converse_start,
             commands::converse::converse_stop,
             commands::converse::converse_status,
+            // optional voice features
+            commands::aux_model::aux_model_status,
+            commands::aux_model::aux_model_download,
+            commands::aux_model::aux_model_cancel,
+            commands::aux_model::aux_model_delete,
+            commands::persona::list_personas,
+            commands::persona::save_persona,
+            commands::persona::delete_persona,
+            commands::persona::apply_persona,
+            commands::speaker::speaker_status,
+            commands::speaker::speaker_enroll_begin,
+            commands::speaker::speaker_enroll_step,
+            commands::speaker::speaker_enroll_cancel,
+            commands::speaker::speaker_enroll_finish,
+            commands::speaker::speaker_delete_voiceprint,
+            commands::converse_extras::change_converse_smart_turn_setting,
+            commands::converse_extras::change_converse_latency_panel_setting,
+            commands::converse_extras::change_speaker_filter_enabled_setting,
+            commands::converse_extras::change_speaker_filter_sensitivity_setting,
             commands::realtime::change_exp_rt_bool_setting,
             commands::realtime::change_exp_rt_text_setting,
             helpers::clamshell::is_laptop,
@@ -1159,6 +1200,13 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         .typ::<managers::converse_platform::ConverseStateEvent>()
         .typ::<commands::natural_voice::NaturalVoiceDownloadProgress>()
         .typ::<commands::natural_voice::NaturalVoiceDownloadFinished>()
+        .typ::<commands::aux_model::AuxProgressEvent>()
+        .typ::<commands::aux_model::AuxFinishedEvent>()
+        .typ::<managers::converse_latency::LatencyEvent>()
+        .typ::<commands::speaker::SpeakerStatus>()
+        .typ::<commands::speaker::SpeakerCmdError>()
+        .typ::<managers::speaker_enroll::StepResult>()
+        .typ::<managers::speaker_enroll::EnrollError>()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -214,6 +214,8 @@ fn decision_for(outcome: ListenOutcome) -> Decision {
         ListenOutcome::NoSpeech | ListenOutcome::TooLong => {
             Decision::Declined(DeclineReason::Silence)
         }
+        // A voice the speaker filter rejected can never approve an action: it declines.
+        ListenOutcome::Ignored => Decision::Declined(DeclineReason::Silence),
         ListenOutcome::Aborted => Decision::Declined(DeclineReason::Cancelled),
         ListenOutcome::Failed(_) => Decision::Declined(DeclineReason::Error),
     }

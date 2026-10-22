@@ -11,6 +11,7 @@ use crate::managers::converse::{
 use crate::managers::converse_capture::CaptureHandle;
 use crate::managers::converse_confirm::PolicySource;
 use crate::managers::converse_hooks;
+use crate::managers::converse_latency::{event_enabled, LatencyEvent, LatencyReport, LatencyStats};
 use futures_util::FutureExt;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -64,6 +65,11 @@ pub trait Platform: Send + Sync + 'static {
     fn admit(&self) -> Result<Box<dyn AdmissionGuard>, String> {
         Ok(Box::new(NoopGuard))
     }
+    /// Receives each completed turn's latency report and stats (T9b). Attached to the session
+    /// reporter by `start`. Default: no sink.
+    fn latency_sink(&self) -> Option<LatencySink> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,6 +106,27 @@ pub fn state_label(state: SessionState) -> &'static str {
 struct ForwardReporter {
     platform: Arc<dyn Platform>,
     transcript: Option<Arc<dyn TranscriptSink>>,
+    /// T9b: receives each latency report (numbers only). Default None (no-op).
+    latency_sink: Option<LatencySink>,
+}
+
+/// T9b: receives one latency report and the session's rolling stats per completed turn.
+pub type LatencySink = Arc<dyn Fn(&LatencyReport, &LatencyStats) + Send + Sync>;
+
+/// T9b: builds a sink that emits `converse-latency` (`LatencyEvent`) only while
+/// `panel_on()` is true at the moment of the call.
+pub fn make_latency_sink(
+    emit: Arc<dyn Fn(LatencyEvent) + Send + Sync>,
+    panel_on: Arc<dyn Fn() -> bool + Send + Sync>,
+) -> LatencySink {
+    Arc::new(move |report, stats| {
+        if event_enabled(panel_on(), true) {
+            emit(LatencyEvent {
+                report: report.clone(),
+                stats: stats.clone(),
+            });
+        }
+    })
 }
 
 impl Reporter for ForwardReporter {
@@ -112,6 +139,12 @@ impl Reporter for ForwardReporter {
     fn transcript(&self, ev: TranscriptEvent) {
         if let Some(sink) = self.transcript.as_ref() {
             sink.record(ev);
+        }
+    }
+
+    fn latency(&self, report: &LatencyReport, stats: &LatencyStats) {
+        if let Some(sink) = self.latency_sink.as_ref() {
+            sink(report, stats);
         }
     }
 }
@@ -199,6 +232,7 @@ impl ConverseController {
 
         let platform = self.platform.clone();
         let registry = self.registry.clone();
+        let latency_sink = self.platform.latency_sink();
         tauri::async_runtime::spawn(async move {
             let SessionParts {
                 ears,
@@ -218,6 +252,7 @@ impl ConverseController {
                 let reporter = ForwardReporter {
                     platform: platform.clone(),
                     transcript,
+                    latency_sink,
                 };
                 let deps = Deps {
                     policy: policy.as_deref(),
@@ -1022,3 +1057,11 @@ mod tests {
 #[cfg(test)]
 #[path = "converse_hooks_tests.rs"]
 mod hooks_tests;
+
+#[cfg(test)]
+#[path = "converse_latency_wiring_tests.rs"]
+mod latency_wiring_tests;
+
+#[cfg(test)]
+#[path = "converse_runtime_sink_tests.rs"]
+mod runtime_sink_tests;

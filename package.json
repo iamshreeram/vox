@@ -31,6 +31,7 @@
     "test:vault-rag": "bun src/components/settings/vaultRagForm.test.ts",
     "test:agent-jobs": "bun src/lib/agentJobs.test.ts",
     "test:tts-voices": "bun src/lib/ttsVoices.test.ts",
+    "test:voice-features": "vitest run src/components/settings/voice",
     "test:scripts": "bash scripts/test-update-lock.sh && bash scripts/test-update-macos.sh && bash scripts/test-install-macos.sh",
     "test:workflow-permissions": "bun scripts/check-workflow-permissions.test.ts",
     "test:playwright": "playwright test",

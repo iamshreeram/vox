@@ -1269,6 +1269,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "Fitur suara",
+      "intro": "Add-on opsional untuk percakapan tanpa tangan. Setiap add-on mati sampai Anda menyalakannya, dan setiap unduhan hanya terjadi saat Anda menekan Unduh.",
+      "model": {
+        "checking": "Memeriksa...",
+        "state": {
+          "not_installed": "Belum diunduh",
+          "downloading": "Mengunduh... {{percent}}%",
+          "verifying": "Memeriksa berkas...",
+          "ready": "Terpasang",
+          "error": "Percobaan terakhir tidak berhasil."
+        },
+        "download": "Unduh",
+        "cancel": "Batal",
+        "delete": "Hapus",
+        "error": {
+          "busy": "Unduhan model lain sedang berjalan.",
+          "corrupt": "Berkas yang diunduh tidak sesuai dengan ukuran atau checksum yang diharapkan. Unduh lagi.",
+          "url_not_allowed": "Alamat unduhan tidak ada dalam daftar yang diizinkan.",
+          "download": "Unduhan gagal. Periksa koneksi Anda lalu coba lagi.",
+          "io": "Berkas tidak dapat disimpan di komputer ini.",
+          "not_installed": "Model belum terpasang.",
+          "unknown": "Terjadi masalah dengan model."
+        }
+      },
+      "smartTurn": {
+        "heading": "Deteksi giliran pintar",
+        "label": "Deteksi giliran pintar",
+        "description": "Menggunakan model kecil untuk memutuskan kapan Anda selesai berbicara, sehingga Vox bisa membalas lebih cepat. Audio disimpan di memori selama satu giliran dan tidak disimpan.",
+        "fallbackNote": "Model belum terpasang, jadi Vox menggunakan aturan jeda tetap.",
+        "modelLabel": "Model giliran pintar",
+        "modelDescription": "Unduhan sekali saja sekitar {{size}}. Model berjalan di komputer ini.",
+        "modelDescriptionPending": "Unduhan sekali saja. Model berjalan di komputer ini."
+      },
+      "latency": {
+        "heading": "Panel latensi",
+        "label": "Tampilkan panel latensi",
+        "description": "Menampilkan angka waktu untuk setiap giliran dalam percakapan. Hanya angka: tidak ada audio atau teks yang disimpan.",
+        "placeholder": "Menunggu giliran pertama dalam percakapan.",
+        "turn": "Giliran terakhir: {{turn}}",
+        "samples": "Median dan persentil ke-90 dari {{count}} giliran terakhir.",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "Tahap",
+          "last": "Terakhir",
+          "median": "Median",
+          "p90": "Persentil ke-90"
+        },
+        "stage": {
+          "waitForSpeech": "Menunggu akhir ucapan",
+          "transcription": "Transkripsi",
+          "thinking": "Berpikir",
+          "toFirstSpeech": "Waktu hingga ucapan pertama",
+          "speakerCheck": "Pemeriksaan pembicara"
+        }
+      },
+      "persona": {
+        "heading": "Persona",
+        "label": "Persona",
+        "description": "Pengaturan siap pakai untuk gaya balasan dan suara. Menerapkan persona akan mengatur keduanya sekaligus.",
+        "activeOption": "{{name}} (aktif)",
+        "apply": "Terapkan",
+        "customHeading": "Persona kustom",
+        "customEmpty": "Belum ada persona kustom.",
+        "builtinTag": "Bawaan",
+        "builtinLocked": "Persona bawaan hanya bisa dibaca.",
+        "new": "Persona baru",
+        "edit": "Edit",
+        "delete": "Hapus",
+        "nameLabel": "Nama",
+        "styleLabel": "Gaya",
+        "charCount": "{{count}} dari {{max}} karakter",
+        "voiceLabel": "Suara",
+        "noVoice": "Pertahankan suara saya saat ini",
+        "save": "Simpan",
+        "cancel": "Batal",
+        "error": {
+          "name_empty": "Masukkan nama.",
+          "name_too_long": "Nama maksimal {{max}} karakter.",
+          "style_empty": "Masukkan gaya.",
+          "style_too_long": "Gaya maksimal {{max}} karakter.",
+          "control_chars": "Hapus karakter kontrol tersembunyi.",
+          "unknown_voice": "Pilih suara dari daftar.",
+          "limit_reached": "Anda dapat menyimpan hingga {{max}} persona kustom. Hapus salah satu untuk menambah yang baru.",
+          "builtin_immutable": "Persona bawaan tidak dapat diubah.",
+          "generic": "Persona tidak dapat disimpan. Coba lagi."
+        }
+      },
+      "speaker": {
+        "heading": "Filter pembicara",
+        "label": "Filter pembicara",
+        "description": "Abaikan ucapan yang tidak terdengar seperti suara Anda yang sudah terdaftar.",
+        "disclosure": {
+          "lead": "Filter pembicara adalah filter kenyamanan. Ini bukan keamanan dan bukan autentikasi.",
+          "detail": "Filter ini bisa keliru mengabaikan suara Anda sendiri, dan rekaman atau suara yang mirip bisa lolos. Voiceprint Anda tetap ada di komputer ini, dalam berkas yang hanya bisa dibaca oleh akun Anda. Tidak ada audio yang disimpan. Filter ini mati secara default."
+        },
+        "inactiveNote": "Filter tetap tidak aktif sampai model pembicara terpasang dan suara Anda sudah terdaftar.",
+        "sensitivityLabel": "Sensitivitas",
+        "sensitivityDescription": "Seberapa ketat ucapan dari suara lain disaring.",
+        "sensitivity": {
+          "lenient": "Longgar",
+          "balanced": "Seimbang",
+          "strict": "Ketat",
+          "lenientHint": "Membiarkan lebih banyak suara lewat, dan lebih jarang keliru mengabaikan Anda.",
+          "balancedHint": "Pengaturan default, jalan tengah di antara keduanya.",
+          "strictHint": "Menyaring lebih banyak suara lain, dan lebih sering keliru mengabaikan Anda."
+        },
+        "modelLabel": "Model pembicara",
+        "modelDescription": "Unduhan sekali saja sekitar {{size}}. Model berjalan di komputer ini.",
+        "enrolled": "Suara Anda sudah terdaftar.",
+        "notEnrolled": "Suara Anda belum terdaftar.",
+        "enroll": {
+          "label": "Daftarkan suara Anda",
+          "description": "Tiga rekaman pendek masing-masing sekitar 6 detik. Bicaralah seperti biasa di tempat yang tenang.",
+          "intro": "Anda akan membaca tiga kelompok kalimat pendek. Hanya voiceprint yang disimpan, audio tidak pernah disimpan.",
+          "needModel": "Pasang model pembicara terlebih dahulu.",
+          "start": "Mulai pendaftaran",
+          "starting": "Memulai...",
+          "cancel": "Batal",
+          "progress": "{{done}} dari {{total}} rekaman selesai",
+          "stepTitle": "Rekaman {{step}} dari {{total}}",
+          "readThese": "Bacakan kalimat-kalimat ini dengan suara biasa Anda:",
+          "record": "Mulai merekam langkah ini",
+          "recording": "Sedang merekam. Sisa {{seconds}} detik.",
+          "allRecorded": "Ketiga rekaman sudah masuk. Selesaikan untuk menyimpan voiceprint Anda.",
+          "finish": "Selesaikan pendaftaran",
+          "done": "Suara Anda sudah terdaftar.",
+          "messages": {
+            "busy": "Hentikan percakapan atau dikte terlebih dahulu.",
+            "too_little_speech": "Bicaralah sedikit lebih lama. Vox memerlukan setidaknya 2 detik ucapan untuk setiap rekaman.",
+            "inconsistent": "Ketiga rekaman tidak terdengar mirip. Mulai lagi dari rekaman pertama.",
+            "model_missing": "Pasang model pembicara terlebih dahulu.",
+            "session_ended": "Pendaftaran telah berakhir. Mulai lagi saat Anda siap.",
+            "generic": "Pendaftaran gagal. Coba lagi."
+          },
+          "prompts": {
+            "s1a": "Rubah cokelat yang cepat melompati anjing yang malas.",
+            "s1b": "Tolong buka kalender saya dan beri tahu apa agenda hari ini.",
+            "s1c": "Bagaimana cuaca sore ini?",
+            "s2a": "Tolong kecilkan volumenya sedikit.",
+            "s2b": "Beri tahu saya satu fakta singkat tentang bulan.",
+            "s2c": "Saya ingin secangkir teh di dekat jendela.",
+            "s3a": "Ingatkan saya untuk menelepon adik perempuan saya besok pagi.",
+            "s3b": "Bacakan pesan terbaru dari tim saya.",
+            "s3c": "Terima kasih, itu saja untuk sekarang."
+          }
+        },
+        "deleteLabel": "Voiceprint",
+        "deleteDescription": "Menghapus voiceprint yang tersimpan. Tanpa voiceprint, filter pembicara tidak bisa berjalan.",
+        "deleteButton": "Hapus voiceprint",
+        "deleteConfirm": "Hapus voiceprint? Anda perlu mendaftar lagi untuk menggunakan filter.",
+        "deleteConfirmButton": "Ya, hapus",
+        "deleteKeep": "Simpan",
+        "deleteError": "Voiceprint tidak dapat dihapus. Coba lagi."
+      }
     }
   }
 }

@@ -89,6 +89,7 @@ impl Ears for CaptureEars {
             max_utterance_ms: 5000,
             min_speech_ms: 100,
             floor: 0.02,
+            smart_turn: None,
         };
         Box::pin(async move { handle.listen(cfg).await })
     }

@@ -1,8 +1,9 @@
 use std::{
     io::Error,
+    panic::{catch_unwind, AssertUnwindSafe},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        mpsc, Arc, Mutex,
+        mpsc, Arc, Mutex, PoisonError, TryLockError,
     },
     time::{Duration, Instant},
 };
@@ -85,6 +86,52 @@ impl VadConfig {
 pub type AudioFrameCallback = Arc<dyn Fn(&[f32]) + Send + Sync + 'static>;
 pub type LevelCallback = Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>;
 
+/// Pre-VAD tap (T9b): one optional callback that receives EVERY post-resample 16 kHz
+/// frame on the recorder's consumer thread, before the VAD decides. The recorder and its
+/// consumer share the slot, so the tap can be installed or cleared while the stream runs.
+/// Real-time rules: never blocks (a contended frame is skipped and counted), a panicking
+/// callback is contained, and with no tap the cost is one relaxed load.
+#[derive(Default)]
+pub struct RawTapSlot {
+    armed: AtomicBool,
+    callback: Mutex<Option<AudioFrameCallback>>,
+    #[cfg_attr(not(test), allow(dead_code))]
+    skipped: AtomicU64,
+}
+
+impl RawTapSlot {
+    /// Installs (`Some`) or clears (`None`) the tap. The lock is held only for the swap.
+    pub fn set(&self, callback: Option<AudioFrameCallback>) {
+        let mut slot = self.callback.lock().unwrap_or_else(PoisonError::into_inner);
+        self.armed.store(callback.is_some(), Ordering::SeqCst);
+        *slot = callback;
+    }
+
+    /// Frames not delivered because the slot was busy (diagnostic counter).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn skipped(&self) -> u64 {
+        self.skipped.load(Ordering::Relaxed)
+    }
+
+    /// Consumer-thread entry point: never blocks and never unwinds into the caller.
+    fn deliver(&self, frame: &[f32]) {
+        if !self.armed.load(Ordering::Relaxed) {
+            return;
+        }
+        let guard = match self.callback.try_lock() {
+            Ok(guard) => guard,
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(TryLockError::WouldBlock) => {
+                self.skipped.fetch_add(1, Ordering::Relaxed);
+                return;
+            }
+        };
+        if let Some(callback) = guard.as_ref() {
+            let _ = catch_unwind(AssertUnwindSafe(|| callback(frame)));
+        }
+    }
+}
+
 pub struct AudioRecorder {
     device: Option<Device>,
     cmd_tx: Option<mpsc::Sender<Cmd>>,
@@ -92,6 +139,8 @@ pub struct AudioRecorder {
     vad: Option<VadConfig>,
     level_cb: Option<LevelCallback>,
     audio_cb: Option<AudioFrameCallback>,
+    /// Pre-VAD tap, shared with every consumer this recorder opens.
+    raw_tap: Arc<RawTapSlot>,
     /// Which input channel to use. None = average all (original behavior).
     selected_channel: Option<usize>,
     /// Preferred stream config cached per device name. The two HAL property
@@ -114,6 +163,7 @@ impl AudioRecorder {
             vad: None,
             level_cb: None,
             audio_cb: None,
+            raw_tap: Arc::new(RawTapSlot::default()),
             selected_channel: None,
             config_cache: Arc::new(Mutex::new(None)),
             stream_error: Arc::new(AtomicBool::new(false)),
@@ -160,6 +210,12 @@ impl AudioRecorder {
         self
     }
 
+    /// Smart Turn (T9b): installs (`Some`) or clears (`None`) the pre-VAD tap. Works
+    /// before or after `open`; the tap is kept across close and reopen.
+    pub fn set_raw_tap(&self, callback: Option<AudioFrameCallback>) {
+        self.raw_tap.set(callback);
+    }
+
     pub fn with_selected_channel(mut self, channel: Option<u16>) -> Self {
         self.set_selected_channel(channel);
         self
@@ -197,6 +253,7 @@ impl AudioRecorder {
         let level_cb = self.level_cb.clone();
         // Move the optional real-time audio frame callback into the worker thread
         let audio_cb = self.audio_cb.clone();
+        let raw_tap = Arc::clone(&self.raw_tap);
         let selected_channel = self.selected_channel;
         let config_cache = Arc::clone(&self.config_cache);
         let stream_error = Arc::clone(&self.stream_error);
@@ -327,7 +384,8 @@ impl AudioRecorder {
                         level_cb,
                         audio_cb,
                         stream_running_at,
-                    );
+                    )
+                    .with_raw_tap(raw_tap);
                     run_consumer(
                         processor,
                         sample_consumer,
@@ -704,6 +762,8 @@ struct CaptureProcessor {
     vad: Option<VadConfig>,
     level_cb: Option<LevelCallback>,
     audio_cb: Option<AudioFrameCallback>,
+    /// Pre-VAD tap (see `RawTapSlot`).
+    raw_tap: Arc<RawTapSlot>,
     stream_running_at: Instant,
     visualizer: AudioVisualiser,
     frame_resampler: FrameResampler,
@@ -757,6 +817,7 @@ impl CaptureProcessor {
             vad,
             level_cb,
             audio_cb,
+            raw_tap: Arc::new(RawTapSlot::default()),
             stream_running_at,
             visualizer,
             frame_resampler,
@@ -769,6 +830,12 @@ impl CaptureProcessor {
             total_dropped_samples: 0,
             overrun_warning_logged: false,
         }
+    }
+
+    /// Uses the tap slot the recorder owns, so `set_raw_tap` reaches this consumer.
+    fn with_raw_tap(mut self, raw_tap: Arc<RawTapSlot>) -> Self {
+        self.raw_tap = raw_tap;
+        self
     }
 
     /// Reset per-recording state and arm the first-sample acknowledgement.
@@ -828,7 +895,10 @@ impl CaptureProcessor {
         }
 
         let vad_policy = self.vad_policy;
+        let raw_tap = &self.raw_tap;
         self.frame_resampler.push(raw, |frame: &[f32]| {
+            // The raw tap sees every frame, before the VAD decides.
+            raw_tap.deliver(frame);
             handle_frame(
                 frame,
                 vad_policy,

@@ -1269,6 +1269,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "Spraakfuncties",
+      "intro": "Optionele extra's voor handsfree gesprekken. Elk staat uit totdat je het aanzet, en elke download start pas als je op Downloaden drukt.",
+      "model": {
+        "checking": "Controleren...",
+        "state": {
+          "not_installed": "Niet gedownload",
+          "downloading": "Downloaden... {{percent}}%",
+          "verifying": "Bestand controleren...",
+          "ready": "Geïnstalleerd",
+          "error": "De laatste poging is mislukt."
+        },
+        "download": "Downloaden",
+        "cancel": "Annuleren",
+        "delete": "Verwijderen",
+        "error": {
+          "busy": "Er wordt al een ander model gedownload.",
+          "corrupt": "Het gedownloade bestand komt niet overeen met de verwachte grootte of checksum. Download het opnieuw.",
+          "url_not_allowed": "Het downloadadres staat niet op de lijst met toegestane adressen.",
+          "download": "Downloaden is mislukt. Controleer je verbinding en probeer het opnieuw.",
+          "io": "Het bestand kon niet op deze computer worden opgeslagen.",
+          "not_installed": "Het model is niet geïnstalleerd.",
+          "unknown": "Er is iets misgegaan met het model."
+        }
+      },
+      "smartTurn": {
+        "heading": "Slimme beurtdetectie",
+        "label": "Slimme beurtdetectie",
+        "description": "Gebruikt een klein model om te bepalen wanneer je klaar bent met spreken, zodat Vox sneller kan antwoorden. Audio blijft tijdens een beurt in het geheugen en wordt niet opgeslagen.",
+        "fallbackNote": "Het model is niet geïnstalleerd, dus Vox gebruikt de vaste stiltegrens.",
+        "modelLabel": "Model voor slimme beurtdetectie",
+        "modelDescription": "Eenmalige download van ongeveer {{size}}. Het draait op deze computer.",
+        "modelDescriptionPending": "Eenmalige download. Het draait op deze computer."
+      },
+      "latency": {
+        "heading": "Latentiepaneel",
+        "label": "Latentiepaneel tonen",
+        "description": "Toont tijdsmetingen voor elke beurt van een gesprek. Alleen getallen: er wordt geen audio of tekst opgeslagen.",
+        "placeholder": "Wachten op de eerste beurt van een gesprek.",
+        "turn": "Laatste beurt: {{turn}}",
+        "samples": "Mediaan en 90e percentiel over de laatste {{count}} beurten.",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "Fase",
+          "last": "Laatste",
+          "median": "Mediaan",
+          "p90": "90e percentiel"
+        },
+        "stage": {
+          "waitForSpeech": "Wachten op einde van spraak",
+          "transcription": "Transcriptie",
+          "thinking": "Nadenken",
+          "toFirstSpeech": "Tijd tot eerste spraak",
+          "speakerCheck": "Sprekercontrole"
+        }
+      },
+      "persona": {
+        "heading": "Persona's",
+        "label": "Persona",
+        "description": "Een voorinstelling van antwoordstijl en stem. Een persona toepassen stelt beide tegelijk in.",
+        "activeOption": "{{name}} (actief)",
+        "apply": "Toepassen",
+        "customHeading": "Eigen persona's",
+        "customEmpty": "Nog geen eigen persona's.",
+        "builtinTag": "Ingebouwd",
+        "builtinLocked": "Ingebouwde persona's zijn alleen-lezen.",
+        "new": "Nieuwe persona",
+        "edit": "Bewerken",
+        "delete": "Verwijderen",
+        "nameLabel": "Naam",
+        "styleLabel": "Stijl",
+        "charCount": "{{count}} van {{max}} tekens",
+        "voiceLabel": "Stem",
+        "noVoice": "Mijn huidige stem behouden",
+        "save": "Opslaan",
+        "cancel": "Annuleren",
+        "error": {
+          "name_empty": "Voer een naam in.",
+          "name_too_long": "De naam mag maximaal {{max}} tekens bevatten.",
+          "style_empty": "Voer een stijl in.",
+          "style_too_long": "De stijl mag maximaal {{max}} tekens bevatten.",
+          "control_chars": "Verwijder de verborgen besturingstekens.",
+          "unknown_voice": "Kies een stem uit de lijst.",
+          "limit_reached": "Je kunt maximaal {{max}} eigen persona's opslaan. Verwijder er een om een nieuwe toe te voegen.",
+          "builtin_immutable": "Ingebouwde persona's kunnen niet worden gewijzigd.",
+          "generic": "De persona kon niet worden opgeslagen. Probeer het opnieuw."
+        }
+      },
+      "speaker": {
+        "heading": "Sprekerfilter",
+        "label": "Sprekerfilter",
+        "description": "Negeer spraak die niet klinkt als je geregistreerde stem.",
+        "disclosure": {
+          "lead": "Het sprekerfilter is een gemakkelijkheidsfilter. Het is geen beveiliging en geen authenticatie.",
+          "detail": "Het kan je eigen stem per ongeluk negeren, en een opname of een vergelijkbare stem kan erdoorheen komen. Je stemafdruk blijft op deze computer, in een bestand dat alleen jouw account kan lezen. Er wordt geen audio bewaard. Het filter staat standaard uit."
+        },
+        "inactiveNote": "Het filter blijft inactief totdat het sprekermodel is geïnstalleerd en je stem is geregistreerd.",
+        "sensitivityLabel": "Gevoeligheid",
+        "sensitivityDescription": "Hoe streng spraak van andere stemmen wordt tegengehouden.",
+        "sensitivity": {
+          "lenient": "Mild",
+          "balanced": "Gebalanceerd",
+          "strict": "Streng",
+          "lenientHint": "Laat meer stemmen door, en negeert jou minder vaak per ongeluk.",
+          "balancedHint": "De standaard, een middenweg tussen beide.",
+          "strictHint": "Houdt meer andere stemmen tegen, en negeert jou vaker per ongeluk."
+        },
+        "modelLabel": "Sprekermodel",
+        "modelDescription": "Eenmalige download van ongeveer {{size}}. Het draait op deze computer.",
+        "enrolled": "Je stem is geregistreerd.",
+        "notEnrolled": "Je stem is nog niet geregistreerd.",
+        "enroll": {
+          "label": "Registreer je stem",
+          "description": "Drie korte opnames van elk ongeveer 6 seconden. Spreek normaal, op een rustige plek.",
+          "intro": "Je leest drie korte reeksen zinnen voor. Alleen de stemafdruk wordt bewaard, nooit de audio.",
+          "needModel": "Installeer eerst het sprekermodel.",
+          "start": "Registratie starten",
+          "starting": "Starten...",
+          "cancel": "Annuleren",
+          "progress": "{{done}} van {{total}} opnames voltooid",
+          "stepTitle": "Opname {{step}} van {{total}}",
+          "readThese": "Lees deze zinnen voor met je normale stem:",
+          "record": "Begin met opnemen van deze stap",
+          "recording": "Opnemen. Nog {{seconds}} seconden.",
+          "allRecorded": "Alle drie de opnames zijn binnen. Rond af om je stemafdruk op te slaan.",
+          "finish": "Registratie afronden",
+          "done": "Je stem is geregistreerd.",
+          "messages": {
+            "busy": "Stop eerst het gesprek of de dictee.",
+            "too_little_speech": "Praat iets langer. Vox heeft voor elke opname minstens 2 seconden spraak nodig.",
+            "inconsistent": "De drie opnames klonken niet hetzelfde. We beginnen opnieuw bij de eerste opname.",
+            "model_missing": "Installeer eerst het sprekermodel.",
+            "session_ended": "De registratie is beëindigd. Begin opnieuw wanneer je er klaar voor bent.",
+            "generic": "De registratie is mislukt. Probeer het opnieuw."
+          },
+          "prompts": {
+            "s1a": "De snelle bruine vos springt over de luie hond.",
+            "s1b": "Open alsjeblieft mijn agenda en vertel me wat er vandaag staat.",
+            "s1c": "Hoe wordt het weer vanmiddag?",
+            "s2a": "Zet het volume alsjeblieft iets lager.",
+            "s2b": "Vertel me een kort feitje over de maan.",
+            "s2c": "Ik wil graag een kopje thee bij het raam.",
+            "s3a": "Herinner me eraan om morgenochtend mijn zus te bellen.",
+            "s3b": "Lees het laatste bericht van mijn team voor.",
+            "s3c": "Dank je, dat is het voor nu."
+          }
+        },
+        "deleteLabel": "Stemafdruk",
+        "deleteDescription": "Verwijdert de opgeslagen stemafdruk. Zonder stemafdruk kan het sprekerfilter niet werken.",
+        "deleteButton": "Stemafdruk verwijderen",
+        "deleteConfirm": "Stemafdruk verwijderen? Je moet je stem opnieuw registreren om het filter te gebruiken.",
+        "deleteConfirmButton": "Ja, verwijderen",
+        "deleteKeep": "Behouden",
+        "deleteError": "De stemafdruk kon niet worden verwijderd. Probeer het opnieuw."
+      }
     }
   }
 }

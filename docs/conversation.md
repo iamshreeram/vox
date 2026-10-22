@@ -71,6 +71,9 @@ they appear in the Experimental settings page, in the Spoken replies group,
 below the speaking-rate setting. That page is shown only when Experimental
 features are turned on.
 
+Optional features for conversations (smart turn detection, a latency panel,
+personas, and a speaker filter) are described in [Optional voice features](voice-features.md).
+
 ## Troubleshooting
 
 - **Nothing happens when I start:** turn on Spoken replies in the speech

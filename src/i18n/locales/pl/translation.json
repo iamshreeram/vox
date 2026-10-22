@@ -1269,6 +1269,162 @@
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
       "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+    },
+    "voice": {
+      "title": "Funkcje głosowe",
+      "intro": "Opcjonalne dodatki do rozmowy bez użycia rąk. Każdy jest wyłączony, dopóki go nie włączysz, a każde pobieranie rozpoczyna się dopiero po naciśnięciu Pobierz.",
+      "model": {
+        "checking": "Sprawdzanie...",
+        "state": {
+          "not_installed": "Nie pobrano",
+          "downloading": "Pobieranie... {{percent}}%",
+          "verifying": "Sprawdzanie pliku...",
+          "ready": "Zainstalowany",
+          "error": "Ostatnia próba się nie powiodła."
+        },
+        "download": "Pobierz",
+        "cancel": "Anuluj",
+        "delete": "Usuń",
+        "error": {
+          "busy": "Pobieranie innego modelu jest już w toku.",
+          "corrupt": "Pobrany plik nie zgadza się z oczekiwanym rozmiarem lub sumą kontrolną. Pobierz go ponownie.",
+          "url_not_allowed": "Adres pobierania nie znajduje się na liście dozwolonych.",
+          "download": "Pobieranie nie powiodło się. Sprawdź połączenie i spróbuj ponownie.",
+          "io": "Nie udało się zapisać pliku na tym komputerze.",
+          "not_installed": "Model nie jest zainstalowany.",
+          "unknown": "Coś poszło nie tak z modelem."
+        }
+      },
+      "smartTurn": {
+        "heading": "Inteligentne wykrywanie końca wypowiedzi",
+        "label": "Inteligentne wykrywanie końca wypowiedzi",
+        "description": "Mały model decyduje, kiedy skończyłeś mówić, dzięki czemu Vox może odpowiedzieć szybciej. Dźwięk jest trzymany w pamięci podczas wypowiedzi i nie jest zapisywany.",
+        "fallbackNote": "Model nie jest zainstalowany, więc Vox używa stałej reguły ciszy.",
+        "modelLabel": "Model wykrywania końca wypowiedzi",
+        "modelDescription": "Jednorazowe pobranie, około {{size}}. Działa na tym komputerze.",
+        "modelDescriptionPending": "Jednorazowe pobranie. Działa na tym komputerze."
+      },
+      "latency": {
+        "heading": "Panel opóźnień",
+        "label": "Pokaż panel opóźnień",
+        "description": "Pokazuje czasy każdej wypowiedzi w rozmowie. Tylko liczby: nie zapisujemy dźwięku ani tekstu.",
+        "placeholder": "Oczekiwanie na pierwszą wypowiedź w rozmowie.",
+        "turn": "Ostatnia wypowiedź: {{turn}}",
+        "samples": "Mediana i 90. percentyl z ostatnich {{count}} wypowiedzi.",
+        "ms": "{{ms}} ms",
+        "header": {
+          "stage": "Etap",
+          "last": "Ostatnia",
+          "median": "Mediana",
+          "p90": "90. percentyl"
+        },
+        "stage": {
+          "waitForSpeech": "Oczekiwanie na koniec mowy",
+          "transcription": "Transkrypcja",
+          "thinking": "Myślenie",
+          "toFirstSpeech": "Czas do pierwszej odpowiedzi głosowej",
+          "speakerCheck": "Sprawdzenie mówcy"
+        }
+      },
+      "persona": {
+        "heading": "Persony",
+        "label": "Persona",
+        "description": "Gotowy zestaw stylu odpowiedzi i głosu. Zastosowanie persony ustawia oba naraz.",
+        "activeOption": "{{name}} (aktywna)",
+        "apply": "Zastosuj",
+        "customHeading": "Własne persony",
+        "customEmpty": "Nie ma jeszcze własnych person.",
+        "builtinTag": "Wbudowana",
+        "builtinLocked": "Wbudowanych person nie można edytować.",
+        "new": "Nowa persona",
+        "edit": "Edytuj",
+        "delete": "Usuń",
+        "nameLabel": "Nazwa",
+        "styleLabel": "Styl",
+        "charCount": "{{count}} z {{max}} znaków",
+        "voiceLabel": "Głos",
+        "noVoice": "Zachowaj mój obecny głos",
+        "save": "Zapisz",
+        "cancel": "Anuluj",
+        "error": {
+          "name_empty": "Wpisz nazwę.",
+          "name_too_long": "Nazwa może mieć najwyżej {{max}} znaków.",
+          "style_empty": "Wpisz styl.",
+          "style_too_long": "Styl może mieć najwyżej {{max}} znaków.",
+          "control_chars": "Usuń ukryte znaki sterujące.",
+          "unknown_voice": "Wybierz głos z listy.",
+          "limit_reached": "Możesz zapisać do {{max}} własnych person. Usuń jedną, aby dodać kolejną.",
+          "builtin_immutable": "Wbudowanych person nie można zmienić.",
+          "generic": "Nie udało się zapisać persony. Spróbuj ponownie."
+        }
+      },
+      "speaker": {
+        "heading": "Filtr mówcy",
+        "label": "Filtr mówcy",
+        "description": "Ignoruj mowę, która nie brzmi jak zarejestrowany przez Ciebie głos.",
+        "disclosure": {
+          "lead": "Filtr mówcy to wygodny filtr. Nie jest zabezpieczeniem ani uwierzytelnianiem.",
+          "detail": "Może błędnie zignorować Twój własny głos, a nagranie lub podobny głos może przejść. Odcisk głosu pozostaje na tym komputerze, w pliku, który może odczytać tylko Twoje konto. Dźwięk nie jest zachowywany. Filtr jest domyślnie wyłączony."
+        },
+        "inactiveNote": "Filtr pozostaje nieaktywny, dopóki model mówcy nie zostanie zainstalowany, a Twój głos nie zostanie zarejestrowany.",
+        "sensitivityLabel": "Czułość",
+        "sensitivityDescription": "Jak ściśle wykluczać mowę innych głosów.",
+        "sensitivity": {
+          "lenient": "Łagodna",
+          "balanced": "Zrównoważona",
+          "strict": "Ścisła",
+          "lenientHint": "Przepuszcza więcej głosów, ale rzadziej błędnie ignoruje Ciebie.",
+          "balancedHint": "Ustawienie domyślne, złoty środek między tymi dwoma.",
+          "strictHint": "Wyklucza więcej obcych głosów, ale częściej błędnie ignoruje Ciebie."
+        },
+        "modelLabel": "Model mówcy",
+        "modelDescription": "Jednorazowe pobranie, około {{size}}. Działa na tym komputerze.",
+        "enrolled": "Twój głos jest zarejestrowany.",
+        "notEnrolled": "Twój głos nie jest jeszcze zarejestrowany.",
+        "enroll": {
+          "label": "Zarejestruj swój głos",
+          "description": "Trzy krótkie nagrania po około 6 sekund każde. Mów normalnie w cichym miejscu.",
+          "intro": "Przeczytasz trzy krótkie zestawy zdań. Zachowany zostanie tylko odcisk głosu, nigdy nagranie.",
+          "needModel": "Najpierw zainstaluj model mówcy.",
+          "start": "Rozpocznij rejestrację",
+          "starting": "Uruchamianie...",
+          "cancel": "Anuluj",
+          "progress": "Nagrania wykonane: {{done}} z {{total}}",
+          "stepTitle": "Nagranie {{step}} z {{total}}",
+          "readThese": "Przeczytaj te zdania swoim zwykłym głosem:",
+          "record": "Rozpocznij nagranie tego kroku",
+          "recording": "Nagrywanie. Pozostało {{seconds}} s.",
+          "allRecorded": "Wszystkie trzy nagrania są gotowe. Zakończ, aby zapisać odcisk głosu.",
+          "finish": "Zakończ rejestrację",
+          "done": "Twój głos jest zarejestrowany.",
+          "messages": {
+            "busy": "Najpierw zatrzymaj rozmowę lub dyktowanie.",
+            "too_little_speech": "Mów trochę dłużej. Vox potrzebuje co najmniej 2 sekund mowy w każdym nagraniu.",
+            "inconsistent": "Trzy nagrania nie brzmiały podobnie. Zaczynamy od pierwszego nagrania.",
+            "model_missing": "Najpierw zainstaluj model mówcy.",
+            "session_ended": "Rejestracja została zakończona. Zacznij ponownie, gdy będziesz gotowy.",
+            "generic": "Rejestracja nie powiodła się. Spróbuj ponownie."
+          },
+          "prompts": {
+            "s1a": "Żółty jeż szybko przebiegł przez łąkę.",
+            "s1b": "Proszę otwórz mój kalendarz i powiedz, co mam dzisiaj.",
+            "s1c": "Jaka będzie dziś pogoda po południu?",
+            "s2a": "Proszę, trochę ścisz głos.",
+            "s2b": "Opowiedz mi krótką ciekawostkę o Księżycu.",
+            "s2c": "Poproszę filiżankę herbaty przy oknie.",
+            "s3a": "Przypomnij mi, żebym jutro rano zadzwonił do siostry.",
+            "s3b": "Przeczytaj najnowszą wiadomość od mojego zespołu.",
+            "s3c": "Dziękuję, to wszystko na teraz."
+          }
+        },
+        "deleteLabel": "Odcisk głosu",
+        "deleteDescription": "Usuwa zapisany odcisk głosu. Bez niego filtr mówcy nie może działać.",
+        "deleteButton": "Usuń odcisk głosu",
+        "deleteConfirm": "Usunąć odcisk głosu? Aby ponownie korzystać z filtra, trzeba będzie go zarejestrować.",
+        "deleteConfirmButton": "Tak, usuń",
+        "deleteKeep": "Zachowaj",
+        "deleteError": "Nie udało się usunąć odcisku głosu. Spróbuj ponownie."
+      }
     }
   }
 }
