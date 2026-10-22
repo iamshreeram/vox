@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "L'ascolto ambientale deve essere disattivato durante una conversazione. Anche la parola di attivazione deve essere disattivata, a meno che la sua azione non sia impostata su «Parla con l'assistente»."
+      "wakeWordNote": "L'ascolto ambientale deve essere disattivato durante una conversazione. Anche la parola di attivazione deve essere disattivata, a meno che la sua azione non sia impostata su «Parla con l'assistente».",
+      "bargeIn": {
+        "label": "Interrompi parlando",
+        "description": "Parla sopra l'assistente per interromperlo. Usa le cuffie: con gli altoparlanti l'assistente sentirebbe se stesso. Funziona con le voci Phonon e Natural; la voce di sistema non può essere interrotta in questo modo. Richiede risposte vocali.",
+        "options": {
+          "off": "Disattivato",
+          "headphones": "Solo cuffie"
+        }
+      }
     },
     "voice": {
       "title": "Funzioni vocali",

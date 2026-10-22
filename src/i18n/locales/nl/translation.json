@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "Omgevingsluisteren moet uit staan terwijl een gesprek loopt. Het wekwoord moet ook uit staan, tenzij de actie is ingesteld op praten met de assistent."
+      "wakeWordNote": "Omgevingsluisteren moet uit staan terwijl een gesprek loopt. Het wekwoord moet ook uit staan, tenzij de actie is ingesteld op praten met de assistent.",
+      "bargeIn": {
+        "label": "Onderbreken door te spreken",
+        "description": "Praat over de assistent heen om die te onderbreken. Gebruik een koptelefoon: via luidsprekers zou de assistent zichzelf horen. Werkt met de stemmen Phonon en Natural; de systeemstem kan zo niet worden onderbroken. Vereist gesproken antwoorden.",
+        "options": {
+          "off": "Uit",
+          "headphones": "Alleen koptelefoon"
+        }
+      }
     },
     "voice": {
       "title": "Spraakfuncties",

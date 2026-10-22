@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "Bir sohbet çalışırken ortam dinleme kapalı olmalıdır. Uyandırma kelimesinin eylemi asistanla konuşmaya ayarlı değilse, uyandırma kelimesi de kapalı olmalıdır."
+      "wakeWordNote": "Bir sohbet çalışırken ortam dinleme kapalı olmalıdır. Uyandırma kelimesinin eylemi asistanla konuşmaya ayarlı değilse, uyandırma kelimesi de kapalı olmalıdır.",
+      "bargeIn": {
+        "label": "Konuşarak kes",
+        "description": "Asistanı kesmek için onun üzerine konuşun. Kulaklık kullanın: hoparlörde asistan kendi sesini duyar. Phonon ve Natural seslerle çalışır; sistem sesi bu yolla kesilemez. Sesli yanıtlar gerektirir.",
+        "options": {
+          "off": "Kapalı",
+          "headphones": "Yalnızca kulaklık"
+        }
+      }
     },
     "voice": {
       "title": "Ses özellikleri",

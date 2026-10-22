@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "L'écoute ambiante doit être désactivée pendant une conversation. Le mot d'éveil doit l'être aussi, sauf si son action est réglée sur « Parler avec l'assistant »."
+      "wakeWordNote": "L'écoute ambiante doit être désactivée pendant une conversation. Le mot d'éveil doit l'être aussi, sauf si son action est réglée sur « Parler avec l'assistant ».",
+      "bargeIn": {
+        "label": "Interrompre en parlant",
+        "description": "Parlez par-dessus l'assistant pour l'interrompre. Utilisez un casque : sur haut-parleurs, l'assistant s'entendrait lui-même. Fonctionne avec les voix Phonon et Natural ; la voix système ne peut pas être interrompue ainsi. Nécessite des réponses vocales.",
+        "options": {
+          "off": "Désactivé",
+          "headphones": "Casque uniquement"
+        }
+      }
     },
     "voice": {
       "title": "Fonctions vocales",

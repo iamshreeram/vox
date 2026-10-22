@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "बातचीत चलने के दौरान परिवेश श्रवण बंद होना चाहिए। वेक वर्ड भी बंद होना चाहिए, जब तक उसकी कार्रवाई सहायक से बात करने पर सेट न हो।"
+      "wakeWordNote": "बातचीत चलने के दौरान परिवेश श्रवण बंद होना चाहिए। वेक वर्ड भी बंद होना चाहिए, जब तक उसकी कार्रवाई सहायक से बात करने पर सेट न हो।",
+      "bargeIn": {
+        "label": "बोलकर बाधित करें",
+        "description": "सहायक की आवाज़ के ऊपर बोलकर उसे बाधित करें। हेडफ़ोन का उपयोग करें: स्पीकर पर सहायक अपनी ही आवाज़ सुनेगा। Phonon और Natural आवाज़ों के साथ काम करता है; सिस्टम आवाज़ को इस तरह बाधित नहीं किया जा सकता। बोले गए उत्तर आवश्यक हैं।",
+        "options": {
+          "off": "बंद",
+          "headphones": "केवल हेडफ़ोन"
+        }
+      }
     },
     "voice": {
       "title": "वॉइस सुविधाएँ",

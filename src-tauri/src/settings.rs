@@ -204,6 +204,30 @@ pub enum WakeWordAction {
     VoiceRequest,
 }
 
+/// Whether the user can interrupt a spoken reply by talking over it. Off by default.
+/// Setting only for now: the monitor that acts on it lands in a later stage.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ConverseBargeIn {
+    /// Interrupt by speaking. Intended for headphones only: on speakers the assistant hears itself.
+    Headphones,
+    /// No interruption (default). Also what any unrecognised stored value means, so a bad
+    /// settings file can never stop the app from loading.
+    #[default]
+    #[serde(other)]
+    Off,
+}
+
+impl ConverseBargeIn {
+    /// Normalise a setter value: only `headphones` enables it; anything else is Off.
+    pub fn from_setting_value(value: &str) -> Self {
+        match value {
+            "headphones" => Self::Headphones,
+            _ => Self::Off,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AutoSubmitKey {
@@ -858,6 +882,9 @@ pub struct AppSettings {
     /// Show the live per-turn latency panel in the Conversation settings.
     #[serde(default)]
     pub converse_latency_panel: bool,
+    /// Interrupt a spoken reply by talking over it (headphones only). No runtime effect yet.
+    #[serde(default)]
+    pub converse_barge_in: ConverseBargeIn,
     /// Ignore utterances that do not sound like the enrolled voice (convenience
     /// filter, NOT authentication; needs the model and an enrolled voice).
     #[serde(default)]
@@ -1922,6 +1949,7 @@ pub fn get_default_settings() -> AppSettings {
         converse_context_turns: default_converse_context_turns(),
         converse_smart_turn: false,
         converse_latency_panel: false,
+        converse_barge_in: ConverseBargeIn::Off,
         speaker_filter_enabled: false,
         speaker_filter_sensitivity: SpeakerSensitivity::default(),
         personas: Vec::new(),
@@ -3153,6 +3181,68 @@ mod tests {
         assert_eq!(
             settings.transcribe_gpu_device.as_deref(),
             Some("[\"vulkan\",\"id\",\"0000:01:00.0\"]")
+        );
+    }
+
+    #[test]
+    fn converse_barge_setting_default_is_off() {
+        assert_eq!(
+            get_default_settings().converse_barge_in,
+            ConverseBargeIn::Off
+        );
+        assert_eq!(ConverseBargeIn::default(), ConverseBargeIn::Off);
+    }
+
+    #[test]
+    fn converse_barge_setting_legacy_json_without_field_loads_off() {
+        let mut v = serde_json::to_value(get_default_settings()).unwrap();
+        v.as_object_mut().unwrap().remove("converse_barge_in");
+        let s: AppSettings = serde_json::from_value(v).expect("legacy store must deserialize");
+        assert_eq!(s.converse_barge_in, ConverseBargeIn::Off);
+    }
+
+    #[test]
+    fn converse_barge_setting_headphones_round_trips() {
+        let mut s = get_default_settings();
+        s.converse_barge_in = ConverseBargeIn::Headphones;
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["converse_barge_in"], "headphones");
+        let back: AppSettings = serde_json::from_value(v).unwrap();
+        assert_eq!(back.converse_barge_in, ConverseBargeIn::Headphones);
+    }
+
+    #[test]
+    fn converse_barge_setting_unknown_value_loads_off() {
+        let parsed: ConverseBargeIn =
+            serde_json::from_str("\"speakers\"").expect("unknown value must not error");
+        assert_eq!(parsed, ConverseBargeIn::Off);
+        let mut v = serde_json::to_value(get_default_settings()).unwrap();
+        v["converse_barge_in"] = serde_json::json!("speakers");
+        let s: AppSettings = serde_json::from_value(v).expect("store with unknown value must load");
+        assert_eq!(s.converse_barge_in, ConverseBargeIn::Off);
+    }
+
+    #[test]
+    fn converse_barge_setting_setter_value_normalizes_unknown_to_off() {
+        assert_eq!(
+            ConverseBargeIn::from_setting_value("headphones"),
+            ConverseBargeIn::Headphones
+        );
+        assert_eq!(
+            ConverseBargeIn::from_setting_value("off"),
+            ConverseBargeIn::Off
+        );
+        assert_eq!(
+            ConverseBargeIn::from_setting_value("speakers"),
+            ConverseBargeIn::Off
+        );
+        assert_eq!(
+            ConverseBargeIn::from_setting_value("HEADPHONES"),
+            ConverseBargeIn::Off
+        );
+        assert_eq!(
+            ConverseBargeIn::from_setting_value(""),
+            ConverseBargeIn::Off
         );
     }
 

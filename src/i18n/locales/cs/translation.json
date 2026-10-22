@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "Okolní poslech musí být během konverzace vypnutý. Aktivační slovo musí být také vypnuté, pokud jeho akce není nastavena na mluvení s asistentem."
+      "wakeWordNote": "Okolní poslech musí být během konverzace vypnutý. Aktivační slovo musí být také vypnuté, pokud jeho akce není nastavena na mluvení s asistentem.",
+      "bargeIn": {
+        "label": "Přerušit mluvením",
+        "description": "Mluvte přes asistenta, abyste ho přerušili. Používejte sluchátka: z reproduktorů by se asistent slyšel sám. Funguje s hlasy Phonon a Natural; systémový hlas takto přerušit nelze. Vyžaduje mluvené odpovědi.",
+        "options": {
+          "off": "Vypnuto",
+          "headphones": "Pouze sluchátka"
+        }
+      }
     },
     "voice": {
       "title": "Hlasové funkce",

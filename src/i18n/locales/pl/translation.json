@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "Nasłuchiwanie otoczenia musi być wyłączone podczas rozmowy. Słowo aktywujące również musi być wyłączone, chyba że jego działanie ustawiono na rozmowę z asystentem."
+      "wakeWordNote": "Nasłuchiwanie otoczenia musi być wyłączone podczas rozmowy. Słowo aktywujące również musi być wyłączone, chyba że jego działanie ustawiono na rozmowę z asystentem.",
+      "bargeIn": {
+        "label": "Przerywaj mówiąc",
+        "description": "Mów w trakcie wypowiedzi asystenta, aby mu przerwać. Używaj słuchawek: przez głośniki asystent słyszałby samego siebie. Działa z głosami Phonon i Natural; głosu systemowego nie da się w ten sposób przerwać. Wymaga mówionych odpowiedzi.",
+        "options": {
+          "off": "Wyłączone",
+          "headphones": "Tylko słuchawki"
+        }
+      }
     },
     "voice": {
       "title": "Funkcje głosowe",

@@ -857,6 +857,17 @@ async changeWakeWordActionSetting(action: WakeWordAction) : Promise<Result<null,
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Interrupt a spoken reply by talking over it: `headphones` or `off`. Any other value is Off.
+ */
+async changeConverseBargeInSetting(value: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_converse_barge_in_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeAppLanguageSetting(language: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_app_language_setting", { language }) };
@@ -2094,6 +2105,10 @@ converse_smart_turn?: boolean;
  */
 converse_latency_panel?: boolean; 
 /**
+ * Interrupt a spoken reply by talking over it (headphones only). No runtime effect yet.
+ */
+converse_barge_in?: ConverseBargeIn; 
+/**
  * Ignore utterances that do not sound like the enrolled voice (convenience
  * filter, NOT authentication; needs the model and an enrolled voice).
  */
@@ -2212,6 +2227,20 @@ export type ComposerProviderInfo = { id: string; label: string; base_url: string
  * One saved conversation as listed in the UI. The transcript is not included.
  */
 export type ConversationRecordSummaryDto = { id: number; started_at: number; ended_at: number; end_reason: string; summary: string; turns: number; vault_note: string | null }
+/**
+ * Whether the user can interrupt a spoken reply by talking over it. Off by default.
+ * Setting only for now: the monitor that acts on it lands in a later stage.
+ */
+export type ConverseBargeIn = 
+/**
+ * Interrupt by speaking. Intended for headphones only: on speakers the assistant hears itself.
+ */
+"headphones" | 
+/**
+ * No interruption (default). Also what any unrecognised stored value means, so a bad
+ * settings file can never stop the app from loading.
+ */
+"off"
 /**
  * Payload of the `converse-state` event (`state` and `end` are static labels).
  */
