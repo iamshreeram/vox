@@ -343,11 +343,13 @@ test.describe("Settings search: keyboard and composition", () => {
   });
 
   test("(4f) Cmd+F focuses the search box", async ({ page }) => {
-    await installTauriMock(page);
+    // The mock reports macOS, where the search box listens for the Command key. `ControlOrMeta`
+    // would press Control on a Linux runner and never match, so press Meta explicitly.
+    await installTauriMock(page, { platform: "macos" });
     await page.goto("/");
 
     await page.locator("h2").first().click();
-    await page.keyboard.press("ControlOrMeta+f");
+    await page.keyboard.press("Meta+f");
     await expect(searchBox(page)).toBeFocused();
   });
 
