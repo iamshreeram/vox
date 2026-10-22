@@ -97,6 +97,33 @@ const settingUpdaters: {
   autostart_enabled: (value) =>
     commands.changeAutostartSetting(value as boolean),
   wake_word_enabled: (value) => commands.wakewordSetEnabled(value as boolean),
+  wake_word_confidence_threshold: async (value) => {
+    const result = await commands.changeWakeWordConfidenceThresholdSetting(
+      value as number,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  wake_word_cooldown_ms: async (value) => {
+    const result = await commands.changeWakeWordCooldownMsSetting(
+      value as number,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  wake_word_silence_timeout_ms: async (value) => {
+    const result = await commands.changeWakeWordSilenceTimeoutMsSetting(
+      value as number,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
   ambient_mode_enabled: (value) => commands.ambientSetEnabled(value as boolean),
   update_checks_enabled: (value) =>
     commands.changeUpdateChecksSetting(value as boolean),

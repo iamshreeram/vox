@@ -971,6 +971,51 @@ pub fn change_word_correction_threshold_setting(
     Ok(())
 }
 
+/// Validates and stores the wake-word confidence threshold. A rejected value
+/// leaves the stored setting untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_wake_word_confidence_threshold_setting(
+    app: AppHandle,
+    threshold: f32,
+) -> Result<(), String> {
+    let threshold = settings::validate_wake_word_confidence_threshold(threshold)?;
+    let mut settings = settings::get_settings(&app);
+    settings.wake_word_confidence_threshold = threshold;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Validates and stores the wake-word cooldown. A rejected value leaves the
+/// stored setting untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_wake_word_cooldown_ms_setting(
+    app: AppHandle,
+    cooldown_ms: u32,
+) -> Result<(), String> {
+    let cooldown_ms = settings::validate_wake_word_cooldown_ms(cooldown_ms)?;
+    let mut settings = settings::get_settings(&app);
+    settings.wake_word_cooldown_ms = cooldown_ms;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Validates and stores the wake-word silence timeout (0 turns auto-finish off).
+/// A rejected value leaves the stored setting untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_wake_word_silence_timeout_ms_setting(
+    app: AppHandle,
+    timeout_ms: u32,
+) -> Result<(), String> {
+    let timeout_ms = settings::validate_wake_word_silence_timeout_ms(timeout_ms)?;
+    let mut settings = settings::get_settings(&app);
+    settings.wake_word_silence_timeout_ms = timeout_ms;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// Normalizes a voice name submitted from the settings UI.
 ///
 /// Blank or missing input means "system default" (`Ok(None)`). A non-blank

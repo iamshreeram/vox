@@ -1137,6 +1137,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::ambient::ambient_set_enabled,
             commands::ambient::ambient_clear,
             commands::wakeword::wakeword_set_enabled,
+            shortcut::change_wake_word_confidence_threshold_setting,
+            shortcut::change_wake_word_cooldown_ms_setting,
+            shortcut::change_wake_word_silence_timeout_ms_setting,
             commands::voice_shortcuts::set_voice_shortcuts,
             commands::converse::change_converse_silence_ms_setting,
             commands::converse::change_converse_max_idle_turns_setting,
@@ -1582,6 +1585,9 @@ pub fn run(cli_args: CliArgs) {
         _ => {}
     });
 }
+
+#[cfg(test)]
+mod settings_validation_tests;
 
 #[cfg(test)]
 mod tts_listener_tests {

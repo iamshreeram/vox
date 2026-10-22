@@ -306,6 +306,15 @@
         "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
       },
       "wakeWord": {
+        "confidenceLabel": "Поріг розпізнавання",
+        "confidenceDescription": "Наскільки впевненим має бути детектор, щоб фраза активації запустила запис. Чим вищий поріг, тим суворіше: менше хибних спрацювань, але можна пропустити справжні. Набуде чинності після перезапуску Vox.",
+        "cooldownLabel": "Пауза після запису",
+        "cooldownDescription": "Час очікування після запису, запущеного словом активації, перед тим як знову почати слухати, у мілісекундах.",
+        "silenceTimeoutLabel": "Автоматичне завершення після тиші",
+        "silenceTimeoutDescription": "Завершує запис, запущений словом активації, після такої тиші, у мілісекундах. Установіть 0, щоб вимкнути автоматичне завершення.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} мс",
+        "offValue": "Вимкнено",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",

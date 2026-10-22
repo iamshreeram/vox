@@ -1145,6 +1145,56 @@ fn default_wake_word_silence_timeout_ms() -> u32 {
     1500
 }
 
+/// Lowest accepted wake-word confidence threshold (inclusive).
+pub const WAKE_WORD_CONFIDENCE_MIN: f32 = 0.10;
+/// Highest accepted wake-word confidence threshold (inclusive).
+pub const WAKE_WORD_CONFIDENCE_MAX: f32 = 0.95;
+/// Largest accepted wake-word cooldown in milliseconds (inclusive; 0 is allowed).
+pub const WAKE_WORD_COOLDOWN_MAX_MS: u32 = 10_000;
+/// Largest accepted wake-word silence timeout in milliseconds (inclusive; 0 turns auto-finish off).
+pub const WAKE_WORD_SILENCE_TIMEOUT_MAX_MS: u32 = 30_000;
+
+/// Validates a wake-word confidence threshold. Non-finite values and values outside
+/// `[WAKE_WORD_CONFIDENCE_MIN, WAKE_WORD_CONFIDENCE_MAX]` are rejected, never clamped.
+pub fn validate_wake_word_confidence_threshold(threshold: f32) -> Result<f32, String> {
+    if threshold.is_finite()
+        && (WAKE_WORD_CONFIDENCE_MIN..=WAKE_WORD_CONFIDENCE_MAX).contains(&threshold)
+    {
+        Ok(threshold)
+    } else {
+        Err(format!(
+            "Wake word confidence threshold must be between {:.0}% and {:.0}%",
+            WAKE_WORD_CONFIDENCE_MIN * 100.0,
+            WAKE_WORD_CONFIDENCE_MAX * 100.0
+        ))
+    }
+}
+
+/// Validates a wake-word cooldown in milliseconds. Values above
+/// `WAKE_WORD_COOLDOWN_MAX_MS` are rejected, never clamped; 0 is allowed.
+pub fn validate_wake_word_cooldown_ms(cooldown_ms: u32) -> Result<u32, String> {
+    if cooldown_ms <= WAKE_WORD_COOLDOWN_MAX_MS {
+        Ok(cooldown_ms)
+    } else {
+        Err(format!(
+            "Wake word cooldown must be between 0 and {WAKE_WORD_COOLDOWN_MAX_MS} ms"
+        ))
+    }
+}
+
+/// Validates a wake-word silence timeout in milliseconds. Values above
+/// `WAKE_WORD_SILENCE_TIMEOUT_MAX_MS` are rejected, never clamped; 0 is allowed and
+/// turns auto-finish off.
+pub fn validate_wake_word_silence_timeout_ms(timeout_ms: u32) -> Result<u32, String> {
+    if timeout_ms <= WAKE_WORD_SILENCE_TIMEOUT_MAX_MS {
+        Ok(timeout_ms)
+    } else {
+        Err(format!(
+            "Wake word silence timeout must be between 0 and {WAKE_WORD_SILENCE_TIMEOUT_MAX_MS} ms (0 turns auto-finish off)"
+        ))
+    }
+}
+
 const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 2;
 
 fn default_settings_schema_version() -> u32 {

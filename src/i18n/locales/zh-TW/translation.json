@@ -306,6 +306,15 @@
         "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
       },
       "wakeWord": {
+        "confidenceLabel": "偵測門檻",
+        "confidenceDescription": "偵測器在喚醒詞觸發錄音前需要達到的信心程度。數值越高越嚴格：誤觸發較少，但可能漏掉真正的喚醒。重新啟動 Vox 後生效。",
+        "cooldownLabel": "冷卻時間",
+        "cooldownDescription": "喚醒詞觸發的錄音結束後，再次開始聆聽前的等待時間（毫秒）。",
+        "silenceTimeoutLabel": "靜音後自動結束",
+        "silenceTimeoutDescription": "喚醒詞觸發的錄音在靜音持續此時長後自動結束（毫秒）。設為 0 可關閉自動結束。",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} 毫秒",
+        "offValue": "關閉",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",

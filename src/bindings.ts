@@ -1504,6 +1504,42 @@ async wakewordSetEnabled(enabled: boolean) : Promise<Result<null, string>> {
 }
 },
 /**
+ * Validates and stores the wake-word confidence threshold. A rejected value
+ * leaves the stored setting untouched.
+ */
+async changeWakeWordConfidenceThresholdSetting(threshold: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_wake_word_confidence_threshold_setting", { threshold }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Validates and stores the wake-word cooldown. A rejected value leaves the
+ * stored setting untouched.
+ */
+async changeWakeWordCooldownMsSetting(cooldownMs: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_wake_word_cooldown_ms_setting", { cooldownMs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Validates and stores the wake-word silence timeout (0 turns auto-finish off).
+ * A rejected value leaves the stored setting untouched.
+ */
+async changeWakeWordSilenceTimeoutMsSetting(timeoutMs: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_wake_word_silence_timeout_ms_setting", { timeoutMs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Validates and persists the full list of voice shortcuts.
  * 
  * The whole list is validated before anything is written: if any entry is

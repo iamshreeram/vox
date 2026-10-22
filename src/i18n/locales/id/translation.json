@@ -306,6 +306,15 @@
         "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
       },
       "wakeWord": {
+        "confidenceLabel": "Ambang deteksi",
+        "confidenceDescription": "Seberapa yakin detektor harus sebelum frasa pemicu memulai rekaman. Nilai lebih tinggi lebih ketat: lebih sedikit pemicu palsu, tetapi bisa melewatkan yang asli. Berlaku setelah Anda memulai ulang Vox.",
+        "cooldownLabel": "Jeda pendinginan",
+        "cooldownDescription": "Waktu tunggu setelah rekaman yang dimulai wake word sebelum mendengarkan lagi, dalam milidetik.",
+        "silenceTimeoutLabel": "Selesai otomatis setelah senyap",
+        "silenceTimeoutDescription": "Mengakhiri rekaman yang dimulai wake word setelah senyap selama ini, dalam milidetik. Atur ke 0 untuk mematikan selesai otomatis.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} ms",
+        "offValue": "Mati",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",

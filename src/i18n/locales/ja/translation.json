@@ -306,6 +306,15 @@
         "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
       },
       "wakeWord": {
+        "confidenceLabel": "検出しきい値",
+        "confidenceDescription": "ウェイクフレーズが録音を開始するまでに、検出器がどの程度確信している必要があるかを設定します。高いほど厳格になり、誤検出は減りますが、本物を取りこぼすことがあります。Vox を再起動すると反映されます。",
+        "cooldownLabel": "クールダウン",
+        "cooldownDescription": "ウェイクワードで開始した録音の後、再び聞き取りを始めるまでの待機時間（ミリ秒）。",
+        "silenceTimeoutLabel": "無音で自動終了",
+        "silenceTimeoutDescription": "ウェイクワードで開始した録音を、この長さの無音が続いたら終了します（ミリ秒）。0 にすると自動終了をオフにします。",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} ミリ秒",
+        "offValue": "オフ",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",

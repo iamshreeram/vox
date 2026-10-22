@@ -306,6 +306,15 @@
         "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
       },
       "wakeWord": {
+        "confidenceLabel": "Ngưỡng nhận diện",
+        "confidenceDescription": "Mức độ chắc chắn mà bộ nhận diện cần có trước khi cụm từ đánh thức bắt đầu ghi âm. Giá trị cao hơn thì nghiêm ngặt hơn: ít kích hoạt nhầm hơn nhưng có thể bỏ sót lần thật. Có hiệu lực sau khi khởi động lại Vox.",
+        "cooldownLabel": "Thời gian chờ",
+        "cooldownDescription": "Thời gian chờ sau một lần ghi âm do từ đánh thức bắt đầu, trước khi lắng nghe lại, tính bằng mili giây.",
+        "silenceTimeoutLabel": "Tự kết thúc khi im lặng",
+        "silenceTimeoutDescription": "Kết thúc bản ghi do từ đánh thức bắt đầu sau khoảng im lặng này, tính bằng mili giây. Đặt 0 để tắt tự kết thúc.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} ms",
+        "offValue": "Tắt",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",

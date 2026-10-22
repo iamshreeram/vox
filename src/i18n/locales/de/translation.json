@@ -306,6 +306,15 @@
         "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
       },
       "wakeWord": {
+        "confidenceLabel": "Erkennungsschwelle",
+        "confidenceDescription": "Wie sicher der Detektor sein muss, bevor die Aktivierungsphrase eine Aufnahme auslöst. Ein höherer Wert ist strenger: weniger Fehlauslösungen, aber echte Aktivierungen können verpasst werden. Wirkt nach einem Neustart von Vox.",
+        "cooldownLabel": "Abklingzeit",
+        "cooldownDescription": "Wartezeit nach einer durch das Wake Word ausgelösten Aufnahme, bevor wieder zugehört wird, in Millisekunden.",
+        "silenceTimeoutLabel": "Nach Stille automatisch beenden",
+        "silenceTimeoutDescription": "Beendet eine durch das Wake Word ausgelöste Aufnahme nach dieser Stille, in Millisekunden. Auf 0 setzen, um das automatische Beenden auszuschalten.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} ms",
+        "offValue": "Aus",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",

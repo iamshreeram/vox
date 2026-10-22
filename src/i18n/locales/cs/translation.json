@@ -306,6 +306,15 @@
         "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
       },
       "wakeWord": {
+        "confidenceLabel": "Práh rozpoznání",
+        "confidenceDescription": "Jak jistý musí detektor být, než fráze pro probuzení spustí nahrávání. Vyšší hodnota je přísnější: méně falešných spuštění, ale může minout skutečná. Platí až po restartování aplikace Vox.",
+        "cooldownLabel": "Doba zklidnění",
+        "cooldownDescription": "Doba čekání po nahrávání spuštěném probouzecím slovem, než se znovu začne poslouchat, v milisekundách.",
+        "silenceTimeoutLabel": "Automaticky ukončit po tichu",
+        "silenceTimeoutDescription": "Ukončí nahrávání spuštěné probouzecím slovem po tolika tichu, v milisekundách. Nastavte 0 pro vypnutí automatického ukončení.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} ms",
+        "offValue": "Vypnuto",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
