@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Ім'я активації",
+        "wakeNameDescription": "Одне слово: літери, цифри або підкреслення. Набуде чинності після перезапуску Vox.",
+        "windowLabel": "Вікно пам'яті",
+        "windowDescription": "Скільки нещодавньої розмови пам'ятає фоновий режим. Набуде чинності після перезапуску Vox.",
+        "windowValue": "{{value}} с"
       },
       "wakeWord": {
+        "confidenceLabel": "Поріг розпізнавання",
+        "confidenceDescription": "Наскільки впевненим має бути детектор, щоб фраза активації запустила запис. Чим вищий поріг, тим суворіше: менше хибних спрацювань, але можна пропустити справжні. Набуде чинності після перезапуску Vox.",
+        "cooldownLabel": "Пауза після запису",
+        "cooldownDescription": "Час очікування після запису, запущеного словом активації, перед тим як знову почати слухати, у мілісекундах.",
+        "silenceTimeoutLabel": "Автоматичне завершення після тиші",
+        "silenceTimeoutDescription": "Завершує запис, запущений словом активації, після такої тиші, у мілісекундах. Установіть 0, щоб вимкнути автоматичне завершення.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} мс",
+        "offValue": "Вимкнено",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Додатково",
+        "timeoutLabel": "Час очікування агента (секунди)",
+        "timeoutDescription": "Скільки чекати на відповідь команди агента. Від 5 до 600 секунд.",
+        "promptFlagLabel": "Прапорець запиту",
+        "promptFlagDescription": "Прапорець, який передає ваш запит команді агента, наприклад -p. Він має відрізнятися від прапорця агента.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Видаляти слова-паразити",
-        "description": "Видаляє поширені слова-вагання з транскрипцій. Вимкніть, щоб зберегти їх."
+        "description": "Видаляє поширені слова-вагання з транскрипцій. Вимкніть, щоб зберегти їх.",
+        "modeLabel": "Список слів-паразитів",
+        "builtIn": "Вбудований список",
+        "custom": "Власний список",
+        "off": "Вимкнено (зберегти всі слова)",
+        "customLabel": "Власні слова-паразити",
+        "customHelp": "Розділяйте слова комами або переносами рядків. До 100 слів, кожне до 32 символів. Регістр літер не враховується.",
+        "customCount": "{{count}} з {{max}} слів",
+        "customTooMany": "Власний список може містити не більше {{max}} слів.",
+        "customTooLong": "Кожне слово може містити не більше {{max}} символів.",
+        "customEmpty": "Додайте принаймні одне слово або виберіть Вбудований список чи Вимкнено.",
+        "saveCustom": "Зберегти список"
       },
       "chineseScript": {
         "title": "Китайська писемність",

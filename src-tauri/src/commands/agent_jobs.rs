@@ -103,7 +103,7 @@ pub(crate) fn apply_agents_change(s: &mut AppSettings, input: Vec<String>) -> Ve
 
 /// Stores a valid agent flag on `s`, or returns `Invalid agent flag.` and keeps the old value (M4).
 pub(crate) fn apply_flag_change(s: &mut AppSettings, flag: String) -> Result<String, String> {
-    if !settings::is_valid_agent_flag(&flag, &s.agent_bridge_prompt_flag) {
+    if !settings::is_valid_agent_flag(&flag, &settings::effective_prompt_flag(s)) {
         return Err("Invalid agent flag.".to_string());
     }
     s.agent_jobs_agent_flag = flag.clone();

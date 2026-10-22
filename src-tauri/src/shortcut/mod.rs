@@ -971,6 +971,118 @@ pub fn change_word_correction_threshold_setting(
     Ok(())
 }
 
+/// Validates and stores the wake-word confidence threshold. A rejected value
+/// leaves the stored setting untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_wake_word_confidence_threshold_setting(
+    app: AppHandle,
+    threshold: f32,
+) -> Result<(), String> {
+    let threshold = settings::validate_wake_word_confidence_threshold(threshold)?;
+    let mut settings = settings::get_settings(&app);
+    settings.wake_word_confidence_threshold = threshold;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Validates and stores the wake-word cooldown. A rejected value leaves the
+/// stored setting untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_wake_word_cooldown_ms_setting(
+    app: AppHandle,
+    cooldown_ms: u32,
+) -> Result<(), String> {
+    let cooldown_ms = settings::validate_wake_word_cooldown_ms(cooldown_ms)?;
+    let mut settings = settings::get_settings(&app);
+    settings.wake_word_cooldown_ms = cooldown_ms;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Validates and stores the wake-word silence timeout (0 turns auto-finish off).
+/// A rejected value leaves the stored setting untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_wake_word_silence_timeout_ms_setting(
+    app: AppHandle,
+    timeout_ms: u32,
+) -> Result<(), String> {
+    let timeout_ms = settings::validate_wake_word_silence_timeout_ms(timeout_ms)?;
+    let mut settings = settings::get_settings(&app);
+    settings.wake_word_silence_timeout_ms = timeout_ms;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Validates and stores the ambient wake name (trimmed). A rejected value leaves
+/// the stored setting untouched. Takes effect after restart.
+#[tauri::command]
+#[specta::specta]
+pub fn change_ambient_wake_name_setting(app: AppHandle, name: String) -> Result<(), String> {
+    let name = settings::validate_ambient_wake_name(&name)?;
+    let mut settings = settings::get_settings(&app);
+    settings.ambient_wake_name = name;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Validates and stores the ambient conversation window in milliseconds. A rejected
+/// value leaves the stored setting untouched. Takes effect after restart.
+#[tauri::command]
+#[specta::specta]
+pub fn change_ambient_window_ms_setting(app: AppHandle, window_ms: u64) -> Result<(), String> {
+    let window_ms = settings::validate_ambient_window_ms(window_ms)?;
+    let mut settings = settings::get_settings(&app);
+    settings.ambient_window_ms = window_ms;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Validates and stores the custom filler word list. `None` restores the built-in lists,
+/// `Some([])` turns filler removal off. A rejected list leaves the stored setting untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_custom_filler_words_setting(
+    app: AppHandle,
+    words: Option<Vec<String>>,
+) -> Result<(), String> {
+    let words = settings::validate_custom_filler_words(words)?;
+    let mut settings = settings::get_settings(&app);
+    settings.custom_filler_words = words;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Validates and stores the agent bridge timeout in seconds. A rejected value leaves the
+/// stored setting untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_bridge_timeout_secs_setting(
+    app: AppHandle,
+    timeout_secs: u64,
+) -> Result<(), String> {
+    let timeout_secs = settings::validate_agent_bridge_timeout_secs(timeout_secs)?;
+    let mut settings = settings::get_settings(&app);
+    settings.agent_bridge_timeout_secs = timeout_secs;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Validates and stores the agent bridge prompt flag. The flag must have a valid shape and
+/// must differ from the effective agent flag. A rejected flag leaves the stored setting
+/// untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_bridge_prompt_flag_setting(app: AppHandle, flag: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    let flag = settings::validate_agent_bridge_prompt_flag(&settings, &flag)?;
+    settings.agent_bridge_prompt_flag = flag;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// Normalizes a voice name submitted from the settings UI.
 ///
 /// Blank or missing input means "system default" (`Ok(None)`). A non-blank

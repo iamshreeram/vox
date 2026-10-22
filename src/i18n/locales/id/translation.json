@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Nama pemicu",
+        "wakeNameDescription": "Satu kata: huruf, angka, atau garis bawah. Berlaku setelah Vox dimulai ulang.",
+        "windowLabel": "Jendela memori",
+        "windowDescription": "Seberapa banyak percakapan terbaru yang diingat mode ambien. Berlaku setelah Vox dimulai ulang.",
+        "windowValue": "{{value}} dtk"
       },
       "wakeWord": {
+        "confidenceLabel": "Ambang deteksi",
+        "confidenceDescription": "Seberapa yakin detektor harus sebelum frasa pemicu memulai rekaman. Nilai lebih tinggi lebih ketat: lebih sedikit pemicu palsu, tetapi bisa melewatkan yang asli. Berlaku setelah Anda memulai ulang Vox.",
+        "cooldownLabel": "Jeda pendinginan",
+        "cooldownDescription": "Waktu tunggu setelah rekaman yang dimulai wake word sebelum mendengarkan lagi, dalam milidetik.",
+        "silenceTimeoutLabel": "Selesai otomatis setelah senyap",
+        "silenceTimeoutDescription": "Mengakhiri rekaman yang dimulai wake word setelah senyap selama ini, dalam milidetik. Atur ke 0 untuk mematikan selesai otomatis.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} ms",
+        "offValue": "Mati",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Lanjutan",
+        "timeoutLabel": "Batas waktu agen (detik)",
+        "timeoutDescription": "Berapa lama menunggu balasan dari perintah agen. Antara 5 dan 600 detik.",
+        "promptFlagLabel": "Flag permintaan",
+        "promptFlagDescription": "Flag yang meneruskan permintaan Anda ke perintah agen, misalnya -p. Harus berbeda dari flag agen.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Hapus Kata Pengisi",
-        "description": "Menghapus kata pengisi umum dari transkripsi. Nonaktifkan untuk mempertahankannya."
+        "description": "Menghapus kata pengisi umum dari transkripsi. Nonaktifkan untuk mempertahankannya.",
+        "modeLabel": "Daftar kata pengisi",
+        "builtIn": "Daftar bawaan",
+        "custom": "Daftar kustom",
+        "off": "Nonaktif (pertahankan semua kata)",
+        "customLabel": "Kata pengisi kustom",
+        "customHelp": "Pisahkan kata dengan koma atau baris baru. Hingga 100 kata, masing-masing paling banyak 32 karakter. Pencocokan tidak membedakan huruf besar dan kecil.",
+        "customCount": "{{count}} dari {{max}} kata",
+        "customTooMany": "Daftar kustom dapat berisi paling banyak {{max}} kata.",
+        "customTooLong": "Setiap kata dapat berisi paling banyak {{max}} karakter.",
+        "customEmpty": "Tambahkan minimal satu kata, atau pilih Daftar bawaan atau Nonaktif.",
+        "saveCustom": "Simpan daftar"
       },
       "chineseScript": {
         "title": "Aksara Tionghoa",

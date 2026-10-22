@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Uyandırma adı",
+        "wakeNameDescription": "Tek kelime: harf, rakam veya alt çizgi. Vox'u yeniden başlattıktan sonra geçerli olur.",
+        "windowLabel": "Bellek penceresi",
+        "windowDescription": "Ortam modunun son konuşmadan ne kadarını hatırlayacağı. Vox'u yeniden başlattıktan sonra geçerli olur.",
+        "windowValue": "{{value}} sn"
       },
       "wakeWord": {
+        "confidenceLabel": "Algılama eşiği",
+        "confidenceDescription": "Uyandırma ifadesinin kaydı başlatması için dedektörün ne kadar emin olması gerektiği. Daha yüksek değer daha katıdır: daha az yanlış tetikleme olur ama gerçek olanlar kaçabilir. Vox yeniden başlatıldıktan sonra etkili olur.",
+        "cooldownLabel": "Bekleme süresi",
+        "cooldownDescription": "Uyandırma sözcüğüyle başlatılan kayıttan sonra yeniden dinlemeden önce beklenecek süre, milisaniye cinsinden.",
+        "silenceTimeoutLabel": "Sessizlikte otomatik bitir",
+        "silenceTimeoutDescription": "Uyandırma sözcüğüyle başlatılan kaydı bu kadar sessizlikten sonra bitirir, milisaniye cinsinden. Otomatik bitirmeyi kapatmak için 0 girin.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} ms",
+        "offValue": "Kapalı",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Gelişmiş",
+        "timeoutLabel": "Ajan zaman aşımı (saniye)",
+        "timeoutDescription": "Ajan komutunun yanıt vermesi için ne kadar beklenecek. 5 ile 600 saniye arası.",
+        "promptFlagLabel": "İstek bayrağı",
+        "promptFlagDescription": "İsteğinizi ajan komutuna ileten bayrak, örneğin -p. Ajan bayrağından farklı olmalıdır.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Dolgu Sözcüklerini Kaldır",
-        "description": "Transkripsiyonlardaki yaygın duraksama sözcüklerini kaldırır. Bunları korumak için kapatın."
+        "description": "Transkripsiyonlardaki yaygın duraksama sözcüklerini kaldırır. Bunları korumak için kapatın.",
+        "modeLabel": "Dolgu kelimeleri listesi",
+        "builtIn": "Yerleşik liste",
+        "custom": "Özel liste",
+        "off": "Kapalı (tüm kelimeleri koru)",
+        "customLabel": "Özel dolgu kelimeleri",
+        "customHelp": "Kelimeleri virgül veya yeni satırla ayırın. En fazla 100 kelime, her biri en fazla 32 karakter. Eşleştirme büyük ve küçük harfi ayırt etmez.",
+        "customCount": "{{max}} kelimeden {{count}} kelime",
+        "customTooMany": "Özel liste en fazla {{max}} kelime içerebilir.",
+        "customTooLong": "Her kelime en fazla {{max}} karakter olabilir.",
+        "customEmpty": "En az bir kelime ekleyin ya da Yerleşik liste veya Kapalı seçin.",
+        "saveCustom": "Listeyi kaydet"
       },
       "chineseScript": {
         "title": "Çince yazı",

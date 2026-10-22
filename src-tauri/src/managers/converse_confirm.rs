@@ -698,7 +698,7 @@ pub fn launch_config_from_settings(settings: &AppSettings) -> Option<LaunchConfi
     Some(LaunchConfig {
         binary,
         binary_id,
-        prompt_flag: settings.agent_bridge_prompt_flag.clone(),
+        prompt_flag: crate::settings::effective_prompt_flag(settings),
         timeout: Duration::from_secs(u64::from(minutes) * 60),
         agent_flag: None,
     })

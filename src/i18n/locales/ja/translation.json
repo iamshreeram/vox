@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "ウェイク名",
+        "wakeNameDescription": "単語1つ：英字、数字、アンダースコアのみ。Voxを再起動すると反映されます。",
+        "windowLabel": "メモリの時間範囲",
+        "windowDescription": "アンビエントモードが直近の会話をどれだけ覚えておくかを設定します。Voxを再起動すると反映されます。",
+        "windowValue": "{{value}} 秒"
       },
       "wakeWord": {
+        "confidenceLabel": "検出しきい値",
+        "confidenceDescription": "ウェイクフレーズが録音を開始するまでに、検出器がどの程度確信している必要があるかを設定します。高いほど厳格になり、誤検出は減りますが、本物を取りこぼすことがあります。Vox を再起動すると反映されます。",
+        "cooldownLabel": "クールダウン",
+        "cooldownDescription": "ウェイクワードで開始した録音の後、再び聞き取りを始めるまでの待機時間（ミリ秒）。",
+        "silenceTimeoutLabel": "無音で自動終了",
+        "silenceTimeoutDescription": "ウェイクワードで開始した録音を、この長さの無音が続いたら終了します（ミリ秒）。0 にすると自動終了をオフにします。",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} ミリ秒",
+        "offValue": "オフ",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "詳細設定",
+        "timeoutLabel": "エージェントのタイムアウト（秒）",
+        "timeoutDescription": "エージェントコマンドの応答を待つ時間です。5～600秒の間で設定します。",
+        "promptFlagLabel": "プロンプト用フラグ",
+        "promptFlagDescription": "依頼内容をエージェントコマンドに渡すフラグです（例: -p）。エージェント用フラグとは異なる必要があります。",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "フィラー語を削除",
-        "description": "文字起こしから一般的なフィラー語を削除します。残すにはオフにしてください。"
+        "description": "文字起こしから一般的なフィラー語を削除します。残すにはオフにしてください。",
+        "modeLabel": "フィラー語のリスト",
+        "builtIn": "内蔵リスト",
+        "custom": "カスタムリスト",
+        "off": "オフ（すべての単語を残す）",
+        "customLabel": "カスタムのフィラー語",
+        "customHelp": "単語はカンマか改行で区切ってください。最大100語、各32文字まで。大文字と小文字は区別されません。",
+        "customCount": "{{max}} 語中 {{count}} 語",
+        "customTooMany": "カスタムリストは最大 {{max}} 語までです。",
+        "customTooLong": "各単語は最大 {{max}} 文字までです。",
+        "customEmpty": "少なくとも1語を追加するか、内蔵リストまたはオフを選んでください。",
+        "saveCustom": "リストを保存"
       },
       "chineseScript": {
         "title": "中国語の表記",

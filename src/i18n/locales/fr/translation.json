@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Nom d'activation",
+        "wakeNameDescription": "Un seul mot : lettres, chiffres ou tiret bas. Prend effet après le redémarrage de Vox.",
+        "windowLabel": "Fenêtre de mémoire",
+        "windowDescription": "Quelle part de la conversation récente le mode ambiant retient. Prend effet après le redémarrage de Vox.",
+        "windowValue": "{{value}} s"
       },
       "wakeWord": {
+        "confidenceLabel": "Seuil de détection",
+        "confidenceDescription": "Niveau de confiance que le détecteur doit atteindre pour que la phrase d'activation déclenche l'enregistrement. Plus il est élevé, plus la détection est stricte : moins de faux déclenchements, mais de vrais peuvent être manqués. Prend effet après le redémarrage de Vox.",
+        "cooldownLabel": "Délai de récupération",
+        "cooldownDescription": "Temps d'attente après un enregistrement déclenché par le mot d'activation, avant de réécouter, en millisecondes.",
+        "silenceTimeoutLabel": "Arrêt automatique après silence",
+        "silenceTimeoutDescription": "Termine un enregistrement déclenché par le mot d'activation après ce temps de silence, en millisecondes. Mettez 0 pour désactiver l'arrêt automatique.",
+        "percentValue": "{{value}} %",
+        "msValue": "{{value}} ms",
+        "offValue": "Désactivé",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Avancé",
+        "timeoutLabel": "Délai de l'agent (secondes)",
+        "timeoutDescription": "Durée d'attente de la réponse de la commande de l'agent. Entre 5 et 600 secondes.",
+        "promptFlagLabel": "Option de requête",
+        "promptFlagDescription": "L'option qui transmet votre demande à la commande de l'agent, par exemple -p. Elle doit être différente de l'option de l'agent.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Supprimer les mots de remplissage",
-        "description": "Supprime les hésitations courantes des transcriptions. Désactivez cette option pour les conserver."
+        "description": "Supprime les hésitations courantes des transcriptions. Désactivez cette option pour les conserver.",
+        "modeLabel": "Liste des mots de remplissage",
+        "builtIn": "Liste intégrée",
+        "custom": "Liste personnalisée",
+        "off": "Désactivé (garder tous les mots)",
+        "customLabel": "Mots de remplissage personnalisés",
+        "customHelp": "Séparez les mots par des virgules ou des retours à la ligne. Jusqu'à 100 mots, chacun de 32 caractères au plus. La recherche ne distingue pas les majuscules des minuscules.",
+        "customCount": "{{count}} sur {{max}} mots",
+        "customTooMany": "Une liste personnalisée peut comporter au plus {{max}} mots.",
+        "customTooLong": "Chaque mot peut comporter au plus {{max}} caractères.",
+        "customEmpty": "Ajoutez au moins un mot, ou choisissez Liste intégrée ou Désactivé.",
+        "saveCustom": "Enregistrer la liste"
       },
       "chineseScript": {
         "title": "Écriture chinoise",

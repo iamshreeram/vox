@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Nom d'activació",
+        "wakeNameDescription": "Una sola paraula: lletres, xifres o guionet baix. Té efecte després de reiniciar Vox.",
+        "windowLabel": "Finestra de memòria",
+        "windowDescription": "Quanta conversa recent recorda el mode ambient. Té efecte després de reiniciar Vox.",
+        "windowValue": "{{value}} s"
       },
       "wakeWord": {
+        "confidenceLabel": "Llindar de detecció",
+        "confidenceDescription": "Quina confiança ha de tenir el detector abans que la frase d'activació iniciï l'enregistrament. Un valor més alt és més estricte: menys activacions falses, però pot perdre les reals. Té efecte després de reiniciar Vox.",
+        "cooldownLabel": "Temps de refredament",
+        "cooldownDescription": "Temps d'espera després d'un enregistrament iniciat per la paraula d'activació, abans de tornar a escoltar, en mil·lisegons.",
+        "silenceTimeoutLabel": "Acaba automàticament després del silenci",
+        "silenceTimeoutDescription": "Acaba un enregistrament iniciat per la paraula d'activació després d'aquest silenci, en mil·lisegons. Posa 0 per desactivar l'acabament automàtic.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} ms",
+        "offValue": "Desactivat",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Avançat",
+        "timeoutLabel": "Temps d'espera de l'agent (segons)",
+        "timeoutDescription": "Quant de temps esperar que l'ordre de l'agent respongui. Entre 5 i 600 segons.",
+        "promptFlagLabel": "Indicador de sol·licitud",
+        "promptFlagDescription": "L'indicador que passa la vostra sol·licitud a l'ordre de l'agent, per exemple -p. Ha de ser diferent de l'indicador de l'agent.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Elimina les falques",
-        "description": "Elimina les expressions de vacil·lació habituals de les transcripcions. Desactiveu aquesta opció per conservar-les."
+        "description": "Elimina les expressions de vacil·lació habituals de les transcripcions. Desactiveu aquesta opció per conservar-les.",
+        "modeLabel": "Llista de paraules de farciment",
+        "builtIn": "Llista integrada",
+        "custom": "Llista personalitzada",
+        "off": "Desactivat (mantén totes les paraules)",
+        "customLabel": "Paraules de farciment personalitzades",
+        "customHelp": "Separa les paraules amb comes o salts de línia. Fins a 100 paraules, cadascuna de fins a 32 caràcters. La cerca no distingeix majúscules de minúscules.",
+        "customCount": "{{count}} de {{max}} paraules",
+        "customTooMany": "Una llista personalitzada pot tenir com a màxim {{max}} paraules.",
+        "customTooLong": "Cada paraula pot tenir com a màxim {{max}} caràcters.",
+        "customEmpty": "Afegeix almenys una paraula, o tria Llista integrada o Desactivat.",
+        "saveCustom": "Desa la llista"
       },
       "chineseScript": {
         "title": "Escriptura xinesa",

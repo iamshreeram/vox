@@ -277,9 +277,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "اسم التنبيه",
+        "wakeNameDescription": "كلمة واحدة: حروف أو أرقام أو شرطة سفلية. يسري بعد إعادة تشغيل Vox.",
+        "windowLabel": "نافذة الذاكرة",
+        "windowDescription": "مقدار المحادثة الأخيرة التي يتذكرها الوضع المحيطي. يسري بعد إعادة تشغيل Vox.",
+        "windowValue": "{{value}} ث"
       },
       "wakeWord": {
+        "confidenceLabel": "عتبة الاكتشاف",
+        "confidenceDescription": "مدى الثقة التي يجب أن يبلغها الكاشف قبل أن تبدأ عبارة التنشيط التسجيل. القيمة الأعلى أكثر صرامة: إنذارات خاطئة أقل، لكنها قد تفوّت الحقيقية. تسري بعد إعادة تشغيل Vox.",
+        "cooldownLabel": "مهلة التهدئة",
+        "cooldownDescription": "مدة الانتظار بعد تسجيل بدأته كلمة التنشيط قبل العودة إلى الاستماع، بالمللي ثانية.",
+        "silenceTimeoutLabel": "إنهاء تلقائي بعد الصمت",
+        "silenceTimeoutDescription": "ينهي تسجيل كلمة التنشيط بعد هذا القدر من الصمت، بالمللي ثانية. اضبطه على 0 لإيقاف الإنهاء التلقائي.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} مللي ثانية",
+        "offValue": "متوقف",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -321,6 +335,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "متقدم",
+        "timeoutLabel": "مهلة الوكيل (بالثواني)",
+        "timeoutDescription": "المدة التي ينتظرها الأمر الخاص بالوكيل للرد. بين 5 و600 ثانية.",
+        "promptFlagLabel": "علامة الطلب",
+        "promptFlagDescription": "العلامة التي تمرر طلبك إلى أمر الوكيل، مثل -p. يجب أن تختلف عن علامة الوكيل.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -610,7 +629,18 @@
       },
       "fillerWordRemoval": {
         "title": "إزالة كلمات الحشو",
-        "description": "يزيل كلمات التردد الشائعة من النصوص. عطّل هذا الخيار للاحتفاظ بها."
+        "description": "يزيل كلمات التردد الشائعة من النصوص. عطّل هذا الخيار للاحتفاظ بها.",
+        "modeLabel": "قائمة كلمات الحشو",
+        "builtIn": "القائمة المدمجة",
+        "custom": "قائمة مخصصة",
+        "off": "إيقاف (الاحتفاظ بكل الكلمات)",
+        "customLabel": "كلمات الحشو المخصصة",
+        "customHelp": "افصل بين الكلمات بفواصل أو أسطر جديدة. حتى 100 كلمة، وكل كلمة حتى 32 حرفًا. المطابقة لا تفرق بين الحروف الكبيرة والصغيرة.",
+        "customCount": "{{count}} من {{max}} كلمة",
+        "customTooMany": "يمكن أن تحتوي القائمة المخصصة على {{max}} كلمة كحد أقصى.",
+        "customTooLong": "يمكن أن تحتوي كل كلمة على {{max}} حرفًا كحد أقصى.",
+        "customEmpty": "أضف كلمة واحدة على الأقل، أو اختر القائمة المدمجة أو إيقاف.",
+        "saveCustom": "حفظ القائمة"
       },
       "chineseScript": {
         "title": "الكتابة الصينية",

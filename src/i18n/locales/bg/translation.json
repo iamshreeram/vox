@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Име за активиране",
+        "wakeNameDescription": "Една дума: букви, цифри или долна черта. Влиза в сила след рестартиране на Vox.",
+        "windowLabel": "Прозорец на паметта",
+        "windowDescription": "Колко скорошен разговор помни режимът на околна среда. Влиза в сила след рестартиране на Vox.",
+        "windowValue": "{{value}} с"
       },
       "wakeWord": {
+        "confidenceLabel": "Праг на разпознаване",
+        "confidenceDescription": "Колко сигурен трябва да е детекторът, преди фразата за активиране да стартира запис. По-високата стойност е по-строга: по-малко фалшиви задействания, но може да пропусне истински. Влиза в сила след рестартиране на Vox.",
+        "cooldownLabel": "Охлаждане",
+        "cooldownDescription": "Време на изчакване след запис, стартиран с думата за активиране, преди отново да се слуша, в милисекунди.",
+        "silenceTimeoutLabel": "Автоматично приключване след тишина",
+        "silenceTimeoutDescription": "Приключва запис, стартиран с думата за активиране, след толкова тишина, в милисекунди. Задайте 0, за да изключите автоматичното приключване.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} ms",
+        "offValue": "Изключено",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Разширени",
+        "timeoutLabel": "Време за изчакване на агента (секунди)",
+        "timeoutDescription": "Колко дълго да се чака командата на агента да отговори. Между 5 и 600 секунди.",
+        "promptFlagLabel": "Флаг за заявка",
+        "promptFlagDescription": "Флагът, който предава вашата заявка на командата на агента, например -p. Трябва да се различава от флага на агента.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Премахване на думи паразити",
-        "description": "Премахва често срещаните думи за колебание от транскрипциите. Изключете, за да ги запазите."
+        "description": "Премахва често срещаните думи за колебание от транскрипциите. Изключете, за да ги запазите.",
+        "modeLabel": "Списък с думи за паузи",
+        "builtIn": "Вграден списък",
+        "custom": "Персонализиран списък",
+        "off": "Изключено (запазва всяка дума)",
+        "customLabel": "Персонализирани думи за паузи",
+        "customHelp": "Разделяйте думите със запетаи или нови редове. До 100 думи, всяка до 32 знака. Съпоставянето не прави разлика между главни и малки букви.",
+        "customCount": "{{count}} от {{max}} думи",
+        "customTooMany": "Персонализираният списък може да има най-много {{max}} думи.",
+        "customTooLong": "Всяка дума може да има най-много {{max}} знака.",
+        "customEmpty": "Добавете поне една дума или изберете Вграден списък или Изключено.",
+        "saveCustom": "Запазване на списъка"
       },
       "chineseScript": {
         "title": "Китайска писменост",

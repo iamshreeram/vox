@@ -98,7 +98,76 @@ const settingUpdaters: {
   autostart_enabled: (value) =>
     commands.changeAutostartSetting(value as boolean),
   wake_word_enabled: (value) => commands.wakewordSetEnabled(value as boolean),
+  wake_word_confidence_threshold: async (value) => {
+    const result = await commands.changeWakeWordConfidenceThresholdSetting(
+      value as number,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  wake_word_cooldown_ms: async (value) => {
+    const result = await commands.changeWakeWordCooldownMsSetting(
+      value as number,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  wake_word_silence_timeout_ms: async (value) => {
+    const result = await commands.changeWakeWordSilenceTimeoutMsSetting(
+      value as number,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
   ambient_mode_enabled: (value) => commands.ambientSetEnabled(value as boolean),
+  ambient_wake_name: async (value) => {
+    const result = await commands.changeAmbientWakeNameSetting(value as string);
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  ambient_window_ms: async (value) => {
+    const result = await commands.changeAmbientWindowMsSetting(value as number);
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  // null = built-in lists, [] = filler filtering off, non-empty = custom list.
+  custom_filler_words: async (value) => {
+    const result = await commands.changeCustomFillerWordsSetting(
+      (value as string[] | null) ?? null,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  agent_bridge_timeout_secs: async (value) => {
+    const result = await commands.changeAgentBridgeTimeoutSecsSetting(
+      value as number,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  agent_bridge_prompt_flag: async (value) => {
+    const result = await commands.changeAgentBridgePromptFlagSetting(
+      value as string,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
   update_checks_enabled: (value) =>
     commands.changeUpdateChecksSetting(value as boolean),
   show_whats_new_on_update: (value) =>

@@ -716,6 +716,10 @@ pub struct AppSettings {
     pub tts_composer_fallback: crate::managers::composer_config::TtsComposerFallback,
     #[serde(default)]
     pub wake_word_enabled: bool,
+    /// Name of the wake-word model. Only the bundled `hey_jarvis` model exists
+    /// today, so there is intentionally no settings control for it: a selector
+    /// would offer a choice that cannot work. Add a UI control when a second
+    /// model ships.
     #[serde(default = "default_wake_word_model_name")]
     pub wake_word_model_name: String,
     #[serde(default = "default_wake_word_confidence_threshold")]
@@ -1051,13 +1055,10 @@ pub fn clean_agent_names(input: Vec<String>) -> Vec<String> {
     kept
 }
 
-/// Reports whether `flag` is a usable agent flag (M4).
-///
-/// A usable flag matches `^--?[A-Za-z][A-Za-z0-9-]{0,31}$` and differs from `prompt_flag`.
-pub fn is_valid_agent_flag(flag: &str, prompt_flag: &str) -> bool {
-    if flag == prompt_flag {
-        return false;
-    }
+/// Reports whether `flag` has the shape of a command-line flag: an optional leading `--` or
+/// `-`, then 1..=`MAX_AGENT_FLAG_NAME_LEN` bytes whose first byte is ASCII alphabetic and
+/// whose remaining bytes are ASCII alphanumeric or `-`. No whitespace, no shell syntax.
+pub fn is_valid_flag_shape(flag: &str) -> bool {
     let name = match flag.strip_prefix("--") {
         Some(rest) => rest,
         None => match flag.strip_prefix('-') {
@@ -1077,15 +1078,115 @@ pub fn is_valid_agent_flag(flag: &str, prompt_flag: &str) -> bool {
         .all(|b| b.is_ascii_alphanumeric() || *b == b'-')
 }
 
+/// Reports whether `flag` is a usable agent flag (M4).
+///
+/// A usable flag has a valid flag shape and differs from `prompt_flag`.
+pub fn is_valid_agent_flag(flag: &str, prompt_flag: &str) -> bool {
+    flag != prompt_flag && is_valid_flag_shape(flag)
+}
+
+/// Returns the prompt flag to pass to the agent command: the stored value when it has a
+/// valid flag shape, otherwise the default `-p`. Every launch path reads this, never the raw
+/// stored value, so a bad stored value cannot reach the command line.
+pub fn effective_prompt_flag(s: &AppSettings) -> String {
+    if is_valid_flag_shape(&s.agent_bridge_prompt_flag) {
+        s.agent_bridge_prompt_flag.clone()
+    } else {
+        default_agent_bridge_prompt_flag()
+    }
+}
+
 /// Returns the agent flag to pass to the coding CLI (M4).
 ///
-/// Falls back to the default `--agent` when the stored value is invalid or equals the prompt flag.
+/// Compared against the EFFECTIVE prompt flag. Falls back to the default `--agent` when the
+/// stored value is invalid or equals the effective prompt flag.
 pub fn effective_agent_flag(s: &AppSettings) -> String {
-    if is_valid_agent_flag(&s.agent_jobs_agent_flag, &s.agent_bridge_prompt_flag) {
+    let prompt_flag = effective_prompt_flag(s);
+    if is_valid_agent_flag(&s.agent_jobs_agent_flag, &prompt_flag) {
         s.agent_jobs_agent_flag.clone()
     } else {
         default_agent_jobs_agent_flag()
     }
+}
+
+/// Validates a candidate prompt flag against the current settings. The candidate is not
+/// trimmed. It must have a valid flag shape and must differ from the effective agent flag,
+/// so the two flags can never collide. Returns the candidate unchanged when valid.
+pub fn validate_agent_bridge_prompt_flag(
+    s: &AppSettings,
+    candidate: &str,
+) -> Result<String, String> {
+    if !is_valid_flag_shape(candidate) {
+        return Err(
+            "The prompt flag must start with - or --, then letters, digits or dashes (no spaces)."
+                .to_string(),
+        );
+    }
+    if candidate == effective_agent_flag(s) {
+        return Err("The prompt flag must differ from the agent flag.".to_string());
+    }
+    Ok(candidate.to_string())
+}
+
+/// Smallest accepted agent bridge timeout in seconds (inclusive). Zero would time out at once.
+pub const AGENT_BRIDGE_TIMEOUT_MIN_SECS: u64 = 5;
+/// Largest accepted agent bridge timeout in seconds (inclusive).
+pub const AGENT_BRIDGE_TIMEOUT_MAX_SECS: u64 = 600;
+
+/// Validates an agent bridge timeout in seconds. Out-of-range values are rejected, never
+/// clamped.
+pub fn validate_agent_bridge_timeout_secs(secs: u64) -> Result<u64, String> {
+    if (AGENT_BRIDGE_TIMEOUT_MIN_SECS..=AGENT_BRIDGE_TIMEOUT_MAX_SECS).contains(&secs) {
+        Ok(secs)
+    } else {
+        Err(format!(
+            "Agent timeout must be between {AGENT_BRIDGE_TIMEOUT_MIN_SECS} and {AGENT_BRIDGE_TIMEOUT_MAX_SECS} seconds"
+        ))
+    }
+}
+
+/// Largest number of custom filler words accepted (inclusive).
+pub const CUSTOM_FILLER_MAX_WORDS: usize = 100;
+/// Longest accepted custom filler word, counted in characters.
+pub const CUSTOM_FILLER_WORD_MAX_CHARS: usize = 32;
+
+/// Validates a custom filler word list.
+///
+/// `None` (built-in lists) and `Some(empty)` (filtering off) are both kept distinct and
+/// returned as they are. A non-empty list is normalised: each word is trimmed and lowercased,
+/// and duplicates are removed keeping the first occurrence. The raw entry count is checked
+/// before de-duplication. A list is never partly kept: any invalid entry rejects the whole
+/// list, so nothing is silently dropped.
+pub fn validate_custom_filler_words(
+    words: Option<Vec<String>>,
+) -> Result<Option<Vec<String>>, String> {
+    let Some(words) = words else {
+        return Ok(None);
+    };
+    if words.len() > CUSTOM_FILLER_MAX_WORDS {
+        return Err(format!(
+            "A custom filler list can have at most {CUSTOM_FILLER_MAX_WORDS} words"
+        ));
+    }
+    let mut normalised: Vec<String> = Vec::with_capacity(words.len());
+    for raw in words {
+        let word = raw.trim().to_lowercase();
+        if word.is_empty() {
+            return Err("Filler words cannot be empty".to_string());
+        }
+        if word.chars().count() > CUSTOM_FILLER_WORD_MAX_CHARS {
+            return Err(format!(
+                "Each filler word must be at most {CUSTOM_FILLER_WORD_MAX_CHARS} characters"
+            ));
+        }
+        if word.chars().any(char::is_control) {
+            return Err("Filler words cannot contain control characters".to_string());
+        }
+        if !normalised.contains(&word) {
+            normalised.push(word);
+        }
+    }
+    Ok(Some(normalised))
 }
 
 fn default_agent_bridge_prompt_flag() -> String {
@@ -1171,6 +1272,117 @@ fn default_wake_word_cooldown_ms() -> u32 {
 
 fn default_wake_word_silence_timeout_ms() -> u32 {
     1500
+}
+
+/// Lowest accepted wake-word confidence threshold (inclusive).
+pub const WAKE_WORD_CONFIDENCE_MIN: f32 = 0.10;
+/// Highest accepted wake-word confidence threshold (inclusive).
+pub const WAKE_WORD_CONFIDENCE_MAX: f32 = 0.95;
+/// Largest accepted wake-word cooldown in milliseconds (inclusive; 0 is allowed).
+pub const WAKE_WORD_COOLDOWN_MAX_MS: u32 = 10_000;
+/// Largest accepted wake-word silence timeout in milliseconds (inclusive; 0 turns auto-finish off).
+pub const WAKE_WORD_SILENCE_TIMEOUT_MAX_MS: u32 = 30_000;
+
+/// Validates a wake-word confidence threshold. Non-finite values and values outside
+/// `[WAKE_WORD_CONFIDENCE_MIN, WAKE_WORD_CONFIDENCE_MAX]` are rejected, never clamped.
+pub fn validate_wake_word_confidence_threshold(threshold: f32) -> Result<f32, String> {
+    if threshold.is_finite()
+        && (WAKE_WORD_CONFIDENCE_MIN..=WAKE_WORD_CONFIDENCE_MAX).contains(&threshold)
+    {
+        Ok(threshold)
+    } else {
+        Err(format!(
+            "Wake word confidence threshold must be between {:.0}% and {:.0}%",
+            WAKE_WORD_CONFIDENCE_MIN * 100.0,
+            WAKE_WORD_CONFIDENCE_MAX * 100.0
+        ))
+    }
+}
+
+/// Validates a wake-word cooldown in milliseconds. Values above
+/// `WAKE_WORD_COOLDOWN_MAX_MS` are rejected, never clamped; 0 is allowed.
+pub fn validate_wake_word_cooldown_ms(cooldown_ms: u32) -> Result<u32, String> {
+    if cooldown_ms <= WAKE_WORD_COOLDOWN_MAX_MS {
+        Ok(cooldown_ms)
+    } else {
+        Err(format!(
+            "Wake word cooldown must be between 0 and {WAKE_WORD_COOLDOWN_MAX_MS} ms"
+        ))
+    }
+}
+
+/// Validates a wake-word silence timeout in milliseconds. Values above
+/// `WAKE_WORD_SILENCE_TIMEOUT_MAX_MS` are rejected, never clamped; 0 is allowed and
+/// turns auto-finish off.
+pub fn validate_wake_word_silence_timeout_ms(timeout_ms: u32) -> Result<u32, String> {
+    if timeout_ms <= WAKE_WORD_SILENCE_TIMEOUT_MAX_MS {
+        Ok(timeout_ms)
+    } else {
+        Err(format!(
+            "Wake word silence timeout must be between 0 and {WAKE_WORD_SILENCE_TIMEOUT_MAX_MS} ms (0 turns auto-finish off)"
+        ))
+    }
+}
+
+/// Smallest accepted ambient conversation window in milliseconds (inclusive).
+pub const AMBIENT_WINDOW_MIN_MS: u64 = 10_000;
+/// Largest accepted ambient conversation window in milliseconds (inclusive).
+pub const AMBIENT_WINDOW_MAX_MS: u64 = 600_000;
+/// Longest accepted ambient wake name, counted in characters.
+pub const AMBIENT_WAKE_NAME_MAX_CHARS: usize = 32;
+/// Wake name used when the stored name is missing or invalid.
+const AMBIENT_DEFAULT_WAKE_NAME: &str = "vox";
+
+/// Validates an ambient wake name. The name is trimmed; it must be non-empty,
+/// at most `AMBIENT_WAKE_NAME_MAX_CHARS` characters, free of control characters,
+/// and one word that the real ambient address matcher can recognise.
+pub fn validate_ambient_wake_name(name: &str) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("Wake name cannot be empty".to_string());
+    }
+    if trimmed.chars().count() > AMBIENT_WAKE_NAME_MAX_CHARS {
+        return Err(format!(
+            "Wake name must be at most {AMBIENT_WAKE_NAME_MAX_CHARS} characters"
+        ));
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err("Wake name cannot contain control characters".to_string());
+    }
+    if !crate::managers::ambient::engagement::name_is_matchable(trimmed) {
+        return Err("Wake name must be one word: letters, digits or underscore".to_string());
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Validates an ambient conversation window in milliseconds. Out-of-range values
+/// are rejected, never clamped.
+pub fn validate_ambient_window_ms(window_ms: u64) -> Result<u64, String> {
+    if (AMBIENT_WINDOW_MIN_MS..=AMBIENT_WINDOW_MAX_MS).contains(&window_ms) {
+        Ok(window_ms)
+    } else {
+        Err(format!(
+            "Ambient memory window must be between {} and {} seconds",
+            AMBIENT_WINDOW_MIN_MS / 1000,
+            AMBIENT_WINDOW_MAX_MS / 1000
+        ))
+    }
+}
+
+/// The wake names the ambient judge should use at startup: the stored name
+/// lowercased when it is valid, otherwise the built-in default.
+pub fn effective_ambient_wake_names(settings: &AppSettings) -> Vec<String> {
+    match validate_ambient_wake_name(&settings.ambient_wake_name) {
+        Ok(name) => vec![name.to_lowercase()],
+        Err(_) => vec![AMBIENT_DEFAULT_WAKE_NAME.to_string()],
+    }
+}
+
+/// The ambient conversation window to use at startup: the stored value when
+/// valid, otherwise the built-in default.
+pub fn effective_ambient_window_ms(settings: &AppSettings) -> u64 {
+    validate_ambient_window_ms(settings.ambient_window_ms)
+        .unwrap_or_else(|_| default_ambient_window_ms())
 }
 
 const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 2;

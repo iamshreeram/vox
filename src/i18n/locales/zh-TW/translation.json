@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "喚醒名稱",
+        "wakeNameDescription": "一個詞：字母、數字或底線。重新啟動 Vox 後生效。",
+        "windowLabel": "記憶時長",
+        "windowDescription": "環境模式會記住多少最近的對話。重新啟動 Vox 後生效。",
+        "windowValue": "{{value}} 秒"
       },
       "wakeWord": {
+        "confidenceLabel": "偵測門檻",
+        "confidenceDescription": "偵測器在喚醒詞觸發錄音前需要達到的信心程度。數值越高越嚴格：誤觸發較少，但可能漏掉真正的喚醒。重新啟動 Vox 後生效。",
+        "cooldownLabel": "冷卻時間",
+        "cooldownDescription": "喚醒詞觸發的錄音結束後，再次開始聆聽前的等待時間（毫秒）。",
+        "silenceTimeoutLabel": "靜音後自動結束",
+        "silenceTimeoutDescription": "喚醒詞觸發的錄音在靜音持續此時長後自動結束（毫秒）。設為 0 可關閉自動結束。",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} 毫秒",
+        "offValue": "關閉",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "進階",
+        "timeoutLabel": "代理程式逾時（秒）",
+        "timeoutDescription": "等待代理程式指令回覆的時間。介於 5 到 600 秒之間。",
+        "promptFlagLabel": "提示旗標",
+        "promptFlagDescription": "將您的請求傳給代理程式指令的旗標，例如 -p。必須與代理程式旗標不同。",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "移除語助詞",
-        "description": "從轉錄中移除常見的語助詞。關閉此選項即可保留這些詞。"
+        "description": "從轉錄中移除常見的語助詞。關閉此選項即可保留這些詞。",
+        "modeLabel": "贅字清單",
+        "builtIn": "內建清單",
+        "custom": "自訂清單",
+        "off": "關閉（保留所有字詞）",
+        "customLabel": "自訂贅字",
+        "customHelp": "以逗號或換行分隔字詞。最多 100 個，每個最多 32 個字元。比對時不區分大小寫。",
+        "customCount": "{{count}} / {{max}} 個字詞",
+        "customTooMany": "自訂清單最多只能有 {{max}} 個字詞。",
+        "customTooLong": "每個字詞最多只能有 {{max}} 個字元。",
+        "customEmpty": "請至少新增一個字詞，或選擇內建清單或關閉。",
+        "saveCustom": "儲存清單"
       },
       "chineseScript": {
         "title": "繁簡轉換",

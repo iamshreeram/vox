@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Wake name",
+        "wakeNameDescription": "One word: letters, digits or underscore. Takes effect after you restart Vox.",
+        "windowLabel": "Memory window",
+        "windowDescription": "How much recent conversation ambient mode remembers. Takes effect after you restart Vox.",
+        "windowValue": "{{value}} s"
       },
       "wakeWord": {
+        "confidenceLabel": "Detection threshold",
+        "confidenceDescription": "How confident the detector must be before the wake phrase starts a recording. Higher is stricter: fewer false triggers, but real ones may be missed. Takes effect after you restart Vox.",
+        "cooldownLabel": "Cooldown",
+        "cooldownDescription": "Wait time after a wake-word recording before listening again, in milliseconds.",
+        "silenceTimeoutLabel": "Auto-finish after silence",
+        "silenceTimeoutDescription": "Ends a wake-word recording after this much silence, in milliseconds. Set to 0 to turn auto-finish off.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} ms",
+        "offValue": "Off",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Advanced",
+        "timeoutLabel": "Agent timeout (seconds)",
+        "timeoutDescription": "How long to wait for the agent command to reply. Between 5 and 600 seconds.",
+        "promptFlagLabel": "Prompt flag",
+        "promptFlagDescription": "The flag that passes your request to the agent command, for example -p. It must differ from the agent flag.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Remove Filler Words",
-        "description": "Removes common hesitation words from transcriptions. Turn off to keep them."
+        "description": "Removes common hesitation words from transcriptions. Turn off to keep them.",
+        "modeLabel": "Filler word list",
+        "builtIn": "Built-in list",
+        "custom": "Custom list",
+        "off": "Off (keep every word)",
+        "customLabel": "Custom filler words",
+        "customHelp": "Separate words with commas or new lines. Up to 100 words, each up to 32 characters. Matching ignores capitals.",
+        "customCount": "{{count}} of {{max}} words",
+        "customTooMany": "A custom list can have at most {{max}} words.",
+        "customTooLong": "Each word can be at most {{max}} characters.",
+        "customEmpty": "Add at least one word, or choose Built-in list or Off.",
+        "saveCustom": "Save list"
       },
       "chineseScript": {
         "title": "Chinese Script",

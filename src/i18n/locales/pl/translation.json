@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Nazwa wybudzenia",
+        "wakeNameDescription": "Jedno słowo: litery, cyfry lub podkreślnik. Zacznie działać po ponownym uruchomieniu Vox.",
+        "windowLabel": "Okno pamięci",
+        "windowDescription": "Ile ostatniej rozmowy pamięta tryb otoczenia. Zacznie działać po ponownym uruchomieniu Vox.",
+        "windowValue": "{{value}} s"
       },
       "wakeWord": {
+        "confidenceLabel": "Próg wykrywania",
+        "confidenceDescription": "Jak pewny musi być detektor, zanim fraza wybudzająca uruchomi nagrywanie. Wyższa wartość oznacza ostrzejsze wykrywanie: mniej fałszywych uruchomień, ale mogą zostać pominięte prawdziwe. Zmiana zadziała po ponownym uruchomieniu Vox.",
+        "cooldownLabel": "Czas wyciszenia",
+        "cooldownDescription": "Czas oczekiwania po nagraniu uruchomionym słowem wybudzającym, zanim ponownie zacznie się nasłuch, w milisekundach.",
+        "silenceTimeoutLabel": "Automatyczne kończenie po ciszy",
+        "silenceTimeoutDescription": "Kończy nagranie uruchomione słowem wybudzającym po takiej ciszy, w milisekundach. Ustaw 0, aby wyłączyć automatyczne kończenie.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} ms",
+        "offValue": "Wyłączone",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Zaawansowane",
+        "timeoutLabel": "Limit czasu agenta (sekundy)",
+        "timeoutDescription": "Jak długo czekać na odpowiedź polecenia agenta. Od 5 do 600 sekund.",
+        "promptFlagLabel": "Flaga zapytania",
+        "promptFlagDescription": "Flaga, która przekazuje Twoje zapytanie do polecenia agenta, na przykład -p. Musi być inna niż flaga agenta.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Usuń wyrazy wypełniające",
-        "description": "Usuwa typowe słowa wyrażające wahanie z transkrypcji. Wyłącz, aby je zachować."
+        "description": "Usuwa typowe słowa wyrażające wahanie z transkrypcji. Wyłącz, aby je zachować.",
+        "modeLabel": "Lista słów wypełniających",
+        "builtIn": "Wbudowana lista",
+        "custom": "Własna lista",
+        "off": "Wyłączone (zachowaj wszystkie słowa)",
+        "customLabel": "Własne słowa wypełniające",
+        "customHelp": "Oddziel słowa przecinkami lub nowymi wierszami. Do 100 słów, każde do 32 znaków. Dopasowanie nie rozróżnia wielkości liter.",
+        "customCount": "{{count}} z {{max}} słów",
+        "customTooMany": "Własna lista może zawierać najwyżej {{max}} słów.",
+        "customTooLong": "Każde słowo może mieć najwyżej {{max}} znaków.",
+        "customEmpty": "Dodaj co najmniej jedno słowo albo wybierz Wbudowana lista lub Wyłączone.",
+        "saveCustom": "Zapisz listę"
       },
       "chineseScript": {
         "title": "Pismo chińskie",

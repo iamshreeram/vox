@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "वेक नाम",
+        "wakeNameDescription": "एक शब्द: अक्षर, अंक या अंडरस्कोर। Vox को दोबारा शुरू करने के बाद लागू होगा।",
+        "windowLabel": "मेमोरी विंडो",
+        "windowDescription": "परिवेश मोड हाल की बातचीत में से कितनी याद रखता है। Vox को दोबारा शुरू करने के बाद लागू होगा।",
+        "windowValue": "{{value}} स"
       },
       "wakeWord": {
+        "confidenceLabel": "पहचान सीमा",
+        "confidenceDescription": "वेक फ़्रेज़ के रिकॉर्डिंग शुरू करने से पहले पहचानकर्ता को कितना आश्वस्त होना चाहिए। अधिक मान सख़्त है: गलत ट्रिगर कम होंगे, पर असली वेक फ़्रेज़ छूट सकते हैं। Vox को पुनः प्रारंभ करने के बाद लागू होगा।",
+        "cooldownLabel": "कूलडाउन",
+        "cooldownDescription": "वेक वर्ड से शुरू की गई रिकॉर्डिंग के बाद फिर से सुनने से पहले का प्रतीक्षा समय, मिलीसेकंड में।",
+        "silenceTimeoutLabel": "चुप्पी के बाद स्वतः समाप्त करें",
+        "silenceTimeoutDescription": "वेक वर्ड से शुरू की गई रिकॉर्डिंग को इतनी चुप्पी के बाद समाप्त करता है, मिलीसेकंड में। स्वतः समाप्ति बंद करने के लिए 0 रखें।",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} मिलीसेकंड",
+        "offValue": "बंद",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "उन्नत",
+        "timeoutLabel": "एजेंट की समय सीमा (सेकंड)",
+        "timeoutDescription": "एजेंट कमांड के जवाब का कितनी देर तक इंतज़ार करना है। 5 से 600 सेकंड के बीच।",
+        "promptFlagLabel": "प्रॉम्प्ट फ़्लैग",
+        "promptFlagDescription": "वह फ़्लैग जो आपका अनुरोध एजेंट कमांड तक पहुँचाता है, जैसे -p। यह एजेंट फ़्लैग से अलग होना चाहिए।",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "फिलर शब्द हटाएं",
-        "description": "ट्रांसक्रिप्शन से आम हिचकिचाहट वाले शब्द हटाता है। उन्हें बनाए रखने के लिए इसे बंद करें।"
+        "description": "ट्रांसक्रिप्शन से आम हिचकिचाहट वाले शब्द हटाता है। उन्हें बनाए रखने के लिए इसे बंद करें।",
+        "modeLabel": "फ़िलर शब्दों की सूची",
+        "builtIn": "अंतर्निहित सूची",
+        "custom": "कस्टम सूची",
+        "off": "बंद (हर शब्द रखें)",
+        "customLabel": "कस्टम फ़िलर शब्द",
+        "customHelp": "शब्दों को कॉमा या नई लाइन से अलग करें। अधिकतम 100 शब्द, हर शब्द अधिकतम 32 अक्षरों का। मिलान में बड़े और छोटे अक्षर का फ़र्क नहीं होता।",
+        "customCount": "{{max}} में से {{count}} शब्द",
+        "customTooMany": "कस्टम सूची में अधिकतम {{max}} शब्द हो सकते हैं।",
+        "customTooLong": "हर शब्द अधिकतम {{max}} अक्षरों का हो सकता है।",
+        "customEmpty": "कम से कम एक शब्द जोड़ें, या अंतर्निहित सूची या बंद चुनें।",
+        "saveCustom": "सूची सहेजें"
       },
       "chineseScript": {
         "title": "चीनी लिपि",

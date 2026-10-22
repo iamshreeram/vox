@@ -313,6 +313,21 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
     keywords: ["hesitation", "stutter", "verbal tics", "clean up", "filler"],
   },
   {
+    id: "advanced.customFillerWords",
+    section: "advanced",
+    groupKey: "settings.advanced.groups.transcription",
+    labelKey: "settings.advanced.fillerWordRemoval.customLabel",
+    descriptionKey: "settings.advanced.fillerWordRemoval.customHelp",
+    keywords: [
+      "custom filler",
+      "filler list",
+      "filler words",
+      "built-in list",
+      "keep every word",
+      "stop words",
+    ],
+  },
+  {
     id: "advanced.chineseScript",
     section: "advanced",
     groupKey: "settings.advanced.groups.transcription",

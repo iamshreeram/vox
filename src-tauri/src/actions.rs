@@ -1345,7 +1345,7 @@ impl ShortcutAction for TranscribeAction {
                                         tauri::async_runtime::spawn(async move {
                                             let worker = crate::managers::agent_bridge::CliAgentWorker::from_settings(
                                                 settings.agent_bridge_binary_path.clone(),
-                                                settings.agent_bridge_prompt_flag.clone(),
+                                                crate::settings::effective_prompt_flag(&settings),
                                                 settings.agent_bridge_timeout_secs,
                                             );
                                             let result = match worker {

@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "唤醒名称",
+        "wakeNameDescription": "一个词：字母、数字或下划线。重启 Vox 后生效。",
+        "windowLabel": "记忆时长",
+        "windowDescription": "环境模式会记住多少最近的对话。重启 Vox 后生效。",
+        "windowValue": "{{value}} 秒"
       },
       "wakeWord": {
+        "confidenceLabel": "检测阈值",
+        "confidenceDescription": "检测器在唤醒词触发录音前需要达到的置信度。数值越高越严格：误触发更少，但可能漏掉真实的唤醒。重启 Vox 后生效。",
+        "cooldownLabel": "冷却时间",
+        "cooldownDescription": "唤醒词触发录音结束后，再次开始监听前的等待时间（毫秒）。",
+        "silenceTimeoutLabel": "静音后自动结束",
+        "silenceTimeoutDescription": "唤醒词触发的录音在静音持续此时长后自动结束（毫秒）。设为 0 可关闭自动结束。",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} 毫秒",
+        "offValue": "关闭",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "高级",
+        "timeoutLabel": "智能体超时（秒）",
+        "timeoutDescription": "等待智能体命令回复的时长。介于 5 到 600 秒之间。",
+        "promptFlagLabel": "提示参数",
+        "promptFlagDescription": "把您的请求传给智能体命令的参数，例如 -p。必须与智能体参数不同。",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "移除语气词",
-        "description": "从转录中移除常见的语气词。关闭此选项即可保留这些词。"
+        "description": "从转录中移除常见的语气词。关闭此选项即可保留这些词。",
+        "modeLabel": "填充词列表",
+        "builtIn": "内置列表",
+        "custom": "自定义列表",
+        "off": "关闭（保留所有词）",
+        "customLabel": "自定义填充词",
+        "customHelp": "用逗号或换行分隔词语。最多 100 个，每个最多 32 个字符。匹配时不区分大小写。",
+        "customCount": "{{count}} / {{max}} 个词",
+        "customTooMany": "自定义列表最多只能有 {{max}} 个词。",
+        "customTooLong": "每个词最多只能有 {{max}} 个字符。",
+        "customEmpty": "请至少添加一个词，或选择内置列表或关闭。",
+        "saveCustom": "保存列表"
       },
       "chineseScript": {
         "title": "简繁转换",

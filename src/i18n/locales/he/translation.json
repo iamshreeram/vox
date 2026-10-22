@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "שם הפעלה",
+        "wakeNameDescription": "מילה אחת: אותיות, ספרות או קו תחתון. נכנס לתוקף לאחר הפעלה מחדש של Vox.",
+        "windowLabel": "חלון זיכרון",
+        "windowDescription": "כמה מהשיחה האחרונה מצב הסביבה זוכר. נכנס לתוקף לאחר הפעלה מחדש של Vox.",
+        "windowValue": "{{value}} שנ׳"
       },
       "wakeWord": {
+        "confidenceLabel": "סף זיהוי",
+        "confidenceDescription": "עד כמה הגלאי צריך להיות בטוח לפני שביטוי ההפעלה מתחיל הקלטה. ערך גבוה יותר מחמיר יותר: פחות הפעלות שגויות, אך עלולות להיות החמצות של הפעלות אמיתיות. נכנס לתוקף לאחר הפעלה מחדש של Vox.",
+        "cooldownLabel": "זמן המתנה",
+        "cooldownDescription": "זמן ההמתנה לאחר הקלטה שהופעלה על ידי מילת ההפעלה, לפני האזנה מחדש, באלפיות השנייה.",
+        "silenceTimeoutLabel": "סיום אוטומטי לאחר שתיקה",
+        "silenceTimeoutDescription": "מסיים הקלטה שהופעלה על ידי מילת ההפעלה לאחר שתיקה בת משך זה, באלפיות השנייה. הגדירו 0 כדי לכבות סיום אוטומטי.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} אלפיות שנייה",
+        "offValue": "כבוי",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "מתקדם",
+        "timeoutLabel": "זמן המתנה לסוכן (בשניות)",
+        "timeoutDescription": "כמה זמן לחכות לתשובה מפקודת הסוכן. בין 5 ל-600 שניות.",
+        "promptFlagLabel": "דגל בקשה",
+        "promptFlagDescription": "הדגל שמעביר את הבקשה שלכם לפקודת הסוכן, למשל -p. הוא חייב להיות שונה מדגל הסוכן.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "הסרת מילות מילוי",
-        "description": "מסיר מילות היסוס נפוצות מתמלולים. השבת כדי להשאיר אותן."
+        "description": "מסיר מילות היסוס נפוצות מתמלולים. השבת כדי להשאיר אותן.",
+        "modeLabel": "רשימת מילות מילוי",
+        "builtIn": "רשימה מובנית",
+        "custom": "רשימה מותאמת",
+        "off": "כבוי (שמירה על כל המילים)",
+        "customLabel": "מילות מילוי מותאמות",
+        "customHelp": "הפרידו בין מילים בפסיקים או בשורות חדשות. עד 100 מילים, עד 32 תווים לכל מילה. ההתאמה אינה מבחינה בין אותיות גדולות לקטנות.",
+        "customCount": "{{count}} מתוך {{max}} מילים",
+        "customTooMany": "רשימה מותאמת יכולה לכלול עד {{max}} מילים.",
+        "customTooLong": "כל מילה יכולה לכלול עד {{max}} תווים.",
+        "customEmpty": "הוסיפו לפחות מילה אחת, או בחרו רשימה מובנית או כבוי.",
+        "saveCustom": "שמירת הרשימה"
       },
       "chineseScript": {
         "title": "כתב סיני",

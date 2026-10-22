@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Vækkenavn",
+        "wakeNameDescription": "Ét ord: bogstaver, cifre eller underscore. Træder i kraft, når du genstarter Vox.",
+        "windowLabel": "Hukommelsesvindue",
+        "windowDescription": "Hvor meget nylig samtale det omgivende tilstand husker. Træder i kraft, når du genstarter Vox.",
+        "windowValue": "{{value}} s"
       },
       "wakeWord": {
+        "confidenceLabel": "Genkendelsestærskel",
+        "confidenceDescription": "Hvor sikker detektoren skal være, før aktiveringsfrasen starter optagelsen. En højere værdi er strengere: færre falske udløsninger, men rigtige kan blive overset. Træder i kraft, når du genstarter Vox.",
+        "cooldownLabel": "Afkølingstid",
+        "cooldownDescription": "Ventetid efter en optagelse startet af wake word, før der lyttes igen, i millisekunder.",
+        "silenceTimeoutLabel": "Afslut automatisk efter stilhed",
+        "silenceTimeoutDescription": "Afslutter en optagelse startet af wake word efter så meget stilhed, i millisekunder. Angiv 0 for at slå automatisk afslutning fra.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} ms",
+        "offValue": "Fra",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Avanceret",
+        "timeoutLabel": "Timeout for agent (sekunder)",
+        "timeoutDescription": "Hvor længe der ventes på, at agentkommandoen svarer. Mellem 5 og 600 sekunder.",
+        "promptFlagLabel": "Forespørgselsflag",
+        "promptFlagDescription": "Flaget der sender din forespørgsel til agentkommandoen, for eksempel -p. Det skal være forskelligt fra agentflaget.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Fjern fyldord",
-        "description": "Fjerner almindelige tøveord fra transskriptioner. Slå fra for at beholde dem."
+        "description": "Fjerner almindelige tøveord fra transskriptioner. Slå fra for at beholde dem.",
+        "modeLabel": "Liste over fyldord",
+        "builtIn": "Indbygget liste",
+        "custom": "Egen liste",
+        "off": "Fra (behold alle ord)",
+        "customLabel": "Egne fyldord",
+        "customHelp": "Adskil ord med kommaer eller nye linjer. Op til 100 ord, hver på højst 32 tegn. Søgningen skelner ikke mellem store og små bogstaver.",
+        "customCount": "{{count}} af {{max}} ord",
+        "customTooMany": "En egen liste kan højst have {{max}} ord.",
+        "customTooLong": "Hvert ord kan højst have {{max}} tegn.",
+        "customEmpty": "Tilføj mindst ét ord, eller vælg Indbygget liste eller Fra.",
+        "saveCustom": "Gem listen"
       },
       "chineseScript": {
         "title": "Kinesisk skrift",

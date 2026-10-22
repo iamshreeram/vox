@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Aktivierungsname",
+        "wakeNameDescription": "Ein Wort: Buchstaben, Ziffern oder Unterstrich. Wirkt nach einem Neustart von Vox.",
+        "windowLabel": "Speicherfenster",
+        "windowDescription": "Wie viel der letzten Unterhaltung der Umgebungsmodus behält. Wirkt nach einem Neustart von Vox.",
+        "windowValue": "{{value}} s"
       },
       "wakeWord": {
+        "confidenceLabel": "Erkennungsschwelle",
+        "confidenceDescription": "Wie sicher der Detektor sein muss, bevor die Aktivierungsphrase eine Aufnahme auslöst. Ein höherer Wert ist strenger: weniger Fehlauslösungen, aber echte Aktivierungen können verpasst werden. Wirkt nach einem Neustart von Vox.",
+        "cooldownLabel": "Abklingzeit",
+        "cooldownDescription": "Wartezeit nach einer durch das Wake Word ausgelösten Aufnahme, bevor wieder zugehört wird, in Millisekunden.",
+        "silenceTimeoutLabel": "Nach Stille automatisch beenden",
+        "silenceTimeoutDescription": "Beendet eine durch das Wake Word ausgelöste Aufnahme nach dieser Stille, in Millisekunden. Auf 0 setzen, um das automatische Beenden auszuschalten.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} ms",
+        "offValue": "Aus",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Erweitert",
+        "timeoutLabel": "Zeitlimit des Agenten (Sekunden)",
+        "timeoutDescription": "Wie lange auf eine Antwort des Agentenbefehls gewartet wird. Zwischen 5 und 600 Sekunden.",
+        "promptFlagLabel": "Anfrage-Flag",
+        "promptFlagDescription": "Das Flag, das Ihre Anfrage an den Agentenbefehl übergibt, zum Beispiel -p. Es muss sich vom Agenten-Flag unterscheiden.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Füllwörter entfernen",
-        "description": "Entfernt häufige Verzögerungslaute aus Transkriptionen. Deaktivieren Sie diese Option, um sie beizubehalten."
+        "description": "Entfernt häufige Verzögerungslaute aus Transkriptionen. Deaktivieren Sie diese Option, um sie beizubehalten.",
+        "modeLabel": "Liste der Füllwörter",
+        "builtIn": "Eingebaute Liste",
+        "custom": "Eigene Liste",
+        "off": "Aus (alle Wörter behalten)",
+        "customLabel": "Eigene Füllwörter",
+        "customHelp": "Trennen Sie Wörter durch Kommas oder Zeilenumbrüche. Bis zu 100 Wörter, jeweils höchstens 32 Zeichen. Die Erkennung unterscheidet nicht zwischen Groß- und Kleinschreibung.",
+        "customCount": "{{count}} von {{max}} Wörtern",
+        "customTooMany": "Eine eigene Liste darf höchstens {{max}} Wörter enthalten.",
+        "customTooLong": "Jedes Wort darf höchstens {{max}} Zeichen lang sein.",
+        "customEmpty": "Fügen Sie mindestens ein Wort hinzu oder wählen Sie Eingebaute Liste oder Aus.",
+        "saveCustom": "Liste speichern"
       },
       "chineseScript": {
         "title": "Chinesische Schrift",

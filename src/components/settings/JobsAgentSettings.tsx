@@ -7,6 +7,7 @@ import { useSettings } from "../../hooks/useSettings";
 import {
   canAddAgentName,
   cleanAgentNames,
+  effectivePromptFlag,
   isValidAgentFlag,
   isValidAgentName,
   MAX_AGENT_NAMES,
@@ -118,7 +119,9 @@ export const AgentFlagField: React.FC<AgentSettingProps> = ({
   const { getSetting, updateSetting, isUpdating } = useSettings();
   const names = getSetting("agent_jobs_agents") ?? [];
   const stored = getSetting("agent_jobs_agent_flag") ?? "";
-  const promptFlag = getSetting("agent_bridge_prompt_flag") ?? "";
+  const promptFlag = effectivePromptFlag(
+    getSetting("agent_bridge_prompt_flag") ?? "",
+  );
   const [draft, setDraft] = useState(stored);
   const [invalid, setInvalid] = useState(false);
   const pending = isUpdating("agent_jobs_agent_flag");

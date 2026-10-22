@@ -354,10 +354,13 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let conversation_log = Arc::new(managers::conversation::ConversationLog::new());
     let command_router = Arc::new(CommandRouter::new(new_app_discovery()));
     let wakeword_listener = Arc::new(WakeWordListener::new(app_handle.clone()));
-    let ambient_transcript = Arc::new(RollingTranscript::new(90_000));
+    let ambient_settings = settings::get_settings(app_handle);
+    let ambient_transcript = Arc::new(RollingTranscript::new(
+        settings::effective_ambient_window_ms(&ambient_settings),
+    ));
     let ambient_coordinator = Arc::new(AmbientCoordinator::with_shared_transcript(
         Arc::clone(&ambient_transcript),
-        EngagementJudge::new(vec!["vox".to_string()]),
+        EngagementJudge::new(settings::effective_ambient_wake_names(&ambient_settings)),
         EchoSuppressor::new(),
     ));
     let ambient_listener = Arc::new(AmbientListener::new(app_handle.clone()));
@@ -1159,6 +1162,14 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::ambient::ambient_set_enabled,
             commands::ambient::ambient_clear,
             commands::wakeword::wakeword_set_enabled,
+            shortcut::change_wake_word_confidence_threshold_setting,
+            shortcut::change_wake_word_cooldown_ms_setting,
+            shortcut::change_wake_word_silence_timeout_ms_setting,
+            shortcut::change_ambient_wake_name_setting,
+            shortcut::change_ambient_window_ms_setting,
+            shortcut::change_custom_filler_words_setting,
+            shortcut::change_agent_bridge_timeout_secs_setting,
+            shortcut::change_agent_bridge_prompt_flag_setting,
             commands::voice_shortcuts::set_voice_shortcuts,
             commands::converse::change_converse_silence_ms_setting,
             commands::converse::change_converse_max_idle_turns_setting,
@@ -1630,6 +1641,13 @@ pub fn run(cli_args: CliArgs) {
         _ => {}
     });
 }
+
+#[cfg(test)]
+mod agent_bridge_settings_tests;
+#[cfg(test)]
+mod ambient_settings_tests;
+#[cfg(test)]
+mod settings_validation_tests;
 
 #[cfg(test)]
 mod tts_listener_tests {

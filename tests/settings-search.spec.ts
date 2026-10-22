@@ -199,7 +199,9 @@ test.describe("Settings search: navigation and reveal", () => {
     await page.clock.install({ time: new Date("2026-10-16T10:00:00Z") });
     await page.goto("/");
     await expect(navItem(page, "General")).toBeVisible();
-    await page.clock.pauseAt(new Date("2026-10-16T10:00:05Z"));
+    // The installed clock keeps running in real time; pause well ahead so a slow page load
+    // cannot overtake the pause time ("Cannot fast-forward to the past").
+    await page.clock.pauseAt(new Date("2026-10-16T10:00:30Z"));
 
     // Precondition: the listening card is collapsed on the Experimental page.
     await navItem(page, "Experimental").click();
@@ -343,11 +345,13 @@ test.describe("Settings search: keyboard and composition", () => {
   });
 
   test("(4f) Cmd+F focuses the search box", async ({ page }) => {
-    await installTauriMock(page);
+    // The mock reports macOS, where the search box listens for the Command key. `ControlOrMeta`
+    // would press Control on a Linux runner and never match, so press Meta explicitly.
+    await installTauriMock(page, { platform: "macos" });
     await page.goto("/");
 
     await page.locator("h2").first().click();
-    await page.keyboard.press("ControlOrMeta+f");
+    await page.keyboard.press("Meta+f");
     await expect(searchBox(page)).toBeFocused();
   });
 
@@ -535,6 +539,30 @@ test.describe("Settings search: debug and language", () => {
     await localeSearchBox(page).fill(germanLabel);
     await expect(
       options(page).filter({ hasText: germanLabel }).first(),
+    ).toBeVisible();
+  });
+});
+
+test.describe("Settings search: new Experimental controls", () => {
+  test("(11) a control added in this change is found by search and rendered on the Experimental page", async ({
+    page,
+  }) => {
+    // Wake word cooldown is a slider on the Experimental page (WakeWordToggle).
+    const cooldownLabel = textAt(
+      translation("en"),
+      "settings.advanced.wakeWord.cooldownLabel",
+    );
+    await installTauriMock(page, { settings: { experimental_enabled: true } });
+    await page.goto("/");
+
+    await searchBox(page).fill("wake word cooldown");
+    await options(page).filter({ hasText: cooldownLabel }).first().click();
+
+    await expect(section(page, "experimental")).toBeVisible();
+    await expect(
+      section(page, "experimental")
+        .getByText(cooldownLabel, { exact: true })
+        .first(),
     ).toBeVisible();
   });
 });

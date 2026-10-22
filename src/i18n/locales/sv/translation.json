@@ -303,9 +303,23 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Väckningsnamn",
+        "wakeNameDescription": "Ett ord: bokstäver, siffror eller understreck. Gäller efter att du startar om Vox.",
+        "windowLabel": "Minnesfönster",
+        "windowDescription": "Hur mycket av den senaste konversationen omgivningsläget minns. Gäller efter att du startar om Vox.",
+        "windowValue": "{{value}} s"
       },
       "wakeWord": {
+        "confidenceLabel": "Igenkänningströskel",
+        "confidenceDescription": "Hur säker detektorn måste vara innan aktiveringsfrasen startar inspelningen. Ett högre värde är strängare: färre falska utlösningar, men riktiga kan missas. Gäller efter att du startat om Vox.",
+        "cooldownLabel": "Avklingningstid",
+        "cooldownDescription": "Väntetid efter en inspelning som startats av wake word innan den lyssnar igen, i millisekunder.",
+        "silenceTimeoutLabel": "Avsluta automatiskt efter tystnad",
+        "silenceTimeoutDescription": "Avslutar en inspelning som startats av wake word efter så mycket tystnad, i millisekunder. Ange 0 för att stänga av automatisk avslutning.",
+        "percentValue": "{{value}}%",
+        "msValue": "{{value}} ms",
+        "offValue": "Av",
         "label": "Wake Word",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
@@ -347,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Avancerat",
+        "timeoutLabel": "Tidsgräns för agenten (sekunder)",
+        "timeoutDescription": "Hur länge agentkommandot får dröja med svaret. Mellan 5 och 600 sekunder.",
+        "promptFlagLabel": "Flagga för begäran",
+        "promptFlagDescription": "Flaggan som skickar din begäran till agentkommandot, till exempel -p. Den måste skilja sig från agentflaggan.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -636,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Ta bort utfyllnadsord",
-        "description": "Tar bort vanliga tvekljud från transkriberingar. Stäng av för att behålla dem."
+        "description": "Tar bort vanliga tvekljud från transkriberingar. Stäng av för att behålla dem.",
+        "modeLabel": "Lista över utfyllnadsord",
+        "builtIn": "Inbyggd lista",
+        "custom": "Egen lista",
+        "off": "Av (behåll alla ord)",
+        "customLabel": "Egna utfyllnadsord",
+        "customHelp": "Separera orden med kommatecken eller nya rader. Upp till 100 ord, vart och ett på högst 32 tecken. Matchningen skiljer inte på stora och små bokstäver.",
+        "customCount": "{{count}} av {{max}} ord",
+        "customTooMany": "En egen lista kan innehålla högst {{max}} ord.",
+        "customTooLong": "Varje ord kan vara högst {{max}} tecken.",
+        "customEmpty": "Lägg till minst ett ord, eller välj Inbyggd lista eller Av.",
+        "saveCustom": "Spara listan"
       },
       "chineseScript": {
         "title": "Kinesisk skrift",
