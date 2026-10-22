@@ -1108,6 +1108,8 @@ fn default_tts_natural_voice() -> String {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TtsEngine {
+    /// The local Phonon voice: a pure-Rust English model (needs a one-time download, macOS only).
+    Phonon,
     /// The local neural voice (needs a one-time model download).
     Natural,
     /// The operating system voice (default). Also what any unrecognised stored value means, so a
@@ -2403,9 +2405,11 @@ mod tests {
 
     #[test]
     fn tts_engine_uses_snake_case_and_an_unknown_value_never_breaks_loading() {
+        assert_eq!(serde_json::to_value(TtsEngine::Phonon).unwrap(), "phonon");
         assert_eq!(serde_json::to_value(TtsEngine::Natural).unwrap(), "natural");
         assert_eq!(serde_json::to_value(TtsEngine::System).unwrap(), "system");
         for (stored, want) in [
+            ("phonon", TtsEngine::Phonon),
             ("natural", TtsEngine::Natural),
             ("system", TtsEngine::System),
             ("bogus", TtsEngine::System),

@@ -487,6 +487,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 choice: Arc::new(move || {
                     let s = get_settings(&choice_handle);
                     RouterChoice {
+                        // P4 wires the Phonon route. Until then Phonon is treated exactly like System.
                         natural: s.tts_engine == settings::TtsEngine::Natural,
                         voice: managers::natural_voices::normalize_natural_voice(
                             &s.tts_natural_voice,
@@ -1049,6 +1050,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::natural_voice::natural_voice_delete,
             commands::natural_voice::natural_voice_retry,
             commands::natural_voice::list_natural_voices,
+            commands::tts_engines::list_tts_engines,
             shortcut::tts_speak_test,
             shortcut::tts_stop,
             shortcut::change_post_process_base_url_setting,

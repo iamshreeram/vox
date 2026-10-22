@@ -109,6 +109,9 @@ pub mod transcription;
 pub mod tts;
 #[cfg(target_os = "macos")]
 pub mod tts_av;
+pub mod tts_engines;
+#[cfg(test)]
+mod tts_engines_tests;
 pub mod tts_queue;
 pub mod tts_serial;
 #[cfg(test)]

@@ -1059,6 +1059,11 @@ pub fn change_tts_engine_setting(
     engine: crate::settings::TtsEngine,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
+    crate::managers::tts_engines::validate_engine_selection(
+        settings.tts_engine,
+        engine,
+        &crate::managers::tts_engines::tts_engine_catalog(),
+    )?;
     settings.tts_engine = engine;
     settings::write_settings(&app, settings);
     reset_spoken_replies(&app);

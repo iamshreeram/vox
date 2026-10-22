@@ -17,6 +17,7 @@ pub mod source_update;
 pub mod speaker;
 pub mod transcription;
 pub mod tts_composer;
+pub mod tts_engines;
 pub mod tts_voices;
 pub mod vault_rag;
 #[cfg(test)]
