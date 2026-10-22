@@ -68,7 +68,7 @@ impl Drive {
 fn frames_of(samples: &[f32]) -> Vec<u32> {
     assert_eq!(samples.len() % FRAME_SAMPLES, 0, "whole frames only");
     samples
-        .chunks_exact(FRAME_SAMPLES)
+        .chunks(FRAME_SAMPLES)
         .map(|c| c[0] as u32)
         .collect()
 }

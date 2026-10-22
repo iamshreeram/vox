@@ -266,7 +266,7 @@ async fn announcement_during_confirmation_is_held_until_the_guard_drops() {
     };
     let hands = GateHands::new(ev.clone());
     let (_tx, rx) = watch::channel(false);
-    let mut cancel: CancelToken = rx;
+    let mut cancel: CancelToken = rx.into();
     let deps = Deps {
         ears: &ears,
         mouth: &mouth,

@@ -313,7 +313,7 @@ async fn run_loop(
         brain,
         reporter,
     };
-    let token: CancelToken = rx;
+    let token: CancelToken = rx.into();
     tokio::time::timeout(Duration::from_secs(5), run_session(&deps, cfg, token))
         .await
         .expect("run_session hung")
