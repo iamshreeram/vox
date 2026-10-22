@@ -114,6 +114,10 @@ pub enum ListenFailure {
     Permission,
     ModelUnavailable,
     Other,
+    /// The microphone stream could not be opened or started (a raw device/OS error, not a
+    /// permission or missing-device case). Reported to the user exactly like `Other`; it is the
+    /// one start failure the barge-in recovery retries (DESIGN 12.4).
+    StreamOpen,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2732,6 +2736,7 @@ mod tests {
             ListenFailure::Permission,
             ListenFailure::ModelUnavailable,
             ListenFailure::Other,
+            ListenFailure::StreamOpen,
         ] {
             let r = rig(vec![L::Out(ListenOutcome::Failed(f))], vec![]);
             assert_eq!(run(&r, &cfg()).await, SessionEnd::AudioUnavailable);

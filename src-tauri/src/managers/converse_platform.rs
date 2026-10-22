@@ -155,9 +155,18 @@ pub fn classify_start_error(message: &str) -> StartError {
         StartError::NoMicrophone
     } else if message.contains("Already recording") {
         StartError::Busy
+    } else if is_stream_open_failure(message) {
+        StartError::StreamOpen
     } else {
         StartError::Other
     }
+}
+
+/// The raw open/start failures of `AudioRecordingManager::try_start_recording`, prefixed in
+/// managers/audio.rs with the shared constants below (so this cannot drift from the producer).
+fn is_stream_open_failure(message: &str) -> bool {
+    message.starts_with(crate::managers::audio::STREAM_OPEN_FAILED_PREFIX)
+        || message.starts_with(crate::managers::audio::RECORDER_START_FAILED_PREFIX)
 }
 
 /// Planner errors as the session sees them. Only the three configuration
@@ -1252,6 +1261,36 @@ mod tests {
             ),
             StartError::NoMicrophone
         );
+    }
+
+    /// The strings are built exactly as `try_start_recording` builds them (shared prefix
+    /// constants), so a raw stream-open refusal from the OS is classified as retriable.
+    #[test]
+    fn production_shaped_open_failures_are_stream_open() {
+        use crate::managers::audio::{RECORDER_START_FAILED_PREFIX, STREAM_OPEN_FAILED_PREFIX};
+        for raw in [
+            "The requested stream configuration is not supported by the device.",
+            "AudioUnit error: kAudioUnitErr_CannotDoInCurrentContext",
+            "A backend-specific error has occurred: could not start the input stream",
+        ] {
+            let open = format!("{STREAM_OPEN_FAILED_PREFIX} {raw}");
+            assert_eq!(
+                classify_start_error(&open),
+                StartError::StreamOpen,
+                "{open}"
+            );
+            let start = format!("{RECORDER_START_FAILED_PREFIX} {raw}");
+            assert_eq!(
+                classify_start_error(&start),
+                StartError::StreamOpen,
+                "{start}"
+            );
+        }
+        // Precedence is unchanged: a prefixed permission or no-device message keeps its class.
+        let denied = format!("{STREAM_OPEN_FAILED_PREFIX} permission denied");
+        assert_eq!(classify_start_error(&denied), StartError::Permission);
+        let no_device = format!("{STREAM_OPEN_FAILED_PREFIX} No input device found");
+        assert_eq!(classify_start_error(&no_device), StartError::NoMicrophone);
     }
 
     #[test]

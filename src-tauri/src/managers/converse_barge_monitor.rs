@@ -274,8 +274,6 @@ impl BargeMonitor {
     }
 
     /// False once any internal failure happened or after `shutdown`.
-    // Used by B3b (health probe from the session); no production caller yet.
-    #[allow(dead_code)]
     pub fn is_healthy(&self) -> bool {
         self.shared.healthy.load(Ordering::SeqCst)
     }
@@ -388,6 +386,8 @@ impl Worker {
             match self.rx.recv_timeout(POLL) {
                 Ok(chunk) => {
                     self.last_chunk = Instant::now();
+                    // Conservative: overflow is global, so a clip may be discarded even if the lost
+                    // audio fell after its endpoint.
                     if self.shared.overflow.swap(false, Ordering::SeqCst) {
                         self.missing();
                     }

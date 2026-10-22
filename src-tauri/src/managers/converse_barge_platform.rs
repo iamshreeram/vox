@@ -122,6 +122,16 @@ impl BargeSlot {
         self.retired.store(true, Ordering::SeqCst);
         self.shutdown();
     }
+
+    /// True only for a monitor that is not retired and has not failed soft. A monitor that
+    /// already failed soft does not consume the listen retry.
+    pub fn is_live(&self) -> bool {
+        !self.retired.load(Ordering::SeqCst)
+            && self
+                .monitor
+                .as_deref()
+                .is_some_and(|monitor| monitor.is_healthy())
+    }
 }
 
 /// What the listen recovery needs from the barge-in side.
@@ -134,7 +144,7 @@ pub trait BargeRecovery: Send + Sync {
 
 impl BargeRecovery for BargeSlot {
     fn is_alive(&self) -> bool {
-        self.view().is_some()
+        self.is_live()
     }
 
     fn retire(&self) {
@@ -142,12 +152,13 @@ impl BargeRecovery for BargeSlot {
     }
 }
 
-/// The microphone refused to open for this listen (DESIGN 12.4). Permission and the catch-all
-/// failures are not refusals a second attempt can fix, so they are not retried.
+/// The microphone could not be opened or started for this listen (DESIGN 12.4): a second input
+/// stream may be the cause. `Busy` is the app's own "Already recording" state and is never a
+/// refusal; Permission and the catch-all failures are not retried either.
 pub fn is_open_refusal(outcome: &ListenOutcome) -> bool {
     matches!(
         outcome,
-        ListenOutcome::Failed(ListenFailure::Busy | ListenFailure::NoMicrophone)
+        ListenOutcome::Failed(ListenFailure::StreamOpen | ListenFailure::NoMicrophone)
     )
 }
 

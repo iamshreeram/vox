@@ -30,7 +30,7 @@ use crate::managers::converse_capture::{
 };
 use crate::managers::converse_hooks;
 use crate::managers::converse_plan::{PlanError, PlanInput, TurnPlan};
-use crate::managers::converse_platform::preflight_check;
+use crate::managers::converse_platform::{classify_start_error, preflight_check};
 use crate::managers::converse_runtime::{
     AdmissionGuard, ConverseController, Platform, SessionParts,
 };
@@ -175,7 +175,11 @@ impl MonitorInput for FailingInput {
     }
 }
 
-struct QuietStream;
+/// Holds the sample callback like a real open stream does: dropping it would disconnect the
+/// worker's channel, which the monitor correctly treats as a dead input.
+struct QuietStream {
+    _keep_alive: SampleCallback,
+}
 
 impl MonitorStream for QuietStream {
     fn close(self: Box<Self>) {}
@@ -184,8 +188,10 @@ impl MonitorStream for QuietStream {
 struct OpenInput;
 
 impl MonitorInput for OpenInput {
-    fn open(&self, _on_samples: SampleCallback) -> Result<Box<dyn MonitorStream>, String> {
-        Ok(Box::new(QuietStream))
+    fn open(&self, on_samples: SampleCallback) -> Result<Box<dyn MonitorStream>, String> {
+        Ok(Box::new(QuietStream {
+            _keep_alive: on_samples,
+        }))
     }
 }
 
@@ -377,7 +383,7 @@ fn a_refused_listen_with_a_live_monitor_retires_it_and_retries_once() {
     let (outcome, attempts) = recover(
         barge.clone(),
         vec![
-            ListenOutcome::Failed(ListenFailure::Busy),
+            ListenOutcome::Failed(ListenFailure::StreamOpen),
             ListenOutcome::Utterance("hi".into()),
         ],
     );
@@ -385,6 +391,63 @@ fn a_refused_listen_with_a_live_monitor_retires_it_and_retries_once() {
     assert_eq!(attempts, 2);
     assert_eq!(barge.retires.load(Ordering::SeqCst), 1);
     assert!(!barge.is_alive());
+}
+
+#[test]
+fn a_busy_listen_is_the_apps_own_state_and_never_retires_the_monitor() {
+    let monitor = start_with(Arc::new(OpenInput), ok_vad()).expect("monitor starts");
+    let slot = Arc::new(BargeSlot::new(Some(monitor.clone())));
+    let (outcome, attempts) = recover(
+        slot.clone(),
+        vec![ListenOutcome::Failed(ListenFailure::Busy)],
+    );
+    assert_eq!(outcome, ListenOutcome::Failed(ListenFailure::Busy));
+    assert_eq!(attempts, 1, "Busy is the app's own state: no retry");
+    assert!(slot.view().is_some(), "the monitor is untouched");
+    assert!(monitor.is_healthy());
+}
+
+#[test]
+fn a_monitor_that_already_failed_soft_does_not_use_up_the_retry() {
+    let monitor = start_with(Arc::new(OpenInput), ok_vad()).expect("monitor starts");
+    monitor.report_input_failure();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while monitor.is_healthy() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(!monitor.is_healthy(), "the input failure made it fail soft");
+    let slot = Arc::new(BargeSlot::new(Some(monitor.clone())));
+    let (outcome, attempts) = recover(slot, vec![ListenOutcome::Failed(ListenFailure::StreamOpen)]);
+    assert_eq!(outcome, ListenOutcome::Failed(ListenFailure::StreamOpen));
+    assert_eq!(attempts, 1, "no live monitor: no retry");
+}
+
+#[test]
+fn raw_stream_open_failures_classify_as_the_retriable_stream_open() {
+    for raw in [
+        "Failed to open microphone stream: The requested stream configuration is not supported by the device",
+        "Failed to open microphone stream: Failed to open stream: AudioUnit initialize failed (-10851)",
+        "Failed to start recorder: failed to play stream: the input device stopped responding",
+    ] {
+        assert_eq!(classify_start_error(raw), StartError::StreamOpen, "{raw}");
+    }
+}
+
+#[test]
+fn permission_missing_device_busy_and_unknown_keep_their_classes() {
+    assert_eq!(
+        classify_start_error("Failed to start recorder: permission denied"),
+        StartError::Permission
+    );
+    assert_eq!(
+        classify_start_error("Failed to open microphone stream: No input device found"),
+        StartError::NoMicrophone
+    );
+    assert_eq!(classify_start_error("Already recording"), StartError::Busy);
+    assert_eq!(
+        classify_start_error("Recorder not available"),
+        StartError::Other
+    );
 }
 
 #[test]
@@ -414,11 +477,11 @@ fn a_listen_refused_twice_with_a_live_monitor_fails_after_two_attempts() {
     let (outcome, attempts) = recover(
         barge.clone(),
         vec![
-            ListenOutcome::Failed(ListenFailure::Busy),
-            ListenOutcome::Failed(ListenFailure::Busy),
+            ListenOutcome::Failed(ListenFailure::StreamOpen),
+            ListenOutcome::Failed(ListenFailure::StreamOpen),
         ],
     );
-    assert_eq!(outcome, ListenOutcome::Failed(ListenFailure::Busy));
+    assert_eq!(outcome, ListenOutcome::Failed(ListenFailure::StreamOpen));
     assert_eq!(attempts, 2);
     assert_eq!(barge.retires.load(Ordering::SeqCst), 1);
 }

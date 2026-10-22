@@ -20,6 +20,13 @@ use tauri::{Emitter, Manager};
 const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const SILERO_VAD_THRESHOLD: f32 = 0.3;
 /// Silero VAD model resource (shared with the barge-in monitor; same file, no behaviour change).
+/// Prefix of the `Err(String)` of `try_start_recording` when the microphone stream cannot be
+/// opened. The conversation code classifies refusals by this prefix (see
+/// `converse_platform::classify_start_error`), so both sides share the constant.
+pub(crate) const STREAM_OPEN_FAILED_PREFIX: &str = "Failed to open microphone stream:";
+/// Prefix of the `Err(String)` when the opened recorder refuses to start.
+pub(crate) const RECORDER_START_FAILED_PREFIX: &str = "Failed to start recorder:";
+
 pub(crate) const SILERO_VAD_RESOURCE: &str = "resources/models/silero_vad_v4.onnx";
 const EARSHOT_VAD_THRESHOLD: f32 = 0.5;
 
@@ -865,9 +872,9 @@ impl AudioRecordingManager {
             // "Recorder not available".
             if let Err(e) = self.start_microphone_stream() {
                 let msg = format!("{e}");
-                error!("Failed to open microphone stream: {msg}");
+                error!("{STREAM_OPEN_FAILED_PREFIX} {msg}");
                 release_tts();
-                return Err(msg);
+                return Err(format!("{STREAM_OPEN_FAILED_PREFIX} {msg}"));
             }
 
             if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
@@ -889,7 +896,7 @@ impl AudioRecordingManager {
                     }
                     Err(error) => {
                         release_tts();
-                        return Err(format!("Failed to start recorder: {error}"));
+                        return Err(format!("{RECORDER_START_FAILED_PREFIX} {error}"));
                     }
                 }
             }
