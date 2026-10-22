@@ -103,6 +103,24 @@ When it is on:
 - If the interruption monitor cannot start, the conversation runs as it did
   before, without interruptions. No error is shown.
 
+### Live check (headphones)
+
+Run this once with a wired headset and once with a Bluetooth headset:
+
+1. Say "Hey Jarvis", ask for a long answer, and talk over it for a second or
+   more. The voice should dip at once and stop within about a second, and your
+   sentence should be answered in the same conversation.
+2. During a reply say a short "yeah". The volume should dip and come back and
+   the reply should keep going.
+3. Let ten replies play while you stay silent, with a normal background noise
+   level. None should be interrupted or left quiet.
+4. End the conversation during a reply. It should end normally.
+5. Switch the setting back to **Off**. Conversations should behave as before.
+6. With the system voice selected, step 1 should still stop the reply (no dip
+   is expected).
+
+Report anything that fails together with the headset model.
+
 ## Troubleshooting
 
 - **Nothing happens when I start:** turn on Spoken replies in the speech
