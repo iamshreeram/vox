@@ -1099,8 +1099,11 @@ impl crate::managers::tts::SpeechBackend for C1SystemRoute {
 }
 
 /// A stream factory that must never be opened: a load failure never reaches the device.
+/// macOS only, like the stack builder the test below needs (`ptts` is a macOS-only dependency).
+#[cfg(target_os = "macos")]
 struct C1NoDevice;
 
+#[cfg(target_os = "macos")]
 impl crate::managers::natural_sink::StreamFactory for C1NoDevice {
     fn device_rate(&self) -> Result<u32, String> {
         Ok(24_000)
@@ -1113,6 +1116,7 @@ impl crate::managers::natural_sink::StreamFactory for C1NoDevice {
     }
 }
 
+#[cfg(target_os = "macos")]
 #[test]
 fn phonon_load_failure_reports_load_and_routes_next_burst_to_system() {
     use crate::managers::emotion::Emotion;
