@@ -171,6 +171,8 @@ objc2-app-kit = "0.3"
 objc2-service-management = "0.3.2"
 # Local neural TTS (opt-in "natural voice"); macOS only, loads models from verified bytes.
 kokoro-tts = "0.3.3"
+# Phonon TTS runtime (pure Rust). Never enable the hub or cli features: they add network clients.
+ptts = { version = "=0.4.0", default-features = false, features = ["hf"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8", features = ["v0_6"] }

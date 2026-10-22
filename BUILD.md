@@ -17,6 +17,14 @@ This guide covers how to set up the development environment and build Vox from s
 - Xcode Command Line Tools
 - Install with: `xcode-select --install`
 
+##### Rust toolchain
+
+The Phonon TTS dependency (`ptts` / `xn`) needs a current stable Rust installed through [rustup](https://rustup.rs/) (verified with 1.99.0). The Homebrew `rustc` 1.86 fails to build it (it uses let-chains). Put `$HOME/.cargo/bin` first on `PATH` so that cargo and rustc resolve to the rustup toolchain:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
 ##### Intel Mac (x86_64)
 
 Prebuilt ONNX Runtime binaries are not available for Intel Macs. Install ONNX Runtime via Homebrew and link dynamically:
