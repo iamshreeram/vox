@@ -7,7 +7,9 @@
 //! `ModelManager::download_verified_file`).
 #![allow(dead_code)]
 
+use crate::managers::aux_model::{is_redirect_refused, DownloadPolicy, RedirectRefused};
 use crate::managers::model::ModelManager;
+use crate::managers::natural_snapshot::{snapshot_verified_with, Snapshot};
 use crate::managers::natural_voices::ModelBytes;
 use hf_hub::api::tokio::CancellationToken;
 use log::{info, warn};
@@ -35,6 +37,16 @@ pub const KOKORO_VOICES_SIZE: u64 = 28_311_781;
 pub const KOKORO_VOICES_SHA256: &str =
     "988549ccf1d68a80a31de1b9d00ac59d5dceb69743cbc607d1de17c7c4cdccf4";
 
+/// Phonon 31M English TTS (Gradium, Apache-2.0 weights). Installed into `<root>/phonon-31m-en/`
+/// under its own root (`<app_data>/phonon_models`), never nested in the Kokoro root.
+pub const PHONON_DIR_NAME: &str = "phonon-31m-en";
+/// Hugging Face commit the files are pinned to (never `main`).
+pub const PHONON_COMMIT: &str = "541f5752bc3c79583068bb205bfda5eb39aaa08a";
+/// Pinned start-URL prefix. Must equal `https://huggingface.co/gradium/phonon-31m-en/resolve/
+/// {PHONON_COMMIT}/` (the test `phonon_urls_are_pinned_to_the_commit_and_never_main` checks it).
+pub const PHONON_URL_PREFIX: &str =
+    "https://huggingface.co/gradium/phonon-31m-en/resolve/541f5752bc3c79583068bb205bfda5eb39aaa08a/";
+
 /// One pinned file to install into `<root>/kokoro-v1.0/`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssetSpec {
@@ -58,6 +70,63 @@ pub fn kokoro_assets() -> Vec<AssetSpec> {
         sha256: (*sha256).to_string(),
     })
     .collect()
+}
+
+/// The four Phonon assets (model, default voice, tokenizer, config), URLs under
+/// `PHONON_URL_PREFIX`. Order is part of the contract.
+pub fn phonon_assets() -> Vec<AssetSpec> {
+    [
+        (
+            "model.q8.gguf",
+            64_512_352u64,
+            "a7d9aad2cd6dc66473f24a08bc6d2939030ef4d751ef82349361fbef3272dbae",
+        ),
+        (
+            "default-voice.safetensors",
+            256_136,
+            "f739e8c4c76ee7f92e7c94a82002748c8cd22e99582ac49f7b9b94cd63786e18",
+        ),
+        (
+            "tokenizer.json",
+            277_967,
+            "691a00068fa7b989f2f3e5ae5daa2d1a5bb319f2d5360deafcfb19a8bb6e7936",
+        ),
+        (
+            "config.json",
+            4_634,
+            "b5d0f88353638370d94035b7d73d7d6577c0554d78f8d7ecfd40490aae39ae85",
+        ),
+    ]
+    .iter()
+    .map(|(file, size, sha256)| AssetSpec {
+        file: (*file).to_string(),
+        url: format!("{PHONON_URL_PREFIX}{file}"),
+        size: *size,
+        sha256: (*sha256).to_string(),
+    })
+    .collect()
+}
+
+/// Allowed start-URL prefixes for Phonon: only the pinned prefix. Redirect hops are governed by
+/// [`phonon_download_policy`], not by this list.
+pub fn phonon_allowed_prefixes() -> Vec<String> {
+    vec![PHONON_URL_PREFIX.to_string()]
+}
+
+/// Redirect/host policy for the Phonon download: Hugging Face hosts only, https only, at most 4
+/// redirects. It checks the start URL and every redirect hop. The pinned size and SHA-256 remain
+/// the trust anchor.
+pub fn phonon_download_policy() -> DownloadPolicy {
+    DownloadPolicy {
+        allowed_hosts: vec![
+            "huggingface.co".into(),
+            ".huggingface.co".into(),
+            ".hf.co".into(),
+        ],
+        max_redirects: 4,
+        require_https: true,
+        allow_loopback_http: false,
+    }
 }
 
 /// True when `url` may be fetched: it starts with one of `prefixes`, has no userinfo (`@`),
@@ -84,6 +153,8 @@ pub enum ModelError {
     UrlNotAllowed,
     /// Transport / verification failure while downloading (no text from the network is logged).
     Download(String),
+    /// The server answered HTTP 407: a proxy that needs sign-in blocked the download.
+    ProxyAuthRequired,
     Io(String),
 }
 
@@ -96,6 +167,12 @@ impl fmt::Display for ModelError {
             ModelError::Corrupt(why) => write!(f, "model files are invalid: {why}"),
             ModelError::UrlNotAllowed => write!(f, "download address is not allowed"),
             ModelError::Download(why) => write!(f, "download failed: {why}"),
+            ModelError::ProxyAuthRequired => {
+                write!(
+                    f,
+                    "download blocked by a proxy that needs sign-in (HTTP 407)"
+                )
+            }
             ModelError::Io(why) => write!(f, "file error: {why}"),
         }
     }
@@ -144,8 +221,12 @@ pub struct DownloadProgress {
 ///   symlinks. While reading the state is `Loading` (delete/download get `Busy`).
 pub struct ModelCoordinator {
     root: PathBuf,
+    /// Install directory name under `root` (`KOKORO_DIR_NAME` or `PHONON_DIR_NAME`).
+    dir_name: String,
     assets: Vec<AssetSpec>,
     allowed_prefixes: Vec<String>,
+    /// Redirect/host policy for the downloader. `None` keeps the legacy default redirects (Kokoro).
+    download_policy: Option<DownloadPolicy>,
     shared: Shared,
 }
 
@@ -202,6 +283,18 @@ fn io_err(e: std::io::Error) -> ModelError {
     ModelError::Io(e.to_string())
 }
 
+/// Maps a downloader error: HTTP 407 becomes `ProxyAuthRequired`, a refused URL or redirect hop
+/// becomes `Download` with the policy text (no URL), everything else stays `Download`.
+fn download_error(e: anyhow::Error) -> ModelError {
+    if ModelManager::http_status(&e) == Some(reqwest::StatusCode::PROXY_AUTHENTICATION_REQUIRED) {
+        return ModelError::ProxyAuthRequired;
+    }
+    if is_redirect_refused(&e) {
+        return ModelError::Download(RedirectRefused.to_string());
+    }
+    ModelError::Download(e.to_string())
+}
+
 fn is_regular_file_of_size(path: &Path, size: u64) -> bool {
     fs::symlink_metadata(path)
         .map(|m| m.file_type().is_file() && m.len() == size)
@@ -218,7 +311,19 @@ fn staging_name() -> String {
 }
 
 impl ModelCoordinator {
+    /// Kokoro coordinator: installs into `<root>/kokoro-v1.0`. Behaviour is unchanged.
     pub fn new(root: PathBuf, assets: Vec<AssetSpec>, allowed_prefixes: Vec<String>) -> Self {
+        Self::new_named(root, KOKORO_DIR_NAME, assets, allowed_prefixes)
+    }
+
+    /// Coordinator for any model: installs into `<root>/<dir_name>`. Removes every stale
+    /// `.staging-*` directory directly under `root` (so give each model its own root).
+    pub fn new_named(
+        root: PathBuf,
+        dir_name: &str,
+        assets: Vec<AssetSpec>,
+        allowed_prefixes: Vec<String>,
+    ) -> Self {
         if let Ok(entries) = fs::read_dir(&root) {
             let mut removed = 0usize;
             for entry in entries.flatten() {
@@ -237,8 +342,10 @@ impl ModelCoordinator {
         }
         ModelCoordinator {
             root,
+            dir_name: dir_name.to_string(),
             assets,
             allowed_prefixes,
+            download_policy: None,
             shared: Shared {
                 op: Mutex::new(Op::Idle),
                 progress: Mutex::new(DownloadProgress::default()),
@@ -246,6 +353,17 @@ impl ModelCoordinator {
                 generation: AtomicU64::new(0),
             },
         }
+    }
+
+    /// Enables the redirect/host policy for downloads (start URL and every redirect hop).
+    pub fn with_download_policy(mut self, policy: DownloadPolicy) -> Self {
+        self.download_policy = Some(policy);
+        self
+    }
+
+    /// True when a redirect/host policy is set (`None` means the legacy default redirects).
+    pub(crate) fn has_download_policy(&self) -> bool {
+        self.download_policy.is_some()
     }
 
     pub fn state(&self) -> ModelState {
@@ -269,7 +387,7 @@ impl ModelCoordinator {
     }
 
     pub fn install_dir(&self) -> PathBuf {
-        self.root.join(KOKORO_DIR_NAME)
+        self.root.join(&self.dir_name)
     }
 
     /// Install dir + every asset are regular files of the pinned size and READY exists.
@@ -372,10 +490,10 @@ impl ModelCoordinator {
                         on_progress(snapshot);
                     }
                 },
-                None,
+                self.download_policy.as_ref(),
             )
             .await
-            .map_err(|e| ModelError::Download(e.to_string()))?;
+            .map_err(download_error)?;
             if outcome.is_cancelled() {
                 return Err(ModelError::Cancelled);
             }
@@ -449,5 +567,23 @@ impl ModelCoordinator {
                 "expected exactly two model files".into(),
             )),
         }
+    }
+
+    /// Verified private copy of the installed files, for loaders that can only read from a path
+    /// (see `natural_snapshot`). Holds the single-flight op guard for its whole duration, so a
+    /// delete, download or load cannot interleave. Re-verifies on every call (no cached verdict).
+    pub fn snapshot(&self, scratch_root: &Path) -> Result<Snapshot, ModelError> {
+        self.snapshot_with(scratch_root, &|_: &Path| {})
+    }
+
+    /// [`Self::snapshot`] with a hook called on each source path after it was inspected and
+    /// before it is copied (tests use it to swap a file under the snapshot).
+    pub(crate) fn snapshot_with(
+        &self,
+        scratch_root: &Path,
+        before_copy: &dyn Fn(&Path),
+    ) -> Result<Snapshot, ModelError> {
+        let _guard = OpGuard::acquire(&self.shared, Op::Verifying)?;
+        snapshot_verified_with(&self.install_dir(), &self.assets, scratch_root, before_copy)
     }
 }

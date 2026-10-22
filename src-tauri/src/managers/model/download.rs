@@ -28,6 +28,31 @@ const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// loop and mirror fallback take over instead of hanging forever.
 pub(super) const DOWNLOAD_STALL_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// A non-success HTTP status from the server. Carried as a typed error so callers can react to
+/// one status (the natural model maps 407 to `ProxyAuthRequired`). The message text is the same
+/// one the untyped error always produced.
+#[derive(Debug)]
+pub(crate) struct HttpStatusError {
+    pub(crate) status: reqwest::StatusCode,
+}
+
+impl std::fmt::Display for HttpStatusError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "server returned HTTP {}", self.status)
+    }
+}
+
+impl std::error::Error for HttpStatusError {}
+
+impl ModelManager {
+    /// The HTTP status carried by an error returned from [`ModelManager::download_verified_file`],
+    /// when the server answered with a non-success status. `HttpStatusError` itself stays private
+    /// to this module; this accessor is how other modules see the status (e.g. 407).
+    pub(crate) fn http_status(error: &anyhow::Error) -> Option<reqwest::StatusCode> {
+        error.downcast_ref::<HttpStatusError>().map(|e| e.status)
+    }
+}
+
 /// Start offset of a `Content-Range: bytes <start>-<end>/<total>` header.
 fn content_range_start(value: &str) -> Option<u64> {
     let range = value.trim().strip_prefix("bytes")?.trim_start();
@@ -377,10 +402,9 @@ impl ModelManager {
             resume_from = 0;
         }
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!(
-                "server returned HTTP {}",
-                response.status()
-            ));
+            return Err(anyhow::Error::new(HttpStatusError {
+                status: response.status(),
+            }));
         }
         // On a 206, trust but verify the offset: a reply starting anywhere but
         // exactly our partial's end would silently corrupt the file on append.

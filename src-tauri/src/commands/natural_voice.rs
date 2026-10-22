@@ -97,6 +97,9 @@ pub fn error_message(error: &ModelError) -> String {
             "The model files failed verification. Please download the model again."
         }
         ModelError::UrlNotAllowed => "The download address is not allowed.",
+        ModelError::ProxyAuthRequired => {
+            "The download was blocked by a proxy that needs sign-in. Install the model from a folder instead."
+        }
         ModelError::Download(_) => {
             "The download failed. Check your internet connection and try again."
         }
@@ -356,6 +359,7 @@ mod tests {
             ModelError::NotInstalled,
             ModelError::Corrupt(secret.into()),
             ModelError::UrlNotAllowed,
+            ModelError::ProxyAuthRequired,
             ModelError::Download(secret.into()),
             ModelError::Io(secret.into()),
         ] {

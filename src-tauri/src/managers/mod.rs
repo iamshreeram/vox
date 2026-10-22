@@ -75,12 +75,15 @@ mod natural_model_tests;
 pub mod natural_phonon_core;
 #[cfg(test)]
 mod natural_phonon_core_tests;
+#[cfg(test)]
+mod natural_phonon_model_tests;
 pub mod natural_router;
 #[cfg(test)]
 mod natural_router_tests;
 pub mod natural_sink;
 #[cfg(test)]
 mod natural_sink_tests;
+pub mod natural_snapshot;
 #[cfg(test)]
 mod natural_test_support;
 pub mod natural_text;
