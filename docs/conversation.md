@@ -74,6 +74,30 @@ features are turned on.
 Optional features for conversations (smart turn detection, a latency panel,
 personas, and a speaker filter) are described in [Optional voice features](voice-features.md).
 
+## Interrupting by speaking (headphones)
+
+Setting: **Interrupt by speaking** in the Conversation settings. It is off by
+default. Its only other option, **Headphones only**, is meant for headphones.
+
+> Available when the interruption monitor is enabled in a release that includes
+> it. Until then the setting is saved but has no effect, and the assistant
+> cannot be interrupted.
+
+When the monitor is enabled, this is what it will do:
+
+- Your voice lowers the assistant's volume as soon as you start talking.
+- About 600 ms of continuous speech cancels the current reply. Your sentence
+  becomes the next turn in the same conversation.
+- A short "yeah" restores the volume.
+
+Limits:
+
+- The system voice cannot be interrupted this way. It works with the Phonon and
+  Natural voices.
+- Speakers are not supported. The assistant would hear its own voice and
+  interrupt itself.
+- Spoken replies must be on.
+
 ## Troubleshooting
 
 - **Nothing happens when I start:** turn on Spoken replies in the speech

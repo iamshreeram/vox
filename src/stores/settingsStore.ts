@@ -5,6 +5,7 @@ import type {
   AppSettings as Settings,
   AudioDevice,
   ChineseScript,
+  ConverseBargeIn,
   CustomThemeColors,
   ModelUnloadTimeout,
   TranscribeAcceleratorSetting,
@@ -382,6 +383,15 @@ const settingUpdaters: {
     commands.changeTtsNaturalVoiceSetting(value as string),
   converse_silence_ms: (value) =>
     commands.changeConverseSilenceMsSetting(value as number),
+  converse_barge_in: async (value) => {
+    const result = await commands.changeConverseBargeInSetting(
+      value as ConverseBargeIn,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
   converse_max_idle_turns: (value) =>
     commands.changeConverseMaxIdleTurnsSetting(value as number),
   converse_context_turns: (value) =>

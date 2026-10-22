@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "会話の実行中は周囲の音声待機をオフにしてください。ウェイクワードの動作を「アシスタントと会話する」に設定しない限り、ウェイクワードもオフにしてください。"
+      "wakeWordNote": "会話の実行中は周囲の音声待機をオフにしてください。ウェイクワードの動作を「アシスタントと会話する」に設定しない限り、ウェイクワードもオフにしてください。",
+      "bargeIn": {
+        "label": "話して割り込む",
+        "description": "アシスタントの音声に重ねて話すと、アシスタントを中断できます。スピーカーではアシスタントが自分の声を聞いてしまうため、ヘッドフォンを使ってください。Phonon と Natural の音声で動作します。システム音声はこの方法では中断できません。音声での返答が必要です。",
+        "options": {
+          "off": "オフ",
+          "headphones": "ヘッドフォンのみ"
+        }
+      }
     },
     "voice": {
       "title": "音声機能",

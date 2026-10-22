@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "Lắng nghe xung quanh phải tắt trong khi cuộc trò chuyện đang chạy. Từ đánh thức cũng phải tắt, trừ khi hành động của nó được đặt là trò chuyện với trợ lý."
+      "wakeWordNote": "Lắng nghe xung quanh phải tắt trong khi cuộc trò chuyện đang chạy. Từ đánh thức cũng phải tắt, trừ khi hành động của nó được đặt là trò chuyện với trợ lý.",
+      "bargeIn": {
+        "label": "Ngắt lời bằng giọng nói",
+        "description": "Nói chồng lên trợ lý để ngắt lời. Hãy dùng tai nghe: qua loa, trợ lý sẽ nghe thấy chính giọng mình. Hoạt động với giọng Phonon và Natural; không thể ngắt giọng hệ thống theo cách này. Cần có phản hồi bằng giọng nói.",
+        "options": {
+          "off": "Tắt",
+          "headphones": "Chỉ tai nghe"
+        }
+      }
     },
     "voice": {
       "title": "Tính năng giọng nói",

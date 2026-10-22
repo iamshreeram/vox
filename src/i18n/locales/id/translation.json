@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "Mendengarkan sekitar harus dimatikan saat percakapan berjalan. Kata pemicu juga harus dimatikan, kecuali tindakannya diatur ke bicara dengan asisten."
+      "wakeWordNote": "Mendengarkan sekitar harus dimatikan saat percakapan berjalan. Kata pemicu juga harus dimatikan, kecuali tindakannya diatur ke bicara dengan asisten.",
+      "bargeIn": {
+        "label": "Interupsi dengan berbicara",
+        "description": "Bicara di atas asisten untuk menghentikannya. Gunakan headphone: lewat speaker, asisten akan mendengar dirinya sendiri. Berfungsi dengan suara Phonon dan Natural; suara sistem tidak bisa diinterupsi dengan cara ini. Membutuhkan balasan lisan.",
+        "options": {
+          "off": "Mati",
+          "headphones": "Hanya headphone"
+        }
+      }
     },
     "voice": {
       "title": "Fitur suara",

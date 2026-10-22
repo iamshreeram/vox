@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "Omgivelseslytning skal være slået fra, mens en samtale kører. Aktiveringsordet skal også være slået fra, medmindre dets handling er sat til at tale med assistenten."
+      "wakeWordNote": "Omgivelseslytning skal være slået fra, mens en samtale kører. Aktiveringsordet skal også være slået fra, medmindre dets handling er sat til at tale med assistenten.",
+      "bargeIn": {
+        "label": "Afbryd ved at tale",
+        "description": "Tal hen over assistenten for at afbryde den. Brug hovedtelefoner: over højttalere ville assistenten høre sig selv. Virker med stemmerne Phonon og Natural; systemstemmen kan ikke afbrydes på denne måde. Kræver talte svar.",
+        "options": {
+          "off": "Fra",
+          "headphones": "Kun hovedtelefoner"
+        }
+      }
     },
     "voice": {
       "title": "Stemmefunktioner",

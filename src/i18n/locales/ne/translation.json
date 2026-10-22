@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "कुराकानी चलिरहेको बेला परिवेश सुनाइ बन्द हुनुपर्छ। वेक वर्डको कार्य सहायकसँग कुरा गर्ने भनी सेट नभएसम्म वेक वर्ड पनि बन्द हुनुपर्छ।"
+      "wakeWordNote": "कुराकानी चलिरहेको बेला परिवेश सुनाइ बन्द हुनुपर्छ। वेक वर्डको कार्य सहायकसँग कुरा गर्ने भनी सेट नभएसम्म वेक वर्ड पनि बन्द हुनुपर्छ।",
+      "bargeIn": {
+        "label": "बोलेर अवरोध गर्नुहोस्",
+        "description": "सहायकलाई रोक्न त्यसको आवाजमाथि बोल्नुहोस्। हेडफोन प्रयोग गर्नुहोस्: स्पिकरमा सहायकले आफ्नै आवाज सुन्नेछ। Phonon र Natural आवाजसँग काम गर्छ; प्रणालीको आवाजलाई यसरी अवरोध गर्न सकिँदैन। बोलिएका जवाफहरू आवश्यक छन्।",
+        "options": {
+          "off": "निष्क्रिय",
+          "headphones": "हेडफोन मात्र"
+        }
+      }
     },
     "voice": {
       "title": "आवाज सुविधाहरू",
