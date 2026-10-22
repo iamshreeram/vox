@@ -12,11 +12,15 @@ pub mod memory;
 pub mod models;
 pub mod natural_voice;
 pub mod persona;
+pub mod phonon_voice;
+#[cfg(test)]
+mod phonon_voice_tests;
 pub mod realtime;
 pub mod source_update;
 pub mod speaker;
 pub mod transcription;
 pub mod tts_composer;
+pub mod tts_engines;
 pub mod tts_voices;
 pub mod vault_rag;
 #[cfg(test)]

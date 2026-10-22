@@ -526,6 +526,48 @@
             "firstSpeech": "De eerste zin kan een paar seconden duren terwijl het model wordt geladen.",
             "limitations": "Alleen Engels. Zinnen in andere schriften worden door de systeemstem uitgesproken."
           }
+        },
+        "engines": {
+          "fixedNote": "Alle stemmen draaien op dit apparaat. Modellen worden één keer gedownload, alleen als je dat kiest.",
+          "select": "Selecteren",
+          "selected": "Geselecteerd",
+          "unavailable": "Alleen beschikbaar op macOS.",
+          "usingSystemVoice": "De systeemstem wordt gebruikt tot de installatie is voltooid",
+          "badge": {
+            "recommended": "Aanbevolen",
+            "englishOnly": "Alleen Engels",
+            "size": "Download van ongeveer {{size}}",
+            "license": "Licentie: {{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "Besturingssysteem"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "Natuurlijke Engelse stem die volledig op je computer draait.",
+            "help": "Phonon spreekt Engels; antwoorden die niet Engels lijken, gebruiken de systeemstem. De detectie is indicatief.",
+            "license": "Stemmodel: {{license}}. Gebruik het niet om een echt persoon na te bootsen zonder diens toestemming.",
+            "fixedVoiceRate": "Phonon gebruikt één ingebouwde stem en een vaste spreeksnelheid.",
+            "model": {
+              "label": "Phonon-stemmodel",
+              "description": "Eenmalige download van ongeveer {{size}}, gecontroleerd met vaste checksums. Spraak wordt op dit apparaat gegenereerd."
+            }
+          },
+          "install": "Installeren",
+          "installFromFolder": "Installeren uit map",
+          "confirmDelete": "Het Phonon-stemmodel verwijderen? Je kunt het later opnieuw installeren.",
+          "error": {
+            "corrupt": "De stembestanden zijn niet geverifieerd. Installeer de stem opnieuw.",
+            "disk": "De stembestanden konden niet worden geschreven. Controleer de vrije schijfruimte.",
+            "blocked": "Dit downloadadres is niet toegestaan. Installeer de stem in plaats daarvan uit een map.",
+            "generic": "De stem kon niet worden geïnstalleerd. Probeer het opnieuw.",
+            "proxy": "Het downloaden is geblokkeerd door een netwerkproxy die aanmelden vereist."
+          },
+          "importHint": "Je kunt ook installeren uit een map met de vier modelbestanden.",
+          "proxyHint": "Geblokkeerd door een proxy? Download de vier bestanden elders en installeer ze uit een map.",
+          "unsupportedSelected": "Niet beschikbaar op dit platform. In plaats daarvan wordt de systeemstem gebruikt."
         }
       },
       "lazyStreamClose": {

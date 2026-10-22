@@ -1,13 +1,13 @@
 # Model provenance and licence attribution
 
-This page covers the two optional voice models that Vox can download when you press **Install**. The values in the tables are copied by script from `src-tauri/src/managers/aux_model.rs`, the file that pins them.
+This page covers the optional voice models that Vox can download when you press **Install**. Sections 1 and 2 are the two speech-analysis models. Section 3 is the Phonon text-to-speech model. The values in sections 1 and 2 are copied by script from `src-tauri/src/managers/aux_model.rs`, the file that pins them.
 
 **Date checked:** 2026-10-19 (UTC). Every licence fact below was read from the upstream source on that date. Check again before each release.
 
 ## What Vox does not ship
 
-- The two models are **not bundled** in the Vox app, and they are **not stored** in this repository.
-- Vox downloads a model **only when you choose to install it**. It does not download either model on its own.
+- The models are **not bundled** in the Vox app, and they are **not stored** in this repository.
+- Vox downloads a model **only when you choose to install it**. It does not download any model on its own.
 - You can **uninstall** a model at any time from Settings. Vox then deletes the model's folder.
 - Vox uses a downloaded file only after its size and SHA-256 match the values pinned in `aux_model.rs`.
 
@@ -81,6 +81,44 @@ The BSD 2-Clause licence requires that redistributed copies keep the copyright n
 ### Required attribution (speaker model)
 
 **UNVERIFIED: the licence-specific attribution wording for this model.** It depends on the licence in question 1 above. [NOTICE.md](NOTICE.md) carries a neutral credit that names the WeSpeaker authors and the sherpa-onnx project and states no licence. The licence-specific wording waits until the maintainer settles question 1.
+
+## 3. Phonon (text-to-speech, English)
+
+| Field           | Value                                                                                                                                                                                        |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Purpose         | Text-to-speech for spoken replies, when you select the Phonon engine (see [Text-to-speech engines](tts-engines.md))                                                                          |
+| Source          | Hugging Face model `gradium/phonon-31m-en`, at commit `541f5752bc3c79583068bb205bfda5eb39aaa08a`: https://huggingface.co/gradium/phonon-31m-en/tree/541f5752bc3c79583068bb205bfda5eb39aaa08a |
+| Language        | English only. Output is 24 kHz mono.                                                                                                                                                         |
+| Total download  | 65,051,089 bytes, in four files                                                                                                                                                              |
+| Runtime         | `ptts`, a Rust crate from the `xn-ptts` repository: https://github.com/gradium-ai/xn-ptts                                                                                                    |
+| Built on        | Kyutai Pocket TTS and the Mimi codec                                                                                                                                                         |
+| Weights licence | Apache-2.0                                                                                                                                                                                   |
+| Runtime licence | MIT OR Apache-2.0 (`ptts`)                                                                                                                                                                   |
+| Responsible use | No impersonation, and no voice cloning without consent                                                                                                                                       |
+
+Vox pins each file by size and SHA-256. A file that does not match is not used.
+
+| File                        | Size (bytes) | SHA-256                                                            |
+| --------------------------- | -----------: | ------------------------------------------------------------------ |
+| `model.q8.gguf`             |   64,512,352 | `a7d9aad2cd6dc66473f24a08bc6d2939030ef4d751ef82349361fbef3272dbae` |
+| `default-voice.safetensors` |      256,136 | `f739e8c4c76ee7f92e7c94a82002748c8cd22e99582ac49f7b9b94cd63786e18` |
+| `tokenizer.json`            |      277,967 | `691a00068fa7b989f2f3e5ae5daa2d1a5bb319f2d5360deafcfb19a8bb6e7936` |
+| `config.json`               |        4,634 | `b5d0f88353638370d94035b7d73d7d6577c0554d78f8d7ecfd40490aae39ae85` |
+
+**Why the 40M models are not used.** The same family includes 40M-parameter models. Vox does not use them, because of their licensing and gating terms.
+
+### Required attribution (Phonon)
+
+> Phonon text-to-speech model (gradium/phonon-31m-en), Gradium. Weights licensed under the Apache License 2.0. Built on Kyutai Pocket TTS and the Mimi codec. Runtime `ptts` licensed under MIT OR Apache-2.0. Source: https://huggingface.co/gradium/phonon-31m-en
+
+To check a downloaded Phonon file, run this in the folder that holds it:
+
+```sh
+shasum -a 256 model.q8.gguf    # expect a7d9aad2cd6dc66473f24a08bc6d2939030ef4d751ef82349361fbef3272dbae
+wc -c < model.q8.gguf          # expect 64512352
+```
+
+Repeat for the other three files, using the table above.
 
 ## How to verify a downloaded file
 

@@ -526,6 +526,48 @@
             "firstSpeech": "The first sentence can take a few seconds while the model loads.",
             "limitations": "English only. Sentences in other scripts are spoken by the system voice."
           }
+        },
+        "engines": {
+          "fixedNote": "All voices run on this device. Models are downloaded once, only when you choose to.",
+          "select": "Select",
+          "selected": "Selected",
+          "unavailable": "Available on macOS only.",
+          "usingSystemVoice": "Using the system voice until installed",
+          "badge": {
+            "recommended": "Recommended",
+            "englishOnly": "English only",
+            "size": "About {{size}} download",
+            "license": "License: {{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "Operating system"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "Natural-sounding English voice that runs entirely on your computer.",
+            "help": "Phonon speaks English; replies that look non-English use the system voice. Detection is best-effort.",
+            "license": "Voice model: {{license}}. Please do not use it to imitate a real person without their consent.",
+            "fixedVoiceRate": "Phonon uses one built-in voice and a fixed speaking rate.",
+            "model": {
+              "label": "Phonon voice model",
+              "description": "One-time download of about {{size}}, checked against fixed checksums. Speech is generated on this device."
+            }
+          },
+          "install": "Install",
+          "installFromFolder": "Install from folder",
+          "confirmDelete": "Delete the Phonon voice model? You can install it again later.",
+          "error": {
+            "corrupt": "The voice files did not pass verification. Install the voice again.",
+            "disk": "The voice files could not be written. Check free disk space.",
+            "blocked": "The download address is not allowed. Install the voice from a folder instead.",
+            "generic": "The voice could not be installed. Try again.",
+            "proxy": "The download was blocked by a network proxy that needs sign-in."
+          },
+          "importHint": "You can also install from a folder that holds the four model files.",
+          "proxyHint": "Blocked by a proxy? Download the four files elsewhere and install from a folder.",
+          "unsupportedSelected": "Not available on this platform. The system voice is used instead."
         }
       },
       "lazyStreamClose": {

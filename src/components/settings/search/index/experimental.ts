@@ -585,6 +585,23 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
       "offline speech",
     ],
   ),
+  row(
+    "ttsPhononModel",
+    "spokenReplies",
+    "settings.advanced.tts.engines.phonon.model.label",
+    "settings.advanced.tts.engines.phonon.model.description",
+    [
+      "phonon",
+      "phonon voice",
+      "voice model",
+      "install voice",
+      "install from folder",
+      "download voice",
+      "delete voice",
+      "offline voice",
+      "english voice",
+    ],
+  ),
 
   // ----- spoken reply style (SpokenReplyStyle) -----
   row(

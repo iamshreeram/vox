@@ -145,6 +145,105 @@ fn is_latin_char(c: char) -> bool {
         )
 }
 
+/// English function words used by `is_probably_english`. No entry may also appear in
+/// `FOREIGN_FUNCTION_WORDS`.
+const ENGLISH_FUNCTION_WORDS: &[&str] = &[
+    "the", "and", "of", "to", "is", "are", "was", "were", "be", "been", "have", "has", "had",
+    "will", "would", "can", "could", "do", "does", "am", "i", "you", "your", "he", "she", "it",
+    "we", "they", "me", "my", "his", "her", "its", "our", "their", "them", "this", "that", "these",
+    "what", "which", "when", "where", "how", "who", "there", "here", "with", "for", "from", "by",
+    "at", "on", "in", "or", "but", "if", "not", "no", "so", "as", "an", "all", "about", "out",
+    "one", "let", "also", "then", "than", "any",
+];
+
+/// Function words and greetings of Spanish, French, German, Portuguese and Italian used by
+/// `is_probably_english`. Words that are also common English words (`die`, `per`, `ate`,
+/// `do`, `ha`, `no`, `on`, `son`, `tag`, `bin`) are deliberately omitted.
+const FOREIGN_FUNCTION_WORDS: &[&str] = &[
+    // Spanish
+    "hola", "amigo", "amiga", "gracias", "muchas", "muchos", "por", "todo", "todos", "con", "eso",
+    "el", "la", "los", "las", "de", "que", "y", "en", "es", "un", "una", "para", "pero", "como",
+    "del", "al", "lo", "se", "su", "sus", "mi", "tu", "yo", "ya", "hay", "esta", "este", "muy",
+    "ser", "tiene", "puedo", "nos", "buenos", "buenas", // French
+    "bonjour", "merci", "le", "les", "des", "avec", "je", "vous", "est", "et", "du", "une", "pour",
+    "dans", "sur", "qui", "pas", "mais", "ou", "nous", "sont", "il", "elle", "ce", "cette", "mon",
+    "ma", "votre", "oui", "bien", "au", "aux", "ont", "salut", "bonsoir", // German
+    "hallo", "danke", "ich", "das", "ist", "ein", "eine", "einen", "und", "der", "mit", "dem",
+    "den", "nicht", "auch", "auf", "bei", "zu", "sie", "wir", "ihr", "ihre", "ihrer", "ihrem",
+    "ihnen", "ihren", "wird", "wurde", "sind", "habe", "hat", "oder", "aus", "wie", "dass", "sich",
+    "im", "zum", "zur", "von", "ja", "nein", "bitte", "es", "doch", "noch", "sehr", "gut", "guten",
+    // Portuguese
+    "obrigado", "obrigada", "voce", "nao", "uma", "um", "com", "para", "que", "da", "dos", "das",
+    "ao", "aos", "muito", "sim", "ola", "tudo", "bem", "ele", "ela", "mas", "seu", "sua", "pra",
+    "esta", "sao", "isso", "aqui", "em", "os", "na", "eu", // Italian
+    "ciao", "grazie", "il", "di", "che", "non", "sono", "con", "della", "delle", "degli", "gli",
+    "questo", "questa", "anche", "molto", "bene", "ho", "hai", "ma", "come", "sei", "siamo", "nel",
+    "nella", "alla", "uno", "lo", "dei", "tuo", "tua", "al", "del", "si",
+];
+
+/// Letters and marks that are common in the foreign lists and rare in English. Each word
+/// carrying one of them scores one foreign point. Inverted `?` and `!` count as well.
+const NON_ENGLISH_LATIN_MARKS: [char; 25] = [
+    '\u{00F1}', '\u{00E7}', '\u{00DF}', '\u{00E4}', '\u{00F6}', '\u{00FC}', '\u{00E9}', '\u{00E8}',
+    '\u{00EA}', '\u{00E0}', '\u{00E2}', '\u{00EC}', '\u{00EE}', '\u{00F2}', '\u{00F4}', '\u{00F9}',
+    '\u{00FB}', '\u{00E3}', '\u{00F5}', '\u{00E1}', '\u{00ED}', '\u{00F3}', '\u{00FA}', '\u{00BF}',
+    '\u{00A1}',
+];
+
+/// BEST-EFFORT English detector for routing the Phonon engine. It is NOT a language
+/// identifier and must not be relied on as one.
+///
+/// Rule: returns `false` for text with no alphabetic char, and for text that is not
+/// `is_mostly_latin`. Otherwise it scores the alphabetic words (Unicode letters, lowercased;
+/// apostrophes and hyphens separate words). `E` counts words in a short English
+/// function-word list. `F` counts words in a short function-word/greeting list for
+/// Spanish, French, German, Portuguese and Italian, plus one point per word carrying a
+/// non-English Latin letter. The result is `F == 0 || E > F`.
+///
+/// Known false positives: short or rare-vocabulary foreign text that matches no list (for
+/// example "Zdravo prijatelju") counts as English and is spoken with English pronunciation.
+/// Known false negatives: English text with several accented loanwords (for example
+/// "Let's meet at the café near the bar") can score as foreign and falls back to the
+/// system voice, which is always safe.
+pub fn is_probably_english(text: &str) -> bool {
+    if !text.chars().any(char::is_alphabetic) {
+        return false;
+    }
+    if !is_mostly_latin(text) {
+        return false;
+    }
+    let (english, foreign) = score_function_words(text);
+    foreign == 0 || english > foreign
+}
+
+/// Returns `(english_hits, foreign_hits)` for `text`, see `is_probably_english`.
+fn score_function_words(text: &str) -> (usize, usize) {
+    let mut english = 0usize;
+    let mut foreign = 0usize;
+    // Inverted ? and ! are kept inside tokens so they can mark the word they start.
+    let is_token_char = |c: char| c.is_alphabetic() || c == '\u{00BF}' || c == '\u{00A1}';
+    for token in text.split(|c: char| !is_token_char(c)) {
+        let lowered = token.to_lowercase();
+        let word: String = lowered.chars().filter(|c| c.is_alphabetic()).collect();
+        if word.is_empty() {
+            continue;
+        }
+        if ENGLISH_FUNCTION_WORDS.contains(&word.as_str()) {
+            english += 1;
+        }
+        if FOREIGN_FUNCTION_WORDS.contains(&word.as_str()) {
+            foreign += 1;
+        }
+        if lowered
+            .chars()
+            .any(|c| NON_ENGLISH_LATIN_MARKS.contains(&c))
+        {
+            foreign += 1;
+        }
+    }
+    (english, foreign)
+}
+
 /// Result of `synth_with_overflow_retry`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RetryOutcome {

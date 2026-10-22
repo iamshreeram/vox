@@ -67,15 +67,33 @@ mod natural_engine_tests;
 pub mod natural_kokoro;
 #[cfg(all(test, target_os = "macos"))]
 mod natural_kokoro_tests;
+#[cfg(test)]
+mod natural_lang_tests;
 pub mod natural_model;
 #[cfg(test)]
 mod natural_model_tests;
+#[cfg(target_os = "macos")]
+pub mod natural_phonon;
+pub mod natural_phonon_core;
+#[cfg(test)]
+mod natural_phonon_core_tests;
+#[cfg(all(test, target_os = "macos"))]
+mod natural_phonon_e2e_tests;
+#[cfg(test)]
+mod natural_phonon_loader_tests;
+#[cfg(test)]
+mod natural_phonon_model_tests;
+#[cfg(all(test, target_os = "macos"))]
+mod natural_phonon_tests;
 pub mod natural_router;
+#[cfg(test)]
+mod natural_router_phonon_tests;
 #[cfg(test)]
 mod natural_router_tests;
 pub mod natural_sink;
 #[cfg(test)]
 mod natural_sink_tests;
+pub mod natural_snapshot;
 #[cfg(test)]
 mod natural_test_support;
 pub mod natural_text;
@@ -104,6 +122,9 @@ pub mod transcription;
 pub mod tts;
 #[cfg(target_os = "macos")]
 pub mod tts_av;
+pub mod tts_engines;
+#[cfg(test)]
+mod tts_engines_tests;
 pub mod tts_queue;
 pub mod tts_serial;
 #[cfg(test)]

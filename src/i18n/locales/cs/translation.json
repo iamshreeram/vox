@@ -526,6 +526,48 @@
             "firstSpeech": "První věta může trvat několik sekund, než se model načte.",
             "limitations": "Pouze angličtina. Věty v jiných písmech čte systémový hlas."
           }
+        },
+        "engines": {
+          "fixedNote": "Všechny hlasy běží na tomto zařízení. Modely se stahují jen jednou, a to pouze tehdy, když to zvolíte.",
+          "select": "Vybrat",
+          "selected": "Vybráno",
+          "unavailable": "Dostupné pouze v macOS.",
+          "usingSystemVoice": "Dokud není nainstalován, používá se systémový hlas",
+          "badge": {
+            "recommended": "Doporučeno",
+            "englishOnly": "Pouze angličtina",
+            "size": "Stažení přibližně {{size}}",
+            "license": "Licence: {{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "Operační systém"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "Přirozeně znějící anglický hlas, který běží plně ve vašem počítači.",
+            "help": "Phonon mluví anglicky; odpovědi, které nevypadají jako angličtina, čte systémový hlas. Rozpoznání je pouze orientační.",
+            "license": "Model hlasu: {{license}}. Nepoužívejte jej k napodobování skutečné osoby bez jejího souhlasu.",
+            "fixedVoiceRate": "Phonon používá jeden vestavěný hlas a pevné tempo řeči.",
+            "model": {
+              "label": "Model hlasu Phonon",
+              "description": "Jednorázové stažení přibližně {{size}}, ověřené pevnými kontrolními součty. Řeč se generuje na tomto zařízení."
+            }
+          },
+          "install": "Nainstalovat",
+          "installFromFolder": "Nainstalovat ze složky",
+          "confirmDelete": "Smazat model hlasu Phonon? Můžete jej později znovu nainstalovat.",
+          "error": {
+            "corrupt": "Soubory hlasu neprošly ověřením. Nainstalujte hlas znovu.",
+            "disk": "Soubory hlasu nelze zapsat. Zkontrolujte volné místo na disku.",
+            "blocked": "Tato adresa ke stažení není povolena. Nainstalujte hlas ze složky.",
+            "generic": "Hlas nelze nainstalovat. Zkuste to znovu.",
+            "proxy": "Stahování zablokoval síťový proxy server, který vyžaduje přihlášení."
+          },
+          "importHint": "Můžete také nainstalovat ze složky, která obsahuje čtyři soubory modelu.",
+          "proxyHint": "Blokováno proxy serverem? Stáhněte čtyři soubory jinde a nainstalujte je ze složky.",
+          "unsupportedSelected": "Na této platformě není k dispozici. Místo něj se používá systémový hlas."
         }
       },
       "lazyStreamClose": {

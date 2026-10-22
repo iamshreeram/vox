@@ -160,6 +160,7 @@ fn natural_choice(voice: &str) -> RouterChoice {
     RouterChoice {
         natural: true,
         voice: voice.into(),
+        phonon: false,
     }
 }
 
@@ -179,6 +180,7 @@ fn rig_with(system_queue: bool, with_natural: bool, cooldown: Duration) -> Rig {
         RouterConfig {
             choice: Arc::new(move || c.lock().unwrap().clone()),
             model_ready: Arc::new(move || m.load(Ordering::SeqCst)),
+            phonon_ready: Arc::new(|| false),
         },
     );
     Rig {
@@ -488,6 +490,7 @@ fn manager(r: Rig) -> (TtsManager, Rig) {
             RouterConfig {
                 choice: Arc::new(|| natural_choice("af_heart")),
                 model_ready: Arc::new(|| true),
+                phonon_ready: Arc::new(|| false),
             },
         ),
         system,

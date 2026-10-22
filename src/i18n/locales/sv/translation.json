@@ -526,6 +526,48 @@
             "firstSpeech": "Den första meningen kan ta några sekunder medan modellen läses in.",
             "limitations": "Endast engelska. Meningar i andra skriftsystem läses upp av systemrösten."
           }
+        },
+        "engines": {
+          "fixedNote": "Alla röster körs på den här enheten. Modeller laddas ned en gång, bara när du väljer det.",
+          "select": "Välj",
+          "selected": "Vald",
+          "unavailable": "Endast tillgänglig på macOS.",
+          "usingSystemVoice": "Systemrösten används tills den är installerad",
+          "badge": {
+            "recommended": "Rekommenderas",
+            "englishOnly": "Endast engelska",
+            "size": "Nedladdning på cirka {{size}}",
+            "license": "Licens: {{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "Operativsystem"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "Naturlig engelsk röst som körs helt på din dator.",
+            "help": "Phonon talar engelska; svar som inte verkar vara på engelska använder systemrösten. Identifieringen är ungefärlig.",
+            "license": "Röstmodell: {{license}}. Använd den inte för att härma en verklig person utan hens samtycke.",
+            "fixedVoiceRate": "Phonon använder en inbyggd röst och en fast talhastighet.",
+            "model": {
+              "label": "Phonon-röstmodell",
+              "description": "Engångsnedladdning på cirka {{size}}, kontrollerad med fasta checksummor. Talet genereras på den här enheten."
+            }
+          },
+          "install": "Installera",
+          "installFromFolder": "Installera från mapp",
+          "confirmDelete": "Ta bort Phonon-röstmodellen? Du kan installera den igen senare.",
+          "error": {
+            "corrupt": "Röstfilerna klarade inte verifieringen. Installera rösten igen.",
+            "disk": "Röstfilerna kunde inte skrivas. Kontrollera det lediga diskutrymmet.",
+            "blocked": "Nedladdningsadressen är inte tillåten. Installera rösten från en mapp i stället.",
+            "generic": "Rösten kunde inte installeras. Försök igen.",
+            "proxy": "Nedladdningen blockerades av en nätverksproxy som kräver inloggning."
+          },
+          "importHint": "Du kan också installera från en mapp som innehåller de fyra modellfilerna.",
+          "proxyHint": "Blockerad av en proxy? Ladda ned de fyra filerna någon annanstans och installera dem från en mapp.",
+          "unsupportedSelected": "Inte tillgänglig på den här plattformen. Systemrösten används i stället."
         }
       },
       "lazyStreamClose": {

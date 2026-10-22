@@ -526,6 +526,48 @@
             "firstSpeech": "La primera frase pot trigar uns segons mentre es carrega el model.",
             "limitations": "Només en anglès. Les frases en altres escriptures les llegeix la veu del sistema."
           }
+        },
+        "engines": {
+          "fixedNote": "Totes les veus funcionen en aquest dispositiu. Els models es descarreguen una sola vegada, només quan ho decideixis.",
+          "select": "Selecciona",
+          "selected": "Seleccionat",
+          "unavailable": "Disponible només a macOS.",
+          "usingSystemVoice": "S'utilitza la veu del sistema fins que s'instal·li",
+          "badge": {
+            "recommended": "Recomanat",
+            "englishOnly": "Només anglès",
+            "size": "Descàrrega d'uns {{size}}",
+            "license": "Llicència: {{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "Sistema operatiu"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "Veu anglesa natural que funciona íntegrament al teu ordinador.",
+            "help": "Phonon parla anglès; les respostes que no semblen estar en anglès fan servir la veu del sistema. La detecció és orientativa.",
+            "license": "Model de veu: {{license}}. No l'utilitzis per imitar una persona real sense el seu consentiment.",
+            "fixedVoiceRate": "Phonon fa servir una única veu integrada i una velocitat de parla fixa.",
+            "model": {
+              "label": "Model de veu Phonon",
+              "description": "Descàrrega única d'uns {{size}}, verificada amb sumes de comprovació fixes. La parla es genera en aquest dispositiu."
+            }
+          },
+          "install": "Instal·la",
+          "installFromFolder": "Instal·la des d'una carpeta",
+          "confirmDelete": "Vols eliminar el model de veu Phonon? El podràs tornar a instal·lar més endavant.",
+          "error": {
+            "corrupt": "Els fitxers de veu no han superat la verificació. Torna a instal·lar la veu.",
+            "disk": "No s'han pogut escriure els fitxers de veu. Comprova l'espai lliure del disc.",
+            "blocked": "Aquesta adreça de descàrrega no està permesa. Instal·la la veu des d'una carpeta.",
+            "generic": "No s'ha pogut instal·lar la veu. Torna-ho a provar.",
+            "proxy": "La descàrrega ha estat bloquejada per un servidor intermediari de xarxa que requereix iniciar sessió."
+          },
+          "importHint": "També pots instal·lar-la des d'una carpeta amb els quatre fitxers del model.",
+          "proxyHint": "Bloquejat per un servidor intermediari (proxy)? Descarrega els quatre fitxers des d'un altre lloc i instal·la'ls des d'una carpeta.",
+          "unsupportedSelected": "No està disponible en aquesta plataforma. S'utilitza la veu del sistema."
         }
       },
       "lazyStreamClose": {

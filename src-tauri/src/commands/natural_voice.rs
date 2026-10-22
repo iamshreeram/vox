@@ -97,10 +97,25 @@ pub fn error_message(error: &ModelError) -> String {
             "The model files failed verification. Please download the model again."
         }
         ModelError::UrlNotAllowed => "The download address is not allowed.",
+        ModelError::ProxyAuthRequired => {
+            "The download was blocked by a proxy that needs sign-in. Install the model from a folder instead."
+        }
         ModelError::Download(_) => {
             "The download failed. Check your internet connection and try again."
         }
         ModelError::Io(_) => "The model files could not be written to disk.",
+    }
+    .to_string()
+}
+
+/// A message safe to show in the UI for a Phonon engine failure. It names no path, URL or hash
+/// and no internal reason name. Speech falls back to the system voice after any of them.
+pub fn phonon_failure_message(reason: FailureReason) -> String {
+    match reason {
+        FailureReason::Load => "The Phonon voice could not be loaded. Replies use the system voice for now.",
+        FailureReason::Synth => "The Phonon voice could not speak this text. Replies use the system voice for now.",
+        FailureReason::Sink => "The audio output failed while the Phonon voice was speaking. Replies use the system voice for now.",
+        FailureReason::WorkerExit => "The Phonon voice stopped unexpectedly. Replies use the system voice for now.",
     }
     .to_string()
 }
@@ -356,6 +371,7 @@ mod tests {
             ModelError::NotInstalled,
             ModelError::Corrupt(secret.into()),
             ModelError::UrlNotAllowed,
+            ModelError::ProxyAuthRequired,
             ModelError::Download(secret.into()),
             ModelError::Io(secret.into()),
         ] {

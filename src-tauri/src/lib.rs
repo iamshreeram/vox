@@ -479,13 +479,49 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         let core: SharedCore<_> = Arc::new(Mutex::new(SpeakerCore::new(synth)));
         let natural: Box<dyn managers::tts::SpeechBackend> = Box::new(QueueBackend::new(core));
 
+        // Phonon voice: a peer of Kokoro with its own coordinator, health and sink. Its model
+        // root and its scratch folder are siblings under the app data dir (scratch is never
+        // inside the model root). Its stream factory reads the same output device as Kokoro's.
+        let phonon_app_data =
+            portable::app_data_dir(app_handle).expect("Failed to resolve app data dir");
+        let phonon_device_handle = app_handle.clone();
+        let phonon_factory = Arc::new(
+            managers::natural_sink::CpalStreamFactory::with_device_source(Arc::new(move || {
+                get_settings(&phonon_device_handle).selected_output_device
+            })),
+        );
+        let managers::natural_phonon::PhononStack {
+            backend: phonon,
+            health: phonon_health,
+            coordinator: phonon_coordinator,
+        } = managers::natural_phonon::build_phonon_stack(
+            phonon_app_data.join("phonon_models"),
+            phonon_app_data.join("phonon_scratch"),
+            phonon_factory,
+        );
+        {
+            let phonon_event_handle = app_handle.clone();
+            phonon_health.set_event_sink(commands::phonon_voice::phonon_failure_sink(Arc::new(
+                move |name: &str, payload: serde_json::Value| {
+                    let _ = phonon_event_handle.emit(name, payload);
+                },
+            )));
+        }
+        app_handle.manage(commands::phonon_voice::PhononCoordinator(
+            phonon_coordinator.clone(),
+        ));
+        app_handle.manage(commands::phonon_voice::PhononHealth(phonon_health.clone()));
+
         let choice_handle = app_handle.clone();
         let ready_coordinator = natural_coordinator.clone();
-        let router = EngineBackend::new(
+        let phonon_ready_coordinator = phonon_coordinator.clone();
+        let router = EngineBackend::with_phonon(
             system,
             system_queue,
             Some(natural),
             natural_health.clone(),
+            Some(phonon),
+            phonon_health,
             RouterConfig {
                 choice: Arc::new(move || {
                     let s = get_settings(&choice_handle);
@@ -494,10 +530,14 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                         voice: managers::natural_voices::normalize_natural_voice(
                             &s.tts_natural_voice,
                         ),
+                        phonon: s.tts_engine == settings::TtsEngine::Phonon,
                     }
                 }),
                 model_ready: Arc::new(move || {
                     ready_coordinator.state() == managers::natural_model::ModelState::Ready
+                }),
+                phonon_ready: Arc::new(move || {
+                    phonon_ready_coordinator.state() == managers::natural_model::ModelState::Ready
                 }),
             },
         );
@@ -1052,6 +1092,12 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::natural_voice::natural_voice_delete,
             commands::natural_voice::natural_voice_retry,
             commands::natural_voice::list_natural_voices,
+            commands::phonon_voice::phonon_voice_status,
+            commands::phonon_voice::phonon_voice_install,
+            commands::phonon_voice::phonon_voice_import_folder,
+            commands::phonon_voice::phonon_voice_cancel,
+            commands::phonon_voice::phonon_voice_delete,
+            commands::tts_engines::list_tts_engines,
             shortcut::tts_speak_test,
             shortcut::tts_stop,
             shortcut::change_post_process_base_url_setting,

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { commands, type TtsEngine } from "@/bindings";
+import { ask, open } from "@tauri-apps/plugin-dialog";
+import { commands, type TtsEngine, type TtsEngineInfo } from "@/bindings";
 import { Button } from "../ui/Button";
 import { Dropdown } from "../ui/Dropdown";
 import { Input } from "../ui/Input";
@@ -8,7 +9,11 @@ import { SettingContainer } from "../ui/SettingContainer";
 import { Slider } from "../ui/Slider";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
-import { useNaturalVoice } from "../../hooks/useNaturalVoice";
+import {
+  useNaturalVoice,
+  type UseNaturalVoice,
+} from "../../hooks/useNaturalVoice";
+import { phononInstallState, usePhononVoice } from "../../hooks/usePhononVoice";
 import {
   NATURAL_MODEL_SIZE_BYTES,
   downloadPercent,
@@ -17,6 +22,8 @@ import {
   naturalRowState,
   selectedEngineNeedsModel,
 } from "./naturalVoiceState";
+import { buildEngineCards } from "./ttsEngineState";
+import { PhononEngineBody, TtsEngineCard } from "./TtsEngineCard";
 import {
   buildVoiceOptions,
   voiceValueToSetting,
@@ -33,30 +40,31 @@ interface TtsSettingsProps {
 
 const DEFAULT_RATE_WPM = 180;
 
-interface NaturalVoiceSectionProps {
+interface NaturalVoiceBodyProps {
   descriptionMode: "inline" | "tooltip";
   grouped: boolean;
+  engine: TtsEngine;
+  natural: UseNaturalVoice;
 }
 
 /**
- * Natural voice controls: engine choice, voice picker with preview, and the
- * model download row. Hidden until status loads and on unsupported platforms.
+ * Natural voice controls inside the Natural card: voice picker with preview, and the model
+ * download row. Hidden until status loads and on unsupported platforms.
  */
-const NaturalVoiceSection: React.FC<NaturalVoiceSectionProps> = ({
+const NaturalVoiceBody: React.FC<NaturalVoiceBodyProps> = ({
   descriptionMode,
   grouped,
+  engine,
+  natural,
 }) => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
-  const { status, voices, error, download, cancel, remove, retry } =
-    useNaturalVoice();
+  const { status, voices, error, download, cancel, remove, retry } = natural;
   const [pending, setPending] = useState(false);
 
   const row = naturalRowState(status);
   if (row === "hidden" || status === null) return null;
 
-  const engine: TtsEngine =
-    getSetting("tts_engine") === "natural" ? "natural" : "system";
   const naturalVoice = getSetting("tts_natural_voice") ?? "";
   const selectedVoice = voices.some((voice) => voice.id === naturalVoice)
     ? naturalVoice
@@ -85,32 +93,6 @@ const NaturalVoiceSection: React.FC<NaturalVoiceSectionProps> = ({
 
   return (
     <>
-      <SettingContainer
-        title={t("settings.advanced.tts.natural.engine.label")}
-        description={t("settings.advanced.tts.natural.engine.description")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
-      >
-        <Dropdown
-          options={[
-            {
-              value: "system",
-              label: t("settings.advanced.tts.natural.engine.system"),
-            },
-            {
-              value: "natural",
-              label: t("settings.advanced.tts.natural.engine.natural"),
-            },
-          ]}
-          selectedValue={engine}
-          onSelect={(value) => {
-            if (value === engine) return;
-            updateSetting("tts_engine", value as TtsEngine);
-          }}
-          disabled={isUpdating("tts_engine")}
-          className="flex-1 min-w-[360px]"
-        />
-      </SettingContainer>
       {engine === "natural" && (
         <SettingContainer
           title={t("settings.advanced.tts.natural.voice.label")}
@@ -249,7 +231,10 @@ const NaturalVoiceSection: React.FC<NaturalVoiceSectionProps> = ({
               </div>
             </div>
           )}
-          {selectedEngineNeedsModel(engine, status) && (
+          {selectedEngineNeedsModel(
+            engine === "natural" ? "natural" : "system",
+            status,
+          ) && (
             <p className="text-xs text-mid-gray">
               {t("settings.advanced.tts.natural.model.needed")}
             </p>
@@ -273,18 +258,23 @@ const NaturalVoiceSection: React.FC<NaturalVoiceSectionProps> = ({
 };
 
 /**
- * Spoken replies: an opt-in toggle, the voice name, the speaking rate, and
- * buttons to audition or stop speech. Spoken output is audible to anyone
- * nearby, so the toggle description says so explicitly.
+ * Spoken replies: an opt-in toggle, the engine picker (System, Natural, Phonon), the system
+ * voice name, the speaking rate, and buttons to audition or stop speech. Spoken output is
+ * audible to anyone nearby, so the toggle description says so explicitly.
  */
 export const TtsSettings: React.FC<TtsSettingsProps> = React.memo(
   ({ descriptionMode = "tooltip", grouped = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
+    const natural = useNaturalVoice();
+    const phonon = usePhononVoice();
+    const [catalog, setCatalog] = useState<TtsEngineInfo[]>([]);
+    const [phononPending, setPhononPending] = useState(false);
 
     const ttsEnabled = getSetting("tts_enabled") ?? false;
     const ttsVoice = getSetting("tts_voice") ?? null;
     const ttsRate = getSetting("tts_rate_wpm") ?? DEFAULT_RATE_WPM;
+    const engine: TtsEngine = getSetting("tts_engine") ?? "system";
     const [localVoice, setLocalVoice] = useState(ttsVoice ?? "");
     const [voices, setVoices] = useState<TtsVoiceInfo[]>([]);
     const [loading, setLoading] = useState(true);
@@ -298,7 +288,8 @@ export const TtsSettings: React.FC<TtsSettingsProps> = React.memo(
       const loadVoices = async () => {
         let list: TtsVoiceInfo[] = [];
         try {
-          list = await commands.listTtsVoices();
+          const result = await commands.listTtsVoices();
+          list = Array.isArray(result) ? result : [];
         } catch (error) {
           console.warn("Listing system voices failed:", error);
         }
@@ -313,6 +304,29 @@ export const TtsSettings: React.FC<TtsSettingsProps> = React.memo(
       };
     }, []);
 
+    useEffect(() => {
+      let active = true;
+      commands
+        .listTtsEngines()
+        .then((list) => {
+          if (active) setCatalog(Array.isArray(list) ? list : []);
+        })
+        .catch((error: unknown) => {
+          console.warn("Listing speech engines failed:", error);
+        });
+      return () => {
+        active = false;
+      };
+    }, []);
+
+    const cards = buildEngineCards(catalog, engine, {
+      phonon: phononInstallState(phonon.status, phonon.error),
+    });
+    const selectedCard = cards.find((card) => card.selected);
+    // Before the catalog loads, keep the system voice and rate controls as they were.
+    const showSystemVoice = selectedCard?.showVoiceDropdown ?? true;
+    const showRateSlider = selectedCard?.showRateSlider ?? true;
+
     const voiceResult = buildVoiceOptions(voices, ttsVoice, {
       defaultLabel: t("settings.advanced.tts.voiceDefaultOption"),
       notInstalled: (name: string) =>
@@ -325,6 +339,52 @@ export const TtsSettings: React.FC<TtsSettingsProps> = React.memo(
       if (next === ttsVoice) return;
       updateSetting("tts_voice", next);
     };
+
+    const handleSelectEngine = (id: TtsEngine) => {
+      if (id === engine) return;
+      updateSetting("tts_engine", id);
+    };
+
+    const withPhononPending = async (action: () => Promise<void>) => {
+      setPhononPending(true);
+      try {
+        await action();
+      } finally {
+        setPhononPending(false);
+      }
+    };
+
+    const handlePhononDelete = () =>
+      withPhononPending(async () => {
+        const confirmed = await ask(
+          t("settings.advanced.tts.engines.confirmDelete"),
+          {
+            title: t("settings.advanced.tts.engines.phonon.name"),
+            kind: "warning",
+          },
+        );
+        if (confirmed) {
+          await phonon.remove();
+        }
+      });
+
+    const handlePhononImport = () =>
+      withPhononPending(async () => {
+        const picked = await open({ directory: true, multiple: false });
+        if (typeof picked === "string") {
+          await phonon.importFolder(picked);
+        }
+      });
+
+    const handlePhononPreview = () =>
+      withPhononPending(async () => {
+        const result = await commands.ttsSpeakTest(
+          t("settings.advanced.tts.testPhrase"),
+        );
+        if (result.status === "error") {
+          console.warn("Phonon preview failed:", result.error);
+        }
+      });
 
     const handleTest = async () => {
       const result = await commands.ttsSpeakTest(
@@ -354,78 +414,120 @@ export const TtsSettings: React.FC<TtsSettingsProps> = React.memo(
           grouped={grouped}
           tooltipPosition="bottom"
         />
-        <NaturalVoiceSection
-          descriptionMode={descriptionMode}
-          grouped={grouped}
-        />
         <SettingContainer
-          title={t("settings.advanced.tts.voiceLabel")}
-          description={t(
-            loading
-              ? "settings.advanced.tts.voiceListDescription"
-              : voiceResult.descriptionKey,
-          )}
+          title={t("settings.advanced.tts.natural.engine.label")}
+          description={t("settings.advanced.tts.natural.engine.description")}
           descriptionMode={descriptionMode}
           grouped={grouped}
+          layout="stacked"
         >
-          {showTextInput ? (
-            <Input
-              type="text"
-              value={localVoice}
-              onChange={(event) => setLocalVoice(event.target.value)}
-              onBlur={() => {
-                const next = localVoice.trim();
-                if (next === (ttsVoice ?? "")) return;
-                updateSetting("tts_voice", next === "" ? null : next);
-              }}
-              placeholder={t("settings.advanced.tts.voicePlaceholder")}
-              variant="compact"
-              disabled={isUpdating("tts_voice")}
-              className="flex-1 min-w-[360px]"
-            />
-          ) : (
-            <Dropdown
-              options={
-                loading
-                  ? [
-                      {
-                        value: "",
-                        label: t("settings.advanced.tts.voiceDefaultOption"),
-                      },
-                      ...(voiceResult.selected !== ""
-                        ? [
-                            {
-                              value: voiceResult.selected,
-                              label: voiceResult.selected,
-                            },
-                          ]
-                        : []),
-                    ]
-                  : voiceResult.options
-              }
-              selectedValue={voiceResult.selected}
-              onSelect={handleVoiceSelect}
-              placeholder={t("settings.advanced.tts.voiceDefaultOption")}
-              disabled={loading || isUpdating("tts_voice")}
-              className="flex-1 min-w-[360px]"
-            />
-          )}
+          <div className="flex flex-col gap-3" data-testid="tts-engine-picker">
+            {cards.map((card) => (
+              <TtsEngineCard
+                key={card.id}
+                card={card}
+                onSelect={() => handleSelectEngine(card.id)}
+              >
+                {card.id === "phonon" && (
+                  <PhononEngineBody
+                    card={card}
+                    descriptionMode={descriptionMode}
+                    grouped={grouped}
+                    pending={phononPending}
+                    onInstall={() => withPhononPending(phonon.install)}
+                    onCancel={() => withPhononPending(phonon.cancel)}
+                    onDelete={handlePhononDelete}
+                    onImportFolder={handlePhononImport}
+                    onPreview={handlePhononPreview}
+                  />
+                )}
+                {card.id === "natural" && (
+                  <NaturalVoiceBody
+                    descriptionMode={descriptionMode}
+                    grouped={grouped}
+                    engine={engine}
+                    natural={natural}
+                  />
+                )}
+              </TtsEngineCard>
+            ))}
+            <p className="text-xs text-mid-gray">
+              {t("settings.advanced.tts.engines.fixedNote")}
+            </p>
+          </div>
         </SettingContainer>
-        <Slider
-          value={ttsRate}
-          onChange={(value: number) => updateSetting("tts_rate_wpm", value)}
-          min={80}
-          max={400}
-          step={10}
-          label={t("settings.advanced.tts.rateLabel")}
-          description={t("settings.advanced.tts.rateDescription")}
-          descriptionMode={descriptionMode}
-          grouped={grouped}
-          formatValue={(value) =>
-            t("settings.advanced.tts.rateValue", { value: Math.round(value) })
-          }
-          disabled={isUpdating("tts_rate_wpm")}
-        />
+        {showSystemVoice && (
+          <SettingContainer
+            title={t("settings.advanced.tts.voiceLabel")}
+            description={t(
+              loading
+                ? "settings.advanced.tts.voiceListDescription"
+                : voiceResult.descriptionKey,
+            )}
+            descriptionMode={descriptionMode}
+            grouped={grouped}
+          >
+            {showTextInput ? (
+              <Input
+                type="text"
+                value={localVoice}
+                onChange={(event) => setLocalVoice(event.target.value)}
+                onBlur={() => {
+                  const next = localVoice.trim();
+                  if (next === (ttsVoice ?? "")) return;
+                  updateSetting("tts_voice", next === "" ? null : next);
+                }}
+                placeholder={t("settings.advanced.tts.voicePlaceholder")}
+                variant="compact"
+                disabled={isUpdating("tts_voice")}
+                className="flex-1 min-w-[360px]"
+              />
+            ) : (
+              <Dropdown
+                options={
+                  loading
+                    ? [
+                        {
+                          value: "",
+                          label: t("settings.advanced.tts.voiceDefaultOption"),
+                        },
+                        ...(voiceResult.selected !== ""
+                          ? [
+                              {
+                                value: voiceResult.selected,
+                                label: voiceResult.selected,
+                              },
+                            ]
+                          : []),
+                      ]
+                    : voiceResult.options
+                }
+                selectedValue={voiceResult.selected}
+                onSelect={handleVoiceSelect}
+                placeholder={t("settings.advanced.tts.voiceDefaultOption")}
+                disabled={loading || isUpdating("tts_voice")}
+                className="flex-1 min-w-[360px]"
+              />
+            )}
+          </SettingContainer>
+        )}
+        {showRateSlider && (
+          <Slider
+            value={ttsRate}
+            onChange={(value: number) => updateSetting("tts_rate_wpm", value)}
+            min={80}
+            max={400}
+            step={10}
+            label={t("settings.advanced.tts.rateLabel")}
+            description={t("settings.advanced.tts.rateDescription")}
+            descriptionMode={descriptionMode}
+            grouped={grouped}
+            formatValue={(value) =>
+              t("settings.advanced.tts.rateValue", { value: Math.round(value) })
+            }
+            disabled={isUpdating("tts_rate_wpm")}
+          />
+        )}
         <SettingContainer
           title={t("settings.advanced.tts.testLabel")}
           description={t("settings.advanced.tts.testDescription")}
