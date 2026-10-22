@@ -13,6 +13,7 @@ import type {
   SpeakerSensitivity,
   TtsEngine,
   VadBackend,
+  WakeWordAction,
 } from "@/bindings";
 import { commands } from "@/bindings";
 import { toast } from "sonner";
@@ -119,6 +120,15 @@ const settingUpdaters: {
   wake_word_silence_timeout_ms: async (value) => {
     const result = await commands.changeWakeWordSilenceTimeoutMsSetting(
       value as number,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  wake_word_action: async (value) => {
+    const result = await commands.changeWakeWordActionSetting(
+      value as WakeWordAction,
     );
     if (result.status === "error") {
       toast.error(result.error);

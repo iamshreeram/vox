@@ -1872,6 +1872,19 @@ pub fn change_chinese_script_setting(app: AppHandle, script: ChineseScript) -> R
     Ok(())
 }
 
+/// What a wake-word detection starts: a one-shot voice request or a conversation.
+#[tauri::command]
+#[specta::specta]
+pub fn change_wake_word_action_setting(
+    app: AppHandle,
+    action: settings::WakeWordAction,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.wake_word_action = action;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_app_language_setting(app: AppHandle, language: String) -> Result<(), String> {

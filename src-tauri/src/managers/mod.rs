@@ -56,8 +56,6 @@ pub mod model;
 pub mod model_capabilities;
 pub mod natural_audio;
 #[cfg(test)]
-mod wake_conversation_tests;
-#[cfg(test)]
 mod natural_audio_tests;
 pub mod natural_chunk;
 #[cfg(test)]
@@ -163,5 +161,7 @@ pub mod voice_common;
 pub mod voice_models;
 pub mod voice_runtime;
 pub mod voice_shortcuts;
+#[cfg(test)]
+mod wake_conversation_tests;
 pub mod wakeword;
 pub mod wakeword_listener;

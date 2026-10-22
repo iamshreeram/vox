@@ -846,6 +846,17 @@ async changeChineseScriptSetting(script: ChineseScript) : Promise<Result<null, s
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * What a wake-word detection starts: a one-shot voice request or a conversation.
+ */
+async changeWakeWordActionSetting(action: WakeWordAction) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_wake_word_action_setting", { action }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeAppLanguageSetting(language: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_app_language_setting", { language }) };
@@ -2009,7 +2020,18 @@ tts_composer_mode?: TtsComposerMode; tts_composer_provider_id?: string; tts_comp
 /**
  * The exact normalized (path, args, flag) tuple the user acknowledged.
  */
-tts_composer_command_ack?: string; tts_composer_timeout_secs?: number; tts_composer_style?: string; tts_composer_send_user_utterance?: boolean; tts_composer_fallback?: TtsComposerFallback; wake_word_enabled?: boolean; wake_word_model_name?: string; wake_word_confidence_threshold?: number; wake_word_cooldown_ms?: number; 
+tts_composer_command_ack?: string; tts_composer_timeout_secs?: number; tts_composer_style?: string; tts_composer_send_user_utterance?: boolean; tts_composer_fallback?: TtsComposerFallback; wake_word_enabled?: boolean; 
+/**
+ * Name of the wake-word model. Only the bundled `hey_jarvis` model exists
+ * today, so there is intentionally no settings control for it: a selector
+ * would offer a choice that cannot work. Add a UI control when a second
+ * model ships.
+ */
+wake_word_model_name?: string; wake_word_confidence_threshold?: number; wake_word_cooldown_ms?: number; 
+/**
+ * What a wake-word detection starts: a one-shot voice request (default) or a conversation.
+ */
+wake_word_action?: WakeWordAction; 
 /**
  * User-defined spoken phrase -> open URL / folder / app. Validated when
  * saved (`set_voice_shortcuts`) and again at match time.
@@ -2650,6 +2672,19 @@ export type VaultIndexStatusDto = { notes: number; chunks: number; skipped: numb
 tool_support: string }
 export type VoiceShortcut = { phrase: string; action: VoiceShortcutAction }
 export type VoiceShortcutAction = { type: "open_url"; url: string } | { type: "open_path"; path: string } | { type: "open_app"; name: string }
+/**
+ * What a wake-word detection does while no conversation session is running.
+ */
+export type WakeWordAction = 
+/**
+ * Start a turn-based conversation session.
+ */
+"conversation" | 
+/**
+ * One-shot voice request (today's behaviour, default). Also what any unrecognised stored
+ * value means, so a bad settings file can never stop the app from loading.
+ */
+"voice_request"
 /**
  * A wake-word detection emitted by an engine. Must be Serialize/Type so it
  * can be sent as a Tauri event payload (see `commands/wakeword.rs`'s

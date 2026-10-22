@@ -324,7 +324,13 @@
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
         "disabledByAmbientMode": "Turn off Ambient Mode to enable Wake Word.",
-        "downloadFailedTitle": "Wake word model couldn't be downloaded"
+        "downloadFailedTitle": "Wake word model couldn't be downloaded",
+        "action": {
+          "label": "Quan digui la paraula d'activació",
+          "description": "Tria si la paraula d'activació executa una sola petició de veu o inicia una conversa parlada amb l'assistent.",
+          "voiceRequest": "Executa una petició de veu",
+          "conversation": "Parla amb l'assistent"
+        }
       },
       "voiceCommands": {
         "label": "Voice Commands",
@@ -1340,7 +1346,7 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+      "wakeWordNote": "L'escolta ambient ha d'estar desactivada mentre s'executa una conversa. La paraula d'activació també ha d'estar desactivada, tret que la seva acció sigui parlar amb l'assistent."
     },
     "voice": {
       "title": "Funcions de veu",

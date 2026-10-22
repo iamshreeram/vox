@@ -131,13 +131,16 @@ fn earlier_preflight_refusals_still_win_with_conversation_action() {
 
 #[test]
 fn route_detection_matrix() {
-    use WakeDetectionRoute::*;
-    use WakeWordAction::*;
-    assert_eq!(route_detection(VoiceRequest, false), WakeDetectionRoute::VoiceRequest);
-    assert_eq!(route_detection(Conversation, false), StartConversation);
+    use WakeDetectionRoute as R;
+    use WakeWordAction as A;
+    assert_eq!(route_detection(A::VoiceRequest, false), R::VoiceRequest);
+    assert_eq!(
+        route_detection(A::Conversation, false),
+        R::StartConversation
+    );
     // A live session always wins: neither action may start anything.
-    assert_eq!(route_detection(VoiceRequest, true), Ignore);
-    assert_eq!(route_detection(Conversation, true), Ignore);
+    assert_eq!(route_detection(A::VoiceRequest, true), R::Ignore);
+    assert_eq!(route_detection(A::Conversation, true), R::Ignore);
 }
 
 // ---- detector suppression ---------------------------------------------------------
@@ -156,7 +159,10 @@ fn frames_are_suppressed_during_session_and_for_the_tail_only() {
     assert!(wake_frames_suppressed(true, Some(50_000)));
     // Tail window: [0, TAIL) suppressed, TAIL and later not.
     assert!(wake_frames_suppressed(false, Some(0)));
-    assert!(wake_frames_suppressed(false, Some(WAKE_SESSION_TAIL_MS - 1)));
+    assert!(wake_frames_suppressed(
+        false,
+        Some(WAKE_SESSION_TAIL_MS - 1)
+    ));
     assert!(!wake_frames_suppressed(false, Some(WAKE_SESSION_TAIL_MS)));
     assert!(!wake_frames_suppressed(false, Some(60_000)));
 }
@@ -175,7 +181,11 @@ fn session_hooks_expose_time_since_session_end() {
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     converse_hooks::set_session_active(true);
-    assert_eq!(converse_hooks::ms_since_session_end(), None, "none while active");
+    assert_eq!(
+        converse_hooks::ms_since_session_end(),
+        None,
+        "none while active"
+    );
     converse_hooks::set_session_active(false);
     let ms = converse_hooks::ms_since_session_end().expect("end time recorded");
     assert!(ms < WAKE_SESSION_TAIL_MS, "just ended, got {ms} ms");
@@ -208,7 +218,8 @@ impl ConversationStarter for FakeStarter {
 fn successful_start_calls_once_and_reports_nothing() {
     let starter = FakeStarter::new(Ok(7));
     let notified = RefCell::new(Vec::<String>::new());
-    let out = start_conversation_from_wake(&starter, &mut |m| notified.borrow_mut().push(m.to_string()));
+    let out =
+        start_conversation_from_wake(&starter, &mut |m| notified.borrow_mut().push(m.to_string()));
     assert_eq!(out, Some(7));
     assert_eq!(starter.calls.get(), 1);
     assert!(notified.borrow().is_empty());
@@ -219,7 +230,8 @@ fn setup_refusals_are_reported_exactly_once() {
     let msg = "Turn on spoken replies in the speech settings first.";
     let starter = FakeStarter::new(Err(msg.to_string()));
     let notified = RefCell::new(Vec::<String>::new());
-    let out = start_conversation_from_wake(&starter, &mut |m| notified.borrow_mut().push(m.to_string()));
+    let out =
+        start_conversation_from_wake(&starter, &mut |m| notified.borrow_mut().push(m.to_string()));
     assert_eq!(out, None);
     assert_eq!(starter.calls.get(), 1);
     assert_eq!(*notified.borrow(), vec![msg.to_string()]);
@@ -230,8 +242,9 @@ fn busy_refusals_are_silent_because_a_spurious_wake_must_not_nag() {
     for busy in [ALREADY_RUNNING, DICTATION_BUSY, ENROLLMENT_BUSY] {
         let starter = FakeStarter::new(Err(busy.to_string()));
         let notified = RefCell::new(Vec::<String>::new());
-        let out =
-            start_conversation_from_wake(&starter, &mut |m| notified.borrow_mut().push(m.to_string()));
+        let out = start_conversation_from_wake(&starter, &mut |m| {
+            notified.borrow_mut().push(m.to_string())
+        });
         assert_eq!(out, None, "{busy}");
         assert_eq!(starter.calls.get(), 1, "{busy}");
         assert!(notified.borrow().is_empty(), "{busy} must not notify");

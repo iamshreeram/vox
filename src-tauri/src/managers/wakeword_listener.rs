@@ -1,14 +1,18 @@
 //! Dedicated wake-word microphone capture and arbitration with dictation.
 
 use crate::audio_toolkit::{list_input_devices, AudioRecorder, VadPolicy};
+use crate::commands::converse::CONVERSE_ERROR_EVENT;
 use crate::helpers::clamshell;
 use crate::managers::audio::AudioRecordingManager;
+use crate::managers::converse_hooks;
+use crate::managers::converse_platform::{DICTATION_BUSY, ENROLLMENT_BUSY};
+use crate::managers::converse_runtime::{ConverseController, ALREADY_RUNNING};
 use crate::managers::wakeword::{
     ensure_model_downloaded, model_readiness, wakeword_model_dir, BufferingWakeWordEngine,
     HttpModelDownloader, ModelDownloader, ModelReadiness, OpenWakeWordClassifier,
     WakeWordDetection, WakeWordEngine,
 };
-use crate::settings::{get_settings, AppSettings};
+use crate::settings::{get_settings, AppSettings, WakeWordAction};
 use log::warn;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -438,7 +442,22 @@ fn open_recorder(
     let engine = Arc::clone(engine);
     let detection_pending = Arc::new(AtomicBool::new(false));
     let callback_detection_pending = Arc::clone(&detection_pending);
+    let callback_suppressed = Arc::new(AtomicBool::new(false));
     let audio_cb = move |frame: &[f32]| {
+        let now_suppressed = wake_frames_suppressed(
+            converse_hooks::session_active(),
+            converse_hooks::ms_since_session_end(),
+        );
+        let was_suppressed = callback_suppressed.swap(now_suppressed, Ordering::SeqCst);
+        if now_suppressed {
+            // Drop the frame: a conversation session (and its tail) owns the audio.
+            if should_reset_engine_on_suppression_edge(was_suppressed, now_suppressed) {
+                if let Some(wakeword) = engine.lock().unwrap().as_mut() {
+                    wakeword.reset();
+                }
+            }
+            return;
+        }
         if !should_feed_wakeword_frame(
             get_settings(&app).wake_word_enabled,
             app.try_state::<Arc<AudioRecordingManager>>()
@@ -492,19 +511,120 @@ fn open_recorder(
 
 /// True while a conversation session is active: a wake-word detection must
 /// then neither emit its event nor start a recording (DESIGN.md section 2).
+#[cfg_attr(not(test), allow(dead_code))]
 fn should_ignore_detection() -> bool {
     crate::managers::converse_hooks::session_active()
 }
 
+/// How long after a conversation session ends the detector stays muted, so the
+/// assistant's own last words cannot re-trigger the wake word.
+pub const WAKE_SESSION_TAIL_MS: u64 = 1000;
+
+/// What one wake-word detection should do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WakeDetectionRoute {
+    Ignore,
+    VoiceRequest,
+    StartConversation,
+}
+
+/// Pure: a live session always wins, for either action.
+pub fn route_detection(action: WakeWordAction, session_active: bool) -> WakeDetectionRoute {
+    if session_active {
+        return WakeDetectionRoute::Ignore;
+    }
+    match action {
+        WakeWordAction::VoiceRequest => WakeDetectionRoute::VoiceRequest,
+        WakeWordAction::Conversation => WakeDetectionRoute::StartConversation,
+    }
+}
+
+/// Pure: true while detector input must be dropped -- during a session and for
+/// `WAKE_SESSION_TAIL_MS` after it ended.
+pub fn wake_frames_suppressed(session_active: bool, ms_since_session_end: Option<u64>) -> bool {
+    session_active || matches!(ms_since_session_end, Some(ms) if ms < WAKE_SESSION_TAIL_MS)
+}
+
+/// Pure: the detector is reset exactly once, on the rising edge of suppression.
+pub fn should_reset_engine_on_suppression_edge(was_suppressed: bool, now_suppressed: bool) -> bool {
+    !was_suppressed && now_suppressed
+}
+
+/// Start-only seam over `ConverseController::start`, so the policy below is testable.
+pub trait ConversationStarter {
+    fn start(&self) -> Result<u64, String>;
+}
+
+/// Starts a conversation for a wake detection. Calls `starter.start()` exactly once.
+/// Busy refusals are silent (a spurious wake must not nag); any other refusal is
+/// reported once through `notify_error`.
+pub fn start_conversation_from_wake(
+    starter: &dyn ConversationStarter,
+    notify_error: &mut dyn FnMut(&str),
+) -> Option<u64> {
+    match starter.start() {
+        Ok(id) => Some(id),
+        Err(message) => {
+            let busy =
+                [ALREADY_RUNNING, DICTATION_BUSY, ENROLLMENT_BUSY].contains(&message.as_str());
+            if !busy {
+                notify_error(&message);
+            }
+            None
+        }
+    }
+}
+
+/// Real starter: the app's conversation controller. Never toggles, so a racing
+/// session can never be stopped by a wake detection.
+struct AppConversationStarter(AppHandle);
+
+impl ConversationStarter for AppConversationStarter {
+    fn start(&self) -> Result<u64, String> {
+        self.0.state::<Arc<ConverseController>>().start()
+    }
+}
+
+/// Starts the conversation on a short-lived thread so the audio callback never blocks.
+fn start_conversation_in_background(app: &AppHandle) {
+    let app = app.clone();
+    let spawned = std::thread::Builder::new()
+        .name("wake-converse-start".into())
+        .spawn(move || {
+            let starter = AppConversationStarter(app.clone());
+            let mut notify = |message: &str| {
+                if app.emit(CONVERSE_ERROR_EVENT, message.to_string()).is_err() {
+                    log::debug!("wake-word: converse error event not delivered");
+                }
+            };
+            let _ = start_conversation_from_wake(&starter, &mut notify);
+        });
+    if let Err(error) = spawned {
+        warn!("Failed to spawn wake-word conversation start thread: {error}");
+    }
+}
+
 fn handle_detection(app: &AppHandle, detection: WakeWordDetection) {
-    if should_ignore_detection() {
-        log::debug!("wake-word detection ignored: conversation session active");
-        return;
+    let action = get_settings(app).wake_word_action;
+    match route_detection(action, converse_hooks::session_active()) {
+        WakeDetectionRoute::Ignore => {
+            log::debug!("wake-word detection ignored: conversation session active");
+        }
+        WakeDetectionRoute::VoiceRequest => {
+            if let Err(error) = crate::commands::wakeword::emit_wakeword_detection(app, &detection)
+            {
+                warn!("Failed to emit wake-word detection event: {error}");
+            }
+            crate::signal_handle::send_transcription_input(app, "transcribe", "wake_word");
+        }
+        WakeDetectionRoute::StartConversation => {
+            if let Err(error) = crate::commands::wakeword::emit_wakeword_detection(app, &detection)
+            {
+                warn!("Failed to emit wake-word detection event: {error}");
+            }
+            start_conversation_in_background(app);
+        }
     }
-    if let Err(error) = crate::commands::wakeword::emit_wakeword_detection(app, &detection) {
-        warn!("Failed to emit wake-word detection event: {error}");
-    }
-    crate::signal_handle::send_transcription_input(app, "transcribe", "wake_word");
 }
 
 #[cfg(test)]
