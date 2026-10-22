@@ -478,26 +478,36 @@ fn coordinator_snapshot_holds_the_op_guard_against_delete() {
     let entered_tx = Mutex::new(entered_tx);
     let release_rx = Mutex::new(release_rx);
     let first = AtomicBool::new(true);
-    // Blocks the first asset's copy until the test releases it. Bounded wait: never hangs.
+    // Blocks the first asset's copy until the test releases it. Bounded wait (generous, so a
+    // saturated machine never trips it): never hangs.
     let hook = |_: &Path| {
         if first.swap(false, Ordering::SeqCst) {
             let _ = entered_tx.lock().unwrap().send(());
             let _ = release_rx
                 .lock()
                 .unwrap()
-                .recv_timeout(Duration::from_secs(10));
+                .recv_timeout(Duration::from_secs(30));
         }
     };
 
     thread::scope(|s| {
         let a = s.spawn(|| coord.snapshot_with(&scratch, &hook));
         entered_rx
-            .recv_timeout(Duration::from_secs(5))
+            .recv_timeout(Duration::from_secs(30))
             .expect("thread A reached before_copy");
 
-        // Thread B races a delete while A is blocked inside the snapshot.
+        // Thread B races a delete while A is blocked inside the snapshot. Positive handshake:
+        // wait until B has returned (a delete against a held op guard is refused at once), so
+        // the file checks below run only after the racing delete really happened.
         let b = s.spawn(|| coord.delete());
-        thread::sleep(Duration::from_millis(250));
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while !b.is_finished() && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            b.is_finished(),
+            "the racing delete must return while the snapshot holds the guard"
+        );
         for (file, _) in TINY {
             assert!(
                 t.install().join(file).is_file(),
@@ -784,4 +794,31 @@ fn only_the_phonon_coordinator_carries_a_download_policy() {
     assert!(phonon
         .with_download_policy(phonon_download_policy())
         .has_download_policy());
+}
+
+// ---- P4a: the only production Phonon coordinator constructor ---------------------------------------
+
+#[test]
+fn phonon_coordinator_always_carries_the_phonon_download_policy() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().join("phonon_models");
+    let coord = crate::managers::natural_model::phonon_coordinator(root.clone());
+    assert!(
+        coord.has_download_policy(),
+        "the production constructor must set the redirect policy"
+    );
+    assert_eq!(coord.install_dir(), root.join(PHONON_DIR_NAME));
+    assert_eq!(coord.install_dir(), root.join("phonon-31m-en"));
+    assert_eq!(coord.state(), ModelState::NotInstalled, "a fresh root");
+}
+
+#[test]
+fn kokoro_coordinator_keeps_the_legacy_redirects_after_the_phonon_constructor_exists() {
+    let dir = TempDir::new().unwrap();
+    let kokoro = ModelCoordinator::new(
+        dir.path().join("tts_models"),
+        kokoro_assets(),
+        vec![KOKORO_URL_PREFIX.to_string()],
+    );
+    assert!(!kokoro.has_download_policy());
 }

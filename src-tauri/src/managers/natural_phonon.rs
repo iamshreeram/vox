@@ -5,23 +5,63 @@
 //! loaded only from a verified private snapshot (see `natural_phonon_core::SnapshotLoader`).
 //! DESIGN.md Rev 4, section 3 P3. Spec = `natural_phonon_tests.rs`.
 
-use crate::managers::natural_engine::{EngineLoader, SynthEngine};
-use crate::managers::natural_model::ModelCoordinator;
+use crate::managers::natural_engine::{
+    EngineLoader, NaturalConfig, NaturalHealth, NaturalSynth, SynthEngine,
+    DEFAULT_AUTO_RETRY_COOLDOWN,
+};
+use crate::managers::natural_model::{phonon_coordinator, ModelCoordinator};
 use crate::managers::natural_phonon_core::{synthesize_with, SnapshotLoader, PHONON_SAMPLE_RATE};
+use crate::managers::natural_sink::{ManagedSink, StreamFactory};
 use crate::managers::natural_snapshot::Snapshot;
+use crate::managers::tts::SpeechBackend;
+use crate::managers::tts_queue::{QueueBackend, SharedCore, SpeakerCore};
 use ptts::preprocess::Lang;
 use ptts::synth::{Quant, Synth, SynthBuilder};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// Name under which the bundled default voice is registered.
 const VOICE_NAME: &str = "default";
 
+/// The parts of the Phonon peer engine that lib.rs wires next to Kokoro's.
+pub struct PhononStack {
+    /// `QueueBackend` over the shared Phonon core (the router's `phonon` route).
+    pub backend: Box<dyn SpeechBackend>,
+    /// The Phonon engine health: independent of Kokoro's.
+    pub health: Arc<NaturalHealth>,
+    /// The Phonon model files coordinator (install, verify, delete).
+    pub coordinator: Arc<ModelCoordinator>,
+}
+
+/// Builds the Phonon peer stack. The coordinator comes ONLY from `phonon_coordinator`, so the
+/// Phonon redirect policy is always applied. Nothing is created on disk here: the model loads
+/// lazily on the first Phonon burst.
+pub fn build_phonon_stack(
+    root: PathBuf,
+    scratch_root: PathBuf,
+    factory: Arc<dyn StreamFactory>,
+) -> PhononStack {
+    let coordinator = Arc::new(phonon_coordinator(root));
+    let health = NaturalHealth::new(DEFAULT_AUTO_RETRY_COOLDOWN);
+    let sink = Arc::new(ManagedSink::new(factory, Duration::from_secs(3)));
+    let synth = NaturalSynth::new(
+        phonon_loader(coordinator.clone(), scratch_root),
+        sink,
+        health.clone(),
+        NaturalConfig::default(),
+    );
+    let core: SharedCore<_> = Arc::new(Mutex::new(SpeakerCore::new(synth)));
+    PhononStack {
+        backend: Box::new(QueueBackend::new(core)),
+        health,
+        coordinator,
+    }
+}
+
 /// Loader for the Phonon voice: a verified private snapshot of the installed files, built into
 /// a ptts engine on each load.
-// Nothing calls this until the P4 router wiring lands.
-#[allow(dead_code)]
 pub fn phonon_loader(
     coordinator: Arc<ModelCoordinator>,
     scratch_root: PathBuf,

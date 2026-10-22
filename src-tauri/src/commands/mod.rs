@@ -12,6 +12,9 @@ pub mod memory;
 pub mod models;
 pub mod natural_voice;
 pub mod persona;
+pub mod phonon_voice;
+#[cfg(test)]
+mod phonon_voice_tests;
 pub mod realtime;
 pub mod source_update;
 pub mod speaker;

@@ -606,6 +606,45 @@ async naturalVoiceRetry() : Promise<Result<null, string>> {
 async listNaturalVoices() : Promise<NaturalVoiceOption[]> {
     return await TAURI_INVOKE("list_natural_voices");
 },
+async phononVoiceStatus() : Promise<Result<NaturalVoiceStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("phonon_voice_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Starts the Phonon download in the background and returns at once. Progress and the result
+ * arrive as events.
+ */
+async phononVoiceInstall() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("phonon_voice_install") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async phononVoiceCancel() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("phonon_voice_cancel") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stops speech (through the shared TTS manager), removes the Phonon model and bumps health.
+ */
+async phononVoiceDelete() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("phonon_voice_delete") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Every speech engine in picker order, with platform support and download facts.
  */

@@ -77,6 +77,8 @@ pub mod natural_phonon;
 pub mod natural_phonon_core;
 #[cfg(test)]
 mod natural_phonon_core_tests;
+#[cfg(all(test, target_os = "macos"))]
+mod natural_phonon_e2e_tests;
 #[cfg(test)]
 mod natural_phonon_loader_tests;
 #[cfg(test)]
@@ -84,6 +86,8 @@ mod natural_phonon_model_tests;
 #[cfg(all(test, target_os = "macos"))]
 mod natural_phonon_tests;
 pub mod natural_router;
+#[cfg(test)]
+mod natural_router_phonon_tests;
 #[cfg(test)]
 mod natural_router_tests;
 pub mod natural_sink;

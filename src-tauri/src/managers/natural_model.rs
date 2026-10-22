@@ -129,6 +129,18 @@ pub fn phonon_download_policy() -> DownloadPolicy {
     }
 }
 
+/// The only production Phonon coordinator: installs into `<root>/phonon-31m-en`, with the pinned
+/// start-URL prefix, the Phonon assets and the Phonon redirect policy.
+pub fn phonon_coordinator(root: PathBuf) -> ModelCoordinator {
+    ModelCoordinator::new_named(
+        root,
+        PHONON_DIR_NAME,
+        phonon_assets(),
+        phonon_allowed_prefixes(),
+    )
+    .with_download_policy(phonon_download_policy())
+}
+
 /// True when `url` may be fetched: it starts with one of `prefixes`, has no userinfo (`@`),
 /// no backslash, and no `..` path segment. Everything else (other host, `http` instead of
 /// `https`, lookalike hosts such as `github.com.evil.example`) is refused.
