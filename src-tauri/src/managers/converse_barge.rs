@@ -238,8 +238,6 @@ impl BargePolicy {
 }
 
 /// Result of one barge-in capture, handed to the supervisor.
-// Used by B1b/B3 (not yet wired into the conversation loop).
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum BargeCapture {
     Utterance(String),
@@ -248,13 +246,10 @@ pub enum BargeCapture {
 
 /// Linearization point between reply admission and barge-in cancel: once
 /// `close()` returns, no admission is running and none can start.
-// Used by B1b/B3 (not yet wired into the conversation loop).
-#[allow(dead_code)]
 pub struct ReplyGate {
     closed: Mutex<bool>,
 }
 
-#[allow(dead_code)]
 impl ReplyGate {
     pub fn new() -> Arc<ReplyGate> {
         Arc::new(ReplyGate {
@@ -272,6 +267,8 @@ impl ReplyGate {
     }
 
     /// A poisoned gate counts as closed.
+    // Used by B3b (admission checks in the conversation loop); tests use it today.
+    #[allow(dead_code)]
     pub fn is_closed(&self) -> bool {
         match self.closed.lock() {
             Ok(guard) => *guard,
@@ -296,18 +293,23 @@ impl ReplyGate {
 }
 
 /// Arms one barge-in watch per reply turn. `None` means unavailable (fail-soft).
-// Used by B1b/B3 (not yet wired into the conversation loop).
-#[allow(dead_code)]
 pub trait BargeIn: Send + Sync {
     fn arm(&self) -> Option<Box<dyn BargeWatch>>;
 }
 
-// Used by B1b/B3 (not yet wired into the conversation loop).
-#[allow(dead_code)]
+/// One reply turn's barge-in watch. Dropping it disarms the monitor and restores the volume.
+///
+/// Contract: an implementation MUST make `gate().is_closed()` and `cancel_latched()` observable
+/// (SeqCst) BEFORE `reply_token()` fires, because the loop reads the latch after seeing the token
+/// (converse.rs run_turns).
 pub trait BargeWatch: Send {
+    /// Fires (true) when the reply must stop. Closed without a value means never fires.
     fn reply_token(&self) -> watch::Receiver<bool>;
+    /// True once a barge-in cancelled this reply.
     fn cancel_latched(&self) -> bool;
+    /// The admission gate of this reply; closed before the token fires.
     fn gate(&self) -> Arc<ReplyGate>;
+    /// Resolves once the barge-in clip is classified (`NoSpeech` if none is coming).
     fn capture(&mut self) -> BoxFuture<'_, BargeCapture>;
 }
 
