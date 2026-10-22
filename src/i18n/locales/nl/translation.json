@@ -1349,7 +1349,7 @@
       "wakeWordNote": "Omgevingsluisteren moet uit staan terwijl een gesprek loopt. Het wekwoord moet ook uit staan, tenzij de actie is ingesteld op praten met de assistent.",
       "bargeIn": {
         "label": "Onderbreken door te spreken",
-        "description": "Praat over de assistent heen om die te onderbreken. Gebruik een koptelefoon: via luidsprekers zou de assistent zichzelf horen. Werkt met de stemmen Phonon en Natural; de systeemstem kan zo niet worden onderbroken. Vereist gesproken antwoorden.",
+        "description": "Praat over de assistent heen om hem te onderbreken. Gebruik een koptelefoon: via luidsprekers zou de assistent zichzelf horen. De stemmen Phonon en Natural worden ook zachter zodra je praat; de systeemstem wordt gewoon gestopt. Vereist dat gesproken antwoorden aan staan.",
         "options": {
           "off": "Uit",
           "headphones": "Alleen koptelefoon"

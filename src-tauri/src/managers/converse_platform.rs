@@ -23,7 +23,8 @@ use crate::managers::converse::{
 use crate::managers::converse_audio::{wait_for_speech_end, SpeechProbe, WaitOutcome};
 use crate::managers::converse_barge::BargeIn;
 use crate::managers::converse_barge_platform::{
-    barge_config, barge_enabled, build_monitor, start_monitor_fail_soft, BargeSlot,
+    barge_config, barge_enabled, build_monitor, listen_with_barge_recovery,
+    start_monitor_fail_soft, BargeSlot,
 };
 use crate::managers::converse_capture::{
     CaptureHandle, CaptureOptions, CaptureTimings, CaptureWorker, RecorderPort, StartError,
@@ -312,14 +313,19 @@ struct RealEars {
     app: AppHandle,
     capture: CaptureHandle,
     /// Barge-in monitor of this session (B3b). Empty unless enabled and started (fail-soft).
-    barge: BargeSlot,
+    barge: Arc<BargeSlot>,
 }
 
 impl Ears for RealEars {
+    /// One listen. If the microphone refuses to open while the barge-in monitor is alive, the
+    /// monitor is retired and the listen retried once (DESIGN 12.4); otherwise one attempt.
     fn listen(&self) -> BoxFuture<'_, ListenOutcome> {
         Box::pin(async move {
-            let cfg = endpoint_config(&get_settings(&self.app));
-            self.capture.listen(cfg).await
+            listen_with_barge_recovery(Arc::clone(&self.barge), || {
+                let cfg = endpoint_config(&get_settings(&self.app));
+                self.capture.listen(cfg)
+            })
+            .await
         })
     }
 
@@ -1027,7 +1033,7 @@ impl Platform for RealPlatform {
             ears: Box::new(RealEars {
                 app: self.app.clone(),
                 capture: capture.clone(),
-                barge,
+                barge: Arc::new(barge),
             }),
             mouth: Box::new(RealMouth {
                 app: self.app.clone(),

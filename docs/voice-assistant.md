@@ -47,7 +47,9 @@ until the conversation ends.
 - [ ] (a) Overlay live transcript: show what you said and the reply on the
       recording overlay.
 - [ ] (b) Dedicated Assistant chat window. Typing input is deferred.
-- [x] (c) Barge-in on headphones: talk over the assistant to interrupt it.
+- [ ] (c) Barge-in on headphones: talk over the assistant to interrupt it.
+      Implemented and experimental; tick this once the live headset check in
+      [conversation.md](conversation.md) has passed on a wired and a Bluetooth headset.
       Experimental and opt-in (headphones only); see the limits above.
 - [ ] (d) Speakers, using echo cancellation. Starts only after a measured spike.
 - [ ] (e) Cross-session memory. This needs its own security design first.

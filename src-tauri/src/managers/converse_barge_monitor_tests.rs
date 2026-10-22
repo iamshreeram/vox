@@ -319,11 +319,27 @@ fn vad_factory(spec: VadSpec, counters: Arc<Counters>) -> VadFactory {
 struct FakeTranscriber {
     received: Mutex<Vec<Vec<f32>>>,
     pending: Mutex<VecDeque<oneshot::Sender<Result<String, String>>>>,
+    /// Incremented when a clip's transcription future is dropped (its work is over).
+    completed: Arc<AtomicUsize>,
+    /// When set, every clip completes immediately with this result.
+    instant: Mutex<Option<Result<String, String>>>,
+}
+
+struct CompletionGuard(Arc<AtomicUsize>);
+
+impl Drop for CompletionGuard {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 impl FakeTranscriber {
     fn calls(&self) -> usize {
         self.received.lock().unwrap().len()
+    }
+
+    fn completed(&self) -> usize {
+        self.completed.load(Ordering::SeqCst)
     }
 
     fn received(&self) -> Vec<Vec<f32>> {
@@ -344,11 +360,23 @@ impl FakeTranscriber {
 
 impl ClipTranscriber for FakeTranscriber {
     fn transcribe(&self, samples: Vec<f32>) -> BoxFuture<'static, Result<String, String>> {
+        let guard = CompletionGuard(Arc::clone(&self.completed));
+        let instant = self.instant.lock().unwrap().clone();
+        if let Some(result) = instant {
+            self.received.lock().unwrap().push(samples);
+            return Box::pin(async move {
+                let _guard = guard;
+                result
+            });
+        }
         let (tx, rx) = oneshot::channel();
         // Pending first, so a test that sees calls() == 1 can always call finish().
         self.pending.lock().unwrap().push_back(tx);
         self.received.lock().unwrap().push(samples);
-        Box::pin(async move { rx.await.unwrap_or_else(|_| Err("dropped".to_string())) })
+        Box::pin(async move {
+            let _guard = guard;
+            rx.await.unwrap_or_else(|_| Err("dropped".to_string()))
+        })
     }
 }
 
@@ -1066,6 +1094,199 @@ fn stall_clock_starts_when_speech_starts() {
     assert!(
         wait_until(|| !rig.monitor.is_healthy()),
         "stall not detected after speech began"
+    );
+    drop(armed);
+}
+
+/// DESIGN Rev 10 (a): an overflow while the clip is being CAPTURED discards that clip. The reply
+/// was already cancelled; the capture resolves NoSpeech and the clip is never classified.
+#[test]
+fn overflow_while_capturing_discards_the_clip_and_later_replies_work() {
+    let mut config = cfg();
+    config.channel_frames = 4;
+    let (hold, ends) = hold_pair();
+    let spec = VadSpec {
+        hold_at: Some(62),
+        hold: Some(hold),
+        ..VadSpec::default()
+    };
+    let rig = Rig::new(config, spec, Some(true));
+    rig.effects.set_speaking(true);
+    let mut first = rig.arm();
+    rig.push_paced(true, 62); // cancel at frame 61; now Capturing
+    assert!(wait_until(
+        || rig.effects.entries() == vec!["duck", "stop", "restore"]
+    ));
+    rig.push(&frames(true, 1));
+    ends.entered
+        .recv_timeout(WAIT)
+        .expect("VAD blocked in Capturing");
+    for _ in 0..84 {
+        rig.push(&frames(true, 1)); // overflow while capturing
+    }
+    ends.release.send(()).expect("release the VAD");
+    rig.wait_processed(67);
+    // Endpoint silence ends the (discarded) capture.
+    rig.push_paced(false, 30);
+    settle();
+    assert_eq!(rig.transcriber.calls(), 0, "discarded clip was transcribed");
+    assert_eq!(
+        rig.gate
+            .as_ref()
+            .expect("gate installed")
+            .calls
+            .load(Ordering::SeqCst),
+        0,
+        "discarded clip reached the gate"
+    );
+    assert!(rig.monitor.is_healthy());
+    assert!(first.cancel_latched());
+    assert_eq!(
+        capture_within(&mut *first, WAIT),
+        Some(BargeCapture::NoSpeech)
+    );
+    drop(first);
+
+    let mut second = rig.arm();
+    speak_then_pause(&rig);
+    assert!(wait_until(|| rig.transcriber.calls() == 1));
+    rig.transcriber.finish(Ok("later words".to_string()));
+    assert_eq!(
+        capture_within(&mut *second, WAIT),
+        Some(BargeCapture::Utterance("later words".to_string()))
+    );
+    assert!(second.cancel_latched());
+}
+
+/// DESIGN Rev 10 (a)/(b): an overflow while Ducked restores the duck and cancels nothing.
+#[test]
+fn overflow_while_ducked_restores_without_cancel() {
+    let mut config = cfg();
+    config.channel_frames = 4;
+    let (hold, ends) = hold_pair();
+    let spec = VadSpec {
+        hold_at: Some(5),
+        hold: Some(hold),
+        ..VadSpec::default()
+    };
+    let rig = Rig::new(config, spec, None);
+    rig.effects.set_speaking(true);
+    let mut armed = rig.arm();
+    rig.push_paced(true, 5);
+    rig.push(&frames(true, 1));
+    ends.entered
+        .recv_timeout(WAIT)
+        .expect("VAD blocked while ducked");
+    for _ in 0..84 {
+        rig.push(&frames(true, 1));
+    }
+    ends.release.send(()).expect("release the VAD");
+    rig.wait_processed(10);
+    assert!(wait_until(|| rig
+        .effects
+        .entries()
+        .last()
+        .map(String::as_str)
+        == Some("restore")));
+    settle();
+    assert_eq!(rig.effects.entries(), vec!["duck", "restore"]);
+    assert!(!armed.cancel_latched());
+    let reply = armed.reply_token();
+    assert!(!*reply.borrow());
+    assert!(rig.monitor.is_healthy());
+    assert!(capture_within(&mut *armed, Duration::from_millis(50)).is_none());
+}
+
+/// DESIGN Rev 10 (c): the discard flag is per capture. An overflow BEFORE the cancel must not
+/// stop clean speech that follows it.
+#[test]
+fn overflow_before_the_cancel_does_not_stop_later_clean_speech() {
+    let mut config = cfg();
+    config.channel_frames = 4;
+    let (hold, ends) = hold_pair();
+    let spec = VadSpec {
+        hold_at: Some(20),
+        hold: Some(hold),
+        ..VadSpec::default()
+    };
+    let rig = Rig::new(config, spec, None);
+    rig.effects.set_speaking(true);
+    let armed = rig.arm();
+    rig.push_paced(true, 20);
+    rig.push(&frames(true, 1));
+    ends.entered
+        .recv_timeout(WAIT)
+        .expect("VAD blocked while ducked");
+    for _ in 0..84 {
+        rig.push(&frames(true, 1));
+    }
+    ends.release.send(()).expect("release the VAD");
+    rig.wait_processed(25);
+    assert!(wait_until(|| rig
+        .effects
+        .entries()
+        .last()
+        .map(String::as_str)
+        == Some("restore")));
+    rig.push_paced(true, 100);
+    assert!(wait_until(|| rig.effects.entries().len() == 5));
+    assert_eq!(
+        rig.effects.entries(),
+        vec!["duck", "restore", "duck", "stop", "restore"]
+    );
+    assert!(armed.cancel_latched());
+    assert!(rig.monitor.is_healthy());
+}
+
+/// DESIGN Rev 10 (d): shutdown waits for clip threads, but only for a bounded total time.
+#[test]
+fn shutdown_gives_up_on_a_blocked_clip_after_the_bound() {
+    let rig = Rig::new(cfg(), VadSpec::default(), None);
+    rig.effects.set_speaking(true);
+    let mut armed = rig.arm();
+    speak_then_pause(&rig);
+    assert!(wait_until(|| rig.transcriber.calls() == 1));
+    let started = Instant::now();
+    rig.monitor.shutdown();
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < Duration::from_millis(3500),
+        "shutdown waited {elapsed:?}"
+    );
+    assert_eq!(
+        rig.transcriber.completed(),
+        0,
+        "clip still blocked at shutdown"
+    );
+    assert_eq!(
+        capture_within(&mut *armed, WAIT),
+        Some(BargeCapture::NoSpeech)
+    );
+    assert!(rig.monitor.arm().is_none());
+    // The late result arrives after shutdown: the clip finishes on its own, nothing is delivered.
+    rig.transcriber.finish(Ok("late words".to_string()));
+    assert!(wait_until(|| rig.transcriber.completed() == 1));
+    // Still NoSpeech: the late "late words" result was discarded, not delivered.
+    assert_eq!(
+        capture_within(&mut *armed, Duration::from_millis(50)),
+        Some(BargeCapture::NoSpeech)
+    );
+}
+
+/// DESIGN Rev 10 (d): a clip that finishes quickly is joined by shutdown.
+#[test]
+fn shutdown_joins_a_quick_clip_before_returning() {
+    let rig = Rig::new(cfg(), VadSpec::default(), None);
+    *rig.transcriber.instant.lock().unwrap() = Some(Ok("quick words".to_string()));
+    rig.effects.set_speaking(true);
+    let armed = rig.arm();
+    speak_then_pause(&rig);
+    assert!(wait_until(|| rig.transcriber.calls() == 1));
+    rig.monitor.shutdown();
+    assert_eq!(
+        rig.transcriber.completed(),
+        1,
+        "clip work finished before shutdown returned"
     );
     drop(armed);
 }

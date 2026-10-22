@@ -78,7 +78,8 @@ personas, and a speaker filter) are described in [Optional voice features](voice
 
 Setting: **Interrupt by speaking** in the Conversation settings. It is off by
 default. Its only other option, **Headphones only**, is meant for headphones.
-This feature is experimental.
+This feature is experimental and has **not yet been verified on real headsets**;
+the live check below is how that gets confirmed.
 
 When it is on:
 
@@ -102,6 +103,11 @@ When it is on:
   the setting has no effect.
 - If the interruption monitor cannot start, the conversation runs as it did
   before, without interruptions. No error is shown.
+- If the normal microphone cannot open while the monitor is running, the
+  monitor is closed and the conversation continues without interruptions.
+- The monitor's microphone stream keeps its audio in memory until the
+  conversation ends (roughly 4 MB per minute). Keep conversations short while
+  this is experimental.
 
 ### Live check (headphones)
 

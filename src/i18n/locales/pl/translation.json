@@ -1349,7 +1349,7 @@
       "wakeWordNote": "Nasłuchiwanie otoczenia musi być wyłączone podczas rozmowy. Słowo aktywujące również musi być wyłączone, chyba że jego działanie ustawiono na rozmowę z asystentem.",
       "bargeIn": {
         "label": "Przerywaj mówiąc",
-        "description": "Mów w trakcie wypowiedzi asystenta, aby mu przerwać. Używaj słuchawek: przez głośniki asystent słyszałby samego siebie. Działa z głosami Phonon i Natural; głosu systemowego nie da się w ten sposób przerwać. Wymaga mówionych odpowiedzi.",
+        "description": "Mów w trakcie wypowiedzi asystenta, aby mu przerwać. Używaj słuchawek: na głośnikach asystent słyszałby sam siebie. Głosy Phonon i Natural również ściszają się, gdy mówisz; głos systemowy po prostu zostaje zatrzymany. Wymaga włączonych odpowiedzi głosowych.",
         "options": {
           "off": "Wyłączone",
           "headphones": "Tylko słuchawki"

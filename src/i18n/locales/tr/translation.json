@@ -1349,7 +1349,7 @@
       "wakeWordNote": "Bir sohbet çalışırken ortam dinleme kapalı olmalıdır. Uyandırma kelimesinin eylemi asistanla konuşmaya ayarlı değilse, uyandırma kelimesi de kapalı olmalıdır.",
       "bargeIn": {
         "label": "Konuşarak kes",
-        "description": "Asistanı kesmek için onun üzerine konuşun. Kulaklık kullanın: hoparlörde asistan kendi sesini duyar. Phonon ve Natural seslerle çalışır; sistem sesi bu yolla kesilemez. Sesli yanıtlar gerektirir.",
+        "description": "Asistanı kesmek için onun üzerinden konuşun. Kulaklık kullanın: hoparlörle asistan kendi sesini duyar. Phonon ve Natural sesleri de siz konuşurken ses seviyesini düşürür; sistem sesi ise yalnızca durdurulur. Sesli yanıtların açık olmasını gerektirir.",
         "options": {
           "off": "Kapalı",
           "headphones": "Yalnızca kulaklık"

@@ -1349,7 +1349,7 @@
       "wakeWordNote": "Omgivningslyssning måste vara avstängd medan ett samtal pågår. Väckordet måste också vara avstängt, om inte dess åtgärd är inställd på att prata med assistenten.",
       "bargeIn": {
         "label": "Avbryt genom att tala",
-        "description": "Tala över assistenten för att avbryta den. Använd hörlurar: med högtalare skulle assistenten höra sig själv. Fungerar med rösterna Phonon och Natural; systemrösten kan inte avbrytas på det här sättet. Kräver talade svar.",
+        "description": "Prata över assistenten för att avbryta den. Använd hörlurar: på högtalare skulle assistenten höra sig själv. Rösterna Phonon och Natural sänker också volymen när du pratar; systemrösten stoppas helt. Kräver att talade svar är på.",
         "options": {
           "off": "Av",
           "headphones": "Endast hörlurar"

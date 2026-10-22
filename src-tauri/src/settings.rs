@@ -205,7 +205,7 @@ pub enum WakeWordAction {
 }
 
 /// Whether the user can interrupt a spoken reply by talking over it. Off by default.
-/// Setting only for now: the monitor that acts on it lands in a later stage.
+/// Experimental: headphones only. Read once when a conversation starts.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ConverseBargeIn {
@@ -882,7 +882,8 @@ pub struct AppSettings {
     /// Show the live per-turn latency panel in the Conversation settings.
     #[serde(default)]
     pub converse_latency_panel: bool,
-    /// Interrupt a spoken reply by talking over it (headphones only). No runtime effect yet.
+    /// Interrupt a spoken reply by talking over it. Experimental, headphones only. Read once
+    /// when a conversation starts.
     #[serde(default)]
     pub converse_barge_in: ConverseBargeIn,
     /// Ignore utterances that do not sound like the enrolled voice (convenience

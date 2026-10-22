@@ -2105,7 +2105,8 @@ converse_smart_turn?: boolean;
  */
 converse_latency_panel?: boolean; 
 /**
- * Interrupt a spoken reply by talking over it (headphones only). No runtime effect yet.
+ * Interrupt a spoken reply by talking over it. Experimental, headphones only. Read once
+ * when a conversation starts.
  */
 converse_barge_in?: ConverseBargeIn; 
 /**
@@ -2229,7 +2230,7 @@ export type ComposerProviderInfo = { id: string; label: string; base_url: string
 export type ConversationRecordSummaryDto = { id: number; started_at: number; ended_at: number; end_reason: string; summary: string; turns: number; vault_note: string | null }
 /**
  * Whether the user can interrupt a spoken reply by talking over it. Off by default.
- * Setting only for now: the monitor that acts on it lands in a later stage.
+ * Experimental: headphones only. Read once when a conversation starts.
  */
 export type ConverseBargeIn = 
 /**

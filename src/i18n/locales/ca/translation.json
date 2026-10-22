@@ -1349,7 +1349,7 @@
       "wakeWordNote": "L'escolta ambient ha d'estar desactivada mentre s'executa una conversa. La paraula d'activació també ha d'estar desactivada, tret que la seva acció sigui parlar amb l'assistent.",
       "bargeIn": {
         "label": "Interromp parlant",
-        "description": "Parla per sobre de l'assistent per interrompre'l. Fes servir auriculars: amb altaveus, l'assistent s'escoltaria a si mateix. Funciona amb les veus Phonon i Natural; la veu del sistema no es pot interrompre d'aquesta manera. Cal que les respostes siguin parlades.",
+        "description": "Parla per sobre de l'assistent per interrompre'l. Fes servir auriculars: amb altaveus, l'assistent s'escoltaria a si mateix. Les veus Phonon i Natural també abaixen el volum mentre parles; la veu del sistema simplement s'atura. Requereix respostes parlades activades.",
         "options": {
           "off": "Desactivat",
           "headphones": "Només auriculars"

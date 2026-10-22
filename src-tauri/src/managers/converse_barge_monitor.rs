@@ -12,7 +12,7 @@
 
 use std::future::Future;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::pin::pin;
+use std::pin::{pin, Pin};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -39,22 +39,16 @@ const JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 pub type SampleCallback = Box<dyn Fn(&[f32]) + Send + Sync>;
 
 /// Second input stream (16 kHz mono, any chunk size). The real adapter arrives in B3b.
-// Used by B3b (not yet constructed in production).
-#[allow(dead_code)]
 pub trait MonitorInput: Send + Sync {
     fn open(&self, on_samples: SampleCallback) -> Result<Box<dyn MonitorStream>, String>;
 }
 
 /// An open input stream. `close` is called exactly once.
-// Used by B3b (not yet constructed in production).
-#[allow(dead_code)]
 pub trait MonitorStream: Send {
     fn close(self: Box<Self>);
 }
 
 /// Playback side effects. Ducking is a gain change; `stop_speech` stops the reply.
-// Used by B3b (not yet constructed in production).
-#[allow(dead_code)]
 pub trait MonitorEffects: Send + Sync {
     fn speaking(&self) -> bool;
     fn duck(&self);
@@ -63,20 +57,14 @@ pub trait MonitorEffects: Send + Sync {
 }
 
 /// Builds one fresh VAD per monitor.
-// Used by B3b (not yet constructed in production).
-#[allow(dead_code)]
 pub type VadFactory = Box<dyn Fn() -> Result<Box<dyn VoiceActivityDetector>, String> + Send + Sync>;
 
 /// Transcribes one captured clip (16 kHz mono).
-// Used by B3b (not yet constructed in production).
-#[allow(dead_code)]
 pub trait ClipTranscriber: Send + Sync {
     fn transcribe(&self, samples: Vec<f32>) -> BoxFuture<'static, Result<String, String>>;
 }
 
 /// Speaker gate for a captured clip. May block: only called from a blocking worker.
-// Used by B3b (not yet constructed in production).
-#[allow(dead_code)]
 pub trait ClipGate: Send + Sync {
     fn accepts(&self, samples: &[f32]) -> bool;
 }
@@ -84,8 +72,6 @@ pub trait ClipGate: Send + Sync {
 /// Monitor tuning. `heartbeat_ms` refreshes the duck while Ducked; `channel_frames` bounds the
 /// audio channel between the callback and the worker. `stall_ms` is the DESIGN 12.2.6 stall
 /// limit: no audio for this long while armed AND speaking fails the monitor soft (production 1000).
-// Used by B3b (not yet constructed in production).
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct BargeConfig {
     pub endpoint_silence_ms: u64,
@@ -96,8 +82,6 @@ pub struct BargeConfig {
 }
 
 /// One arm of the monitor. Owned by the session; `arm()` hands out watches.
-// Used by B3b (not yet constructed in production).
-#[allow(dead_code)]
 pub struct BargeMonitor {
     shared: Arc<Shared>,
     worker: Mutex<Option<(JoinHandle<()>, Receiver<()>)>>,
@@ -118,6 +102,8 @@ struct Armed {
     capture_tx: Option<oneshot::Sender<BargeCapture>>,
     ducked: bool,
     last_duck_ms: u64,
+    /// Set when an overflow hits while this reply's utterance is being captured (Rev 10 (a)).
+    discard: bool,
 }
 
 struct Shared {
@@ -132,6 +118,14 @@ struct Shared {
     input_failed: AtomicBool,
     stop: AtomicBool,
     healthy: AtomicBool,
+    /// Live clip threads: joined (bounded) by `shutdown`, pruned when finished.
+    clips: Mutex<Vec<JoinHandle<()>>>,
+}
+
+/// The clip result of one watch: pending until delivered, then kept for repeated `capture()`.
+enum CaptureSlot {
+    Waiting(oneshot::Receiver<BargeCapture>),
+    Resolved(BargeCapture),
 }
 
 /// The watch handed to one reply turn. Dropping it disarms the monitor.
@@ -141,7 +135,7 @@ struct MonitorWatch {
     reply_rx: watch::Receiver<bool>,
     gate: Arc<ReplyGate>,
     latched: Arc<AtomicBool>,
-    capture_rx: oneshot::Receiver<BargeCapture>,
+    capture_rx: CaptureSlot,
 }
 
 struct Worker {
@@ -155,8 +149,6 @@ struct Worker {
     last_chunk: Instant,
 }
 
-// Used by B3b (not yet constructed in production).
-#[allow(dead_code)]
 impl BargeMonitor {
     /// Opens the input stream and starts the worker. `Err` means the caller must run
     /// half-duplex (no monitor); nothing is left running on error.
@@ -218,6 +210,7 @@ impl BargeMonitor {
             input_failed: AtomicBool::new(false),
             stop: AtomicBool::new(false),
             healthy: AtomicBool::new(true),
+            clips: Mutex::new(Vec::new()),
         });
 
         let (done_tx, done_rx) = mpsc::channel::<()>();
@@ -277,14 +270,19 @@ impl BargeMonitor {
                 }
             }
         }
+        join_clips(&self.shared, JOIN_TIMEOUT);
     }
 
     /// False once any internal failure happened or after `shutdown`.
+    // Used by B3b (health probe from the session); no production caller yet.
+    #[allow(dead_code)]
     pub fn is_healthy(&self) -> bool {
         self.shared.healthy.load(Ordering::SeqCst)
     }
 
     /// Reported by the input adapter when its stream fails. Makes the monitor fail soft.
+    // Used by B3b (the real input adapter reports stream failures); no production caller yet.
+    #[allow(dead_code)]
     pub fn report_input_failure(&self) {
         self.shared.input_failed.store(true, Ordering::SeqCst);
     }
@@ -296,8 +294,6 @@ impl Drop for BargeMonitor {
     }
 }
 
-// Used by B3b (not yet constructed in production).
-#[allow(dead_code)]
 impl BargeIn for BargeMonitor {
     fn arm(&self) -> Option<Box<dyn BargeWatch>> {
         let mut state = lock(&self.shared.arm);
@@ -321,6 +317,7 @@ impl BargeIn for BargeMonitor {
             capture_tx: Some(capture_tx),
             ducked: false,
             last_duck_ms: 0,
+            discard: false,
         });
         Some(Box::new(MonitorWatch {
             id,
@@ -328,7 +325,7 @@ impl BargeIn for BargeMonitor {
             reply_rx,
             gate,
             latched,
-            capture_rx,
+            capture_rx: CaptureSlot::Waiting(capture_rx),
         }))
     }
 }
@@ -347,8 +344,26 @@ impl BargeWatch for MonitorWatch {
     }
 
     fn capture(&mut self) -> BoxFuture<'_, BargeCapture> {
-        let receiver = &mut self.capture_rx;
-        Box::pin(async move { receiver.await.unwrap_or(BargeCapture::NoSpeech) })
+        // A oneshot receiver panics if polled after it completed, so the result is kept: every
+        // call (also a repeated one) resolves to the same value.
+        Box::pin(std::future::poll_fn(move |cx| {
+            let slot = &mut self.capture_rx;
+            let polled = match slot {
+                CaptureSlot::Waiting(rx) => Some(Pin::new(rx).poll(cx)),
+                CaptureSlot::Resolved(_) => None,
+            };
+            match polled {
+                Some(Poll::Pending) => return Poll::Pending,
+                Some(Poll::Ready(result)) => {
+                    *slot = CaptureSlot::Resolved(result.unwrap_or(BargeCapture::NoSpeech));
+                }
+                None => {}
+            }
+            match slot {
+                CaptureSlot::Resolved(value) => Poll::Ready(value.clone()),
+                CaptureSlot::Waiting(_) => Poll::Pending,
+            }
+        }))
     }
 }
 
@@ -450,9 +465,21 @@ impl Worker {
         let now = now_ms(self.consumed);
         let mut state = lock(&self.shared.arm);
         if let Some(armed) = state.slot.as_mut() {
+            if armed.policy.state() == PolicyState::Capturing {
+                discard_capture(armed);
+            }
             let events = armed.policy.push_missing(now);
             apply_events(&self.shared, armed, now, events);
         }
+    }
+}
+
+/// DESIGN Rev 10 (a): a lost span inside an utterance makes that clip garbled. The capture resolves
+/// NoSpeech now and the clip is never classified. The reply stays cancelled; the monitor stays up.
+fn discard_capture(armed: &mut Armed) {
+    armed.discard = true;
+    if let Some(tx) = armed.capture_tx.take() {
+        let _ = tx.send(BargeCapture::NoSpeech);
     }
 }
 
@@ -522,7 +549,12 @@ fn apply_events(shared: &Arc<Shared>, armed: &mut Armed, now: u64, events: Vec<P
                 shared.effects.restore();
                 armed.ducked = false;
             }
-            PolicyEvent::Done(samples) => spawn_clip(shared, armed, samples),
+            PolicyEvent::Done(samples) => {
+                // DESIGN Rev 10 (a): an overflowed clip is never classified.
+                if !armed.discard {
+                    spawn_clip(shared, armed, samples);
+                }
+            }
         }
     }
 }
@@ -547,12 +579,41 @@ fn spawn_clip(shared: &Arc<Shared>, armed: &mut Armed, samples: Vec<f32>) {
             let result = classify_clip(&clip_shared, samples);
             deliver(&clip_shared, id, result);
         });
-    if let Err(err) = spawned {
-        log::warn!("barge-in clip thread failed to start: {err}");
-        // Already holding the arm lock: deliver directly, never re-lock.
-        if let Some(tx) = armed.capture_tx.take() {
-            let _ = tx.send(BargeCapture::NoSpeech);
+    match spawned {
+        Ok(handle) => {
+            let mut clips = lock(&shared.clips);
+            clips.retain(|clip| !clip.is_finished());
+            clips.push(handle);
         }
+        Err(err) => {
+            log::warn!("barge-in clip thread failed to start: {err}");
+            // Already holding the arm lock: deliver directly, never re-lock.
+            if let Some(tx) = armed.capture_tx.take() {
+                let _ = tx.send(BargeCapture::NoSpeech);
+            }
+        }
+    }
+}
+
+/// DESIGN Rev 10 (d): joins the live clip threads within a TOTAL `bound`. Threads still running
+/// at the deadline are detached; their results are discarded (the monitor is disarmed).
+fn join_clips(shared: &Shared, bound: Duration) {
+    let mut pending = std::mem::take(&mut *lock(&shared.clips));
+    let deadline = Instant::now() + bound;
+    loop {
+        let mut running = Vec::new();
+        for handle in pending {
+            if handle.is_finished() {
+                let _ = handle.join();
+            } else {
+                running.push(handle);
+            }
+        }
+        if running.is_empty() || Instant::now() >= deadline {
+            return;
+        }
+        pending = running;
+        thread::sleep(Duration::from_millis(5));
     }
 }
 

@@ -3,15 +3,17 @@
 //! The AppHandle-bound adapters are covered through their pure helpers and the fake-platform
 //! finalizer ordering test below.
 
-use std::sync::atomic::AtomicBool;
+use std::collections::VecDeque;
+use std::future::Future;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::audio_toolkit::vad::{VadFrame, VoiceActivityDetector};
 use crate::managers::composer_config::TtsComposerMode;
 use crate::managers::converse::{
-    endpoint_config, BoxFuture, Brain, Ears, Hands, ListenOutcome, Mouth, PhraseOutcome,
-    QuietOutcome, SayOutcome, SessionConfig,
+    endpoint_config, BoxFuture, Brain, Ears, Hands, ListenFailure, ListenOutcome, Mouth,
+    PhraseOutcome, QuietOutcome, SayOutcome, SessionConfig,
 };
 use crate::managers::converse_barge::BargeIn;
 use crate::managers::converse_barge_monitor::{
@@ -19,8 +21,8 @@ use crate::managers::converse_barge_monitor::{
     MonitorStream, SampleCallback, VadFactory,
 };
 use crate::managers::converse_barge_platform::{
-    accepts_verdict, barge_config, barge_enabled, start_monitor_fail_soft, BargeSlot,
-    SpeakerClipGate, TranscriberClip,
+    accepts_verdict, barge_config, barge_enabled, listen_with_barge_recovery,
+    start_monitor_fail_soft, BargeRecovery, BargeSlot, SpeakerClipGate, TranscriberClip,
 };
 use crate::managers::converse_capture::{
     CaptureHandle, CaptureTimings, CaptureWorker, RecorderPort, StartError, TranscribeFailure,
@@ -315,6 +317,145 @@ fn a_running_monitor_is_offered_and_shut_down() {
     );
 }
 
+// ----------------------------- listen recovery -----------------------------
+
+/// Fake monitor side of the recovery: alive until it is retired.
+struct FakeBarge {
+    alive: AtomicBool,
+    retires: AtomicUsize,
+}
+
+impl FakeBarge {
+    fn with_monitor(alive: bool) -> Arc<FakeBarge> {
+        Arc::new(FakeBarge {
+            alive: AtomicBool::new(alive),
+            retires: AtomicUsize::new(0),
+        })
+    }
+}
+
+impl BargeRecovery for FakeBarge {
+    fn is_alive(&self) -> bool {
+        self.alive.load(Ordering::SeqCst)
+    }
+
+    fn retire(&self) {
+        self.retires.fetch_add(1, Ordering::SeqCst);
+        self.alive.store(false, Ordering::SeqCst);
+    }
+}
+
+fn block_on<F: Future>(future: F) -> F::Output {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .expect("runtime");
+    runtime.block_on(future)
+}
+
+/// Runs the recovery over scripted listen outcomes. Returns the outcome and the attempt count.
+fn recover<R: BargeRecovery + 'static>(
+    barge: Arc<R>,
+    script: Vec<ListenOutcome>,
+) -> (ListenOutcome, usize) {
+    let attempts = AtomicUsize::new(0);
+    let script = Mutex::new(VecDeque::from(script));
+    let outcome = block_on(listen_with_barge_recovery(barge, || {
+        attempts.fetch_add(1, Ordering::SeqCst);
+        let next = script
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("an unscripted listen attempt");
+        std::future::ready(next)
+    }));
+    (outcome, attempts.load(Ordering::SeqCst))
+}
+
+#[test]
+fn a_refused_listen_with_a_live_monitor_retires_it_and_retries_once() {
+    let barge = FakeBarge::with_monitor(true);
+    let (outcome, attempts) = recover(
+        barge.clone(),
+        vec![
+            ListenOutcome::Failed(ListenFailure::Busy),
+            ListenOutcome::Utterance("hi".into()),
+        ],
+    );
+    assert_eq!(outcome, ListenOutcome::Utterance("hi".into()));
+    assert_eq!(attempts, 2);
+    assert_eq!(barge.retires.load(Ordering::SeqCst), 1);
+    assert!(!barge.is_alive());
+}
+
+#[test]
+fn the_real_slot_offers_no_barge_in_after_a_refused_listen() {
+    let monitor = start_with(Arc::new(OpenInput), ok_vad()).expect("monitor starts");
+    let slot = Arc::new(BargeSlot::new(Some(monitor.clone())));
+    assert!(slot.view().is_some());
+    let (outcome, attempts) = recover(
+        slot.clone(),
+        vec![
+            ListenOutcome::Failed(ListenFailure::NoMicrophone),
+            ListenOutcome::NoSpeech,
+        ],
+    );
+    assert_eq!(outcome, ListenOutcome::NoSpeech);
+    assert_eq!(attempts, 2);
+    assert!(
+        slot.view().is_none(),
+        "barge-in is None for the rest of the session"
+    );
+    assert!(!monitor.is_healthy(), "the refused monitor is shut down");
+}
+
+#[test]
+fn a_listen_refused_twice_with_a_live_monitor_fails_after_two_attempts() {
+    let barge = FakeBarge::with_monitor(true);
+    let (outcome, attempts) = recover(
+        barge.clone(),
+        vec![
+            ListenOutcome::Failed(ListenFailure::Busy),
+            ListenOutcome::Failed(ListenFailure::Busy),
+        ],
+    );
+    assert_eq!(outcome, ListenOutcome::Failed(ListenFailure::Busy));
+    assert_eq!(attempts, 2);
+    assert_eq!(barge.retires.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_refused_listen_without_a_monitor_is_not_retried() {
+    let barge = FakeBarge::with_monitor(false);
+    let (outcome, attempts) = recover(
+        barge.clone(),
+        vec![ListenOutcome::Failed(ListenFailure::NoMicrophone)],
+    );
+    assert_eq!(outcome, ListenOutcome::Failed(ListenFailure::NoMicrophone));
+    assert_eq!(attempts, 1);
+    assert_eq!(barge.retires.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn other_failures_and_results_are_never_retried() {
+    let cases = [
+        ListenOutcome::Failed(ListenFailure::Permission),
+        ListenOutcome::Failed(ListenFailure::Other),
+        ListenOutcome::Failed(ListenFailure::ModelUnavailable),
+        ListenOutcome::NoSpeech,
+        ListenOutcome::TooLong,
+        ListenOutcome::Aborted,
+        ListenOutcome::Utterance("x".into()),
+    ];
+    for outcome in cases {
+        let barge = FakeBarge::with_monitor(true);
+        let (got, attempts) = recover(barge.clone(), vec![outcome.clone()]);
+        assert_eq!(got, outcome);
+        assert_eq!(attempts, 1, "{outcome:?} must not retry");
+        assert_eq!(barge.retires.load(Ordering::SeqCst), 0);
+        assert!(barge.is_alive());
+    }
+}
+
 // ----------------------------- finalizer ordering -----------------------------
 
 /// Records the finalizer steps this test can observe, in order.
@@ -333,6 +474,7 @@ enum Ending {
 struct OrderEars {
     ending: Ending,
     log: Log,
+    barge_panics: bool,
 }
 
 impl Ears for OrderEars {
@@ -346,6 +488,9 @@ impl Ears for OrderEars {
 
     fn barge_shutdown(&self) {
         self.log.lock().unwrap().push("barge_shutdown");
+        if self.barge_panics {
+            panic!("barge shutdown exploded");
+        }
     }
 }
 
@@ -408,6 +553,7 @@ impl RecorderPort for NullPort {
 struct OrderPlatform {
     ending: Ending,
     log: Log,
+    barge_panics: bool,
 }
 
 impl Platform for OrderPlatform {
@@ -438,6 +584,7 @@ impl Platform for OrderPlatform {
             ears: Box::new(OrderEars {
                 ending: self.ending,
                 log: self.log.clone(),
+                barge_panics: self.barge_panics,
             }),
             mouth: Box::new(QuietMouth),
             hands: Box::new(NoHands),
@@ -463,6 +610,10 @@ impl Platform for OrderPlatform {
 }
 
 fn run_session_to_the_end(ending: Ending) -> Vec<&'static str> {
+    run_session_to_the_end_with(ending, false)
+}
+
+fn run_session_to_the_end_with(ending: Ending, barge_panics: bool) -> Vec<&'static str> {
     let _lock = converse_hooks::TEST_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
@@ -472,6 +623,7 @@ fn run_session_to_the_end(ending: Ending) -> Vec<&'static str> {
     let controller = ConverseController::new(Arc::new(OrderPlatform {
         ending,
         log: log.clone(),
+        barge_panics,
     }));
     controller.start().expect("session starts");
     if ending == Ending::SessionStop {
@@ -504,6 +656,18 @@ fn barge_shutdown_runs_before_the_admission_is_released_on_a_natural_end() {
 fn barge_shutdown_runs_before_the_admission_is_released_on_a_session_stop() {
     assert_eq!(
         run_session_to_the_end(Ending::SessionStop),
+        vec!["barge_shutdown", "idle", "admission_drop"]
+    );
+}
+
+#[test]
+fn a_panicking_barge_shutdown_does_not_skip_the_later_finalizer_steps() {
+    assert_eq!(
+        run_session_to_the_end_with(Ending::Natural, true),
+        vec!["barge_shutdown", "idle", "admission_drop"]
+    );
+    assert_eq!(
+        run_session_to_the_end_with(Ending::SessionStop, true),
         vec!["barge_shutdown", "idle", "admission_drop"]
     );
 }

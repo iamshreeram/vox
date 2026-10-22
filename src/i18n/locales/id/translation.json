@@ -1349,7 +1349,7 @@
       "wakeWordNote": "Mendengarkan sekitar harus dimatikan saat percakapan berjalan. Kata pemicu juga harus dimatikan, kecuali tindakannya diatur ke bicara dengan asisten.",
       "bargeIn": {
         "label": "Interupsi dengan berbicara",
-        "description": "Bicara di atas asisten untuk menghentikannya. Gunakan headphone: lewat speaker, asisten akan mendengar dirinya sendiri. Berfungsi dengan suara Phonon dan Natural; suara sistem tidak bisa diinterupsi dengan cara ini. Membutuhkan balasan lisan.",
+        "description": "Bicaralah di atas asisten untuk menghentikannya. Gunakan headphone: lewat speaker, asisten akan mendengar suaranya sendiri. Suara Phonon dan Natural juga akan mengecil saat Anda berbicara; suara sistem hanya dihentikan. Memerlukan balasan suara yang aktif.",
         "options": {
           "off": "Mati",
           "headphones": "Hanya headphone"

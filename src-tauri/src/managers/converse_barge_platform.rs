@@ -3,8 +3,9 @@
 //! slot ownership) are pure and tested in converse_barge_platform_tests.rs. The device, ONNX and
 //! TTS paths in this file are exercised only live (no audio hardware in the test suite).
 
+use std::future::Future;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use tauri::path::BaseDirectory;
@@ -13,7 +14,7 @@ use tauri::{AppHandle, Manager};
 use crate::audio_toolkit::{AudioRecorder, SileroVad, VadPolicy, VoiceActivityDetector};
 use crate::managers::audio::{SILERO_VAD_RESOURCE, SILERO_VAD_THRESHOLD};
 use crate::managers::composer_config::{settings_from_app, TtsComposerMode};
-use crate::managers::converse::BoxFuture;
+use crate::managers::converse::{BoxFuture, ListenFailure, ListenOutcome};
 use crate::managers::converse_audio::EndpointConfig;
 use crate::managers::converse_barge::BargeIn;
 use crate::managers::converse_barge_monitor::{
@@ -82,19 +83,28 @@ pub fn start_monitor_fail_soft(
     }
 }
 
-/// The session's monitor (or none). Owned by `RealEars`; the finalizer shuts it down.
+/// The session's monitor (or none). Owned by `RealEars`; the finalizer shuts it down. A slot
+/// that was retired by a refused listen offers nothing for the rest of the session.
 #[derive(Default)]
 pub struct BargeSlot {
     monitor: Option<Arc<BargeMonitor>>,
+    retired: AtomicBool,
 }
 
 impl BargeSlot {
     pub fn new(monitor: Option<Arc<BargeMonitor>>) -> Self {
-        Self { monitor }
+        Self {
+            monitor,
+            retired: AtomicBool::new(false),
+        }
     }
 
-    /// The barge-in view for the conversation loop; `None` when there is no monitor.
+    /// The barge-in view for the conversation loop; `None` when there is no monitor or it was
+    /// retired.
     pub fn view(&self) -> Option<&dyn BargeIn> {
+        if self.retired.load(Ordering::SeqCst) {
+            return None;
+        }
         self.monitor
             .as_deref()
             .map(|monitor| monitor as &dyn BargeIn)
@@ -106,6 +116,63 @@ impl BargeSlot {
             monitor.shutdown();
         }
     }
+
+    /// Stops the monitor for the rest of the session. Blocks while the worker is joined.
+    pub fn retire(&self) {
+        self.retired.store(true, Ordering::SeqCst);
+        self.shutdown();
+    }
+}
+
+/// What the listen recovery needs from the barge-in side.
+pub trait BargeRecovery: Send + Sync {
+    /// True while a monitor is armed for this session.
+    fn is_alive(&self) -> bool;
+    /// Stops the monitor for good. May block: call it off the async executor.
+    fn retire(&self);
+}
+
+impl BargeRecovery for BargeSlot {
+    fn is_alive(&self) -> bool {
+        self.view().is_some()
+    }
+
+    fn retire(&self) {
+        BargeSlot::retire(self);
+    }
+}
+
+/// The microphone refused to open for this listen (DESIGN 12.4). Permission and the catch-all
+/// failures are not refusals a second attempt can fix, so they are not retried.
+pub fn is_open_refusal(outcome: &ListenOutcome) -> bool {
+    matches!(
+        outcome,
+        ListenOutcome::Failed(ListenFailure::Busy | ListenFailure::NoMicrophone)
+    )
+}
+
+/// One ordinary listen with the barge-in recovery of DESIGN 12.4. If the microphone refuses to
+/// open while a monitor is alive (a second input stream may be the cause), the monitor is
+/// retired and the listen is retried exactly once. With no live monitor, or for any other
+/// outcome, there is exactly one attempt.
+pub async fn listen_with_barge_recovery<R, F, Fut>(barge: Arc<R>, mut attempt: F) -> ListenOutcome
+where
+    R: BargeRecovery + 'static,
+    F: FnMut() -> Fut,
+    Fut: Future<Output = ListenOutcome>,
+{
+    let first = attempt().await;
+    if !is_open_refusal(&first) || !barge.is_alive() {
+        return first;
+    }
+    let retiring = Arc::clone(&barge);
+    if tauri::async_runtime::spawn_blocking(move || retiring.retire())
+        .await
+        .is_err()
+    {
+        log::warn!("barge-in retirement did not complete; retrying the listen anyway");
+    }
+    attempt().await
 }
 
 /// A speaker-gate verdict as the monitor needs it: only a Reject discards the clip.
