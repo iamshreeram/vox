@@ -705,6 +705,10 @@ pub struct AppSettings {
     pub tts_composer_fallback: crate::managers::composer_config::TtsComposerFallback,
     #[serde(default)]
     pub wake_word_enabled: bool,
+    /// Name of the wake-word model. Only the bundled `hey_jarvis` model exists
+    /// today, so there is intentionally no settings control for it: a selector
+    /// would offer a choice that cannot work. Add a UI control when a second
+    /// model ships.
     #[serde(default = "default_wake_word_model_name")]
     pub wake_word_model_name: String,
     #[serde(default = "default_wake_word_confidence_threshold")]
