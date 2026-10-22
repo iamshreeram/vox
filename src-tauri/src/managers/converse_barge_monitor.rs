@@ -18,7 +18,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{Context, Poll, Wake, Waker};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::sync::{oneshot, watch};
 
@@ -82,7 +82,8 @@ pub trait ClipGate: Send + Sync {
 }
 
 /// Monitor tuning. `heartbeat_ms` refreshes the duck while Ducked; `channel_frames` bounds the
-/// audio channel between the callback and the worker.
+/// audio channel between the callback and the worker. `stall_ms` is the DESIGN 12.2.6 stall
+/// limit: no audio for this long while armed AND speaking fails the monitor soft (production 1000).
 // Used by B3b (not yet constructed in production).
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
@@ -91,6 +92,7 @@ pub struct BargeConfig {
     pub max_utterance_ms: u64,
     pub heartbeat_ms: u64,
     pub channel_frames: usize,
+    pub stall_ms: u64,
 }
 
 /// One arm of the monitor. Owned by the session; `arm()` hands out watches.
@@ -149,6 +151,8 @@ struct Worker {
     frame_samples: usize,
     pending: Vec<f32>,
     consumed: u64,
+    stall: Duration,
+    last_chunk: Instant,
 }
 
 // Used by B3b (not yet constructed in production).
@@ -169,6 +173,9 @@ impl BargeMonitor {
         }
         if cfg.heartbeat_ms == 0 {
             return Err("barge-in heartbeat_ms must be at least 1".to_string());
+        }
+        if cfg.stall_ms == 0 {
+            return Err("barge-in stall_ms must be at least 1".to_string());
         }
         let detector = vad().map_err(|e| format!("barge-in VAD init failed: {e}"))?;
         let frame_samples = detector.frame_samples();
@@ -221,6 +228,8 @@ impl BargeMonitor {
             frame_samples,
             pending: Vec::new(),
             consumed: 0,
+            stall: Duration::from_millis(cfg.stall_ms),
+            last_chunk: Instant::now(),
         };
         let worker_shared = Arc::clone(&shared);
         let spawned = thread::Builder::new()
@@ -363,6 +372,7 @@ impl Worker {
             }
             match self.rx.recv_timeout(POLL) {
                 Ok(chunk) => {
+                    self.last_chunk = Instant::now();
                     if self.shared.overflow.swap(false, Ordering::SeqCst) {
                         self.missing();
                     }
@@ -380,7 +390,26 @@ impl Worker {
                     return Err("input stream closed unexpectedly".to_string());
                 }
             }
+            self.check_stall()?;
         }
+    }
+
+    /// DESIGN 12.2.6: no audio for `stall` while armed AND speaking is a dead input. The clock
+    /// only runs while both hold; otherwise it is held at "now", so quiet periods and the start
+    /// of speech never count as stall time.
+    fn check_stall(&mut self) -> Result<(), String> {
+        let armed = lock(&self.shared.arm).slot.is_some();
+        if !armed || !self.shared.effects.speaking() {
+            self.last_chunk = Instant::now();
+            return Ok(());
+        }
+        if self.last_chunk.elapsed() >= self.stall {
+            return Err(format!(
+                "input stalled: no audio for {} ms while speaking",
+                self.stall.as_millis()
+            ));
+        }
+        Ok(())
     }
 
     fn feed(&mut self, chunk: &[f32]) -> Result<(), String> {

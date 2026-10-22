@@ -406,7 +406,7 @@ fn prepare_engine_for_fresh_listen(engine: &Mutex<Option<Box<dyn WakeWordEngine>
     }
 }
 
-fn resolve_device(settings: &AppSettings) -> Result<Option<cpal::Device>, String> {
+pub(crate) fn resolve_device(settings: &AppSettings) -> Result<Option<cpal::Device>, String> {
     let selected = if let Some(name) = settings.clamshell_microphone.as_ref() {
         if clamshell::is_clamshell().unwrap_or(false) {
             Some(name)

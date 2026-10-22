@@ -36,6 +36,8 @@ fn cfg() -> BargeConfig {
         max_utterance_ms: 5000,
         heartbeat_ms: 1000,
         channel_frames: 64,
+        // Out of the way for the non-stall tests; stall tests set their own (60..150 ms).
+        stall_ms: 10_000,
     }
 }
 
@@ -964,6 +966,108 @@ fn reply_token_never_fires_before_the_latch_and_gate_close() {
         );
         drop(watch);
     }
+}
+
+fn stall_cfg(stall_ms: u64) -> BargeConfig {
+    BargeConfig { stall_ms, ..cfg() }
+}
+
+/// DESIGN 12.2.6: no audio for `stall_ms` while armed AND speaking fails the monitor soft.
+#[test]
+fn stalled_input_while_speaking_fails_soft() {
+    let rig = Rig::new(stall_cfg(100), VadSpec::default(), None);
+    rig.effects.set_speaking(true);
+    let mut armed = rig.arm();
+    rig.push(&frames(true, 5));
+    assert!(wait_until(|| rig.effects.entries() == vec!["duck"]));
+    // The input now goes silent: nothing else is pushed.
+    assert!(
+        wait_until(|| !rig.monitor.is_healthy()
+            && rig.effects.entries().last().map(String::as_str) == Some("restore")),
+        "stall not detected within the bound"
+    );
+    assert_eq!(rig.effects.entries(), vec!["duck", "restore"]);
+    assert!(rig.monitor.arm().is_none());
+    assert_eq!(
+        capture_within(&mut *armed, WAIT),
+        Some(BargeCapture::NoSpeech)
+    );
+    assert!(!armed.cancel_latched());
+    let reply = armed.reply_token();
+    assert!(!*reply.borrow());
+    assert_eq!(rig.input.closes(), 1);
+}
+
+#[test]
+fn stalled_monitor_survives_shutdown_and_closes_once() {
+    let rig = Rig::new(stall_cfg(100), VadSpec::default(), None);
+    rig.effects.set_speaking(true);
+    let armed = rig.arm();
+    rig.push(&frames(true, 5));
+    assert!(wait_until(|| rig.effects.entries() == vec!["duck"]));
+    assert!(wait_until(|| !rig.monitor.is_healthy()));
+    assert_eq!(rig.input.closes(), 1, "early close on stall");
+    rig.monitor.shutdown();
+    rig.monitor.shutdown();
+    assert_eq!(rig.input.closes(), 1, "stream closed exactly once overall");
+    drop(armed);
+    assert_eq!(rig.effects.entries(), vec!["duck", "restore"]);
+}
+
+#[test]
+fn silent_input_while_armed_but_not_speaking_stays_healthy() {
+    let rig = Rig::new(stall_cfg(60), VadSpec::default(), None);
+    rig.effects.set_speaking(false);
+    let armed = rig.arm();
+    thread::sleep(Duration::from_millis(400));
+    assert!(rig.monitor.is_healthy());
+    drop(armed);
+    assert!(rig.effects.entries().is_empty());
+}
+
+#[test]
+fn silent_input_while_not_armed_stays_healthy() {
+    let rig = Rig::new(stall_cfg(60), VadSpec::default(), None);
+    rig.effects.set_speaking(true);
+    thread::sleep(Duration::from_millis(400));
+    assert!(rig.monitor.is_healthy());
+    let armed = rig.arm();
+    drop(armed);
+}
+
+#[test]
+fn steady_frames_slower_than_half_the_stall_limit_never_stall() {
+    let rig = Rig::new(stall_cfg(150), VadSpec::default(), None);
+    rig.effects.set_speaking(true);
+    let armed = rig.arm();
+    for _ in 0..12 {
+        thread::sleep(Duration::from_millis(60));
+        rig.push(&frames(false, 1));
+        assert!(rig.monitor.is_healthy(), "stalled on a steady stream");
+    }
+    assert!(rig.effects.entries().is_empty());
+    drop(armed);
+}
+
+/// The stall clock counts only while armed AND speaking: a long quiet period before speech
+/// must not make the first speech frames look stalled.
+#[test]
+fn stall_clock_starts_when_speech_starts() {
+    let rig = Rig::new(stall_cfg(150), VadSpec::default(), None);
+    rig.effects.set_speaking(false);
+    let armed = rig.arm();
+    thread::sleep(Duration::from_millis(400));
+    rig.effects.set_speaking(true);
+    thread::sleep(Duration::from_millis(30));
+    assert!(
+        rig.monitor.is_healthy(),
+        "stall fired right after speech began"
+    );
+    assert!(
+        wait_until(|| !rig.monitor.is_healthy()),
+        "stall not detected after speech began"
+    );
+    drop(armed);
 }
 
 #[test]

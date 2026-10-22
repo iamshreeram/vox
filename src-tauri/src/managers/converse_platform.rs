@@ -21,6 +21,10 @@ use crate::managers::converse::{
     QuietOutcome, SayOutcome, SessionConfig, SessionEnd, SpeechQueue, TranscriptSink,
 };
 use crate::managers::converse_audio::{wait_for_speech_end, SpeechProbe, WaitOutcome};
+use crate::managers::converse_barge::BargeIn;
+use crate::managers::converse_barge_platform::{
+    barge_config, barge_enabled, build_monitor, start_monitor_fail_soft, BargeSlot,
+};
 use crate::managers::converse_capture::{
     CaptureHandle, CaptureOptions, CaptureTimings, CaptureWorker, RecorderPort, StartError,
     TranscribeFailure, Transcriber,
@@ -307,6 +311,8 @@ impl Transcriber for AppTranscriber {
 struct RealEars {
     app: AppHandle,
     capture: CaptureHandle,
+    /// Barge-in monitor of this session (B3b). Empty unless enabled and started (fail-soft).
+    barge: BargeSlot,
 }
 
 impl Ears for RealEars {
@@ -321,6 +327,14 @@ impl Ears for RealEars {
     /// so the most recent listen id is the one the loop is asking about.
     fn take_timing(&self) -> Option<crate::managers::converse_latency::ListenTiming> {
         self.capture.take_timing(self.capture.last_listen_id())
+    }
+
+    fn barge_in(&self) -> Option<&dyn BargeIn> {
+        self.barge.view()
+    }
+
+    fn barge_shutdown(&self) {
+        self.barge.shutdown();
     }
 }
 
@@ -991,10 +1005,29 @@ impl Platform for RealPlatform {
             Arc::new(move || get_settings(&app_for_settings)),
         );
 
+        // Barge-in (DESIGN 12.2.6): only with the explicit headphones setting, decided once from
+        // the settings read above. Any failure to build leaves the session half-duplex.
+        let barge = BargeSlot::new(start_monitor_fail_soft(barge_enabled(&settings), || {
+            let gate = self
+                .app
+                .try_state::<Arc<VoiceRuntime>>()
+                .and_then(|runtime| capture_options(&settings, runtime.inner()).speaker_gate);
+            let transcriber: Arc<dyn Transcriber> = Arc::new(AppTranscriber {
+                app: self.app.clone(),
+            });
+            build_monitor(
+                &self.app,
+                transcriber,
+                gate,
+                barge_config(&endpoint_config(&settings)),
+            )
+        }));
+
         SessionParts {
             ears: Box::new(RealEars {
                 app: self.app.clone(),
                 capture: capture.clone(),
+                barge,
             }),
             mouth: Box::new(RealMouth {
                 app: self.app.clone(),

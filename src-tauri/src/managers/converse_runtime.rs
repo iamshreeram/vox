@@ -158,7 +158,7 @@ async fn run_prepare(prepare: Option<BoxFuture<'static, ()>>, cancel: &mut Cance
     let Some(prepare) = prepare else {
         return true;
     };
-    if *cancel.borrow() {
+    if *cancel.session_ref() {
         return false;
     }
     let bounded = tokio::time::timeout(PREPARE_TIMEOUT, prepare);
@@ -194,7 +194,8 @@ impl ConverseController {
     ///
     /// The session task runs `run_session` under `catch_unwind` (a panic counts
     /// as `Cancelled`), then the FINALIZER runs, always, in this exact order:
-    /// (1) `capture.shutdown()` on a blocking thread and awaited,
+    /// (0) `ears.barge_shutdown()` (the barge-in monitor, if any), (1) `capture.shutdown()` on a
+    /// blocking thread and awaited,
     /// (2) `install_capture(None)`, (3) `set_session_active(false)`,
     /// (4) `platform.on_state("idle", Some(end_label(end)))`,
     /// (5) `registry.finish(id)`, (6) drop the admission guard.
@@ -274,7 +275,14 @@ impl ConverseController {
                     .await
                     .unwrap_or(SessionEnd::Cancelled)
             };
-            // Finalizer: exact order, always runs.
+            // Finalizer: exact order, always runs. The barge-in monitor (its stream and worker)
+            // ends first: before the capture worker and long before the admission is released
+            // (DESIGN 12.7.A). It may block while joining its worker, so it runs on a blocking
+            // thread; a panic there must not skip the steps below.
+            let _ = tauri::async_runtime::spawn_blocking(move || {
+                let _ = std::panic::catch_unwind(AssertUnwindSafe(|| ears.barge_shutdown()));
+            })
+            .await;
             let _ = tauri::async_runtime::spawn_blocking(move || capture.shutdown()).await;
             converse_hooks::install_capture(None);
             converse_hooks::set_session_active(false);

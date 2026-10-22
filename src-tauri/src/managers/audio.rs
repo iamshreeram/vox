@@ -18,7 +18,9 @@ use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
 
 const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
-const SILERO_VAD_THRESHOLD: f32 = 0.3;
+pub(crate) const SILERO_VAD_THRESHOLD: f32 = 0.3;
+/// Silero VAD model resource (shared with the barge-in monitor; same file, no behaviour change).
+pub(crate) const SILERO_VAD_RESOURCE: &str = "resources/models/silero_vad_v4.onnx";
 const EARSHOT_VAD_THRESHOLD: f32 = 0.5;
 
 fn set_mute(mute: bool) {
@@ -291,10 +293,7 @@ fn create_audio_recorder(
         VadBackend::Silero => {
             let vad_path = app_handle
                 .path()
-                .resolve(
-                    "resources/models/silero_vad_v4.onnx",
-                    tauri::path::BaseDirectory::Resource,
-                )
+                .resolve(SILERO_VAD_RESOURCE, tauri::path::BaseDirectory::Resource)
                 .map_err(|e| anyhow::anyhow!("Failed to resolve VAD path: {e}"))?;
             Box::new(
                 SileroVad::new(vad_path, SILERO_VAD_THRESHOLD)

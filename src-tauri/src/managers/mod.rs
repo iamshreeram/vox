@@ -28,6 +28,9 @@ mod converse_barge_loop_tests;
 pub mod converse_barge_monitor;
 #[cfg(test)]
 mod converse_barge_monitor_tests;
+pub mod converse_barge_platform;
+#[cfg(test)]
+mod converse_barge_platform_tests;
 #[cfg(test)]
 mod converse_barge_tests;
 pub mod converse_capture;

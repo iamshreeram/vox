@@ -26,19 +26,29 @@ until the conversation ends.
 
 ## Current limits
 
-- Conversations are still turn-based. You cannot interrupt the assistant while
-  it is speaking; wait for the reply to finish, then talk.
+- Conversations are turn-based by default. Interrupting the assistant while it
+  speaks is experimental and headphones only; see
+  [Interrupting by speaking](conversation.md#interrupting-by-speaking-headphones-experimental).
 - The wake word detector is muted while a conversation session runs, and for
   1 second after it ends.
 - Ambient listening must be off while a conversation runs. The wake word must
   be off as well, unless its action is set to talk with the assistant.
+
+### Known limits of interrupting by speaking
+
+- The system voice can be interrupted but not ducked (lowered in volume).
+- Speakers are not supported: the assistant would hear itself.
+- Bluetooth headsets may switch profile when the second microphone stream
+  opens, so a short audio glitch is possible.
+- Spoken replies and a reply backend are required.
 
 ## Roadmap / TODO
 
 - [ ] (a) Overlay live transcript: show what you said and the reply on the
       recording overlay.
 - [ ] (b) Dedicated Assistant chat window. Typing input is deferred.
-- [ ] (c) Barge-in on headphones: talk over the assistant to interrupt it.
+- [x] (c) Barge-in on headphones: talk over the assistant to interrupt it.
+      Experimental and opt-in (headphones only); see the limits above.
 - [ ] (d) Speakers, using echo cancellation. Starts only after a measured spike.
 - [ ] (e) Cross-session memory. This needs its own security design first.
 - [ ] (f) Show a start refusal (for example spoken replies being off) when the

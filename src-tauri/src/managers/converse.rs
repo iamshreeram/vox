@@ -71,7 +71,7 @@ impl CancelToken {
 
     /// The session side only. Kept for the pre-listen `prepare` step, which runs before any
     /// reply token exists. Use `is_cancelled` for the full state.
-    pub fn borrow(&self) -> tokio::sync::watch::Ref<'_, bool> {
+    pub fn session_ref(&self) -> tokio::sync::watch::Ref<'_, bool> {
         self.session.borrow()
     }
 
@@ -185,6 +185,10 @@ pub trait Ears: Send + Sync {
     fn barge_in(&self) -> Option<&dyn BargeIn> {
         None
     }
+
+    /// Stops this session's barge-in monitor, if any. The session finalizer calls it before the
+    /// capture worker is shut down. Default: nothing to stop.
+    fn barge_shutdown(&self) {}
 }
 
 pub trait Mouth: Send + Sync {
@@ -3362,9 +3366,9 @@ mod tests {
         assert_eq!(reg.state(), RegistryState::Running(id));
         assert!(reg.is_active());
         assert!(reg.try_begin().is_none(), "double begin refused");
-        assert!(!*token.borrow());
+        assert!(!*token.session_ref());
         assert!(reg.request_stop());
-        assert!(*token.borrow(), "stop must cancel the token");
+        assert!(*token.session_ref(), "stop must cancel the token");
         assert_eq!(reg.state(), RegistryState::Draining(id));
         assert!(!reg.request_stop(), "second stop is idempotent no-op");
         assert!(reg.is_active(), "draining still counts as active");
