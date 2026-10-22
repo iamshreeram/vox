@@ -1145,6 +1145,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_wake_word_silence_timeout_ms_setting,
             shortcut::change_ambient_wake_name_setting,
             shortcut::change_ambient_window_ms_setting,
+            shortcut::change_custom_filler_words_setting,
+            shortcut::change_agent_bridge_timeout_secs_setting,
+            shortcut::change_agent_bridge_prompt_flag_setting,
             commands::voice_shortcuts::set_voice_shortcuts,
             commands::converse::change_converse_silence_ms_setting,
             commands::converse::change_converse_max_idle_turns_setting,
@@ -1591,6 +1594,8 @@ pub fn run(cli_args: CliArgs) {
     });
 }
 
+#[cfg(test)]
+mod agent_bridge_settings_tests;
 #[cfg(test)]
 mod ambient_settings_tests;
 #[cfg(test)]

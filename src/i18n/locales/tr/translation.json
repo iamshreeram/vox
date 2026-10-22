@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Gelişmiş",
+        "timeoutLabel": "Ajan zaman aşımı (saniye)",
+        "timeoutDescription": "Ajan komutunun yanıt vermesi için ne kadar beklenecek. 5 ile 600 saniye arası.",
+        "promptFlagLabel": "İstek bayrağı",
+        "promptFlagDescription": "İsteğinizi ajan komutuna ileten bayrak, örneğin -p. Ajan bayrağından farklı olmalıdır.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Dolgu Sözcüklerini Kaldır",
-        "description": "Transkripsiyonlardaki yaygın duraksama sözcüklerini kaldırır. Bunları korumak için kapatın."
+        "description": "Transkripsiyonlardaki yaygın duraksama sözcüklerini kaldırır. Bunları korumak için kapatın.",
+        "modeLabel": "Dolgu kelimeleri listesi",
+        "builtIn": "Yerleşik liste",
+        "custom": "Özel liste",
+        "off": "Kapalı (tüm kelimeleri koru)",
+        "customLabel": "Özel dolgu kelimeleri",
+        "customHelp": "Kelimeleri virgül veya yeni satırla ayırın. En fazla 100 kelime, her biri en fazla 32 karakter. Eşleştirme büyük ve küçük harfi ayırt etmez.",
+        "customCount": "{{max}} kelimeden {{count}} kelime",
+        "customTooMany": "Özel liste en fazla {{max}} kelime içerebilir.",
+        "customTooLong": "Her kelime en fazla {{max}} karakter olabilir.",
+        "customEmpty": "En az bir kelime ekleyin ya da Yerleşik liste veya Kapalı seçin.",
+        "saveCustom": "Listeyi kaydet"
       },
       "chineseScript": {
         "title": "Çince yazı",

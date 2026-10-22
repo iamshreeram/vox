@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Avancé",
+        "timeoutLabel": "Délai de l'agent (secondes)",
+        "timeoutDescription": "Durée d'attente de la réponse de la commande de l'agent. Entre 5 et 600 secondes.",
+        "promptFlagLabel": "Option de requête",
+        "promptFlagDescription": "L'option qui transmet votre demande à la commande de l'agent, par exemple -p. Elle doit être différente de l'option de l'agent.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Supprimer les mots de remplissage",
-        "description": "Supprime les hésitations courantes des transcriptions. Désactivez cette option pour les conserver."
+        "description": "Supprime les hésitations courantes des transcriptions. Désactivez cette option pour les conserver.",
+        "modeLabel": "Liste des mots de remplissage",
+        "builtIn": "Liste intégrée",
+        "custom": "Liste personnalisée",
+        "off": "Désactivé (garder tous les mots)",
+        "customLabel": "Mots de remplissage personnalisés",
+        "customHelp": "Séparez les mots par des virgules ou des retours à la ligne. Jusqu'à 100 mots, chacun de 32 caractères au plus. La recherche ne distingue pas les majuscules des minuscules.",
+        "customCount": "{{count}} sur {{max}} mots",
+        "customTooMany": "Une liste personnalisée peut comporter au plus {{max}} mots.",
+        "customTooLong": "Chaque mot peut comporter au plus {{max}} caractères.",
+        "customEmpty": "Ajoutez au moins un mot, ou choisissez Liste intégrée ou Désactivé.",
+        "saveCustom": "Enregistrer la liste"
       },
       "chineseScript": {
         "title": "Écriture chinoise",

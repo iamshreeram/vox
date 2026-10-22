@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Lanjutan",
+        "timeoutLabel": "Batas waktu agen (detik)",
+        "timeoutDescription": "Berapa lama menunggu balasan dari perintah agen. Antara 5 dan 600 detik.",
+        "promptFlagLabel": "Flag permintaan",
+        "promptFlagDescription": "Flag yang meneruskan permintaan Anda ke perintah agen, misalnya -p. Harus berbeda dari flag agen.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Hapus Kata Pengisi",
-        "description": "Menghapus kata pengisi umum dari transkripsi. Nonaktifkan untuk mempertahankannya."
+        "description": "Menghapus kata pengisi umum dari transkripsi. Nonaktifkan untuk mempertahankannya.",
+        "modeLabel": "Daftar kata pengisi",
+        "builtIn": "Daftar bawaan",
+        "custom": "Daftar kustom",
+        "off": "Nonaktif (pertahankan semua kata)",
+        "customLabel": "Kata pengisi kustom",
+        "customHelp": "Pisahkan kata dengan koma atau baris baru. Hingga 100 kata, masing-masing paling banyak 32 karakter. Pencocokan tidak membedakan huruf besar dan kecil.",
+        "customCount": "{{count}} dari {{max}} kata",
+        "customTooMany": "Daftar kustom dapat berisi paling banyak {{max}} kata.",
+        "customTooLong": "Setiap kata dapat berisi paling banyak {{max}} karakter.",
+        "customEmpty": "Tambahkan minimal satu kata, atau pilih Daftar bawaan atau Nonaktif.",
+        "saveCustom": "Simpan daftar"
       },
       "chineseScript": {
         "title": "Aksara Tionghoa",

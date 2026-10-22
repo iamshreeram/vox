@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "詳細設定",
+        "timeoutLabel": "エージェントのタイムアウト（秒）",
+        "timeoutDescription": "エージェントコマンドの応答を待つ時間です。5～600秒の間で設定します。",
+        "promptFlagLabel": "プロンプト用フラグ",
+        "promptFlagDescription": "依頼内容をエージェントコマンドに渡すフラグです（例: -p）。エージェント用フラグとは異なる必要があります。",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "フィラー語を削除",
-        "description": "文字起こしから一般的なフィラー語を削除します。残すにはオフにしてください。"
+        "description": "文字起こしから一般的なフィラー語を削除します。残すにはオフにしてください。",
+        "modeLabel": "フィラー語のリスト",
+        "builtIn": "内蔵リスト",
+        "custom": "カスタムリスト",
+        "off": "オフ（すべての単語を残す）",
+        "customLabel": "カスタムのフィラー語",
+        "customHelp": "単語はカンマか改行で区切ってください。最大100語、各32文字まで。大文字と小文字は区別されません。",
+        "customCount": "{{max}} 語中 {{count}} 語",
+        "customTooMany": "カスタムリストは最大 {{max}} 語までです。",
+        "customTooLong": "各単語は最大 {{max}} 文字までです。",
+        "customEmpty": "少なくとも1語を追加するか、内蔵リストまたはオフを選んでください。",
+        "saveCustom": "リストを保存"
       },
       "chineseScript": {
         "title": "中国語の表記",

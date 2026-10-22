@@ -1040,6 +1040,49 @@ pub fn change_ambient_window_ms_setting(app: AppHandle, window_ms: u64) -> Resul
     Ok(())
 }
 
+/// Validates and stores the custom filler word list. `None` restores the built-in lists,
+/// `Some([])` turns filler removal off. A rejected list leaves the stored setting untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_custom_filler_words_setting(
+    app: AppHandle,
+    words: Option<Vec<String>>,
+) -> Result<(), String> {
+    let words = settings::validate_custom_filler_words(words)?;
+    let mut settings = settings::get_settings(&app);
+    settings.custom_filler_words = words;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Validates and stores the agent bridge timeout in seconds. A rejected value leaves the
+/// stored setting untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_bridge_timeout_secs_setting(
+    app: AppHandle,
+    timeout_secs: u64,
+) -> Result<(), String> {
+    let timeout_secs = settings::validate_agent_bridge_timeout_secs(timeout_secs)?;
+    let mut settings = settings::get_settings(&app);
+    settings.agent_bridge_timeout_secs = timeout_secs;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Validates and stores the agent bridge prompt flag. The flag must have a valid shape and
+/// must differ from the effective agent flag. A rejected flag leaves the stored setting
+/// untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_agent_bridge_prompt_flag_setting(app: AppHandle, flag: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    let flag = settings::validate_agent_bridge_prompt_flag(&settings, &flag)?;
+    settings.agent_bridge_prompt_flag = flag;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// Normalizes a voice name submitted from the settings UI.
 ///
 /// Blank or missing input means "system default" (`Ok(None)`). A non-blank

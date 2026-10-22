@@ -59,7 +59,22 @@ export function isRunning(state: string): boolean {
 export const MAX_AGENT_NAMES = 20;
 
 const AGENT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-const AGENT_FLAG_PATTERN = /^--?[A-Za-z][A-Za-z0-9-]{0,31}$/;
+// Mirrors the backend flag-shape rule (settings.rs is_valid_flag_shape): an optional
+// leading "--" or "-", then 1..=32 chars: ASCII letter first, then ASCII alphanumeric or '-'.
+const FLAG_SHAPE_PATTERN = /^--?[A-Za-z][A-Za-z0-9-]{0,31}$/;
+
+/** Prompt flag the backend falls back to when the stored value is not a valid flag shape. */
+export const DEFAULT_PROMPT_FLAG = "-p";
+
+/** True when the string has a valid flag shape (no whitespace, no shell syntax). */
+export function isValidFlagShape(flag: string): boolean {
+  return FLAG_SHAPE_PATTERN.test(flag);
+}
+
+/** The prompt flag the backend will use: the stored value when its shape is valid, else "-p". */
+export function effectivePromptFlag(stored: string): string {
+  return isValidFlagShape(stored) ? stored : DEFAULT_PROMPT_FLAG;
+}
 
 /** Returns true when the name matches the agent name rule (ASCII only, no trimming). */
 export function isValidAgentName(name: string): boolean {
@@ -83,7 +98,7 @@ export function cleanAgentNames(names: string[]): string[] {
 
 /** Returns true when the flag matches the agent flag rule and is not the prompt flag. */
 export function isValidAgentFlag(flag: string, promptFlag: string): boolean {
-  return AGENT_FLAG_PATTERN.test(flag) && flag !== promptFlag;
+  return isValidFlagShape(flag) && flag !== promptFlag;
 }
 
 /** Returns true when the candidate is a valid, non-duplicate name and the list is below MAX_AGENT_NAMES. */

@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Nâng cao",
+        "timeoutLabel": "Thời gian chờ của tác nhân (giây)",
+        "timeoutDescription": "Thời gian chờ phản hồi từ lệnh của tác nhân. Từ 5 đến 600 giây.",
+        "promptFlagLabel": "Cờ yêu cầu",
+        "promptFlagDescription": "Cờ truyền yêu cầu của bạn đến lệnh của tác nhân, ví dụ -p. Cờ này phải khác cờ của tác nhân.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Loại bỏ từ đệm",
-        "description": "Loại bỏ các từ ngập ngừng phổ biến khỏi bản chép lời. Tắt để giữ lại các từ này."
+        "description": "Loại bỏ các từ ngập ngừng phổ biến khỏi bản chép lời. Tắt để giữ lại các từ này.",
+        "modeLabel": "Danh sách từ đệm",
+        "builtIn": "Danh sách có sẵn",
+        "custom": "Danh sách tùy chỉnh",
+        "off": "Tắt (giữ mọi từ)",
+        "customLabel": "Từ đệm tùy chỉnh",
+        "customHelp": "Phân tách các từ bằng dấu phẩy hoặc xuống dòng. Tối đa 100 từ, mỗi từ tối đa 32 ký tự. Không phân biệt chữ hoa và chữ thường.",
+        "customCount": "{{count}} trên {{max}} từ",
+        "customTooMany": "Danh sách tùy chỉnh có tối đa {{max}} từ.",
+        "customTooLong": "Mỗi từ có tối đa {{max}} ký tự.",
+        "customEmpty": "Thêm ít nhất một từ, hoặc chọn Danh sách có sẵn hoặc Tắt.",
+        "saveCustom": "Lưu danh sách"
       },
       "chineseScript": {
         "title": "Chữ Hán giản thể/phồn thể",

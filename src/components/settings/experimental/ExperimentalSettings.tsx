@@ -14,6 +14,7 @@ import { VoiceMediaControlsToggle } from "../VoiceMediaControlsToggle";
 import { AgentBridgeToggle } from "../AgentBridgeToggle";
 import { AgentContextToggle } from "../AgentContextToggle";
 import { AgentBridgeBinaryPathField } from "../AgentBridgeBinaryPathField";
+import { AgentBridgeAdvancedSettings } from "../AgentBridgeAdvancedSettings";
 import {
   ConversationRecordsToggle,
   ConversationVaultContextToggle,
@@ -84,7 +85,10 @@ export const ExperimentalSettings: React.FC = () => {
       <AgentContextToggle descriptionMode="tooltip" grouped={true} />
     ),
     agentBridgeBinaryPath: () => (
-      <AgentBridgeBinaryPathField descriptionMode="tooltip" grouped={true} />
+      <>
+        <AgentBridgeBinaryPathField descriptionMode="tooltip" grouped={true} />
+        <AgentBridgeAdvancedSettings descriptionMode="tooltip" grouped={true} />
+      </>
     ),
     tts: () => <TtsSettings descriptionMode="tooltip" grouped={true} />,
     realtime: () => (

@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "고급",
+        "timeoutLabel": "에이전트 제한 시간(초)",
+        "timeoutDescription": "에이전트 명령의 응답을 기다리는 시간입니다. 5~600초 사이로 설정하세요.",
+        "promptFlagLabel": "프롬프트 플래그",
+        "promptFlagDescription": "요청을 에이전트 명령에 전달하는 플래그입니다(예: -p). 에이전트 플래그와 달라야 합니다.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "군더더기 표현 제거",
-        "description": "전사에서 흔한 머뭇거림 표현을 제거합니다. 그대로 두려면 이 옵션을 끄세요."
+        "description": "전사에서 흔한 머뭇거림 표현을 제거합니다. 그대로 두려면 이 옵션을 끄세요.",
+        "modeLabel": "군더더기 단어 목록",
+        "builtIn": "기본 제공 목록",
+        "custom": "사용자 지정 목록",
+        "off": "끄기 (모든 단어 유지)",
+        "customLabel": "사용자 지정 군더더기 단어",
+        "customHelp": "쉼표나 줄바꿈으로 단어를 구분하세요. 최대 100개, 각 단어는 32자 이하입니다. 대소문자는 구분하지 않습니다.",
+        "customCount": "{{max}}개 중 {{count}}개 단어",
+        "customTooMany": "사용자 지정 목록은 최대 {{max}}개 단어까지 가능합니다.",
+        "customTooLong": "각 단어는 최대 {{max}}자까지 가능합니다.",
+        "customEmpty": "단어를 하나 이상 추가하거나 기본 제공 목록 또는 끄기를 선택하세요.",
+        "saveCustom": "목록 저장"
       },
       "chineseScript": {
         "title": "중국어 간체/번체",

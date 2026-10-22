@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Дополнительно",
+        "timeoutLabel": "Время ожидания агента (секунды)",
+        "timeoutDescription": "Сколько ждать ответа от команды агента. От 5 до 600 секунд.",
+        "promptFlagLabel": "Флаг запроса",
+        "promptFlagDescription": "Флаг, который передаёт ваш запрос команде агента, например -p. Он должен отличаться от флага агента.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Удалять слова-паразиты",
-        "description": "Удаляет распространённые слова-заминки из расшифровок. Отключите, чтобы сохранить их."
+        "description": "Удаляет распространённые слова-заминки из расшифровок. Отключите, чтобы сохранить их.",
+        "modeLabel": "Список слов-паразитов",
+        "builtIn": "Встроенный список",
+        "custom": "Свой список",
+        "off": "Выкл. (оставить все слова)",
+        "customLabel": "Свои слова-паразиты",
+        "customHelp": "Разделяйте слова запятыми или переносами строк. До 100 слов, каждое не длиннее 32 символов. Регистр букв не учитывается.",
+        "customCount": "{{count}} из {{max}} слов",
+        "customTooMany": "Свой список может содержать не более {{max}} слов.",
+        "customTooLong": "Каждое слово может содержать не более {{max}} символов.",
+        "customEmpty": "Добавьте хотя бы одно слово или выберите Встроенный список или Выкл.",
+        "saveCustom": "Сохранить список"
       },
       "chineseScript": {
         "title": "Китайская письменность",

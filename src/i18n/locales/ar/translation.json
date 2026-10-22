@@ -335,6 +335,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "متقدم",
+        "timeoutLabel": "مهلة الوكيل (بالثواني)",
+        "timeoutDescription": "المدة التي ينتظرها الأمر الخاص بالوكيل للرد. بين 5 و600 ثانية.",
+        "promptFlagLabel": "علامة الطلب",
+        "promptFlagDescription": "العلامة التي تمرر طلبك إلى أمر الوكيل، مثل -p. يجب أن تختلف عن علامة الوكيل.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -624,7 +629,18 @@
       },
       "fillerWordRemoval": {
         "title": "إزالة كلمات الحشو",
-        "description": "يزيل كلمات التردد الشائعة من النصوص. عطّل هذا الخيار للاحتفاظ بها."
+        "description": "يزيل كلمات التردد الشائعة من النصوص. عطّل هذا الخيار للاحتفاظ بها.",
+        "modeLabel": "قائمة كلمات الحشو",
+        "builtIn": "القائمة المدمجة",
+        "custom": "قائمة مخصصة",
+        "off": "إيقاف (الاحتفاظ بكل الكلمات)",
+        "customLabel": "كلمات الحشو المخصصة",
+        "customHelp": "افصل بين الكلمات بفواصل أو أسطر جديدة. حتى 100 كلمة، وكل كلمة حتى 32 حرفًا. المطابقة لا تفرق بين الحروف الكبيرة والصغيرة.",
+        "customCount": "{{count}} من {{max}} كلمة",
+        "customTooMany": "يمكن أن تحتوي القائمة المخصصة على {{max}} كلمة كحد أقصى.",
+        "customTooLong": "يمكن أن تحتوي كل كلمة على {{max}} حرفًا كحد أقصى.",
+        "customEmpty": "أضف كلمة واحدة على الأقل، أو اختر القائمة المدمجة أو إيقاف.",
+        "saveCustom": "حفظ القائمة"
       },
       "chineseScript": {
         "title": "الكتابة الصينية",

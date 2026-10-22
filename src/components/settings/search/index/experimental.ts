@@ -457,6 +457,20 @@ row(
     ],
   ),
   row(
+    "agentBridgeTimeout",
+    "agentBridge",
+    "settings.advanced.agentBridge.timeoutLabel",
+    "settings.advanced.agentBridge.timeoutDescription",
+    ["agent timeout", "timeout", "seconds", "wait", "agent wait"],
+  ),
+  row(
+    "agentBridgePromptFlag",
+    "agentBridge",
+    "settings.advanced.agentBridge.promptFlagLabel",
+    "settings.advanced.agentBridge.promptFlagDescription",
+    ["prompt flag", "flag", "argument", "-p", "agent flag"],
+  ),
+  row(
     "agentBridgeBinaryPath",
     "agentBridge",
     "settings.advanced.agentBridge.binaryPathLabel",

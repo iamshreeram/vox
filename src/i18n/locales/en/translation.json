@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Advanced",
+        "timeoutLabel": "Agent timeout (seconds)",
+        "timeoutDescription": "How long to wait for the agent command to reply. Between 5 and 600 seconds.",
+        "promptFlagLabel": "Prompt flag",
+        "promptFlagDescription": "The flag that passes your request to the agent command, for example -p. It must differ from the agent flag.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Remove Filler Words",
-        "description": "Removes common hesitation words from transcriptions. Turn off to keep them."
+        "description": "Removes common hesitation words from transcriptions. Turn off to keep them.",
+        "modeLabel": "Filler word list",
+        "builtIn": "Built-in list",
+        "custom": "Custom list",
+        "off": "Off (keep every word)",
+        "customLabel": "Custom filler words",
+        "customHelp": "Separate words with commas or new lines. Up to 100 words, each up to 32 characters. Matching ignores capitals.",
+        "customCount": "{{count}} of {{max}} words",
+        "customTooMany": "A custom list can have at most {{max}} words.",
+        "customTooLong": "Each word can be at most {{max}} characters.",
+        "customEmpty": "Add at least one word, or choose Built-in list or Off.",
+        "saveCustom": "Save list"
       },
       "chineseScript": {
         "title": "Chinese Script",

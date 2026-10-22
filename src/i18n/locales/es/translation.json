@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Avanzado",
+        "timeoutLabel": "Tiempo de espera del agente (segundos)",
+        "timeoutDescription": "Cuánto tiempo esperar a que el comando del agente responda. Entre 5 y 600 segundos.",
+        "promptFlagLabel": "Indicador de solicitud",
+        "promptFlagDescription": "El indicador que pasa su solicitud al comando del agente, por ejemplo -p. Debe ser distinto del indicador del agente.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Eliminar muletillas",
-        "description": "Elimina las muletillas más comunes de las transcripciones. Desactívalo para conservarlas."
+        "description": "Elimina las muletillas más comunes de las transcripciones. Desactívalo para conservarlas.",
+        "modeLabel": "Lista de muletillas",
+        "builtIn": "Lista integrada",
+        "custom": "Lista personalizada",
+        "off": "Desactivado (conservar todas las palabras)",
+        "customLabel": "Muletillas personalizadas",
+        "customHelp": "Separe las palabras con comas o saltos de línea. Hasta 100 palabras, de 32 caracteres como máximo cada una. La búsqueda no distingue mayúsculas de minúsculas.",
+        "customCount": "{{count}} de {{max}} palabras",
+        "customTooMany": "Una lista personalizada puede tener como máximo {{max}} palabras.",
+        "customTooLong": "Cada palabra puede tener como máximo {{max}} caracteres.",
+        "customEmpty": "Añada al menos una palabra, o elija Lista integrada o Desactivado.",
+        "saveCustom": "Guardar lista"
       },
       "chineseScript": {
         "title": "Escritura china",

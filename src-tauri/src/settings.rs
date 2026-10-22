@@ -1023,13 +1023,10 @@ pub fn clean_agent_names(input: Vec<String>) -> Vec<String> {
     kept
 }
 
-/// Reports whether `flag` is a usable agent flag (M4).
-///
-/// A usable flag matches `^--?[A-Za-z][A-Za-z0-9-]{0,31}$` and differs from `prompt_flag`.
-pub fn is_valid_agent_flag(flag: &str, prompt_flag: &str) -> bool {
-    if flag == prompt_flag {
-        return false;
-    }
+/// Reports whether `flag` has the shape of a command-line flag: an optional leading `--` or
+/// `-`, then 1..=`MAX_AGENT_FLAG_NAME_LEN` bytes whose first byte is ASCII alphabetic and
+/// whose remaining bytes are ASCII alphanumeric or `-`. No whitespace, no shell syntax.
+pub fn is_valid_flag_shape(flag: &str) -> bool {
     let name = match flag.strip_prefix("--") {
         Some(rest) => rest,
         None => match flag.strip_prefix('-') {
@@ -1049,15 +1046,115 @@ pub fn is_valid_agent_flag(flag: &str, prompt_flag: &str) -> bool {
         .all(|b| b.is_ascii_alphanumeric() || *b == b'-')
 }
 
+/// Reports whether `flag` is a usable agent flag (M4).
+///
+/// A usable flag has a valid flag shape and differs from `prompt_flag`.
+pub fn is_valid_agent_flag(flag: &str, prompt_flag: &str) -> bool {
+    flag != prompt_flag && is_valid_flag_shape(flag)
+}
+
+/// Returns the prompt flag to pass to the agent command: the stored value when it has a
+/// valid flag shape, otherwise the default `-p`. Every launch path reads this, never the raw
+/// stored value, so a bad stored value cannot reach the command line.
+pub fn effective_prompt_flag(s: &AppSettings) -> String {
+    if is_valid_flag_shape(&s.agent_bridge_prompt_flag) {
+        s.agent_bridge_prompt_flag.clone()
+    } else {
+        default_agent_bridge_prompt_flag()
+    }
+}
+
 /// Returns the agent flag to pass to the coding CLI (M4).
 ///
-/// Falls back to the default `--agent` when the stored value is invalid or equals the prompt flag.
+/// Compared against the EFFECTIVE prompt flag. Falls back to the default `--agent` when the
+/// stored value is invalid or equals the effective prompt flag.
 pub fn effective_agent_flag(s: &AppSettings) -> String {
-    if is_valid_agent_flag(&s.agent_jobs_agent_flag, &s.agent_bridge_prompt_flag) {
+    let prompt_flag = effective_prompt_flag(s);
+    if is_valid_agent_flag(&s.agent_jobs_agent_flag, &prompt_flag) {
         s.agent_jobs_agent_flag.clone()
     } else {
         default_agent_jobs_agent_flag()
     }
+}
+
+/// Validates a candidate prompt flag against the current settings. The candidate is not
+/// trimmed. It must have a valid flag shape and must differ from the effective agent flag,
+/// so the two flags can never collide. Returns the candidate unchanged when valid.
+pub fn validate_agent_bridge_prompt_flag(
+    s: &AppSettings,
+    candidate: &str,
+) -> Result<String, String> {
+    if !is_valid_flag_shape(candidate) {
+        return Err(
+            "The prompt flag must start with - or --, then letters, digits or dashes (no spaces)."
+                .to_string(),
+        );
+    }
+    if candidate == effective_agent_flag(s) {
+        return Err("The prompt flag must differ from the agent flag.".to_string());
+    }
+    Ok(candidate.to_string())
+}
+
+/// Smallest accepted agent bridge timeout in seconds (inclusive). Zero would time out at once.
+pub const AGENT_BRIDGE_TIMEOUT_MIN_SECS: u64 = 5;
+/// Largest accepted agent bridge timeout in seconds (inclusive).
+pub const AGENT_BRIDGE_TIMEOUT_MAX_SECS: u64 = 600;
+
+/// Validates an agent bridge timeout in seconds. Out-of-range values are rejected, never
+/// clamped.
+pub fn validate_agent_bridge_timeout_secs(secs: u64) -> Result<u64, String> {
+    if (AGENT_BRIDGE_TIMEOUT_MIN_SECS..=AGENT_BRIDGE_TIMEOUT_MAX_SECS).contains(&secs) {
+        Ok(secs)
+    } else {
+        Err(format!(
+            "Agent timeout must be between {AGENT_BRIDGE_TIMEOUT_MIN_SECS} and {AGENT_BRIDGE_TIMEOUT_MAX_SECS} seconds"
+        ))
+    }
+}
+
+/// Largest number of custom filler words accepted (inclusive).
+pub const CUSTOM_FILLER_MAX_WORDS: usize = 100;
+/// Longest accepted custom filler word, counted in characters.
+pub const CUSTOM_FILLER_WORD_MAX_CHARS: usize = 32;
+
+/// Validates a custom filler word list.
+///
+/// `None` (built-in lists) and `Some(empty)` (filtering off) are both kept distinct and
+/// returned as they are. A non-empty list is normalised: each word is trimmed and lowercased,
+/// and duplicates are removed keeping the first occurrence. The raw entry count is checked
+/// before de-duplication. A list is never partly kept: any invalid entry rejects the whole
+/// list, so nothing is silently dropped.
+pub fn validate_custom_filler_words(
+    words: Option<Vec<String>>,
+) -> Result<Option<Vec<String>>, String> {
+    let Some(words) = words else {
+        return Ok(None);
+    };
+    if words.len() > CUSTOM_FILLER_MAX_WORDS {
+        return Err(format!(
+            "A custom filler list can have at most {CUSTOM_FILLER_MAX_WORDS} words"
+        ));
+    }
+    let mut normalised: Vec<String> = Vec::with_capacity(words.len());
+    for raw in words {
+        let word = raw.trim().to_lowercase();
+        if word.is_empty() {
+            return Err("Filler words cannot be empty".to_string());
+        }
+        if word.chars().count() > CUSTOM_FILLER_WORD_MAX_CHARS {
+            return Err(format!(
+                "Each filler word must be at most {CUSTOM_FILLER_WORD_MAX_CHARS} characters"
+            ));
+        }
+        if word.chars().any(char::is_control) {
+            return Err("Filler words cannot contain control characters".to_string());
+        }
+        if !normalised.contains(&word) {
+            normalised.push(word);
+        }
+    }
+    Ok(Some(normalised))
 }
 
 fn default_agent_bridge_prompt_flag() -> String {

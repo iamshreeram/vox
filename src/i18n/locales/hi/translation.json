@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "उन्नत",
+        "timeoutLabel": "एजेंट की समय सीमा (सेकंड)",
+        "timeoutDescription": "एजेंट कमांड के जवाब का कितनी देर तक इंतज़ार करना है। 5 से 600 सेकंड के बीच।",
+        "promptFlagLabel": "प्रॉम्प्ट फ़्लैग",
+        "promptFlagDescription": "वह फ़्लैग जो आपका अनुरोध एजेंट कमांड तक पहुँचाता है, जैसे -p। यह एजेंट फ़्लैग से अलग होना चाहिए।",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "फिलर शब्द हटाएं",
-        "description": "ट्रांसक्रिप्शन से आम हिचकिचाहट वाले शब्द हटाता है। उन्हें बनाए रखने के लिए इसे बंद करें।"
+        "description": "ट्रांसक्रिप्शन से आम हिचकिचाहट वाले शब्द हटाता है। उन्हें बनाए रखने के लिए इसे बंद करें।",
+        "modeLabel": "फ़िलर शब्दों की सूची",
+        "builtIn": "अंतर्निहित सूची",
+        "custom": "कस्टम सूची",
+        "off": "बंद (हर शब्द रखें)",
+        "customLabel": "कस्टम फ़िलर शब्द",
+        "customHelp": "शब्दों को कॉमा या नई लाइन से अलग करें। अधिकतम 100 शब्द, हर शब्द अधिकतम 32 अक्षरों का। मिलान में बड़े और छोटे अक्षर का फ़र्क नहीं होता।",
+        "customCount": "{{max}} में से {{count}} शब्द",
+        "customTooMany": "कस्टम सूची में अधिकतम {{max}} शब्द हो सकते हैं।",
+        "customTooLong": "हर शब्द अधिकतम {{max}} अक्षरों का हो सकता है।",
+        "customEmpty": "कम से कम एक शब्द जोड़ें, या अंतर्निहित सूची या बंद चुनें।",
+        "saveCustom": "सूची सहेजें"
       },
       "chineseScript": {
         "title": "चीनी लिपि",

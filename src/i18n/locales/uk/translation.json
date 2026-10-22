@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Додатково",
+        "timeoutLabel": "Час очікування агента (секунди)",
+        "timeoutDescription": "Скільки чекати на відповідь команди агента. Від 5 до 600 секунд.",
+        "promptFlagLabel": "Прапорець запиту",
+        "promptFlagDescription": "Прапорець, який передає ваш запит команді агента, наприклад -p. Він має відрізнятися від прапорця агента.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Видаляти слова-паразити",
-        "description": "Видаляє поширені слова-вагання з транскрипцій. Вимкніть, щоб зберегти їх."
+        "description": "Видаляє поширені слова-вагання з транскрипцій. Вимкніть, щоб зберегти їх.",
+        "modeLabel": "Список слів-паразитів",
+        "builtIn": "Вбудований список",
+        "custom": "Власний список",
+        "off": "Вимкнено (зберегти всі слова)",
+        "customLabel": "Власні слова-паразити",
+        "customHelp": "Розділяйте слова комами або переносами рядків. До 100 слів, кожне до 32 символів. Регістр літер не враховується.",
+        "customCount": "{{count}} з {{max}} слів",
+        "customTooMany": "Власний список може містити не більше {{max}} слів.",
+        "customTooLong": "Кожне слово може містити не більше {{max}} символів.",
+        "customEmpty": "Додайте принаймні одне слово або виберіть Вбудований список чи Вимкнено.",
+        "saveCustom": "Зберегти список"
       },
       "chineseScript": {
         "title": "Китайська писемність",

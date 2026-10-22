@@ -139,6 +139,34 @@ const settingUpdaters: {
       throw new Error(result.error);
     }
   },
+  // null = built-in lists, [] = filler filtering off, non-empty = custom list.
+  custom_filler_words: async (value) => {
+    const result = await commands.changeCustomFillerWordsSetting(
+      (value as string[] | null) ?? null,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  agent_bridge_timeout_secs: async (value) => {
+    const result = await commands.changeAgentBridgeTimeoutSecsSetting(
+      value as number,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  agent_bridge_prompt_flag: async (value) => {
+    const result = await commands.changeAgentBridgePromptFlagSetting(
+      value as string,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
   update_checks_enabled: (value) =>
     commands.changeUpdateChecksSetting(value as boolean),
   show_whats_new_on_update: (value) =>

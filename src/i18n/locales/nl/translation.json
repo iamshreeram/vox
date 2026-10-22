@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Geavanceerd",
+        "timeoutLabel": "Time-out van agent (seconden)",
+        "timeoutDescription": "Hoe lang er op een antwoord van het agentcommando wordt gewacht. Tussen 5 en 600 seconden.",
+        "promptFlagLabel": "Verzoekvlag",
+        "promptFlagDescription": "De vlag die je verzoek doorgeeft aan het agentcommando, bijvoorbeeld -p. Die moet verschillen van de agentvlag.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Opvulwoorden verwijderen",
-        "description": "Verwijdert veelvoorkomende aarzelwoorden uit transcripties. Schakel dit uit om ze te behouden."
+        "description": "Verwijdert veelvoorkomende aarzelwoorden uit transcripties. Schakel dit uit om ze te behouden.",
+        "modeLabel": "Lijst met vulwoorden",
+        "builtIn": "Ingebouwde lijst",
+        "custom": "Eigen lijst",
+        "off": "Uit (elk woord behouden)",
+        "customLabel": "Eigen vulwoorden",
+        "customHelp": "Scheid woorden met komma's of nieuwe regels. Maximaal 100 woorden, elk van maximaal 32 tekens. Hoofdletters worden niet onderscheiden.",
+        "customCount": "{{count}} van {{max}} woorden",
+        "customTooMany": "Een eigen lijst mag maximaal {{max}} woorden bevatten.",
+        "customTooLong": "Elk woord mag maximaal {{max}} tekens bevatten.",
+        "customEmpty": "Voeg minstens één woord toe, of kies Ingebouwde lijst of Uit.",
+        "saveCustom": "Lijst opslaan"
       },
       "chineseScript": {
         "title": "Chinees schrift",

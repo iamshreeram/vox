@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "מתקדם",
+        "timeoutLabel": "זמן המתנה לסוכן (בשניות)",
+        "timeoutDescription": "כמה זמן לחכות לתשובה מפקודת הסוכן. בין 5 ל-600 שניות.",
+        "promptFlagLabel": "דגל בקשה",
+        "promptFlagDescription": "הדגל שמעביר את הבקשה שלכם לפקודת הסוכן, למשל -p. הוא חייב להיות שונה מדגל הסוכן.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "הסרת מילות מילוי",
-        "description": "מסיר מילות היסוס נפוצות מתמלולים. השבת כדי להשאיר אותן."
+        "description": "מסיר מילות היסוס נפוצות מתמלולים. השבת כדי להשאיר אותן.",
+        "modeLabel": "רשימת מילות מילוי",
+        "builtIn": "רשימה מובנית",
+        "custom": "רשימה מותאמת",
+        "off": "כבוי (שמירה על כל המילים)",
+        "customLabel": "מילות מילוי מותאמות",
+        "customHelp": "הפרידו בין מילים בפסיקים או בשורות חדשות. עד 100 מילים, עד 32 תווים לכל מילה. ההתאמה אינה מבחינה בין אותיות גדולות לקטנות.",
+        "customCount": "{{count}} מתוך {{max}} מילים",
+        "customTooMany": "רשימה מותאמת יכולה לכלול עד {{max}} מילים.",
+        "customTooLong": "כל מילה יכולה לכלול עד {{max}} תווים.",
+        "customEmpty": "הוסיפו לפחות מילה אחת, או בחרו רשימה מובנית או כבוי.",
+        "saveCustom": "שמירת הרשימה"
       },
       "chineseScript": {
         "title": "כתב סיני",

@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Pokročilé",
+        "timeoutLabel": "Časový limit agenta (sekundy)",
+        "timeoutDescription": "Jak dlouho čekat na odpověď příkazu agenta. Mezi 5 a 600 sekundami.",
+        "promptFlagLabel": "Příznak dotazu",
+        "promptFlagDescription": "Příznak, který předá váš požadavek příkazu agenta, například -p. Musí se lišit od příznaku agenta.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Odstranit výplňová slova",
-        "description": "Odstraňuje běžná slova vyjadřující váhání z přepisů. Vypnutím je zachováte."
+        "description": "Odstraňuje běžná slova vyjadřující váhání z přepisů. Vypnutím je zachováte.",
+        "modeLabel": "Seznam slov výplně",
+        "builtIn": "Vestavěný seznam",
+        "custom": "Vlastní seznam",
+        "off": "Vypnuto (ponechat všechna slova)",
+        "customLabel": "Vlastní slova výplně",
+        "customHelp": "Slova oddělte čárkami nebo novými řádky. Až 100 slov, každé až 32 znaků. Porovnání nerozlišuje velká a malá písmena.",
+        "customCount": "{{count}} ze {{max}} slov",
+        "customTooMany": "Vlastní seznam může mít nejvýše {{max}} slov.",
+        "customTooLong": "Každé slovo může mít nejvýše {{max}} znaků.",
+        "customEmpty": "Přidejte alespoň jedno slovo, nebo zvolte Vestavěný seznam nebo Vypnuto.",
+        "saveCustom": "Uložit seznam"
       },
       "chineseScript": {
         "title": "Čínské písmo",

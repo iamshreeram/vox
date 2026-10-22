@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Erweitert",
+        "timeoutLabel": "Zeitlimit des Agenten (Sekunden)",
+        "timeoutDescription": "Wie lange auf eine Antwort des Agentenbefehls gewartet wird. Zwischen 5 und 600 Sekunden.",
+        "promptFlagLabel": "Anfrage-Flag",
+        "promptFlagDescription": "Das Flag, das Ihre Anfrage an den Agentenbefehl übergibt, zum Beispiel -p. Es muss sich vom Agenten-Flag unterscheiden.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Füllwörter entfernen",
-        "description": "Entfernt häufige Verzögerungslaute aus Transkriptionen. Deaktivieren Sie diese Option, um sie beizubehalten."
+        "description": "Entfernt häufige Verzögerungslaute aus Transkriptionen. Deaktivieren Sie diese Option, um sie beizubehalten.",
+        "modeLabel": "Liste der Füllwörter",
+        "builtIn": "Eingebaute Liste",
+        "custom": "Eigene Liste",
+        "off": "Aus (alle Wörter behalten)",
+        "customLabel": "Eigene Füllwörter",
+        "customHelp": "Trennen Sie Wörter durch Kommas oder Zeilenumbrüche. Bis zu 100 Wörter, jeweils höchstens 32 Zeichen. Die Erkennung unterscheidet nicht zwischen Groß- und Kleinschreibung.",
+        "customCount": "{{count}} von {{max}} Wörtern",
+        "customTooMany": "Eine eigene Liste darf höchstens {{max}} Wörter enthalten.",
+        "customTooLong": "Jedes Wort darf höchstens {{max}} Zeichen lang sein.",
+        "customEmpty": "Fügen Sie mindestens ein Wort hinzu oder wählen Sie Eingebaute Liste oder Aus.",
+        "saveCustom": "Liste speichern"
       },
       "chineseScript": {
         "title": "Chinesische Schrift",

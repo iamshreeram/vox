@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "उन्नत",
+        "timeoutLabel": "एजेन्टको समयसीमा (सेकेन्ड)",
+        "timeoutDescription": "एजेन्ट कमान्डको जवाफ कति समय पर्खने। 5 देखि 600 सेकेन्डबीच।",
+        "promptFlagLabel": "प्रम्प्ट फ्ल्याग",
+        "promptFlagDescription": "तपाईंको अनुरोध एजेन्ट कमान्डमा पठाउने फ्ल्याग, जस्तै -p। यो एजेन्ट फ्ल्यागभन्दा फरक हुनुपर्छ।",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "फिलर शब्दहरू हटाउनुहोस्",
-        "description": "ट्रान्सक्रिप्सनबाट सामान्य हिचकिचाहटका शब्दहरू हटाउँछ। तिनलाई राख्न यो विकल्प बन्द गर्नुहोस्।"
+        "description": "ट्रान्सक्रिप्सनबाट सामान्य हिचकिचाहटका शब्दहरू हटाउँछ। तिनलाई राख्न यो विकल्प बन्द गर्नुहोस्।",
+        "modeLabel": "फिलर शब्दहरूको सूची",
+        "builtIn": "अन्तर्निर्मित सूची",
+        "custom": "अनुकूलित सूची",
+        "off": "बन्द (सबै शब्द राख्नुहोस्)",
+        "customLabel": "अनुकूलित फिलर शब्दहरू",
+        "customHelp": "शब्दहरूलाई अल्पविराम वा नयाँ लाइनले छुट्याउनुहोस्। अधिकतम 100 शब्द, प्रत्येक 32 अक्षरसम्म। मिलानमा ठूलो र सानो अक्षर फरक पर्दैन।",
+        "customCount": "{{max}} मध्ये {{count}} शब्द",
+        "customTooMany": "अनुकूलित सूचीमा अधिकतम {{max}} शब्द हुन सक्छन्।",
+        "customTooLong": "प्रत्येक शब्द अधिकतम {{max}} अक्षरको हुन सक्छ।",
+        "customEmpty": "कम्तीमा एउटा शब्द थप्नुहोस्, वा अन्तर्निर्मित सूची वा बन्द छनौट गर्नुहोस्।",
+        "saveCustom": "सूची सुरक्षित गर्नुहोस्"
       },
       "chineseScript": {
         "title": "चिनियाँ लिपि",

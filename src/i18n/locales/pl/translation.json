@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Zaawansowane",
+        "timeoutLabel": "Limit czasu agenta (sekundy)",
+        "timeoutDescription": "Jak długo czekać na odpowiedź polecenia agenta. Od 5 do 600 sekund.",
+        "promptFlagLabel": "Flaga zapytania",
+        "promptFlagDescription": "Flaga, która przekazuje Twoje zapytanie do polecenia agenta, na przykład -p. Musi być inna niż flaga agenta.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Usuń wyrazy wypełniające",
-        "description": "Usuwa typowe słowa wyrażające wahanie z transkrypcji. Wyłącz, aby je zachować."
+        "description": "Usuwa typowe słowa wyrażające wahanie z transkrypcji. Wyłącz, aby je zachować.",
+        "modeLabel": "Lista słów wypełniających",
+        "builtIn": "Wbudowana lista",
+        "custom": "Własna lista",
+        "off": "Wyłączone (zachowaj wszystkie słowa)",
+        "customLabel": "Własne słowa wypełniające",
+        "customHelp": "Oddziel słowa przecinkami lub nowymi wierszami. Do 100 słów, każde do 32 znaków. Dopasowanie nie rozróżnia wielkości liter.",
+        "customCount": "{{count}} z {{max}} słów",
+        "customTooMany": "Własna lista może zawierać najwyżej {{max}} słów.",
+        "customTooLong": "Każde słowo może mieć najwyżej {{max}} znaków.",
+        "customEmpty": "Dodaj co najmniej jedno słowo albo wybierz Wbudowana lista lub Wyłączone.",
+        "saveCustom": "Zapisz listę"
       },
       "chineseScript": {
         "title": "Pismo chińskie",

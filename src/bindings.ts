@@ -1564,6 +1564,43 @@ async changeAmbientWindowMsSetting(windowMs: number) : Promise<Result<null, stri
 }
 },
 /**
+ * Validates and stores the custom filler word list. `None` restores the built-in lists,
+ * `Some([])` turns filler removal off. A rejected list leaves the stored setting untouched.
+ */
+async changeCustomFillerWordsSetting(words: string[] | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_custom_filler_words_setting", { words }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Validates and stores the agent bridge timeout in seconds. A rejected value leaves the
+ * stored setting untouched.
+ */
+async changeAgentBridgeTimeoutSecsSetting(timeoutSecs: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_bridge_timeout_secs_setting", { timeoutSecs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Validates and stores the agent bridge prompt flag. The flag must have a valid shape and
+ * must differ from the effective agent flag. A rejected flag leaves the stored setting
+ * untouched.
+ */
+async changeAgentBridgePromptFlagSetting(flag: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_agent_bridge_prompt_flag_setting", { flag }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Validates and persists the full list of voice shortcuts.
  * 
  * The whole list is validated before anything is written: if any entry is

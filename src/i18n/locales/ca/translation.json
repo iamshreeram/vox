@@ -361,6 +361,11 @@
         "description": "When a spoken command isn't recognized, send the transcript to a locally-configured CLI agent and show its reply as a suggestion. Nothing is sent anywhere unless you configure a binary below.",
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
+        "advancedLabel": "Avançat",
+        "timeoutLabel": "Temps d'espera de l'agent (segons)",
+        "timeoutDescription": "Quant de temps esperar que l'ordre de l'agent respongui. Entre 5 i 600 segons.",
+        "promptFlagLabel": "Indicador de sol·licitud",
+        "promptFlagDescription": "L'indicador que passa la vostra sol·licitud a l'ordre de l'agent, per exemple -p. Ha de ser diferent de l'indicador de l'agent.",
         "suggestionFailedTitle": "Agent suggestion failed"
       },
       "agentContext": {
@@ -650,7 +655,18 @@
       },
       "fillerWordRemoval": {
         "title": "Elimina les falques",
-        "description": "Elimina les expressions de vacil·lació habituals de les transcripcions. Desactiveu aquesta opció per conservar-les."
+        "description": "Elimina les expressions de vacil·lació habituals de les transcripcions. Desactiveu aquesta opció per conservar-les.",
+        "modeLabel": "Llista de paraules de farciment",
+        "builtIn": "Llista integrada",
+        "custom": "Llista personalitzada",
+        "off": "Desactivat (mantén totes les paraules)",
+        "customLabel": "Paraules de farciment personalitzades",
+        "customHelp": "Separa les paraules amb comes o salts de línia. Fins a 100 paraules, cadascuna de fins a 32 caràcters. La cerca no distingeix majúscules de minúscules.",
+        "customCount": "{{count}} de {{max}} paraules",
+        "customTooMany": "Una llista personalitzada pot tenir com a màxim {{max}} paraules.",
+        "customTooLong": "Cada paraula pot tenir com a màxim {{max}} caràcters.",
+        "customEmpty": "Afegeix almenys una paraula, o tria Llista integrada o Desactivat.",
+        "saveCustom": "Desa la llista"
       },
       "chineseScript": {
         "title": "Escriptura xinesa",
