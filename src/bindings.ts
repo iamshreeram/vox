@@ -1540,6 +1540,30 @@ async changeWakeWordSilenceTimeoutMsSetting(timeoutMs: number) : Promise<Result<
 }
 },
 /**
+ * Validates and stores the ambient wake name (trimmed). A rejected value leaves
+ * the stored setting untouched. Takes effect after restart.
+ */
+async changeAmbientWakeNameSetting(name: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_ambient_wake_name_setting", { name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Validates and stores the ambient conversation window in milliseconds. A rejected
+ * value leaves the stored setting untouched. Takes effect after restart.
+ */
+async changeAmbientWindowMsSetting(windowMs: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_ambient_window_ms_setting", { windowMs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Validates and persists the full list of voice shortcuts.
  * 
  * The whole list is validated before anything is written: if any entry is

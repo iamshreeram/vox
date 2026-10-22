@@ -365,6 +365,33 @@ row(
       "background listening",
     ],
   ),
+  row(
+    "ambientWakeName",
+    "listening",
+    "settings.advanced.ambientMode.wakeNameLabel",
+    "settings.advanced.ambientMode.wakeNameDescription",
+    [
+      "ambient wake name",
+      "wake name",
+      "address name",
+      "vox name",
+      "name",
+    ],
+  ),
+  row(
+    "ambientWindow",
+    "listening",
+    "settings.advanced.ambientMode.windowLabel",
+    "settings.advanced.ambientMode.windowDescription",
+    [
+      "ambient memory",
+      "memory window",
+      "context window",
+      "recent conversation",
+      "history length",
+      "seconds",
+    ],
+  ),
 
   // ----- memory -----
   row(

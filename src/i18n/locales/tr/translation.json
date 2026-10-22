@@ -303,7 +303,12 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Uyandırma adı",
+        "wakeNameDescription": "Tek kelime: harf, rakam veya alt çizgi. Vox'u yeniden başlattıktan sonra geçerli olur.",
+        "windowLabel": "Bellek penceresi",
+        "windowDescription": "Ortam modunun son konuşmadan ne kadarını hatırlayacağı. Vox'u yeniden başlattıktan sonra geçerli olur.",
+        "windowValue": "{{value}} sn"
       },
       "wakeWord": {
         "confidenceLabel": "Algılama eşiği",

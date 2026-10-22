@@ -303,7 +303,12 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Име за активиране",
+        "wakeNameDescription": "Една дума: букви, цифри или долна черта. Влиза в сила след рестартиране на Vox.",
+        "windowLabel": "Прозорец на паметта",
+        "windowDescription": "Колко скорошен разговор помни режимът на околна среда. Влиза в сила след рестартиране на Vox.",
+        "windowValue": "{{value}} с"
       },
       "wakeWord": {
         "confidenceLabel": "Праг на разпознаване",

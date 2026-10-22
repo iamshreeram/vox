@@ -303,7 +303,12 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "웨이크 이름",
+        "wakeNameDescription": "단어 하나: 문자, 숫자 또는 밑줄만 사용할 수 있습니다. Vox를 다시 시작한 후 적용됩니다.",
+        "windowLabel": "메모리 기간",
+        "windowDescription": "주변 모드가 최근 대화를 얼마나 기억할지 설정합니다. Vox를 다시 시작한 후 적용됩니다.",
+        "windowValue": "{{value}}초"
       },
       "wakeWord": {
         "confidenceLabel": "감지 임계값",

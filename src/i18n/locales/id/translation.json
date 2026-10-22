@@ -303,7 +303,12 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Nama pemicu",
+        "wakeNameDescription": "Satu kata: huruf, angka, atau garis bawah. Berlaku setelah Vox dimulai ulang.",
+        "windowLabel": "Jendela memori",
+        "windowDescription": "Seberapa banyak percakapan terbaru yang diingat mode ambien. Berlaku setelah Vox dimulai ulang.",
+        "windowValue": "{{value}} dtk"
       },
       "wakeWord": {
         "confidenceLabel": "Ambang deteksi",

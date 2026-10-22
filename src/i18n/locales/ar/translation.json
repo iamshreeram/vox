@@ -277,7 +277,12 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "اسم التنبيه",
+        "wakeNameDescription": "كلمة واحدة: حروف أو أرقام أو شرطة سفلية. يسري بعد إعادة تشغيل Vox.",
+        "windowLabel": "نافذة الذاكرة",
+        "windowDescription": "مقدار المحادثة الأخيرة التي يتذكرها الوضع المحيطي. يسري بعد إعادة تشغيل Vox.",
+        "windowValue": "{{value}} ث"
       },
       "wakeWord": {
         "confidenceLabel": "عتبة الاكتشاف",

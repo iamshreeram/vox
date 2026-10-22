@@ -1195,6 +1195,67 @@ pub fn validate_wake_word_silence_timeout_ms(timeout_ms: u32) -> Result<u32, Str
     }
 }
 
+/// Smallest accepted ambient conversation window in milliseconds (inclusive).
+pub const AMBIENT_WINDOW_MIN_MS: u64 = 10_000;
+/// Largest accepted ambient conversation window in milliseconds (inclusive).
+pub const AMBIENT_WINDOW_MAX_MS: u64 = 600_000;
+/// Longest accepted ambient wake name, counted in characters.
+pub const AMBIENT_WAKE_NAME_MAX_CHARS: usize = 32;
+/// Wake name used when the stored name is missing or invalid.
+const AMBIENT_DEFAULT_WAKE_NAME: &str = "vox";
+
+/// Validates an ambient wake name. The name is trimmed; it must be non-empty,
+/// at most `AMBIENT_WAKE_NAME_MAX_CHARS` characters, free of control characters,
+/// and one word that the real ambient address matcher can recognise.
+pub fn validate_ambient_wake_name(name: &str) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("Wake name cannot be empty".to_string());
+    }
+    if trimmed.chars().count() > AMBIENT_WAKE_NAME_MAX_CHARS {
+        return Err(format!(
+            "Wake name must be at most {AMBIENT_WAKE_NAME_MAX_CHARS} characters"
+        ));
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err("Wake name cannot contain control characters".to_string());
+    }
+    if !crate::managers::ambient::engagement::name_is_matchable(trimmed) {
+        return Err("Wake name must be one word: letters, digits or underscore".to_string());
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Validates an ambient conversation window in milliseconds. Out-of-range values
+/// are rejected, never clamped.
+pub fn validate_ambient_window_ms(window_ms: u64) -> Result<u64, String> {
+    if (AMBIENT_WINDOW_MIN_MS..=AMBIENT_WINDOW_MAX_MS).contains(&window_ms) {
+        Ok(window_ms)
+    } else {
+        Err(format!(
+            "Ambient memory window must be between {} and {} seconds",
+            AMBIENT_WINDOW_MIN_MS / 1000,
+            AMBIENT_WINDOW_MAX_MS / 1000
+        ))
+    }
+}
+
+/// The wake names the ambient judge should use at startup: the stored name
+/// lowercased when it is valid, otherwise the built-in default.
+pub fn effective_ambient_wake_names(settings: &AppSettings) -> Vec<String> {
+    match validate_ambient_wake_name(&settings.ambient_wake_name) {
+        Ok(name) => vec![name.to_lowercase()],
+        Err(_) => vec![AMBIENT_DEFAULT_WAKE_NAME.to_string()],
+    }
+}
+
+/// The ambient conversation window to use at startup: the stored value when
+/// valid, otherwise the built-in default.
+pub fn effective_ambient_window_ms(settings: &AppSettings) -> u64 {
+    validate_ambient_window_ms(settings.ambient_window_ms)
+        .unwrap_or_else(|_| default_ambient_window_ms())
+}
+
 const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 2;
 
 fn default_settings_schema_version() -> u32 {

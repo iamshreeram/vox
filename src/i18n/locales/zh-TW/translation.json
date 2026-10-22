@@ -303,7 +303,12 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "喚醒名稱",
+        "wakeNameDescription": "一個詞：字母、數字或底線。重新啟動 Vox 後生效。",
+        "windowLabel": "記憶時長",
+        "windowDescription": "環境模式會記住多少最近的對話。重新啟動 Vox 後生效。",
+        "windowValue": "{{value}} 秒"
       },
       "wakeWord": {
         "confidenceLabel": "偵測門檻",

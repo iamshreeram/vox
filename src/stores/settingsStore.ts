@@ -125,6 +125,20 @@ const settingUpdaters: {
     }
   },
   ambient_mode_enabled: (value) => commands.ambientSetEnabled(value as boolean),
+  ambient_wake_name: async (value) => {
+    const result = await commands.changeAmbientWakeNameSetting(value as string);
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  ambient_window_ms: async (value) => {
+    const result = await commands.changeAmbientWindowMsSetting(value as number);
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
   update_checks_enabled: (value) =>
     commands.changeUpdateChecksSetting(value as boolean),
   show_whats_new_on_update: (value) =>

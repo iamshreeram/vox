@@ -1016,6 +1016,30 @@ pub fn change_wake_word_silence_timeout_ms_setting(
     Ok(())
 }
 
+/// Validates and stores the ambient wake name (trimmed). A rejected value leaves
+/// the stored setting untouched. Takes effect after restart.
+#[tauri::command]
+#[specta::specta]
+pub fn change_ambient_wake_name_setting(app: AppHandle, name: String) -> Result<(), String> {
+    let name = settings::validate_ambient_wake_name(&name)?;
+    let mut settings = settings::get_settings(&app);
+    settings.ambient_wake_name = name;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Validates and stores the ambient conversation window in milliseconds. A rejected
+/// value leaves the stored setting untouched. Takes effect after restart.
+#[tauri::command]
+#[specta::specta]
+pub fn change_ambient_window_ms_setting(app: AppHandle, window_ms: u64) -> Result<(), String> {
+    let window_ms = settings::validate_ambient_window_ms(window_ms)?;
+    let mut settings = settings::get_settings(&app);
+    settings.ambient_window_ms = window_ms;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// Normalizes a voice name submitted from the settings UI.
 ///
 /// Blank or missing input means "system default" (`Ok(None)`). A non-blank

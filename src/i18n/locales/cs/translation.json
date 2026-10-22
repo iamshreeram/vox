@@ -303,7 +303,12 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Probouzecí jméno",
+        "wakeNameDescription": "Jedno slovo: písmena, číslice nebo podtržítko. Projeví se po restartu Vox.",
+        "windowLabel": "Okno paměti",
+        "windowDescription": "Kolik nedávné konverzace si ambientní režim pamatuje. Projeví se po restartu Vox.",
+        "windowValue": "{{value}} s"
       },
       "wakeWord": {
         "confidenceLabel": "Práh rozpoznání",

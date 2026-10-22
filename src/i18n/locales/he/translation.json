@@ -303,7 +303,12 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "שם הפעלה",
+        "wakeNameDescription": "מילה אחת: אותיות, ספרות או קו תחתון. נכנס לתוקף לאחר הפעלה מחדש של Vox.",
+        "windowLabel": "חלון זיכרון",
+        "windowDescription": "כמה מהשיחה האחרונה מצב הסביבה זוכר. נכנס לתוקף לאחר הפעלה מחדש של Vox.",
+        "windowValue": "{{value}} שנ׳"
       },
       "wakeWord": {
         "confidenceLabel": "סף זיהוי",

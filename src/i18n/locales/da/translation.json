@@ -303,7 +303,12 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Vækkenavn",
+        "wakeNameDescription": "Ét ord: bogstaver, cifre eller underscore. Træder i kraft, når du genstarter Vox.",
+        "windowLabel": "Hukommelsesvindue",
+        "windowDescription": "Hvor meget nylig samtale det omgivende tilstand husker. Træder i kraft, når du genstarter Vox.",
+        "windowValue": "{{value}} s"
       },
       "wakeWord": {
         "confidenceLabel": "Genkendelsestærskel",

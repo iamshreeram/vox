@@ -303,7 +303,12 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Nome di attivazione",
+        "wakeNameDescription": "Una sola parola: lettere, cifre o trattino basso. Ha effetto dopo il riavvio di Vox.",
+        "windowLabel": "Finestra di memoria",
+        "windowDescription": "Quanta conversazione recente ricorda la modalità ambientale. Ha effetto dopo il riavvio di Vox.",
+        "windowValue": "{{value}} s"
       },
       "wakeWord": {
         "confidenceLabel": "Soglia di rilevamento",

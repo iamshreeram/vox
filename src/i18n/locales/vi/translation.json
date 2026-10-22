@@ -303,7 +303,12 @@
         "clearButton": "Clear ambient history",
         "clearedToast": "Ambient history cleared.",
         "addressedToast": "Vox heard: {{request}}",
-        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode."
+        "disabledByWakeWord": "Turn off Wake Word to enable Ambient Mode.",
+        "wakeNameLabel": "Tên đánh thức",
+        "wakeNameDescription": "Một từ: chữ cái, chữ số hoặc dấu gạch dưới. Có hiệu lực sau khi khởi động lại Vox.",
+        "windowLabel": "Cửa sổ bộ nhớ",
+        "windowDescription": "Chế độ xung quanh ghi nhớ bao nhiêu cuộc trò chuyện gần đây. Có hiệu lực sau khi khởi động lại Vox.",
+        "windowValue": "{{value}} giây"
       },
       "wakeWord": {
         "confidenceLabel": "Ngưỡng nhận diện",

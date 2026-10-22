@@ -52,7 +52,7 @@ impl EngagementJudge {
             let is_known_wake_name = self
                 .wake_names
                 .iter()
-                .any(|name| name.eq_ignore_ascii_case(candidate_name));
+                .any(|name| same_name(name, candidate_name));
             if !is_known_wake_name {
                 continue;
             }
@@ -82,6 +82,26 @@ fn is_effectively_empty(remainder: &str) -> bool {
     remainder
         .trim_matches(|c: char| c.is_whitespace() || c.is_ascii_punctuation())
         .is_empty()
+}
+
+/// Compares a configured wake name with a captured token using full Unicode
+/// lowercasing on BOTH sides. `name_is_matchable` and the judge share this, so the
+/// setter's validation and the runtime match can never disagree.
+fn same_name(configured: &str, captured: &str) -> bool {
+    configured.to_lowercase() == captured.to_lowercase()
+}
+
+/// True iff a name spoken as "Hey {name}, ..." is captured by the SAME address
+/// pattern the judge uses and the captured token equals `name` case-insensitively.
+/// Used to validate a configured wake name: only names this matcher can actually
+/// recognise are accepted.
+pub fn name_is_matchable(name: &str) -> bool {
+    let probe = format!("Hey {name}, tell me the time");
+    let Some(captures) = ADDRESS_PATTERN.captures(&probe) else {
+        return false;
+    };
+    let captured = captures.get(1).map(|m| m.as_str()).unwrap_or("");
+    same_name(captured, name)
 }
 
 #[cfg(test)]
