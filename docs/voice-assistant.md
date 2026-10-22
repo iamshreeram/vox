@@ -41,3 +41,8 @@ until the conversation ends.
 - [ ] (c) Barge-in on headphones: talk over the assistant to interrupt it.
 - [ ] (d) Speakers, using echo cancellation. Starts only after a measured spike.
 - [ ] (e) Cross-session memory. This needs its own security design first.
+- [ ] (f) Show a start refusal (for example spoken replies being off) when the
+      settings window is closed. Today the error only appears in the
+      conversation settings, which is easy to miss when you are hands-free.
+- [ ] (g) A start chime when the wake word opens a conversation.
+- [ ] (h) List the wake word action in the settings search index.
