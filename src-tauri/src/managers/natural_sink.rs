@@ -6,9 +6,9 @@
 #![allow(dead_code)]
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, TryLockError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, TryLockError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -144,6 +144,10 @@ pub struct PlaybackCtl {
     sample_rate: u32,
     inner: Mutex<Inner>,
     acked: Condvar,
+    /// Applied duck gain (f32 bits), ramped per frame toward the duck target.
+    gain: AtomicU32,
+    /// `None` = the process-wide `GLOBAL_DUCK`; tests may supply a private one.
+    duck: Option<Arc<DuckState>>,
 }
 
 impl PlaybackCtl {
@@ -158,7 +162,21 @@ impl PlaybackCtl {
             sample_rate,
             inner: Mutex::new(Inner::new(generation)),
             acked: Condvar::new(),
+            gain: AtomicU32::new(UNITY_BITS),
+            duck: None,
         }
+    }
+
+    /// Test seam: a control that follows `duck` instead of the process-wide duck.
+    #[cfg(test)]
+    pub(crate) fn with_duck_state(sample_rate: u32, duck: Arc<DuckState>) -> Self {
+        let mut ctl = Self::with_generation(sample_rate, 0);
+        ctl.duck = Some(duck);
+        ctl
+    }
+
+    fn duck_state(&self) -> &DuckState {
+        self.duck.as_deref().unwrap_or(&GLOBAL_DUCK)
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -241,9 +259,13 @@ impl PlaybackCtl {
         let newly_acked = g.callback_seen_gen != g.generation;
         g.callback_seen_gen = g.generation;
         g.last_callback = Some(now);
+        let target = self.duck_state().target_gain_at(now);
+        let step = duck_step(self.sample_rate);
+        let mut gain = f32::from_bits(self.gain.load(Ordering::Relaxed));
         let mut emitted = 0usize;
         let mut frames = out.chunks_exact_mut(channels);
         for frame in &mut frames {
+            gain = approach_gain(gain, target, step);
             let sample = match g.next_sample() {
                 Some(s) => {
                     emitted += 1;
@@ -251,8 +273,9 @@ impl PlaybackCtl {
                 }
                 None => 0.0,
             };
-            frame.fill(sample);
+            frame.fill(sample * gain);
         }
+        self.gain.store(gain.to_bits(), Ordering::Relaxed);
         frames.into_remainder().fill(0.0);
         if emitted > 0 {
             let ahead = frames_duration(emitted, self.sample_rate).saturating_add(g.tail_bound);
@@ -393,6 +416,118 @@ impl PlaybackCtl {
     pub(crate) fn lock_for_test(&self) -> impl Drop + '_ {
         self.lock()
     }
+}
+
+// ---- process-wide playback duck (B2) -------------------------------------------------------
+
+/// Gain applied to playback while ducked (linear).
+pub const DUCK_GAIN: f32 = 0.25;
+/// A full 1.0 <-> `DUCK_GAIN` transition takes this long, in seconds of audio.
+const DUCK_RAMP_SECS: f32 = 0.020;
+/// An un-renewed duck reverts to unity after this long (watchdog).
+const DUCK_WATCHDOG: Duration = Duration::from_millis(3000);
+/// `1.0f32` as bits.
+const UNITY_BITS: u32 = 0x3F80_0000;
+/// `DuckState` value meaning "not ducked". Any other value is the watchdog deadline in
+/// nanoseconds since `duck_epoch()`.
+const DUCK_IDLE: u64 = u64::MAX;
+
+/// Origin of the nanosecond deadlines (a clock origin only; carries no duck state).
+static DUCK_EPOCH: OnceLock<Instant> = OnceLock::new();
+
+fn duck_epoch() -> Instant {
+    *DUCK_EPOCH.get_or_init(Instant::now)
+}
+
+/// `t` as nanoseconds since `duck_epoch()`, clamped below `DUCK_IDLE`.
+fn nanos_since_epoch(t: Instant) -> u64 {
+    let nanos = t.saturating_duration_since(duck_epoch()).as_nanos();
+    u64::try_from(nanos)
+        .unwrap_or(DUCK_IDLE - 1)
+        .min(DUCK_IDLE - 1)
+}
+
+/// Per-frame gain step so that a full `1.0 <-> DUCK_GAIN` swing takes `DUCK_RAMP_SECS`.
+fn duck_step(rate: u32) -> f32 {
+    (1.0 - DUCK_GAIN) / (DUCK_RAMP_SECS * rate.max(1) as f32)
+}
+
+/// One frame of linear ramping from `gain` toward `target`, never overshooting.
+fn approach_gain(gain: f32, target: f32, step: f32) -> f32 {
+    if gain < target {
+        (gain + step).min(target)
+    } else if gain > target {
+        (gain - step).max(target)
+    } else {
+        gain
+    }
+}
+
+/// One duck target plus its watchdog. ONE atomic, so the target and its deadline can never
+/// disagree. Production code uses `GLOBAL_DUCK` through the free functions; tests own private
+/// instances so they never touch process-wide state.
+pub(crate) struct DuckState {
+    state_ns: AtomicU64,
+}
+
+impl DuckState {
+    pub(crate) const fn new() -> Self {
+        Self {
+            state_ns: AtomicU64::new(DUCK_IDLE),
+        }
+    }
+
+    /// Ducks to `DUCK_GAIN`; calling again while ducked renews the watchdog to `now + 3000 ms`.
+    pub(crate) fn duck_at(&self, now: Instant) {
+        let deadline = instant_after(now, DUCK_WATCHDOG);
+        self.state_ns
+            .store(nanos_since_epoch(deadline), Ordering::SeqCst);
+    }
+
+    /// Back to unity; clears the watchdog. No-op when not ducked.
+    pub(crate) fn restore(&self) {
+        self.state_ns.store(DUCK_IDLE, Ordering::SeqCst);
+    }
+
+    /// Target at `now` after applying the watchdog: an expired duck reverts to unity (one CAS,
+    /// so a concurrent `duck_at` renewal is never overwritten).
+    pub(crate) fn target_gain_at(&self, now: Instant) -> f32 {
+        let state = self.state_ns.load(Ordering::SeqCst);
+        if state == DUCK_IDLE {
+            return 1.0;
+        }
+        if nanos_since_epoch(now) < state {
+            return DUCK_GAIN;
+        }
+        match self
+            .state_ns
+            .compare_exchange(state, DUCK_IDLE, Ordering::SeqCst, Ordering::SeqCst)
+        {
+            Ok(_) => 1.0,
+            Err(current) if current == DUCK_IDLE => 1.0,
+            Err(_) => DUCK_GAIN,
+        }
+    }
+}
+
+/// The duck every production `PlaybackCtl` follows.
+static GLOBAL_DUCK: DuckState = DuckState::new();
+
+/// Ducks all in-process playback to `DUCK_GAIN` (ramped over 20 ms). Calling it again while
+/// ducked renews the 3000 ms watchdog (heartbeat). Not reset per utterance.
+pub fn duck() {
+    GLOBAL_DUCK.duck_at(Instant::now());
+}
+
+/// Returns playback to unity gain (ramped over 20 ms) and clears the watchdog. No-op when not
+/// ducked.
+pub fn restore() {
+    GLOBAL_DUCK.restore();
+}
+
+/// Current duck target after applying the watchdog: `DUCK_GAIN` while ducked, else 1.0.
+pub fn duck_target_gain() -> f32 {
+    GLOBAL_DUCK.target_gain_at(Instant::now())
 }
 
 /// Callback helper: fills an interleaved f32 buffer with `channels` copies of the mono stream.

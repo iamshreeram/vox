@@ -65,6 +65,8 @@ mod natural_audio_tests;
 pub mod natural_chunk;
 #[cfg(test)]
 mod natural_chunk_tests;
+#[cfg(test)]
+mod natural_duck_tests;
 pub mod natural_engine;
 #[cfg(test)]
 mod natural_engine_tests;
