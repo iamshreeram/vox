@@ -199,7 +199,9 @@ test.describe("Settings search: navigation and reveal", () => {
     await page.clock.install({ time: new Date("2026-10-16T10:00:00Z") });
     await page.goto("/");
     await expect(navItem(page, "General")).toBeVisible();
-    await page.clock.pauseAt(new Date("2026-10-16T10:00:05Z"));
+    // The installed clock keeps running in real time; pause well ahead so a slow page load
+    // cannot overtake the pause time ("Cannot fast-forward to the past").
+    await page.clock.pauseAt(new Date("2026-10-16T10:00:30Z"));
 
     // Precondition: the listening card is collapsed on the Experimental page.
     await navItem(page, "Experimental").click();
