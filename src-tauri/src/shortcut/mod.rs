@@ -1050,6 +1050,9 @@ pub(crate) fn reset_spoken_replies(app: &AppHandle) {
     if let Some(health) = app.try_state::<Arc<crate::managers::natural_engine::NaturalHealth>>() {
         health.bump();
     }
+    if let Some(phonon) = app.try_state::<crate::commands::phonon_voice::PhononHealth>() {
+        phonon.0.bump();
+    }
 }
 
 #[tauri::command]
@@ -1059,6 +1062,11 @@ pub fn change_tts_engine_setting(
     engine: crate::settings::TtsEngine,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
+    crate::managers::tts_engines::validate_engine_selection(
+        settings.tts_engine,
+        engine,
+        &crate::managers::tts_engines::tts_engine_catalog(),
+    )?;
     settings.tts_engine = engine;
     settings::write_settings(&app, settings);
     reset_spoken_replies(&app);

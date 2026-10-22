@@ -10,6 +10,43 @@ default-run = "vox"
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.
 
+# Phonon TTS (ptts / xn) runs about 19x slower unoptimised, which makes Phonon unusable under
+# `tauri dev` and makes the live Phonon test miss its warm-synthesis limit. Only the numeric
+# crates on the synthesis path are optimised here. Everything else stays at opt-level 0, and
+# there is deliberately NO `"*"` wildcard.
+[profile.dev.package.ptts]
+opt-level = 3
+
+[profile.dev.package.xn]
+opt-level = 3
+
+[profile.dev.package.xn-gemm]
+opt-level = 3
+
+[profile.dev.package.xn-gemm-common]
+opt-level = 3
+
+[profile.dev.package.xn-gemm-f32]
+opt-level = 3
+
+[profile.dev.package.xn-gemm-f16]
+opt-level = 3
+
+[profile.dev.package.xn-gemm-f64]
+opt-level = 3
+
+[profile.dev.package.xn-gemm-c32]
+opt-level = 3
+
+[profile.dev.package.xn-gemm-c64]
+opt-level = 3
+
+[profile.dev.package.pulp]
+opt-level = 3
+
+[profile.dev.package.half]
+opt-level = 3
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
@@ -171,6 +208,8 @@ objc2-app-kit = "0.3"
 objc2-service-management = "0.3.2"
 # Local neural TTS (opt-in "natural voice"); macOS only, loads models from verified bytes.
 kokoro-tts = "0.3.3"
+# Phonon TTS runtime (pure Rust). Never enable the hub or cli features: they add network clients.
+ptts = { version = "=0.4.0", default-features = false, features = ["hf"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8", features = ["v0_6"] }

@@ -606,6 +606,63 @@ async naturalVoiceRetry() : Promise<Result<null, string>> {
 async listNaturalVoices() : Promise<NaturalVoiceOption[]> {
     return await TAURI_INVOKE("list_natural_voices");
 },
+async phononVoiceStatus() : Promise<Result<NaturalVoiceStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("phonon_voice_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Starts the Phonon download in the background and returns at once. Progress and the result
+ * arrive as events.
+ */
+async phononVoiceInstall() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("phonon_voice_install") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Starts the Phonon import from `path` (a folder picked by the user) on a blocking task and
+ * returns at once. The result arrives as events, like the install.
+ */
+async phononVoiceImportFolder(path: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("phonon_voice_import_folder", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async phononVoiceCancel() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("phonon_voice_cancel") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stops speech (through the shared TTS manager), removes the Phonon model and bumps health.
+ */
+async phononVoiceDelete() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("phonon_voice_delete") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Every speech engine in picker order, with platform support and download facts.
+ */
+async listTtsEngines() : Promise<TtsEngineInfo[]> {
+    return await TAURI_INVOKE("list_tts_engines");
+},
 /**
  * Speaks a short test phrase with the saved voice and rate. Works even when
  * spoken replies are disabled so the user can audition a voice first. The
@@ -2436,6 +2493,10 @@ acknowledge_command: boolean | null }
  */
 export type TtsEngine = 
 /**
+ * The local Phonon voice: a pure-Rust English model (needs a one-time download, macOS only).
+ */
+"phonon" | 
+/**
  * The local neural voice (needs a one-time model download).
  */
 "natural" | 
@@ -2444,6 +2505,26 @@ export type TtsEngine =
  * bad settings file can never stop the app from loading.
  */
 "system"
+/**
+ * One row of the engine picker.
+ */
+export type TtsEngineInfo = { id: TtsEngine; recommended: boolean; runtime: TtsRuntime; requires_download: boolean; size_bytes: number; english_only: boolean; supports_voice_choice: boolean; supports_rate: boolean; supported_on_platform: boolean; license: string }
+/**
+ * What runs the engine's speech synthesis.
+ */
+export type TtsRuntime = 
+/**
+ * Pure Rust, no separate native runtime.
+ */
+"pure_rust" | 
+/**
+ * Runs on ONNX Runtime.
+ */
+"onnx_runtime" | 
+/**
+ * Provided by the operating system.
+ */
+"operating_system"
 /**
  * One installed speech voice, as reported by `say -v '?'`.
  */

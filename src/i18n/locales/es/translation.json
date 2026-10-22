@@ -507,6 +507,48 @@
             "firstSpeech": "La primera frase puede tardar unos segundos mientras se carga el modelo.",
             "limitations": "Solo en inglés. Las frases en otros sistemas de escritura las lee la voz del sistema."
           }
+        },
+        "engines": {
+          "fixedNote": "Todas las voces se ejecutan en este dispositivo. Los modelos se descargan una sola vez, solo cuando tú lo eliges.",
+          "select": "Seleccionar",
+          "selected": "Seleccionado",
+          "unavailable": "Disponible solo en macOS.",
+          "usingSystemVoice": "Se usa la voz del sistema hasta que se instale",
+          "badge": {
+            "recommended": "Recomendado",
+            "englishOnly": "Solo inglés",
+            "size": "Descarga de unos {{size}}",
+            "license": "Licencia: {{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "Sistema operativo"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "Voz en inglés natural que funciona por completo en tu equipo.",
+            "help": "Phonon habla inglés; las respuestas que parecen no estar en inglés usan la voz del sistema. La detección es orientativa.",
+            "license": "Modelo de voz: {{license}}. No lo uses para imitar a una persona real sin su consentimiento.",
+            "fixedVoiceRate": "Phonon usa una sola voz integrada y una velocidad de habla fija.",
+            "model": {
+              "label": "Modelo de voz Phonon",
+              "description": "Descarga única de unos {{size}}, verificada con sumas de comprobación fijas. La voz se genera en este dispositivo."
+            }
+          },
+          "install": "Instalar",
+          "installFromFolder": "Instalar desde carpeta",
+          "confirmDelete": "¿Eliminar el modelo de voz Phonon? Podrás volver a instalarlo más tarde.",
+          "error": {
+            "corrupt": "Los archivos de voz no superaron la verificación. Vuelve a instalar la voz.",
+            "disk": "No se pudieron escribir los archivos de voz. Comprueba el espacio libre del disco.",
+            "blocked": "La dirección de descarga no está permitida. Instala la voz desde una carpeta.",
+            "generic": "No se pudo instalar la voz. Inténtalo de nuevo.",
+            "proxy": "La descarga fue bloqueada por un proxy de red que requiere inicio de sesión."
+          },
+          "importHint": "También puedes instalar desde una carpeta que contenga los cuatro archivos del modelo.",
+          "proxyHint": "¿Bloqueado por un proxy? Descarga los cuatro archivos desde otro lugar e instálalos desde una carpeta.",
+          "unsupportedSelected": "No disponible en esta plataforma. Se usa la voz del sistema en su lugar."
         }
       },
       "lazyStreamClose": {

@@ -104,3 +104,67 @@ change any of the three, the app asks for acknowledgement again.
 - Session isolation is checked at the prompt level: each session starts with an
   empty history, as `converse::run_turns` does. The test does not run two real
   sessions.
+
+## Phonon text-to-speech: local acceptance
+
+The Phonon engine has its own two live tests. They are separate from the tests
+above, and they do not need the command-line agent. They run on a Mac with the
+four pinned Phonon files in a folder. See [Text-to-speech engines](tts-engines.md)
+for what the engine is, and [BUILD.md](../BUILD.md) for the build notes.
+
+| Test                                                          | What it checks                                                                                                                        |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `natural_phonon_live_speaks_and_reverifies`                   | Installs from the folder, verifies the files, loads the model, synthesises a short English sentence and checks the audio.             |
+| `natural_phonon_e2e_live_speaks_through_the_router_and_stops` | Speaks a sentence through the production router to a fake output device, checks the audible span, and checks that speaking goes idle. |
+
+Both tests are marked `#[ignore]`, so the normal suite never runs them.
+
+### Prerequisites
+
+- macOS (Apple silicon was used for the recorded numbers).
+- The four pinned files in one folder, `<folder>`: `model.q8.gguf`,
+  `default-voice.safetensors`, `tokenizer.json` and `config.json`. Get them from
+  the Hugging Face page of `gradium/phonon-31m-en` at the pinned commit (see
+  [Model provenance](model-provenance.md), section 3).
+- A Rust toolchain that can build the Phonon crate (see BUILD.md).
+
+### How to run
+
+Run from the `src-tauri` folder:
+
+```sh
+VOX_PHONON_DIR=<folder> cargo test --lib natural_phonon_live -- --ignored --nocapture
+VOX_PHONON_DIR=<folder> cargo test --lib natural_phonon_e2e_live -- --ignored --nocapture
+```
+
+Replace `<folder>` with the path to the folder that holds the four files.
+
+**Important:** if `VOX_PHONON_DIR` is not set, each test prints
+`SKIPPED: VOX_PHONON_DIR is not set` and reports as passed. A run with no
+`SKIPPED` line is the only evidence that the audio checks ran.
+
+### What a pass prints
+
+A passing run prints these lines (the values vary by machine), then
+`test result: ok. 1 passed` for each test.
+
+- `natural_phonon_live_speaks_and_reverifies`: `load_ms=...`, `first_synth_ms=...`,
+  `duration_s=...` (must be between 1.0 and 6.0 s), `rms=...` (must be above
+  0.005), `peak=...`.
+- `natural_phonon_e2e_live_speaks_through_the_router_and_stops`: `first_pcm_ms=...`
+  and `sentence_span_s=... sentence_rms=...` (the span must be between 1.0 and
+  8.0 s, and the RMS above 0.005).
+
+The tests also check that all samples are finite and within bounds. A failure prints the assertion that did not hold. The printed lines
+come from the test code at the time of writing; if they differ, the assertions
+still decide the result.
+
+### What these tests do NOT prove
+
+- They use a fake output device, not a real speaker. Nobody listens to the output.
+- They do not measure the vendor's claimed speeds. The recorded numbers in
+  [Text-to-speech engines](tts-engines.md) are indicative only, from one machine.
+- They do not cover Linux or Windows. Continuous integration runs on Linux, so the
+  macOS audio paths are covered only by this local acceptance.
+- They do not cover speech recognition, barge-in or echo cancellation, which are
+  not part of this change.

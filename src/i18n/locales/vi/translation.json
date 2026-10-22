@@ -507,6 +507,48 @@
             "firstSpeech": "Câu đầu tiên có thể mất vài giây trong khi mô hình đang tải.",
             "limitations": "Chỉ tiếng Anh. Các câu viết bằng hệ chữ khác sẽ do giọng hệ thống đọc."
           }
+        },
+        "engines": {
+          "fixedNote": "Mọi giọng nói đều chạy trên thiết bị này. Mô hình chỉ được tải xuống một lần, và chỉ khi bạn chọn.",
+          "select": "Chọn",
+          "selected": "Đã chọn",
+          "unavailable": "Chỉ khả dụng trên macOS.",
+          "usingSystemVoice": "Đang dùng giọng hệ thống cho đến khi cài đặt xong",
+          "badge": {
+            "recommended": "Được đề xuất",
+            "englishOnly": "Chỉ tiếng Anh",
+            "size": "Tải xuống khoảng {{size}}",
+            "license": "Giấy phép: {{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "Hệ điều hành"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "Giọng tiếng Anh tự nhiên, chạy hoàn toàn trên máy tính của bạn.",
+            "help": "Phonon nói tiếng Anh; các câu trả lời không giống tiếng Anh sẽ dùng giọng hệ thống. Việc nhận diện chỉ mang tính tương đối.",
+            "license": "Mô hình giọng nói: {{license}}. Không dùng để bắt chước một người thật khi chưa có sự đồng ý của họ.",
+            "fixedVoiceRate": "Phonon dùng một giọng tích hợp sẵn và tốc độ nói cố định.",
+            "model": {
+              "label": "Mô hình giọng Phonon",
+              "description": "Tải xuống một lần khoảng {{size}}, được kiểm tra bằng checksum cố định. Giọng nói được tạo trên thiết bị này."
+            }
+          },
+          "install": "Cài đặt",
+          "installFromFolder": "Cài đặt từ thư mục",
+          "confirmDelete": "Xóa mô hình giọng Phonon? Bạn có thể cài đặt lại sau.",
+          "error": {
+            "corrupt": "Các tệp giọng nói không vượt qua xác minh. Hãy cài đặt lại giọng nói.",
+            "disk": "Không thể ghi các tệp giọng nói. Hãy kiểm tra dung lượng ổ đĩa trống.",
+            "blocked": "Địa chỉ tải xuống này không được phép. Hãy cài đặt giọng nói từ một thư mục.",
+            "generic": "Không thể cài đặt giọng nói. Hãy thử lại.",
+            "proxy": "Việc tải xuống bị chặn bởi một proxy mạng yêu cầu đăng nhập."
+          },
+          "importHint": "Bạn cũng có thể cài đặt từ thư mục chứa bốn tệp của mô hình.",
+          "proxyHint": "Bị chặn bởi proxy? Hãy tải bốn tệp từ nơi khác và cài đặt từ một thư mục.",
+          "unsupportedSelected": "Không khả dụng trên nền tảng này. Thay vào đó, giọng hệ thống được sử dụng."
         }
       },
       "lazyStreamClose": {

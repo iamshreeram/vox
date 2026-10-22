@@ -507,6 +507,48 @@
             "firstSpeech": "La première phrase peut prendre quelques secondes pendant le chargement du modèle.",
             "limitations": "Anglais uniquement. Les phrases dans d'autres écritures sont lues par la voix du système."
           }
+        },
+        "engines": {
+          "fixedNote": "Toutes les voix fonctionnent sur cet appareil. Les modèles ne sont téléchargés qu'une fois, uniquement si vous le choisissez.",
+          "select": "Sélectionner",
+          "selected": "Sélectionné",
+          "unavailable": "Disponible uniquement sur macOS.",
+          "usingSystemVoice": "La voix du système est utilisée jusqu'à l'installation",
+          "badge": {
+            "recommended": "Recommandé",
+            "englishOnly": "Anglais uniquement",
+            "size": "Téléchargement d'environ {{size}}",
+            "license": "Licence : {{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "Système d'exploitation"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "Voix anglaise naturelle, entièrement exécutée sur votre ordinateur.",
+            "help": "Phonon parle anglais ; les réponses qui ne semblent pas en anglais utilisent la voix du système. La détection est indicative.",
+            "license": "Modèle vocal : {{license}}. Ne l'utilisez pas pour imiter une personne réelle sans son consentement.",
+            "fixedVoiceRate": "Phonon utilise une seule voix intégrée et une vitesse de parole fixe.",
+            "model": {
+              "label": "Modèle vocal Phonon",
+              "description": "Téléchargement unique d'environ {{size}}, vérifié par des sommes de contrôle fixes. La parole est générée sur cet appareil."
+            }
+          },
+          "install": "Installer",
+          "installFromFolder": "Installer depuis un dossier",
+          "confirmDelete": "Supprimer le modèle vocal Phonon ? Vous pourrez le réinstaller plus tard.",
+          "error": {
+            "corrupt": "Les fichiers vocaux n'ont pas passé la vérification. Réinstallez la voix.",
+            "disk": "Les fichiers vocaux n'ont pas pu être écrits. Vérifiez l'espace disque disponible.",
+            "blocked": "L'adresse de téléchargement n'est pas autorisée. Installez plutôt la voix depuis un dossier.",
+            "generic": "La voix n'a pas pu être installée. Réessayez.",
+            "proxy": "Le téléchargement a été bloqué par un proxy réseau qui demande une connexion."
+          },
+          "importHint": "Vous pouvez aussi installer depuis un dossier contenant les quatre fichiers du modèle.",
+          "proxyHint": "Bloqué par un proxy ? Téléchargez les quatre fichiers ailleurs et installez-les depuis un dossier.",
+          "unsupportedSelected": "Non disponible sur cette plateforme. La voix du système est utilisée à la place."
         }
       },
       "lazyStreamClose": {

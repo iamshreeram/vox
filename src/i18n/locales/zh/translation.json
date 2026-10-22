@@ -507,6 +507,48 @@
             "firstSpeech": "加载模型时，第一句话可能需要几秒钟。",
             "limitations": "仅支持英语。其他文字的句子将由系统语音朗读。"
           }
+        },
+        "engines": {
+          "fixedNote": "所有语音都在此设备上运行。模型仅在您选择时下载一次。",
+          "select": "选择",
+          "selected": "已选择",
+          "unavailable": "仅在 macOS 上可用。",
+          "usingSystemVoice": "安装前使用系统语音",
+          "badge": {
+            "recommended": "推荐",
+            "englishOnly": "仅英语",
+            "size": "约 {{size}} 下载",
+            "license": "许可证：{{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "操作系统"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "自然的英语语音，完全在您的电脑上运行。",
+            "help": "Phonon 只说英语；看起来不是英语的回复会使用系统语音。检测仅为尽力而为。",
+            "license": "语音模型：{{license}}。未经本人同意，请勿用其模仿真实的人。",
+            "fixedVoiceRate": "Phonon 只使用一种内置语音和固定的语速。",
+            "model": {
+              "label": "Phonon 语音模型",
+              "description": "一次性下载约 {{size}}，并使用固定校验和进行校验。语音在此设备上生成。"
+            }
+          },
+          "install": "安装",
+          "installFromFolder": "从文件夹安装",
+          "confirmDelete": "删除 Phonon 语音模型？您以后可以重新安装。",
+          "error": {
+            "corrupt": "语音文件未通过校验。请重新安装语音。",
+            "disk": "无法写入语音文件。请检查磁盘可用空间。",
+            "blocked": "不允许使用此下载地址。请改为从文件夹安装语音。",
+            "generic": "无法安装语音。请重试。",
+            "proxy": "下载被需要登录的网络代理阻止。"
+          },
+          "importHint": "您也可以从包含四个模型文件的文件夹安装。",
+          "proxyHint": "被代理阻止？请从其他位置下载这四个文件，然后从文件夹安装。",
+          "unsupportedSelected": "此平台不可用。将改用系统语音。"
         }
       },
       "lazyStreamClose": {

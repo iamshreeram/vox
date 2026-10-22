@@ -293,8 +293,10 @@ fn natural_live_manager_end_to_end() {
             choice: Arc::new(|| RouterChoice {
                 natural: true,
                 voice: "af_heart".into(),
+                phonon: false,
             }),
             model_ready: Arc::new(move || c2.state() == ModelState::Ready),
+            phonon_ready: Arc::new(|| false),
         },
     );
     let mgr = TtsManager::new(Box::new(router));

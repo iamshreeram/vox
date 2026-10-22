@@ -507,6 +507,48 @@
             "firstSpeech": "모델을 불러오는 동안 첫 문장은 몇 초 걸릴 수 있습니다.",
             "limitations": "영어만 지원합니다. 다른 문자로 된 문장은 시스템 음성으로 읽습니다."
           }
+        },
+        "engines": {
+          "fixedNote": "모든 음성은 이 기기에서 실행됩니다. 모델은 선택한 경우에만 한 번 다운로드됩니다.",
+          "select": "선택",
+          "selected": "선택됨",
+          "unavailable": "macOS에서만 사용할 수 있습니다.",
+          "usingSystemVoice": "설치되기 전까지 시스템 음성을 사용합니다",
+          "badge": {
+            "recommended": "추천",
+            "englishOnly": "영어 전용",
+            "size": "약 {{size}} 다운로드",
+            "license": "라이선스: {{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "운영 체제"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "컴퓨터에서 완전히 실행되는 자연스러운 영어 음성입니다.",
+            "help": "Phonon은 영어를 말합니다. 영어가 아닌 것으로 보이는 응답에는 시스템 음성을 사용합니다. 감지는 참고용입니다.",
+            "license": "음성 모델: {{license}}. 본인의 동의 없이 실제 사람의 목소리를 흉내 내는 데 사용하지 마세요.",
+            "fixedVoiceRate": "Phonon은 기본 제공 음성 하나와 고정된 말하기 속도를 사용합니다.",
+            "model": {
+              "label": "Phonon 음성 모델",
+              "description": "약 {{size}}를 한 번만 다운로드하며, 고정된 체크섬으로 확인합니다. 음성은 이 기기에서 생성됩니다."
+            }
+          },
+          "install": "설치",
+          "installFromFolder": "폴더에서 설치",
+          "confirmDelete": "Phonon 음성 모델을 삭제할까요? 나중에 다시 설치할 수 있습니다.",
+          "error": {
+            "corrupt": "음성 파일이 검증을 통과하지 못했습니다. 음성을 다시 설치하세요.",
+            "disk": "음성 파일을 쓸 수 없었습니다. 디스크 여유 공간을 확인하세요.",
+            "blocked": "이 다운로드 주소는 허용되지 않습니다. 대신 폴더에서 음성을 설치하세요.",
+            "generic": "음성을 설치할 수 없었습니다. 다시 시도하세요.",
+            "proxy": "다운로드가 로그인이 필요한 네트워크 프록시에 의해 차단되었습니다."
+          },
+          "importHint": "모델 파일 네 개가 들어 있는 폴더에서도 설치할 수 있습니다.",
+          "proxyHint": "프록시에 막혔나요? 네 개의 파일을 다른 곳에서 다운로드한 뒤 폴더에서 설치하세요.",
+          "unsupportedSelected": "이 플랫폼에서는 사용할 수 없습니다. 대신 시스템 음성을 사용합니다."
         }
       },
       "lazyStreamClose": {

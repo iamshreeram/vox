@@ -507,6 +507,48 @@
             "firstSpeech": "Pierwsze zdanie może potrwać kilka sekund, gdy model się ładuje.",
             "limitations": "Tylko angielski. Zdania w innych pismach odczytuje głos systemowy."
           }
+        },
+        "engines": {
+          "fixedNote": "Wszystkie głosy działają na tym urządzeniu. Modele są pobierane raz, tylko wtedy, gdy o to poprosisz.",
+          "select": "Wybierz",
+          "selected": "Wybrano",
+          "unavailable": "Dostępne tylko w macOS.",
+          "usingSystemVoice": "Do czasu instalacji używany jest głos systemowy",
+          "badge": {
+            "recommended": "Polecane",
+            "englishOnly": "Tylko angielski",
+            "size": "Pobieranie około {{size}}",
+            "license": "Licencja: {{license}}"
+          },
+          "runtime": {
+            "pureRust": "Pure Rust",
+            "onnxRuntime": "ONNX Runtime",
+            "operatingSystem": "System operacyjny"
+          },
+          "phonon": {
+            "name": "Phonon",
+            "description": "Naturalny angielski głos działający w całości na Twoim komputerze.",
+            "help": "Phonon mówi po angielsku; odpowiedzi, które nie wyglądają na angielskie, są czytane głosem systemowym. Wykrywanie jest orientacyjne.",
+            "license": "Model głosu: {{license}}. Nie używaj go do naśladowania prawdziwej osoby bez jej zgody.",
+            "fixedVoiceRate": "Phonon używa jednego wbudowanego głosu i stałego tempa mowy.",
+            "model": {
+              "label": "Model głosu Phonon",
+              "description": "Jednorazowe pobranie około {{size}}, sprawdzane stałymi sumami kontrolnymi. Mowa jest generowana na tym urządzeniu."
+            }
+          },
+          "install": "Zainstaluj",
+          "installFromFolder": "Zainstaluj z folderu",
+          "confirmDelete": "Usunąć model głosu Phonon? Możesz go zainstalować ponownie później.",
+          "error": {
+            "corrupt": "Pliki głosu nie przeszły weryfikacji. Zainstaluj głos ponownie.",
+            "disk": "Nie udało się zapisać plików głosu. Sprawdź wolne miejsce na dysku.",
+            "blocked": "Ten adres pobierania jest niedozwolony. Zainstaluj głos z folderu.",
+            "generic": "Nie udało się zainstalować głosu. Spróbuj ponownie.",
+            "proxy": "Pobieranie zostało zablokowane przez sieciowy serwer proxy, który wymaga logowania."
+          },
+          "importHint": "Możesz też zainstalować z folderu zawierającego cztery pliki modelu.",
+          "proxyHint": "Zablokowane przez serwer proxy? Pobierz cztery pliki z innego miejsca i zainstaluj je z folderu.",
+          "unsupportedSelected": "Niedostępne na tej platformie. Zamiast tego używany jest głos systemowy."
         }
       },
       "lazyStreamClose": {
