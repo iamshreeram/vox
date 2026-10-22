@@ -207,9 +207,22 @@ Notes on the table:
 - Until the model is installed, the feature runs in its fallback mode. Other
   features are not affected.
 
+## Text-to-speech engine: Phonon (optional)
+
+This is not one of the four features above. It is a choice of voice engine for spoken replies. Phonon is a local neural text-to-speech model. It is English only and runs on macOS only for now. The system voice stays the default.
+
+- **Off by default.** Phonon is marked "Recommended" in the engine picker, but nothing downloads until you press **Install**.
+- **One-time download of about 65 MB** (65,051,089 bytes, in four files), or install from a folder that holds the four files.
+- **Runs on this computer.** The spoken text is not sent anywhere.
+- **Text-to-speech only.** Phonon does not listen. It does not provide speech recognition, barge-in or echo cancellation.
+- **Responsible use.** Do not use Phonon to impersonate a real person, or to clone a voice without consent.
+
+For installation, the English-only behaviour, troubleshooting and measured numbers, see [Text-to-speech engines](tts-engines.md). Sources and checksums are in [model-provenance.md](model-provenance.md).
+
 ## Credits and licences
 
 Vox does not ship the optional voice models. You download one only when you choose to install it, and you can uninstall it at any time. Full sources and checksums are in [model-provenance.md](model-provenance.md). Notices are in [NOTICE.md](NOTICE.md).
 
+- **Phonon text-to-speech model** (`gradium/phonon-31m-en`, Gradium): weights licensed under the Apache License 2.0. Runtime `ptts` licensed under MIT OR Apache-2.0. Built on Kyutai Pocket TTS and the Mimi codec.
 - **Smart Turn v3.2** (`smart-turn-v3.2-cpu.onnx`, pipecat-ai): BSD 2-Clause License, Copyright (c) 2024–2025, Daily. Checked against the smart-turn repository LICENSE and the model card.
 - **WeSpeaker ResNet34, trained on VoxCeleb** (`wespeaker_en_voxceleb_resnet34.onnx`, from sherpa-onnx): licence **not verified**. The upstream sources conflict (CC BY 4.0 vs Apache-2.0), and the VoxCeleb terms could not be read. Open question for the maintainer.
