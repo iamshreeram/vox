@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "A escuta ambiente deve estar desativada enquanto uma conversa estiver em andamento. A palavra de ativação também deve estar desativada, a menos que a ação dela esteja definida como conversar com o assistente."
+      "wakeWordNote": "A escuta ambiente deve estar desativada enquanto uma conversa estiver em andamento. A palavra de ativação também deve estar desativada, a menos que a ação dela esteja definida como conversar com o assistente.",
+      "bargeIn": {
+        "label": "Interromper falando",
+        "description": "Fale por cima do assistente para o interromper. Use fones de ouvido: com alto-falantes, o assistente ouviria a própria voz. As vozes Phonon e Natural também baixam o volume enquanto fala; a voz do sistema é simplesmente parada. Requer respostas por voz ativadas.",
+        "options": {
+          "off": "Desativado",
+          "headphones": "Somente fones de ouvido"
+        }
+      }
     },
     "voice": {
       "title": "Funcionalidades de voz",

@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "对话进行时必须关闭环境监听。除非唤醒词的动作设为与助手对话，否则也必须关闭唤醒词。"
+      "wakeWordNote": "对话进行时必须关闭环境监听。除非唤醒词的动作设为与助手对话，否则也必须关闭唤醒词。",
+      "bargeIn": {
+        "label": "说话打断",
+        "description": "在助手说话时插话即可打断它。请使用耳机：若使用扬声器，助手会听到自己的声音。Phonon 和 Natural 语音在你说话时也会降低音量；系统语音则会直接停止。需要开启语音回复。",
+        "options": {
+          "off": "关闭",
+          "headphones": "仅限耳机"
+        }
+      }
     },
     "voice": {
       "title": "语音功能",

@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "يجب إيقاف الاستماع المحيطي أثناء تشغيل محادثة. يجب إيقاف كلمة التنبيه أيضًا، ما لم يكن إجراؤها مضبوطًا على التحدث مع المساعد."
+      "wakeWordNote": "يجب إيقاف الاستماع المحيطي أثناء تشغيل محادثة. يجب إيقاف كلمة التنبيه أيضًا، ما لم يكن إجراؤها مضبوطًا على التحدث مع المساعد.",
+      "bargeIn": {
+        "label": "المقاطعة بالكلام",
+        "description": "تحدّث فوق المساعد لمقاطعته. استخدم سماعات الرأس: مع مكبرات الصوت سيسمع المساعد صوته هو. تخفض أصوات Phonon وNatural مستوى الصوت أيضًا أثناء حديثك؛ أما صوت النظام فيتوقف ببساطة. يتطلب تفعيل الردود الصوتية.",
+        "options": {
+          "off": "إيقاف",
+          "headphones": "سماعات الرأس فقط"
+        }
+      }
     },
     "voice": {
       "title": "ميزات الصوت",

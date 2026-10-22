@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "대화가 진행되는 동안에는 주변 듣기를 꺼야 합니다. 웨이크 워드의 동작이 '어시스턴트와 대화하기'로 설정되어 있지 않다면 웨이크 워드도 꺼야 합니다."
+      "wakeWordNote": "대화가 진행되는 동안에는 주변 듣기를 꺼야 합니다. 웨이크 워드의 동작이 '어시스턴트와 대화하기'로 설정되어 있지 않다면 웨이크 워드도 꺼야 합니다.",
+      "bargeIn": {
+        "label": "말하여 중단",
+        "description": "어시스턴트가 말하는 중에 말을 걸면 중단시킬 수 있습니다. 헤드폰을 사용하세요. 스피커를 쓰면 어시스턴트가 자기 목소리를 듣게 됩니다. Phonon 및 Natural 음성은 말하는 동안 볼륨도 낮아지며, 시스템 음성은 그냥 멈춥니다. 음성 응답이 켜져 있어야 합니다.",
+        "options": {
+          "off": "끔",
+          "headphones": "헤드폰만"
+        }
+      }
     },
     "voice": {
       "title": "음성 기능",

@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "האזנה סביבתית חייבת להיות כבויה בזמן שיחה. גם מילת ההפעלה חייבת להיות כבויה, אלא אם הפעולה שלה מוגדרת לשיחה עם העוזר."
+      "wakeWordNote": "האזנה סביבתית חייבת להיות כבויה בזמן שיחה. גם מילת ההפעלה חייבת להיות כבויה, אלא אם הפעולה שלה מוגדרת לשיחה עם העוזר.",
+      "bargeIn": {
+        "label": "הפסקה בדיבור",
+        "description": "דבר מעל העוזר כדי להפסיק אותו. השתמש באוזניות: ברמקולים העוזר ישמע את עצמו. הקולות Phonon ו-Natural מנמיכים גם הם את העוצמה כשאתה מדבר; קול המערכת פשוט נעצר. נדרשות תשובות קוליות מופעלות.",
+        "options": {
+          "off": "כבוי",
+          "headphones": "אוזניות בלבד"
+        }
+      }
     },
     "voice": {
       "title": "תכונות קול",

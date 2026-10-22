@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "Ambient listening must be off while a conversation runs. The wake word must be off too, unless its action is set to talk with the assistant."
+      "wakeWordNote": "Ambient listening must be off while a conversation runs. The wake word must be off too, unless its action is set to talk with the assistant.",
+      "bargeIn": {
+        "label": "Interrupt by speaking",
+        "description": "Talk over the assistant to interrupt it. Use headphones: on speakers the assistant would hear itself. The Phonon and Natural voices also dip in volume while you talk; the system voice is simply stopped. Requires spoken replies.",
+        "options": {
+          "off": "Off",
+          "headphones": "Headphones only"
+        }
+      }
     },
     "voice": {
       "title": "Voice features",

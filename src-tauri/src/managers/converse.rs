@@ -71,7 +71,7 @@ impl CancelToken {
 
     /// The session side only. Kept for the pre-listen `prepare` step, which runs before any
     /// reply token exists. Use `is_cancelled` for the full state.
-    pub fn borrow(&self) -> tokio::sync::watch::Ref<'_, bool> {
+    pub fn session_ref(&self) -> tokio::sync::watch::Ref<'_, bool> {
         self.session.borrow()
     }
 
@@ -114,6 +114,10 @@ pub enum ListenFailure {
     Permission,
     ModelUnavailable,
     Other,
+    /// The microphone stream could not be opened or started (a raw device/OS error, not a
+    /// permission or missing-device case). Reported to the user exactly like `Other`; it is the
+    /// one start failure the barge-in recovery retries (DESIGN 12.4).
+    StreamOpen,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,6 +189,10 @@ pub trait Ears: Send + Sync {
     fn barge_in(&self) -> Option<&dyn BargeIn> {
         None
     }
+
+    /// Stops this session's barge-in monitor, if any. The session finalizer calls it before the
+    /// capture worker is shut down. Default: nothing to stop.
+    fn barge_shutdown(&self) {}
 }
 
 pub trait Mouth: Send + Sync {
@@ -2728,6 +2736,7 @@ mod tests {
             ListenFailure::Permission,
             ListenFailure::ModelUnavailable,
             ListenFailure::Other,
+            ListenFailure::StreamOpen,
         ] {
             let r = rig(vec![L::Out(ListenOutcome::Failed(f))], vec![]);
             assert_eq!(run(&r, &cfg()).await, SessionEnd::AudioUnavailable);
@@ -3362,9 +3371,9 @@ mod tests {
         assert_eq!(reg.state(), RegistryState::Running(id));
         assert!(reg.is_active());
         assert!(reg.try_begin().is_none(), "double begin refused");
-        assert!(!*token.borrow());
+        assert!(!*token.session_ref());
         assert!(reg.request_stop());
-        assert!(*token.borrow(), "stop must cancel the token");
+        assert!(*token.session_ref(), "stop must cancel the token");
         assert_eq!(reg.state(), RegistryState::Draining(id));
         assert!(!reg.request_stop(), "second stop is idempotent no-op");
         assert!(reg.is_active(), "draining still counts as active");

@@ -3,11 +3,17 @@ import { useTranslation } from "react-i18next";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { commands } from "@/bindings";
 import { Button } from "../ui/Button";
+import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import { Slider } from "../ui/Slider";
 import { useSettings } from "../../hooks/useSettings";
 import { useOsType } from "../../hooks/useOsType";
 import { formatKeyCombination } from "../../lib/utils/keyboard";
+import {
+  CONVERSE_BARGE_IN_VALUES,
+  normalizeConverseBargeIn,
+  type ConverseBargeIn,
+} from "./converseBargeIn";
 import {
   CONVERSE_LIMITS,
   buttonAction,
@@ -42,7 +48,7 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
   React.memo(({ descriptionMode = "tooltip", grouped = false }) => {
     const { t } = useTranslation();
     const osType = useOsType();
-    const { getSetting, updateSetting } = useSettings();
+    const { getSetting, updateSetting, isUpdating } = useSettings();
 
     const [active, setActive] = useState(false);
     const [state, setState] = useState<ConverseStateEvent>({
@@ -55,6 +61,7 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
     const [error, setError] = useState<string | null>(null);
 
     const converseBinding = getSetting("bindings")?.converse;
+    const bargeIn = normalizeConverseBargeIn(getSetting("converse_barge_in"));
 
     useEffect(() => {
       let cancelled = false;
@@ -241,6 +248,25 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
             />
           );
         })}
+
+        <SettingContainer
+          title={t("converse.section.bargeIn.label")}
+          description={t("converse.section.bargeIn.description")}
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+        >
+          <Dropdown
+            options={CONVERSE_BARGE_IN_VALUES.map((mode) => ({
+              value: mode,
+              label: t(`converse.section.bargeIn.options.${mode}`),
+            }))}
+            selectedValue={bargeIn}
+            onSelect={(value) =>
+              void updateSetting("converse_barge_in", value as ConverseBargeIn)
+            }
+            disabled={isUpdating("converse_barge_in")}
+          />
+        </SettingContainer>
 
         <SettingContainer
           title={t("converse.section.shortcutLabel")}

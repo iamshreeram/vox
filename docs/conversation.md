@@ -74,6 +74,59 @@ features are turned on.
 Optional features for conversations (smart turn detection, a latency panel,
 personas, and a speaker filter) are described in [Optional voice features](voice-features.md).
 
+## Interrupting by speaking (headphones, experimental)
+
+Setting: **Interrupt by speaking** in the Conversation settings. It is off by
+default. Its only other option, **Headphones only**, is meant for headphones.
+This feature is experimental and has **not yet been verified on real headsets**;
+the live check below is how that gets confirmed.
+
+When it is on:
+
+- Your voice lowers the assistant's volume as soon as you start talking.
+- About 600 ms of continuous speech cancels the current reply. Your sentence
+  becomes the next turn in the same conversation.
+- A short "yeah" restores the volume.
+- The setting is read once, when a conversation starts. Changing it applies to
+  the next conversation.
+
+### Known limits
+
+- The system voice cannot be ducked (lowered in volume), but it can be
+  interrupted. The Phonon and Natural voices can be both ducked and
+  interrupted.
+- Speakers are not supported. The assistant would hear its own voice and
+  interrupt itself.
+- Bluetooth headsets may switch to a call profile when the second microphone
+  stream opens, so a short audio glitch is possible when a conversation starts.
+- Spoken replies must be on, and a reply backend must be set up. Without them
+  the setting has no effect.
+- If the interruption monitor cannot start, the conversation runs as it did
+  before, without interruptions. No error is shown.
+- If the normal microphone cannot open while the monitor is running, the
+  monitor is closed and the conversation continues without interruptions.
+- The monitor's microphone stream keeps its audio in memory until the
+  conversation ends (roughly 4 MB per minute). Keep conversations short while
+  this is experimental.
+
+### Live check (headphones)
+
+Run this once with a wired headset and once with a Bluetooth headset:
+
+1. Say "Hey Jarvis", ask for a long answer, and talk over it for a second or
+   more. The voice should dip at once and stop within about a second, and your
+   sentence should be answered in the same conversation.
+2. During a reply say a short "yeah". The volume should dip and come back and
+   the reply should keep going.
+3. Let ten replies play while you stay silent, with a normal background noise
+   level. None should be interrupted or left quiet.
+4. End the conversation during a reply. It should end normally.
+5. Switch the setting back to **Off**. Conversations should behave as before.
+6. With the system voice selected, step 1 should still stop the reply (no dip
+   is expected).
+
+Report anything that fails together with the headset model.
+
 ## Troubleshooting
 
 - **Nothing happens when I start:** turn on Spoken replies in the speech

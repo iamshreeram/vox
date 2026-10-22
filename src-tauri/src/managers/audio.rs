@@ -18,7 +18,15 @@ use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
 
 const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
-const SILERO_VAD_THRESHOLD: f32 = 0.3;
+pub(crate) const SILERO_VAD_THRESHOLD: f32 = 0.3;
+/// Prefix of the `Err(String)` of `try_start_recording` when the microphone stream cannot be
+/// opened. The conversation code classifies refusals by this prefix (see
+/// `converse_platform::classify_start_error`), so both sides share the constant.
+pub(crate) const STREAM_OPEN_FAILED_PREFIX: &str = "Failed to open microphone stream:";
+/// Prefix of the `Err(String)` when the opened recorder refuses to start.
+pub(crate) const RECORDER_START_FAILED_PREFIX: &str = "Failed to start recorder:";
+/// Silero VAD model resource (shared with the barge-in monitor; same file, no behaviour change).
+pub(crate) const SILERO_VAD_RESOURCE: &str = "resources/models/silero_vad_v4.onnx";
 const EARSHOT_VAD_THRESHOLD: f32 = 0.5;
 
 fn set_mute(mute: bool) {
@@ -291,10 +299,7 @@ fn create_audio_recorder(
         VadBackend::Silero => {
             let vad_path = app_handle
                 .path()
-                .resolve(
-                    "resources/models/silero_vad_v4.onnx",
-                    tauri::path::BaseDirectory::Resource,
-                )
+                .resolve(SILERO_VAD_RESOURCE, tauri::path::BaseDirectory::Resource)
                 .map_err(|e| anyhow::anyhow!("Failed to resolve VAD path: {e}"))?;
             Box::new(
                 SileroVad::new(vad_path, SILERO_VAD_THRESHOLD)
@@ -866,9 +871,9 @@ impl AudioRecordingManager {
             // "Recorder not available".
             if let Err(e) = self.start_microphone_stream() {
                 let msg = format!("{e}");
-                error!("Failed to open microphone stream: {msg}");
+                error!("{STREAM_OPEN_FAILED_PREFIX} {msg}");
                 release_tts();
-                return Err(msg);
+                return Err(format!("{STREAM_OPEN_FAILED_PREFIX} {msg}"));
             }
 
             if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
@@ -890,7 +895,7 @@ impl AudioRecordingManager {
                     }
                     Err(error) => {
                         release_tts();
-                        return Err(format!("Failed to start recorder: {error}"));
+                        return Err(format!("{RECORDER_START_FAILED_PREFIX} {error}"));
                     }
                 }
             }

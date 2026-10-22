@@ -1346,7 +1346,15 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "Die Umgebungserkennung muss während eines Gesprächs ausgeschaltet sein. Auch das Aktivierungswort muss ausgeschaltet sein, es sei denn, seine Aktion ist auf „Mit dem Assistenten sprechen“ gestellt."
+      "wakeWordNote": "Die Umgebungserkennung muss während eines Gesprächs ausgeschaltet sein. Auch das Aktivierungswort muss ausgeschaltet sein, es sei denn, seine Aktion ist auf „Mit dem Assistenten sprechen“ gestellt.",
+      "bargeIn": {
+        "label": "Durch Sprechen unterbrechen",
+        "description": "Sprich über den Assistenten, um ihn zu unterbrechen. Nutze Kopfhörer: über Lautsprecher würde der Assistent sich selbst hören. Die Stimmen Phonon und Natural werden beim Sprechen ebenfalls leiser; die Systemstimme wird einfach gestoppt. Gesprochene Antworten müssen aktiviert sein.",
+        "options": {
+          "off": "Aus",
+          "headphones": "Nur Kopfhörer"
+        }
+      }
     },
     "voice": {
       "title": "Sprachfunktionen",

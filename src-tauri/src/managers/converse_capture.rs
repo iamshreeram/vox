@@ -24,6 +24,8 @@ pub enum StartError {
     NoMicrophone,
     Permission,
     Other,
+    /// The stream could not be opened or started (raw device/OS error). See `ListenFailure::StreamOpen`.
+    StreamOpen,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -687,6 +689,12 @@ impl Worker {
             Err(StartError::Other) => {
                 self.set_inactive();
                 let _ = p.reply.send(ListenOutcome::Failed(ListenFailure::Other));
+            }
+            Err(StartError::StreamOpen) => {
+                self.set_inactive();
+                let _ = p
+                    .reply
+                    .send(ListenOutcome::Failed(ListenFailure::StreamOpen));
             }
         }
     }
@@ -1815,6 +1823,7 @@ mod tests {
             (StartError::NoMicrophone, ListenFailure::NoMicrophone),
             (StartError::Permission, ListenFailure::Permission),
             (StartError::Other, ListenFailure::Other),
+            (StartError::StreamOpen, ListenFailure::StreamOpen),
         ] {
             let port = FakePort::new();
             port.set_default(Err(e));
