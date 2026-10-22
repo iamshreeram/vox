@@ -324,7 +324,13 @@
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
         "disabledByAmbientMode": "Turn off Ambient Mode to enable Wake Word.",
-        "downloadFailedTitle": "Wake word model couldn't be downloaded"
+        "downloadFailedTitle": "Wake word model couldn't be downloaded",
+        "action": {
+          "label": "जब मैं वेक वर्ड बोलूं",
+          "description": "चुनें कि वेक वर्ड एक ही वॉइस अनुरोध चलाए या सहायक के साथ बोलकर बातचीत शुरू करे।",
+          "voiceRequest": "एक वॉइस अनुरोध चलाएँ",
+          "conversation": "सहायक से बात करें"
+        }
       },
       "voiceCommands": {
         "label": "Voice Commands",
@@ -1340,7 +1346,7 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "Wake word and ambient listening must be off while a conversation runs."
+      "wakeWordNote": "बातचीत चलने के दौरान परिवेश श्रवण बंद होना चाहिए। वेक वर्ड भी बंद होना चाहिए, जब तक उसकी कार्रवाई सहायक से बात करने पर सेट न हो।"
     },
     "voice": {
       "title": "वॉइस सुविधाएँ",

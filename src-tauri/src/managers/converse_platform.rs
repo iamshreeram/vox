@@ -124,7 +124,11 @@ pub fn preflight_check(settings: &AppSettings) -> Result<(), String> {
     if !direct && settings_from_app(settings).mode == TtsComposerMode::Off {
         return Err("Set up a reply backend in the speech settings first.".to_string());
     }
-    if settings.wake_word_enabled || settings.ambient_mode_enabled {
+    // A wake word that starts a conversation is allowed; the one-shot voice request is not.
+    if (settings.wake_word_enabled
+        && settings.wake_word_action != crate::settings::WakeWordAction::Conversation)
+        || settings.ambient_mode_enabled
+    {
         return Err(
             "Turn off wake word and ambient listening before starting a conversation.".to_string(),
         );

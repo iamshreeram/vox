@@ -191,6 +191,19 @@ pub enum ChineseScript {
     Traditional,
 }
 
+/// What a wake-word detection does while no conversation session is running.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum WakeWordAction {
+    /// Start a turn-based conversation session.
+    Conversation,
+    /// One-shot voice request (today's behaviour, default). Also what any unrecognised stored
+    /// value means, so a bad settings file can never stop the app from loading.
+    #[default]
+    #[serde(other)]
+    VoiceRequest,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AutoSubmitKey {
@@ -726,6 +739,9 @@ pub struct AppSettings {
     pub wake_word_confidence_threshold: f32,
     #[serde(default = "default_wake_word_cooldown_ms")]
     pub wake_word_cooldown_ms: u32,
+    /// What a wake-word detection starts: a one-shot voice request (default) or a conversation.
+    #[serde(default)]
+    pub wake_word_action: WakeWordAction,
     /// User-defined spoken phrase -> open URL / folder / app. Validated when
     /// saved (`set_voice_shortcuts`) and again at match time.
     #[serde(default)]
@@ -1862,6 +1878,7 @@ pub fn get_default_settings() -> AppSettings {
         wake_word_model_name: default_wake_word_model_name(),
         wake_word_confidence_threshold: default_wake_word_confidence_threshold(),
         wake_word_cooldown_ms: default_wake_word_cooldown_ms(),
+        wake_word_action: WakeWordAction::VoiceRequest,
         voice_shortcuts: Vec::new(),
         wake_word_silence_timeout_ms: default_wake_word_silence_timeout_ms(),
         recording_retention_period: default_recording_retention_period(),

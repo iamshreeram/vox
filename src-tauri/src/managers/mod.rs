@@ -161,5 +161,7 @@ pub mod voice_common;
 pub mod voice_models;
 pub mod voice_runtime;
 pub mod voice_shortcuts;
+#[cfg(test)]
+mod wake_conversation_tests;
 pub mod wakeword;
 pub mod wakeword_listener;

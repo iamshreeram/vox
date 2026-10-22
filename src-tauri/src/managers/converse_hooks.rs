@@ -7,11 +7,14 @@
 //! callback thread and from shortcut handlers.
 
 use crate::managers::converse_capture::CaptureHandle;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
 static SESSION_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// `now_ms()` of the most recent true->false session transition, or `NEVER_ENDED`.
+static SESSION_ENDED_AT_MS: AtomicU64 = AtomicU64::new(NEVER_ENDED);
+const NEVER_ENDED: u64 = u64::MAX;
 static CAPTURE: Mutex<Option<CaptureHandle>> = Mutex::new(None);
 static EPOCH: OnceLock<Instant> = OnceLock::new();
 
@@ -25,14 +28,31 @@ fn now_ms() -> u64 {
 }
 
 /// Mark a session as running/stopped (set by the session manager; true from
-/// start until the finalizer has joined the capture worker).
+/// start until the finalizer has joined the capture worker). Only a true->false
+/// transition records the end time; repeated `false` calls leave it untouched.
 pub fn set_session_active(active: bool) {
-    SESSION_ACTIVE.store(active, Ordering::SeqCst);
+    let was_active = SESSION_ACTIVE.swap(active, Ordering::SeqCst);
+    if was_active && !active {
+        SESSION_ENDED_AT_MS.store(now_ms(), Ordering::SeqCst);
+    }
 }
 
 /// True while a conversation session exists (Running or Draining).
 pub fn session_active() -> bool {
     SESSION_ACTIVE.load(Ordering::SeqCst)
+}
+
+/// Milliseconds since the most recent session ended. `None` while a session is
+/// active, or if no session has ended since process start. Lock-free.
+pub fn ms_since_session_end() -> Option<u64> {
+    if session_active() {
+        return None;
+    }
+    let ended_at = SESSION_ENDED_AT_MS.load(Ordering::SeqCst);
+    if ended_at == NEVER_ENDED {
+        return None;
+    }
+    Some(now_ms().saturating_sub(ended_at))
 }
 
 /// Install (Some) or remove (None) the capture handle that receives levels.
