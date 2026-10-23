@@ -1,5 +1,7 @@
 # Phase 3 - Agent Bridge (headless external CLI agent subprocess)
 
+> **Superseded for interactive dictation by [docs/acp-agent.md](../acp-agent.md).** Dictation that no voice command matched now goes to a persistent ACP agent process instead of a one-shot `-p` subprocess per request. The one-shot design below still describes background jobs, which have not moved.
+
 **Branch:** `phase/3-agent-bridge` - **Worktree:** `.worktrees/phase-3-agent-bridge/`
 **Depends on:** nothing (optionally consumes Phase 1's recall output and
 Phase 2's safety gate once all three exist, but each is independently

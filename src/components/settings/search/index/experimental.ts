@@ -9,6 +9,7 @@ const GROUP = {
   listening: "settings.advanced.listeningMode.title",
   memory: "settings.experimental.groups.memory",
   agentBridge: "settings.experimental.groups.agentBridge",
+  acpAgent: "settings.experimental.groups.acpAgent",
   spokenReplies: "settings.advanced.tts.groupTitle",
   realtime: "settings.experimental.realtime.title",
   conversationMemory: "settings.experimental.groups.conversationMemory",
@@ -451,13 +452,6 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
     ],
   ),
   row(
-    "agentBridgeTimeout",
-    "agentBridge",
-    "settings.advanced.agentBridge.timeoutLabel",
-    "settings.advanced.agentBridge.timeoutDescription",
-    ["agent timeout", "timeout", "seconds", "wait", "agent wait"],
-  ),
-  row(
     "agentBridgePromptFlag",
     "agentBridge",
     "settings.advanced.agentBridge.promptFlagLabel",
@@ -478,6 +472,36 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
       "cli path",
       "location",
     ],
+  ),
+
+  // ----- ACP agent (AcpAgentSettings) -----
+  row(
+    "acpAgentEnabled",
+    "acpAgent",
+    "settings.advanced.acpAgent.enabled.label",
+    "settings.advanced.acpAgent.enabled.description",
+    ["agent", "acp", "protocol", "assistant", "escalation"],
+  ),
+  row(
+    "acpAgentCommand",
+    "acpAgent",
+    "settings.advanced.acpAgent.command.label",
+    "settings.advanced.acpAgent.command.description",
+    ["agent path", "command", "executable", "program", "acp", "binary"],
+  ),
+  row(
+    "acpAgentArgs",
+    "acpAgent",
+    "settings.advanced.acpAgent.args.label",
+    "settings.advanced.acpAgent.args.description",
+    ["arguments", "args", "flags", "agent arguments", "acp"],
+  ),
+  row(
+    "acpAgentTimeout",
+    "acpAgent",
+    "settings.advanced.acpAgent.timeout.label",
+    "settings.advanced.acpAgent.timeout.description",
+    ["timeout", "seconds", "wait", "agent timeout", "turn timeout"],
   ),
 
   // ----- spoken replies (TtsSettings) -----

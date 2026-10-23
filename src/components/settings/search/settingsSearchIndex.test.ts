@@ -68,6 +68,7 @@ const VALID_GROUP_IDS = new Set([
   "listening",
   "memory",
   "agentBridge",
+  "acpAgent",
   "spokenReplies",
   "realtime",
   "conversationMemory",

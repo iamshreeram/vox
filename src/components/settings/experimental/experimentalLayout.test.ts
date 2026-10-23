@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { EXPERIMENTAL_GROUPS, visibleControls } from "./experimentalLayout";
 
-// The 17 controls the flat Experimental page rendered before the regrouping.
+// The 17 controls the flat Experimental page rendered before the regrouping,
+// plus `acpAgent`, added later as its own group.
 // `tts` and `realtime` are composite components kept whole.
 const LEGACY_CONTROLS = [
   "postProcessing",
@@ -17,6 +18,7 @@ const LEGACY_CONTROLS = [
   "agentBridge",
   "agentContext",
   "agentBridgeBinaryPath",
+  "acpAgent",
   "wakeWord",
   "ambientMode",
   "tts",
@@ -27,7 +29,7 @@ const allFlags = { memoryEnabled: true, agentBridgeEnabled: true };
 const noFlags = { memoryEnabled: false, agentBridgeEnabled: false };
 
 const scenarios: Record<string, () => void> = {
-  "seven groups with the expected ids in order": () => {
+  "eight groups with the expected ids in order": () => {
     assert.deepEqual(
       EXPERIMENTAL_GROUPS.map((g) => g.id),
       [
@@ -36,6 +38,7 @@ const scenarios: Record<string, () => void> = {
         "listening",
         "memory",
         "agentBridge",
+        "acpAgent",
         "spokenReplies",
         "realtime",
       ],
@@ -94,7 +97,7 @@ const scenarios: Record<string, () => void> = {
       "agentBridgeBinaryPath",
     ]);
   },
-  "with every flag on all 17 controls are visible": () => {
+  "with every flag on all 18 controls are visible": () => {
     const all = EXPERIMENTAL_GROUPS.flatMap((g) =>
       visibleControls(g, allFlags),
     );
