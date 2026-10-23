@@ -1,5 +1,6 @@
-//! Tests for Track S step S-C: custom filler word validation, agent bridge
-//! timeout validation, and agent bridge prompt flag validation.
+//! Tests for Track S step S-C: custom filler word validation and agent
+//! bridge prompt flag validation (jobs settings; the bridge timeout setting
+//! was removed with the one-shot bridge).
 //!
 //! These tests encode the contract for the production functions in
 //! `settings.rs` and are expected to fail to compile until they exist.
@@ -12,43 +13,6 @@ fn settings_with(agent_flag: &str, prompt_flag: &str) -> AppSettings {
     s.agent_jobs_agent_flag = agent_flag.to_string();
     s.agent_bridge_prompt_flag = prompt_flag.to_string();
     s
-}
-
-// ---------------------------------------------------------------------------
-// A) agent bridge timeout
-// ---------------------------------------------------------------------------
-
-#[test]
-fn timeout_constants_match_contract() {
-    assert_eq!(AGENT_BRIDGE_TIMEOUT_MIN_SECS, 5);
-    assert_eq!(AGENT_BRIDGE_TIMEOUT_MAX_SECS, 600);
-}
-
-#[test]
-fn timeout_boundaries_and_typical_values_are_accepted() {
-    assert_eq!(validate_agent_bridge_timeout_secs(5), Ok(5));
-    assert_eq!(validate_agent_bridge_timeout_secs(60), Ok(60));
-    assert_eq!(validate_agent_bridge_timeout_secs(600), Ok(600));
-}
-
-#[test]
-fn timeout_out_of_range_is_rejected() {
-    assert!(validate_agent_bridge_timeout_secs(4).is_err());
-    assert!(validate_agent_bridge_timeout_secs(0).is_err());
-    assert!(validate_agent_bridge_timeout_secs(601).is_err());
-    assert!(validate_agent_bridge_timeout_secs(u64::MAX).is_err());
-}
-
-#[test]
-fn timeout_rejection_has_a_message() {
-    let err = validate_agent_bridge_timeout_secs(0).unwrap_err();
-    assert!(!err.trim().is_empty());
-}
-
-#[test]
-fn default_timeout_validates() {
-    let s = get_default_settings();
-    assert!(validate_agent_bridge_timeout_secs(s.agent_bridge_timeout_secs).is_ok());
 }
 
 // ---------------------------------------------------------------------------

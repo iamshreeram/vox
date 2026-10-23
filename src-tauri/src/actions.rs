@@ -2,11 +2,13 @@
 use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
+use crate::managers::acp_agent::{AcpAgentConfig, AcpAgentManager};
+use crate::managers::acp_escalation::{run_escalation, EscalationEnv, EscalationSink};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::command_router::{CommandAction, CommandRouter, RouteDecision};
-use crate::managers::conversation::{
-    build_agent_prompt, should_append_exchange, ConversationLog, Ticket,
-};
+use crate::managers::conversation::ConversationLog;
+#[cfg(test)]
+use crate::managers::conversation::{build_agent_prompt, should_append_exchange, Ticket};
 use crate::managers::converse::PhraseOutcome;
 use crate::managers::converse_audio::restrict_model_action;
 use crate::managers::history::HistoryManager;
@@ -204,9 +206,120 @@ pub(crate) fn run_utterance_hooks(
 fn should_escalate_to_agent_bridge(
     route: &RouteDecision,
     voice_commands_enabled: bool,
-    agent_bridge_enabled: bool,
+    acp_agent_enabled: bool,
 ) -> bool {
-    voice_commands_enabled && agent_bridge_enabled && matches!(route, RouteDecision::NoMatch)
+    voice_commands_enabled && acp_agent_enabled && matches!(route, RouteDecision::NoMatch)
+}
+
+/// Sends one finished dictation transcript to the persistent ACP agent (DESIGN
+/// rev 3.1 section 3). Blocking work runs on a blocking thread; results go out
+/// as the existing `agent-bridge-*` events.
+fn escalate_to_acp_agent(app: &AppHandle, settings: &AppSettings, transcript: &str) {
+    let cfg = match acp_agent_config(app, settings) {
+        Ok(cfg) => cfg,
+        Err(message) => {
+            let _ = app.emit("agent-bridge-error", message);
+            return;
+        }
+    };
+    let manager = app.state::<Arc<AcpAgentManager>>().inner().clone();
+    let log = app.state::<Arc<ConversationLog>>().inner().clone();
+    let memory = app.state::<Arc<MemoryManager>>().inner().clone();
+    let app = app.clone();
+    let transcript = transcript.to_string();
+    let ctx_enabled = settings.agent_context_enabled;
+    let memory_enabled = settings.memory_enabled;
+    tauri::async_runtime::spawn_blocking(move || {
+        let recall = move |query: &str| -> Vec<String> {
+            memory
+                .recall(query, 5)
+                .map(|facts| facts.into_iter().map(|fact| fact.text).collect())
+                .unwrap_or_default()
+        };
+        let ctx_enabled_now = {
+            let app = app.clone();
+            move || get_settings(&app).agent_context_enabled
+        };
+        let now_ms = || monotonic_ms();
+        let env = EscalationEnv {
+            log: &log,
+            ctx_enabled,
+            memory_enabled,
+            recall: &recall,
+            ctx_enabled_now: &ctx_enabled_now,
+            now_ms: &now_ms,
+        };
+        let sink = TauriEscalationSink(app.clone());
+        run_escalation(&*manager, &sink, &env, &cfg, &transcript);
+    });
+}
+
+/// Builds the ACP agent config from settings. A blank command is a user-facing error.
+fn acp_agent_config(app: &AppHandle, settings: &AppSettings) -> Result<AcpAgentConfig, String> {
+    let command = settings
+        .acp_agent_command
+        .as_deref()
+        .map(str::trim)
+        .filter(|command| !command.is_empty())
+        .ok_or_else(|| {
+            "The ACP agent is not configured. Set its command in settings.".to_string()
+        })?;
+    Ok(AcpAgentConfig {
+        command: PathBuf::from(command),
+        args: settings
+            .acp_agent_args
+            .split_ascii_whitespace()
+            .map(str::to_string)
+            .collect(),
+        cwd: acp_workspace_dir(app)?,
+        turn_timeout: Duration::from_secs(settings.acp_agent_turn_timeout_secs),
+        handshake_timeout: Duration::from_secs(60),
+        cancel_grace: Duration::from_secs(3),
+    })
+}
+
+/// `<app data dir>/acp_workspace`, created with mode 0700 on first use.
+fn acp_workspace_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = crate::portable::app_data_dir(app)
+        .map_err(|_| "Could not locate the app data folder for the agent.".to_string())?
+        .join("acp_workspace");
+    create_private_dir(&dir)
+        .map_err(|_| "Could not create the agent workspace folder.".to_string())?;
+    Ok(dir)
+}
+
+#[cfg(unix)]
+fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+}
+
+#[cfg(not(unix))]
+fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)
+}
+
+/// Tauri-event sink for escalation results. Event names and payloads are unchanged.
+struct TauriEscalationSink(AppHandle);
+
+impl EscalationSink for TauriEscalationSink {
+    fn reply(&self, text: &str) {
+        let _ = self.0.emit("agent-bridge-reply", text.to_string());
+    }
+
+    fn exchange(&self, user: &str, reply: &str) {
+        let _ = self.0.emit(
+            "agent-bridge-exchange",
+            crate::managers::speech_pipeline::build_exchange_payload(reply, Some(user)),
+        );
+    }
+
+    fn error(&self, user_message: &str) {
+        let _ = self.0.emit("agent-bridge-error", user_message.to_string());
+    }
 }
 
 /// Monotonic milliseconds since the first call. Conversation-log expiry uses
@@ -221,6 +334,10 @@ fn monotonic_ms() -> u64 {
 /// transcript is returned unchanged and `recall` is not called. When enabled,
 /// a [`Ticket`] is allocated for the exchange; `recall` runs only when
 /// `memory_enabled` is set.
+///
+/// Test-only since the ACP escalation (DESIGN rev 3.1 section 3): production
+/// dispatch no longer prefixes history, see `acp_escalation::run_escalation`.
+#[cfg(test)]
 fn prepare_agent_prompt(
     context_enabled: bool,
     memory_enabled: bool,
@@ -245,6 +362,7 @@ fn prepare_agent_prompt(
 /// Records a finished exchange (original transcript and reply) only when the
 /// ticket is present, no clear happened since dispatch, and context is still
 /// enabled. Returns whether it was recorded.
+#[cfg(test)]
 fn finish_agent_exchange(
     ticket: Option<Ticket>,
     log: &ConversationLog,
@@ -1312,81 +1430,11 @@ impl ShortcutAction for TranscribeAction {
                                         if should_escalate_to_agent_bridge(
                                             &RouteDecision::NoMatch,
                                             hook_settings.voice_commands_enabled,
-                                            hook_settings.agent_bridge_enabled,
+                                            hook_settings.acp_agent_enabled,
                                         ) =>
                                     {
-                                        let app = ah.clone();
                                         let settings = hook_settings.clone();
-                                        let log =
-                                            ah.state::<Arc<ConversationLog>>().inner().clone();
-                                        let memory =
-                                            ah.state::<Arc<MemoryManager>>().inner().clone();
-                                        let now_ms = monotonic_ms();
-                                        let recall = move |query: &str| -> Vec<String> {
-                                            memory
-                                                .recall(query, 5)
-                                                .map(|facts| {
-                                                    facts
-                                                        .into_iter()
-                                                        .map(|fact| fact.text)
-                                                        .collect()
-                                                })
-                                                .unwrap_or_default()
-                                        };
-                                        let (prompt, ticket) = prepare_agent_prompt(
-                                            hook_settings.agent_context_enabled,
-                                            hook_settings.memory_enabled,
-                                            &transcription,
-                                            &recall,
-                                            &log,
-                                            now_ms,
-                                        );
-                                        let prompt_transcript = transcription.clone();
-                                        tauri::async_runtime::spawn(async move {
-                                            let worker = crate::managers::agent_bridge::CliAgentWorker::from_settings(
-                                                settings.agent_bridge_binary_path.clone(),
-                                                crate::settings::effective_prompt_flag(&settings),
-                                                settings.agent_bridge_timeout_secs,
-                                            );
-                                            let result = match worker {
-                                                Ok(worker) => crate::commands::agent_bridge::invoke_with_worker(
-                                                    &settings,
-                                                    &prompt,
-                                                    &worker,
-                                                ),
-                                                Err(crate::managers::agent_bridge::AgentBridgeError::NotConfigured) => Err(
-                                                    "No agent binary is configured. Set a binary path in Settings.".to_string(),
-                                                ),
-                                                Err(crate::managers::agent_bridge::AgentBridgeError::BinaryNotFound) => Err(
-                                                    "The configured agent binary was not found. Check its path in Settings.".to_string(),
-                                                ),
-                                                Err(error) => Err(format!("Could not configure the agent: {error:?}")),
-                                            };
-                                            match result {
-                                                Ok(reply) => {
-                                                    let _ = app
-                                                        .emit("agent-bridge-reply", reply.clone());
-                                                    let _ = app.emit(
-                                                        "agent-bridge-exchange",
-                                                        crate::managers::speech_pipeline::build_exchange_payload(
-                                                            &reply,
-                                                            Some(prompt_transcript.as_str()),
-                                                        ),
-                                                    );
-                                                    finish_agent_exchange(
-                                                        ticket,
-                                                        &log,
-                                                        get_settings(&app).agent_context_enabled,
-                                                        &prompt_transcript,
-                                                        &reply,
-                                                        monotonic_ms(),
-                                                    );
-                                                }
-                                                Err(message) => {
-                                                    let _ = app.emit("agent-bridge-error", message);
-                                                }
-                                            }
-                                        });
+                                        escalate_to_acp_agent(&ah, &settings, &transcription);
                                     }
                                     RouteDecision::NoMatch => {}
                                 }

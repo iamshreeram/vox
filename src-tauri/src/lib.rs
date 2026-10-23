@@ -382,6 +382,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         app_handle.manage(store);
     }
     app_handle.manage(conversation_log);
+    // Persistent ACP agent client used by dictation escalation (DESIGN rev 3.1 section 3).
+    app_handle.manage(Arc::new(managers::acp_agent::AcpAgentManager::new()));
     app_handle.manage(command_router.clone());
     app_handle.manage(wakeword_listener.clone());
     app_handle.manage(ambient_transcript);
@@ -1139,7 +1141,6 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             trigger_update_check,
             show_main_window_command,
             commands::cancel_operation,
-            commands::agent_bridge::agent_invoke,
             commands::is_portable,
             commands::is_update_checks_locked,
             commands::source_update::get_update_mode,
@@ -1216,7 +1217,6 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_ambient_wake_name_setting,
             shortcut::change_ambient_window_ms_setting,
             shortcut::change_custom_filler_words_setting,
-            shortcut::change_agent_bridge_timeout_secs_setting,
             shortcut::change_agent_bridge_prompt_flag_setting,
             shortcut::change_acp_agent_enabled_setting,
             shortcut::change_acp_agent_command_setting,
@@ -1658,6 +1658,9 @@ pub fn run(cli_args: CliArgs) {
         }
         // Teardown transcribe.cpp before exit
         tauri::RunEvent::ExitRequested { api, .. } => {
+            if let Some(acp) = app.try_state::<Arc<managers::acp_agent::AcpAgentManager>>() {
+                acp.close();
+            }
             let job_wiring = app.state::<job_runtime::JobWiring>();
             let exit_handle = app.clone();
             let decision = job_wiring.exit.on_exit_requested(
@@ -1669,6 +1672,9 @@ pub fn run(cli_args: CliArgs) {
             log::debug!("native exit request decision: {:?}", decision);
         }
         tauri::RunEvent::Exit => {
+            if let Some(acp) = app.try_state::<Arc<managers::acp_agent::AcpAgentManager>>() {
+                acp.close();
+            }
             // Non-blocking: the coordinator and IO worker are detached (DESIGN 3.6 shutdown).
             if let Some(state) =
                 app.try_state::<Option<Arc<managers::vault_rag_runtime::VaultRagRuntime>>>()

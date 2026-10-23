@@ -1055,21 +1055,6 @@ pub fn change_custom_filler_words_setting(
     Ok(())
 }
 
-/// Validates and stores the agent bridge timeout in seconds. A rejected value leaves the
-/// stored setting untouched.
-#[tauri::command]
-#[specta::specta]
-pub fn change_agent_bridge_timeout_secs_setting(
-    app: AppHandle,
-    timeout_secs: u64,
-) -> Result<(), String> {
-    let timeout_secs = settings::validate_agent_bridge_timeout_secs(timeout_secs)?;
-    let mut settings = settings::get_settings(&app);
-    settings.agent_bridge_timeout_secs = timeout_secs;
-    settings::write_settings(&app, settings);
-    Ok(())
-}
-
 /// Validates and stores the agent bridge prompt flag. The flag must have a valid shape and
 /// must differ from the effective agent flag. A rejected flag leaves the stored setting
 /// untouched.
@@ -1592,11 +1577,21 @@ pub fn change_agent_context_setting(app: AppHandle, enabled: bool) -> Result<(),
     let mut settings = settings::get_settings(&app);
     settings.agent_context_enabled = enabled;
     settings::write_settings(&app, settings);
-    if !enabled {
-        if let Some(log) =
-            app.try_state::<std::sync::Arc<crate::managers::conversation::ConversationLog>>()
-        {
-            log.clear();
+    let log = app
+        .try_state::<Arc<crate::managers::conversation::ConversationLog>>()
+        .map(|state| state.inner().clone());
+    match app.try_state::<Arc<crate::managers::acp_agent::AcpAgentManager>>() {
+        Some(manager) => crate::managers::acp_escalation::on_context_setting_changed(
+            enabled,
+            log.as_deref(),
+            &**manager.inner(),
+        ),
+        None => {
+            if !enabled {
+                if let Some(log) = log.as_deref() {
+                    log.clear();
+                }
+            }
         }
     }
     let _ = app.emit(
@@ -1613,10 +1608,19 @@ pub fn change_agent_context_setting(app: AppHandle, enabled: bool) -> Result<(),
 #[tauri::command]
 #[specta::specta]
 pub fn agent_clear_conversation(app: AppHandle) -> Result<(), String> {
-    if let Some(log) =
-        app.try_state::<std::sync::Arc<crate::managers::conversation::ConversationLog>>()
-    {
-        log.clear();
+    let log = app
+        .try_state::<Arc<crate::managers::conversation::ConversationLog>>()
+        .map(|state| state.inner().clone());
+    match app.try_state::<Arc<crate::managers::acp_agent::AcpAgentManager>>() {
+        // Always resets the ACP session, even when no conversation log is managed.
+        Some(manager) => {
+            crate::managers::acp_escalation::on_history_cleared(log.as_deref(), &**manager.inner())
+        }
+        None => {
+            if let Some(log) = log.as_deref() {
+                log.clear();
+            }
+        }
     }
     Ok(())
 }

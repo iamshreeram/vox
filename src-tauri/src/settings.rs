@@ -709,8 +709,6 @@ pub struct AppSettings {
     pub agent_bridge_binary_path: Option<String>,
     #[serde(default = "default_agent_bridge_prompt_flag")]
     pub agent_bridge_prompt_flag: String,
-    #[serde(default = "default_agent_bridge_timeout_secs")]
-    pub agent_bridge_timeout_secs: u64,
     /// Persistent ACP agent client (DESIGN rev 3.1 section 7). Opt-in.
     #[serde(default)]
     pub acp_agent_enabled: bool,
@@ -1184,23 +1182,6 @@ pub fn validate_agent_bridge_prompt_flag(
     Ok(candidate.to_string())
 }
 
-/// Smallest accepted agent bridge timeout in seconds (inclusive). Zero would time out at once.
-pub const AGENT_BRIDGE_TIMEOUT_MIN_SECS: u64 = 5;
-/// Largest accepted agent bridge timeout in seconds (inclusive).
-pub const AGENT_BRIDGE_TIMEOUT_MAX_SECS: u64 = 600;
-
-/// Validates an agent bridge timeout in seconds. Out-of-range values are rejected, never
-/// clamped.
-pub fn validate_agent_bridge_timeout_secs(secs: u64) -> Result<u64, String> {
-    if (AGENT_BRIDGE_TIMEOUT_MIN_SECS..=AGENT_BRIDGE_TIMEOUT_MAX_SECS).contains(&secs) {
-        Ok(secs)
-    } else {
-        Err(format!(
-            "Agent timeout must be between {AGENT_BRIDGE_TIMEOUT_MIN_SECS} and {AGENT_BRIDGE_TIMEOUT_MAX_SECS} seconds"
-        ))
-    }
-}
-
 /// Largest number of custom filler words accepted (inclusive).
 pub const CUSTOM_FILLER_MAX_WORDS: usize = 100;
 /// Longest accepted custom filler word, counted in characters.
@@ -1247,10 +1228,6 @@ pub fn validate_custom_filler_words(
 
 fn default_agent_bridge_prompt_flag() -> String {
     "-p".to_string()
-}
-
-fn default_agent_bridge_timeout_secs() -> u64 {
-    60
 }
 
 /// Default seconds allowed for one ACP agent turn.
@@ -1977,7 +1954,6 @@ pub fn get_default_settings() -> AppSettings {
         agent_bridge_enabled: false,
         agent_bridge_binary_path: None,
         agent_bridge_prompt_flag: default_agent_bridge_prompt_flag(),
-        agent_bridge_timeout_secs: default_agent_bridge_timeout_secs(),
         acp_agent_enabled: false,
         acp_agent_command: None,
         acp_agent_args: String::new(),
@@ -2835,17 +2811,6 @@ mod tests {
     }
 
     #[test]
-    fn agent_bridge_timeout_defaults_when_missing_from_legacy_settings() {
-        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
-        settings
-            .as_object_mut()
-            .unwrap()
-            .remove("agent_bridge_timeout_secs");
-        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
-        assert_eq!(loaded.agent_bridge_timeout_secs, 60);
-    }
-
-    #[test]
     fn conversation_records_and_vault_context_defaults_are_off() {
         let settings = get_default_settings();
         assert!(!settings.conversation_records_enabled);
@@ -2894,7 +2859,6 @@ mod tests {
         assert!(!settings.agent_bridge_enabled);
         assert_eq!(settings.agent_bridge_binary_path, None);
         assert_eq!(settings.agent_bridge_prompt_flag, "-p");
-        assert_eq!(settings.agent_bridge_timeout_secs, 60);
     }
 
     #[test]
