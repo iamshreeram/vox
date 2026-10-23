@@ -32,12 +32,21 @@ assert.deepEqual(parseAcpCommand("/opt/a b/agent"), {
   value: "/opt/a b/agent",
 });
 // Relative paths and bare program names are refused (no PATH lookup).
-for (const bad of ["my-agent", "./agent", "../agent", "~/agent", "agent --acp"]) {
+for (const bad of [
+  "my-agent",
+  "./agent",
+  "../agent",
+  "~/agent",
+  "agent --acp",
+]) {
   assert.deepEqual(parseAcpCommand(bad), { ok: false, error: "notAbsolute" });
 }
 // Length boundary: 1024 characters is fine, 1025 is not.
 const slash = "/";
-assert.equal(parseAcpCommand(slash + "a".repeat(ACP_MAX_COMMAND_LEN - 1)).ok, true);
+assert.equal(
+  parseAcpCommand(slash + "a".repeat(ACP_MAX_COMMAND_LEN - 1)).ok,
+  true,
+);
 assert.deepEqual(parseAcpCommand(slash + "a".repeat(ACP_MAX_COMMAND_LEN)), {
   ok: false,
   error: "tooLong",
@@ -52,7 +61,10 @@ for (const bad of ["/a\u0000b", "/a\nb", "/a\rb", "/a\u001bb", "/a\u007fb"]) {
 assert.deepEqual(splitAcpArgs(""), []);
 assert.deepEqual(splitAcpArgs("   "), []);
 assert.deepEqual(splitAcpArgs("--acp"), ["--acp"]);
-assert.deepEqual(splitAcpArgs("  --acp \t --verbose  "), ["--acp", "--verbose"]);
+assert.deepEqual(splitAcpArgs("  --acp \t --verbose  "), [
+  "--acp",
+  "--verbose",
+]);
 assert.deepEqual(splitAcpArgs('--name "two words" $HOME `x` ;'), [
   "--name",
   '"two',
@@ -62,7 +74,10 @@ assert.deepEqual(splitAcpArgs('--name "two words" $HOME `x` ;'), [
   ";",
 ]);
 assert.deepEqual(parseAcpArgs(""), { ok: true, value: "" });
-assert.deepEqual(parseAcpArgs("--acp --flag"), { ok: true, value: "--acp --flag" });
+assert.deepEqual(parseAcpArgs("--acp --flag"), {
+  ok: true,
+  value: "--acp --flag",
+});
 // Tabs and spaces are separators, not control-character errors.
 assert.equal(parseAcpArgs("a\tb").ok, true);
 // Count boundary: 8 args fine, 9 refused.
@@ -89,7 +104,17 @@ assert.deepEqual(parseAcpTimeout("900"), { ok: true, value: 900 });
 for (const bad of ["9", "901", "0", "-5", "100000"]) {
   assert.deepEqual(parseAcpTimeout(bad), { ok: false, error: "outOfRange" });
 }
-for (const bad of ["", "  ", "abc", "1.5", "1e2", "12 3", "+30", "0x20", "NaN"]) {
+for (const bad of [
+  "",
+  "  ",
+  "abc",
+  "1.5",
+  "1e2",
+  "12 3",
+  "+30",
+  "0x20",
+  "NaN",
+]) {
   assert.deepEqual(parseAcpTimeout(bad), { ok: false, error: "notInteger" });
 }
 
