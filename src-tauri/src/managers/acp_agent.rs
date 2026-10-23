@@ -1,11 +1,11 @@
 //! Persistent ACP (Agent Client Protocol) client.
 //!
-//! CONTRACT SKELETON. Every body below is `todo!()` until step S1 implements it
+//! CONTRACT SKELETON. `prompt` is `todo!()` until step S1b-3b implements the turn
 //! against the design (DESIGN.md rev 3.1) and the tests in `acp_agent_tests.rs`.
 //! Signatures, constants and type shapes here are part of the contract: do not
 //! change them without updating the design and the tests.
 
-#![allow(unused_variables, dead_code)]
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::io::BufRead;
@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::process::Child;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, SyncSender, TrySendError};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -116,9 +116,78 @@ impl std::fmt::Display for AcpAgentError {
 
 impl std::error::Error for AcpAgentError {}
 
+/// Session of the current conversation on the current child. `epoch` is the manager epoch
+/// when the session was created; a `reset_session` bumps the epoch and drops it.
+#[derive(Debug, Clone)]
+pub(crate) struct SessionInfo {
+    pub(crate) id: String,
+    pub(crate) epoch: u64,
+}
+
+/// The single operation allowed to hold the manager (DESIGN 5). `token` identifies the
+/// reservation; a release or publish only acts when the token still matches.
+#[derive(Debug, Clone)]
+pub(crate) enum Op {
+    Idle,
+    Warming { token: u64, cfg: AcpAgentConfig },
+    Turn { token: u64 },
+}
+
+impl Op {
+    pub(crate) fn token(&self) -> Option<u64> {
+        match self {
+            Self::Idle => None,
+            Self::Warming { token, .. } | Self::Turn { token } => Some(*token),
+        }
+    }
+}
+
+/// What a caller reserves the manager for. The config comes in as a separate argument.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Reservation {
+    Turn,
+    Warm,
+}
+
+/// Everything guarded by `Inner::m`. Never held across spawns, I/O, waits or kills.
+pub(crate) struct State {
+    pub(crate) closed: bool,
+    pub(crate) conn: Option<Arc<Conn>>,
+    pub(crate) cfg: Option<AcpAgentConfig>,
+    pub(crate) session: Option<SessionInfo>,
+    pub(crate) epoch: u64,
+    pub(crate) op: Op,
+    pub(crate) last_activity: Instant,
+    pub(crate) agent_name: Option<String>,
+}
+
+impl State {
+    fn new() -> Self {
+        Self {
+            closed: false,
+            conn: None,
+            cfg: None,
+            session: None,
+            epoch: 0,
+            op: Op::Idle,
+            last_activity: Instant::now(),
+            agent_name: None,
+        }
+    }
+}
+
+/// Shared manager state. The reaper and helper threads hold only `Weak` or `Conn` handles,
+/// so `Arc::strong_count` of this value stays 1 for a lone manager (DESIGN 4).
+pub(crate) struct Inner {
+    pub(crate) m: Mutex<State>,
+    pub(crate) cv: Condvar,
+    pub(crate) next_token: AtomicU64,
+    pub(crate) helpers: Arc<AtomicUsize>,
+}
+
 /// One long-lived ACP child process behind a small state machine. `Send + Sync`.
 pub struct AcpAgentManager {
-    _private: (),
+    inner: Arc<Inner>,
 }
 
 impl Default for AcpAgentManager {
@@ -130,11 +199,25 @@ impl Default for AcpAgentManager {
 impl AcpAgentManager {
     /// Idle shutdown of 30 minutes.
     pub fn new() -> Self {
-        todo!()
+        Self::with_idle_shutdown(Duration::from_secs(30 * 60))
     }
 
+    /// Starts the manager and its single reaper thread (DESIGN 5.7). The reaper holds only
+    /// a `Weak`, so it exits as soon as the last handle is dropped.
     pub fn with_idle_shutdown(idle: Duration) -> Self {
-        todo!()
+        let inner = Arc::new(Inner {
+            m: Mutex::new(State::new()),
+            cv: Condvar::new(),
+            next_token: AtomicU64::new(1),
+            helpers: Arc::new(AtomicUsize::new(0)),
+        });
+        let weak = Arc::downgrade(&inner);
+        // Why ignore the error: without a reaper the child is still retired on drop, close
+        // or shutdown; only the idle timeout is lost.
+        let _ = thread::Builder::new()
+            .name("acp-reaper".to_owned())
+            .spawn(move || reaper_loop(weak, idle));
+        Self { inner }
     }
 
     /// Blocking. See DESIGN.md sections 4-6.
@@ -144,43 +227,351 @@ impl AcpAgentManager {
         text: &str,
         opts: PromptOptions,
     ) -> Result<AcpReply, AcpAgentError> {
+        // S1b-3b implements the turn; until then the parameters are only named here.
+        let _ = (cfg, text, opts);
         todo!()
     }
 
     /// Spawn + initialize only. Returns the agent name when the agent reports one.
     pub fn warm_up(&self, cfg: &AcpAgentConfig) -> Result<Option<String>, AcpAgentError> {
-        todo!()
+        check_config(cfg)?;
+        let deadline = Instant::now() + cfg.handshake_timeout;
+        let (token, stale) = reserve(&self.inner, Reservation::Warm, cfg, deadline)?;
+        // Created first so that every later path, including a panic, releases the op.
+        let _guard = ReservationGuard::new(&self.inner, token);
+        if let Some(old) = stale {
+            retire(&old, RetireReason::Replaced);
+        }
+        connect(&self.inner, cfg, token, deadline)?;
+        let name = lock_state(&self.inner).agent_name.clone();
+        Ok(name)
     }
 
+    /// Drops the conversation (DESIGN 5.5): the epoch moves on, so an in-flight turn returns
+    /// `Stale`; the agent's session is closed best-effort, outside the lock.
     pub fn reset_session(&self) {
-        todo!()
+        let (conn, session) = {
+            let mut s = lock_state(&self.inner);
+            s.epoch = s.epoch.wrapping_add(1);
+            let session = s.session.take();
+            (s.conn.clone(), session)
+        };
+        if let (Some(conn), Some(session)) = (conn, session) {
+            conn.try_notify("session/close", close_params(&session.id));
+        }
     }
 
     pub fn is_running(&self) -> bool {
-        todo!()
+        lock_state(&self.inner)
+            .conn
+            .as_ref()
+            .is_some_and(|c| !c.is_retired())
     }
 
     /// Retires the current child; the manager stays usable.
     pub fn shutdown(&self) {
-        todo!()
+        stop(&self.inner, false);
     }
 
     /// Irreversible (app exit): later prompt/warm_up return `Closed`; nothing can spawn afterwards.
     pub fn close(&self) {
-        todo!()
+        stop(&self.inner, true);
     }
 
     /// Live helper threads (reader, writer, stderr) of this manager's children.
     #[cfg(test)]
     pub fn helper_threads_alive(&self) -> usize {
-        todo!()
+        self.inner.helpers.load(Ordering::SeqCst)
     }
 
     /// Strong count of the shared inner state. Must stay 1: the reaper and helper
     /// threads hold only weak references.
     #[cfg(test)]
     pub fn inner_strong_count(&self) -> usize {
-        todo!()
+        Arc::strong_count(&self.inner)
+    }
+}
+
+impl Drop for AcpAgentManager {
+    /// Dropping the last handle behaves like `close()`: the child is retired and the
+    /// reaper exits on its next tick.
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.inner) == 1 {
+            stop(&self.inner, true);
+        }
+    }
+}
+
+// ---------------------------------------------------------------- lifecycle (S1b-3a)
+
+/// Locks the manager state, ignoring poisoning (a panic elsewhere must not panic callers).
+fn lock_state(inner: &Inner) -> MutexGuard<'_, State> {
+    lock(&inner.m)
+}
+
+/// Rejects configurations that can never work, before any reservation (DESIGN 4).
+fn check_config(cfg: &AcpAgentConfig) -> Result<(), AcpAgentError> {
+    if cfg.command.as_os_str().to_string_lossy().trim().is_empty() {
+        return Err(AcpAgentError::NotConfigured);
+    }
+    Ok(())
+}
+
+/// Reserves the manager for one operation (DESIGN 5 rule 1). Returns the reservation token
+/// and the connection taken out of State (the caller retires it after unlocking). Waits are
+/// bounded by `deadline`; after every wake the decision restarts from the top.
+fn reserve(
+    inner: &Arc<Inner>,
+    kind: Reservation,
+    cfg: &AcpAgentConfig,
+    deadline: Instant,
+) -> Result<(u64, Option<Arc<Conn>>), AcpAgentError> {
+    loop {
+        let mut s = lock_state(inner);
+        if s.closed {
+            return Err(AcpAgentError::Closed);
+        }
+        let warming = match &s.op {
+            Op::Turn { .. } => return Err(AcpAgentError::Busy),
+            Op::Warming { cfg: warming, .. } => Some(warming.clone()),
+            Op::Idle => None,
+        };
+        if let Some(warming) = warming {
+            // Why join: a prompt waits for the warm-up it overlaps; a warm-up joins only the
+            // same config, since a different one would replace the child under it.
+            let joinable = match kind {
+                Reservation::Turn => true,
+                Reservation::Warm => warming == *cfg,
+            };
+            if !joinable || Instant::now() >= deadline {
+                return Err(AcpAgentError::Busy);
+            }
+            let _woken = wait_deadline(&inner.cv, s, deadline, |st| {
+                st.closed || !matches!(st.op, Op::Warming { .. })
+            });
+            continue;
+        }
+        let token = inner.next_token.fetch_add(1, Ordering::SeqCst);
+        s.op = match kind {
+            Reservation::Turn => Op::Turn { token },
+            Reservation::Warm => Op::Warming {
+                token,
+                cfg: cfg.clone(),
+            },
+        };
+        // A different config or a dead child invalidates the session and the child.
+        let config_changed = s.cfg.as_ref() != Some(cfg);
+        if config_changed {
+            s.cfg = Some(cfg.clone());
+        }
+        let dead = s.conn.as_ref().is_some_and(|c| c.is_retired());
+        let stale = if config_changed || dead {
+            s.session = None;
+            s.conn.take()
+        } else {
+            None
+        };
+        return Ok((token, stale));
+    }
+}
+
+/// Ends the reservation `token` if it is still the current one (DESIGN 5 rule 4). A token
+/// mismatch means a newer operation owns the manager; leave it alone.
+fn release(inner: &Inner, token: u64) {
+    let mut s = lock_state(inner);
+    if s.op.token() == Some(token) {
+        s.op = Op::Idle;
+        s.last_activity = Instant::now();
+        drop(s);
+        inner.cv.notify_all();
+    }
+}
+
+/// Releases its reservation on drop, so no path (including a panic) leaves `op` stuck.
+pub(crate) struct ReservationGuard {
+    inner: Arc<Inner>,
+    token: u64,
+}
+
+impl ReservationGuard {
+    pub(crate) fn new(inner: &Arc<Inner>, token: u64) -> Self {
+        Self {
+            inner: Arc::clone(inner),
+            token,
+        }
+    }
+}
+
+impl Drop for ReservationGuard {
+    fn drop(&mut self) {
+        release(&self.inner, self.token);
+    }
+}
+
+/// Ends a manager's life or its child (DESIGN 5 rule 6). Invalidates any reservation by
+/// setting `op` to Idle, takes the child out under the lock and retires it after unlocking.
+fn stop(inner: &Inner, closing: bool) {
+    let conn = {
+        let mut s = lock_state(inner);
+        if closing {
+            s.closed = true;
+        }
+        s.op = Op::Idle;
+        s.session = None;
+        let conn = s.conn.take();
+        drop(s);
+        conn
+    };
+    inner.cv.notify_all();
+    if let Some(conn) = conn {
+        retire(&conn, RetireReason::Shutdown);
+    }
+}
+
+/// Installs a freshly spawned, handshaken connection (DESIGN 5 rule 3). Only the current
+/// reservation may publish, and never over a live connection; otherwise the connection is
+/// handed back so the caller retires it.
+fn publish_conn(
+    inner: &Inner,
+    token: u64,
+    conn: Arc<Conn>,
+    agent_name: Option<String>,
+) -> Result<(), Arc<Conn>> {
+    let mut s = lock_state(inner);
+    let live = s.conn.as_ref().is_some_and(|c| !c.is_retired());
+    if s.closed || s.op.token() != Some(token) || live {
+        return Err(conn);
+    }
+    s.conn = Some(conn);
+    s.agent_name = agent_name;
+    Ok(())
+}
+
+/// Maps a handshake-deadline timeout to `HandshakeFailed`; other errors pass through.
+fn handshake_error(err: AcpAgentError) -> AcpAgentError {
+    match err {
+        AcpAgentError::Timeout => {
+            AcpAgentError::HandshakeFailed("no response before the handshake deadline".to_owned())
+        }
+        other => other,
+    }
+}
+
+/// `initialize` (DESIGN 6c step 1). Returns the agent name when reported.
+fn handshake(conn: &Conn, deadline: Instant) -> Result<Option<String>, AcpAgentError> {
+    let outcome = conn
+        .request_raw("initialize", initialize_params(), deadline)
+        .map_err(handshake_error)?;
+    let result = match outcome {
+        Ok(result) => result,
+        Err(err) => return Err(AcpAgentError::HandshakeFailed(error_detail(&err))),
+    };
+    // Why fail closed: we only speak protocol version 1.
+    if result.get("protocolVersion").and_then(Value::as_u64) != Some(1) {
+        return Err(AcpAgentError::HandshakeFailed(
+            "unsupported protocol version".to_owned(),
+        ));
+    }
+    let name = result
+        .pointer("/agentInfo/name")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    Ok(name)
+}
+
+/// Returns a live connection for this reservation: the stored one when present (no second
+/// spawn), otherwise a fresh child that completes `initialize` and is published (rule 3).
+/// Every failure retires the new child before returning.
+fn connect(
+    inner: &Arc<Inner>,
+    cfg: &AcpAgentConfig,
+    token: u64,
+    deadline: Instant,
+) -> Result<Arc<Conn>, AcpAgentError> {
+    {
+        let s = lock_state(inner);
+        if s.closed {
+            return Err(AcpAgentError::Closed);
+        }
+        if s.op.token() != Some(token) {
+            return Err(AcpAgentError::Stale);
+        }
+        if let Some(conn) = s.conn.as_ref().filter(|c| !c.is_retired()) {
+            return Ok(Arc::clone(conn));
+        }
+    }
+    // Why check here: a missing folder would otherwise surface as a misleading command error.
+    if !cfg.cwd.is_dir() {
+        return Err(AcpAgentError::SpawnFailed(
+            "workspace folder missing".to_owned(),
+        ));
+    }
+    let conn = Conn::spawn(cfg, Arc::clone(&inner.helpers))?;
+    let name = match handshake(&conn, deadline) {
+        Ok(name) => name,
+        Err(err) => {
+            retire(&conn, RetireReason::Protocol("handshake failed".to_owned()));
+            return Err(err);
+        }
+    };
+    let handle = Arc::clone(&conn);
+    match publish_conn(inner, token, conn, name) {
+        Ok(()) => Ok(handle),
+        Err(unpublished) => {
+            retire(&unpublished, RetireReason::Shutdown);
+            let closed = lock_state(inner).closed;
+            Err(if closed {
+                AcpAgentError::Closed
+            } else {
+                AcpAgentError::Stale
+            })
+        }
+    }
+}
+
+/// What the reaper decided for one tick (DESIGN 5 rule 7).
+enum ReapStep {
+    /// The manager is gone or closed: the reaper must exit.
+    Gone,
+    Keep,
+    /// Retire this idle child after the state lock is released.
+    Retire(Arc<Conn>),
+}
+
+/// One reaper decision. The `Arc<Inner>` is dropped before returning, so the caller never
+/// sleeps or retires while holding a strong reference.
+fn reap_once(weak: &Weak<Inner>, idle: Duration) -> ReapStep {
+    let Some(inner) = weak.upgrade() else {
+        return ReapStep::Gone;
+    };
+    let mut s = lock_state(&inner);
+    if s.closed {
+        return ReapStep::Gone;
+    }
+    let is_idle = matches!(s.op, Op::Idle) && s.conn.is_some() && s.last_activity.elapsed() >= idle;
+    if !is_idle {
+        return ReapStep::Keep;
+    }
+    s.session = None;
+    match s.conn.take() {
+        Some(conn) => ReapStep::Retire(conn),
+        None => ReapStep::Keep,
+    }
+}
+
+/// The single reaper thread of a manager (DESIGN 5 rule 7). It wakes at least every 200 ms
+/// so a dropped or closed manager is noticed quickly.
+fn reaper_loop(weak: Weak<Inner>, idle: Duration) {
+    let pause = (idle / 4)
+        .min(Duration::from_millis(200))
+        .max(Duration::from_millis(5));
+    loop {
+        match reap_once(&weak, idle) {
+            ReapStep::Gone => return,
+            ReapStep::Retire(conn) => retire(&conn, RetireReason::Idle),
+            ReapStep::Keep => {}
+        }
+        thread::sleep(pause);
     }
 }
 
