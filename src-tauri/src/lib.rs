@@ -318,6 +318,37 @@ fn register_tts_listeners(app: &AppHandle, tts: Arc<managers::tts::TtsManager>) 
     }
 }
 
+/// Starts the persistent ACP agent on a background thread when it is enabled and has a
+/// command. Failures are logged without agent detail and never block startup.
+fn spawn_acp_prewarm(app_handle: &AppHandle) {
+    let settings = get_settings(app_handle);
+    if !settings.acp_agent_enabled {
+        return;
+    }
+    let has_command = settings
+        .acp_agent_command
+        .as_deref()
+        .is_some_and(|command| !command.trim().is_empty());
+    if !has_command {
+        return;
+    }
+    let Some(manager) = app_handle
+        .try_state::<Arc<managers::acp_agent::AcpAgentManager>>()
+        .map(|state| state.inner().clone())
+    else {
+        return;
+    };
+    let app = app_handle.clone();
+    std::thread::spawn(move || {
+        let outcome = actions::acp_agent_config(&app, &settings)
+            .map_err(|_| ())
+            .and_then(|cfg| manager.warm_up(&cfg).map_err(|_| ()));
+        if outcome.is_err() {
+            log::warn!("ACP agent prewarm failed");
+        }
+    });
+}
+
 fn initialize_core_logic(app_handle: &AppHandle) {
     // Note: Enigo (keyboard/mouse simulation) is NOT initialized here.
     // The frontend is responsible for calling the `initialize_enigo` command
@@ -382,6 +413,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         app_handle.manage(store);
     }
     app_handle.manage(conversation_log);
+    // Persistent ACP agent client used by dictation escalation (DESIGN rev 3.1 section 3).
+    app_handle.manage(Arc::new(managers::acp_agent::AcpAgentManager::new()));
     app_handle.manage(command_router.clone());
     app_handle.manage(wakeword_listener.clone());
     app_handle.manage(ambient_transcript);
@@ -1139,7 +1172,6 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             trigger_update_check,
             show_main_window_command,
             commands::cancel_operation,
-            commands::agent_bridge::agent_invoke,
             commands::is_portable,
             commands::is_update_checks_locked,
             commands::source_update::get_update_mode,
@@ -1216,8 +1248,12 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_ambient_wake_name_setting,
             shortcut::change_ambient_window_ms_setting,
             shortcut::change_custom_filler_words_setting,
-            shortcut::change_agent_bridge_timeout_secs_setting,
             shortcut::change_agent_bridge_prompt_flag_setting,
+            shortcut::change_acp_agent_enabled_setting,
+            shortcut::change_acp_agent_command_setting,
+            shortcut::change_acp_agent_args_setting,
+            shortcut::change_acp_agent_turn_timeout_setting,
+            shortcut::acp_agent_test_connection,
             commands::voice_shortcuts::set_voice_shortcuts,
             commands::converse::change_converse_silence_ms_setting,
             commands::converse::change_converse_max_idle_turns_setting,
@@ -1551,6 +1587,9 @@ pub fn run(cli_args: CliArgs) {
 
             initialize_core_logic(&app_handle);
 
+            // Warm the persistent ACP agent in the background so the first request is fast.
+            spawn_acp_prewarm(&app_handle);
+
             // Secure Input monitor (macOS): detects stuck secure input that
             // silently blocks keyed shortcuts, warns the user, and activates
             // the Carbon fallback. See secure_input.rs and issue #1578.
@@ -1654,6 +1693,9 @@ pub fn run(cli_args: CliArgs) {
         }
         // Teardown transcribe.cpp before exit
         tauri::RunEvent::ExitRequested { api, .. } => {
+            if let Some(acp) = app.try_state::<Arc<managers::acp_agent::AcpAgentManager>>() {
+                acp.close();
+            }
             let job_wiring = app.state::<job_runtime::JobWiring>();
             let exit_handle = app.clone();
             let decision = job_wiring.exit.on_exit_requested(
@@ -1665,6 +1707,9 @@ pub fn run(cli_args: CliArgs) {
             log::debug!("native exit request decision: {:?}", decision);
         }
         tauri::RunEvent::Exit => {
+            if let Some(acp) = app.try_state::<Arc<managers::acp_agent::AcpAgentManager>>() {
+                acp.close();
+            }
             // Non-blocking: the coordinator and IO worker are detached (DESIGN 3.6 shutdown).
             if let Some(state) =
                 app.try_state::<Option<Arc<managers::vault_rag_runtime::VaultRagRuntime>>>()
@@ -1690,6 +1735,8 @@ pub fn run(cli_args: CliArgs) {
     });
 }
 
+#[cfg(test)]
+mod acp_agent_settings_tests;
 #[cfg(test)]
 mod agent_bridge_settings_tests;
 #[cfg(test)]

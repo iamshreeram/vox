@@ -14,6 +14,7 @@ export type ControlId =
   | "agentBridge"
   | "agentContext"
   | "agentBridgeBinaryPath"
+  | "acpAgent"
   | "tts"
   | "realtime";
 
@@ -80,6 +81,13 @@ export const EXPERIMENTAL_GROUPS: readonly ExperimentalGroup[] = [
       { id: "agentContext" },
       { id: "agentBridgeBinaryPath", when: "agentBridgeEnabled" },
     ],
+  },
+  {
+    id: "acpAgent",
+    titleKey: "settings.experimental.groups.acpAgent",
+    descriptionKey: "settings.experimental.acpAgent.groupDescription",
+    defaultOpen: false,
+    controls: [{ id: "acpAgent" }],
   },
   {
     id: "spokenReplies",

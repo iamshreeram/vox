@@ -1055,21 +1055,6 @@ pub fn change_custom_filler_words_setting(
     Ok(())
 }
 
-/// Validates and stores the agent bridge timeout in seconds. A rejected value leaves the
-/// stored setting untouched.
-#[tauri::command]
-#[specta::specta]
-pub fn change_agent_bridge_timeout_secs_setting(
-    app: AppHandle,
-    timeout_secs: u64,
-) -> Result<(), String> {
-    let timeout_secs = settings::validate_agent_bridge_timeout_secs(timeout_secs)?;
-    let mut settings = settings::get_settings(&app);
-    settings.agent_bridge_timeout_secs = timeout_secs;
-    settings::write_settings(&app, settings);
-    Ok(())
-}
-
 /// Validates and stores the agent bridge prompt flag. The flag must have a valid shape and
 /// must differ from the effective agent flag. A rejected flag leaves the stored setting
 /// untouched.
@@ -1081,6 +1066,109 @@ pub fn change_agent_bridge_prompt_flag_setting(app: AppHandle, flag: String) -> 
     settings.agent_bridge_prompt_flag = flag;
     settings::write_settings(&app, settings);
     Ok(())
+}
+
+/// Retires the managed ACP agent child, if one is managed. Returns at once: `shutdown`
+/// retires the child and does not wait for it.
+fn shutdown_managed_acp_agent(app: &AppHandle) {
+    if let Some(manager) = app.try_state::<Arc<crate::managers::acp_agent::AcpAgentManager>>() {
+        manager.inner().shutdown();
+    }
+}
+
+/// Enables or disables the persistent ACP agent client. Turning it off also retires the
+/// running agent so it does not linger until the idle timeout.
+#[tauri::command]
+#[specta::specta]
+pub fn change_acp_agent_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.acp_agent_enabled = enabled;
+    settings::write_settings(&app, settings);
+    if !enabled {
+        shutdown_managed_acp_agent(&app);
+    }
+    Ok(())
+}
+
+/// Validates and stores the ACP agent command. Blank or missing means unset. A rejected
+/// command leaves the stored setting untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_acp_agent_command_setting(
+    app: AppHandle,
+    command: Option<String>,
+) -> Result<(), String> {
+    let normalized = settings::normalize_acp_agent_command(command.as_deref().unwrap_or(""))?;
+    let mut settings = settings::get_settings(&app);
+    let changed = settings.acp_agent_command != normalized;
+    settings.acp_agent_command = normalized;
+    settings::write_settings(&app, settings);
+    if changed {
+        shutdown_managed_acp_agent(&app);
+    }
+    Ok(())
+}
+
+/// Validates and stores the ACP agent arguments. A rejected value leaves the stored setting
+/// untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_acp_agent_args_setting(app: AppHandle, args: String) -> Result<(), String> {
+    settings::validate_acp_agent_args(&args)?;
+    let mut settings = settings::get_settings(&app);
+    let changed = settings.acp_agent_args != args;
+    settings.acp_agent_args = args;
+    settings::write_settings(&app, settings);
+    if changed {
+        shutdown_managed_acp_agent(&app);
+    }
+    Ok(())
+}
+
+/// Validates and stores the ACP agent turn timeout in seconds. A rejected value leaves the
+/// stored setting untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_acp_agent_turn_timeout_setting(app: AppHandle, secs: u64) -> Result<(), String> {
+    let secs = settings::validate_acp_agent_turn_timeout_secs(secs)?;
+    let mut settings = settings::get_settings(&app);
+    settings.acp_agent_turn_timeout_secs = secs;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Spawns the configured ACP agent and completes the handshake, without sending a prompt.
+/// Requires the agent to be enabled and configured. Errors are short and user-safe.
+#[tauri::command]
+#[specta::specta]
+pub async fn acp_agent_test_connection(app: AppHandle) -> Result<String, String> {
+    const GENERIC_FAILURE: &str = "Could not connect to the ACP agent.";
+    let settings = settings::get_settings(&app);
+    if !settings.acp_agent_enabled {
+        return Err("Turn on the ACP agent before testing the connection.".to_string());
+    }
+    let cfg = crate::actions::acp_agent_config(&app, &settings)?;
+    let manager = app
+        .try_state::<Arc<crate::managers::acp_agent::AcpAgentManager>>()
+        .map(|state| state.inner().clone())
+        .ok_or_else(|| GENERIC_FAILURE.to_string())?;
+    let outcome = tauri::async_runtime::spawn_blocking(move || manager.warm_up(&cfg))
+        .await
+        .map_err(|_| GENERIC_FAILURE.to_string())?;
+    match outcome {
+        Ok(Some(name)) => {
+            let name: String = name.chars().filter(|c| !c.is_control()).take(80).collect();
+            let name = name.trim();
+            if name.is_empty() {
+                Ok("Connected".to_string())
+            } else {
+                Ok(format!("Connected to {name}"))
+            }
+        }
+        Ok(None) => Ok("Connected".to_string()),
+        Err(error) => Err(crate::managers::acp_escalation::user_message_for(&error)
+            .unwrap_or_else(|| GENERIC_FAILURE.to_string())),
+    }
 }
 
 /// Normalizes a voice name submitted from the settings UI.
@@ -1543,11 +1631,21 @@ pub fn change_agent_context_setting(app: AppHandle, enabled: bool) -> Result<(),
     let mut settings = settings::get_settings(&app);
     settings.agent_context_enabled = enabled;
     settings::write_settings(&app, settings);
-    if !enabled {
-        if let Some(log) =
-            app.try_state::<std::sync::Arc<crate::managers::conversation::ConversationLog>>()
-        {
-            log.clear();
+    let log = app
+        .try_state::<Arc<crate::managers::conversation::ConversationLog>>()
+        .map(|state| state.inner().clone());
+    match app.try_state::<Arc<crate::managers::acp_agent::AcpAgentManager>>() {
+        Some(manager) => crate::managers::acp_escalation::on_context_setting_changed(
+            enabled,
+            log.as_deref(),
+            &**manager.inner(),
+        ),
+        None => {
+            if !enabled {
+                if let Some(log) = log.as_deref() {
+                    log.clear();
+                }
+            }
         }
     }
     let _ = app.emit(
@@ -1564,10 +1662,19 @@ pub fn change_agent_context_setting(app: AppHandle, enabled: bool) -> Result<(),
 #[tauri::command]
 #[specta::specta]
 pub fn agent_clear_conversation(app: AppHandle) -> Result<(), String> {
-    if let Some(log) =
-        app.try_state::<std::sync::Arc<crate::managers::conversation::ConversationLog>>()
-    {
-        log.clear();
+    let log = app
+        .try_state::<Arc<crate::managers::conversation::ConversationLog>>()
+        .map(|state| state.inner().clone());
+    match app.try_state::<Arc<crate::managers::acp_agent::AcpAgentManager>>() {
+        // Always resets the ACP session, even when no conversation log is managed.
+        Some(manager) => {
+            crate::managers::acp_escalation::on_history_cleared(log.as_deref(), &**manager.inner())
+        }
+        None => {
+            if let Some(log) = log.as_deref() {
+                log.clear();
+            }
+        }
     }
     Ok(())
 }

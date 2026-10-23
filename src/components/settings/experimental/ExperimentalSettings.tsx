@@ -15,6 +15,7 @@ import { AgentBridgeToggle } from "../AgentBridgeToggle";
 import { AgentContextToggle } from "../AgentContextToggle";
 import { AgentBridgeBinaryPathField } from "../AgentBridgeBinaryPathField";
 import { AgentBridgeAdvancedSettings } from "../AgentBridgeAdvancedSettings";
+import { AcpAgentSettings } from "../AcpAgentSettings";
 import {
   ConversationRecordsToggle,
   ConversationVaultContextToggle,
@@ -89,6 +90,9 @@ export const ExperimentalSettings: React.FC = () => {
         <AgentBridgeBinaryPathField descriptionMode="tooltip" grouped={true} />
         <AgentBridgeAdvancedSettings descriptionMode="tooltip" grouped={true} />
       </>
+    ),
+    acpAgent: () => (
+      <AcpAgentSettings descriptionMode="tooltip" grouped={true} />
     ),
     tts: () => <TtsSettings descriptionMode="tooltip" grouped={true} />,
     realtime: () => (

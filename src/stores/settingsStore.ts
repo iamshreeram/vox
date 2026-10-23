@@ -161,15 +161,6 @@ const settingUpdaters: {
       throw new Error(result.error);
     }
   },
-  agent_bridge_timeout_secs: async (value) => {
-    const result = await commands.changeAgentBridgeTimeoutSecsSetting(
-      value as number,
-    );
-    if (result.status === "error") {
-      toast.error(result.error);
-      throw new Error(result.error);
-    }
-  },
   agent_bridge_prompt_flag: async (value) => {
     const result = await commands.changeAgentBridgePromptFlagSetting(
       value as string,
@@ -330,6 +321,36 @@ const settingUpdaters: {
   agent_bridge_binary_path: async (value) => {
     const result = await commands.changeAgentBridgeBinaryPathSetting(
       (value as string | null) ?? null,
+    );
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
+  acp_agent_enabled: async (value) => {
+    const result = await commands.changeAcpAgentEnabledSetting(
+      value as boolean,
+    );
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
+  acp_agent_command: async (value) => {
+    const result = await commands.changeAcpAgentCommandSetting(
+      (value as string | null) ?? null,
+    );
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
+  acp_agent_args: async (value) => {
+    const result = await commands.changeAcpAgentArgsSetting(value as string);
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
+  acp_agent_turn_timeout_secs: async (value) => {
+    const result = await commands.changeAcpAgentTurnTimeoutSetting(
+      value as number,
     );
     if (result.status === "error") {
       throw new Error(result.error);

@@ -1019,14 +1019,6 @@ async showMainWindowCommand() : Promise<Result<null, string>> {
 async cancelOperation() : Promise<void> {
     await TAURI_INVOKE("cancel_operation");
 },
-async agentInvoke(prompt: string) : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("agent_invoke", { prompt }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async isPortable() : Promise<boolean> {
     return await TAURI_INVOKE("is_portable");
 },
@@ -1655,18 +1647,6 @@ async changeCustomFillerWordsSetting(words: string[] | null) : Promise<Result<nu
 }
 },
 /**
- * Validates and stores the agent bridge timeout in seconds. A rejected value leaves the
- * stored setting untouched.
- */
-async changeAgentBridgeTimeoutSecsSetting(timeoutSecs: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_agent_bridge_timeout_secs_setting", { timeoutSecs }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Validates and stores the agent bridge prompt flag. The flag must have a valid shape and
  * must differ from the effective agent flag. A rejected flag leaves the stored setting
  * untouched.
@@ -1674,6 +1654,65 @@ async changeAgentBridgeTimeoutSecsSetting(timeoutSecs: number) : Promise<Result<
 async changeAgentBridgePromptFlagSetting(flag: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_agent_bridge_prompt_flag_setting", { flag }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Enables or disables the persistent ACP agent client.
+ */
+async changeAcpAgentEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_acp_agent_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Validates and stores the ACP agent command. Blank or missing means unset. A rejected
+ * command leaves the stored setting untouched.
+ */
+async changeAcpAgentCommandSetting(command: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_acp_agent_command_setting", { command }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Validates and stores the ACP agent arguments. A rejected value leaves the stored setting
+ * untouched.
+ */
+async changeAcpAgentArgsSetting(args: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_acp_agent_args_setting", { args }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Validates and stores the ACP agent turn timeout in seconds. A rejected value leaves the
+ * stored setting untouched.
+ */
+async changeAcpAgentTurnTimeoutSetting(secs: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_acp_agent_turn_timeout_setting", { secs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Spawns the configured ACP agent and completes the handshake, without sending a prompt.
+ * Requires the agent to be enabled and configured. Errors are short and user-safe.
+ */
+async acpAgentTestConnection() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("acp_agent_test_connection") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2005,7 +2044,23 @@ agent_context_enabled?: boolean; ambient_mode_enabled?: boolean; ambient_wake_na
  * Whole-utterance media phrases ("pause", "next track", "volume 40").
  * Opt-in and only effective while `voice_commands_enabled` is on.
  */
-voice_media_controls_enabled?: boolean; agent_bridge_enabled?: boolean; agent_bridge_binary_path?: string | null; agent_bridge_prompt_flag?: string; agent_bridge_timeout_secs?: number; 
+voice_media_controls_enabled?: boolean; agent_bridge_enabled?: boolean; agent_bridge_binary_path?: string | null; agent_bridge_prompt_flag?: string; 
+/**
+ * Persistent ACP agent client (DESIGN rev 3.1 section 7). Opt-in.
+ */
+acp_agent_enabled?: boolean; 
+/**
+ * Absolute path to the ACP agent program; `None` means unset.
+ */
+acp_agent_command?: string | null; 
+/**
+ * Extra arguments for the ACP agent, split on ASCII whitespace only.
+ */
+acp_agent_args?: string; 
+/**
+ * Seconds allowed for one agent turn.
+ */
+acp_agent_turn_timeout_secs?: number; 
 /**
  * Speak agent replies and a generic confirmation/failure phrase aloud.
  * Opt-in: spoken output audibly exposes agent reply content.
