@@ -10,7 +10,10 @@ fn defaults_are_off_unset_and_120_seconds() {
     assert!(!s.acp_agent_enabled);
     assert_eq!(s.acp_agent_command, None);
     assert_eq!(s.acp_agent_args, "");
-    assert_eq!(s.acp_agent_turn_timeout_secs, ACP_AGENT_TURN_TIMEOUT_DEFAULT_SECS);
+    assert_eq!(
+        s.acp_agent_turn_timeout_secs,
+        ACP_AGENT_TURN_TIMEOUT_DEFAULT_SECS
+    );
     assert_eq!(ACP_AGENT_TURN_TIMEOUT_DEFAULT_SECS, 120);
 }
 
@@ -61,10 +64,17 @@ fn command_length_and_character_limits() {
 fn args_split_on_whitespace_only_with_no_shell_parsing() {
     assert_eq!(validate_acp_agent_args(""), Ok(vec![]));
     assert_eq!(validate_acp_agent_args("   "), Ok(vec![]));
-    assert_eq!(validate_acp_agent_args("--acp"), Ok(vec!["--acp".to_string()]));
+    assert_eq!(
+        validate_acp_agent_args("--acp"),
+        Ok(vec!["--acp".to_string()])
+    );
     assert_eq!(
         validate_acp_agent_args("  --a   --b\t--c  "),
-        Ok(vec!["--a".to_string(), "--b".to_string(), "--c".to_string()])
+        Ok(vec![
+            "--a".to_string(),
+            "--b".to_string(),
+            "--c".to_string()
+        ])
     );
     // quotes are NOT interpreted: they stay part of the argument
     assert_eq!(
@@ -108,7 +118,10 @@ fn an_old_settings_file_with_the_removed_bridge_timeout_still_loads() {
         "agent_bridge_enabled": true
     });
     let s: AppSettings = serde_json::from_value(value).expect("old files must keep loading");
-    assert!(s.agent_bridge_enabled, "kept (background jobs) setting still reads");
+    assert!(
+        s.agent_bridge_enabled,
+        "kept (background jobs) setting still reads"
+    );
     assert!(!s.acp_agent_enabled, "new settings take their defaults");
     assert_eq!(s.acp_agent_turn_timeout_secs, 120);
 }

@@ -1,9 +1,7 @@
 //! Contract tests for `acp_escalation` (DESIGN.md rev 3.1, tests T31-T33).
 //! Red until step S1 implements the module. Workers must not edit this file.
 
-use crate::managers::acp_agent::{
-    AcpAgentConfig, AcpAgentError, AcpReply, PromptOptions,
-};
+use crate::managers::acp_agent::{AcpAgentConfig, AcpAgentError, AcpReply, PromptOptions};
 use crate::managers::acp_escalation::{
     on_context_setting_changed, on_history_cleared, run_escalation, user_message_for, AcpPrompter,
     EscalationEnv, EscalationSink,
@@ -154,10 +152,20 @@ fn context_off_sends_raw_transcript_and_a_fresh_session_and_never_recalls() {
     let sent = p.sent();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].0, TRANSCRIPT, "raw transcript only");
-    assert!(!sent[0].1.reuse_session, "context off => fresh session per turn");
-    assert_eq!(recalls.load(Ordering::SeqCst), 0, "recall must not run with context off");
+    assert!(
+        !sent[0].1.reuse_session,
+        "context off => fresh session per turn"
+    );
+    assert_eq!(
+        recalls.load(Ordering::SeqCst),
+        0,
+        "recall must not run with context off"
+    );
     assert_eq!(log.len(), 0, "nothing recorded with context off");
-    assert_eq!(sink.events().first().map(String::as_str), Some("reply:done"));
+    assert_eq!(
+        sink.events().first().map(String::as_str),
+        Some("reply:done")
+    );
 }
 
 #[test]
@@ -172,7 +180,10 @@ fn context_on_reuses_the_session_and_injects_no_history() {
     let sent = p.sent();
     assert_eq!(sent.len(), 1);
     assert!(sent[0].0.contains(TRANSCRIPT));
-    assert!(!sent[0].0.contains("old question"), "history must not be re-sent");
+    assert!(
+        !sent[0].0.contains("old question"),
+        "history must not be re-sent"
+    );
     assert!(!sent[0].0.contains("[Recent conversation]"));
     assert!(sent[0].1.reuse_session, "context on => one reused session");
 }
@@ -259,7 +270,10 @@ fn stale_result_is_completely_silent() {
     let sink = Recorder::default();
     let e = env(&log, true, false, &no_recall, &yes, &t0);
     run_escalation(&p, &sink, &e, &cfg(), TRANSCRIPT);
-    assert!(sink.events().is_empty(), "Stale => no reply, no exchange, no error");
+    assert!(
+        sink.events().is_empty(),
+        "Stale => no reply, no exchange, no error"
+    );
     assert_eq!(log.len(), 0);
 }
 
@@ -308,8 +322,8 @@ fn every_error() -> Vec<AcpAgentError> {
 #[test]
 fn every_real_error_has_a_short_non_empty_user_message() {
     for err in every_error() {
-        let message = user_message_for(&err)
-            .unwrap_or_else(|| panic!("{err:?} must produce a user message"));
+        let message =
+            user_message_for(&err).unwrap_or_else(|| panic!("{err:?} must produce a user message"));
         assert!(!message.trim().is_empty(), "{err:?}");
         assert!(message.chars().count() <= 400, "{err:?} message too long");
     }
@@ -375,5 +389,9 @@ fn disabling_context_clears_and_resets_but_enabling_does_nothing() {
     assert_eq!(log.len(), 0);
     assert_eq!(p.resets.load(Ordering::SeqCst), 1);
     on_context_setting_changed(false, None, &p);
-    assert_eq!(p.resets.load(Ordering::SeqCst), 2, "reset runs even without a log");
+    assert_eq!(
+        p.resets.load(Ordering::SeqCst),
+        2,
+        "reset runs even without a log"
+    );
 }

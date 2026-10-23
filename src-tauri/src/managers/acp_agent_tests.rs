@@ -510,7 +510,11 @@ while True:
         assert_eq!(sids.len(), 2);
         assert_eq!(sids[0], sids[1]);
         assert!(m.is_running());
-        assert_eq!(m.inner_strong_count(), 1, "reaper and helpers must hold only weak refs");
+        assert_eq!(
+            m.inner_strong_count(),
+            1,
+            "reaper and helpers must hold only weak refs"
+        );
     }
 
     #[test]
@@ -659,10 +663,19 @@ while True:
                 ),
                 other => panic!("{name}: expected HandshakeFailed, got {other:?}"),
             }
-            assert!(started.elapsed() < Duration::from_secs(20), "{name}: not immediate");
-            assert!(f.recv("session/prompt").is_empty(), "{name}: no prompt may be sent");
+            assert!(
+                started.elapsed() < Duration::from_secs(20),
+                "{name}: not immediate"
+            );
+            assert!(
+                f.recv("session/prompt").is_empty(),
+                "{name}: no prompt may be sent"
+            );
             let pid = f.pids()[0];
-            assert!(wait_until(5, || !pid_alive(pid)), "{name}: child left behind");
+            assert!(
+                wait_until(5, || !pid_alive(pid)),
+                "{name}: child left behind"
+            );
             assert!(!m.is_running(), "{name}");
         }
         let good = Fake::new("t09b_good");
@@ -701,10 +714,16 @@ while True:
                 "{name}: session/cancel must be sent"
             );
             let pid1 = f.pids()[0];
-            assert!(wait_until(5, || !pid_alive(pid1)), "{name}: child must always be killed");
+            assert!(
+                wait_until(5, || !pid_alive(pid1)),
+                "{name}: child must always be killed"
+            );
             assert!(!m.is_running(), "{name}");
             let r = m.prompt(&cfg, "again", opts(true)).unwrap();
-            assert_eq!(r.text, OK_TEXT, "{name}: no text from the timed-out turn may leak");
+            assert_eq!(
+                r.text, OK_TEXT,
+                "{name}: no text from the timed-out turn may leak"
+            );
             assert_eq!(f.starts(), 2, "{name}");
             let pids = f.pids();
             assert_ne!(pids[0], pids[1], "{name}: fresh child expected");
@@ -719,7 +738,9 @@ while True:
     fn t11_a_crash_mid_turn_reports_exit_code_and_a_capped_stderr_tail() {
         let f = Fake::new("t11");
         let m = AcpAgentManager::new();
-        let err = m.prompt(&f.cfg(&["--crash"]), "hi", opts(true)).unwrap_err();
+        let err = m
+            .prompt(&f.cfg(&["--crash"]), "hi", opts(true))
+            .unwrap_err();
         match err {
             AcpAgentError::AgentExited { code, stderr } => {
                 assert_eq!(code, Some(3));
@@ -835,11 +856,17 @@ while True:
         let m = Arc::new(AcpAgentManager::new());
         let (m2, cfg2) = (m.clone(), cfg.clone());
         let h = thread::spawn(move || m2.prompt(&cfg2, "slow", opts(true)));
-        assert!(wait_until(30, || f.touched("started")), "turn never started");
+        assert!(
+            wait_until(30, || f.touched("started")),
+            "turn never started"
+        );
         let t = Instant::now();
         let err = m.prompt(&cfg, "second", opts(true)).unwrap_err();
         assert!(matches!(err, AcpAgentError::Busy), "{err:?}");
-        assert!(t.elapsed() < Duration::from_secs(2), "Busy must be immediate");
+        assert!(
+            t.elapsed() < Duration::from_secs(2),
+            "Busy must be immediate"
+        );
         f.release("gate");
         let r = h.join().unwrap().unwrap();
         assert_eq!(r.text, OK_TEXT);
@@ -946,7 +973,10 @@ while True:
             pid = f.pids()[0];
             assert!(pid_alive(pid));
         }
-        assert!(wait_until(5, || !pid_alive(pid)), "Drop must kill the child");
+        assert!(
+            wait_until(5, || !pid_alive(pid)),
+            "Drop must kill the child"
+        );
     }
 
     #[test]
@@ -976,7 +1006,10 @@ while True:
         let cfg = f.cfg(&[]);
         m.prompt(&cfg, "hi", opts(true)).unwrap();
         let pid = f.pids()[0];
-        assert!(wait_until(15, || !m.is_running()), "idle child never reaped");
+        assert!(
+            wait_until(15, || !m.is_running()),
+            "idle child never reaped"
+        );
         assert!(wait_until(5, || !pid_alive(pid)));
         assert_eq!(m.inner_strong_count(), 1);
         let r = m.prompt(&cfg, "again", opts(true)).unwrap();
@@ -995,7 +1028,9 @@ while True:
             "--prompt-started",
             started.as_str(),
         ]);
-        let m = Arc::new(AcpAgentManager::with_idle_shutdown(Duration::from_millis(300)));
+        let m = Arc::new(AcpAgentManager::with_idle_shutdown(Duration::from_millis(
+            300,
+        )));
         let (m2, c2) = (m.clone(), cfg.clone());
         let h = thread::spawn(move || m2.prompt(&c2, "slow", opts(true)));
         assert!(wait_until(30, || f.touched("started")));
@@ -1074,7 +1109,10 @@ while True:
         assert!(wait_until(5, || !pid_alive(pid)), "child must be reaped");
         let t = Instant::now();
         m.shutdown();
-        assert!(t.elapsed() < Duration::from_secs(5), "shutdown must stay bounded");
+        assert!(
+            t.elapsed() < Duration::from_secs(5),
+            "shutdown must stay bounded"
+        );
     }
 
     // ---------------------------------------------------------------- T24-T26
@@ -1084,7 +1122,10 @@ while True:
         let f = Fake::new("t24");
         let m = AcpAgentManager::new();
         let cfg = f.cfg(&["--memory"]);
-        assert_eq!(m.prompt(&cfg, "remember apple", opts(true)).unwrap().text, "ok");
+        assert_eq!(
+            m.prompt(&cfg, "remember apple", opts(true)).unwrap().text,
+            "ok"
+        );
         assert_eq!(
             m.prompt(&cfg, "recall", opts(true)).unwrap().text,
             "secret=apple",
@@ -1096,7 +1137,10 @@ while True:
             "secret=none",
             "reset_session must drop the conversation"
         );
-        assert_eq!(m.prompt(&cfg, "remember pear", opts(false)).unwrap().text, "ok");
+        assert_eq!(
+            m.prompt(&cfg, "remember pear", opts(false)).unwrap().text,
+            "ok"
+        );
         assert_eq!(
             m.prompt(&cfg, "recall", opts(false)).unwrap().text,
             "secret=none",
@@ -1122,7 +1166,10 @@ while True:
         let t = Instant::now();
         m.shutdown();
         let result = h.join().unwrap();
-        assert!(result.is_err(), "a shut-down turn must never return a reply");
+        assert!(
+            result.is_err(),
+            "a shut-down turn must never return a reply"
+        );
         assert!(t.elapsed() < Duration::from_secs(15));
         let pid = f.pids()[0];
         assert!(wait_until(5, || !pid_alive(pid)));
@@ -1173,9 +1220,18 @@ while True:
         let pid2 = f.pids()[1];
         f.release("delay");
         let stale = a.join().unwrap();
-        assert!(stale.is_err(), "the stale warm_up must not succeed: {stale:?}");
-        assert!(wait_until(5, || !pid_alive(pid1)), "old child must be killed");
-        assert!(pid_alive(pid2), "the newer reservation's child must be untouched");
+        assert!(
+            stale.is_err(),
+            "the stale warm_up must not succeed: {stale:?}"
+        );
+        assert!(
+            wait_until(5, || !pid_alive(pid1)),
+            "old child must be killed"
+        );
+        assert!(
+            pid_alive(pid2),
+            "the newer reservation's child must be untouched"
+        );
         assert!(m.is_running());
         let again = m.prompt(&cfg2, "again", opts(true)).unwrap();
         assert_eq!(again.text, OK_TEXT);
@@ -1249,7 +1305,10 @@ while True:
         let started = Instant::now();
         let result = m.prompt(&cfg, "hi", opts(true));
         assert!(result.is_err(), "a flooding agent must not produce a reply");
-        assert!(started.elapsed() < Duration::from_secs(25), "no deadlock allowed");
+        assert!(
+            started.elapsed() < Duration::from_secs(25),
+            "no deadlock allowed"
+        );
         let pid = f.pids()[0];
         assert!(wait_until(5, || !pid_alive(pid)));
     }
@@ -1264,7 +1323,10 @@ while True:
         let escaper = f.gpid().expect("escaper pid");
         assert!(pid_alive(escaper));
         m.shutdown();
-        assert!(wait_until(5, || !pid_alive(leader)), "leader must be reaped");
+        assert!(
+            wait_until(5, || !pid_alive(leader)),
+            "leader must be reaped"
+        );
         assert!(
             wait_until(5, || m.helper_threads_alive() == 0),
             "helpers must exit even though a descendant still holds the pipes"
@@ -1283,7 +1345,10 @@ while True:
         let cfg = f.cfg(&["--memory"]);
         {
             let m = AcpAgentManager::new();
-            assert_eq!(m.prompt(&cfg, "remember apple", opts(true)).unwrap().text, "ok");
+            assert_eq!(
+                m.prompt(&cfg, "remember apple", opts(true)).unwrap().text,
+                "ok"
+            );
         }
         let m2 = AcpAgentManager::new();
         assert_eq!(
@@ -1312,7 +1377,13 @@ mod non_unix_tests {
         };
         let m = AcpAgentManager::new();
         let err = m
-            .prompt(&cfg, "hi", PromptOptions { reuse_session: true })
+            .prompt(
+                &cfg,
+                "hi",
+                PromptOptions {
+                    reuse_session: true,
+                },
+            )
             .unwrap_err();
         assert!(matches!(err, AcpAgentError::Unsupported), "{err:?}");
     }
