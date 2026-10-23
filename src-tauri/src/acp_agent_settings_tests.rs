@@ -133,3 +133,16 @@ fn background_job_settings_are_untouched() {
     assert_eq!(s.agent_bridge_binary_path, None);
     assert_eq!(s.agent_bridge_prompt_flag, "-p");
 }
+
+#[test]
+fn a_hand_edited_turn_timeout_is_clamped_before_use() {
+    // A settings file edited by hand can hold any number; it must never reach
+    // `Instant::now() + timeout` unchecked (an overflow would panic).
+    assert_eq!(clamped_acp_agent_turn_timeout_secs(0), 10);
+    assert_eq!(clamped_acp_agent_turn_timeout_secs(9), 10);
+    assert_eq!(clamped_acp_agent_turn_timeout_secs(10), 10);
+    assert_eq!(clamped_acp_agent_turn_timeout_secs(120), 120);
+    assert_eq!(clamped_acp_agent_turn_timeout_secs(900), 900);
+    assert_eq!(clamped_acp_agent_turn_timeout_secs(901), 900);
+    assert_eq!(clamped_acp_agent_turn_timeout_secs(u64::MAX), 900);
+}
