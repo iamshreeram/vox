@@ -1,7 +1,6 @@
 //! Persistent ACP (Agent Client Protocol) client.
 //!
-//! CONTRACT SKELETON. `prompt` is `todo!()` until step S1b-3b implements the turn
-//! against the design (DESIGN.md rev 3.1) and the tests in `acp_agent_tests.rs`.
+//! Implements DESIGN.md rev 3.1 and is specified by the tests in `acp_agent_tests.rs`.
 //! Signatures, constants and type shapes here are part of the contract: do not
 //! change them without updating the design and the tests.
 
@@ -183,6 +182,10 @@ pub(crate) struct Inner {
     pub(crate) cv: Condvar,
     pub(crate) next_token: AtomicU64,
     pub(crate) helpers: Arc<AtomicUsize>,
+    /// Held by the reaper while it upgrades its `Weak` and inspects the state, and by the
+    /// test accessor while it reads the strong count. Why: without it a reaper tick could
+    /// make the count read 2 for an instant even though no handle leaked.
+    pub(crate) reaper_gate: Arc<Mutex<()>>,
 }
 
 /// One long-lived ACP child process behind a small state machine. `Send + Sync`.
@@ -210,13 +213,15 @@ impl AcpAgentManager {
             cv: Condvar::new(),
             next_token: AtomicU64::new(1),
             helpers: Arc::new(AtomicUsize::new(0)),
+            reaper_gate: Arc::new(Mutex::new(())),
         });
         let weak = Arc::downgrade(&inner);
+        let gate = Arc::clone(&inner.reaper_gate);
         // Why ignore the error: without a reaper the child is still retired on drop, close
         // or shutdown; only the idle timeout is lost.
         let _ = thread::Builder::new()
             .name("acp-reaper".to_owned())
-            .spawn(move || reaper_loop(weak, idle));
+            .spawn(move || reaper_loop(weak, idle, gate));
         Self { inner }
     }
 
@@ -227,16 +232,42 @@ impl AcpAgentManager {
         text: &str,
         opts: PromptOptions,
     ) -> Result<AcpReply, AcpAgentError> {
-        // S1b-3b implements the turn; until then the parameters are only named here.
-        let _ = (cfg, text, opts);
-        todo!()
+        // Why before reserve: a blank prompt must never start, reuse or disturb the child.
+        if text.trim().is_empty() {
+            return Err(AcpAgentError::Protocol("blank prompt".to_owned()));
+        }
+        check_config(cfg)?;
+        let turn_deadline = Instant::now() + cfg.turn_timeout;
+        let handshake_deadline = Instant::now() + cfg.handshake_timeout;
+        let (token, epoch, stale) =
+            reserve(&self.inner, Reservation::Turn, cfg, handshake_deadline)?;
+        // Created first so that every later path, including a panic, releases the op.
+        let _guard = ReservationGuard::new(&self.inner, token);
+        if let Some(old) = stale {
+            retire(&old, RetireReason::Replaced);
+        }
+        let conn = connect(&self.inner, cfg, token, handshake_deadline)?;
+        let ticket = TurnTicket {
+            token,
+            epoch,
+            turn_deadline,
+            handshake_deadline,
+        };
+        let outcome = run_turn(&self.inner, &conn, cfg, text, opts, ticket);
+        // Why: a retired child must not stay the stored connection; the next call respawns.
+        if conn.is_retired() {
+            forget_conn(&self.inner, &conn);
+        }
+        let mut reply = outcome?;
+        reply.agent_name = lock_state(&self.inner).agent_name.clone();
+        Ok(reply)
     }
 
     /// Spawn + initialize only. Returns the agent name when the agent reports one.
     pub fn warm_up(&self, cfg: &AcpAgentConfig) -> Result<Option<String>, AcpAgentError> {
         check_config(cfg)?;
         let deadline = Instant::now() + cfg.handshake_timeout;
-        let (token, stale) = reserve(&self.inner, Reservation::Warm, cfg, deadline)?;
+        let (token, _epoch, stale) = reserve(&self.inner, Reservation::Warm, cfg, deadline)?;
         // Created first so that every later path, including a panic, releases the op.
         let _guard = ReservationGuard::new(&self.inner, token);
         if let Some(old) = stale {
@@ -288,6 +319,9 @@ impl AcpAgentManager {
     /// threads hold only weak references.
     #[cfg(test)]
     pub fn inner_strong_count(&self) -> usize {
+        // Why the gate: the reaper only holds an upgraded `Arc` while it holds this lock,
+        // so the count is read between reaper ticks, never mid-upgrade.
+        let _gate = lock(&self.inner.reaper_gate);
         Arc::strong_count(&self.inner)
     }
 }
@@ -296,9 +330,10 @@ impl Drop for AcpAgentManager {
     /// Dropping the last handle behaves like `close()`: the child is retired and the
     /// reaper exits on its next tick.
     fn drop(&mut self) {
-        if Arc::strong_count(&self.inner) == 1 {
-            stop(&self.inner, true);
-        }
+        // Why unconditional: this handle is the only strong owner of the operations (the
+        // reaper and helpers hold Weak or Conn only). A count check could miss the child
+        // while the reaper is mid-tick and let it outlive the manager.
+        stop(&self.inner, true);
     }
 }
 
@@ -325,7 +360,7 @@ fn reserve(
     kind: Reservation,
     cfg: &AcpAgentConfig,
     deadline: Instant,
-) -> Result<(u64, Option<Arc<Conn>>), AcpAgentError> {
+) -> Result<(u64, u64, Option<Arc<Conn>>), AcpAgentError> {
     loop {
         let mut s = lock_state(inner);
         if s.closed {
@@ -371,7 +406,7 @@ fn reserve(
         } else {
             None
         };
-        return Ok((token, stale));
+        return Ok((token, s.epoch, stale));
     }
 }
 
@@ -529,6 +564,203 @@ fn connect(
     }
 }
 
+// ---------------------------------------------------------------- turn (S1b-3b)
+
+/// What one turn carries through its helpers: its reservation and its absolute deadlines.
+#[derive(Clone, Copy)]
+struct TurnTicket {
+    token: u64,
+    /// Manager epoch at reservation. A `reset_session` moves it, which makes the turn stale.
+    epoch: u64,
+    /// Covers queue, write and response (DESIGN 6c).
+    turn_deadline: Instant,
+    /// Covers spawn..session/new (DESIGN 6c).
+    handshake_deadline: Instant,
+}
+
+fn epoch_moved(inner: &Inner, epoch: u64) -> bool {
+    lock_state(inner).epoch != epoch
+}
+
+/// Drops the stored connection and its session when they still point at `conn`.
+/// Why: a retired child must never be handed to the next reservation as a live one.
+fn forget_conn(inner: &Inner, conn: &Arc<Conn>) {
+    let mut s = lock_state(inner);
+    if s.conn.as_ref().is_some_and(|c| Arc::ptr_eq(c, conn)) {
+        s.conn = None;
+        s.session = None;
+    }
+}
+
+/// Returns the session for this turn: the stored one when reusable, otherwise a fresh
+/// `session/new`. A stored session is kept only when `reuse_session` is set (DESIGN 3b).
+fn ensure_session(
+    inner: &Inner,
+    conn: &Arc<Conn>,
+    cfg: &AcpAgentConfig,
+    opts: PromptOptions,
+    ticket: TurnTicket,
+) -> Result<String, AcpAgentError> {
+    if opts.reuse_session {
+        let s = lock_state(inner);
+        let same_conn = s.conn.as_ref().is_some_and(|c| Arc::ptr_eq(c, conn));
+        if let Some(session) = s
+            .session
+            .as_ref()
+            .filter(|x| same_conn && x.epoch == ticket.epoch)
+        {
+            return Ok(session.id.clone());
+        }
+    }
+    let outcome = conn.request_raw(
+        "session/new",
+        session_new_params(&cfg.cwd),
+        ticket.handshake_deadline,
+    );
+    let result = match outcome {
+        Ok(Ok(result)) => result,
+        Ok(Err(err)) => {
+            retire(
+                conn,
+                RetireReason::Protocol("session/new failed".to_owned()),
+            );
+            return Err(AcpAgentError::HandshakeFailed(error_detail(&err)));
+        }
+        Err(err) => {
+            retire(
+                conn,
+                RetireReason::Protocol("session/new failed".to_owned()),
+            );
+            return Err(handshake_error(err));
+        }
+    };
+    let id = match result.get("sessionId").and_then(Value::as_str) {
+        Some(id) if !id.trim().is_empty() => id.to_owned(),
+        _ => {
+            retire(
+                conn,
+                RetireReason::Protocol("session/new without id".to_owned()),
+            );
+            return Err(AcpAgentError::HandshakeFailed(
+                "session/new returned no session id".to_owned(),
+            ));
+        }
+    };
+    if opts.reuse_session {
+        // Why the checks: a reset, a shutdown or a newer reservation must never receive a
+        // session that belongs to a conversation it did not start (DESIGN 5 rule 3).
+        let mut s = lock_state(inner);
+        let owned = !s.closed
+            && s.op.token() == Some(ticket.token)
+            && s.epoch == ticket.epoch
+            && s.conn.as_ref().is_some_and(|c| Arc::ptr_eq(c, conn));
+        if owned {
+            s.session = Some(SessionInfo {
+                id: id.clone(),
+                epoch: ticket.epoch,
+            });
+        }
+    }
+    Ok(id)
+}
+
+/// Maps the prompt response to the reply (DESIGN 6c). `raw` is the accumulated text of
+/// this turn only; it is sanitised and capped here.
+fn map_turn_result(result: &Value, raw: &str) -> Result<AcpReply, AcpAgentError> {
+    let text = sanitize_reply(raw);
+    let reply = |text: String| AcpReply {
+        text,
+        agent_name: None,
+    };
+    match map_stop_reason(result.get("stopReason").and_then(Value::as_str)) {
+        StopOutcome::Reply if text.is_empty() => Err(AcpAgentError::EmptyReply),
+        StopOutcome::Reply => Ok(reply(text)),
+        StopOutcome::ReplyIfText if text.is_empty() => Err(AcpAgentError::Protocol(
+            "max_turn_requests without text".to_owned(),
+        )),
+        StopOutcome::ReplyIfText => Ok(reply(text)),
+        StopOutcome::Refused => Err(AcpAgentError::Refused),
+        // We only send session/cancel on timeout, which never reaches this mapping.
+        StopOutcome::Cancelled => Err(AcpAgentError::Protocol("unexpected cancel".to_owned())),
+        StopOutcome::Unknown => Err(AcpAgentError::Protocol("unknown stopReason".to_owned())),
+    }
+}
+
+/// Timeout path (DESIGN 5 rule 8): cancel best-effort, give the agent `grace` to answer,
+/// then ALWAYS retire the child so the next call starts clean. The caller has already
+/// discarded the turn text.
+fn abandon_turn(conn: &Arc<Conn>, session_id: &str, rx: Option<&ResponseRx>, grace: Duration) {
+    conn.try_notify("session/cancel", cancel_params(session_id));
+    if let Some(rx) = rx {
+        let _ = conn.await_response(rx, Instant::now() + grace);
+    }
+    retire(conn, RetireReason::Timeout);
+}
+
+/// The turn itself on a live connection: session, prompt, reply mapping, stale check.
+/// Every path ends the turn's accumulation and closes a turn-local or stale session.
+fn run_turn(
+    inner: &Inner,
+    conn: &Arc<Conn>,
+    cfg: &AcpAgentConfig,
+    text: &str,
+    opts: PromptOptions,
+    ticket: TurnTicket,
+) -> Result<AcpReply, AcpAgentError> {
+    let session_id = ensure_session(inner, conn, cfg, opts, ticket)?;
+    if epoch_moved(inner, ticket.epoch) {
+        conn.try_notify("session/close", close_params(&session_id));
+        return Err(AcpAgentError::Stale);
+    }
+    conn.begin_turn(&session_id);
+    let started = conn.start_request(
+        "session/prompt",
+        prompt_params(&session_id, text),
+        ticket.turn_deadline,
+    );
+    let rx = match started {
+        Ok((_id, rx)) => rx,
+        Err(AcpAgentError::Timeout) => {
+            conn.end_turn();
+            abandon_turn(conn, &session_id, None, cfg.cancel_grace);
+            return Err(AcpAgentError::Timeout);
+        }
+        Err(other) => {
+            conn.end_turn();
+            return Err(other);
+        }
+    };
+    let response = conn.await_response(&rx, ticket.turn_deadline);
+    // Why before the match: the text is final now. Updates that arrive later (during a
+    // cancel, or after the response) must not reach this turn.
+    let raw = conn.end_turn();
+    let outcome = match response {
+        Err(AcpAgentError::Timeout) => {
+            abandon_turn(conn, &session_id, Some(&rx), cfg.cancel_grace);
+            return Err(AcpAgentError::Timeout);
+        }
+        Err(other) => Err(other),
+        Ok(Err(err)) => Err(AcpAgentError::Protocol(error_detail(&err))),
+        Ok(Ok(result)) => {
+            // Why: the deadline wins even when the response arrives just after it.
+            if Instant::now() >= ticket.turn_deadline {
+                abandon_turn(conn, &session_id, None, cfg.cancel_grace);
+                return Err(AcpAgentError::Timeout);
+            }
+            map_turn_result(&result, &raw)
+        }
+    };
+    let stale = epoch_moved(inner, ticket.epoch);
+    if stale || !opts.reuse_session {
+        conn.try_notify("session/close", close_params(&session_id));
+    }
+    if stale {
+        // Why: a reset during the turn makes its reply belong to a dropped conversation.
+        return Err(AcpAgentError::Stale);
+    }
+    outcome
+}
+
 /// What the reaper decided for one tick (DESIGN 5 rule 7).
 enum ReapStep {
     /// The manager is gone or closed: the reaper must exit.
@@ -561,12 +793,18 @@ fn reap_once(weak: &Weak<Inner>, idle: Duration) -> ReapStep {
 
 /// The single reaper thread of a manager (DESIGN 5 rule 7). It wakes at least every 200 ms
 /// so a dropped or closed manager is noticed quickly.
-fn reaper_loop(weak: Weak<Inner>, idle: Duration) {
+fn reaper_loop(weak: Weak<Inner>, idle: Duration, gate: Arc<Mutex<()>>) {
     let pause = (idle / 4)
         .min(Duration::from_millis(200))
         .max(Duration::from_millis(5));
     loop {
-        match reap_once(&weak, idle) {
+        // Why the gate: keeps the transient strong `Arc` of `reap_once` invisible to
+        // `inner_strong_count`, which reads the count under the same lock.
+        let step = {
+            let _gate = lock(&gate);
+            reap_once(&weak, idle)
+        };
+        match step {
             ReapStep::Gone => return,
             ReapStep::Retire(conn) => retire(&conn, RetireReason::Idle),
             ReapStep::Keep => {}
@@ -838,6 +1076,9 @@ pub(crate) enum ConnFail {
 /// Delivery slot of one in-flight request.
 type Waiter = mpsc::Sender<Result<Value, ConnFail>>;
 
+/// Receiving end of one request's waiter.
+type ResponseRx = mpsc::Receiver<Result<Value, ConnFail>>;
+
 /// Bounded state of the turn currently running on a connection.
 #[derive(Default)]
 pub(crate) struct TurnAcc {
@@ -1016,14 +1257,13 @@ impl Conn {
         self.reap_blocking();
     }
 
-    /// Registers, sends and waits for one request. Returns the raw JSON-RPC outcome so
-    /// the manager can map initialize/session errors to `HandshakeFailed` itself.
-    pub(crate) fn request_raw(
+    /// Registers and sends one request; the response is read with `await_response`.
+    pub(crate) fn start_request(
         &self,
         method: &str,
         params: Value,
         deadline: Instant,
-    ) -> Result<Result<Value, Value>, AcpAgentError> {
+    ) -> Result<(u64, ResponseRx), AcpAgentError> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = mpsc::channel::<Result<Value, ConnFail>>();
         lock(&self.pending).insert(id, tx);
@@ -1037,6 +1277,16 @@ impl Conn {
             lock(&self.pending).remove(&id);
             return Err(e);
         }
+        Ok((id, rx))
+    }
+
+    /// Waits until `deadline` for the response on `rx`. Retirement fails the wait at once.
+    /// The waiter stays registered on timeout, so a caller can still wait for the answer.
+    pub(crate) fn await_response(
+        &self,
+        rx: &ResponseRx,
+        deadline: Instant,
+    ) -> Result<Result<Value, Value>, AcpAgentError> {
         let wait = deadline.saturating_duration_since(Instant::now());
         match rx.recv_timeout(wait) {
             Ok(Ok(result)) => Ok(Ok(result)),
@@ -1044,13 +1294,26 @@ impl Conn {
             Ok(Err(ConnFail::Retired)) | Err(RecvTimeoutError::Disconnected) => {
                 Err(self.retire_error())
             }
-            Err(RecvTimeoutError::Timeout) => {
-                // A late response may still be in the channel; the caller treats it as a
-                // timeout regardless (DESIGN 5.8: timeout precedence).
-                lock(&self.pending).remove(&id);
-                Err(AcpAgentError::Timeout)
-            }
+            Err(RecvTimeoutError::Timeout) => Err(AcpAgentError::Timeout),
         }
+    }
+
+    /// Registers, sends and waits for one request. Returns the raw JSON-RPC outcome so
+    /// the manager can map initialize/session errors to `HandshakeFailed` itself.
+    pub(crate) fn request_raw(
+        &self,
+        method: &str,
+        params: Value,
+        deadline: Instant,
+    ) -> Result<Result<Value, Value>, AcpAgentError> {
+        let (id, rx) = self.start_request(method, params, deadline)?;
+        let outcome = self.await_response(&rx, deadline);
+        if matches!(outcome, Err(AcpAgentError::Timeout)) {
+            // A late response may still be in the channel; the caller treats the request as
+            // timed out regardless (DESIGN 5.8: timeout precedence).
+            lock(&self.pending).remove(&id);
+        }
+        outcome
     }
 
     /// Like `request_raw`, but a JSON-RPC error becomes `Protocol`.
@@ -1190,6 +1453,9 @@ fn handle_line(conn: &Arc<Conn>, raw: &[u8]) {
         Some(Incoming::Response { id, result, error }) => {
             let waiter = lock(&conn.pending).remove(&id);
             if let Some(waiter) = waiter {
+                // Why: updates after a response belong to no turn (DESIGN 6b). Closing the turn
+                // here, before the waiter wakes, makes that cut exact; the text stays for the caller.
+                lock(&conn.acc).active_session = None;
                 let outcome = match error.filter(|e| !e.is_null()) {
                     Some(err) => Err(ConnFail::Rpc(err)),
                     None => Ok(result.unwrap_or(Value::Null)),
