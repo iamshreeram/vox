@@ -23,7 +23,8 @@
     "history": "歷史紀錄",
     "debug": "偵錯",
     "about": "關於",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "agents": "Agents"
   },
   "onboarding": {
     "subtitle": "首先，請選擇一種模型",
@@ -220,8 +221,15 @@
         }
       }
     },
+    "agents": {
+      "title": "Agents"
+    },
     "models": {
       "title": "轉錄模型",
+      "transcriptionHeading": "Transcription models",
+      "groups": {
+        "vadEngine": "Voice activity detection engine"
+      },
       "description": "選擇轉錄模型或下載其他模型。不同模型提供不同的準確度和速度",
       "yourModels": "已下載的模型",
       "availableModels": "可供下載",

@@ -23,7 +23,8 @@
     "history": "히스토리",
     "debug": "디버그",
     "about": "정보",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "agents": "Agents"
   },
   "onboarding": {
     "subtitle": "시작하려면 음성 인식 모델을 선택하세요",
@@ -220,6 +221,9 @@
         }
       }
     },
+    "agents": {
+      "title": "Agents"
+    },
     "sound": {
       "title": "사운드",
       "microphone": {
@@ -251,6 +255,10 @@
     },
     "models": {
       "title": "음성 인식 모델",
+      "transcriptionHeading": "Transcription models",
+      "groups": {
+        "vadEngine": "Voice activity detection engine"
+      },
       "description": "음성 인식 모델을 선택하거나 추가 모델을 다운로드하세요. 모델마다 정확도와 속도가 다릅니다.",
       "yourModels": "다운로드된 모델",
       "availableModels": "다운로드 가능",

@@ -23,7 +23,8 @@
     "history": "История",
     "debug": "Отладка",
     "about": "О программе",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "agents": "Agents"
   },
   "onboarding": {
     "subtitle": "Для начала выберите модель транскрипции",
@@ -167,6 +168,10 @@
     },
     "models": {
       "title": "Модели транскрипции",
+      "transcriptionHeading": "Transcription models",
+      "groups": {
+        "vadEngine": "Voice activity detection engine"
+      },
       "description": "Выберите модель транскрипции или загрузите дополнительные модели. Разные модели предлагают разные уровни точности и скорости.",
       "deleteConfirm": "Вы уверены, что хотите удалить {{modelName}}? Вам нужно будет загрузить её снова, чтобы использовать.",
       "deleteActiveConfirm": "{{modelName}} — ваша активная модель. Удаление остановит транскрипцию, пока вы не выберете новую модель. Вы уверены?",
@@ -242,6 +247,9 @@
           "toggle": "Нажмите сочетание клавиш, чтобы начать запись, нажмите ещё раз, чтобы остановить"
         }
       }
+    },
+    "agents": {
+      "title": "Agents"
     },
     "sound": {
       "title": "Звук",
