@@ -255,7 +255,10 @@ fn escalate_to_acp_agent(app: &AppHandle, settings: &AppSettings, transcript: &s
 }
 
 /// Builds the ACP agent config from settings. A blank command is a user-facing error.
-fn acp_agent_config(app: &AppHandle, settings: &AppSettings) -> Result<AcpAgentConfig, String> {
+pub(crate) fn acp_agent_config(
+    app: &AppHandle,
+    settings: &AppSettings,
+) -> Result<AcpAgentConfig, String> {
     let command = settings
         .acp_agent_command
         .as_deref()

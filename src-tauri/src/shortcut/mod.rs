@@ -1117,6 +1117,40 @@ pub fn change_acp_agent_turn_timeout_setting(app: AppHandle, secs: u64) -> Resul
     Ok(())
 }
 
+/// Spawns the configured ACP agent and completes the handshake, without sending a prompt.
+/// Requires the agent to be enabled and configured. Errors are short and user-safe.
+#[tauri::command]
+#[specta::specta]
+pub async fn acp_agent_test_connection(app: AppHandle) -> Result<String, String> {
+    const GENERIC_FAILURE: &str = "Could not connect to the ACP agent.";
+    let settings = settings::get_settings(&app);
+    if !settings.acp_agent_enabled {
+        return Err("Turn on the ACP agent before testing the connection.".to_string());
+    }
+    let cfg = crate::actions::acp_agent_config(&app, &settings)?;
+    let manager = app
+        .try_state::<Arc<crate::managers::acp_agent::AcpAgentManager>>()
+        .map(|state| state.inner().clone())
+        .ok_or_else(|| GENERIC_FAILURE.to_string())?;
+    let outcome = tauri::async_runtime::spawn_blocking(move || manager.warm_up(&cfg))
+        .await
+        .map_err(|_| GENERIC_FAILURE.to_string())?;
+    match outcome {
+        Ok(Some(name)) => {
+            let name: String = name.chars().filter(|c| !c.is_control()).take(80).collect();
+            let name = name.trim();
+            if name.is_empty() {
+                Ok("Connected".to_string())
+            } else {
+                Ok(format!("Connected to {name}"))
+            }
+        }
+        Ok(None) => Ok("Connected".to_string()),
+        Err(error) => Err(crate::managers::acp_escalation::user_message_for(&error)
+            .unwrap_or_else(|| GENERIC_FAILURE.to_string())),
+    }
+}
+
 /// Normalizes a voice name submitted from the settings UI.
 ///
 /// Blank or missing input means "system default" (`Ok(None)`). A non-blank
