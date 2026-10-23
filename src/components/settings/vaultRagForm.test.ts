@@ -887,13 +887,7 @@ await scenario(
   "VaultRagSettings is rendered by the Experimental page or ConversationMemorySettings",
   () => {
     const experimental = readFileSync(
-      path.join(
-        SRC,
-        "components",
-        "settings",
-        "experimental",
-        "ExperimentalSettings.tsx",
-      ),
+      path.join(HERE, "placedRenderers.tsx"),
       "utf8",
     );
     const memory = readFileSync(

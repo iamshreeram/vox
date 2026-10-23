@@ -18,7 +18,9 @@ export const SETTINGS_SECTION_IDS = [
 export type SettingsSectionId = (typeof SETTINGS_SECTION_IDS)[number];
 
 /** Maps a legacy section id to the section that replaces it. Other ids pass through. */
-export function resolveSectionAlias(id: SettingsSectionId): SettingsSectionId {
+export function resolveSectionAlias(
+  id: SettingsSectionId,
+): Exclude<SettingsSectionId, "experimental"> {
   return id === "experimental" ? "agents" : id;
 }
 

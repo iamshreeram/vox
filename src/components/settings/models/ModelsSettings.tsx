@@ -18,6 +18,7 @@ import {
   supportsLanguageCode,
 } from "@/lib/constants/languages.ts";
 import type { ModelInfo } from "@/bindings";
+import { PlacedGroups } from "../PlacedGroups";
 
 // check if model supports a language based on its supported_languages list
 const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
@@ -248,6 +249,10 @@ export const ModelsSettings: React.FC = () => {
         </p>
       </div>
 
+      <h2 className="px-1 text-xs font-medium text-mid-gray uppercase tracking-wide">
+        {t("settings.models.transcriptionHeading")}
+      </h2>
+
       {/* Search bar — filter the catalog by name or description */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text/40 pointer-events-none" />
@@ -450,6 +455,7 @@ export const ModelsSettings: React.FC = () => {
           </div>
         )}
       </div>
+      <PlacedGroups section="models" />
     </div>
   );
 };

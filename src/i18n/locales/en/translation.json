@@ -23,7 +23,8 @@
     "history": "History",
     "debug": "Debug",
     "about": "About",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "agents": "Agents"
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
@@ -220,8 +221,15 @@
         }
       }
     },
+    "agents": {
+      "title": "Agents"
+    },
     "models": {
       "title": "Transcription Models",
+      "transcriptionHeading": "Transcription models",
+      "groups": {
+        "vadEngine": "Voice activity detection engine"
+      },
       "description": "Select a transcription model or download additional models. Different models offer varying levels of accuracy and speed.",
       "searchPlaceholder": "Search models by name…",
       "yourModels": "Downloaded Models",

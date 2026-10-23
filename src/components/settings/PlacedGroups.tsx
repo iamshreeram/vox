@@ -54,24 +54,44 @@ export const PlacedGroupsView: React.FC<PlacedGroupsViewProps> = ({
   );
 };
 
+interface PlacedGroupsProps {
+  section: PlacedSection;
+  /** Shows the small "Experimental" heading above the groups (default true). */
+  showBadge?: boolean;
+}
+
+const badgeClass =
+  "px-1 text-xs font-medium text-mid-gray uppercase tracking-wide";
+
 // Connected: reads the live settings and renders the real controls for one section.
-export const PlacedGroups: React.FC<{ section: PlacedSection }> = ({
+export const PlacedGroups: React.FC<PlacedGroupsProps> = ({
   section,
+  showBadge = true,
 }) => {
   const { t } = useTranslation();
   const { getSetting } = useSettings();
+  const experimentalEnabled = getSetting("experimental_enabled") === true;
   const flags = {
     memoryEnabled: getSetting("memory_enabled") || false,
     agentBridgeEnabled: getSetting("agent_bridge_enabled") || false,
   };
+  const showHeading =
+    showBadge && experimentalEnabled && groupsForSection(section).length > 0;
 
   return (
-    <PlacedGroupsView
-      section={section}
-      experimentalEnabled={getSetting("experimental_enabled") === true}
-      flags={flags}
-      render={PLACED_RENDERERS}
-      t={t}
-    />
+    <>
+      {showHeading && (
+        <h2 className={badgeClass}>
+          {t("settings.advanced.groups.experimental")}
+        </h2>
+      )}
+      <PlacedGroupsView
+        section={section}
+        experimentalEnabled={experimentalEnabled}
+        flags={flags}
+        render={PLACED_RENDERERS}
+        t={t}
+      />
+    </>
   );
 };

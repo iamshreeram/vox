@@ -18,6 +18,7 @@ import { ExperimentalToggle } from "../ExperimentalToggle";
 import { VoiceActivityDetection } from "../VoiceActivityDetection";
 import { FillerWordRemoval } from "../FillerWordRemoval";
 import { ChineseScriptSetting } from "../ChineseScript";
+import { PlacedGroups } from "../PlacedGroups";
 
 export const AdvancedSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -55,6 +56,7 @@ export const AdvancedSettings: React.FC = () => {
           grouped={true}
         />
       </SettingsGroup>
+      <PlacedGroups section="advanced" />
     </div>
   );
 };

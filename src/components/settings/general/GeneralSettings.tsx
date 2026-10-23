@@ -13,6 +13,7 @@ import { VolumeSlider } from "../VolumeSlider";
 import { MuteWhileRecording } from "../MuteWhileRecording";
 import { ModelSettingsCard } from "./ModelSettingsCard";
 import { ThemeSelector } from "../ThemeSelector";
+import { PlacedGroups } from "../PlacedGroups";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -42,6 +43,7 @@ export const GeneralSettings: React.FC = () => {
         />
         <VolumeSlider disabled={!audioFeedbackEnabled} />
       </SettingsGroup>
+      <PlacedGroups section="general" />
     </div>
   );
 };
