@@ -711,6 +711,18 @@ pub struct AppSettings {
     pub agent_bridge_prompt_flag: String,
     #[serde(default = "default_agent_bridge_timeout_secs")]
     pub agent_bridge_timeout_secs: u64,
+    /// Persistent ACP agent client (DESIGN rev 3.1 section 7). Opt-in.
+    #[serde(default)]
+    pub acp_agent_enabled: bool,
+    /// Absolute path to the ACP agent program; `None` means unset.
+    #[serde(default)]
+    pub acp_agent_command: Option<String>,
+    /// Extra arguments for the ACP agent, split on ASCII whitespace only.
+    #[serde(default)]
+    pub acp_agent_args: String,
+    /// Seconds allowed for one agent turn.
+    #[serde(default = "default_acp_agent_turn_timeout_secs")]
+    pub acp_agent_turn_timeout_secs: u64,
     /// Speak agent replies and a generic confirmation/failure phrase aloud.
     /// Opt-in: spoken output audibly exposes agent reply content.
     #[serde(default)]
@@ -1239,6 +1251,86 @@ fn default_agent_bridge_prompt_flag() -> String {
 
 fn default_agent_bridge_timeout_secs() -> u64 {
     60
+}
+
+/// Default seconds allowed for one ACP agent turn.
+pub const ACP_AGENT_TURN_TIMEOUT_DEFAULT_SECS: u64 = 120;
+/// Smallest accepted ACP agent turn timeout in seconds (inclusive).
+pub const ACP_AGENT_TURN_TIMEOUT_MIN_SECS: u64 = 10;
+/// Largest accepted ACP agent turn timeout in seconds (inclusive).
+pub const ACP_AGENT_TURN_TIMEOUT_MAX_SECS: u64 = 900;
+/// Longest accepted ACP agent command, counted in characters.
+pub const ACP_AGENT_COMMAND_MAX_CHARS: usize = 1024;
+/// Largest number of ACP agent arguments accepted (inclusive).
+pub const ACP_AGENT_ARGS_MAX_COUNT: usize = 8;
+/// Longest accepted single ACP agent argument, counted in characters.
+pub const ACP_AGENT_ARG_MAX_CHARS: usize = 256;
+
+fn default_acp_agent_turn_timeout_secs() -> u64 {
+    ACP_AGENT_TURN_TIMEOUT_DEFAULT_SECS
+}
+
+/// Validates an ACP agent turn timeout in seconds. Out-of-range values are rejected, never
+/// clamped.
+pub fn validate_acp_agent_turn_timeout_secs(secs: u64) -> Result<u64, String> {
+    if (ACP_AGENT_TURN_TIMEOUT_MIN_SECS..=ACP_AGENT_TURN_TIMEOUT_MAX_SECS).contains(&secs) {
+        Ok(secs)
+    } else {
+        Err(format!(
+            "Agent turn timeout must be between {ACP_AGENT_TURN_TIMEOUT_MIN_SECS} and {ACP_AGENT_TURN_TIMEOUT_MAX_SECS} seconds"
+        ))
+    }
+}
+
+/// Normalizes the ACP agent command before it is persisted. Blank input means unset
+/// (`Ok(None)`). Otherwise the value is trimmed, must be an absolute path, must be at most
+/// [`ACP_AGENT_COMMAND_MAX_CHARS`] characters, and must not contain control characters
+/// (NUL and newlines included). Existence is not checked here.
+pub fn normalize_acp_agent_command(input: &str) -> Result<Option<String>, String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if trimmed.chars().count() > ACP_AGENT_COMMAND_MAX_CHARS {
+        return Err(format!(
+            "The agent command must be at most {ACP_AGENT_COMMAND_MAX_CHARS} characters"
+        ));
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err("The agent command cannot contain control characters".to_string());
+    }
+    if !std::path::Path::new(trimmed).is_absolute() {
+        return Err("The agent command must be an absolute path to the program".to_string());
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
+/// Splits the ACP agent arguments on ASCII whitespace. There is NO quote or shell parsing:
+/// quotes and metacharacters stay part of the argument. Rejects more than
+/// [`ACP_AGENT_ARGS_MAX_COUNT`] arguments, arguments longer than [`ACP_AGENT_ARG_MAX_CHARS`]
+/// characters, and control characters other than space and tab.
+pub fn validate_acp_agent_args(input: &str) -> Result<Vec<String>, String> {
+    if input
+        .chars()
+        .any(|c| c.is_control() && c != ' ' && c != '\t')
+    {
+        return Err("The agent arguments cannot contain control characters".to_string());
+    }
+    let args: Vec<String> = input.split_ascii_whitespace().map(str::to_string).collect();
+    if args.len() > ACP_AGENT_ARGS_MAX_COUNT {
+        return Err(format!(
+            "The agent can take at most {ACP_AGENT_ARGS_MAX_COUNT} arguments"
+        ));
+    }
+    if args
+        .iter()
+        .any(|arg| arg.chars().count() > ACP_AGENT_ARG_MAX_CHARS)
+    {
+        return Err(format!(
+            "Each agent argument must be at most {ACP_AGENT_ARG_MAX_CHARS} characters"
+        ));
+    }
+    Ok(args)
 }
 
 fn default_tts_rate_wpm() -> u32 {
@@ -1886,6 +1978,10 @@ pub fn get_default_settings() -> AppSettings {
         agent_bridge_binary_path: None,
         agent_bridge_prompt_flag: default_agent_bridge_prompt_flag(),
         agent_bridge_timeout_secs: default_agent_bridge_timeout_secs(),
+        acp_agent_enabled: false,
+        acp_agent_command: None,
+        acp_agent_args: String::new(),
+        acp_agent_turn_timeout_secs: default_acp_agent_turn_timeout_secs(),
         tts_enabled: false,
         tts_voice: None,
         tts_rate_wpm: default_tts_rate_wpm(),
