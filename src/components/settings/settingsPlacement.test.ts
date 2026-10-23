@@ -169,6 +169,7 @@ const scenarios: Record<string, () => void> = {
   "every group has a non-empty translation title key": () => {
     for (const g of PLACED_GROUPS) {
       assert.match(g.titleKey, /^settings\.[A-Za-z.]+$/, g.id);
+      assert.ok(g.controls.length > 0, `${g.id} has controls`);
     }
   },
   "placementOf agrees with the group that holds the control": () => {
@@ -200,6 +201,23 @@ const scenarios: Record<string, () => void> = {
       "memoryFacts",
     ]);
     assert.deepEqual(visibleControls(memory, noFlags), ["memoryToggle"]);
+    // Each optional control follows ITS OWN flag only (mixed flags).
+    const onlyBridge = { memoryEnabled: false, agentBridgeEnabled: true };
+    const onlyMemory = { memoryEnabled: true, agentBridgeEnabled: false };
+    assert.deepEqual(visibleControls(memory, onlyBridge), ["memoryToggle"]);
+    assert.deepEqual(visibleControls(bridge, onlyBridge), [
+      "agentBridge",
+      "agentContext",
+      "agentBridgeBinaryPath",
+    ]);
+    assert.deepEqual(visibleControls(memory, onlyMemory), [
+      "memoryToggle",
+      "memoryFacts",
+    ]);
+    assert.deepEqual(visibleControls(bridge, onlyMemory), [
+      "agentBridge",
+      "agentContext",
+    ]);
   },
   "gate off: no moved group renders in any destination section": () => {
     for (const s of SECTIONS) {

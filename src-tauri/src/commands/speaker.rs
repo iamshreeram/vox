@@ -30,7 +30,7 @@ pub enum SpeakerCmdError {
     StoreFailed,
 }
 
-/// Flags for the Experimental page. Reads the store and the controller; takes no lease.
+/// Flags for the Realtime voice and spoken-reply settings. Reads the store and the controller; takes no lease.
 pub fn status_of(rt: &VoiceRuntime) -> SpeakerStatus {
     SpeakerStatus {
         enrolled: rt.store.is_enrolled(),
