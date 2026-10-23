@@ -1068,13 +1068,25 @@ pub fn change_agent_bridge_prompt_flag_setting(app: AppHandle, flag: String) -> 
     Ok(())
 }
 
-/// Enables or disables the persistent ACP agent client.
+/// Retires the managed ACP agent child, if one is managed. Returns at once: `shutdown`
+/// retires the child and does not wait for it.
+fn shutdown_managed_acp_agent(app: &AppHandle) {
+    if let Some(manager) = app.try_state::<Arc<crate::managers::acp_agent::AcpAgentManager>>() {
+        manager.inner().shutdown();
+    }
+}
+
+/// Enables or disables the persistent ACP agent client. Turning it off also retires the
+/// running agent so it does not linger until the idle timeout.
 #[tauri::command]
 #[specta::specta]
 pub fn change_acp_agent_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.acp_agent_enabled = enabled;
     settings::write_settings(&app, settings);
+    if !enabled {
+        shutdown_managed_acp_agent(&app);
+    }
     Ok(())
 }
 
@@ -1088,8 +1100,12 @@ pub fn change_acp_agent_command_setting(
 ) -> Result<(), String> {
     let normalized = settings::normalize_acp_agent_command(command.as_deref().unwrap_or(""))?;
     let mut settings = settings::get_settings(&app);
+    let changed = settings.acp_agent_command != normalized;
     settings.acp_agent_command = normalized;
     settings::write_settings(&app, settings);
+    if changed {
+        shutdown_managed_acp_agent(&app);
+    }
     Ok(())
 }
 
@@ -1100,8 +1116,12 @@ pub fn change_acp_agent_command_setting(
 pub fn change_acp_agent_args_setting(app: AppHandle, args: String) -> Result<(), String> {
     settings::validate_acp_agent_args(&args)?;
     let mut settings = settings::get_settings(&app);
+    let changed = settings.acp_agent_args != args;
     settings.acp_agent_args = args;
     settings::write_settings(&app, settings);
+    if changed {
+        shutdown_managed_acp_agent(&app);
+    }
     Ok(())
 }
 

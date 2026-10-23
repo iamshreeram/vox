@@ -1259,6 +1259,15 @@ pub fn validate_acp_agent_turn_timeout_secs(secs: u64) -> Result<u64, String> {
     }
 }
 
+/// Clamps a stored ACP agent turn timeout into the accepted range. Used on read, because a
+/// settings file edited by hand can hold any number and the value feeds `Instant` arithmetic.
+pub fn clamped_acp_agent_turn_timeout_secs(secs: u64) -> u64 {
+    secs.clamp(
+        ACP_AGENT_TURN_TIMEOUT_MIN_SECS,
+        ACP_AGENT_TURN_TIMEOUT_MAX_SECS,
+    )
+}
+
 /// Normalizes the ACP agent command before it is persisted. Blank input means unset
 /// (`Ok(None)`). Otherwise the value is trimmed, must be an absolute path, must be at most
 /// [`ACP_AGENT_COMMAND_MAX_CHARS`] characters, and must not contain control characters

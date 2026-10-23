@@ -2,9 +2,6 @@
 //!
 //! DESIGN.md rev 3.1, sections 3, 3a and 3b. Tests: `acp_escalation_tests.rs`.
 
-// Production callers (actions.rs, shortcut/mod.rs) are wired in step S2.
-#![allow(dead_code)]
-
 use crate::managers::acp_agent::{
     AcpAgentConfig, AcpAgentError, AcpAgentManager, AcpReply, PromptOptions,
 };

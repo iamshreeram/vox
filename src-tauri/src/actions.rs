@@ -275,7 +275,9 @@ pub(crate) fn acp_agent_config(
             .map(str::to_string)
             .collect(),
         cwd: acp_workspace_dir(app)?,
-        turn_timeout: Duration::from_secs(settings.acp_agent_turn_timeout_secs),
+        turn_timeout: Duration::from_secs(crate::settings::clamped_acp_agent_turn_timeout_secs(
+            settings.acp_agent_turn_timeout_secs,
+        )),
         handshake_timeout: Duration::from_secs(60),
         cancel_grace: Duration::from_secs(3),
     })

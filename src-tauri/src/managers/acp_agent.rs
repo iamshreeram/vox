@@ -4,8 +4,6 @@
 //! Signatures, constants and type shapes here are part of the contract: do not
 //! change them without updating the design and the tests.
 
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::io::BufRead;
 use std::path::PathBuf;
@@ -64,6 +62,8 @@ pub struct AcpReply {
 pub enum AcpAgentError {
     NotConfigured,
     CommandNotFound,
+    // Why: only the ACP tests construct this today.
+    #[cfg_attr(not(test), allow(dead_code))]
     Unsupported,
     SpawnFailed(String),
     HandshakeFailed(String),
@@ -71,10 +71,15 @@ pub enum AcpAgentError {
     Busy,
     Stale,
     Closed,
-    AgentExited { code: Option<i32>, stderr: String },
+    AgentExited {
+        code: Option<i32>,
+        stderr: String,
+    },
     EmptyReply,
     Refused,
     Protocol(String),
+    // Why: only the ACP tests construct this today.
+    #[cfg_attr(not(test), allow(dead_code))]
     Io(std::io::Error),
 }
 
@@ -292,6 +297,8 @@ impl AcpAgentManager {
         }
     }
 
+    // Why: only the ACP tests call this today.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn is_running(&self) -> bool {
         lock_state(&self.inner)
             .conn
@@ -1089,9 +1096,6 @@ pub(crate) struct TurnAcc {
     overflow: bool,
 }
 
-/// Source of unique connection ids (diagnostics and test assertions).
-static NEXT_CONN_ID: AtomicU64 = AtomicU64::new(1);
-
 /// Locks ignoring poisoning. Why: a panicking helper must not turn every later call into
 /// a panic; the protected data is plain state that stays consistent per update.
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -1141,7 +1145,6 @@ impl Drop for HelperGuard {
 /// `pending` / `reason` / `acc` / `exit` / `stderr_tail` / `stderr_done` / `child` are leaves.
 /// No lock is held while calling `retire`, `submit`, or any blocking wait.
 pub(crate) struct Conn {
-    pub(crate) conn_id: u64,
     /// The leader. Locked only briefly for `try_wait`/`wait`; never held across a sleep.
     child: Mutex<Child>,
     /// Process-group id (== leader pid). Only signalled when > 1 (never 0 or -1).
@@ -1316,19 +1319,6 @@ impl Conn {
         outcome
     }
 
-    /// Like `request_raw`, but a JSON-RPC error becomes `Protocol`.
-    pub(crate) fn request(
-        &self,
-        method: &str,
-        params: Value,
-        deadline: Instant,
-    ) -> Result<Value, AcpAgentError> {
-        match self.request_raw(method, params, deadline)? {
-            Ok(result) => Ok(result),
-            Err(err) => Err(AcpAgentError::Protocol(error_detail(&err))),
-        }
-    }
-
     /// Best-effort notification: never blocks, errors ignored (used for session/close).
     pub(crate) fn try_notify(&self, method: &str, params: Value) {
         let _ = self.outbound.try_send(notification_json(method, params));
@@ -1370,10 +1360,6 @@ impl Conn {
         let mut acc = lock(&self.acc);
         acc.active_session = None;
         std::mem::take(&mut acc.text)
-    }
-
-    pub(crate) fn turn_text_len(&self) -> usize {
-        lock(&self.acc).text.len()
     }
 }
 
@@ -1649,7 +1635,13 @@ fn stderr_loop(conn: Arc<Conn>, stderr: ChildStderr) {
         conn: Arc::clone(&conn),
     };
     let mut chunk = [0u8; 4096];
-    while let Ok(n) = src.read(&mut chunk) {
+    // Why check on every pass: a descendant that keeps writing stderr must not keep this
+    // helper alive after retirement, because a read that never blocks never reaches the
+    // wait inside `PollRead`.
+    while !conn.is_retired() {
+        let Ok(n) = src.read(&mut chunk) else {
+            break;
+        };
         if n == 0 {
             break;
         }
@@ -1738,7 +1730,6 @@ impl Conn {
         // Why bounded(8): a stuck agent must hit `Full` (=> retire), never grow memory.
         let (outbound, rx) = mpsc::sync_channel::<String>(8);
         let conn = Arc::new(Conn {
-            conn_id: NEXT_CONN_ID.fetch_add(1, Ordering::SeqCst),
             child: Mutex::new(child),
             pgid,
             retired: AtomicBool::new(false),
