@@ -27,12 +27,13 @@ const ALL_TOOLS: [&str; 5] = [
     "open_settings",
     "recent_conversations",
 ];
-const OPEN_SETTINGS_IDS: [&str; 7] = [
+const OPEN_SETTINGS_IDS: [&str; 8] = [
     "general",
     "history",
     "models",
     "advanced",
     "postprocessing",
+    "agents",
     "experimental",
     "about",
 ];
