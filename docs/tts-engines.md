@@ -1,7 +1,7 @@
 # Text-to-speech engines
 
 Vox can read spoken replies with one of three engines. You choose the engine in
-Settings, Advanced, Spoken replies, under "Voice engine". The choice applies to
+Settings > Models, Spoken replies, under "Voice engine". The choice applies to
 spoken replies only. It does not change how Vox listens.
 
 For the spoken reply style, see [Spoken replies](spoken-replies.md). For the
@@ -27,7 +27,7 @@ sources and checksums of the downloaded models, see
 
 ## Choosing an engine
 
-1. Open Settings, Advanced, Spoken replies.
+1. Open Settings > Models, Spoken replies.
 2. In "Voice engine", choose the engine you want.
 3. If the engine is not installed, press **Install** (or **Install from folder**
    for Phonon). Until it is installed, Vox speaks with the system voice.
@@ -115,7 +115,7 @@ English; the platform is macOS. If none of these explain it, delete the model an
 install it again.
 
 **To remove Phonon and free the space.**
-Open Settings, Advanced, Spoken replies, and delete the Phonon voice model. Vox
+Open Settings > Models, Spoken replies, and delete the Phonon voice model. Vox
 asks you to confirm, then deletes the model. You can install it again later.
 
 ## Measured numbers

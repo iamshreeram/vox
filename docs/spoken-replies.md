@@ -4,7 +4,8 @@ The spoken reply style (the "composer") turns an agent reply into a short
 spoken sentence before Vox reads it aloud. It is optional. With the composer
 off, Vox speaks the reply text as it is.
 
-Spoken replies must be turned on first (Settings, Advanced, Spoken Replies).
+Spoken replies must be turned on first (Settings > Models > Spoken replies;
+the group is shown when the Experimental switch is on).
 The composer settings appear below that toggle.
 
 ## What the composer does
@@ -134,7 +135,7 @@ voices with American and British accents.
 
 ### Turning it on
 
-1. Open Settings, Advanced, Spoken replies.
+1. Open Settings > Models, then Spoken replies.
 2. In "Voice engine", choose "Natural voice (beta)".
 3. Pick a voice.
 4. Press Download.

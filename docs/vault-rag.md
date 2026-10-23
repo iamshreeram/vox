@@ -18,7 +18,8 @@ does not do.
 
 ## How to turn it on
 
-1. Open Settings, then Experimental, then the Conversation memory group.
+1. Open Settings > Agents, then the Conversation memory group. The Agents tab is
+   shown only when Experimental features are turned on.
 2. Set the Vault folder path. Vault notes search cannot be turned on without
    it; the toggle stays disabled and shows a hint until a path is set.
 3. Turn on "Search my vault notes". The toggle needs the realtime model route
@@ -31,8 +32,8 @@ unavailable, with the number of notes, searchable sections and skipped files.
 "Re-index now" refreshes the index: it picks up new, changed and removed notes
 in the listed folders. It is disabled while indexing is running.
 The status is refreshed about every two seconds, but only while the
-Experimental page is visible and the toggle is on. Leaving the page or turning
-the toggle off stops the refresh.
+Agents tab is visible and the toggle is on. Leaving the tab or turning the
+toggle off stops the refresh.
 
 ## What is sent to the model provider, and when
 
