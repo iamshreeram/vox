@@ -368,11 +368,43 @@
         "binaryPathLabel": "Agent binary path",
         "binaryPathDescription": "Full path to the CLI agent executable to invoke. Leave empty to keep Agent Bridge inactive even if the toggle above is on.",
         "advancedLabel": "Avanceret",
-        "timeoutLabel": "Timeout for agent (sekunder)",
-        "timeoutDescription": "Hvor længe der ventes på, at agentkommandoen svarer. Mellem 5 og 600 sekunder.",
         "promptFlagLabel": "Forespørgselsflag",
         "promptFlagDescription": "Flaget der sender din forespørgsel til agentkommandoen, for eksempel -p. Det skal være forskelligt fra agentflaget.",
         "suggestionFailedTitle": "Agent suggestion failed"
+      },
+      "acpAgent": {
+        "title": "Agent (ACP)",
+        "description": "Sends dictation that no built-in command matched to an agent program that speaks the Agent Client Protocol, then shows its reply. Nothing is sent unless you turn this on and set a program.",
+        "trustWarning": "Trust warning: the agent program you configure is fully trusted and NOT sandboxed. It inherits Vox's environment and can use its own tools without asking Vox. While this is on, every dictation that no built-in command matched is sent to it. Denying permission requests does not limit the agent's own tools. Vox only strips terminal control characters from replies. It does not stop harmful instructions.",
+        "enabled": {
+          "label": "Use ACP agent",
+          "description": "When on, dictation that no built-in command matched goes to the agent program below."
+        },
+        "command": {
+          "label": "Agent program path",
+          "description": "Absolute path to the agent program. Leave empty to turn the agent off. Vox does not search your PATH.",
+          "placeholder": "/path/to/my-agent"
+        },
+        "args": {
+          "label": "Agent arguments",
+          "description": "Separated by spaces. No quotes or shell syntax. Up to 8 arguments, each up to 256 characters.",
+          "placeholder": "--acp"
+        },
+        "timeout": {
+          "label": "Turn timeout (seconds)",
+          "description": "How long to wait for the agent to finish one reply. Between {{min}} and {{max}} seconds."
+        },
+        "testConnection": "Test connection",
+        "testing": "Testing...",
+        "errors": {
+          "notAbsolute": "Enter an absolute path, such as /path/to/my-agent. Relative paths and bare names are not allowed.",
+          "tooLong": "The path is too long. Use at most 1024 characters.",
+          "controlChars": "Remove control characters such as line breaks.",
+          "tooMany": "Use at most 8 arguments.",
+          "argTooLong": "Each argument must be at most 256 characters.",
+          "outOfRange": "Enter a number of seconds from 10 to 900.",
+          "notInteger": "Enter a whole number of seconds."
+        }
       },
       "agentContext": {
         "title": "Conversation Context",
@@ -973,9 +1005,13 @@
         "voiceCommands": "Voice commands",
         "memory": "Memory",
         "agentBridge": "Agent bridge",
+        "acpAgent": "Agent (ACP)",
         "conversationMemory": "Conversation memory",
         "agentTools": "Voice agent tools",
         "codingJobs": "Coding jobs"
+      },
+      "acpAgent": {
+        "groupDescription": "Sends dictation that no built-in command matched to an agent program you choose. The program is fully trusted and not sandboxed."
       },
       "realtime": {
         "title": "Realtime conversation",
