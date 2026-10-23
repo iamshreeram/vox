@@ -13,8 +13,8 @@ export const SECTION_ORDER: readonly SearchSection[] = [
   "models",
   "advanced",
   "postprocessing",
+  "agents",
   "debug",
-  "experimental",
   "about",
 ];
 
@@ -25,8 +25,8 @@ export const SECTION_LABEL_KEY: Readonly<Record<SearchSection, string>> = {
   models: "sidebar.models",
   advanced: "sidebar.advanced",
   postprocessing: "sidebar.postProcessing",
+  agents: "sidebar.agents",
   debug: "sidebar.debug",
-  experimental: "sidebar.experimental",
   about: "sidebar.about",
 };
 

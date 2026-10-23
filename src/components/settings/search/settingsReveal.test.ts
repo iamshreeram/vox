@@ -18,7 +18,7 @@ import {
 
 const FRAME_MS = 16;
 const ROOT_SELECTOR = "[data-settings-section]";
-const SECTION = "experimental";
+const SECTION = "agents";
 
 interface ScrollOptions {
   block: "center" | "nearest";

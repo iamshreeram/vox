@@ -126,6 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="flex flex-col w-full items-center gap-1 pt-2 border-t border-mid-gray/20">
         <SettingsSearchBox
           isSectionEnabled={isSectionEnabled}
+          experimentalEnabled={settings?.experimental_enabled === true}
           onNavigate={onSectionChange}
         />
         {availableSections.map((section) => {

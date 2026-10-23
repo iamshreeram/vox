@@ -30,6 +30,8 @@ const COMPOSITION_ENTER_GUARD_MS = 50;
 
 export interface SettingsSearchBoxProps {
   isSectionEnabled(section: SearchSection): boolean;
+  /** Experimental switch state; rows with requiresExperimental are locked while false. */
+  experimentalEnabled: boolean;
   platform?: SearchPlatform;
   onNavigate(section: SearchSection): void;
   defaultQuery?: string;
@@ -69,6 +71,7 @@ function renderLabel(label: string, query: string): React.ReactNode {
 
 export const SettingsSearchBox: React.FC<SettingsSearchBoxProps> = ({
   isSectionEnabled,
+  experimentalEnabled,
   platform: platformProp,
   onNavigate,
   defaultQuery = "",
@@ -93,17 +96,18 @@ export const SettingsSearchBox: React.FC<SettingsSearchBoxProps> = ({
 
   // Gate state as a string key, so the memoised results only change when a
   // section actually flips (the caller's predicate identity changes each render).
-  const gateKey = SECTION_ORDER.filter((section) =>
+  const gateKey = `${SECTION_ORDER.filter((section) =>
     isSectionEnabled(section),
-  ).join(",");
+  ).join(",")}|experimental:${experimentalEnabled ? "on" : "off"}`;
 
   const ctx = useMemo<SearchContext>(() => {
-    const enabled = new Set<string>(gateKey.split(","));
+    const enabled = new Set<string>(gateKey.split("|")[0].split(","));
     return {
       isSectionEnabled: (section) => enabled.has(section),
+      experimentalEnabled,
       platform,
     };
-  }, [gateKey, platform]);
+  }, [gateKey, experimentalEnabled, platform]);
 
   const englishT = useMemo(() => i18n.getFixedT("en"), [i18n, language]);
 

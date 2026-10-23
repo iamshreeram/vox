@@ -8,8 +8,8 @@ export type SearchSection =
   | "models"
   | "advanced"
   | "postprocessing"
+  | "agents"
   | "debug"
-  | "experimental"
   | "about";
 
 export type SearchPlatform = "macos" | "windows" | "linux";
@@ -27,7 +27,7 @@ export interface SearchEntry {
   descriptionKey?: string;
   /** Lowercase English synonyms. Matched, never displayed. */
   keywords?: readonly string[];
-  /** Entry id of the setting that makes this section visible. Required for postprocessing and experimental. */
+  /** Entry id of the setting that makes this section visible. Required for postprocessing and requiresExperimental rows. */
   unlockedBy?: string;
   /**
    * 0-based n-th row carrying this translated title inside the destination scope
@@ -38,6 +38,11 @@ export interface SearchEntry {
   platforms?: readonly SearchPlatform[];
   /** Navigate to the page only; there is no row to reveal (history and models pages). */
   pageOnly?: boolean;
+  /**
+   * True when the row is only rendered while the Experimental switch is on, regardless of
+   * its section's own visibility (moved rows live on always-visible pages).
+   */
+  requiresExperimental?: boolean;
 }
 
 export interface TextPair {
@@ -50,6 +55,11 @@ export type Resolve = (key: string) => TextPair;
 export interface SearchContext {
   isSectionEnabled(section: SearchSection): boolean;
   platform: SearchPlatform;
+  /**
+   * Experimental switch state. Undefined means on, so callers and fixtures that predate
+   * the field keep their behaviour. Only rows with requiresExperimental read it.
+   */
+  experimentalEnabled?: boolean;
 }
 
 export interface SearchHit {

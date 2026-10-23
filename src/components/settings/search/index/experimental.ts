@@ -1,10 +1,12 @@
+import { PLACED_GROUPS } from "../../settingsPlacement";
 import type { DynamicFamily, SearchEntry } from "../types";
 
-/** Entry id of the advanced-page toggle that unlocks the Experimental page. */
+/** Entry id of the advanced-page toggle that unlocks the Experimental switch. */
 const UNLOCK = "advanced.experimentalToggle";
 
 const GROUP = {
   engine: "settings.experimental.groups.engine",
+  vadEngine: "settings.models.groups.vadEngine",
   voiceCommands: "settings.experimental.groups.voiceCommands",
   listening: "settings.advanced.listeningMode.title",
   memory: "settings.experimental.groups.memory",
@@ -17,7 +19,10 @@ const GROUP = {
   codingJobs: "settings.experimental.groups.codingJobs",
 } as const;
 
-/** One row on the Experimental page. The id is always "experimental.<slug>". */
+/**
+ * One row of a moved control. The id is always "experimental.<slug>" (kept from the old page).
+ * The page (section) comes from the placed group, never from a hand-written value.
+ */
 function row(
   slug: string,
   groupId: keyof typeof GROUP,
@@ -25,9 +30,14 @@ function row(
   descriptionKey: string | undefined,
   keywords: readonly string[],
 ): SearchEntry {
+  const group = PLACED_GROUPS.find((candidate) => candidate.id === groupId);
+  if (group === undefined) {
+    throw new Error(`search index: no placed group "${groupId}"`);
+  }
   return {
     id: `experimental.${slug}`,
-    section: "experimental",
+    section: group.section,
+    requiresExperimental: true,
     groupId,
     groupKey: GROUP[groupId],
     labelKey,
@@ -141,8 +151,7 @@ const JOB_STATE_IDS = [
 
 const SHORTCUT_ACTION_IDS = ["url", "folder", "app"] as const;
 
-const EXPERIMENTAL_SOURCE =
-  "src/components/settings/experimental/ExperimentalSettings.tsx";
+const PLACED_GROUPS_SOURCE = "src/components/settings/PlacedGroups.tsx";
 const SPOKEN_REPLY_SOURCE = "src/components/settings/SpokenReplyStyle.tsx";
 const VOICE_SHORTCUTS_SOURCE =
   "src/components/settings/VoiceShortcutsEditor.tsx";
@@ -238,7 +247,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "vadBackend",
-    "engine",
+    "vadEngine",
     "settings.advanced.vadBackend.title",
     "settings.advanced.vadBackend.description",
     [
@@ -1283,10 +1292,10 @@ export const EXPERIMENTAL_DYNAMIC: readonly DynamicFamily[] = [
     note: "Natural voice option labels (accent./gender. parts), the failure.<code> detail text from failureI18nKey and the system voice description key from buildVoiceOptions are inline text inside the indexed ttsVoice / ttsNaturalVoice / ttsNaturalModel rows, not separate settings.",
   },
   {
-    source: EXPERIMENTAL_SOURCE,
+    source: PLACED_GROUPS_SOURCE,
     prefix: "settings.experimental.groups.",
     ids: [],
-    note: "Card titles and descriptions come from experimentalLayout.ts (titleKey, descriptionKey); each card title is indexed as the groupKey of its rows, so no row label is built here.",
+    note: "Card titles and descriptions come from settingsPlacement.ts (PLACED_GROUPS titleKey, descriptionKey); each card title is indexed as the groupKey of its rows, so no row label is built here.",
   },
   {
     source: SPOKEN_REPLY_SOURCE,
