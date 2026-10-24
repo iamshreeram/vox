@@ -15,7 +15,7 @@ use crate::managers::converse_context::{
     note_interrupted, note_paste, note_paste_failed, CommandNote,
 };
 use crate::managers::converse_latency::{LatencyReport, ListenTiming, RollingStats};
-use crate::managers::converse_local::{classify_local_in_role, LocalIntent};
+use crate::managers::converse_local::{classify_local_in_session, LocalIntent};
 use crate::managers::converse_plan::{
     PlanError, PlanInput, PlanKind, TurnPlan, MAX_UTTERANCE_CHARS,
 };
@@ -1160,6 +1160,13 @@ struct Carry {
     lesson: Option<Lesson>,
     /// True when the turn's plan was an Answer delivered in full (see `continue_lesson`).
     answer_delivered: bool,
+    /// Stage 2: the agent run owned by the loop (`converse_agent_loop`). Ends with the session.
+    agent: Option<converse_agent_loop::AgentSlot>,
+    /// Stage 2: speech owed to the user from the agent run, delivered at loop boundaries.
+    undelivered: VecDeque<converse_agent_loop::Narration>,
+    /// Stage 2: set when an agent result was recorded. Read by the forced-confirmation step (C3b).
+    #[allow(dead_code)]
+    tainted: bool,
 }
 
 /// Consecutive `Ignored` listens that count as one idle turn (T9b).
@@ -1276,8 +1283,9 @@ async fn streamed_outcome(
     }
     if matches!(
         plan.kind,
-        PlanKind::SetRole | PlanKind::ClearRole | PlanKind::Resume
+        PlanKind::SetRole | PlanKind::ClearRole | PlanKind::Resume | PlanKind::Agent
     ) {
+        // Agent plans too: the streamer never releases them as early speech (2.1).
         // Role plans are never released as early speech (the streamer accepts only answer and
         // clarify), so the final plan runs in full through the one-shot path, as `Legacy` does.
         if early.ack.is_some() {
@@ -1503,7 +1511,7 @@ async fn brain_turn(
         role: carry.role.as_deref(),
         lesson_paused: carry.lesson.is_some(),
         roles_enabled: true,
-        agent_enabled: false,
+        agent_enabled: converse_agent_loop::handoff_effective(cfg),
     };
     // Answer-only (DESIGN 8.1): no streamed model text may reach the mouth before a complete
     // plan is parsed, so the streaming path is never used. Role-active turns (Stage 1 roles,
@@ -1772,7 +1780,7 @@ async fn lesson_start_turn(
         role: carry.role.as_deref(),
         lesson_paused: false,
         roles_enabled: true,
-        agent_enabled: false,
+        agent_enabled: converse_agent_loop::handoff_effective(cfg),
     };
     deps.reporter.state(SessionState::Thinking);
     let Some(planned) = race(cancel, deps.brain.plan(input)).await else {
@@ -1871,7 +1879,7 @@ async fn execute_plan(
     if cfg.answer_only
         && matches!(
             plan.kind,
-            PlanKind::Paste | PlanKind::Command | PlanKind::Job
+            PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::Agent
         )
     {
         // Answer-only boundary (DESIGN 3.6): zero paste/command/job calls; only the fixed refusal.
@@ -1889,10 +1897,23 @@ async fn execute_plan(
         // Job plans are parsed only when jobs are allowed and are routed through gate_and_run.
         // With no policy a Job plan never reaches this answer path (parsing refuses it), so it
         // is treated as answer text here.
-        // Stage 2 (C3 wires the real behaviour): an agent plan behaves like Answer until then.
-        PlanKind::Answer | PlanKind::Agent => {
+        PlanKind::Answer => {
             carry.journal.set(speech_outcome(&plan.kind), None);
             answer_turn(deps, cfg, cancel, &plan, carry).await?
+        }
+        // Stage 2: the hand-off is effective only when enabled and not answer-only. Otherwise the
+        // plan is a plain Answer (2.1).
+        PlanKind::Agent => {
+            carry.journal.set(speech_outcome(&plan.kind), None);
+            if converse_agent_loop::handoff_effective(cfg) {
+                converse_agent_loop::agent_turn(deps, cfg, cancel, &plan, carry).await?
+            } else {
+                let mut as_answer = plan.clone();
+                if as_answer.speech.trim().is_empty() {
+                    as_answer.speech = converse_agent_loop::LINE_NOT_EFFECTIVE.to_string();
+                }
+                answer_turn(deps, cfg, cancel, &as_answer, carry).await?
+            }
         }
         PlanKind::Clarify | PlanKind::Job => {
             carry.journal.set(speech_outcome(&plan.kind), None);
@@ -1983,7 +2004,7 @@ async fn gate_and_run(
     if cfg.answer_only
         && matches!(
             plan.kind,
-            PlanKind::Paste | PlanKind::Command | PlanKind::Job
+            PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::Agent
         )
     {
         return execute_plan(deps, cfg, cancel, plan, carry).await;
@@ -2169,9 +2190,21 @@ async fn speak_pending(
 }
 
 /// The turn loop. Returns the end; the wrapper reports Idle and stops.
+/// Ends the session's agent run (cancel once, nothing spoken) on every return path (2.3).
 async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToken) -> SessionEnd {
-    let mut history: Vec<(String, String)> = Vec::new();
     let mut carry = Carry::default();
+    let end = run_turns_loop(outer, cfg, cancel, &mut carry).await;
+    converse_agent_loop::end_agent_session(&mut carry);
+    end
+}
+
+async fn run_turns_loop(
+    outer: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    carry: &mut Carry,
+) -> SessionEnd {
+    let mut history: Vec<(String, String)> = Vec::new();
     let mut idle_turns: u32 = 0;
     let mut consecutive_too_long: u32 = 0;
     let mut consecutive_ignored: u8 = 0;
@@ -2201,6 +2234,23 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
         if is_cancelled(cancel) {
             return SessionEnd::Cancelled;
         }
+        // Agent events are collected first; speech is delivered only here, outside any listen
+        // and outside any reply scope, and never while a captured barge-in is pending (2.4).
+        converse_agent_loop::collect_agent_events(carry, &mut history, cfg, deps.hands);
+        if barge_next.is_none() {
+            if let Some(mut narration) = carry.undelivered.pop_front() {
+                match converse_agent_loop::speak_unsolicited(deps, cfg, cancel, &mut narration)
+                    .await
+                {
+                    Ok(captured) => barge_next = captured,
+                    Err(end) => return end,
+                }
+                if carry.undelivered.is_empty() {
+                    idle_turns = 0;
+                }
+                continue;
+            }
+        }
         if turns >= cfg.max_turns {
             return SessionEnd::TurnLimit;
         }
@@ -2227,6 +2277,9 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
         if !matches!(heard, ListenOutcome::Ignored) {
             consecutive_ignored = 0;
         }
+        if !matches!(heard, ListenOutcome::Utterance(_)) {
+            converse_agent_loop::collect_agent_events(carry, &mut history, cfg, deps.hands);
+        }
         let utterance = match heard {
             ListenOutcome::Aborted => return SessionEnd::Cancelled,
             ListenOutcome::Failed(_) => {
@@ -2237,12 +2290,15 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
             }
             ListenOutcome::TooLong => {
                 idle_turns = 0;
-                consecutive_too_long += 1;
-                if consecutive_too_long >= 2 {
-                    return after_speech(
-                        speak(deps, cfg, cancel, MSG_CANT_HEAR, Emotion::Neutral).await,
-                        SessionEnd::AudioUnavailable,
-                    );
+                // While the agent is occupied, too-long captures do not count toward the streak.
+                if !converse_agent_loop::agent_occupied(carry) {
+                    consecutive_too_long += 1;
+                    if consecutive_too_long >= 2 {
+                        return after_speech(
+                            speak(deps, cfg, cancel, MSG_CANT_HEAR, Emotion::Neutral).await,
+                            SessionEnd::AudioUnavailable,
+                        );
+                    }
                 }
                 if let Some(end) =
                     speak_or_end(deps, cfg, cancel, MSG_TOO_LONG, Emotion::Neutral).await
@@ -2270,6 +2326,10 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
         consecutive_too_long = 0;
 
         if utterance.trim().is_empty() {
+            // While the agent is occupied (run or owed speech), silence does not count (2.3).
+            if converse_agent_loop::agent_occupied(carry) {
+                continue;
+            }
             idle_turns += 1;
             if idle_turns >= u32::from(cfg.max_idle_turns) {
                 return after_speech(
@@ -2300,9 +2360,8 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
             .map(|watch| (watch.reply_token(), watch.gate()));
         let dispatched = match reply_scope {
             None => {
-                let turn =
-                    dispatch_utterance(deps, cfg, cancel, &utterance, &history, &mut carry).await;
-                finish_answer_with_lesson(deps, cfg, cancel, &mut carry, turn, false).await
+                let turn = dispatch_utterance(deps, cfg, cancel, &utterance, &history, carry).await;
+                finish_answer_with_lesson(deps, cfg, cancel, carry, turn, false).await
             }
             Some((reply, gate)) => {
                 let mut turn_cancel = cancel.with_reply(reply);
@@ -2317,21 +2376,14 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
                     &mut turn_cancel,
                     &utterance,
                     &history,
-                    &mut carry,
+                    carry,
                 )
                 .await;
                 let latched = barge_watch
                     .as_deref()
                     .is_some_and(|watch| watch.cancel_latched());
-                finish_answer_with_lesson(
-                    &turn_deps,
-                    cfg,
-                    &mut turn_cancel,
-                    &mut carry,
-                    turn,
-                    latched,
-                )
-                .await
+                finish_answer_with_lesson(&turn_deps, cfg, &mut turn_cancel, carry, turn, latched)
+                    .await
             }
         };
         // T9b: one latency report per completed turn (plan succeeded, speech handed to the voice).
@@ -2356,7 +2408,7 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
             log.finish(true);
             record_turn(
                 &mut history,
-                &mut carry,
+                carry,
                 cfg,
                 &utterance,
                 &interrupted_summary(&spoken),
@@ -2375,9 +2427,12 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
             Ok(None) => log.finish(false),
             Ok(Some(summary)) => {
                 log.finish(false);
-                record_turn(&mut history, &mut carry, cfg, &utterance, &summary);
+                record_turn(&mut history, carry, cfg, &utterance, &summary);
             }
         }
+        // Agent events that arrived during this turn are queued now; they are spoken at the top
+        // of the next iteration (2.3, collection point after dispatch).
+        converse_agent_loop::collect_agent_events(carry, &mut history, cfg, deps.hands);
     }
 }
 
@@ -2395,7 +2450,13 @@ async fn dispatch_utterance(
     // Local tier: end phrases, explicit dictation and role clear phrases.
     let cancel_enabled =
         deps.policy.is_some_and(|p| p.current().jobs_allowed) || deps.hands.has_active_job();
-    match classify_local_in_role(utterance, cancel_enabled, carry.role.is_some()) {
+    let agent_active = converse_agent_loop::agent_running(carry);
+    match classify_local_in_session(
+        utterance,
+        cancel_enabled,
+        carry.role.is_some(),
+        agent_active,
+    ) {
         LocalIntent::ClearRole => {
             carry.role = None;
             carry.lesson = None;
@@ -2447,9 +2508,28 @@ async fn dispatch_utterance(
                 None => Ok(None),
             };
         }
-        // Stage 2 (C3 wires the real behaviour): CancelAgent is not produced yet; it falls
-        // through exactly like None.
-        LocalIntent::None | LocalIntent::CancelAgent => {}
+        // Stage 2 (2.6): voice cancel of a running agent request. Non-blocking; the slot waits in
+        // `Cancelling` for the worker's report.
+        LocalIntent::CancelAgent => {
+            if is_cancelled(cancel) {
+                return Err(SessionEnd::Cancelled);
+            }
+            converse_agent_loop::cancel_agent_run(carry);
+            carry.journal.set(TurnOutcome::Acted, None);
+            return match speak_or_end(
+                deps,
+                cfg,
+                cancel,
+                converse_agent_loop::LINE_CANCELLED,
+                Emotion::Neutral,
+            )
+            .await
+            {
+                Some(end) => Err(end),
+                None => Ok(Some(compose(converse_agent_loop::LINE_CANCELLED, ""))),
+            };
+        }
+        LocalIntent::None => {}
     }
 
     // Exact tier: what the user said (shortcuts, media, router).
@@ -3962,6 +4042,9 @@ mod role_barge_tests;
 #[cfg(test)]
 #[path = "converse_agent_loop_tests.rs"]
 mod converse_agent_loop_tests;
+
+#[path = "converse_agent_loop.rs"]
+mod converse_agent_loop;
 
 #[cfg(test)]
 #[path = "converse_agent_taint_tests.rs"]
