@@ -78,6 +78,7 @@ fn answer(speech: &str) -> Result<TurnPlan, PlanError> {
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        agent: None,
     })
 }
 

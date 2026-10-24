@@ -276,6 +276,7 @@ fn job_plan(project: &str, task: &str) -> TurnPlan {
             agent: None,
             mode: crate::managers::converse_plan::JobMode::Task,
         }),
+        agent: None,
     }
 }
 
@@ -288,6 +289,7 @@ fn paste_plan(text: &str) -> TurnPlan {
         command: None,
         job: None,
         role: None,
+        agent: None,
     }
 }
 
@@ -300,6 +302,7 @@ fn command_plan(cmd: &str) -> TurnPlan {
         command: Some(cmd.to_string()),
         job: None,
         role: None,
+        agent: None,
     }
 }
 
@@ -312,6 +315,7 @@ fn answer_plan(speech: &str) -> TurnPlan {
         command: None,
         job: None,
         role: None,
+        agent: None,
     }
 }
 

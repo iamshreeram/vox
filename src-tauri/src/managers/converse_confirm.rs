@@ -408,6 +408,8 @@ pub async fn prepare_action(
         | PlanKind::End
         | PlanKind::SetRole
         | PlanKind::ClearRole
+        // Stage 2 (C3 wires the real behaviour): agent plans are never prepared as actions yet.
+        | PlanKind::Agent
         | PlanKind::Resume => Err(PrepareError::Unsupported),
     }
 }

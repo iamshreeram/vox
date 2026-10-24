@@ -559,6 +559,7 @@ fn tp(kind: PlanKind, speech: &str) -> TurnPlan {
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        agent: None,
     }
 }
 
@@ -881,6 +882,7 @@ fn plan_input(role: Option<&str>) -> PlanInput<'_> {
         role,
         lesson_paused: false,
         roles_enabled: true,
+        agent_enabled: false,
     }
 }
 

@@ -121,6 +121,7 @@ fn job_plan_with(project: &str, task: &str, agent: Option<&str>, mode: JobMode) 
             agent: agent.map(str::to_string),
             mode,
         }),
+        agent: None,
     }
 }
 

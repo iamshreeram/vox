@@ -170,6 +170,7 @@ fn plan_input<'a>() -> PlanInput<'a> {
         lesson_paused: false,
         role: None,
         roles_enabled: false,
+        agent_enabled: false,
     }
 }
 
@@ -286,6 +287,7 @@ fn job_plan() -> TurnPlan {
             agent: None,
             mode: crate::managers::converse_plan::JobMode::Task,
         }),
+        agent: None,
     }
 }
 

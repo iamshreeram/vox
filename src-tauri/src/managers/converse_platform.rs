@@ -7,6 +7,9 @@
 //! Session audio is never saved and never written to history.
 
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
+use crate::managers::acp_agent::{AcpAgentConfig, AcpAgentError, AcpAgentManager, PromptOptions};
+use crate::managers::acp_escalation::user_message_for;
+use crate::managers::acp_run::RunHandle;
 use crate::managers::agent_tools::tauri_backends::build_tauri_executor;
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::composer_config::{settings_from_app, TtsComposerMode};
@@ -19,6 +22,10 @@ use crate::managers::conversation_store::ConversationStore;
 use crate::managers::converse::{
     endpoint_config, BoxFuture, Brain, Ears, Hands, ListenOutcome, Mouth, PhraseOutcome,
     QuietOutcome, SayOutcome, SessionConfig, SessionEnd, SpeechQueue, TranscriptSink,
+};
+use crate::managers::converse_agent::{
+    cap_result, hand_off_configured, AgentEvent, AgentPoll, AgentRun, AgentStartError,
+    PreparedAgentLaunch, AGENT_FAILED_FALLBACK,
 };
 use crate::managers::converse_audio::{wait_for_speech_end, SpeechProbe, WaitOutcome};
 use crate::managers::converse_barge::BargeIn;
@@ -63,6 +70,7 @@ use crate::overlay::{RealOverlayExecutor, RealOverlaySink};
 use crate::settings::{get_settings, AppSettings};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
@@ -572,6 +580,136 @@ impl Hands for RealHands {
     fn has_active_job(&self) -> bool {
         has_active_job_on(self.jobs.as_ref())
     }
+
+    fn prepare_agent_launch(
+        &self,
+        task: &str,
+        role: Option<&str>,
+    ) -> Result<PreparedAgentLaunch, AgentStartError> {
+        let settings = get_settings(&self.app);
+        if !hand_off_configured(
+            settings.acp_agent_enabled,
+            settings.acp_agent_command.as_deref(),
+        ) {
+            return Err(AgentStartError::NotConfigured);
+        }
+        let cfg = crate::actions::acp_agent_config(&self.app, &settings)
+            .map_err(AgentStartError::Failed)?;
+        Ok(PreparedAgentLaunch::new(
+            task.to_string(),
+            role.map(str::to_string),
+            cfg.command.to_string_lossy().into_owned(),
+            cfg.args,
+            cfg.cwd.to_string_lossy().into_owned(),
+            cfg.turn_timeout,
+        ))
+    }
+
+    fn agent_launch_still_valid(&self, launch: &PreparedAgentLaunch) -> bool {
+        match self.prepare_agent_launch(&launch.task, launch.role.as_deref()) {
+            Ok(live) => live.fingerprint == launch.fingerprint,
+            Err(_) => false,
+        }
+    }
+
+    fn start_agent(
+        &self,
+        launch: PreparedAgentLaunch,
+    ) -> Result<Box<dyn AgentRun>, AgentStartError> {
+        let manager = self
+            .app
+            .try_state::<Arc<AcpAgentManager>>()
+            .map(|state| state.inner().clone())
+            .ok_or(AgentStartError::Unsupported)?;
+        let settings = get_settings(&self.app);
+        crate::managers::acp_permission_ui::notify_allow_all_once(
+            &self.app,
+            settings.acp_permission_mode,
+        );
+        // Built from the prepared launch only: the settings are not read again here.
+        let cfg = AcpAgentConfig {
+            command: PathBuf::from(&launch.command),
+            args: launch.args.clone(),
+            cwd: PathBuf::from(&launch.cwd),
+            turn_timeout: launch.turn_timeout,
+            handshake_timeout: AGENT_HANDSHAKE_TIMEOUT,
+            cancel_grace: AGENT_CANCEL_GRACE,
+        };
+        let prompt = launch.prompt_text();
+        let handle = manager.new_run_handle();
+        let (tx, rx) = std::sync::mpsc::channel::<AgentEvent>();
+        let worker = manager.clone();
+        // A fresh ACP session per request, so nothing carries over between requests or into
+        // dictation. The worker sends exactly one terminal event; if it panics, `tx` is dropped
+        // and the run reports `Lost`.
+        let opts = PromptOptions {
+            reuse_session: false,
+        };
+        drop(tauri::async_runtime::spawn_blocking(move || {
+            let event = match worker.prompt_with_handle(&cfg, &prompt, opts, &handle) {
+                Ok(reply) => AgentEvent::Done(cap_result(&reply.text)),
+                Err(AcpAgentError::Cancelled) => AgentEvent::Cancelled,
+                Err(err) => AgentEvent::Failed(
+                    user_message_for(&err).unwrap_or_else(|| AGENT_FAILED_FALLBACK.to_string()),
+                ),
+            };
+            let _ = tx.send(event);
+        }));
+        Ok(Box::new(AcpAgentRun {
+            events: rx,
+            manager,
+            handle,
+            started: Instant::now(),
+            delivered: false,
+        }))
+    }
+
+    fn publish_agent_result(&self, text: &str) {
+        let _ = self.app.emit("agent-bridge-reply", text.to_string());
+    }
+}
+
+/// Handshake limit of an agent run (the same value `acp_agent_config` uses).
+const AGENT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(60);
+/// Cancel grace of an agent run (the same value `acp_agent_config` uses).
+const AGENT_CANCEL_GRACE: Duration = Duration::from_secs(3);
+
+/// One agent run started by `RealHands::start_agent`. `poll` never blocks; `cancel` only asks the
+/// manager to stop the run and returns at once.
+struct AcpAgentRun {
+    events: std::sync::mpsc::Receiver<AgentEvent>,
+    manager: Arc<AcpAgentManager>,
+    handle: RunHandle,
+    started: Instant,
+    /// Set once a terminal event (or `Lost`) was returned; later polls stay `Pending`.
+    delivered: bool,
+}
+
+impl AgentRun for AcpAgentRun {
+    fn poll(&mut self) -> AgentPoll {
+        if self.delivered {
+            return AgentPoll::Pending;
+        }
+        match self.events.try_recv() {
+            Ok(event) => {
+                self.delivered = true;
+                AgentPoll::Event(event)
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => AgentPoll::Pending,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.delivered = true;
+                AgentPoll::Lost
+            }
+        }
+    }
+
+    fn cancel(&self) {
+        let _ = self.manager.cancel(&self.handle);
+    }
+
+    fn elapsed(&self) -> Duration {
+        self.started.elapsed()
+    }
 }
 
 struct RealBrain {
@@ -695,6 +833,7 @@ pub(crate) async fn plan_with_tools(
         role: input.role,
         lesson_paused: input.lesson_paused,
         roles_enabled: input.roles_enabled,
+        agent_enabled: input.agent_enabled,
     };
     let policy = JobParsePolicy {
         role_active: input.role.is_some(),
@@ -1379,6 +1518,7 @@ pub(crate) fn guard_plan(plan: TurnPlan, taint: &TaintState, guard_actions: bool
         paste_text: None,
         command: None,
         role: None,
+        agent: None,
     }
 }
 

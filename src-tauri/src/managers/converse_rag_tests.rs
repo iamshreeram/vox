@@ -211,6 +211,7 @@ pub(super) fn input_with(utterance: &str) -> PlanInput<'_> {
         lesson_paused: false,
         role: None,
         roles_enabled: false,
+        agent_enabled: false,
     }
 }
 

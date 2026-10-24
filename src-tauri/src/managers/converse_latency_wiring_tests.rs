@@ -276,6 +276,7 @@ fn answer_plan(speech: &str) -> TurnPlan {
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        agent: None,
     }
 }
 

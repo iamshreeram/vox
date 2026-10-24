@@ -229,6 +229,7 @@ fn job_plan(agent: Option<&str>, mode: JobMode) -> TurnPlan {
             agent: agent.map(str::to_string),
             mode,
         }),
+        agent: None,
     }
 }
 

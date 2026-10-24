@@ -17,6 +17,9 @@ pub enum LocalIntent {
     /// Stage 1 roles: the user ends the active role (only from `classify_local_in_role` while a
     /// role is active).
     ClearRole,
+    /// Stage 2 agent hand-off: the user cancels the running agent request (only from
+    /// `classify_local_in_session` while an agent run is active).
+    CancelAgent,
     /// Nothing local matched.
     None,
 }
@@ -170,6 +173,38 @@ fn is_clear_role_utterance(words: &[Word]) -> bool {
     CLEAR_ROLE_PHRASES
         .iter()
         .any(|phrase| words.len() == phrase.len() && match_prefix(words, phrase).is_some())
+}
+
+/// Stage 2 agent hand-off: whole-utterance phrases that cancel a running agent request
+/// (compared on word keys). Recognised only while an agent run is active.
+const CANCEL_AGENT_PHRASES: &[&[&str]] = &[
+    &["cancel", "that"],
+    &["cancel", "the", "request"],
+    &["cancel", "the", "agent"],
+    &["stop", "the", "agent"],
+];
+
+/// True when the words, in full, equal one agent cancel phrase.
+fn is_cancel_agent_utterance(words: &[Word]) -> bool {
+    CANCEL_AGENT_PHRASES
+        .iter()
+        .any(|phrase| words.len() == phrase.len() && match_prefix(words, phrase).is_some())
+}
+
+/// Stage 2 agent hand-off: `classify_local_in_role`, preceded by the agent cancel phrases when
+/// an agent run is active. Without an active run the result is exactly `classify_local_in_role`,
+/// so "cancel that" and "stop the agent" are not local then (the planner handles them).
+/// The bare word "stop" stays End.
+pub fn classify_local_in_session(
+    text: &str,
+    cancel_job_enabled: bool,
+    role_active: bool,
+    agent_active: bool,
+) -> LocalIntent {
+    if agent_active && is_cancel_agent_utterance(&tokenize(text)) {
+        return LocalIntent::CancelAgent;
+    }
+    classify_local_in_role(text, cancel_job_enabled, role_active)
 }
 
 /// Classify one utterance. See DESIGN.md 3.1 for the exact word model.

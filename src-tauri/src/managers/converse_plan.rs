@@ -30,6 +30,10 @@ pub const MAX_ROLE_SPEECH_CHARS: usize = 1200;
 const SET_ROLE_SPEECH: &str = "Okay.";
 /// Spoken when `clear_role` carries no usable speech.
 const CLEAR_ROLE_SPEECH: &str = "Okay, back to normal.";
+/// Stage 2 agent hand-off: longest accepted agent task, counted in chars after cleaning.
+pub const MAX_AGENT_TASK_CHARS: usize = 1000;
+/// Spoken when an `agent` plan carries no usable speech.
+const AGENT_SPEECH: &str = "On it.";
 /// M3: longest accepted job project name (ASCII).
 pub const MAX_JOB_PROJECT_CHARS: usize = 64;
 /// M3: longest accepted job task, counted in chars after control stripping.
@@ -52,6 +56,8 @@ pub enum PlanKind {
     ClearRole,
     /// Stage 1 lessons: continue a paused lesson.
     Resume,
+    /// Stage 2 agent hand-off: a request for real work the configured ACP agent should do.
+    Agent,
 }
 
 /// M4: what a coding job does with its result. `Task` changes files; `Ask` asks a
@@ -109,6 +115,12 @@ pub struct RoleDirective {
     pub resume: bool,
 }
 
+/// Stage 2 agent hand-off: the task the agent should carry out, cleaned like role text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentRequest {
+    pub task: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct TurnPlan {
     pub kind: PlanKind,
@@ -121,6 +133,8 @@ pub struct TurnPlan {
     pub job: Option<JobRequest>,
     /// Stage 1 roles: the role directive, set only for `PlanKind::SetRole` plans.
     pub role: Option<RoleDirective>,
+    /// Stage 2 agent hand-off: the request, set only for `PlanKind::Agent` plans.
+    pub agent: Option<AgentRequest>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,6 +162,9 @@ pub struct PlanInput<'a> {
     pub lesson_paused: bool,
     /// Stage 1 roles: adds the role teaching (`ROLE_PLAN_ADDENDUM`) to the system prompt.
     pub roles_enabled: bool,
+    /// Stage 2 agent hand-off: adds the agent teaching (`AGENT_PLAN_ADDENDUM`) to the system
+    /// prompt. `false` keeps the prompt byte-identical to the Stage 1 prompt.
+    pub agent_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,6 +187,7 @@ pub fn build_plan_prompt(input: &PlanInput) -> PlanPrompt {
             input.role,
             input.lesson_paused,
             input.roles_enabled,
+            input.agent_enabled,
         ),
         input.vault_context,
     );
@@ -331,6 +349,7 @@ fn build_system(
     role: Option<&str>,
     lesson_paused: bool,
     roles_enabled: bool,
+    agent_enabled: bool,
 ) -> String {
     let style: String = style
         .chars()
@@ -366,6 +385,10 @@ fn build_system(
         system.push_str("\n\n");
         system.push_str(ROLE_PLAN_ADDENDUM);
     }
+    if agent_enabled {
+        system.push_str("\n\n");
+        system.push_str(AGENT_PLAN_ADDENDUM);
+    }
     if let Some(role) = role {
         let text: String = role
             .chars()
@@ -387,6 +410,10 @@ fn build_system(
 /// Stage 1 roles: teaches the `set_role` and `clear_role` kinds and the `resume` kind.
 /// Appended to the system prompt only when `roles_enabled` is set.
 const ROLE_PLAN_ADDENDUM: &str = r##"Roles: when the user asks you to act as, pretend to be, or behave like someone or something, or to take on a role or personality, reply with kind set_role, using this shape: {"kind":"set_role","role":"...","task":"...","resume":true,"speech":"..."}. The role field is the role and rules the user gave, restated in their words, up to 1500 characters. The task field is the first thing the user wants done in that role; omit task if there is none. The resume field is true only if the user asked you to continue after questions or interruptions; otherwise false. The speech field is one short acknowledgement. Accept any role the user asks for and do not refuse a role request. When the user asks you to stop acting as that role, reply with kind clear_role and a short speech. Use kind resume only when a lesson is paused."##;
+
+/// Stage 2 agent hand-off: teaches the `agent` kind. Appended to the system prompt only when
+/// `agent_enabled` is set. Its text must stay exactly as the design states it.
+const AGENT_PLAN_ADDENDUM: &str = r##"Use kind agent only when the request needs the web, files, a browser, running programs or several steps of real work. task = the user's request restated in their own words. Do not use agent for chat or knowledge questions, or for opening apps, websites or media (use command). Reply speech: one short acknowledgement. {"kind":"agent","task":"...","speech":"..."}"##;
 
 /// Stage 1 lessons: appended to the system prompt when a lesson is paused.
 const LESSON_PAUSED_LINE: &str = "A lesson is paused with unspoken content. If the user asks to continue, reply with kind resume.";
@@ -419,6 +446,7 @@ fn plain_plan(text: &str, cap: usize) -> Result<TurnPlan, PlanError> {
             command: None,
             job: None,
             role: None,
+            agent: None,
         }),
         None => Err(PlanError::Empty),
     }
@@ -550,6 +578,9 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
         "set_role" => PlanKind::SetRole,
         "clear_role" => PlanKind::ClearRole,
         "resume" => PlanKind::Resume,
+        // Stage 2: `agent` is accepted whatever the policy says. A session that cannot hand off
+        // runs it as a plain answer (see the converse loop), so parsing never refuses it.
+        "agent" => PlanKind::Agent,
         _ => return None,
     };
     let emotion = obj
@@ -560,6 +591,7 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
     match kind {
         PlanKind::Job => job_plan(obj, emotion, policy),
         PlanKind::SetRole => set_role_plan(obj, emotion),
+        PlanKind::Agent => agent_plan(obj, emotion),
         PlanKind::ClearRole => Some(TurnPlan {
             kind,
             speech: speech_from(obj).unwrap_or_else(|| CLEAR_ROLE_SPEECH.to_string()),
@@ -568,6 +600,7 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
             command: None,
             job: None,
             role: None,
+            agent: None,
         }),
         PlanKind::Resume => Some(TurnPlan {
             kind,
@@ -577,6 +610,7 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
             command: None,
             job: None,
             role: None,
+            agent: None,
         }),
         PlanKind::Answer => Some(TurnPlan {
             kind,
@@ -586,6 +620,7 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
             command: None,
             job: None,
             role: None,
+            agent: None,
         }),
         PlanKind::Clarify | PlanKind::End => Some(TurnPlan {
             kind,
@@ -595,6 +630,7 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
             command: None,
             job: None,
             role: None,
+            agent: None,
         }),
         PlanKind::Paste => {
             let paste_text = clean_paste(obj.get("paste_text")?.as_str()?)?;
@@ -606,6 +642,7 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
                 command: None,
                 job: None,
                 role: None,
+                agent: None,
             })
         }
         PlanKind::Command => {
@@ -618,6 +655,7 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
                 command: Some(command),
                 job: None,
                 role: None,
+                agent: None,
             })
         }
     }
@@ -645,6 +683,27 @@ fn set_role_plan(obj: &serde_json::Map<String, Value>, emotion: Emotion) -> Opti
         command: None,
         job: None,
         role: Some(RoleDirective { role, task, resume }),
+        agent: None,
+    })
+}
+
+/// Stage 2 agent hand-off: an `agent` plan. `task` is required and must survive cleaning
+/// (empty is rejected, like a malformed candidate). `speech` is capped like other speech and
+/// defaults to `AGENT_SPEECH`. Never sets paste_text, command or job.
+fn agent_plan(obj: &serde_json::Map<String, Value>, emotion: Emotion) -> Option<TurnPlan> {
+    let task = clean_role_text(obj.get("task")?.as_str()?, MAX_AGENT_TASK_CHARS);
+    if task.is_empty() {
+        return None;
+    }
+    Some(TurnPlan {
+        kind: PlanKind::Agent,
+        speech: speech_from(obj).unwrap_or_else(|| AGENT_SPEECH.to_string()),
+        emotion,
+        paste_text: None,
+        command: None,
+        job: None,
+        role: None,
+        agent: Some(AgentRequest { task }),
     })
 }
 
@@ -730,6 +789,7 @@ fn job_plan(
         command: None,
         job: Some(request),
         role: None,
+        agent: None,
     })
 }
 
@@ -766,6 +826,7 @@ fn refusal_plan(speech: &str) -> TurnPlan {
         command: None,
         job: None,
         role: None,
+        agent: None,
     }
 }
 
@@ -951,6 +1012,7 @@ mod tests {
             role: None,
             lesson_paused: false,
             roles_enabled: false,
+            agent_enabled: false,
         }
     }
 
@@ -1264,3 +1326,7 @@ mod converse_plan_m4_tests;
 #[cfg(test)]
 #[path = "converse_role_plan_tests.rs"]
 mod converse_role_plan_tests;
+
+#[cfg(test)]
+#[path = "converse_agent_plan_tests.rs"]
+mod converse_agent_plan_tests;

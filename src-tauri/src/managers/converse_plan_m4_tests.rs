@@ -71,6 +71,7 @@ fn input(utterance: &str) -> PlanInput<'_> {
         lesson_paused: false,
         role: None,
         roles_enabled: false,
+        agent_enabled: false,
     }
 }
 

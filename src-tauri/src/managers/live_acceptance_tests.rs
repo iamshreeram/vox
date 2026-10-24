@@ -404,6 +404,7 @@ fn c1_turn_two_prompt_carries_turn_one_persona_bounded_history_and_no_session_le
         lesson_paused: false,
         role: None,
         roles_enabled: false,
+        agent_enabled: false,
     });
     assert!(
         p.user.contains("My favourite colour is teal."),
@@ -428,6 +429,7 @@ fn c1_turn_two_prompt_carries_turn_one_persona_bounded_history_and_no_session_le
         lesson_paused: false,
         role: None,
         roles_enabled: false,
+        agent_enabled: false,
     });
     assert_eq!(
         p.user.matches("User: ").count(),
@@ -458,6 +460,7 @@ fn c1_turn_two_prompt_carries_turn_one_persona_bounded_history_and_no_session_le
         lesson_paused: false,
         role: None,
         roles_enabled: false,
+        agent_enabled: false,
     });
     let session_b = build_plan_prompt(&PlanInput {
         utterance: "Hello again.",
@@ -468,6 +471,7 @@ fn c1_turn_two_prompt_carries_turn_one_persona_bounded_history_and_no_session_le
         lesson_paused: false,
         role: None,
         roles_enabled: false,
+        agent_enabled: false,
     });
     assert!(
         !session_b.combined.contains("SESSION-A-SECRET-TEAL"),
@@ -496,6 +500,7 @@ fn c2_live_turn_two_recalls_teal_through_the_command_path() {
             lesson_paused: false,
             role: None,
             roles_enabled: false,
+            agent_enabled: false,
         });
         let raw = match block_on(complete(
             &settings,

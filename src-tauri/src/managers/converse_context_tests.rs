@@ -359,6 +359,7 @@ fn prompt_for(history: Vec<(String, String)>) -> crate::managers::converse_plan:
         lesson_paused: false,
         role: None,
         roles_enabled: false,
+        agent_enabled: false,
     })
 }
 

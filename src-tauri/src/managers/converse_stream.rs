@@ -552,6 +552,8 @@ pub fn reconcile(plan: &TurnPlan, spoken: &[String]) -> Reconcile {
             | PlanKind::Job
             | PlanKind::SetRole
             | PlanKind::ClearRole
+            // Stage 2 (C3 wires the real behaviour): an agent plan reconciles like Answer until then.
+            | PlanKind::Agent
             | PlanKind::Resume => Reconcile::Remainder {
                 text: canon(&plan.speech),
             },
@@ -565,6 +567,7 @@ pub fn reconcile(plan: &TurnPlan, spoken: &[String]) -> Reconcile {
             | PlanKind::Job
             | PlanKind::SetRole
             | PlanKind::ClearRole
+            | PlanKind::Agent
             | PlanKind::Resume
     ) {
         return Reconcile::Abort;

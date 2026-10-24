@@ -30,6 +30,7 @@ fn job_plan(speech: &str) -> TurnPlan {
             agent: None,
             mode: crate::managers::converse_plan::JobMode::Task,
         }),
+        agent: None,
     }
 }
 
@@ -42,6 +43,7 @@ fn paste_plan(speech: &str) -> TurnPlan {
         command: None,
         job: None,
         role: None,
+        agent: None,
     }
 }
 

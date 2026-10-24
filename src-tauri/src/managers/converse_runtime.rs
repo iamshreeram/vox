@@ -775,6 +775,7 @@ mod tests {
                     emotion: Emotion::Neutral,
                     paste_text: None,
                     command: None,
+                    agent: None,
                 })
             })
         }

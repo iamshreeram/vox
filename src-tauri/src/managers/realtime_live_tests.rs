@@ -47,6 +47,7 @@ fn kind_name(kind: PlanKind) -> &'static str {
         PlanKind::SetRole => "SetRole",
         PlanKind::ClearRole => "ClearRole",
         PlanKind::Resume => "Resume",
+        PlanKind::Agent => "Agent",
     }
 }
 
@@ -88,6 +89,7 @@ async fn planner_call(
         lesson_paused: false,
         role: None,
         roles_enabled: false,
+        agent_enabled: false,
     });
     let start = Instant::now();
     let mut streamer = PlanStreamer::new();
@@ -294,6 +296,7 @@ async fn context_call(
         lesson_paused: false,
         role: None,
         roles_enabled: false,
+        agent_enabled: false,
     });
     let start = Instant::now();
     let mut streamer = PlanStreamer::new();

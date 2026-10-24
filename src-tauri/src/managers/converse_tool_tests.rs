@@ -448,6 +448,7 @@ fn input_with<'a>(utterance: &'a str, vault: Option<&'a str>) -> PlanInput<'a> {
         lesson_paused: false,
         role: None,
         roles_enabled: false,
+        agent_enabled: false,
     }
 }
 
@@ -471,6 +472,7 @@ fn command_plan() -> TurnPlan {
         emotion: Emotion::Neutral,
         paste_text: None,
         command: Some("open https://example.invalid/?q=PRIVATE".into()),
+        agent: None,
     }
 }
 
@@ -483,6 +485,7 @@ fn paste_plan() -> TurnPlan {
         emotion: Emotion::Neutral,
         paste_text: Some("hello".into()),
         command: None,
+        agent: None,
     }
 }
 
@@ -495,6 +498,7 @@ fn answer_plan_value() -> TurnPlan {
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        agent: None,
     }
 }
 
@@ -834,6 +838,7 @@ fn guard_plan_tainted_with_guard_on_refuses_paste_and_command_only() {
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        agent: None,
     };
     let end = TurnPlan {
         job: None,
@@ -843,6 +848,7 @@ fn guard_plan_tainted_with_guard_on_refuses_paste_and_command_only() {
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        agent: None,
     };
     for plan in [answer_plan_value(), clarify, end] {
         assert_eq!(

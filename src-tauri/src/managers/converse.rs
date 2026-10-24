@@ -3,6 +3,7 @@
 //! the traits below. Contract: DESIGN.md section 3.3 (Revision 4).
 
 use crate::managers::converse_ack::choose;
+use crate::managers::converse_agent::{AgentRun, AgentStartError, PreparedAgentLaunch};
 use crate::managers::converse_barge::{BargeCapture, BargeIn, BargeWatch, ReplyGate};
 use crate::managers::converse_confirm::{
     confirm_action, confirmation_question, decline_message, fingerprint_for, prepare_action,
@@ -262,6 +263,33 @@ pub trait Hands: Send + Sync {
     fn has_active_job(&self) -> bool {
         false
     }
+    /// Stage 2 agent hand-off: prepares an agent launch from the live settings, with the task
+    /// and role fixed. Default: unsupported.
+    #[allow(dead_code)]
+    fn prepare_agent_launch(
+        &self,
+        _task: &str,
+        _role: Option<&str>,
+    ) -> Result<PreparedAgentLaunch, AgentStartError> {
+        Err(AgentStartError::Unsupported)
+    }
+    /// Stage 2 agent hand-off: whether a prepared launch still matches the live settings (the
+    /// fingerprint is recomputed). Default: false.
+    #[allow(dead_code)]
+    fn agent_launch_still_valid(&self, _launch: &PreparedAgentLaunch) -> bool {
+        false
+    }
+    /// Stage 2 agent hand-off: starts a prepared agent run. Default: unsupported.
+    #[allow(dead_code)]
+    fn start_agent(
+        &self,
+        _launch: PreparedAgentLaunch,
+    ) -> Result<Box<dyn AgentRun>, AgentStartError> {
+        Err(AgentStartError::Unsupported)
+    }
+    /// Stage 2 agent hand-off: publishes the full agent reply to the UI. Default: nothing.
+    #[allow(dead_code)]
+    fn publish_agent_result(&self, _text: &str) {}
 }
 
 pub trait Brain: Send + Sync {
@@ -391,6 +419,8 @@ fn speech_outcome(kind: &PlanKind) -> TurnOutcome {
         | PlanKind::Job
         | PlanKind::SetRole
         | PlanKind::ClearRole
+        // Stage 2 (C3 wires the real behaviour): an agent plan is answer-like until then.
+        | PlanKind::Agent
         | PlanKind::Resume => TurnOutcome::Answered,
     }
 }
@@ -674,6 +704,9 @@ pub struct SessionConfig {
     pub smart_ack: bool,
     /// Vault-context boundary (DESIGN Rev 3, 3.6): no model-derived paste or command. Default false.
     pub answer_only: bool,
+    /// Stage 2 agent hand-off: the ACP agent is enabled with a command and the conversation
+    /// hand-off setting is on (`from_settings`). Default false.
+    pub agent_handoff: bool,
 }
 
 impl Default for SessionConfig {
@@ -690,6 +723,7 @@ impl Default for SessionConfig {
             timing_log: false,
             smart_ack: false,
             answer_only: false,
+            agent_handoff: false,
         }
     }
 }
@@ -714,6 +748,10 @@ impl SessionConfig {
             timing_log: rt.timing_log,
             smart_ack: rt.ack,
             answer_only: crate::managers::conversation_save::answer_only_for(s),
+            agent_handoff: crate::managers::converse_agent::hand_off_configured(
+                s.acp_agent_enabled,
+                s.acp_agent_command.as_deref(),
+            ) && s.conversation_agent_handoff,
         }
     }
 }
@@ -1465,6 +1503,7 @@ async fn brain_turn(
         role: carry.role.as_deref(),
         lesson_paused: carry.lesson.is_some(),
         roles_enabled: true,
+        agent_enabled: false,
     };
     // Answer-only (DESIGN 8.1): no streamed model text may reach the mouth before a complete
     // plan is parsed, so the streaming path is never used. Role-active turns (Stage 1 roles,
@@ -1733,6 +1772,7 @@ async fn lesson_start_turn(
         role: carry.role.as_deref(),
         lesson_paused: false,
         roles_enabled: true,
+        agent_enabled: false,
     };
     deps.reporter.state(SessionState::Thinking);
     let Some(planned) = race(cancel, deps.brain.plan(input)).await else {
@@ -1849,7 +1889,8 @@ async fn execute_plan(
         // Job plans are parsed only when jobs are allowed and are routed through gate_and_run.
         // With no policy a Job plan never reaches this answer path (parsing refuses it), so it
         // is treated as answer text here.
-        PlanKind::Answer => {
+        // Stage 2 (C3 wires the real behaviour): an agent plan behaves like Answer until then.
+        PlanKind::Answer | PlanKind::Agent => {
             carry.journal.set(speech_outcome(&plan.kind), None);
             answer_turn(deps, cfg, cancel, &plan, carry).await?
         }
@@ -2406,7 +2447,9 @@ async fn dispatch_utterance(
                 None => Ok(None),
             };
         }
-        LocalIntent::None => {}
+        // Stage 2 (C3 wires the real behaviour): CancelAgent is not produced yet; it falls
+        // through exactly like None.
+        LocalIntent::None | LocalIntent::CancelAgent => {}
     }
 
     // Exact tier: what the user said (shortcuts, media, router).
@@ -2869,6 +2912,7 @@ mod tests {
         TurnPlan {
             job: None,
             role: None,
+            agent: None,
             kind,
             speech: speech.to_string(),
             emotion: Emotion::Neutral,
