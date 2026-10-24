@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>Vox experimental features - test steps</title>
+<title>Vox manual test steps</title>
 <style>
   :root { color-scheme: dark; --bg:#0e1015; --card:#161a22; --card2:#1c212b; --ink:#e7e9ee; --mute:#98a1b2; --line:#2a303c; --pass:#3fb950; --fail:#f85149; --block:#d29922; --skip:#8b949e; --accent:#6ea8fe; }
   * { box-sizing:border-box; }
@@ -86,7 +86,7 @@
 </head>
 <body>
 <header>
-  <h1>Vox experimental features - manual test steps</h1>
+  <h1>Vox manual test steps</h1>
   <div class="bar">
     <span id="summary">0 of 0 done</span>
     <div class="meter"><span class="m-pass" id="mp"></span><span class="m-fail" id="mf"></span><span class="m-block" id="mb"></span><span class="m-skip" id="ms"></span></div>
@@ -127,6 +127,7 @@
       <li>Reading your screen (OCR), and controlling other windows or the browser.</li>
       <li>Coding jobs on Windows (they report "not supported").</li>
       <li>Wake word and Ambient mode are only partly built; Ambient mode only shows a notification. Realtime voice has been tested only against mock servers. Report what you see; a limited result is expected.</li>
+      <li>The generic assistant ("Hey Jarvis" handing requests to an agent, approving actions by voice, saying stop to cancel) is planned and <b>not built yet</b>. See the Generic assistant section; those tests are skipped until it ships.</li>
       <li>Voices with accents in their names (for example Am&eacute;lie, T&uuml;nde, M&oacute;nica) are intentionally not in the voice list.</li>
     </ul>
   </div>
@@ -145,10 +146,10 @@
   <div class="card" id="nav">
     <h2>Where is each setting? <span class="badge">search</span></h2>
     <ul>
-      <li><b>Experimental</b> page: click <b>Advanced</b> in the sidebar, then in the <b>App</b> card switch on <b>Experimental Features</b>. The <b>Experimental</b> item then appears in the sidebar.</li>
-      <li><b>Post Process</b> page: appears in the sidebar after you switch on <b>Post Processing</b> (Experimental, Engine &amp; input card).</li>
+      <li><b>Experimental features</b> is one switch: <b>Advanced</b> tab, <b>App</b> card, <b>Experimental Features</b> (the last row). Off hides the experimental controls on the General, Models and Agents tabs; on shows them.</li>
+      <li><b>Post Process</b> tab: holds the post-processing provider and model. The switch that turns post-processing on is <b>Post Processing</b> in the <b>Engine &amp; input</b> group of the Advanced tab.</li>
       <li><b>Debug</b> page: press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> inside Vox (again to hide it).</li>
-      <li>Vox shows card titles in <b>CAPITAL LETTERS</b>. On the Experimental page every card except Engine &amp; input starts <b>closed</b>: click its title bar to open it. Vox remembers which ones you opened.</li>
+      <li>Vox shows group titles in <b>CAPITAL LETTERS</b>. Most experimental groups start <b>closed</b>: click the title bar to open one. Vox remembers which ones you opened.</li>
       <li>A greyed-out row depends on another switch. The table says which one. Some rows only appear once their parent switch is on.</li>
       <li>Every test below also shows a blue <b>Where to click</b> box built from this same table.</li>
     </ul>
@@ -195,7 +196,7 @@
 "use strict";
 // Test fields: id, title, needs, steps[], expect, warn, mic (you speak to Vox), opt (optional/slow).
 var SECTIONS = [
-{ id:"setup", title:"Setup (do this first)", note:"One time. Build and start the app, give it permissions, switch the experimental pages on and check the basics.", tests:[
+{ id:"setup", title:"Setup (do this first)", note:"One time. Build and start the app, give it permissions, switch the experimental features on and check the basics.", tests:[
  { id:"setup-run", title:"Start Vox", steps:[
    "From the project folder run <code>bun install</code>, then <code>bun run tauri dev</code>. On macOS, if a cmake error appears, run <code>CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev</code>. Or open an installed build.",
    "Wait for the Vox window or the tray icon to appear."],
@@ -204,35 +205,35 @@ var SECTIONS = [
    "Open System Settings, then Privacy and Security. Allow <b>Microphone</b> and <b>Accessibility</b> for Vox. After a rebuild you may have to remove and add it again.",
    "In Vox open <b>Models</b> and make sure one speech model is downloaded and selected."],
    expect:"Plain dictation works: click into any text box, press <kbd>Option</kbd>+<kbd>Space</kbd> (Windows and Linux: <kbd>Ctrl</kbd>+<kbd>Space</kbd>), speak a sentence, stop, and the text appears.", mic:true },
- { id:"setup-exp", title:"Show the Experimental page", steps:[
+ { id:"setup-exp", title:"Turn on Experimental Features", steps:[
    "Open <b>Advanced</b> in the sidebar.",
    "Switch on <b>Experimental Features</b>.",
    "Look at the sidebar."],
-   expect:"A new <b>Experimental</b> item appears. Opening it shows collapsible groups: Engine and input, Voice commands, Listening Mode, Memory, Agent bridge, Spoken replies, Realtime conversation, Conversation memory, Voice agent tools and Coding jobs." },
+   expect:"The General, Models, Advanced and Agents tabs now show experimental controls. General: Voice commands, Listening Mode, Voice conversation. Models: Spoken replies, Smart turn model, Speaker filter model, Reply style, Voice activity detection engine, Realtime conversation. Advanced: Engine &amp; input. Agents: Agent (ACP), Agent bridge, Voice agent tools, Coding jobs, Memory, Conversation memory." },
  { id:"setup-defaults", title:"Everything experimental starts off", needs:"A fresh profile, or note the state the first time you see each switch.", steps:[
-   "Open each group on the Experimental page.",
+   "Open each group on the General, Models, Advanced and Agents tabs.",
    "Look at the main switch of each: Voice Commands, Wake Word, Ambient Mode, Memory, Agent Bridge, Spoken Replies, Enable realtime conversation, Save conversation records, Voice agent tools, Coding jobs."],
    expect:"All of them are off by default, and Vox behaves exactly like plain dictation until you switch something on." },
  { id:"setup-master", title:"Turning Experimental Features off and on", steps:[
    "Turn a couple of features on (for example Voice Commands and Memory).",
    "In Advanced switch <b>Experimental Features</b> off.",
-   "Switch it on again and open the Experimental page."],
-   expect:"The Experimental item disappears while it is off, and comes back with your settings as you left them." },
+   "Switch it on again and check the General, Models and Agents tabs."],
+   expect:"The experimental groups disappear from the General, Models and Agents tabs while it is off, and come back with your settings as you left them." },
  { id:"setup-restart", title:"Settings survive a restart", steps:[
    "Change several settings (a voice, a slider, a project folder, a switch).",
    "Quit Vox from the tray and start it again.",
-   "Open the Experimental page."],
+   "Check the General, Models and Agents tabs."],
    expect:"Every setting you changed is still as you left it." },
  { id:"setup-lang", title:"Switching the language", steps:[
    "Open General and change the app language to another one.",
-   "Open the Experimental page, then switch back to English."],
+   "Open the General, Models and Agents tabs, then switch back to English."],
    expect:"The page re-renders in the chosen language with no empty labels or raw key names like <code>settings.experimental...</code>. Some new labels may still be in English: that is expected." },
  { id:"setup-debug", title:"Know where to look when something fails", opt:true, steps:[
    "Press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> (Windows and Linux: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd>) to open Debug.",
    "Note the log level option and where logs are written."],
    expect:"Debug opens and tells you how to get logs. Copy relevant log lines into the notes of any failed test." }
 ]},
-{ id:"dictation", title:"Dictation still works (baseline)", note:"The experimental features must never break plain dictation. Do these first with everything off, then again at the end with everything on.", tests:[
+{ id:"dictation", title:"Dictation still works (baseline)", note:"The experimental features must never break plain dictation. Do these first with everything off, then again at the end with everything on. With the ACP agent on, a dictation that the agent answers must not also be typed into the focused app (see acp-no-double-paste).", tests:[
  { id:"dict-basic", title:"Basic dictation", mic:true, steps:[
    "Click into a text box in any app.",
    "Press the dictation shortcut, say &ldquo;this is a test of plain dictation&rdquo;, then stop."],
@@ -248,7 +249,7 @@ var SECTIONS = [
    "At the very end of this page, with all features you tested switched on, repeat the basic dictation test."],
    expect:"Plain dictation still types the sentence normally. Nothing is spoken back, nothing is asked, and no command is triggered by ordinary sentences." }
 ]},
-{ id:"engine", title:"Engine and input", note:"Experimental, Engine and input. Change each control once, dictate, then put it back.", tests:[
+{ id:"engine", title:"Engine and input", note:"Advanced tab, Engine & input group. Change each control once, dictate, then put it back.", tests:[
  { id:"engine-pp", title:"Post-processing shortcut", mic:true, needs:"A post-processing provider configured under Post Process.", steps:[
    "Switch on the post-processing option.",
    "Click into a text box, press <kbd>Option</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd>, speak a messy sentence with filler words, stop."],
@@ -268,7 +269,7 @@ var SECTIONS = [
    "Switch the VAD backend, dictate a sentence with a pause in the middle."],
    expect:"Speech is captured whole; silence at the start and end is trimmed." }
 ]},
-{ id:"voice-commands", title:"Voice commands", note:"Experimental, Voice commands. Simple spoken commands for media, apps and your own phrases.", tests:[
+{ id:"voice-commands", title:"Voice commands", note:"General tab, Voice commands group. Simple spoken commands for media, apps and your own phrases.", tests:[
  { id:"vc-on", title:"Turn on voice commands", steps:[
    "Switch on <b>Voice Commands</b>.",
    "Leave and re-open the page."],
@@ -320,7 +321,7 @@ var SECTIONS = [
    "Switch <b>Voice Commands</b> off and dictate &ldquo;pause&rdquo;, then &ldquo;open Safari&rdquo;."],
    expect:"Both are typed as ordinary text; no media or app action happens." }
 ]},
-{ id:"listening", title:"Listening Mode: wake word and ambient", note:"Experimental, Listening Mode. Partly built: report what you see, but a limited result is expected.", tests:[
+{ id:"listening", title:"Listening Mode: wake word and ambient", note:"General tab, Listening Mode group. Partly built: report what you see, but a limited result is expected.", tests:[
  { id:"lm-wake", title:"Wake word", mic:true, steps:[
    "Switch on <b>Wake Word</b>. If it offers a model download, let it finish.",
    "Say the wake phrase and then a short sentence."],
@@ -340,12 +341,12 @@ var SECTIONS = [
  { id:"lm-tray", title:"Tray: Listening Mode", steps:[
    "Click the Vox tray icon and open <b>Listening Mode</b>.",
    "Pick <b>Hotkey Only</b>, then <b>Wake Word</b>, then <b>Ambient Mode</b>."],
-   expect:"The choice is ticked in the tray and the Experimental page shows the same state." },
+   expect:"The choice is ticked in the tray and the Listening Mode group on the General tab shows the same state." },
  { id:"lm-persist", title:"Mode survives a restart", steps:[
    "Pick a listening mode, quit and restart Vox."],
    expect:"The same mode is active after the restart, in the tray and in Settings." }
 ]},
-{ id:"memory", title:"Memory (remembered facts)", note:"Experimental, Memory.", tests:[
+{ id:"memory", title:"Memory (remembered facts)", note:"Agents tab, Memory group.", tests:[
  { id:"mem-ui", title:"Add and forget a fact in Settings", steps:[
    "Switch on <b>Memory</b>. A facts list appears.",
    "Add a fact with <b>Remember</b>, for example &ldquo;my dog is called Biscuit&rdquo;.",
@@ -372,7 +373,7 @@ var SECTIONS = [
    "Ask in a conversation about a fact you had saved."],
    expect:"The facts list is hidden and Vox no longer knows the fact." }
 ]},
-{ id:"agent-bridge", title:"Agent bridge", note:"Experimental, Agent bridge. Needs a command-line agent you installed yourself.", tests:[
+{ id:"agent-bridge", title:"Agent bridge", note:"Agents tab, Agent bridge group. Needs a command-line agent you installed yourself.", tests:[
  { id:"ab-setup", title:"Connect your agent", needs:"A command-line agent that takes a prompt and prints a reply.", steps:[
    "Switch on <b>Agent Bridge</b>.",
    "Set <b>Agent binary path</b> to the agent's full path."],
@@ -404,7 +405,7 @@ var SECTIONS = [
    "Switch <b>Agent Bridge</b> off and make a spoken request."],
    expect:"No agent is started and nothing is sent." }
 ]},
-{ id:"tts", title:"Spoken replies (talking back)", note:"Experimental, Spoken replies.", tests:[
+{ id:"tts", title:"Spoken replies (talking back)", note:"Models tab, Spoken replies group.", tests:[
  { id:"tts-on", title:"Turn on and test the sound", steps:[
    "Switch on <b>Spoken Replies</b>.",
    "Press <b>Test voice</b>.",
@@ -459,7 +460,7 @@ var SECTIONS = [
    "Try a different <b>Style</b> value and preview."],
    expect:"A timeout falls back as chosen in If composing fails. The style visibly changes the wording." }
 ]},
-{ id:"converse", title:"Hands-free conversation", note:"Experimental, Spoken replies, Conversation. Vox listens, answers aloud, then listens again.", tests:[
+{ id:"converse", title:"Hands-free conversation", note:"General tab, Voice conversation group, and the Models tab, Spoken replies group. Vox listens, answers aloud, then listens again.", tests:[
  { id:"cv-start", title:"Start and have a two-turn chat", mic:true, needs:"Spoken Replies on, and a conversation backend configured.", steps:[
    "Press <b>Start conversation</b>.",
    "Ask a question and wait for the spoken answer.",
@@ -506,9 +507,26 @@ var SECTIONS = [
  { id:"cv-quit", title:"Quit during a conversation", steps:[
    "Start a conversation and quit Vox from the tray in the middle of it.",
    "Start Vox again."],
-   expect:"Vox quits cleanly and starts with Status Idle, with no stuck state." }
+   expect:"Vox quits cleanly and starts with Status Idle, with no stuck state." },
+ { id:"persona-pick", title:"Pick a built-in persona", needs:"For the voice part: the natural voice downloaded (see natural-voice).", steps:[
+   "On the General tab open the <b>Voice conversation</b> group and find <b>Persona</b>.",
+   "Pick <b>Concise</b> and press <b>Apply</b>. Then pick <b>Coach</b> and press <b>Apply</b>.",
+   "Check the built-in list: Default, Concise, Coach, Narrator and Dry wit. Try to edit one of them."],
+   expect:"Apply sets the style and the voice together. Built-in personas cannot be edited or deleted. Default keeps your current voice. A new voice applies from the next thing Vox says; a new style applies from the next conversation." },
+ { id:"persona-custom", title:"Create, edit and delete a custom persona", steps:[
+   "Press <b>New persona</b>, enter a name and a style, optionally pick a natural voice, then press <b>Save</b>.",
+   "Type a style of 301 characters and try to save, then cut it to 300 characters and save.",
+   "Press <b>Edit</b> on your persona, change the name and save. Then press <b>Delete</b>."],
+   expect:"The style counter reads 'N of 300 characters'. 300 is accepted and 301 is refused with a message. Edit saves the change. Delete removes your persona and the built-in ones stay.",
+   warn:"The limit of 12 custom personas is not tested here unless you have time: the 13th save is refused with a message." },
+ { id:"barge-in", title:"Interrupt by speaking", mic:true, needs:"Headphones (wired or Bluetooth), Spoken replies on, and a reply backend set up.", steps:[
+   "On the General tab open <b>Voice conversation</b> and set <b>Interrupt by speaking</b> to <b>Headphones only</b>.",
+   "Start a conversation and ask for a long answer. Talk over it for about a second.",
+   "During a reply say a short &ldquo;yeah&rdquo;."],
+   expect:"Your voice lowers the assistant's volume as soon as you talk. After about 600 ms of speech the reply stops and your sentence is answered in the same conversation. A short 'yeah' brings the volume back.",
+   warn:"Not yet verified on real headsets (the docs say so). The system voice can be interrupted but not lowered in volume. Speakers are not supported: if Vox interrupts itself on speakers, mark Fail." }
 ]},
-{ id:"vault", title:"Conversation memory and notes vault", note:"Experimental, Conversation memory. Vox does not talk to the Obsidian app: it reads and writes Markdown files in a folder you choose. Use a test folder, never your real vault.", tests:[
+{ id:"vault", title:"Conversation memory and notes vault", note:"Agents tab, Conversation memory group. Vox does not talk to the Obsidian app: it reads and writes Markdown files in a folder you choose. Use a test folder, never your real vault.", tests:[
  { id:"vt-records", title:"Save conversation records", mic:true, steps:[
    "Switch on <b>Save conversation records</b>.",
    "Have a short conversation and end it."],
@@ -543,7 +561,7 @@ var SECTIONS = [
    "Switch vault saving and records off, then have a conversation."],
    expect:"No new records or notes are written, and old notes are no longer used." }
 ]},
-{ id:"tools", title:"Voice agent tools (read-only project lookups)", note:"Experimental, Voice agent tools. Vox can only read inside the folders you list. Use a small test project.", tests:[
+{ id:"tools", title:"Voice agent tools (read-only project lookups)", note:"Agents tab, Voice agent tools group. Vox can only read inside the folders you list. Use a small test project.", tests:[
  { id:"tl-setup", title:"Turn on tools and list a test project", needs:"A small git project you do not mind being read.", steps:[
    "Switch on <b>Voice agent tools</b>.",
    "Under <b>Project folders</b> add the project's full path."],
@@ -629,7 +647,7 @@ var SECTIONS = [
    "Look in History and in the vault note or record for that conversation."],
    expect:"The confirmation answer does not appear anywhere." }
 ]},
-{ id:"jobs", title:"Background coding jobs (macOS and Linux)", note:"Experimental, Coding jobs. A job runs your coding command with your account's permissions: use a throwaway project.", tests:[
+{ id:"jobs", title:"Background coding jobs (macOS and Linux)", note:"Agents tab, Coding jobs group. A job runs your coding command with your account's permissions: use a throwaway project.", tests:[
  { id:"jb-setup", title:"Turn on and set the time limit", needs:"Agent bridge configured and a throwaway project listed under Voice agent tools.", steps:[
    "Read the warning in the Coding jobs group.",
    "Switch on <b>Coding jobs</b>.",
@@ -678,7 +696,7 @@ var SECTIONS = [
    "Switch <b>Coding jobs</b> off and ask for a job."],
    expect:"No job starts. While a job was running when you switched it off, tell me what happened." }
 ]},
-{ id:"agents", title:"Pick the coding agent and ask for a summary", note:"Experimental, Coding jobs. Needs a coding command with several agents and a flag to select one (default <code>--agent</code>).", tests:[
+{ id:"agents", title:"Pick the coding agent and ask for a summary", note:"Agents tab, Coding jobs group. Needs a coding command with several agents and a flag to select one (default <code>--agent</code>).", tests:[
  { id:"ag-list", title:"List agent names", steps:[
    "In <b>Agent names</b> type a name (letters, digits, dots, dashes, underscores) and press <b>Add</b>. Add a second.",
    "Remove one with <b>Remove</b>."],
@@ -717,7 +735,7 @@ var SECTIONS = [
    "Start an ask job, then switch Spoken Replies off (or start another job) before it finishes."],
    expect:"Vox speaks the plain finish message instead of a summary, or nothing if speech is off." }
 ]},
-{ id:"realtime", title:"Realtime conversation and speed measurements", note:"Experimental, Realtime conversation. Tested only against mock servers, so a failure here is not surprising: report the message.", tests:[
+{ id:"realtime", title:"Realtime conversation and speed measurements", note:"Models tab, Realtime conversation group. Tested only against mock servers, so a failure here is not surprising: report the message.", tests:[
  { id:"rt-on", title:"Realtime conversation", mic:true, needs:"An endpoint you can use, with a model name and access token.", steps:[
    "Switch on <b>Enable realtime conversation</b> and <b>Speak replies aloud</b>.",
    "Fill in <b>Endpoint address</b>, <b>Model name</b> and <b>Access token</b>.",
@@ -784,93 +802,309 @@ var SECTIONS = [
    expect:"The existing window comes to the front; no second copy starts." },
  { id:"sf-recover", title:"Recovery after a failure", mic:true, steps:[
    "Cause a failure (wrong agent path, offline), then fix it and try again."],
-   expect:"Vox recovers without a restart." }
+   expect:"Vox recovers without a restart." },
+ { id:"sf-approval-default", title:"Approval default changed from always-deny to ask-before-changes", needs:"Agent (ACP) on, or a fresh profile.", steps:[
+   "On the Agents tab open <b>Agent (ACP)</b> and look at <b>Approval mode</b>.",
+   "Set it to <b>Never allow (deny all requests)</b> and send a request that changes something. Then set it back to <b>Ask before changes</b>."],
+   expect:"The default is 'Ask before changes (reads and searches run freely)'. Earlier versions denied every request; the old behaviour is available as 'Never allow', which denies without a dialog." }
+]},
+{ id:"acp-agent", title:"ACP agent and approvals", note:"Agents tab, Agent (ACP) group. Dictation that no voice command matched goes to an agent program you choose. Use a test agent and a scratch folder. Approvals are a convenience policy, not a sandbox.", tests:[
+ { id:"acp-setup", title:"Connect an ACP agent", needs:"An ACP-capable agent program that is already installed and signed in, and its full path. Unix only (macOS or Linux).", steps:[
+   "On the Agents tab open the <b>Agent (ACP)</b> group.",
+   "Switch on <b>Use ACP agent</b>.",
+   "Type the agent's absolute path into <b>Agent program path</b>, for example <code>/path/to/my-agent</code>. Relative paths and bare names are refused.",
+   "If the agent needs a flag, type it into <b>Agent arguments</b>, for example <code>--acp</code>. Arguments are split on spaces, with no quotes.",
+   "Leave the field, then press <b>Test connection</b>."],
+   expect:"The test reports success. The path and arguments are still there after you leave the tab and come back, and after a restart.",
+   warn:"The docs do not say exactly when the path is saved (on leaving the field or by a button). If the values are gone after reopening, mark Fail." },
+ { id:"acp-bad-path", title:"Wrong agent path gives a plain error", steps:[
+   "In <b>Agent program path</b> enter a path that does not exist, then press <b>Test connection</b>.",
+   "Enter a bare name such as <code>my-agent</code>, then test again."],
+   expect:"Each attempt shows a short plain error (for example 'Command not found' or 'Enter an absolute path'). Nothing hangs and nothing crashes." },
+ { id:"acp-no-double-paste", title:"A request the agent answers is not also typed", mic:true, needs:"Voice commands on, ACP agent on and working, and a text editor open.", steps:[
+   "Click into an empty text editor so it has focus.",
+   "Dictate a request that matches no built-in command, for example &ldquo;what is the capital of Peru&rdquo;.",
+   "Wait for the agent's reply."],
+   expect:"The agent answers (shown and spoken). The request text is NOT typed into the editor, so the editor stays empty.",
+   warn:"The docs describe the reply being shown and spoken; they do not say whether the request is also pasted. This test checks the requirement. If the words appear in the editor, mark Fail." },
+ { id:"acp-read-auto", title:"A read-only question runs without a dialog", mic:true, needs:"ACP agent on, Approval mode left at 'Ask before changes'.", steps:[
+   "Dictate a question that only reads or searches, for example &ldquo;search my notes folder for the word budget&rdquo;.",
+   "Watch the screen for an approval dialog."],
+   expect:"No dialog appears, and the answer arrives.",
+   warn:"Whether a read runs without asking depends on the agent offering an allow-once option and on the request not looking like a change. If a plain read shows a dialog, mark Fail and name the agent you used." },
+ { id:"acp-write-asks", title:"A change asks first", mic:true, needs:"ACP agent on. A scratch folder, for example a folder called vox-scratch on your Desktop.", steps:[
+   "Dictate: &ldquo;create a file called hello.txt in my scratch folder that says hello&rdquo;.",
+   "Read the dialog that appears."],
+   expect:"A dialog titled 'The agent wants to perform an action' appears. It shows a kind badge (for example Edit or Run a command), the real command or path, a countdown ('Denied automatically in N s'), and Deny has the focus. The file is not created until you click Allow once.",
+   warn:"If the agent gives no details, the amber warning from acp-no-details appears instead; that is covered there." },
+ { id:"acp-allow-once", title:"Allow once works, and only once", mic:true, needs:"acp-write-asks passed.", steps:[
+   "When the dialog from acp-write-asks appears, click <b>Allow once</b>.",
+   "Check the file, then ask for another change of the same kind."],
+   expect:"The first change happens. The second request shows a new dialog: Vox never remembers an answer and never offers 'always allow'." },
+ { id:"acp-deny", title:"Deny, Escape and Enter all refuse", mic:true, needs:"ACP agent on, and a change request each time.", steps:[
+   "Ask for a file change and click <b>Deny</b>. Check that the file was not created.",
+   "Ask again and press <kbd>Escape</kbd>. Check again.",
+   "Ask again and press <kbd>Enter</kbd> (Deny has the focus). Check again."],
+   expect:"Each request is denied, the dialog closes, and nothing changes on disk." },
+ { id:"acp-timeout", title:"No answer means denied automatically", mic:true, steps:[
+   "Set <b>Approval timeout</b> to 10 seconds.",
+   "Ask for a file change and do nothing."],
+   expect:"When the countdown reaches zero the dialog closes, the request is denied, and the file is not created." },
+ { id:"acp-mode-ask-all", title:"Ask before every tool call", mic:true, steps:[
+   "Set <b>Approval mode</b> to <b>Ask before every tool call</b>.",
+   "Ask a read-only question, for example a search."],
+   expect:"Even the read-only request shows the approval dialog." },
+ { id:"acp-mode-deny", title:"Never allow denies without a dialog", mic:true, steps:[
+   "Set <b>Approval mode</b> to <b>Never allow (deny all requests)</b>.",
+   "Ask for a file change."],
+   expect:"No dialog appears, the request is denied and nothing changes. This matches the old behaviour." },
+ { id:"acp-mode-persist", title:"Mode and timeout survive a restart", steps:[
+   "Set <b>Approval mode</b> to <b>Ask before every tool call</b> and <b>Approval timeout</b> to 45.",
+   "Quit Vox from the tray, start it again and open the <b>Agent (ACP)</b> group."],
+   expect:"Both values are still set as you left them." },
+ { id:"acp-timeout-clamp", title:"Approval timeout is kept in range", steps:[
+   "Type 5 into <b>Approval timeout</b> and save it. Reopen the group.",
+   "Type 999, save, and reopen again."],
+   expect:"The value is kept inside the allowed range of 10 to 300 seconds: 5 becomes 10 and 999 becomes 300.",
+   warn:"The docs give the range 10 to 300 seconds but do not say whether an out-of-range value is clamped or refused. Write what you see. If a value outside 10 to 300 is kept, mark Fail." },
+ { id:"acp-hidden-window", title:"Permission request brings the window forward", mic:true, steps:[
+   "Close the main window (it goes to the tray), or hide it.",
+   "Ask for a file change."],
+   expect:"The Vox window comes to the front with the approval dialog visible.",
+   warn:"Not described in the docs; this is the intended behaviour. Report what happens." },
+ { id:"acp-queue", title:"Several requests queue", mic:true, steps:[
+   "Set <b>Approval mode</b> to <b>Ask before every tool call</b>.",
+   "Make two requests close together so both need an answer."],
+   expect:"The dialogs appear one after the other. The first shows '1 more waiting', and answering one shows the next." },
+ { id:"acp-failed-copy", title:"Failed answer shows Copy request", mic:true, steps:[
+   "Make a request that asks for approval. When the dialog is up, stop the agent process in a terminal (for example with <code>kill</code>).",
+   "Click <b>Allow once</b>, then read the notice that appears. Press <b>Copy request</b> and paste into a text editor."],
+   expect:"A notice with <b>Copy request</b> appears and warns that the agent may have partly run the request. The pasted text is your original request. Your request is NOT typed into the focused app.",
+   warn:"The docs describe this notice for when Vox cannot send an answer back to the agent. If the agent error appears instead, write which message you got." },
+ { id:"acp-contradiction", title:"An agent that calls a command a read is still asked", opt:true, mic:true, needs:"A test ACP agent that labels a command as a read. You need to set one up; say which in notes.", steps:[
+   "Ask the test agent to run a command that changes something, but which it labels as a read.",
+   "Watch for the approval dialog."],
+   expect:"The dialog still appears, because a request whose input looks like a change is asked about even when it is labelled read.",
+   warn:"Needs a special test agent. If you do not have one, mark Skip and say so." },
+ { id:"acp-no-details", title:"An action with no details shows a warning", mic:true, needs:"A test ACP agent that asks for an action without describing it.", steps:[
+   "Trigger an action from that agent.",
+   "Read the dialog."],
+   expect:"An amber 'Operation details unavailable' warning appears, saying the agent did not say what it will change. <b>Deny</b> has the focus, not Allow once.",
+   warn:"Needs a special test agent. If you do not have one, mark Skip." },
+ { id:"acp-keyboard", title:"Enter and Escape deny, Allow needs a click", mic:true, needs:"ACP agent on, and a change request each time.", steps:[
+   "Trigger an approval and press <kbd>Enter</kbd> without moving focus.",
+   "Trigger another and press <kbd>Escape</kbd>.",
+   "Trigger another, press <kbd>Tab</kbd> to move to <b>Allow once</b>, and press <kbd>Enter</kbd>."],
+   expect:"Enter denies and Escape denies. On the third request Enter on the focused Allow once button does not count: Allow needs an explicit click.",
+   warn:"Docs: Deny has the focus, and Allow needs an explicit click. If keyboard Enter on Allow once approves the request, mark Fail with Blocker severity." }
+]},
+{ id:"models-tab", title:"Models tab", note:"Models tab: model language and translation, unload timeout, voice activity detection, spoken voices, smart turn and speaker filter. Downloads happen only when you press a download button.", tests:[
+ { id:"models-language", title:"Language only for multilingual models", steps:[
+   "On the Models tab select a multilingual speech model (for example Whisper Small) and open its settings card.",
+   "Open the <b>Language</b> dropdown and pick a language other than Auto, then pick Auto again.",
+   "Select an English-only model (for example Parakeet V2) and look at its card."],
+   expect:"The Language dropdown is there for the multilingual model. With an English-only model it does not appear.",
+   warn:"The app shows Language only for models that support several input languages. The docs do not spell this out; check the rule and report any mismatch." },
+ { id:"models-translate", title:"Translate to English only for models that can", mic:true, needs:"A Canary model downloaded (Canary 180M Flash or Canary 1B v2).", steps:[
+   "Select a Canary model and open its settings card.",
+   "Switch on <b>Translate to English</b>.",
+   "Dictate a short sentence in another language, for example Spanish."],
+   expect:"The text is typed in English. With a model that does not support translation (for example Whisper Small) the switch does not appear." },
+ { id:"models-unload", title:"Unload Model after a time", opt:true, steps:[
+   "Open <b>Unload Model</b> in the model settings card and choose <b>After 15 seconds (Debug)</b> if it is listed, otherwise <b>Immediately</b>.",
+   "Dictate once, wait longer than the chosen time, then dictate again."],
+   expect:"After the idle time the model is unloaded from memory. The next dictation loads it again, so it is slower the first time.",
+   warn:"The 15 second option is labelled Debug, so it may only show in some builds. Mark Skip if it is missing." },
+ { id:"models-vad-engine", title:"Voice activity detection engine is gated", needs:"Experimental Features switch on the Advanced tab.", steps:[
+   "With <b>Experimental Features</b> off, open the Models tab and look for the group <b>Voice activity detection engine</b>.",
+   "Switch <b>Experimental Features</b> on and look again.",
+   "Open the group, choose <b>Earshot</b>, dictate a sentence, then switch back to <b>Silero</b>."],
+   expect:"The group is hidden while Experimental Features is off and appears when it is on. Silero and Earshot can both be chosen; Earshot is marked experimental.",
+   warn:"Treated as an experimental control like the others. The placement table does not say so explicitly; if the group shows with the switch off, mark Fail with Minor severity." },
+ { id:"smart-turn", title:"Smart turn model", mic:true, opt:true, needs:"Spoken replies on and a conversation backend set up.", steps:[
+   "On the Models tab open the <b>Smart turn model</b> group and read the download size.",
+   "Press <b>Download</b> and wait for it to finish. Switch on <b>Smart turn detection</b>.",
+   "Start a conversation. Say a finished sentence, then a sentence that trails off, and watch how long Vox waits before it answers."],
+   expect:"Before the model is installed the group says Vox uses the fixed silence rule. Once installed, a finished sentence gets an answer after a short pause, and a trailing sentence waits longer.",
+   warn:"The docs say about 8.7 MB (8,679,182 bytes), run on this computer, and audio is not saved. If a finished sentence still waits the full fixed pause, mark Fail." },
+ { id:"speaker-filter", title:"Speaker filter and voice enrolment", mic:true, opt:true, needs:"A quiet room, the speaker model downloaded, and a second person or a recording of another voice.", steps:[
+   "On the Models tab open the <b>Speaker filter model</b> group and press <b>Download</b> (about 26.5 MB). Read the note that it is a convenience filter, not security.",
+   "Press <b>Start enrollment</b>. For each of the three recordings press <b>Start recording this step</b>, read the sentences in your normal voice, then press <b>Finish enrollment</b>.",
+   "Switch the speaker filter on, start a conversation, have the other person speak to Vox, then speak yourself."],
+   expect:"Enrolment says 'Your voice is enrolled.' With the filter on, the other voice is ignored and your voice is answered. Sensitivity (Lenient, Balanced, Strict) can be changed, and <b>Delete voiceprint</b> removes the voiceprint.",
+   warn:"The filter can wrongly ignore you and can be fooled by a recording. Note any miss in the notes." },
+ { id:"phonon-voice", title:"Phonon voice (English, macOS)", opt:true, needs:"macOS and a network connection, or the four Phonon files from scripts/setup-voice-models.sh.", steps:[
+   "On the Models tab open <b>Spoken replies</b> and set <b>Voice engine</b> to Phonon.",
+   "Press <b>Install</b> and wait for the four files to verify (about 65 MB). If the download is blocked, press <b>Install from folder</b>, or run <code>./scripts/setup-voice-models.sh --only phonon</code> and restart Vox.",
+   "Press <b>Test voice</b>, then ask for a reply in English and one in another language."],
+   expect:"Phonon speaks the English sentence. A reply that looks non-English is spoken by the system voice. Deleting the Phonon voice model from the same place frees the space.",
+   warn:"Phonon is English only and macOS only. Detection of non-English text is best-effort." },
+ { id:"natural-voice", title:"Natural voice (Kokoro, English)", opt:true, needs:"macOS, a network connection and about 115 MB free, or run scripts/setup-voice-models.sh --only kokoro first.", steps:[
+   "On the Models tab open <b>Spoken replies</b> and set <b>Voice engine</b> to Natural voice (beta).",
+   "Pick a voice from <b>Natural voice</b>, then press <b>Download</b> (about 115 MB, one time).",
+   "Press <b>Test voice</b>, then try a second voice from the list."],
+   expect:"The first sentence can take a few seconds while the model loads. The two voices sound different. Until the download is finished the system voice is used.",
+   warn:"The docs say English only, with 28 voices. Sentences in other scripts are spoken by the system voice." }
+]},
+{ id:"search", title:"Settings search", note:"The search box at the top of Settings. It finds rows by name and keyword, opens the right tab and group, and highlights the row.", tests:[
+ { id:"search-wake-action", title:"Search finds the wake word action", steps:[
+   "Type <code>wake word action</code> in the Settings search box.",
+   "Click the result.",
+   "Turn <b>Wake Word</b> on, then search again and click the result."],
+   expect:"The result <b>When I say the wake word</b> appears (General tab, Listening Mode group). Clicking it opens the group and highlights the row.",
+   warn:"Known: with Wake Word off the group still opens, but no row is highlighted, because the row is hidden. That is expected, not a failure." },
+ { id:"search-barge-in", title:"Search finds Interrupt by speaking", steps:[
+   "Type <code>interrupt</code> in the search box.",
+   "Click the result."],
+   expect:"<b>Interrupt by speaking</b> is listed under General, Voice conversation, and clicking it opens and highlights that row." },
+ { id:"search-approval-rows", title:"Search finds the approval rows", needs:"Experimental Features on.", steps:[
+   "Type <code>approval</code> in the search box.",
+   "Click <b>Approval mode</b>. Then search <code>approval timeout</code> and click that result."],
+   expect:"Both <b>Approval mode</b> and <b>Approval timeout</b> are listed under Agents, Agent (ACP). Clicking either opens that group and highlights the row." },
+ { id:"search-gated-off", title:"Gated results with the switch off", steps:[
+   "Turn <b>Experimental Features</b> off on the Advanced tab.",
+   "Type <code>approval</code> in the search box and look at the results.",
+   "Click a locked result."],
+   expect:"Gated results appear locked, with a hint to turn on the setting first. Clicking a locked result does not open that row; it points you at the Experimental Features switch.",
+   warn:"Check the hint wording against what the app shows. If a locked result opens the row anyway, mark Fail." }
+]},
+{ id:"install-update", title:"Install and update scripts", note:"Command-line scripts in the scripts folder of the repository. Run them from a terminal in the project folder. They change your machine, so read each step first.", tests:[
+ { id:"update-script", title:"Update Vox from the checkout", opt:true, needs:"A checkout with no uncommitted changes to tracked files, on the branch you want, with origin set to the official repository. Expect several minutes.", steps:[
+   "Test the refusal first: edit a tracked file, run <code>./scripts/update-macos.sh</code>, and read the message. It must refuse and change nothing. Then undo your edit.",
+   "Run <code>git status --short --untracked-files=no</code>. It must print nothing.",
+   "Run <code>./scripts/update-macos.sh</code> in the project folder and wait for the build and install to finish."],
+   expect:"The script fast-forwards the checked-out branch to origin (it never merges), runs bun install, builds the app, installs it as /Applications/Vox.app, and Vox restarts. The last lines say 'Update complete'.",
+   warn:"The docs say it fast-forwards main. The script updates whichever branch is checked out, unless VOX_SOURCE_UPDATE=1 is set, which then requires main. The script takes no options: there is no --help, so arguments are not parsed and the update runs anyway. Do not pass --help to it." },
+ { id:"setup-voice-models-script", title:"Download the voice models with one script", opt:true, needs:"A network connection, or a proxy you know about.", steps:[
+   "Run <code>./scripts/setup-voice-models.sh --dry-run</code>. It prints what would happen and changes nothing.",
+   "Run <code>./scripts/setup-voice-models.sh</code> to install what is missing (Phonon, Natural voice, Smart turn and the speaker model).",
+   "Run it again. It should skip the models already verified. Then quit Vox from the tray and open it again so it rescans."],
+   expect:"The dry run changes nothing. The real run checks each file's size and SHA-256 and reports each model. The second run skips verified models. The log is appended to CONTEXT.md in the repository root.",
+   warn:"Options (see <code>--help</code>): <code>--only phonon,kokoro,smart-turn,speaker</code> picks models; <code>--data-dir</code> and <code>--context</code> change folders; <code>--direct</code> ignores your proxy settings, so use it only if your network policy allows it." }
+]},
+{ id:"generic-assistant", title:"Generic assistant (planned - not built yet)", note:"PLANNED, NOT BUILT YET. Do not report these as failures and do not spend time on them. They describe the intended behaviour so the steps are ready when it ships. See the backlog in docs/vox-phases for background.", tests:[
+ { id:"jarvis-role-spoken", title:"Planned: a spoken role lasts the whole conversation (not built yet)", mic:true, needs:"Not built yet.", steps:[
+   "Start a conversation and say: &ldquo;Hey Jarvis, act like a teacher teaching computers to a 6-year-old.&rdquo;",
+   "Ask six or more lesson questions across the conversation, including after more than 12 turns.",
+   "Interrupt Vox in the middle of one answer with a question, then at the end say &ldquo;stop acting like that&rdquo;."],
+   expect:"Once built: Vox confirms 'Okay, I'll act as a teacher', keeps the role for the whole conversation, answers an interruption and then says 'Let's continue' from the same place in the lesson. The role clears on 'back to normal' or when the conversation ends.",
+   warn:"Not built yet - skip." },
+ { id:"jarvis-agent-handoff", title:"Planned: Hey Jarvis hands browser, search and file requests to the agent (not built yet)", mic:true, needs:"Not built yet.", steps:[
+   "Say &ldquo;Hey Jarvis, search the web for the weather in London&rdquo;.",
+   "Say &ldquo;Hey Jarvis, list the files in my scratch folder&rdquo;."],
+   expect:"Once built: each request goes to the configured agent, not to a plain answer, and the reply is spoken back. Requests that need approval go through the approval dialog or the voice approval below.",
+   warn:"Not built yet - skip." },
+ { id:"jarvis-voice-approval", title:"Planned: approve or deny an agent action by voice (not built yet)", mic:true, needs:"Not built yet.", steps:[
+   "Ask for an action that needs approval, for example a file change.",
+   "When Vox asks, say &ldquo;yes&rdquo;. On another request say &ldquo;no&rdquo;."],
+   expect:"Once built: the spoken answer approves or denies exactly that request, like the dialog's Allow once and Deny. Silence or unclear speech denies. Vox's own voice never counts as an answer.",
+   warn:"Not built yet - skip." },
+ { id:"jarvis-voice-cancel", title:"Planned: say stop to cancel a running agent request (not built yet)", mic:true, needs:"Not built yet.", steps:[
+   "Ask the agent for a long task.",
+   "While it is working, say &ldquo;stop&rdquo;."],
+   expect:"Once built: the agent request is cancelled, speech stops, and the conversation says the request was cancelled.",
+   warn:"Not built yet - skip." }
 ]}
 ];
 
 // ---------- where to find each setting (checked against the app's real labels) ----------
 // [label as shown in Vox, sidebar page, card, notes, other names people use]
 var NAV = [
- ["Experimental Features", "Advanced", "App", "The last row of the App card. It adds the Experimental page to the sidebar.", "experimental master switch"],
+ ["Experimental Features", "Advanced", "App", "The last row of the App card. Switching it on shows the experimental controls on the General, Models and Agents tabs. Off hides them all.", "experimental master switch"],
  ["Application Language", "About", "About (the top card)", "Changes the language of Vox's own menus. It is not the speech language.", "language translate interface ui"],
- ["Language", "General", "the card named after your speech model, for example 'Whisper Small Settings'", "Only appears for speech models that let you choose a language. This is the speech language, not the app language.", "speech language transcription"],
+ ["Language", "Models", "<model> Settings (the card named after your speech model)", "Speech language for the selected model. Only appears for models that let you choose a language. Not the app language.", "speech language transcription"],
+ ["Translate to English", "Models", "<model> Settings (the card named after your speech model)", "Translates speech from other languages into English during transcription. Only for models that support it.", "translate english canary"],
+ ["Unload Model", "Models", "<model> Settings (the card named after your speech model)", "How long an unused model stays in memory: Never, Immediately, 2, 5, 10 or 15 minutes, 1 hour, or 15 seconds (Debug).", "unload timeout memory gpu"],
+ ["Approval mode", "Agents", "Agent (ACP)", "Ask before changes (default), Ask before every tool call, or Never allow.", "approval permission acp agent"],
+ ["Approval timeout", "Agents", "Agent (ACP)", "Seconds to wait for your answer before a request is denied (10 to 300, default 60).", "approval timeout deny"],
+ ["Use ACP agent", "Agents", "Agent (ACP)", "Off by default. When on, dictation that no built-in command matched goes to the agent program.", "acp agent enable"],
+ ["Agent program path", "Agents", "Agent (ACP)", "Absolute path to an ACP agent that is already signed in. Relative paths and bare names are rejected.", "acp command path"],
+ ["Agent arguments", "Agents", "Agent (ACP)", "Space-separated, no quotes, for example --acp. Up to 8 arguments.", "acp args"],
+ ["Persona", "General", "Voice conversation", "Built-in presets of reply style and voice (Default, Concise, Coach, Narrator, Dry wit), plus up to 12 custom ones. Apply sets both.", "persona style voice"],
+ ["Interrupt by speaking", "General", "Voice conversation", "Off or Headphones only. About 600 ms of your speech cancels the reply. Speakers are not supported.", "barge in interrupt headphones"],
+ ["When I say the wake word", "General", "Listening Mode", "Run one voice request (default) or Talk with the assistant. Shown once Wake Word is on.", "wake word action conversation talk"],
+ ["Voice engine", "Models", "Spoken replies", "System voice, or Natural voice (beta). Phonon is also offered on macOS. Install buttons appear for voices not yet installed.", "tts engine phonon kokoro natural"],
+ ["Natural voice", "Models", "Spoken replies", "Pick one of the natural voices (English, American and British accents). Needs the one-time download.", "kokoro voice"],
+ ["Reply style", "Models", "Reply style", "The Spoken reply style section: Composer mode, Style, Timeout and the rest.", "composer style"],
+ ["Smart turn detection", "Models", "Smart turn model", "Decides when you have finished speaking. One-time download of about 8.7 MB; it runs on this computer.", "smart turn endpoint silence"],
+ ["Speaker filter", "Models", "Speaker filter model", "Ignores speech that does not sound like your enrolled voice. Needs the speaker model and an enrolled voice. Not security.", "speaker voice enroll voiceprint"],
  ["Log Level", "Debug", "Debug", "The Debug page only appears after you press Cmd+Shift+D.", "logs verbose"],
- ["Post Processing", "Experimental", "Engine & input", "Switching it on adds the Post Process page to the sidebar.", "post process refine cleanup"],
- ["Keyboard Implementation", "Experimental", "Engine & input", "Choose the keyboard shortcut backend.", "shortcut backend"],
- ["transcribe.cpp Acceleration", "Experimental", "Engine & input", "For Whisper-family models. The list has Auto, CPU and one entry per GPU, so there is no separate GPU picker. Auto uses the GPU (Metal on macOS).", "acceleration gpu metal whisper device"],
- ["ONNX Acceleration", "Experimental", "Engine & input", "For Parakeet, Canary, Moonshine and similar models. Only shown when your computer offers more than two choices: if it is missing, that is normal here, not a bug.", "acceleration gpu onnx parakeet coreml"],
- ["Keep Mic Open Between Transcriptions", "Experimental", "Engine & input", "This is the setting called lazy stream close in the code. Keeps the microphone open for 30 seconds after recording stops.", "lazy stream close microphone latency bluetooth"],
- ["Voice Activity Backend", "Experimental", "Engine & input", "Silero or Earshot (Earshot is experimental).", "vad silence silero earshot"],
- ["Voice Commands", "Experimental", "Voice commands", "", "commands"],
- ["Media Controls", "Experimental", "Voice commands", "Greyed out until Voice Commands is on.", "pause volume music next track"],
- ["Voice Shortcuts", "Experimental", "Voice commands", "Greyed out until Voice Commands is on. Press Add shortcut, fill the row, then press Save.", "phrase website folder app custom command"],
- ["Wake Word", "Experimental", "Listening Mode", "Greyed out while Ambient Mode is on (they cannot both be on).", "hey vox listening"],
- ["Ambient Mode", "Experimental", "Listening Mode", "Greyed out while Wake Word is on. Clear ambient history appears only while Ambient Mode is on.", "ambient listening"],
- ["Memory", "Experimental", "Memory", "A facts box with Remember and Forget appears under it only while Memory is on.", "facts remember forget"],
- ["Agent Bridge", "Experimental", "Agent bridge", "Agent binary path appears only while Agent Bridge is on.", "agent"],
- ["Conversation Context", "Experimental", "Agent bridge", "Greyed out until Agent Bridge is on. Clear conversation history appears only while it is on.", "context history"],
- ["Agent binary path", "Experimental", "Agent bridge", "Appears only while Agent Bridge is on.", "agent path"],
- ["Spoken Replies", "Experimental", "Spoken replies", "", "tts text to speech talk back"],
- ["Voice", "Experimental", "Spoken replies", "A text box on a build without pull request 37; a dropdown of installed voices with it.", "tts voice speaker"],
- ["Speaking rate", "Experimental", "Spoken replies", "A slider in words per minute.", "speed wpm"],
- ["Test voice", "Experimental", "Spoken replies", "The row has Test voice and Stop buttons.", "stop"],
- ["Spoken reply style", "Experimental", "Spoken replies", "A section inside the Spoken replies card, below Test voice.", "composer summary"],
- ["Composer mode", "Experimental", "Spoken replies, Spoken reply style section", "Off, Model provider or Command.", "summary"],
- ["Provider", "Experimental", "Spoken replies, Spoken reply style section", "Only shown when Composer mode is Model provider.", ""],
- ["Model", "Experimental", "Spoken replies, Spoken reply style section", "Only shown when Composer mode is Model provider.", ""],
- ["Command path", "Experimental", "Spoken replies, Spoken reply style section", "Only shown when Composer mode is Command.", ""],
- ["Prompt flag", "Experimental", "Spoken replies, Spoken reply style section", "Only shown when Composer mode is Command.", ""],
- ["Save command", "Experimental", "Spoken replies, Spoken reply style section", "Only shown in Command mode. Press it after changing the command.", ""],
- ["Style", "Experimental", "Spoken replies, Spoken reply style section", "", ""],
- ["Timeout", "Experimental", "Spoken replies, Spoken reply style section", "", ""],
- ["Send what I asked", "Experimental", "Spoken replies, Spoken reply style section", "", ""],
- ["If composing fails", "Experimental", "Spoken replies, Spoken reply style section", "Short notice, Speak the reply as is, or Say nothing.", "fallback"],
- ["Preview", "Experimental", "Spoken replies, Spoken reply style section", "", ""],
- ["Last spoken reply", "Experimental", "Spoken replies, Spoken reply style section", "", "status"],
- ["Start conversation", "Experimental", "Spoken replies, Conversation section", "The Conversation section is further down inside the Spoken replies card. Wake Word and Ambient Mode must be off while a conversation runs.", "converse talk hands-free"],
- ["Silence before a turn ends", "Experimental", "Spoken replies, Conversation section", "", ""],
- ["Silent turns before stopping", "Experimental", "Spoken replies, Conversation section", "", ""],
- ["Turns kept in context", "Experimental", "Spoken replies, Conversation section", "", ""],
- ["Conversation shortcut", "Experimental", "Spoken replies, Conversation section", "Display only. Shows the current keys (default Control+Option+C on macOS) or 'Not set'. You cannot change it here.", "converse hotkey"],
- ["Enable realtime conversation", "Experimental", "Realtime conversation", "Every other row in this card is greyed out until this is on.", "realtime"],
- ["Speak replies aloud", "Experimental", "Realtime conversation", "", ""],
- ["Use my own endpoint", "Experimental", "Realtime conversation", "", "direct"],
- ["Endpoint address", "Experimental", "Realtime conversation", "Must use https unless it is localhost.", "url"],
- ["Model name", "Experimental", "Realtime conversation", "", ""],
- ["Access token", "Experimental", "Realtime conversation", "Shown hidden. Below it: Token set (N characters) and Clear token.", "key secret"],
- ["Stream replies", "Experimental", "Realtime conversation", "", ""],
- ["Speak while the reply streams", "Experimental", "Realtime conversation", "", ""],
- ["Fast voice engine", "Experimental", "Realtime conversation", "", ""],
- ["Spoken acknowledgement", "Experimental", "Realtime conversation", "", ""],
- ["Pre-connect", "Experimental", "Realtime conversation", "", "prewarm"],
- ["Auto-detect proxy", "Experimental", "Realtime conversation", "", ""],
- ["Use a manual proxy", "Experimental", "Realtime conversation", "", ""],
- ["Proxy address", "Experimental", "Realtime conversation", "Greyed out until Use a manual proxy is on.", ""],
- ["Timing log", "Experimental", "Realtime conversation", "Writes how long each step took, never your words.", "latency"],
- ["Save conversation records", "Experimental", "Conversation memory", "Vault folder path appears only while this is on.", "records history"],
- ["Vault folder path", "Experimental", "Conversation memory", "Appears only while Save conversation records is on.", "obsidian notes folder"],
- ["Also save to my notes vault", "Experimental", "Conversation memory", "Greyed out until Save conversation records is on and a Vault folder path is set.", "obsidian markdown"],
- ["Use my vault notes as conversation context", "Experimental", "Conversation memory", "Greyed out until Save conversation records is on.", "vault context"],
- ["Voice agent tools", "Experimental", "Voice agent tools", "Project folders and Block actions after reading project data appear only while this is on.", "tools projects"],
- ["Project folders", "Experimental", "Voice agent tools", "Appears only while Voice agent tools is on. Type a path and press Add folder.", "roots"],
- ["Block actions after reading project data", "Experimental", "Voice agent tools", "Appears only while Voice agent tools is on.", "guard"],
- ["Ask before acting", "Experimental", "Coding jobs", "The spoken OK? question. Applies to coding jobs and agent tools.", "confirm ok"],
- ["Coding jobs", "Experimental", "Coding jobs", "Runs your coding command in the background.", "jobs"],
- ["Job time limit (minutes)", "Experimental", "Coding jobs", "1 to 120.", "timeout"],
- ["Agent names", "Experimental", "Coding jobs", "Type a name and press Add.", "agents"],
- ["Agent flag", "Experimental", "Coding jobs", "Appears only once you have added at least one agent name.", "agent flag --agent"],
- ["Ask an agent and speak a summary", "Experimental", "Coding jobs", "Greyed out until Coding jobs is on.", "ask summarize"],
- ["Current job", "Experimental", "Coding jobs", "A status box at the bottom of the card with the Cancel job button.", "cancel status"],
- ["Cancel job", "Experimental", "Coding jobs, Current job box", "Enabled only while a job is running.", "cancel"],
- ["Last result", "Experimental", "Coding jobs", "Appears only after an ask job has produced a result. Has a Copy button.", "copy summary"],
+ ["Post Processing", "Advanced", "Engine & input", "Turns post-processing on. Its provider and model are on the Post Process tab.", "post process refine cleanup"],
+ ["Keyboard Implementation", "Advanced", "Engine & input", "Choose the keyboard shortcut backend.", "shortcut backend"],
+ ["transcribe.cpp Acceleration", "Advanced", "Engine & input", "For Whisper-family models. The list has Auto, CPU and one entry per GPU, so there is no separate GPU picker. Auto uses the GPU (Metal on macOS).", "acceleration gpu metal whisper device"],
+ ["ONNX Acceleration", "Advanced", "Engine & input", "For Parakeet, Canary, Moonshine and similar models. Only shown when your computer offers more than two choices: if it is missing, that is normal here, not a bug.", "acceleration gpu onnx parakeet coreml"],
+ ["Keep Mic Open Between Transcriptions", "Advanced", "Engine & input", "This is the setting called lazy stream close in the code. Keeps the microphone open for 30 seconds after recording stops.", "lazy stream close microphone latency bluetooth"],
+ ["Voice Activity Backend", "Models", "Voice activity detection engine", "Silero or Earshot (Earshot is experimental). Switch back to Silero if speech is clipped or noise is kept.", "vad silence silero earshot"],
+ ["Voice Commands", "General", "Voice commands", "", "commands"],
+ ["Media Controls", "General", "Voice commands", "Greyed out until Voice Commands is on.", "pause volume music next track"],
+ ["Voice Shortcuts", "General", "Voice commands", "Greyed out until Voice Commands is on. Press Add shortcut, fill the row, then press Save.", "phrase website folder app custom command"],
+ ["Wake Word", "General", "Listening Mode", "Greyed out while Ambient Mode is on (they cannot both be on). Default phrase: Hey Jarvis.", "hey jarvis listening"],
+ ["Ambient Mode", "General", "Listening Mode", "Greyed out while Wake Word is on. Clear ambient history appears only while Ambient Mode is on.", "ambient listening"],
+ ["Memory", "Agents", "Memory", "A facts box with Remember and Forget appears under it only while Memory is on.", "facts remember forget"],
+ ["Agent Bridge", "Agents", "Agent bridge", "Agent binary path appears only while Agent Bridge is on.", "agent"],
+ ["Conversation Context", "Agents", "Agent bridge", "Greyed out until Agent Bridge is on. Clear conversation history appears only while it is on.", "context history"],
+ ["Agent binary path", "Agents", "Agent bridge", "Appears only while Agent Bridge is on.", "agent path"],
+ ["Spoken Replies", "Models", "Spoken replies", "", "tts text to speech talk back"],
+ ["Voice", "Models", "Spoken replies", "System default, or one of the voices installed on this Mac. Shown when Voice engine is System voice.", "tts voice speaker"],
+ ["Speaking rate", "Models", "Spoken replies", "A slider in words per minute.", "speed wpm"],
+ ["Test voice", "Models", "Spoken replies", "The row has Test voice and Stop buttons.", "stop"],
+ ["Spoken reply style", "Models", "Spoken replies", "A section inside the Spoken replies card, below Test voice.", "composer summary"],
+ ["Composer mode", "Models", "Reply style", "Off, Model provider or Command.", "summary"],
+ ["Provider", "Models", "Reply style", "Only shown when Composer mode is Model provider.", ""],
+ ["Model", "Models", "Reply style", "Only shown when Composer mode is Model provider.", ""],
+ ["Command path", "Models", "Reply style", "Only shown when Composer mode is Command.", ""],
+ ["Prompt flag", "Models", "Reply style", "Only shown when Composer mode is Command.", ""],
+ ["Save command", "Models", "Reply style", "Only shown in Command mode. Press it after changing the command.", ""],
+ ["Style", "Models", "Reply style", "", ""],
+ ["Timeout", "Models", "Reply style", "", ""],
+ ["Send what I asked", "Models", "Reply style", "", ""],
+ ["If composing fails", "Models", "Reply style", "Short notice, Speak the reply as is, or Say nothing.", "fallback"],
+ ["Preview", "Models", "Reply style", "", ""],
+ ["Last spoken reply", "Models", "Reply style", "", "status"],
+ ["Start conversation", "General", "Voice conversation", "Wake Word and Ambient Mode must be off while a conversation runs.", "converse talk hands-free"],
+ ["Silence before a turn ends", "General", "Voice conversation", "", ""],
+ ["Silent turns before stopping", "General", "Voice conversation", "", ""],
+ ["Turns kept in context", "General", "Voice conversation", "", ""],
+ ["Conversation shortcut", "General", "Voice conversation", "Display only. Shows the current keys (default Control+Option+C on macOS) or 'Not set'. You cannot change it here.", "converse hotkey"],
+ ["Enable realtime conversation", "Models", "Realtime conversation", "Every other row in this card is greyed out until this is on.", "realtime"],
+ ["Speak replies aloud", "Models", "Realtime conversation", "", ""],
+ ["Use my own endpoint", "Models", "Realtime conversation", "", "direct"],
+ ["Endpoint address", "Models", "Realtime conversation", "Must use https unless it is localhost.", "url"],
+ ["Model name", "Models", "Realtime conversation", "", ""],
+ ["Access token", "Models", "Realtime conversation", "Shown hidden. Below it: Token set (N characters) and Clear token.", "key secret"],
+ ["Stream replies", "Models", "Realtime conversation", "", ""],
+ ["Speak while the reply streams", "Models", "Realtime conversation", "", ""],
+ ["Fast voice engine", "Models", "Realtime conversation", "", ""],
+ ["Spoken acknowledgement", "Models", "Realtime conversation", "", ""],
+ ["Pre-connect", "Models", "Realtime conversation", "", "prewarm"],
+ ["Auto-detect proxy", "Models", "Realtime conversation", "", ""],
+ ["Use a manual proxy", "Models", "Realtime conversation", "", ""],
+ ["Proxy address", "Models", "Realtime conversation", "Greyed out until Use a manual proxy is on.", ""],
+ ["Timing log", "Models", "Realtime conversation", "Writes how long each step took, never your words.", "latency"],
+ ["Save conversation records", "Agents", "Conversation memory", "Vault folder path appears only while this is on.", "records history"],
+ ["Vault folder path", "Agents", "Conversation memory", "Appears only while Save conversation records is on.", "obsidian notes folder"],
+ ["Also save to my notes vault", "Agents", "Conversation memory", "Greyed out until Save conversation records is on and a Vault folder path is set.", "obsidian markdown"],
+ ["Use my vault notes as conversation context", "Agents", "Conversation memory", "Greyed out until Save conversation records is on.", "vault context"],
+ ["Voice agent tools", "Agents", "Voice agent tools", "Project folders and Block actions after reading project data appear only while this is on.", "tools projects"],
+ ["Project folders", "Agents", "Voice agent tools", "Appears only while Voice agent tools is on. Type a path and press Add folder.", "roots"],
+ ["Block actions after reading project data", "Agents", "Voice agent tools", "Appears only while Voice agent tools is on.", "guard"],
+ ["Ask before acting", "Agents", "Coding jobs", "The spoken OK? question. Applies to coding jobs and agent tools.", "confirm ok"],
+ ["Coding jobs", "Agents", "Coding jobs", "Runs your coding command in the background.", "jobs"],
+ ["Job time limit (minutes)", "Agents", "Coding jobs", "1 to 120.", "timeout"],
+ ["Agent names", "Agents", "Coding jobs", "Type a name and press Add.", "agents"],
+ ["Agent flag", "Agents", "Coding jobs", "Appears only once you have added at least one agent name.", "agent flag --agent"],
+ ["Ask an agent and speak a summary", "Agents", "Coding jobs", "Greyed out until Coding jobs is on.", "ask summarize"],
+ ["Current job", "Agents", "Coding jobs", "A status box at the bottom of the card with the Cancel job button.", "cancel status"],
+ ["Cancel job", "Agents", "Coding jobs", "Enabled only while a job is running.", "cancel"],
+ ["Last result", "Agents", "Coding jobs", "Appears only after an ask job has produced a result. Has a Copy button.", "copy summary"],
  ["Transcribe Shortcut", "General", "General (the first card)", "The first row: the dictation keys (default Option+Space on macOS).", "dictation shortcut hotkey keys"],
  ["Cancel Shortcut", "General", "General (the first card)", "Hidden on Linux.", "escape cancel"],
  ["Post-Processing Hotkey", "Post Process", "Hotkey (the first card)", "The Post Process page only appears after Post Processing is switched on.", "post process shortcut keys"],
- ["Models", "Models", "the page itself", "Download and pick a speech model here.", "download model whisper parakeet"],
- ["History", "History", "the page itself", "Lists past dictations with copy and delete.", "transcripts"],
- ["Start or stop conversation", "Tray menu", "click the Vox icon in the menu bar", "Also a shortcut row in Settings.", "tray"],
- ["Cancel coding job", "Tray menu", "click the Vox icon in the menu bar", "English-only label. Enabled only while a coding job is running.", "tray cancel"],
- ["Listening Mode submenu", "Tray menu", "click the Vox icon in the menu bar", "Hotkey Only, Wake Word or Ambient Mode. Different from the Listening Mode card on the Experimental page.", "tray"]
+ ["Models", "Models", "(whole tab)", "Download and pick a speech model here.", "download model whisper parakeet"],
+ ["History", "History", "(whole tab)", "Lists past dictations with copy and delete.", "transcripts"],
+ ["Start or stop conversation", "Tray", "Menu bar", "Also a shortcut row in Settings.", "tray"],
+ ["Cancel coding job", "Tray", "Menu bar", "English-only label. Enabled only while a coding job is running.", "tray cancel"],
+ ["Listening Mode submenu", "Tray", "Menu bar", "Hotkey Only, Wake Word or Ambient Mode. Different from the Listening Mode group on the General tab.", "tray"]
 ];
 var NAVMAP = {};
 NAV.forEach(function (n) { if (!NAVMAP[n[0].toLowerCase()]) NAVMAP[n[0].toLowerCase()] = n; });
@@ -880,53 +1114,53 @@ var PATCH = {
  "setup-exp": { steps:[
    "In the left sidebar click <b>Advanced</b>.",
    "In the <b>App</b> card (the first card) switch on <b>Experimental Features</b>. It is the last row of that card.",
-   "Look at the left sidebar again."],
-   expect:"A new <b>Experimental</b> item appears in the sidebar. Click it: the page has these cards in order: Engine &amp; input, Voice commands, Listening Mode, Memory, Agent bridge, Spoken replies, Realtime conversation, Conversation memory, Voice agent tools, Coding jobs. Vox shows card titles in capitals. Only Engine &amp; input starts open: click any other card's title bar to open it." },
+   "Open the General, Models and Agents tabs and look for the experimental groups."],
+   expect:"The experimental groups now sit on four tabs. General: Voice commands, Listening Mode, Voice conversation. Models: Spoken replies, Smart turn model, Speaker filter model, Reply style, Voice activity detection engine, Realtime conversation. Advanced: Engine &amp; input (open by default). Agents: Agent (ACP), Agent bridge, Voice agent tools, Coding jobs, Memory, Conversation memory. Most of them start closed: click a group's title bar to open it." },
  "setup-defaults": { steps:[
-   "Click <b>Experimental</b> in the sidebar and open each card by clicking its title bar.",
-   "Look at the main switch in each card: <b>Voice Commands</b>, <b>Wake Word</b>, <b>Ambient Mode</b>, <b>Memory</b>, <b>Agent Bridge</b>, <b>Spoken Replies</b>, <b>Enable realtime conversation</b>, <b>Save conversation records</b>, <b>Voice agent tools</b> and <b>Coding jobs</b>."] },
+   "Open the General, Models and Agents tabs and open each group by clicking its title bar.",
+   "Look at the main switch in each group: <b>Voice Commands</b>, <b>Wake Word</b>, <b>Ambient Mode</b>, <b>Memory</b>, <b>Agent Bridge</b>, <b>Spoken Replies</b>, <b>Enable realtime conversation</b>, <b>Save conversation records</b>, <b>Voice agent tools</b> and <b>Coding jobs</b>."] },
  "setup-master": { steps:[
    "Turn on a couple of features, for example <b>Voice Commands</b> and <b>Memory</b>.",
    "Click <b>Advanced</b>, find <b>Experimental Features</b> in the <b>App</b> card and switch it off.",
-   "Switch it on again and open the Experimental page."] },
+   "Switch it on again and check that the General, Models and Agents tabs show their experimental groups again."] },
  "setup-lang": { title:"Changing the app language", steps:[
    "Click <b>About</b> in the sidebar.",
    "In the top card find <b>Application Language</b> and change it to another language.",
-   "Click through General and Experimental, then switch back to English."],
+   "Click through General, Models and Agents, then switch back to English."],
    expect:"The pages re-render in the chosen language with no empty labels or raw key names like <code>settings.experimental...</code>. Some new labels may still be in English: that is expected.",
-   warn:"General has a different setting called <b>Language</b>. That one is the speech language. It sits in the card named after your speech model (for example Whisper Small Settings) and only appears for models that let you choose a language. It is not the app language." },
+   warn:"The Models tab has a different setting called <b>Language</b>. That one is the speech language. It sits in the settings card of your speech model (for example Whisper Small Settings) and only appears for models that let you choose a language. It is not the app language." },
  "setup-debug": { steps:[
    "Inside Vox press <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> (Windows and Linux: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd>). A <b>Debug</b> item appears in the sidebar.",
    "Open it and find <b>Log Level</b>. The folder where logs are written is on the About page."],
    expect:"Debug opens and shows Log Level. Copy relevant log lines into the notes of any failed test." },
  "dict-basic": { where:["General &rarr; General (the first card) &rarr; <b>Transcribe Shortcut</b> <span class=\"cond\">(the dictation keys, default Option+Space on macOS)</span>"] },
  "engine-pp": { steps:[
-   "Click <b>Experimental</b> and, in the <b>Engine &amp; input</b> card (open by default), switch on <b>Post Processing</b>. A <b>Post Process</b> item appears in the sidebar.",
+   "On the Advanced tab, in the <b>Engine &amp; input</b> group (open by default), switch on <b>Post Processing</b>. Then open the <b>Post Process</b> tab in the sidebar.",
    "Open <b>Post Process</b> and make sure a provider is set; the first card there, Hotkey, holds <b>Post-Processing Hotkey</b>.",
    "Click into a text box, press that hotkey (default <kbd>Option</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd>), speak a messy sentence with filler words, stop."],
    expect:"The tidied text is pasted. With Post Processing off, the Post Process page disappears from the sidebar." },
  "engine-kbd": { title:"Keyboard Implementation", steps:[
-   "Click <b>Experimental</b>, <b>Engine &amp; input</b> card, find <b>Keyboard Implementation</b> (a dropdown).",
+   "On the Advanced tab, in the <b>Engine &amp; input</b> group, find <b>Keyboard Implementation</b> (a dropdown).",
    "Pick the other choice. Vox may reset your shortcuts to defaults and say 'Keyboard shortcuts were incompatible and reset to defaults'.",
    "Test the dictation shortcut, then switch back to the original choice."],
    expect:"The shortcut works with each choice. If the reset message appears, your shortcuts are back to defaults and still work." },
  "engine-accel": { title:"Acceleration (there are two selectors)", steps:[
-   "Click <b>Experimental</b> and look in the <b>Engine &amp; input</b> card.",
+   "On the Advanced tab look in the <b>Engine &amp; input</b> group.",
    "Find <b>transcribe.cpp Acceleration</b> (for Whisper-family models). Its list has Auto, CPU and one entry per GPU. Then look for <b>ONNX Acceleration</b> (for Parakeet, Canary, Moonshine and similar): it is only shown when your computer offers more than two choices, so it may simply be absent.",
    "Change the selector that matches your current speech model, dictate a sentence, then set it back to <b>Auto</b>."],
    expect:"Dictation works on every choice. Auto uses the GPU (Metal on macOS). If a choice makes dictation fail, write which selector and which choice. If ONNX Acceleration is not on your page, that is normal: say so in the notes and mark only the transcribe.cpp part." },
  "engine-lazy": { title:"Keep Mic Open Between Transcriptions (lazy stream close)", steps:[
-   "Click <b>Experimental</b>, <b>Engine &amp; input</b> card, find <b>Keep Mic Open Between Transcriptions</b>. This is the setting named lazy stream close in the code.",
+   "On the Advanced tab, in the <b>Engine &amp; input</b> group, find <b>Keep Mic Open Between Transcriptions</b>. This is the setting named lazy stream close in the code.",
    "Switch it on, dictate a sentence and finish. Watch the macOS microphone indicator (the orange dot in the menu bar).",
    "Dictate again within 30 seconds, then wait more than 30 seconds.",
    "Switch it off and repeat once."],
    expect:"On: the microphone stays open for 30 seconds after you stop, so back-to-back dictations start faster, and the indicator stays on during that time. Off: it closes right away. The app warns it may degrade Bluetooth audio while open." },
  "engine-vad": { title:"Voice Activity Backend", steps:[
-   "Click <b>Experimental</b>, <b>Engine &amp; input</b> card, find <b>Voice Activity Backend</b>.",
+   "On the Models tab, in the <b>Voice activity detection engine</b> group, find <b>Voice Activity Backend</b>.",
    "Choose <b>Earshot</b> (experimental), dictate a sentence with a pause in the middle, then switch back to <b>Silero</b>."],
    expect:"Speech is captured whole with Silero. If Earshot clips words or lets noise through, that is a known risk: report what you heard." },
  "vc-on": { steps:[
-   "Click <b>Experimental</b> and open the <b>Voice commands</b> card (click its title bar).",
+   "On the General tab open the <b>Voice commands</b> group (click its title bar).",
    "Switch on <b>Voice Commands</b>.",
    "Leave and re-open the page."],
    expect:"The switch stays on, and <b>Media Controls</b> and <b>Voice Shortcuts</b> become usable (they are greyed out while Voice Commands is off)." },
@@ -955,7 +1189,7 @@ var PATCH = {
    "In <b>Voice Shortcuts</b> add a Website shortcut with the target <code>javascript:alert(1)</code> and another with <code>file:///etc/passwd</code>, and press <b>Save</b>.",
    "Add a Folder shortcut to a folder that does not exist and press <b>Save</b>."] },
  "lm-wake": { steps:[
-   "Click <b>Experimental</b> and open the <b>Listening Mode</b> card.",
+   "On the General tab open the <b>Listening Mode</b> group.",
    "Switch on <b>Wake Word</b> (greyed out while <b>Ambient Mode</b> is on). If it offers a model download, let it finish.",
    "Say the wake phrase and then a short sentence."] },
  "lm-ambient": { steps:[
@@ -963,12 +1197,12 @@ var PATCH = {
    "Press <b>Clear ambient history</b> (it appears only while Ambient Mode is on)."] },
  "lm-tray": { where:["Click the Vox icon in the macOS menu bar, then <b>Listening Mode</b>."] },
  "mem-ui": { steps:[
-   "Click <b>Experimental</b> and open the <b>Memory</b> card.",
+   "On the Agents tab open the <b>Memory</b> group.",
    "Switch on <b>Memory</b>. A facts box appears under it.",
    "Type a fact such as &ldquo;my dog is called Biscuit&rdquo; and press <b>Remember</b>.",
    "Press <b>Forget</b> next to the fact."] },
  "ab-setup": { steps:[
-   "Click <b>Experimental</b> and open the <b>Agent bridge</b> card.",
+   "On the Agents tab open the <b>Agent bridge</b> group.",
    "Switch on <b>Agent Bridge</b>. The <b>Agent binary path</b> row appears only now.",
    "Set <b>Agent binary path</b> to the agent's full path."] },
  "ab-bad-flag": { title:"Agent that fails", mic:true, steps:[
@@ -981,12 +1215,12 @@ var PATCH = {
  "ab-clear": { steps:[
    "With <b>Conversation Context</b> on, press <b>Clear conversation history</b> (it appears only while Conversation Context is on), then repeat the follow-up."] },
  "tts-on": { steps:[
-   "Click <b>Experimental</b> and open the <b>Spoken replies</b> card.",
+   "On the Models tab open the <b>Spoken replies</b> group.",
    "Switch on <b>Spoken Replies</b>.",
    "Press <b>Test voice</b>.",
    "Press <b>Stop</b> while it is speaking (press Test voice again if it finished first)."] },
  "tts-voice": { steps:[
-   "In the <b>Spoken replies</b> card open the <b>Voice</b> dropdown.",
+   "On the Models tab, in the <b>Spoken replies</b> group, open the <b>Voice</b> dropdown.",
    "Check the first entry is <b>System default</b> and the other voices show a language code, for example <code>Samantha (en_US)</code>.",
    "Pick two different voices; after each one press <b>Test voice</b>.",
    "Switch back to <b>System default</b> and test again."] },
@@ -1016,7 +1250,7 @@ var PATCH = {
    "Set <b>Timeout</b> very low (the allowed range is 2 to 60 seconds) and use a slow command.",
    "Try a different <b>Style</b> value and press <b>Preview</b>."] },
  "cv-start": { steps:[
-   "Click <b>Experimental</b>, open the <b>Spoken replies</b> card and scroll down to its <b>Conversation</b> section.",
+   "On the General tab open the <b>Voice conversation</b> group. Its controls include <b>Start conversation</b>.",
    "Make sure <b>Wake Word</b> and <b>Ambient Mode</b> are off. A conversation does not run while they are on.",
    "Press <b>Start conversation</b>.",
    "Ask a question and wait for the spoken answer.",
@@ -1030,7 +1264,7 @@ var PATCH = {
    "Look on the <b>Post Process</b> page too (it has <b>Post-Processing Hotkey</b>)."],
    expect:"The Conversation shortcut row is display only. This build probably has no row anywhere to change those keys, even though the hint points you to the shortcut settings. If you find no way, mark Fail with severity Minor and say so: the hint points to something that does not exist." },
  "vt-records": { steps:[
-   "Click <b>Experimental</b> and open the <b>Conversation memory</b> card.",
+   "On the Agents tab open the <b>Conversation memory</b> group.",
    "Switch on <b>Save conversation records</b>.",
    "Have a short conversation and end it."] },
  "vt-path-empty": { title:"Vault options appear in order", steps:[
@@ -1048,14 +1282,14 @@ var PATCH = {
    "Switch on <b>Use my vault notes as conversation context</b> (greyed out until <b>Save conversation records</b> is on).",
    "Start a conversation and ask: &ldquo;what is the office plant called?&rdquo;."] },
  "tl-setup": { steps:[
-   "Click <b>Experimental</b> and open the <b>Voice agent tools</b> card.",
+   "On the Agents tab open the <b>Voice agent tools</b> group.",
    "Switch on <b>Voice agent tools</b>. <b>Project folders</b> and <b>Block actions after reading project data</b> appear only now.",
    "Under <b>Project folders</b> type the project's full path and press <b>Add folder</b>."] },
  "tl-bad-root": { steps:[
    "Under <b>Project folders</b> try to add a path that does not exist, a path to a file, and an empty entry with <b>Add folder</b>."] },
  "cf-switch": { needs:"The switch is <b>Ask before acting</b>, in the <b>Coding jobs</b> card." },
  "jb-setup": { steps:[
-   "Click <b>Experimental</b> and open the <b>Coding jobs</b> card.",
+   "On the Agents tab open the <b>Coding jobs</b> group.",
    "Read the warning at the top of the card.",
    "Switch on <b>Coding jobs</b>.",
    "Set <b>Job time limit (minutes)</b> to 1 for these tests."] },
@@ -1081,7 +1315,7 @@ var PATCH = {
    "After an ask job finishes, look for <b>Last result</b> in the Coding jobs card (it only appears once a result exists) and press <b>Copy</b>.",
    "Paste into a text box."] },
  "rt-on": { steps:[
-   "Click <b>Experimental</b> and open the <b>Realtime conversation</b> card. Every row is greyed out until the first switch is on.",
+   "On the Models tab open the <b>Realtime conversation</b> group. Every row is greyed out until the first switch is on.",
    "Switch on <b>Enable realtime conversation</b> and <b>Speak replies aloud</b>.",
    "Fill in <b>Endpoint address</b>, <b>Model name</b> and <b>Access token</b>. A status line tells you what is still missing.",
    "Start a conversation and ask something short."] },
@@ -1143,7 +1377,7 @@ function whereHtml(t) {
     h += "<li>" + n[1] + " &rarr; " + esc(n[2]) + " &rarr; <b>" + esc(n[0]) + "</b>" + (n[3] ? ' <span class="cond">(' + esc(n[3]) + ")</span>" : "") + "</li>";
   });
   h += "</ul>";
-  if (rows.some(function (n) { return n[1] === "Experimental"; })) h += '<div class="hint">No Experimental item in the sidebar? Click Advanced, then in the App card switch on Experimental Features.</div>';
+  if (rows.some(function (n) { return n[3].indexOf("Greyed out") >= 0 || n[3].indexOf("Appears only") >= 0; })) h += '<div class="hint">Some rows are greyed out or hidden until their switch is on. The table says which switch.</div>';
   return h + "</div>";
 }
 function renderNav() {
