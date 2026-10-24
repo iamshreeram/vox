@@ -155,6 +155,9 @@ const JOB_STATE_IDS = [
 
 const SHORTCUT_ACTION_IDS = ["url", "folder", "app"] as const;
 
+/** Wake word action dropdown option labels in WakeWordToggle.tsx (wakeWordActionLabelKey). */
+const WAKE_WORD_ACTION_OPTION_IDS = ["voiceRequest", "conversation"] as const;
+
 const PLACED_GROUPS_SOURCE = "src/components/settings/PlacedGroups.tsx";
 const SPOKEN_REPLY_SOURCE = "src/components/settings/SpokenReplyStyle.tsx";
 const VOICE_SHORTCUTS_SOURCE =
@@ -163,6 +166,7 @@ const REALTIME_SOURCE = "src/components/settings/RealtimeSection.tsx";
 const CONVERSATION_SOURCE = "src/components/settings/ConversationSection.tsx";
 const JOBS_SOURCE = "src/components/settings/JobsSettings.tsx";
 const TTS_SOURCE = "src/components/settings/TtsSettings.tsx";
+const WAKE_WORD_TOGGLE_SOURCE = "src/components/settings/WakeWordToggle.tsx";
 
 export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   // ----- engine -----
@@ -327,6 +331,20 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
       "activation phrase",
       "always listening",
       "voice trigger",
+    ],
+  ),
+  row(
+    "wakeWordAction",
+    "listening",
+    "settings.advanced.wakeWord.action.label",
+    "settings.advanced.wakeWord.action.description",
+    [
+      "wake word action",
+      "when i say the wake word",
+      "wake word starts conversation",
+      "voice request",
+      "hands free",
+      "assistant",
     ],
   ),
   row(
@@ -515,6 +533,28 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
     "settings.advanced.acpAgent.timeout.label",
     "settings.advanced.acpAgent.timeout.description",
     ["timeout", "seconds", "wait", "agent timeout", "turn timeout"],
+  ),
+  row(
+    "acpPermissionMode",
+    "acpAgent",
+    "settings.advanced.acpPermission.mode.label",
+    "settings.advanced.acpPermission.mode.description",
+    [
+      "agent permission",
+      "approve",
+      "allow",
+      "deny",
+      "tool approval",
+      "ask before",
+      "permissions",
+    ],
+  ),
+  row(
+    "acpPermissionTimeout",
+    "acpAgent",
+    "settings.advanced.acpPermission.timeout.label",
+    "settings.advanced.acpPermission.timeout.description",
+    ["approval timeout", "agent permission", "approve", "timeout"],
   ),
 
   // ----- spoken replies (TtsSettings) -----
@@ -834,6 +874,20 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
       "keyboard shortcut",
       "conversation shortcut",
       "binding",
+    ],
+  ),
+  row(
+    "converseBargeIn",
+    "conversation",
+    "converse.section.bargeIn.label",
+    "converse.section.bargeIn.description",
+    [
+      "interrupt",
+      "barge in",
+      "talk over",
+      "headphones",
+      "interrupt assistant",
+      "speak over",
     ],
   ),
   row(
@@ -1227,6 +1281,11 @@ export const EXPERIMENTAL_EXCLUDED: Readonly<Record<string, string>> = {
   "settings.advanced.ambientMode.disabledByWakeWord":
     "tooltip on the disabled ambient mode toggle explaining the conflict with wake word",
   ...excludeFamily(
+    "settings.advanced.wakeWord.action.",
+    WAKE_WORD_ACTION_OPTION_IDS,
+    "option label of the wake word action dropdown (run one request or talk with the assistant), not a row title; the row is wakeWordAction",
+  ),
+  ...excludeFamily(
     "settings.advanced.voiceShortcuts.actionType.",
     SHORTCUT_ACTION_IDS,
     "caption of an action type option in the voice shortcut select",
@@ -1372,5 +1431,10 @@ export const EXPERIMENTAL_DYNAMIC: readonly DynamicFamily[] = [
     source: JOBS_SOURCE,
     prefix: "settings.experimental.jobs.state.",
     ids: JOB_STATE_IDS,
+  },
+  {
+    source: WAKE_WORD_TOGGLE_SOURCE,
+    prefix: "settings.advanced.wakeWord.action.",
+    ids: WAKE_WORD_ACTION_OPTION_IDS,
   },
 ];

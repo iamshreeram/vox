@@ -204,6 +204,81 @@ const scenarios: Record<string, () => void> = {
         );
       }
     },
+  "the wake word action and barge-in controls are indexed in their groups":
+    () => {
+      const wanted: Array<[string, string, string]> = [
+        ["settings.advanced.wakeWord.action.label", "listening", "general"],
+        ["converse.section.bargeIn.label", "conversation", "general"],
+      ];
+      for (const [labelKey, groupId, sectionId] of wanted) {
+        const e = SEARCH_ENTRIES.find((x) => x.labelKey === labelKey);
+        assert.ok(e, `${labelKey} has a search row`);
+        assert.equal(e.groupId, groupId, labelKey);
+        assert.equal(String(e.section), sectionId, labelKey);
+        assert.ok(
+          requiresExperimental(e),
+          `${labelKey} must require experimental`,
+        );
+        assert.equal(e.unlockedBy, "advanced.experimentalToggle", labelKey);
+        assert.ok(e.descriptionKey, `${labelKey} has a description`);
+        assert.ok(
+          lookup(e.descriptionKey as string),
+          `${labelKey} description text`,
+        );
+        // searchable by its own English label and locked while the switch is off
+        const label = lookup(labelKey) as string;
+        const hit = search(SEARCH_ENTRIES, label, resolve, ctxOff, {
+          limit: 1000,
+        }).find((h) => h.entry.id === e.id);
+        assert.ok(hit, `${labelKey} is searchable`);
+        assert.equal(hit.locked, true, labelKey);
+      }
+    },
+  "acp permission rows sit in the ACP agent group behind the Experimental switch":
+    () => {
+      const wanted: Array<[string, string, string]> = [
+        [
+          "experimental.acpPermissionMode",
+          "settings.advanced.acpPermission.mode.label",
+          "settings.advanced.acpPermission.mode.description",
+        ],
+        [
+          "experimental.acpPermissionTimeout",
+          "settings.advanced.acpPermission.timeout.label",
+          "settings.advanced.acpPermission.timeout.description",
+        ],
+      ];
+      for (const [id, labelKey, descriptionKey] of wanted) {
+        const e = SEARCH_ENTRIES.find((x) => x.id === id);
+        assert.ok(e, `${id} exists`);
+        assert.equal(String(e.section), "agents", id);
+        assert.equal(e.groupId, "acpAgent", id);
+        assert.equal(e.labelKey, labelKey, id);
+        assert.equal(e.descriptionKey, descriptionKey, id);
+        assert.ok(requiresExperimental(e), `${id} must require experimental`);
+        assert.equal(e.unlockedBy, "advanced.experimentalToggle", id);
+        assert.ok(lookup(labelKey), `${labelKey} exists in English`);
+        assert.ok(
+          lookup(descriptionKey),
+          `${descriptionKey} exists in English`,
+        );
+
+        // Searching the English label finds the row: locked with the switch off,
+        // unlocked and resolving to itself with the switch on.
+        const label = lookup(labelKey) as string;
+        const off = search(SEARCH_ENTRIES, label, resolve, ctxOff, {
+          limit: 1000,
+        }).find((h) => h.entry.id === id);
+        assert.ok(off, `${id} ("${label}") is searchable with the switch off`);
+        assert.equal(off.locked, true, id);
+        const on = search(SEARCH_ENTRIES, label, resolve, ctxOn, {
+          limit: 1000,
+        }).find((h) => h.entry.id === id);
+        assert.ok(on, `${id} ("${label}") is searchable with the switch on`);
+        assert.equal(on.locked, false, id);
+        assert.equal(resolveTarget(on, SEARCH_ENTRIES, ctxOn).id, id);
+      }
+    },
 };
 
 let failed = 0;

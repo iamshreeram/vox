@@ -1,9 +1,23 @@
 pub mod acp_agent;
 #[cfg(test)]
+mod acp_agent_permission_tests;
+#[cfg(test)]
 mod acp_agent_tests;
 pub mod acp_escalation;
 #[cfg(test)]
 mod acp_escalation_tests;
+pub mod acp_permission;
+pub mod acp_permission_broker;
+#[cfg(test)]
+mod acp_permission_broker_tests;
+#[cfg(test)]
+mod acp_permission_tests;
+pub mod acp_permission_ui;
+#[cfg(test)]
+mod acp_permission_ui_tests;
+pub mod acp_run;
+#[cfg(test)]
+mod acp_run_tests;
 pub mod agent_jobs;
 pub mod agent_jobs_output;
 pub mod agent_tools;

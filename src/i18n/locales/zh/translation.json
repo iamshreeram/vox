@@ -385,7 +385,12 @@
         "advancedLabel": "高级",
         "promptFlagLabel": "提示参数",
         "promptFlagDescription": "把您的请求传给智能体命令的参数，例如 -p。必须与智能体参数不同。",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",
@@ -419,6 +424,42 @@
           "argTooLong": "Each argument must be at most 256 characters.",
           "outOfRange": "Enter a number of seconds from 10 to 900.",
           "notInteger": "Enter a whole number of seconds."
+        }
+      },
+      "acpPermission": {
+        "mode": {
+          "label": "Approval mode",
+          "description": "The agent reports what each tool call does, and Vox trusts that report. This is a convenience policy, not a sandbox. Use 'Ask before every tool call' for agents you do not fully trust. Earlier versions denied every request; this setting changes that behaviour.",
+          "options": {
+            "ask_writes": "Ask before changes (reads and searches run freely)",
+            "ask_all": "Ask before every tool call",
+            "deny": "Never allow (deny all requests)"
+          }
+        },
+        "timeout": {
+          "label": "Approval timeout",
+          "description": "Seconds to wait for your answer before a request is denied ({{min}}-{{max}} seconds)."
+        },
+        "kind": {
+          "read": "Read",
+          "edit": "Edit",
+          "delete": "Delete",
+          "move": "Move or rename",
+          "search": "Search",
+          "execute": "Run a command",
+          "think": "Reasoning",
+          "fetch": "Fetch from the internet",
+          "switch_mode": "Switch mode",
+          "other": "Other action"
+        },
+        "prompt": {
+          "title": "The agent wants to perform an action",
+          "allowOnce": "Allow once",
+          "deny": "Deny",
+          "detailsUnavailable": "Operation details unavailable - the agent did not say what it will change.",
+          "queued": "{{count}} more waiting",
+          "countdown": "Denied automatically in {{seconds}} s",
+          "untrustedNote": "The agent describes this action itself. Vox does not check that description."
         }
       },
       "agentContext": {

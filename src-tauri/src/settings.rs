@@ -1,3 +1,5 @@
+use crate::managers::acp_agent::PermissionSettings;
+use crate::managers::acp_permission::PermissionMode;
 use crate::utils;
 use log::{debug, warn};
 use serde::de::{self, Visitor};
@@ -721,6 +723,12 @@ pub struct AppSettings {
     /// Seconds allowed for one agent turn.
     #[serde(default = "default_acp_agent_turn_timeout_secs")]
     pub acp_agent_turn_timeout_secs: u64,
+    /// How agent permission requests are decided. Defaults to asking before writes.
+    #[serde(default)]
+    pub acp_permission_mode: PermissionMode,
+    /// Seconds one approval prompt waits for the user before it is rejected.
+    #[serde(default = "default_acp_permission_timeout_secs")]
+    pub acp_permission_timeout_secs: u64,
     /// Speak agent replies and a generic confirmation/failure phrase aloud.
     /// Opt-in: spoken output audibly exposes agent reply content.
     #[serde(default)]
@@ -1245,6 +1253,26 @@ pub const ACP_AGENT_ARG_MAX_CHARS: usize = 256;
 
 fn default_acp_agent_turn_timeout_secs() -> u64 {
     ACP_AGENT_TURN_TIMEOUT_DEFAULT_SECS
+}
+
+/// Default wait for one approval prompt, in seconds.
+pub const ACP_PERMISSION_TIMEOUT_DEFAULT_SECS: u64 = 60;
+/// Shortest accepted approval wait, in seconds.
+pub const ACP_PERMISSION_TIMEOUT_MIN_SECS: u64 = 10;
+/// Longest accepted approval wait, in seconds.
+pub const ACP_PERMISSION_TIMEOUT_MAX_SECS: u64 = 300;
+
+fn default_acp_permission_timeout_secs() -> u64 {
+    ACP_PERMISSION_TIMEOUT_DEFAULT_SECS
+}
+
+/// Clamps an approval timeout into 10..=300 seconds. Applied on every read, because a
+/// hand-edited settings file can hold any number.
+pub fn clamp_permission_timeout_secs(secs: u64) -> u64 {
+    secs.clamp(
+        ACP_PERMISSION_TIMEOUT_MIN_SECS,
+        ACP_PERMISSION_TIMEOUT_MAX_SECS,
+    )
 }
 
 /// Validates an ACP agent turn timeout in seconds. Out-of-range values are rejected, never
@@ -1967,6 +1995,8 @@ pub fn get_default_settings() -> AppSettings {
         acp_agent_command: None,
         acp_agent_args: String::new(),
         acp_agent_turn_timeout_secs: default_acp_agent_turn_timeout_secs(),
+        acp_permission_mode: PermissionMode::default(),
+        acp_permission_timeout_secs: default_acp_permission_timeout_secs(),
         tts_enabled: false,
         tts_voice: None,
         tts_rate_wpm: default_tts_rate_wpm(),
@@ -2088,6 +2118,16 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
+    /// Permission policy for agent requests, with the approval timeout clamped to range.
+    pub fn acp_permission_settings(&self) -> PermissionSettings {
+        PermissionSettings {
+            mode: self.acp_permission_mode,
+            approval_timeout: std::time::Duration::from_secs(clamp_permission_timeout_secs(
+                self.acp_permission_timeout_secs,
+            )),
+        }
+    }
+
     pub fn active_post_process_provider(&self) -> Option<&PostProcessProvider> {
         self.post_process_providers
             .iter()
