@@ -3553,3 +3553,7 @@ mod converse_timing_m4_tests;
 #[cfg(test)]
 #[path = "converse_loop_voice_tests.rs"]
 mod loop_voice_tests;
+
+#[cfg(test)]
+#[path = "converse_role_loop_tests.rs"]
+mod role_loop_tests;

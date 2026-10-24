@@ -1633,6 +1633,10 @@ mod converse_platform_policy_tests;
 #[path = "converse_platform_m4_tests.rs"]
 mod converse_platform_m4_tests;
 
+#[cfg(test)]
+#[path = "converse_role_seam_tests.rs"]
+mod converse_role_seam_tests;
+
 // ---------------------------------------------------------------------
 // Vault RAG wiring, tool probe and the BrainCore seam (DESIGN Rev 5, 3.2, 3.3, 3.6).
 // ---------------------------------------------------------------------
