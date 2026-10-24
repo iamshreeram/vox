@@ -174,19 +174,120 @@ pub async fn confirm_action(
     question: &str,
     cfg: &ConfirmConfig,
 ) -> Decision {
+    match ask_and_listen(ears, mouth, announcer, question, cfg).await {
+        Ok(outcome) => decision_for(outcome),
+        Err(reason) => Decision::Declined(reason),
+    }
+}
+
+/// Speaks `question` and listens once for the answer, with the timing of `confirm_action`.
+/// `Err` when the question could not be spoken or no answer window opened.
+async fn ask_and_listen(
+    ears: &dyn Ears,
+    mouth: &dyn Mouth,
+    announcer: &Announcer,
+    question: &str,
+    cfg: &ConfirmConfig,
+) -> Result<ListenOutcome, DeclineReason> {
     let _guard = announcer.confirmation_guard();
     match mouth.say(question, Emotion::Neutral).await {
         SayOutcome::Done => {}
-        SayOutcome::Interrupted => return Decision::Declined(DeclineReason::Cancelled),
-        SayOutcome::Failed => return Decision::Declined(DeclineReason::Error),
+        SayOutcome::Interrupted => return Err(DeclineReason::Cancelled),
+        SayOutcome::Failed => return Err(DeclineReason::Error),
     }
     if !wait_until_quiet(mouth, cfg.quiet_wait).await {
-        return Decision::Declined(DeclineReason::Error);
+        return Err(DeclineReason::Error);
     }
     tokio::time::sleep(cfg.post_speech_guard).await;
     match tokio::time::timeout(cfg.listen_timeout, ears.listen()).await {
-        Ok(outcome) => decision_for(outcome),
-        Err(_) => Decision::Declined(DeclineReason::Silence),
+        Ok(outcome) => Ok(outcome),
+        Err(_) => Err(DeclineReason::Silence),
+    }
+}
+
+/// Strict classifier for forced confirmations (DESIGN 2.5, C6): true only when the utterance,
+/// lower-cased, punctuation-stripped and whitespace-normalised, is exactly `yes`. Everything
+/// else (`okay`, `sure`, `yes please`, mixed speech, silence) is not an approval.
+pub fn classify_strict_yes(utterance: &str) -> bool {
+    let key = utterance
+        .split_whitespace()
+        .map(word_key)
+        .filter(|k| !k.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    key == "yes"
+}
+
+/// Asks a forced yes/no question (DESIGN 2.5, C6). The same say, quiet wait, guard and single
+/// listen as `confirm_action`, but only an exact `yes` approves (`classify_strict_yes`). The
+/// caller speaks the decline line; nothing runs unless this returns `Approved`.
+pub async fn confirm_forced(
+    ears: &dyn Ears,
+    mouth: &dyn Mouth,
+    announcer: &Announcer,
+    question: &str,
+    cfg: &ConfirmConfig,
+) -> Decision {
+    match ask_and_listen(ears, mouth, announcer, question, cfg).await {
+        Ok(ListenOutcome::Utterance(text)) if classify_strict_yes(&text) => Decision::Approved,
+        Ok(ListenOutcome::Utterance(text)) if text.trim().is_empty() => {
+            Decision::Declined(DeclineReason::Silence)
+        }
+        Ok(ListenOutcome::Utterance(_)) => Decision::Declined(DeclineReason::Unclear),
+        Ok(other) => decision_for(other),
+        Err(reason) => Decision::Declined(reason),
+    }
+}
+
+/// The first `count` whitespace-separated words of `text`, joined by single spaces.
+fn first_words(text: &str, count: usize) -> String {
+    text.split_whitespace()
+        .take(count)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The exact question spoken before a planner-derived effect runs while the session is tainted
+/// by an agent result (DESIGN 2.5, C6). `None` when the plan has no payload to describe: such a
+/// plan performs no effect, so there is nothing to confirm.
+pub fn forced_prompt(plan: &TurnPlan) -> Option<String> {
+    match plan.kind {
+        PlanKind::Command => {
+            let command = plan.command.as_deref()?;
+            Some(format!(
+                "I am about to do this: {command}. Say yes to go ahead."
+            ))
+        }
+        PlanKind::Paste => {
+            let text = plan.paste_text.as_deref()?;
+            let words = text.split_whitespace().count();
+            let start = first_words(text, 12);
+            Some(format!(
+                "I am about to paste {words} words starting with: {start}. Say yes to go ahead."
+            ))
+        }
+        PlanKind::Job => {
+            let job = plan.job.as_ref()?;
+            Some(format!(
+                "I am about to start a coding job in {}: {}. Say yes to go ahead.",
+                job.project, job.task
+            ))
+        }
+        PlanKind::Agent => {
+            let request = plan.agent.as_ref()?;
+            Some(format!(
+                "I am about to ask the agent: {}. Say yes to go ahead.",
+                request.task
+            ))
+        }
+        PlanKind::SetRole => {
+            let directive = plan.role.as_ref()?;
+            let start = first_words(&directive.role, 12);
+            Some(format!(
+                "I am about to take this role: {start}. Say yes to go ahead."
+            ))
+        }
+        _ => None,
     }
 }
 

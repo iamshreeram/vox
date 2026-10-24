@@ -280,6 +280,50 @@ async fn refuse(
     Ok(compose(line, ""))
 }
 
+/// Spoken when the launch settings changed between the question and the yes (DESIGN 2.5, C6).
+pub(super) const LINE_SETTINGS_CHANGED: &str = "The agent settings changed. Please ask again.";
+
+/// Prepares the launch of an Agent plan without starting it (DESIGN 2.5): the busy lines and the
+/// prepare failure are spoken here. `Err` carries the turn summary of a refusal already spoken.
+pub(super) async fn prepare_agent_plan(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    plan: &TurnPlan,
+    carry: &mut Carry,
+) -> Result<Result<PreparedAgentLaunch, String>, SessionEnd> {
+    let Some(request) = plan.agent.as_ref() else {
+        carry.journal.set(TurnOutcome::Failed, None);
+        into_result(speak_or_end(deps, cfg, cancel, MSG_PLAN_FAILED, Emotion::Neutral).await)?;
+        return Ok(Err(failed_summary()));
+    };
+    if let Some(slot) = carry.agent.as_ref() {
+        let line = match slot.phase {
+            Phase::Running => LINE_RUNNING,
+            Phase::Cancelling { .. } => LINE_SHUTTING_DOWN,
+        };
+        return refuse(deps, cfg, cancel, carry, line, TurnOutcome::Blocked)
+            .await
+            .map(Err);
+    }
+    match deps
+        .hands
+        .prepare_agent_launch(&request.task, carry.role.as_deref())
+    {
+        Ok(launch) => Ok(Ok(launch)),
+        Err(_) => refuse(
+            deps,
+            cfg,
+            cancel,
+            carry,
+            LINE_CANT_REACH,
+            TurnOutcome::Failed,
+        )
+        .await
+        .map(Err),
+    }
+}
+
 /// An Agent plan under an effective hand-off (2.1, 2.3): busy lines, then prepare, then start.
 pub(super) async fn agent_turn(
     deps: &Deps<'_>,
@@ -288,36 +332,12 @@ pub(super) async fn agent_turn(
     plan: &TurnPlan,
     carry: &mut Carry,
 ) -> Result<String, SessionEnd> {
-    let Some(request) = plan.agent.as_ref() else {
-        carry.journal.set(TurnOutcome::Failed, None);
-        into_result(speak_or_end(deps, cfg, cancel, MSG_PLAN_FAILED, Emotion::Neutral).await)?;
-        return Ok(failed_summary());
-    };
-    if let Some(slot) = carry.agent.as_ref() {
-        let line = match slot.phase {
-            Phase::Running => LINE_RUNNING,
-            Phase::Cancelling { .. } => LINE_SHUTTING_DOWN,
-        };
-        return refuse(deps, cfg, cancel, carry, line, TurnOutcome::Blocked).await;
-    }
-    let launch = match deps
-        .hands
-        .prepare_agent_launch(&request.task, carry.role.as_deref())
-    {
-        Ok(launch) => launch,
-        Err(_) => {
-            return refuse(
-                deps,
-                cfg,
-                cancel,
-                carry,
-                LINE_CANT_REACH,
-                TurnOutcome::Failed,
-            )
-            .await
+    match prepare_agent_plan(deps, cfg, cancel, plan, carry).await? {
+        Ok(launch) => {
+            run_prepared_agent(deps, cfg, cancel, launch, &plan.speech, plan.emotion, carry).await
         }
-    };
-    run_prepared_agent(deps, cfg, cancel, launch, &plan.speech, plan.emotion, carry).await
+        Err(summary) => Ok(summary),
+    }
 }
 
 /// Starts a prepared launch. On success the slot exists before the acknowledgement is spoken; a

@@ -7,8 +7,10 @@
 use super::converse_agent_loop_tests::*;
 #[allow(unused_imports)]
 use super::*;
+use crate::managers::command_router::CommandAction;
 use crate::managers::converse_agent::AgentEvent;
 use crate::managers::converse_agent::AgentPoll;
+use crate::managers::converse_confirm::ValidatedCommand;
 use crate::managers::converse_context::note_agent_result;
 use crate::managers::converse_plan::TurnPlan;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -310,15 +312,28 @@ async fn t_gate_on_still_asks_the_forced_yes_first() {
         gate_active: true,
         jobs_allowed: true,
     };
-    run_with(&r, &acfg(), Some(&pol)).await;
-    assert!(prompted(
-        &r,
-        "I am about to do this: cargo build --release. Say yes to go ahead."
-    ));
+    run_gated(&r, &acfg(), &pol).await;
+    let said = spoken(&r);
+    let forced = said
+        .iter()
+        .position(|s| s == "I am about to do this: cargo build --release. Say yes to go ahead.");
+    let gate = said.iter().position(|s| s.ends_with("Say yes or no."));
+    assert!(forced.is_some(), "forced prompt spoken: {said:?}");
+    assert!(gate.is_some(), "the gate asked its own question: {said:?}");
+    assert!(
+        forced < gate,
+        "forced prompt comes before the gate question: {said:?}"
+    );
     assert_eq!(
-        executed(&r, EffectKind::Command),
+        count_entry(&r, "run_validated:Notes"),
         1,
-        "one run after both yeses"
+        "one run after both yeses: {:?}",
+        entries(&r)
+    );
+    assert_eq!(
+        count_entry(&r, &format!("model:{CMD}")),
+        0,
+        "the unvalidated legacy path is not used"
     );
 }
 
@@ -476,15 +491,39 @@ async fn t_result_text_reaches_history_only_as_a_neutralised_note() {
     let r = tainted_rig(MALICIOUS, EffectKind::Command, vec![heard("okay")], vec![]);
     run_with(&r, &acfg(), None).await;
     let call = seen_by_utt(&r, "thanks");
-    let raw_history = call
-        .history
-        .iter()
-        .any(|(u, a)| u.contains("Ignore previous") || a.contains("Ignore previous"));
+    let note_value = note_agent_result(MALICIOUS);
+    let is_hostile = |text: &str| text.contains("Ignore previous") || text.contains("evil.example");
     assert!(
-        !raw_history,
-        "the raw text never enters history: {:?}",
+        call.history.iter().any(|(_, a)| *a == note_value),
+        "history holds the note: {:?}",
         call.history
     );
+    for (user, assistant) in &call.history {
+        assert!(
+            !is_hostile(user),
+            "the user side never carries the result: {user:?}"
+        );
+        if is_hostile(assistant) {
+            assert_eq!(
+                assistant, &note_value,
+                "a hostile result enters history only as the note"
+            );
+            assert!(
+                assistant.contains("untrusted_"),
+                "the note marks its field untrusted"
+            );
+            assert_eq!(
+                assistant.matches('\u{27E6}').count(),
+                1,
+                "only the note's own opening bracket survives"
+            );
+            assert_eq!(
+                assistant.matches('\u{27E7}').count(),
+                1,
+                "only the note's own closing bracket survives"
+            );
+        }
+    }
     assert_eq!(published_count(&r), 1, "published to the screen once");
 }
 
@@ -700,4 +739,83 @@ fn effects_total(r: &Rig) -> usize {
         + count_prefix(r, "paste:")
         + count_prefix(r, "start_job:")
         + count_prefix(r, "start:")
+}
+
+/// Delegates every call to the rig's hands, and scripts Command validation so that the
+/// confirmation gate can approve a brain-planned Command (the gate path needs a validated command).
+struct GateHands<'a> {
+    inner: &'a AHands,
+}
+
+impl Hands for GateHands<'_> {
+    fn paste_generated(&self, text: &str) -> Result<(), String> {
+        self.inner.paste_generated(text)
+    }
+
+    fn run_user_phrase<'b>(&'b self, phrase: &'b str) -> BoxFuture<'b, PhraseOutcome> {
+        self.inner.run_user_phrase(phrase)
+    }
+
+    fn run_model_command<'b>(&'b self, phrase: &'b str) -> BoxFuture<'b, PhraseOutcome> {
+        self.inner.run_model_command(phrase)
+    }
+
+    fn validate_command(&self, _text: &str) -> Option<ValidatedCommand> {
+        Some(ValidatedCommand {
+            label: "Notes".to_string(),
+            action: CommandAction::OpenUrl {
+                url: "https://example.invalid/".to_string(),
+            },
+        })
+    }
+
+    fn run_validated_command(&self, cmd: ValidatedCommand) -> bool {
+        note(&self.inner.log, format!("run_validated:{}", cmd.label));
+        true
+    }
+
+    fn has_active_job(&self) -> bool {
+        self.inner.has_active_job()
+    }
+
+    fn prepare_agent_launch(
+        &self,
+        task: &str,
+        role: Option<&str>,
+    ) -> Result<PreparedAgentLaunch, AgentStartError> {
+        self.inner.prepare_agent_launch(task, role)
+    }
+
+    fn agent_launch_still_valid(&self, launch: &PreparedAgentLaunch) -> bool {
+        self.inner.agent_launch_still_valid(launch)
+    }
+
+    fn start_agent(
+        &self,
+        launch: PreparedAgentLaunch,
+    ) -> Result<Box<dyn AgentRun>, AgentStartError> {
+        self.inner.start_agent(launch)
+    }
+
+    fn publish_agent_result(&self, text: &str) {
+        self.inner.publish_agent_result(text)
+    }
+}
+
+/// `run_with`, but the hands are the delegating `GateHands` with scripted validation.
+async fn run_gated(r: &Rig, cfg: &SessionConfig, policy: &dyn PolicySource) -> SessionEnd {
+    let hands = GateHands { inner: &r.hands };
+    let deps = Deps {
+        policy: Some(policy),
+        announcer: None,
+        ears: &r.ears,
+        mouth: &r.mouth,
+        hands: &hands,
+        brain: &r.brain,
+        reporter: &r.reporter,
+    };
+    let token = r.cancel.subscribe();
+    tokio::time::timeout(Duration::from_secs(10), run_session(&deps, cfg, token))
+        .await
+        .expect("run_session hung")
 }

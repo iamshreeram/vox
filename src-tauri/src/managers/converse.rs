@@ -6,9 +6,9 @@ use crate::managers::converse_ack::choose;
 use crate::managers::converse_agent::{AgentRun, AgentStartError, PreparedAgentLaunch};
 use crate::managers::converse_barge::{BargeCapture, BargeIn, BargeWatch, ReplyGate};
 use crate::managers::converse_confirm::{
-    confirm_action, confirmation_question, decline_message, fingerprint_for, prepare_action,
-    ConfirmConfig, Decision, DeclineReason, DirFd, JobLaunch, JobStartOutcome, PinError,
-    PolicySource, PrepareError, PreparedAction, ValidatedCommand,
+    confirm_action, confirm_forced, confirmation_question, decline_message, fingerprint_for,
+    forced_prompt, prepare_action, ConfirmConfig, Decision, DeclineReason, DirFd, JobLaunch,
+    JobStartOutcome, PinError, PolicySource, PrepareError, PreparedAction, ValidatedCommand,
 };
 use crate::managers::converse_context::{
     compose, neutralize, note_command, note_delivery_failed, note_failed, note_incomplete,
@@ -825,6 +825,8 @@ const MSG_DONE: &str = "Done.";
 /// Spoken instead of any model-proposed paste or command while vault context is on (DESIGN 3.6).
 /// Spoken when a gated job's settings changed between approval and dispatch (DESIGN R3-2).
 const MSG_SETTINGS_CHANGED: &str = "Settings changed, so I didn't start it.";
+/// Spoken when a forced confirmation is not an exact yes (DESIGN 2.5, C6).
+const MSG_FORCED_DECLINED: &str = "Okay, I won't.";
 const MSG_ANSWER_ONLY: &str =
     "Vault context is on, so I can only answer questions. Turn it off to dictate text or open things.";
 /// Queued once when the brain is slow (`SessionConfig::ack_after`).
@@ -1164,8 +1166,8 @@ struct Carry {
     agent: Option<converse_agent_loop::AgentSlot>,
     /// Stage 2: speech owed to the user from the agent run, delivered at loop boundaries.
     undelivered: VecDeque<converse_agent_loop::Narration>,
-    /// Stage 2: set when an agent result was recorded. Read by the forced-confirmation step (C3b).
-    #[allow(dead_code)]
+    /// Stage 2: set when an agent result was recorded. Lasts the rest of the session and makes
+    /// `run_final_plan` ask a forced yes/no question before each planner-derived effect.
     tainted: bool,
 }
 
@@ -1283,15 +1285,20 @@ async fn streamed_outcome(
     }
     if matches!(
         plan.kind,
-        PlanKind::SetRole | PlanKind::ClearRole | PlanKind::Resume | PlanKind::Agent
+        PlanKind::SetRole
+            | PlanKind::ClearRole
+            | PlanKind::Resume
+            | PlanKind::Agent
+            | PlanKind::Job
     ) {
-        // Agent plans too: the streamer never releases them as early speech (2.1).
+        // Agent and Job plans too: the streamer never releases them as early speech (2.1). A Job
+        // plan is executed through `run_final_plan` like the other effect kinds (DESIGN 2.5).
         // Role plans are never released as early speech (the streamer accepts only answer and
         // clarify), so the final plan runs in full through the one-shot path, as `Legacy` does.
         if early.ack.is_some() {
             queue.abort();
         }
-        return execute_plan(deps, cfg, cancel, plan, carry).await;
+        return run_final_plan(deps, cfg, cancel, plan, carry).await;
     }
     let text = match reconcile(&plan, &early.spoken) {
         Reconcile::Abort => {
@@ -1304,7 +1311,7 @@ async fn streamed_outcome(
             if early.ack.is_some() {
                 queue.abort();
             }
-            return execute_plan(deps, cfg, cancel, plan, carry).await;
+            return run_final_plan(deps, cfg, cancel, plan, carry).await;
         }
         Reconcile::Remainder { text } => text,
     };
@@ -1532,7 +1539,7 @@ async fn brain_turn(
         carry.clock.plan_ready = Some(plan_at);
         carry.clock.plan_ok = planned.is_ok();
         let turn = match planned {
-            Ok(plan) => gate_and_run(deps, cfg, cancel, plan, carry).await,
+            Ok(plan) => run_final_plan(deps, cfg, cancel, plan, carry).await,
             Err(err) => plan_failed(deps, cfg, cancel, err, &[], &carry.journal).await,
         };
         carry.clock.speech_at = timed.first_call();
@@ -2065,6 +2072,133 @@ async fn gate_and_run(
         }
         other => dispatch_prepared(deps, cfg, cancel, other, carry).await,
     }
+}
+
+/// The one entry for planner-derived plans (DESIGN 2.5, C6): every final plan from the brain
+/// (streamed or not) passes here and nothing else sends it to `gate_and_run` or `execute_plan`.
+/// Order: (1) the answer-only refusal (`execute_plan` speaks it for Paste, Command, Job, Agent);
+/// (2) while the session is tainted by an agent result, a forced yes/no question for Paste,
+/// Command, Job, Agent and SetRole, which runs an immutable clone of the plan only on an exact
+/// yes; (3) the gate and execute path. Local user-intent paths never reach this function.
+async fn run_final_plan(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    plan: TurnPlan,
+    carry: &mut Carry,
+) -> Result<Option<String>, SessionEnd> {
+    if cfg.answer_only
+        && matches!(
+            plan.kind,
+            PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::Agent
+        )
+    {
+        return execute_plan(deps, cfg, cancel, plan, carry).await;
+    }
+    if !(carry.tainted && needs_forced_confirmation(cfg, &plan)) {
+        return gate_and_run(deps, cfg, cancel, plan, carry).await;
+    }
+    if plan.kind == PlanKind::Agent {
+        return forced_agent(deps, cfg, cancel, plan, carry).await;
+    }
+    let confirmed = plan.clone();
+    let Some(question) = forced_prompt(&confirmed) else {
+        return gate_and_run(deps, cfg, cancel, confirmed, carry).await;
+    };
+    match ask_forced(deps, cancel, carry, &question).await {
+        Decision::Approved => gate_and_run(deps, cfg, cancel, confirmed, carry).await,
+        Decision::Declined(_) => decline_forced(deps, cfg, cancel, carry).await,
+    }
+}
+
+/// True for the planner-derived kinds that need the forced question while tainted. An Agent plan
+/// needs it only when the hand-off is effective; otherwise it is answered as plain speech.
+fn needs_forced_confirmation(cfg: &SessionConfig, plan: &TurnPlan) -> bool {
+    match plan.kind {
+        PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::SetRole => true,
+        PlanKind::Agent => converse_agent_loop::handoff_effective(cfg),
+        _ => false,
+    }
+}
+
+/// A tainted Agent plan (DESIGN 2.5, C6): the launch is prepared before the question, and after
+/// an exact yes it is started only if the settings still produce the same launch. The same
+/// prepared launch is the one started.
+async fn forced_agent(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    plan: TurnPlan,
+    carry: &mut Carry,
+) -> Result<Option<String>, SessionEnd> {
+    carry.journal.set(speech_outcome(&plan.kind), None);
+    let launch =
+        match converse_agent_loop::prepare_agent_plan(deps, cfg, cancel, &plan, carry).await? {
+            Ok(launch) => launch,
+            Err(summary) => return Ok(Some(summary)),
+        };
+    let Some(question) = forced_prompt(&plan) else {
+        return Ok(Some(failed_summary()));
+    };
+    if let Decision::Declined(_) = ask_forced(deps, cancel, carry, &question).await {
+        return decline_forced(deps, cfg, cancel, carry).await;
+    }
+    if !deps.hands.agent_launch_still_valid(&launch) {
+        carry.journal.set(TurnOutcome::Blocked, None);
+        let line = converse_agent_loop::LINE_SETTINGS_CHANGED;
+        into_result(speak_or_end(deps, cfg, cancel, line, Emotion::Neutral).await)?;
+        return Ok(Some(compose(line, "")));
+    }
+    let summary = converse_agent_loop::run_prepared_agent(
+        deps,
+        cfg,
+        cancel,
+        launch,
+        &plan.speech,
+        plan.emotion,
+        carry,
+    )
+    .await?;
+    Ok(Some(summary))
+}
+
+/// Speaks one forced question and waits for the answer (DESIGN 2.5). The question's own speech
+/// is rolled back out of the transcript journal, as for `ask_confirmation`.
+async fn ask_forced(
+    deps: &Deps<'_>,
+    cancel: &mut CancelToken,
+    carry: &Carry,
+    question: &str,
+) -> Decision {
+    let before = carry.journal.submitted_len();
+    let fallback = Announcer::new(Arc::new(NoAnnounce));
+    let announcer = deps.announcer.unwrap_or(&fallback);
+    let config = ConfirmConfig::default();
+    let asked = confirm_forced(deps.ears, deps.mouth, announcer, question, &config);
+    let decision = match race(cancel, asked).await {
+        Some(decision) => decision,
+        None => Decision::Declined(DeclineReason::Cancelled),
+    };
+    carry.journal.truncate_submitted(before);
+    decision
+}
+
+/// Declines a forced question: nothing runs and the decline line is spoken. A cancelled
+/// session ends without speaking.
+async fn decline_forced(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    carry: &mut Carry,
+) -> Result<Option<String>, SessionEnd> {
+    if is_cancelled(cancel) {
+        return Err(SessionEnd::Cancelled);
+    }
+    carry
+        .journal
+        .set(TurnOutcome::Blocked, Some("declined".to_string()));
+    into_result(speak_or_end(deps, cfg, cancel, MSG_FORCED_DECLINED, Emotion::Neutral).await)?;
+    Ok(Some(compose(MSG_FORCED_DECLINED, "")))
 }
 
 /// Announcer stand-in used when the session has none: it never speaks queued text, so a
