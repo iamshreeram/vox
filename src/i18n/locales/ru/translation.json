@@ -170,6 +170,10 @@
       "title": "Модели транскрипции",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style model",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "Выберите модель транскрипции или загрузите дополнительные модели. Разные модели предлагают разные уровни точности и скорости.",
@@ -232,6 +236,9 @@
         "searchPlaceholder": "Поиск языков...",
         "noResults": "Языки не найдены",
         "auto": "Авто"
+      },
+      "groups": {
+        "conversation": "Voice conversation"
       },
       "shortcutActivation": {
         "title": "Поведение сочетания клавиш",

@@ -11,7 +11,6 @@ import { AudioFeedback } from "../AudioFeedback";
 import { useSettings } from "../../../hooks/useSettings";
 import { VolumeSlider } from "../VolumeSlider";
 import { MuteWhileRecording } from "../MuteWhileRecording";
-import { ModelSettingsCard } from "./ModelSettingsCard";
 import { ThemeSelector } from "../ThemeSelector";
 import { PlacedGroups } from "../PlacedGroups";
 
@@ -30,7 +29,6 @@ export const GeneralSettings: React.FC = () => {
       <SettingsGroup title={t("settings.appearance.title")}>
         <ThemeSelector descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
-      <ModelSettingsCard />
       <SettingsGroup title={t("settings.sound.title")}>
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />
         <ChannelSelector descriptionMode="tooltip" grouped={true} />

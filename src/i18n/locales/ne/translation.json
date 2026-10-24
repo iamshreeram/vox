@@ -206,6 +206,9 @@
         "noResults": "कुनै भाषा भेटिएन",
         "auto": "स्वतः"
       },
+      "groups": {
+        "conversation": "Voice conversation"
+      },
       "shortcutActivation": {
         "title": "सर्टकटको व्यवहार",
         "description": "ट्रान्सक्राइब सर्टकटले रेकर्डिङ सुरु र बन्द गर्ने तरिका छान्नुहोस्।",
@@ -228,6 +231,10 @@
       "title": "ट्रान्सक्रिप्सन मोडेलहरू",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style model",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "ट्रान्सक्रिप्सन मोडेल चयन गर्नुहोस् वा थप मोडेलहरू डाउनलोड गर्नुहोस्। फरक मोडेलहरूले फरक स्तरको शुद्धता र गति दिन्छन्।",

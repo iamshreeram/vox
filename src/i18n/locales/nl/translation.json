@@ -206,6 +206,9 @@
         "noResults": "Geen talen gevonden",
         "auto": "Automatisch"
       },
+      "groups": {
+        "conversation": "Voice conversation"
+      },
       "shortcutActivation": {
         "title": "Gedrag van sneltoets",
         "description": "Kies hoe de sneltoets voor dicteren de opname start en stopt.",
@@ -228,6 +231,10 @@
       "title": "Transcriptiemodellen",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style model",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "Selecteer een transcriptiemodel of download extra modellen. Verschillende modellen bieden variërende niveaus van nauwkeurigheid en snelheid.",

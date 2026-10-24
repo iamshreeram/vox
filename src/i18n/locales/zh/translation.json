@@ -170,6 +170,10 @@
       "title": "转录模型",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style model",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "选择转录模型或下载其他模型。不同模型提供不同的准确度和速度。",
@@ -232,6 +236,9 @@
         "searchPlaceholder": "搜索语言...",
         "noResults": "未找到语言",
         "auto": "自动"
+      },
+      "groups": {
+        "conversation": "Voice conversation"
       },
       "shortcutActivation": {
         "title": "快捷键行为",

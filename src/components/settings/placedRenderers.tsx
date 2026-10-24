@@ -27,6 +27,12 @@ import { TtsSettings } from "./TtsSettings";
 import { RealtimeSection } from "./RealtimeSection";
 import { WakeWordToggle } from "./WakeWordToggle";
 import { AmbientModeToggle } from "./AmbientModeToggle";
+import { SpokenReplyStyle } from "./SpokenReplyStyle";
+import { ConversationSection } from "./ConversationSection";
+import { PersonaSettings } from "./voice/PersonaSettings";
+import { LatencyPanel } from "./voice/LatencyPanel";
+import { SmartTurnSettings } from "./voice/SmartTurnSettings";
+import { SpeakerFilterSettings } from "./voice/SpeakerFilterSettings";
 import type { ControlId } from "./settingsPlacement";
 
 // Renders each placed control. Moved verbatim from the former Experimental page,
@@ -93,4 +99,18 @@ export const PLACED_RENDERERS: Record<ControlId, () => React.ReactNode> = {
   codingJobs: () => <JobsSettings descriptionMode="tooltip" grouped={true} />,
   tts: () => <TtsSettings descriptionMode="tooltip" grouped={true} />,
   realtime: () => <RealtimeSection descriptionMode="tooltip" grouped={true} />,
+  replyStyle: () => (
+    <SpokenReplyStyle descriptionMode="tooltip" grouped={true} />
+  ),
+  conversation: () => (
+    <ConversationSection descriptionMode="tooltip" grouped={true} />
+  ),
+  persona: () => <PersonaSettings descriptionMode="tooltip" grouped={true} />,
+  latencyPanel: () => <LatencyPanel descriptionMode="tooltip" grouped={true} />,
+  smartTurn: () => (
+    <SmartTurnSettings descriptionMode="tooltip" grouped={true} />
+  ),
+  speakerFilter: () => (
+    <SpeakerFilterSettings descriptionMode="tooltip" grouped={true} />
+  ),
 };

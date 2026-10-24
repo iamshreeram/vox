@@ -203,6 +203,9 @@
         "noResults": "لم يتم العثور على لغات",
         "auto": "تلقائي"
       },
+      "groups": {
+        "conversation": "Voice conversation"
+      },
       "shortcutActivation": {
         "title": "سلوك الاختصار",
         "description": "اختر كيفية بدء التسجيل وإيقافه باستخدام اختصار التفريغ الصوتي.",
@@ -1206,6 +1209,10 @@
       "title": "نماذج النسخ",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style model",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "اختر نموذج نسخ أو قم بتنزيل نماذج إضافية. تقدم النماذج المختلفة مستويات متفاوتة من الدقة والسرعة.",

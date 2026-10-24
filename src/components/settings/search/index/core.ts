@@ -100,8 +100,8 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
     keywords: ["failure color", "red", "danger", "colour"],
   },
   {
-    id: "general.language",
-    section: "general",
+    id: "models.language",
+    section: "models",
     labelKey: "settings.general.language.title",
     descriptionKey: "settings.general.language.description",
     keywords: [
@@ -113,8 +113,8 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
     ],
   },
   {
-    id: "general.translateToEnglish",
-    section: "general",
+    id: "models.translateToEnglish",
+    section: "models",
     labelKey: "settings.advanced.translateToEnglish.label",
     descriptionKey: "settings.advanced.translateToEnglish.description",
     keywords: ["translation", "english", "translate", "foreign language"],
@@ -248,9 +248,9 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
     keywords: ["top", "bottom", "screen position", "where"],
   },
   {
-    id: "advanced.modelUnload",
-    section: "advanced",
-    groupKey: "settings.advanced.groups.app",
+    id: "models.modelUnload",
+    section: "models",
+    groupKey: "settings.models.groups.loading",
     labelKey: "settings.advanced.modelUnload.title",
     descriptionKey: "settings.advanced.modelUnload.description",
     keywords: ["memory", "gpu memory", "ram", "idle", "free memory", "timeout"],

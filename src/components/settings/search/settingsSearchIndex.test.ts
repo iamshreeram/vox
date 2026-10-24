@@ -75,6 +75,10 @@ const VALID_GROUP_IDS = new Set([
   "conversationMemory",
   "agentTools",
   "codingJobs",
+  "smartTurn",
+  "speakerFilter",
+  "replyStyle",
+  "conversation",
 ]);
 const PLATFORMS = new Set(["macos", "windows", "linux"]);
 

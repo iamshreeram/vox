@@ -19,6 +19,9 @@ import {
 } from "@/lib/constants/languages.ts";
 import type { ModelInfo } from "@/bindings";
 import { PlacedGroups } from "../PlacedGroups";
+import { SettingsGroup } from "../../ui/SettingsGroup";
+import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
+import { ModelSettingsCard } from "./ModelSettingsCard";
 
 // check if model supports a language based on its supported_languages list
 const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
@@ -228,16 +231,6 @@ export const ModelsSettings: React.FC = () => {
     };
   }, [filteredModels, downloadingModels, extractingModels, currentModel]);
 
-  if (loading) {
-    return (
-      <div className="max-w-3xl w-full mx-auto">
-        <div className="flex items-center justify-center py-16">
-          <div className="w-8 h-8 border-2 border-logo-primary border-t-transparent rounded-full animate-spin" />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="max-w-3xl w-full mx-auto space-y-4">
       <div className="mb-4">
@@ -248,6 +241,12 @@ export const ModelsSettings: React.FC = () => {
           {t("settings.models.description")}
         </p>
       </div>
+
+      <ModelSettingsCard />
+
+      <SettingsGroup title={t("settings.models.groups.loading")}>
+        <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />
+      </SettingsGroup>
 
       <h2 className="px-1 text-xs font-medium text-mid-gray uppercase tracking-wide">
         {t("settings.models.transcriptionHeading")}
@@ -411,24 +410,30 @@ export const ModelsSettings: React.FC = () => {
               </div>
             </div>
           </div>
-          {downloadedModels.map((model: ModelInfo) => (
-            <ModelCard
-              key={model.id}
-              model={model}
-              status={getModelStatus(model.id)}
-              onSelect={handleModelSelect}
-              onDownload={handleModelDownload}
-              onDelete={handleModelDelete}
-              onCancel={handleModelCancel}
-              downloadProgress={getDownloadProgress(model.id)}
-              downloadSpeed={getDownloadSpeed(model.id)}
-              showRecommended={false}
-            />
-          ))}
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="w-8 h-8 border-2 border-logo-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : (
+            downloadedModels.map((model: ModelInfo) => (
+              <ModelCard
+                key={model.id}
+                model={model}
+                status={getModelStatus(model.id)}
+                onSelect={handleModelSelect}
+                onDownload={handleModelDownload}
+                onDelete={handleModelDelete}
+                onCancel={handleModelCancel}
+                downloadProgress={getDownloadProgress(model.id)}
+                downloadSpeed={getDownloadSpeed(model.id)}
+                showRecommended={false}
+              />
+            ))
+          )}
         </div>
 
         {/* Available Models Section */}
-        {availableModels.length > 0 && (
+        {!loading && availableModels.length > 0 && (
           <div className="space-y-3">
             <h2 className="text-sm font-medium text-text/60">
               {t("settings.models.availableModels")}
@@ -449,7 +454,7 @@ export const ModelsSettings: React.FC = () => {
             ))}
           </div>
         )}
-        {filteredModels.length === 0 && (
+        {!loading && filteredModels.length === 0 && (
           <div className="text-center py-8 text-text/50">
             {t("settings.models.noModelsMatch")}
           </div>
