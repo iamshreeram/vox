@@ -2,11 +2,46 @@
 //! for the conversation loop. The loop owns the state (`Carry` in `converse.rs`); this module
 //! only splits speech into chunks and models a paused lesson with its expiry.
 
+#[cfg(test)]
+use std::cell::Cell;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-/// A paused lesson is dropped when it is read this long after it was created.
+/// A paused lesson is dropped when nobody has touched it for this long.
 pub const LESSON_TTL: Duration = Duration::from_secs(10 * 60);
+
+/// The lesson clock. Production reads `Instant::now`; tests move it forward with `advance_clock`
+/// so the ten-minute rule is exercised without sleeping.
+pub fn now() -> Instant {
+    Instant::now() + clock_offset()
+}
+
+#[cfg(test)]
+thread_local! {
+    static CLOCK_OFFSET: Cell<Duration> = const { Cell::new(Duration::ZERO) };
+}
+
+#[cfg(test)]
+fn clock_offset() -> Duration {
+    CLOCK_OFFSET.with(Cell::get)
+}
+
+#[cfg(not(test))]
+fn clock_offset() -> Duration {
+    Duration::ZERO
+}
+
+/// Moves the lesson clock forward (tests only).
+#[cfg(test)]
+pub fn advance_clock(by: Duration) {
+    CLOCK_OFFSET.with(|offset| offset.set(offset.get() + by));
+}
+
+/// Sets the lesson clock back to the real clock (tests only).
+#[cfg(test)]
+pub fn reset_clock() {
+    CLOCK_OFFSET.with(|offset| offset.set(Duration::ZERO));
+}
 /// At most this many sentences in one spoken chunk.
 const CHUNK_MAX_SENTENCES: usize = 3;
 /// At most this many characters in one spoken chunk.
@@ -26,21 +61,28 @@ pub struct Lesson {
     pub chunks: VecDeque<String>,
     /// Continue by itself after a question was answered (set by the role's `resume` flag).
     pub resume_auto: bool,
-    pub created: Instant,
+    /// When the lesson was last touched: created, a chunk committed, or a continuation or Resume
+    /// started. The ten-minute lifetime runs from here.
+    pub touched: Instant,
 }
 
 impl Lesson {
-    pub fn new(chunks: Vec<String>, resume_auto: bool, created: Instant) -> Lesson {
+    pub fn new(chunks: Vec<String>, resume_auto: bool, touched: Instant) -> Lesson {
         Lesson {
             chunks: chunks.into(),
             resume_auto,
-            created,
+            touched,
         }
     }
 
-    /// True when the lesson is at least `LESSON_TTL` old at `now`.
+    /// Marks the lesson as used at `now`, restarting its lifetime.
+    pub fn touch(&mut self, now: Instant) {
+        self.touched = now;
+    }
+
+    /// True when the lesson is at least `LESSON_TTL` old since its last touch, at `now`.
     pub fn expired(&self, now: Instant) -> bool {
-        Self::expired_after(now.saturating_duration_since(self.created))
+        Self::expired_after(now.saturating_duration_since(self.touched))
     }
 
     /// True when a lesson of this age is expired. Pure, so the lifetime is testable without a clock.

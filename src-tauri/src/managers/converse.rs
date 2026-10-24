@@ -19,7 +19,8 @@ use crate::managers::converse_plan::{
     PlanError, PlanInput, PlanKind, TurnPlan, MAX_UTTERANCE_CHARS,
 };
 use crate::managers::converse_role::{
-    split_chunks, Lesson, CLEARED_SPOKEN, CONTINUE_SPOKEN, LESSON_START_FAILED_SPOKEN,
+    now as lesson_now, split_chunks, Lesson, CLEARED_SPOKEN, CONTINUE_SPOKEN,
+    LESSON_START_FAILED_SPOKEN,
 };
 use crate::managers::converse_stream::{reconcile, PlanStreamer, Reconcile};
 use crate::managers::emotion::Emotion;
@@ -383,7 +384,6 @@ fn speech_outcome(kind: &PlanKind) -> TurnOutcome {
         PlanKind::End => TurnOutcome::Ended,
         // Job plans are parsed only when jobs are allowed and are routed through gate_and_run;
         // without a policy they are never produced, so this branch only sees answer-like speech.
-        // Job plans are parsed only when jobs are allowed and are routed through gate_and_run;
         // role kinds are answer-like for the history label (their own handling is in execute_plan).
         PlanKind::Answer
         | PlanKind::Paste
@@ -1562,7 +1562,7 @@ fn expire_lesson(carry: &mut Carry) {
     if carry
         .lesson
         .as_ref()
-        .is_some_and(|lesson| lesson.expired(Instant::now()))
+        .is_some_and(|lesson| lesson.expired(lesson_now()))
     {
         carry.lesson = None;
     }
@@ -1619,21 +1619,46 @@ async fn speak_queue(
     }
 }
 
-/// Speaks the paused lesson from its front. The lesson is dropped once it is fully spoken.
+/// Speaks the paused lesson from its front. The lesson is dropped once it is fully spoken. Each
+/// chunk that is committed (said `Done`) touches the lesson, so its ten minutes run from the last
+/// chunk rather than from creation.
 async fn speak_lesson(
     deps: &Deps<'_>,
     cfg: &SessionConfig,
     cancel: &mut CancelToken,
     carry: &mut Carry,
 ) -> Result<SayOutcome, SessionEnd> {
-    let Some(lesson) = carry.lesson.as_mut() else {
-        return Ok(SayOutcome::Done);
-    };
-    let outcome = speak_queue(deps, cfg, cancel, &mut lesson.chunks, Emotion::Neutral).await?;
-    if carry.lesson.as_ref().is_some_and(|l| l.chunks.is_empty()) {
-        carry.lesson = None;
+    loop {
+        let Some(lesson) = carry.lesson.as_mut() else {
+            return Ok(SayOutcome::Done);
+        };
+        if lesson.chunks.is_empty() {
+            carry.lesson = None;
+            return Ok(SayOutcome::Done);
+        }
+        let outcome =
+            say_front_chunk(deps, cfg, cancel, &mut lesson.chunks, Emotion::Neutral).await?;
+        if outcome != SayOutcome::Done {
+            return Ok(outcome);
+        }
+        touch_lesson(carry);
     }
-    Ok(outcome)
+}
+
+/// Marks the paused lesson, if any, as used now.
+fn touch_lesson(carry: &mut Carry) {
+    if let Some(lesson) = carry.lesson.as_mut() {
+        lesson.touch(lesson_now());
+    }
+}
+
+/// The lesson chunks still unspoken, in speaking order (empty without a lesson).
+fn lesson_chunks_left(carry: &Carry) -> Vec<String> {
+    carry
+        .lesson
+        .as_ref()
+        .map(|lesson| lesson.chunks.iter().cloned().collect())
+        .unwrap_or_default()
 }
 
 /// An Answer plan. With a role active the speech is spoken as chunks from a turn-local queue: an
@@ -1717,7 +1742,7 @@ async fn lesson_start_turn(
         Ok(plan) if plan.kind == PlanKind::Answer => {
             let chunks = split_chunks(&plan.speech);
             carry.lesson =
-                (!chunks.is_empty()).then(|| Lesson::new(chunks, resume_auto, Instant::now()));
+                (!chunks.is_empty()).then(|| Lesson::new(chunks, resume_auto, lesson_now()));
             speak_lesson(deps, cfg, cancel, carry).await?;
             Ok(())
         }
@@ -1748,16 +1773,10 @@ async fn resume_turn(
     if carry.lesson.is_none() {
         return answer_turn(deps, cfg, cancel, plan, carry).await;
     }
-    let before: Vec<String> = carry
-        .lesson
-        .as_ref()
-        .map(|lesson| lesson.chunks.iter().cloned().collect())
-        .unwrap_or_default();
+    touch_lesson(carry);
+    let before = lesson_chunks_left(carry);
     let outcome = speak_lesson(deps, cfg, cancel, carry).await?;
-    let left = carry
-        .lesson
-        .as_ref()
-        .map_or(0, |lesson| lesson.chunks.len());
+    let left = lesson_chunks_left(carry).len();
     let spoken = before
         .iter()
         .take(before.len().saturating_sub(left))
@@ -1769,26 +1788,34 @@ async fn resume_turn(
 
 /// After an Answer that was delivered in full, a lesson with `resume_auto` continues: the fixed
 /// continuation line, then the remainder from its front. Runs inside the reply scope of the turn.
+/// `Ok(None)` when nothing continues; otherwise the history side of what was spoken (the line and
+/// the chunks actually committed), with the usual note when it was not delivered in full.
 async fn continue_lesson(
     deps: &Deps<'_>,
     cfg: &SessionConfig,
     cancel: &mut CancelToken,
     carry: &mut Carry,
-) -> Result<(), SessionEnd> {
+) -> Result<Option<String>, SessionEnd> {
     expire_lesson(carry);
     if !carry
         .lesson
         .as_ref()
         .is_some_and(|lesson| lesson.resume_auto)
     {
-        return Ok(());
+        return Ok(None);
     }
+    touch_lesson(carry);
     let outcome = speak_outcome(deps, cfg, cancel, CONTINUE_SPOKEN, Emotion::Neutral).await?;
     if outcome != SayOutcome::Done {
-        return Ok(());
+        return Ok(Some(answer_summary(CONTINUE_SPOKEN, outcome)));
     }
-    speak_lesson(deps, cfg, cancel, carry).await?;
-    Ok(())
+    let before = lesson_chunks_left(carry);
+    let lesson_outcome = speak_lesson(deps, cfg, cancel, carry).await?;
+    let spoken_count = before.len().saturating_sub(lesson_chunks_left(carry).len());
+    let spoken: Vec<String> = std::iter::once(CONTINUE_SPOKEN.to_string())
+        .chain(before.into_iter().take(spoken_count))
+        .collect();
+    Ok(Some(answer_summary(&spoken.join(" "), lesson_outcome)))
 }
 
 /// Executes a final plan with the one-shot `Mouth::say` speech. `Ok(None)` = continue the
@@ -2427,10 +2454,15 @@ async fn finish_answer_with_lesson(
     turn: Result<Option<String>, SessionEnd>,
     latched: bool,
 ) -> Result<Option<String>, SessionEnd> {
-    if turn.is_ok() && carry.answer_delivered && !latched && !cancel.is_cancelled() {
-        continue_lesson(deps, cfg, cancel, carry).await?;
+    if turn.is_err() || !carry.answer_delivered || latched || cancel.is_cancelled() {
+        return turn;
     }
-    turn
+    let continuation = continue_lesson(deps, cfg, cancel, carry).await?;
+    // The continued speech joins the turn's history side, so the next plan sees what was spoken.
+    match (turn, continuation) {
+        (Ok(Some(answer)), Some(spoken)) => Ok(Some(format!("{answer} {spoken}"))),
+        (turn, _) => turn,
+    }
 }
 
 /// Barge-in capture of the interrupted reply's speech (DESIGN 12.2.3): the endpointer's maximum
@@ -3874,3 +3906,11 @@ mod loop_voice_tests;
 #[cfg(test)]
 #[path = "converse_role_loop_tests.rs"]
 mod role_loop_tests;
+
+#[cfg(test)]
+#[path = "converse_role_fix_tests.rs"]
+mod role_fix_tests;
+
+#[cfg(test)]
+#[path = "converse_role_barge_tests.rs"]
+mod role_barge_tests;

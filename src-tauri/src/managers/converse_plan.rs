@@ -369,7 +369,7 @@ fn build_system(
     if let Some(role) = role {
         let text: String = role
             .chars()
-            .filter(|c| !c.is_control())
+            .filter(|c| !is_role_strip_char(*c))
             .take(MAX_ROLE_CHARS)
             .collect();
         system.push_str(
@@ -413,7 +413,7 @@ fn plain_plan(text: &str, cap: usize) -> Result<TurnPlan, PlanError> {
     match sanitize_speech_capped(text, cap) {
         Some(speech) => Ok(TurnPlan {
             kind: PlanKind::Answer,
-            speech: cap_speech(&speech, cap),
+            speech: cap_for(&speech, cap),
             emotion: Emotion::Neutral,
             paste_text: None,
             command: None,
@@ -443,6 +443,51 @@ fn cap_speech(speech: &str, cap: usize) -> String {
         .to_string()
 }
 
+/// Stage 1 roles: the speech cap for a role-active Answer. Above `MAX_SPEECH_CHARS` (the role
+/// cap) a truncated speech is trimmed back to its last sentence end (`.`, `!` or `?` followed by
+/// whitespace or the end of the text) inside the cap. With no sentence end inside the cap it is
+/// cut at the cap, as before. At or under the cap the text is kept. The 400 path is `cap_speech`.
+fn cap_speech_at_sentence(speech: &str, cap: usize) -> String {
+    let chars: Vec<char> = speech.chars().collect();
+    if chars.len() <= cap {
+        return cap_speech(speech, cap);
+    }
+    let sentence_end = chars
+        .iter()
+        .take(cap)
+        .enumerate()
+        .filter(|(at, c)| {
+            matches!(**c, '.' | '!' | '?')
+                && chars.get(at + 1).is_none_or(|next| next.is_whitespace())
+        })
+        .map(|(at, _)| at + 1)
+        .next_back();
+    match sentence_end {
+        Some(end) => chars[..end]
+            .iter()
+            .collect::<String>()
+            .trim_end()
+            .to_string(),
+        None => cap_speech(speech, cap),
+    }
+}
+
+/// The cap applied to a sanitized speech: the sentence-aware trim for the role cap, the plain
+/// cut for the 400 cap.
+fn cap_for(speech: &str, cap: usize) -> String {
+    if cap > MAX_SPEECH_CHARS {
+        cap_speech_at_sentence(speech, cap)
+    } else {
+        cap_speech(speech, cap)
+    }
+}
+
+/// U+27E6 and U+27E7 (the note brackets the Vox runtime writes into history). Removed from role
+/// text so a role cannot imitate a runtime note.
+fn is_role_strip_char(c: char) -> bool {
+    c.is_control() || matches!(c, '\u{27E6}' | '\u{27E7}')
+}
+
 /// `sanitize_speech_text` with a cap that may exceed MAX_SPEECH_CHARS. For a cap of at most
 /// MAX_SPEECH_CHARS it is exactly `sanitize_speech_text`. Above that, the text is sanitized in
 /// whitespace-free groups that each fit under MAX_SPEECH_CHARS, so the internal cap of
@@ -467,9 +512,8 @@ fn sanitize_speech_capped(text: &str, cap: usize) -> Option<String> {
     }
     pieces.extend(sanitize_speech_text(&group.join(" ")));
     let joined = pieces.join(" ");
-    let capped: String = joined.chars().take(cap).collect();
-    let trimmed = capped.trim_end();
-    (!trimmed.is_empty()).then(|| trimmed.to_string())
+    let capped = cap_for(&joined, cap);
+    (!capped.is_empty()).then_some(capped)
 }
 
 /// The first of `speech` / `text` that survives sanitizing, capped to `cap` chars.
@@ -478,7 +522,7 @@ fn speech_from_capped(obj: &serde_json::Map<String, Value>, cap: usize) -> Optio
         .iter()
         .filter_map(|key| obj.get(*key).and_then(Value::as_str))
         .find_map(|raw| sanitize_speech_capped(raw, cap))
-        .map(|s| cap_speech(&s, cap))
+        .map(|s| cap_for(&s, cap))
 }
 
 /// The first of `speech` / `text` that survives sanitizing, capped at MAX_SPEECH_CHARS.
@@ -613,7 +657,7 @@ fn clean_role_text(raw: &str, max_chars: usize) -> String {
     for c in raw.chars() {
         if c == '\n' || c == '\t' || c == ' ' {
             pending_space = true;
-        } else if !c.is_control() {
+        } else if !is_role_strip_char(c) {
             if pending_space && !out.is_empty() {
                 out.push(' ');
             }

@@ -59,8 +59,8 @@ filter of its own. The reply model's own rules still apply.
   role", "drop the role" or "end the role". These are matched only when they
   are the whole sentence, and they clear a paused lesson too. "I am back to
   normal" is treated as an ordinary sentence.
-- **Limits.** A role lasts 1500 characters. A lesson that stays paused for
-  ten minutes is forgotten. Nothing is saved after the conversation ends.
+- **Limits.** A role description can be up to 1500 characters. A lesson that nobody has
+  touched for ten minutes is forgotten. Nothing is saved after the conversation ends.
   With Vault context on, Vox still only answers: a role can be set but no
   paste, command or job runs.
 - Open apps, media keys, dictation, ending the conversation and cancelling a
