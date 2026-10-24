@@ -29,9 +29,6 @@ import {
   voiceValueToSetting,
   type TtsVoiceInfo,
 } from "../../lib/ttsVoices";
-import { SpokenReplyStyle } from "./SpokenReplyStyle";
-import { ConversationSection } from "./ConversationSection";
-import { VoiceFeaturesSection } from "./voice/VoiceFeaturesSection";
 
 interface TtsSettingsProps {
   descriptionMode?: "inline" | "tooltip";
@@ -543,15 +540,6 @@ export const TtsSettings: React.FC<TtsSettingsProps> = React.memo(
             </Button>
           </div>
         </SettingContainer>
-        <SpokenReplyStyle descriptionMode={descriptionMode} grouped={grouped} />
-        <ConversationSection
-          descriptionMode={descriptionMode}
-          grouped={grouped}
-        />
-        <VoiceFeaturesSection
-          descriptionMode={descriptionMode}
-          grouped={grouped}
-        />
       </>
     );
   },

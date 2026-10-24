@@ -10,7 +10,7 @@ export const AgentsSettings: React.FC = () => {
       <h2 className="px-1 text-xs font-medium text-mid-gray uppercase tracking-wide">
         {t("settings.agents.title")}
       </h2>
-      <PlacedGroups section="agents" showBadge={false} />
+      <PlacedGroups section="agents" />
     </div>
   );
 };

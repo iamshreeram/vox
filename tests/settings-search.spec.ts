@@ -94,7 +94,7 @@ test.describe("Settings search: navigation and reveal", () => {
     page,
   }) => {
     // Outgoing page (Post Process) has a row titled "Model"; the destination
-    // (Models > Spoken replies) has another row titled "Model".
+    // (Models > Reply style) has another row titled "Model".
     await installTauriMock(page, {
       settings: {
         post_process_enabled: true,
@@ -110,7 +110,7 @@ test.describe("Settings search: navigation and reveal", () => {
     await searchBox(page).fill("model");
     await options(page)
       .filter({ hasText: "Model" })
-      .filter({ hasText: "Spoken replies" })
+      .filter({ hasText: "Reply style" })
       .first()
       .click();
 
@@ -561,5 +561,149 @@ test.describe("Settings search: new settings controls", () => {
         .getByText(cooldownLabel, { exact: true })
         .first(),
     ).toBeVisible();
+  });
+});
+
+test.describe("Settings search: controls moved into Models and General", () => {
+  const en = translation("en");
+  const label = (key: string): string => textAt(en, key);
+
+  test("(13) a smart turn result opens the Smart turn model group and highlights its row", async ({
+    page,
+  }) => {
+    await installTauriMock(page, { settings: { experimental_enabled: true } });
+    await page.goto("/");
+
+    await searchBox(page).fill("smart turn");
+    await options(page)
+      .filter({ hasText: label("converse.voice.smartTurn.label") })
+      .first()
+      .click();
+
+    await expect(section(page, "models")).toBeVisible();
+    const group = page.locator('[data-group-id="smartTurn"]');
+    await expect(group).toHaveCount(1);
+    await expect(group.locator(`.${HIGHLIGHT_CLASS}`)).toHaveCount(1);
+    await expect(highlighted(page)).toHaveCount(1);
+  });
+
+  test("(14) a speaker filter result opens the Speaker filter model group", async ({
+    page,
+  }) => {
+    await installTauriMock(page, { settings: { experimental_enabled: true } });
+    await page.goto("/");
+
+    await searchBox(page).fill("speaker filter");
+    await options(page)
+      .filter({ hasText: label("converse.voice.speaker.label") })
+      .first()
+      .click();
+
+    await expect(section(page, "models")).toBeVisible();
+    const group = page.locator('[data-group-id="speakerFilter"]');
+    await expect(group).toHaveCount(1);
+    await expect(group.locator(`.${HIGHLIGHT_CLASS}`)).toHaveCount(1);
+  });
+
+  test("(15) persona, latency and conversation results open the Voice conversation group on General", async ({
+    page,
+  }) => {
+    await installTauriMock(page, { settings: { experimental_enabled: true } });
+    await page.goto("/");
+
+    for (const [query, key] of [
+      ["persona", "converse.voice.persona.label"],
+      ["latency panel", "converse.voice.latency.label"],
+      ["silence before", "converse.section.silenceLabel"],
+    ]) {
+      await searchBox(page).fill(query);
+      await options(page)
+        .filter({ hasText: label(key) })
+        .first()
+        .click();
+
+      await expect(section(page, "general")).toBeVisible();
+      const group = page.locator('[data-group-id="conversation"]');
+      await expect(group).toHaveCount(1);
+      await expect(group.locator(`.${HIGHLIGHT_CLASS}`)).toHaveCount(1);
+      await navItem(page, "Models").click();
+      await expect(section(page, "models")).toBeVisible();
+    }
+  });
+
+  test("(16) with Experimental off, language, translation and unload timeout are found on Models and no gated group exists", async ({
+    page,
+  }) => {
+    await installTauriMock(page);
+    await page.goto("/");
+
+    // Language and translation render only for a selected model (ModelSettingsCard keeps
+    // its existing condition), so the mock has none: the results must still be unlocked
+    // and lead to the Models page. The unload timeout always renders and is highlighted.
+    for (const key of [
+      "settings.general.language.title",
+      "settings.advanced.translateToEnglish.label",
+      "settings.advanced.modelUnload.title",
+    ]) {
+      await searchBox(page).fill(label(key));
+      const option = options(page)
+        .filter({ hasText: label(key) })
+        .first();
+      await expect(option).not.toContainText(/Turn on .*first/);
+      await option.click();
+      await expect(section(page, "models")).toBeVisible();
+      if (key === "settings.advanced.modelUnload.title") {
+        await expect(highlighted(page)).toHaveCount(1);
+        await expect(highlighted(page)).toHaveAttribute(
+          "data-setting-title",
+          label(key),
+        );
+      }
+      await navItem(page, "General").click();
+      await expect(section(page, "general")).toBeVisible();
+    }
+    await navItem(page, "Models").click();
+
+    // The gated groups are absent from the DOM while the switch is off.
+    await expect(
+      section(page, "models").locator("[data-group-id]"),
+    ).toHaveCount(0);
+    await navItem(page, "General").click();
+    await expect(section(page, "general")).toBeVisible();
+    await expect(
+      section(page, "general").locator("[data-group-id]"),
+    ).toHaveCount(0);
+  });
+
+  test("(17) a stalled model catalog does not hide the unload timeout or break its reveal", async ({
+    page,
+  }) => {
+    await installTauriMock(page, {
+      commands: { get_available_models: { __pending__: true } },
+    });
+    await page.goto("/");
+    await navItem(page, "Models").click();
+    await expect(section(page, "models")).toBeVisible();
+    await expect(
+      section(page, "models").getByText(
+        label("settings.advanced.modelUnload.title"),
+        {
+          exact: true,
+        },
+      ),
+    ).toBeVisible();
+
+    await navItem(page, "General").click();
+    await searchBox(page).fill(label("settings.advanced.modelUnload.title"));
+    await options(page)
+      .filter({ hasText: label("settings.advanced.modelUnload.title") })
+      .first()
+      .click();
+    await expect(section(page, "models")).toBeVisible();
+    await expect(highlighted(page)).toHaveCount(1);
+    await expect(highlighted(page)).toHaveAttribute(
+      "data-setting-title",
+      label("settings.advanced.modelUnload.title"),
+    );
   });
 });

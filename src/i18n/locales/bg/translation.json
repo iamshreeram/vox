@@ -206,6 +206,9 @@
         "noResults": "Няма намерени езици",
         "auto": "Автоматично"
       },
+      "groups": {
+        "conversation": "Voice conversation"
+      },
       "shortcutActivation": {
         "title": "Поведение на клавишната комбинация",
         "description": "Изберете как бързият клавиш за транскрипция стартира и спира записа.",
@@ -228,6 +231,10 @@
       "title": "Модели за транскрипция",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "Изберете модел за транскрипция или изтеглете допълнителни. Различните модели предлагат различна точност и скорост.",

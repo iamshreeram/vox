@@ -170,6 +170,10 @@
       "title": "Mô hình chuyển đổi",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "Chọn mô hình chuyển đổi hoặc tải thêm mô hình. Các mô hình khác nhau có mức độ chính xác và tốc độ khác nhau.",
@@ -232,6 +236,9 @@
         "searchPlaceholder": "Tìm kiếm ngôn ngữ...",
         "noResults": "Không tìm thấy ngôn ngữ",
         "auto": "Tự động"
+      },
+      "groups": {
+        "conversation": "Voice conversation"
       },
       "shortcutActivation": {
         "title": "Hành vi phím tắt",

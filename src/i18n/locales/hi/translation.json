@@ -206,6 +206,9 @@
         "noResults": "कोई भाषा नहीं मिली",
         "auto": "ऑटो"
       },
+      "groups": {
+        "conversation": "Voice conversation"
+      },
       "shortcutActivation": {
         "title": "शॉर्टकट का व्यवहार",
         "description": "चुनें कि ट्रांसक्राइब शॉर्टकट रिकॉर्डिंग को कैसे शुरू और बंद करे।",
@@ -228,6 +231,10 @@
       "title": "ट्रांसक्रिप्शन मॉडल",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "कोई ट्रांसक्रिप्शन मॉडल चुनें या दूसरे मॉडल डाउनलोड करें. अलग-अलग मॉडल की सटीकता और स्पीड अलग-अलग होती है.",

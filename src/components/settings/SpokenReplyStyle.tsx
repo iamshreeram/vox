@@ -326,11 +326,8 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
 
     return (
       <>
-        <div className="px-4 pt-4 pb-1">
-          <h3 className="text-sm font-medium">
-            {t("settings.advanced.tts.composer.title")}
-          </h3>
-          <p className="text-xs text-mid-gray mt-1">
+        <div className="px-4 pt-3 pb-1">
+          <p className="text-xs text-mid-gray">
             {t("settings.advanced.tts.composer.description")}
           </p>
         </div>

@@ -206,6 +206,9 @@
         "noResults": "Ingen sprog fundet",
         "auto": "Automatisk"
       },
+      "groups": {
+        "conversation": "Voice conversation"
+      },
       "shortcutActivation": {
         "title": "Genvejens adfærd",
         "description": "Vælg, hvordan transskriptionsgenvejen starter og stopper optagelsen.",
@@ -228,6 +231,10 @@
       "title": "Transskriptionsmodeller",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "Vælg en transskriptionsmodel, eller download flere modeller. Forskellige modeller tilbyder varierende niveauer af nøjagtighed og hastighed.",

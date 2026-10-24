@@ -6,7 +6,7 @@ off, Vox speaks the reply text as it is.
 
 Spoken replies must be turned on first (Settings > Models > Spoken replies;
 the group is shown when the Experimental switch is on).
-The composer settings appear below that toggle.
+The composer settings are in the Reply style group on the same tab.
 
 ## What the composer does
 

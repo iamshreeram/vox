@@ -138,6 +138,72 @@ const scenarios: Record<string, () => void> = {
     assert.ok(hit);
     assert.equal(hit.locked, false);
   },
+  "rows follow their control into its new group": () => {
+    // labelKey prefix -> the group that now holds the control that owns the row.
+    const expected: Array<[string, string]> = [
+      ["settings.advanced.tts.composer.", "replyStyle"],
+      ["converse.section.", "conversation"],
+      ["converse.voice.persona.", "conversation"],
+      ["converse.voice.latency.", "conversation"],
+      ["converse.voice.smartTurn.", "smartTurn"],
+      ["converse.voice.speaker.", "speakerFilter"],
+    ];
+    for (const [prefix, groupId] of expected) {
+      const rows = moved.filter((e) => e.labelKey.startsWith(prefix));
+      assert.ok(rows.length > 0, `no row found for ${prefix}`);
+      for (const e of rows) {
+        assert.equal(e.groupId, groupId, `${e.id} (${prefix})`);
+      }
+    }
+    const sectionOf = (groupId: string): string | undefined =>
+      PLACED_GROUPS.find((g) => g.id === groupId)?.section;
+    assert.equal(sectionOf("conversation"), "general");
+    for (const g of ["smartTurn", "speakerFilter", "replyStyle"]) {
+      assert.equal(sectionOf(g), "models", g);
+    }
+  },
+  "language, translation and the unload timeout live in Models and stay ungated":
+    () => {
+      const wanted: Array<[string, string]> = [
+        ["models.language", "settings.general.language.title"],
+        [
+          "models.translateToEnglish",
+          "settings.advanced.translateToEnglish.label",
+        ],
+        ["models.modelUnload", "settings.advanced.modelUnload.title"],
+      ];
+      for (const [id, labelKey] of wanted) {
+        const e = SEARCH_ENTRIES.find((x) => x.id === id);
+        assert.ok(e, `${id} exists`);
+        assert.equal(String(e.section), "models", id);
+        assert.equal(e.labelKey, labelKey, id);
+        assert.ok(
+          !requiresExperimental(e),
+          `${id} must not require experimental`,
+        );
+        assert.equal(e.unlockedBy, undefined, id);
+        // searchable and unlocked with the switch OFF, resolves to itself
+        const label = lookup(labelKey) as string;
+        const hit = search(SEARCH_ENTRIES, label, resolve, ctxOff, {
+          limit: 1000,
+        }).find((h) => h.entry.id === id);
+        assert.ok(hit, `${id} is searchable with the switch off`);
+        assert.equal(hit.locked, false, id);
+        assert.equal(resolveTarget(hit, SEARCH_ENTRIES, ctxOff).id, id);
+      }
+      const unload = SEARCH_ENTRIES.find((x) => x.id === "models.modelUnload");
+      assert.equal(unload?.groupKey, "settings.models.groups.loading");
+      for (const old of [
+        "general.language",
+        "general.translateToEnglish",
+        "advanced.modelUnload",
+      ]) {
+        assert.ok(
+          !SEARCH_ENTRIES.some((x) => x.id === old),
+          `${old} was renamed`,
+        );
+      }
+    },
 };
 
 let failed = 0;

@@ -170,6 +170,10 @@
       "title": "文字起こしのモデル",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "文字起こしのモデルを選択するか、追加のモデルをダウンロードします。異なるモデルは精度と速度のレベルが異なります。",
@@ -232,6 +236,9 @@
         "searchPlaceholder": "言語を検索…",
         "noResults": "言語が見つかりません",
         "auto": "自動"
+      },
+      "groups": {
+        "conversation": "Voice conversation"
       },
       "shortcutActivation": {
         "title": "ショートカットの動作",

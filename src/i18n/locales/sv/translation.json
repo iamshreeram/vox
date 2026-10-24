@@ -206,6 +206,9 @@
         "noResults": "Inga språk hittades",
         "auto": "Automatiskt"
       },
+      "groups": {
+        "conversation": "Voice conversation"
+      },
       "shortcutActivation": {
         "title": "Genvägens beteende",
         "description": "Välj hur kortkommandot för transkribering startar och stoppar inspelningen.",
@@ -228,6 +231,10 @@
       "title": "Transkriptionsmodeller",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "Välj en transkriptionsmodell eller ladda ner ytterligare modeller. Olika modeller erbjuder varierande nivåer av noggrannhet och hastighet.",

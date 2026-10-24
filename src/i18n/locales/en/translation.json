@@ -206,6 +206,9 @@
         "noResults": "No languages found",
         "auto": "Auto"
       },
+      "groups": {
+        "conversation": "Voice conversation"
+      },
       "shortcutActivation": {
         "title": "Shortcut Behavior",
         "description": "Choose how the transcribe shortcut starts and stops recording.",
@@ -228,6 +231,10 @@
       "title": "Transcription Models",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "Select a transcription model or download additional models. Different models offer varying levels of accuracy and speed.",

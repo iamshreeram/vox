@@ -206,6 +206,9 @@
         "noResults": "Мов не знайдено",
         "auto": "Авто"
       },
+      "groups": {
+        "conversation": "Voice conversation"
+      },
       "shortcutActivation": {
         "title": "Поведінка комбінації клавіш",
         "description": "Виберіть, як гаряча клавіша транскрипції запускає та зупиняє запис.",
@@ -228,6 +231,10 @@
       "title": "Моделі транскрипції",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "Виберіть модель транскрипції або завантажте додаткові моделі. Різні моделі пропонують різні рівні точності та швидкості.",

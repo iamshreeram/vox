@@ -206,6 +206,9 @@
         "noResults": "לא נמצאו שפות",
         "auto": "אוטומטי"
       },
+      "groups": {
+        "conversation": "Voice conversation"
+      },
       "shortcutActivation": {
         "title": "התנהגות קיצור הדרך",
         "description": "בחר כיצד קיצור התמלול מתחיל ומפסיק את ההקלטה.",
@@ -228,6 +231,10 @@
       "title": "מודלי תמלול",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "בחר מודל תמלול או הורד מודלים נוספים. מודלים שונים מציעים רמות שונות של דיוק ומהירות.",

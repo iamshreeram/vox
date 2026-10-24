@@ -170,6 +170,10 @@
       "title": "Modèles de Transcription",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "Sélectionnez un modèle de transcription ou téléchargez des modèles supplémentaires. Différents modèles offrent différents niveaux de précision et de vitesse.",
@@ -232,6 +236,9 @@
         "searchPlaceholder": "Rechercher des langues...",
         "noResults": "Aucune langue trouvée",
         "auto": "Automatique"
+      },
+      "groups": {
+        "conversation": "Voice conversation"
       },
       "shortcutActivation": {
         "title": "Comportement du raccourci",

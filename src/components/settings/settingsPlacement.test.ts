@@ -13,9 +13,10 @@ import { PlacedGroupsView } from "./PlacedGroups";
 import { SETTINGS_SECTION_IDS, resolveSectionAlias } from "./agentToolsForm";
 import { shouldFallBackToGeneral } from "../sectionGate";
 
-// The 21 controls that the Experimental page rendered: 18 from its layout list plus
-// the three groups that were hard-coded in the page (conversationMemory, agentTools,
-// codingJobs).
+// The 27 gated controls: the 21 that the old Experimental page rendered (18 from its layout
+// list plus conversationMemory, agentTools, codingJobs) and six that used to be buried
+// inside the one big "Spoken replies" control (reply style, conversation, persona, latency
+// panel, smart turn, speaker filter) and are now placed on their own.
 const ALL_CONTROLS: ControlId[] = [
   "postProcessing",
   "keyboardImplementation",
@@ -38,10 +39,23 @@ const ALL_CONTROLS: ControlId[] = [
   "codingJobs",
   "tts",
   "realtime",
+  "replyStyle",
+  "conversation",
+  "persona",
+  "latencyPanel",
+  "smartTurn",
+  "speakerFilter",
 ];
 
 // Group ids that existed before the split. They are persisted verbatim in
 // localStorage open-state keys, so every one of them must survive unchanged.
+const NEW_GROUP_IDS = [
+  "vadEngine",
+  "smartTurn",
+  "speakerFilter",
+  "replyStyle",
+  "conversation",
+];
 const LEGACY_GROUP_IDS = [
   "engine",
   "voiceCommands",
@@ -90,7 +104,7 @@ const scenarios: Record<string, () => void> = {
     const ids = PLACED_GROUPS.flatMap((g) => g.controls.map((c) => c.id));
     assert.deepEqual([...ids].sort(), [...ALL_CONTROLS].sort());
     assert.equal(new Set(ids).size, ids.length);
-    assert.equal(ALL_CONTROLS.length, 21);
+    assert.equal(ALL_CONTROLS.length, 27);
   },
   "only the four destination sections are used, never experimental": () => {
     assert.deepEqual(
@@ -100,8 +114,19 @@ const scenarios: Record<string, () => void> = {
   },
   "groups per section, in order": () => {
     const ids = (s: PlacedSection) => groupsForSection(s).map((g) => g.id);
-    assert.deepEqual(ids("general"), ["voiceCommands", "listening"]);
-    assert.deepEqual(ids("models"), ["vadEngine", "spokenReplies", "realtime"]);
+    assert.deepEqual(ids("general"), [
+      "voiceCommands",
+      "listening",
+      "conversation",
+    ]);
+    assert.deepEqual(ids("models"), [
+      "vadEngine",
+      "spokenReplies",
+      "smartTurn",
+      "speakerFilter",
+      "replyStyle",
+      "realtime",
+    ]);
     assert.deepEqual(ids("advanced"), ["engine"]);
     assert.deepEqual(ids("agents"), [
       "acpAgent",
@@ -114,8 +139,23 @@ const scenarios: Record<string, () => void> = {
   },
   "model and engine choices live in Models, everything else by topic": () => {
     const sec = (id: ControlId) => placementOf(id).section;
-    for (const id of ["vadBackend", "tts", "realtime"] as ControlId[]) {
+    for (const id of [
+      "vadBackend",
+      "tts",
+      "smartTurn",
+      "speakerFilter",
+      "replyStyle",
+      "realtime",
+    ] as ControlId[]) {
       assert.equal(sec(id), "models", id);
+    }
+    for (const id of [
+      "conversation",
+      "persona",
+      "latencyPanel",
+    ] as ControlId[]) {
+      assert.equal(placementOf(id).section, "general", id);
+      assert.equal(placementOf(id).groupId, "conversation", id);
     }
     for (const id of [
       "voiceCommands",
@@ -150,15 +190,18 @@ const scenarios: Record<string, () => void> = {
     assert.equal(placementOf("vadBackend").groupId, "vadEngine");
     assert.equal(placementOf("tts").groupId, "spokenReplies");
     assert.equal(placementOf("realtime").groupId, "realtime");
+    assert.equal(placementOf("smartTurn").groupId, "smartTurn");
+    assert.equal(placementOf("speakerFilter").groupId, "speakerFilter");
+    assert.equal(placementOf("replyStyle").groupId, "replyStyle");
   },
-  "every legacy group id is retained, only vadEngine is new": () => {
+  "every legacy group id is retained, only the five listed ids are new": () => {
     const ids = PLACED_GROUPS.map((g) => g.id);
     assert.equal(new Set(ids).size, ids.length, "group ids are unique");
     assert.deepEqual(
-      ids.filter((id) => id !== "vadEngine").sort(),
+      ids.filter((id) => !NEW_GROUP_IDS.includes(id)).sort(),
       [...LEGACY_GROUP_IDS].sort(),
     );
-    assert.ok(ids.includes("vadEngine"));
+    for (const id of NEW_GROUP_IDS) assert.ok(ids.includes(id), id);
   },
   "only the engine group is open by default": () => {
     assert.deepEqual(
@@ -259,6 +302,18 @@ const scenarios: Record<string, () => void> = {
     const html = markup("models", true);
     assert.ok(html.includes("T:settings.advanced.tts.groupTitle"));
     assert.ok(html.includes("T:settings.experimental.realtime.title"));
+    for (const key of [
+      "settings.models.groups.smartTurn",
+      "settings.models.groups.speakerFilter",
+      "settings.models.groups.replyStyle",
+    ]) {
+      assert.ok(html.includes(`T:${key}`), key);
+    }
+    assert.ok(
+      markup("general", true).includes(
+        "T:settings.general.groups.conversation",
+      ),
+    );
   },
   "legacy experimental section id resolves to agents": () => {
     assert.equal(resolveSectionAlias("experimental"), "agents");

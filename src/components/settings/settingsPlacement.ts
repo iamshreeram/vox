@@ -24,7 +24,13 @@ export type ControlId =
   | "agentTools"
   | "codingJobs"
   | "tts"
-  | "realtime";
+  | "realtime"
+  | "replyStyle"
+  | "conversation"
+  | "persona"
+  | "latencyPanel"
+  | "smartTurn"
+  | "speakerFilter";
 
 export type ControlFlag = "memoryEnabled" | "agentBridgeEnabled";
 
@@ -65,6 +71,17 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
     controls: [{ id: "wakeWord" }, { id: "ambientMode" }],
   },
   {
+    id: "conversation",
+    section: "general",
+    titleKey: "settings.general.groups.conversation",
+    defaultOpen: false,
+    controls: [
+      { id: "conversation" },
+      { id: "persona" },
+      { id: "latencyPanel" },
+    ],
+  },
+  {
     id: "vadEngine",
     section: "models",
     titleKey: "settings.models.groups.vadEngine",
@@ -77,6 +94,27 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
     titleKey: "settings.advanced.tts.groupTitle",
     defaultOpen: false,
     controls: [{ id: "tts" }],
+  },
+  {
+    id: "smartTurn",
+    section: "models",
+    titleKey: "settings.models.groups.smartTurn",
+    defaultOpen: false,
+    controls: [{ id: "smartTurn" }],
+  },
+  {
+    id: "speakerFilter",
+    section: "models",
+    titleKey: "settings.models.groups.speakerFilter",
+    defaultOpen: false,
+    controls: [{ id: "speakerFilter" }],
+  },
+  {
+    id: "replyStyle",
+    section: "models",
+    titleKey: "settings.models.groups.replyStyle",
+    defaultOpen: false,
+    controls: [{ id: "replyStyle" }],
   },
   {
     id: "realtime",
@@ -101,7 +139,6 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
     id: "acpAgent",
     section: "agents",
     titleKey: "settings.experimental.groups.acpAgent",
-    descriptionKey: "settings.experimental.acpAgent.groupDescription",
     defaultOpen: false,
     controls: [{ id: "acpAgent" }],
   },

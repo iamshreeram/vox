@@ -170,6 +170,10 @@
       "title": "Modelli di Trascrizione",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "Seleziona un modello di trascrizione o scarica modelli aggiuntivi. Diversi modelli offrono diversi livelli di accuratezza e velocità.",
@@ -232,6 +236,9 @@
         "searchPlaceholder": "Cerca lingue...",
         "noResults": "Nessuna lingua trovata",
         "auto": "Automatico"
+      },
+      "groups": {
+        "conversation": "Voice conversation"
       },
       "shortcutActivation": {
         "title": "Comportamento della scorciatoia",

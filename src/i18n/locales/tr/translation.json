@@ -170,6 +170,10 @@
       "title": "Transkripsiyon Modelleri",
       "transcriptionHeading": "Transcription models",
       "groups": {
+        "loading": "Model loading",
+        "smartTurn": "Smart turn model",
+        "speakerFilter": "Speaker filter model",
+        "replyStyle": "Reply style",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "Bir transkripsiyon modeli seçin veya ek modeller indirin. Farklı modeller değişen doğruluk ve hız seviyeleri sunar.",
@@ -232,6 +236,9 @@
         "searchPlaceholder": "Dil ara...",
         "noResults": "Dil bulunamadı",
         "auto": "Otomatik"
+      },
+      "groups": {
+        "conversation": "Voice conversation"
       },
       "shortcutActivation": {
         "title": "Kısayol davranışı",

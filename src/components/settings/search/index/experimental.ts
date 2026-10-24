@@ -13,6 +13,10 @@ const GROUP = {
   agentBridge: "settings.experimental.groups.agentBridge",
   acpAgent: "settings.experimental.groups.acpAgent",
   spokenReplies: "settings.advanced.tts.groupTitle",
+  smartTurn: "settings.models.groups.smartTurn",
+  speakerFilter: "settings.models.groups.speakerFilter",
+  replyStyle: "settings.models.groups.replyStyle",
+  conversation: "settings.general.groups.conversation",
   realtime: "settings.experimental.realtime.title",
   conversationMemory: "settings.experimental.groups.conversationMemory",
   agentTools: "settings.experimental.groups.agentTools",
@@ -639,7 +643,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   // ----- spoken reply style (SpokenReplyStyle) -----
   row(
     "spokenReplyMode",
-    "spokenReplies",
+    "replyStyle",
     "settings.advanced.tts.composer.modeLabel",
     "settings.advanced.tts.composer.modeDescription",
     [
@@ -654,21 +658,21 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "spokenReplyProvider",
-    "spokenReplies",
+    "replyStyle",
     "settings.advanced.tts.composer.providerLabel",
     "settings.advanced.tts.composer.providerDescription",
     ["provider", "model provider", "llm provider", "backend", "service"],
   ),
   row(
     "spokenReplyModel",
-    "spokenReplies",
+    "replyStyle",
     "settings.advanced.tts.composer.modelLabel",
     "settings.advanced.tts.composer.modelDescription",
     ["model", "model name", "llm model", "spoken reply model"],
   ),
   row(
     "spokenReplyCommandPath",
-    "spokenReplies",
+    "replyStyle",
     "settings.advanced.tts.composer.commandPathLabel",
     "settings.advanced.tts.composer.commandPathDescription",
     [
@@ -682,21 +686,21 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "spokenReplyCommandArgs",
-    "spokenReplies",
+    "replyStyle",
     "settings.advanced.tts.composer.commandArgsLabel",
     "settings.advanced.tts.composer.commandArgsDescription",
     ["arguments", "args", "command arguments", "flags", "command line"],
   ),
   row(
     "spokenReplyPromptFlag",
-    "spokenReplies",
+    "replyStyle",
     "settings.advanced.tts.composer.promptFlagLabel",
     "settings.advanced.tts.composer.promptFlagDescription",
     ["prompt flag", "flag", "prompt argument", "command flag"],
   ),
   row(
     "spokenReplyAcknowledge",
-    "spokenReplies",
+    "replyStyle",
     "settings.advanced.tts.composer.ackLabel",
     "settings.advanced.tts.composer.ackDescription",
     [
@@ -710,7 +714,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "spokenReplyStyle",
-    "spokenReplies",
+    "replyStyle",
     "settings.advanced.tts.composer.styleLabel",
     "settings.advanced.tts.composer.styleDescription",
     [
@@ -724,14 +728,14 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "spokenReplyTimeout",
-    "spokenReplies",
+    "replyStyle",
     "settings.advanced.tts.composer.timeoutLabel",
     "settings.advanced.tts.composer.timeoutDescription",
     ["timeout", "seconds", "wait", "time limit", "deadline"],
   ),
   row(
     "spokenReplySendUtterance",
-    "spokenReplies",
+    "replyStyle",
     "settings.advanced.tts.composer.sendUtteranceLabel",
     "settings.advanced.tts.composer.sendUtteranceDescription",
     [
@@ -745,7 +749,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "spokenReplyFallback",
-    "spokenReplies",
+    "replyStyle",
     "settings.advanced.tts.composer.fallbackLabel",
     "settings.advanced.tts.composer.fallbackDescription",
     [
@@ -760,7 +764,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "spokenReplyPreview",
-    "spokenReplies",
+    "replyStyle",
     "settings.advanced.tts.composer.previewLabel",
     "settings.advanced.tts.composer.previewDescription",
     ["preview", "sample", "try", "compose", "test"],
@@ -769,7 +773,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   // ----- conversation section (ConversationSection) -----
   row(
     "conversationMode",
-    "spokenReplies",
+    "conversation",
     "converse.section.title",
     "converse.section.description",
     [
@@ -784,7 +788,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "conversationSilence",
-    "spokenReplies",
+    "conversation",
     "converse.section.silenceLabel",
     "converse.section.silenceDescription",
     [
@@ -799,14 +803,14 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "conversationIdleTurns",
-    "spokenReplies",
+    "conversation",
     "converse.section.idleTurnsLabel",
     "converse.section.idleTurnsDescription",
     ["idle", "idle turns", "inactivity", "timeout", "turns", "stop when idle"],
   ),
   row(
     "conversationContextTurns",
-    "spokenReplies",
+    "conversation",
     "converse.section.contextTurnsLabel",
     "converse.section.contextTurnsDescription",
     [
@@ -820,7 +824,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "conversationShortcut",
-    "spokenReplies",
+    "conversation",
     "converse.section.shortcutLabel",
     "converse.section.shortcutDescription",
     [
@@ -834,7 +838,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "conversationSmartTurn",
-    "spokenReplies",
+    "smartTurn",
     "converse.voice.smartTurn.label",
     "converse.voice.smartTurn.description",
     [
@@ -848,28 +852,28 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "conversationSmartTurnModel",
-    "spokenReplies",
+    "smartTurn",
     "converse.voice.smartTurn.modelLabel",
     undefined,
     ["smart turn model", "download", "delete", "install"],
   ),
   row(
     "conversationLatency",
-    "spokenReplies",
+    "conversation",
     "converse.voice.latency.label",
     "converse.voice.latency.description",
     ["latency", "timing", "speed", "milliseconds", "panel", "median"],
   ),
   row(
     "conversationPersona",
-    "spokenReplies",
+    "conversation",
     "converse.voice.persona.label",
     "converse.voice.persona.description",
     ["persona", "style", "voice preset", "personality", "custom persona"],
   ),
   row(
     "conversationSpeakerFilter",
-    "spokenReplies",
+    "speakerFilter",
     "converse.voice.speaker.label",
     "converse.voice.speaker.description",
     [
@@ -883,28 +887,28 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "conversationSpeakerSensitivity",
-    "spokenReplies",
+    "speakerFilter",
     "converse.voice.speaker.sensitivityLabel",
     "converse.voice.speaker.sensitivityDescription",
     ["sensitivity", "strict", "lenient", "balanced", "speaker"],
   ),
   row(
     "conversationSpeakerModel",
-    "spokenReplies",
+    "speakerFilter",
     "converse.voice.speaker.modelLabel",
     undefined,
     ["speaker model", "download", "delete", "install"],
   ),
   row(
     "conversationSpeakerEnroll",
-    "spokenReplies",
+    "speakerFilter",
     "converse.voice.speaker.enroll.label",
     "converse.voice.speaker.enroll.description",
     ["enroll", "enrollment", "voiceprint", "record voice", "train voice"],
   ),
   row(
     "conversationSpeakerDelete",
-    "spokenReplies",
+    "speakerFilter",
     "converse.voice.speaker.deleteLabel",
     "converse.voice.speaker.deleteDescription",
     ["delete voiceprint", "forget voice", "voiceprint"],
