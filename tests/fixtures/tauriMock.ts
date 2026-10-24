@@ -213,6 +213,11 @@ function installTauriMockInPage(arg: MockInitArg): void {
       return Promise.resolve(null);
     }
     if (command in overrides) {
+      // `{ "__pending__": true }` makes the command never answer (a stalled request).
+      const override = overrides[command] as { __pending__?: boolean } | null;
+      if (override !== null && override?.__pending__ === true) {
+        return new Promise<unknown>(() => undefined);
+      }
       return Promise.resolve(clone(overrides[command]));
     }
     const handler = handlers[command];
