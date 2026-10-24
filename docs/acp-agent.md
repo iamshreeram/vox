@@ -79,7 +79,7 @@ These rules apply in every mode:
 - Vox only ever grants **allow once**. It never grants "always allow" and never remembers an answer.
 - If you do not answer within the **Approval timeout**, the request is denied.
 - Waiting for your answer does not count toward the turn timeout. A turn still cannot run longer than three times its turn timeout, however long the approvals take.
-- Cancelling a turn denies any request that is still open, and the dialog closes. The engine supports cancelling. Voice cancel and hand-off from conversation mode are not connected yet.
+- Cancelling a turn withdraws any request that is still open, and the dialog closes. Vox does not send an answer for a withdrawn request, so the agent is not told allow or deny. If the agent does not stop on its own, Vox retires its process after a short grace period. The engine supports cancelling. Voice cancel and hand-off from conversation mode are not connected yet.
 - If Vox cannot send an answer back to the agent, the turn fails. You then see a notice with **Copy request**, which copies your original dictation. The agent may have partly run the request, so check what it did before you repeat it.
 
 ### What an approval does and does not protect

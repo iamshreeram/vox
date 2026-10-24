@@ -16,6 +16,7 @@
     "format:backend": "cd src-tauri && cargo fmt",
     "test": "vitest run src/overlay/epoch.test.ts",
     "test:keyboard": "bun src/lib/utils/keyboard.test.ts",
+    "test:setting-updaters": "bun src/stores/settingUpdatersCoverage.test.ts",
     "test:source-update": "bun src/components/update-checker/sourceUpdateState.test.ts",
     "test:natural-voice": "bun src/components/settings/naturalVoiceState.test.ts",
     "test:tts-engine": "bun src/components/settings/ttsEngineState.test.ts",

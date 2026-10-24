@@ -117,7 +117,10 @@ impl TauriPermissionPrompter {
 
 impl PermissionPrompter for TauriPermissionPrompter {
     fn present(&self, view: &PermissionView) {
-        let payload = build_request_payload(view, (self.timeout_secs)());
+        // The dialog countdown shows the real time left: the configured timeout, capped by what
+        // remains of this request's deadline (queued requests may already have waited).
+        let remaining_secs = view.remaining.as_secs();
+        let payload = build_request_payload(view, (self.timeout_secs)().min(remaining_secs));
         // Vox lives in the tray, so the window may be hidden. Show and focus it so the
         // approval is visible before it times out. Window calls run on the main thread, and
         // failures are ignored: the prompt still waits for an answer or times out.

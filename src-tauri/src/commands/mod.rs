@@ -1,4 +1,6 @@
 pub mod acp_permission;
+#[cfg(test)]
+mod acp_permission_settings_tests;
 pub mod agent_jobs;
 pub mod agent_tools;
 pub mod ambient;

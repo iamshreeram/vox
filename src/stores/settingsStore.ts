@@ -8,6 +8,7 @@ import type {
   ConverseBargeIn,
   CustomThemeColors,
   ModelUnloadTimeout,
+  PermissionMode,
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
   ShortcutActivation,
@@ -350,6 +351,22 @@ const settingUpdaters: {
   },
   acp_agent_turn_timeout_secs: async (value) => {
     const result = await commands.changeAcpAgentTurnTimeoutSetting(
+      value as number,
+    );
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
+  acp_permission_mode: async (value) => {
+    const result = await commands.changeAcpPermissionModeSetting(
+      value as PermissionMode,
+    );
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
+  acp_permission_timeout_secs: async (value) => {
+    const result = await commands.changeAcpPermissionTimeoutSecsSetting(
       value as number,
     );
     if (result.status === "error") {

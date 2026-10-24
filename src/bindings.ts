@@ -1728,6 +1728,30 @@ async acpPermissionRespond(token: string, allow: boolean) : Promise<boolean> {
     return await TAURI_INVOKE("acp_permission_respond", { token, allow });
 },
 /**
+ * Stores the approval policy for agent permission requests. The permission manager reads
+ * the settings on every request, so the change applies to the next request without a restart.
+ */
+async changeAcpPermissionModeSetting(mode: PermissionMode) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_acp_permission_mode_setting", { mode }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stores the approval timeout in seconds, clamped to the accepted range. Unlike the agent turn
+ * timeout, an out-of-range value is clamped rather than rejected.
+ */
+async changeAcpPermissionTimeoutSecsSetting(secs: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_acp_permission_timeout_secs_setting", { secs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Validates and persists the full list of voice shortcuts.
  * 
  * The whole list is validated before anything is written: if any entry is
