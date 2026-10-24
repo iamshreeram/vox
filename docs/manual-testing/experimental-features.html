@@ -982,13 +982,47 @@ var SECTIONS = [
    expect:"The dry run changes nothing. The real run checks each file's size and SHA-256 and reports each model. The second run skips verified models. The log is appended to CONTEXT.md in the repository root.",
    warn:"Options (see <code>--help</code>): <code>--only phonon,kokoro,smart-turn,speaker</code> picks models; <code>--data-dir</code> and <code>--context</code> change folders; <code>--direct</code> ignores your proxy settings, so use it only if your network policy allows it." }
 ]},
-{ id:"generic-assistant", title:"Generic assistant (planned - not built yet)", note:"PLANNED, NOT BUILT YET. Do not report these as failures and do not spend time on them. They describe the intended behaviour so the steps are ready when it ships. See the backlog in docs/vox-phases for background.", tests:[
- { id:"jarvis-role-spoken", title:"Planned: a spoken role lasts the whole conversation (not built yet)", mic:true, needs:"Not built yet.", steps:[
-   "Start a conversation and say: &ldquo;Hey Jarvis, act like a teacher teaching computers to a 6-year-old.&rdquo;",
-   "Ask six or more lesson questions across the conversation, including after more than 12 turns.",
-   "Interrupt Vox in the middle of one answer with a question, then at the end say &ldquo;stop acting like that&rdquo;."],
-   expect:"Once built: Vox confirms 'Okay, I'll act as a teacher', keeps the role for the whole conversation, answers an interruption and then says 'Let's continue' from the same place in the lesson. The role clears on 'back to normal' or when the conversation ends.",
-   warn:"Not built yet - skip." },
+{ id:"generic-assistant", title:"Generic assistant (spoken roles built; agent hand-off planned)", note:"Spoken roles and lessons ARE built. They need Spoken replies on, a speech model and a reply backend that works (General tab, Voice conversation group). Interruptions also need headphones and Interrupt by speaking. Agent hand-off, voice approval and voice cancel are still PLANNED, NOT BUILT YET: do not report those three tests as failures.", tests:[
+ { id:"jarvis-role-spoken", title:"Spoken role: act like a teacher, lesson, questions, continue", mic:true, needs:"Spoken replies on, a speech model installed and a reply backend that works (General tab, Voice conversation group). Interruptions also need headphones and Interrupt by speaking on.", steps:[
+   "Say &ldquo;Hey Jarvis&rdquo; to start a conversation, then say: &ldquo;act like a teacher teaching computers to a six year old, answer questions politely and then continue the lesson, and start the lesson.&rdquo;",
+   "Listen to the first lesson part. While Vox is speaking, interrupt it with a question, for example &ldquo;what is a computer?&rdquo;",
+   "Let Vox answer, then listen for it to go back to the lesson without you asking."],
+   expect:"Vox confirms the role out loud. The lesson starts and is spoken in short parts of up to three sentences. Your question is answered in the teacher role, then Vox says 'Let's continue.' and the lesson resumes from the part that was cut off.",
+   warn:"Interrupting needs headphones with Interrupt by speaking on; it is not yet verified on real headsets. A cut-off part is repeated from its start, and the unspoken rest of a question's answer is dropped." },
+ { id:"role-set", title:"Set a role with no task: confirmed only, then it holds", mic:true, needs:"Spoken replies on, a speech model installed and a reply backend that works (General tab, Voice conversation group). Interruptions also need headphones and Interrupt by speaking on.", steps:[
+   "Say: &ldquo;Hey Jarvis, act like a teacher teaching computers to a six year old.&rdquo; Do not ask for a lesson.",
+   "Listen. Then ask eight ordinary questions, one per turn, for example &ldquo;what is a file?&rdquo;"],
+   expect:"Vox only confirms the role out loud and does not start a lesson or talk on its own. The answers to all eight questions still stay in the teacher role, even after older turns have dropped out of context (the default keeps six)." },
+ { id:"role-continue-voice", title:"Role without 'then continue': interrupt, then say continue", mic:true, needs:"Spoken replies on, a speech model installed and a reply backend that works (General tab, Voice conversation group). Interruptions also need headphones and Interrupt by speaking on.", steps:[
+   "Say: &ldquo;Hey Jarvis, act like a teacher teaching computers to a six year old, and start the lesson.&rdquo; Do not use the words &ldquo;then continue&rdquo;.",
+   "While a lesson part is being spoken, interrupt with a question.",
+   "When Vox has answered, say &ldquo;continue&rdquo;. After another interruption, say &ldquo;go on&rdquo; or &ldquo;carry on&rdquo; instead."],
+   expect:"Vox answers the question in the teacher role and then waits. Saying continue, go on or carry on resumes the lesson from the part that was cut off. Vox does not carry on by itself.",
+   warn:"Same headphone limits as the previous test. Write down the exact resume wording you hear." },
+ { id:"role-clear", title:"Stop phrases clear the role", mic:true, needs:"Spoken replies on, a speech model installed and a reply backend that works (General tab, Voice conversation group). Interruptions also need headphones and Interrupt by speaking on.", steps:[
+   "Set a role, for example &ldquo;act like a pirate&rdquo;, and check Vox confirms it.",
+   "Say &ldquo;back to normal&rdquo; as the whole sentence. Ask a question a pirate would answer differently; the answer should be normal.",
+   "Repeat with a new role for each phrase: &ldquo;stop acting&rdquo;, &ldquo;stop the role&rdquo;, &ldquo;drop the role&rdquo; and &ldquo;end the role&rdquo;.",
+   "During a role, say &ldquo;I am back to normal&rdquo;. It must not clear the role."],
+   expect:"Each stop phrase, said as the whole sentence, clears the role and any paused lesson, and the next answer is normal. When the role ends with 'end the role', Vox says 'Okay, back to normal.' 'I am back to normal' is an ordinary sentence: the role stays." },
+ { id:"role-long-chunks", title:"Long answers in role are spoken in short parts", mic:true, needs:"Spoken replies on, a speech model installed and a reply backend that works (General tab, Voice conversation group). Interruptions also need headphones and Interrupt by speaking on.", steps:[
+   "Set a role: &ldquo;act like a teacher teaching computers to a six year old&rdquo;.",
+   "Ask for a long explanation, for example &ldquo;explain how a computer stores a photo&rdquo;.",
+   "Listen to the answer. Between two parts, interrupt with a question."],
+   expect:"The long answer is spoken in short parts of up to three sentences, not as one block. You can interrupt between parts, and Vox answers in the same role.",
+   warn:"Interrupting needs headphones and Interrupt by speaking on." },
+ { id:"role-local-first", title:"Local commands still work with a role active", mic:true, needs:"Spoken replies on, a speech model installed and a reply backend that works (General tab, Voice conversation group). Also an app that can be opened, for example Calculator.", steps:[
+   "Set a role, for example &ldquo;act like a pirate&rdquo;.",
+   "Say a command that opens an app, for example &ldquo;open Calculator&rdquo;.",
+   "Press a media key (play or pause) on the keyboard.",
+   "End the conversation with the control you normally use."],
+   expect:"The app opens, the media key works and the conversation ends. These are handled locally first, whatever the role, so the role does not change them." },
+ { id:"role-limits", title:"Role limits: ten-minute timeout, cleared at the end, Vault context", opt:true, mic:true, needs:"Spoken replies on, a speech model installed and a reply backend that works (General tab, Voice conversation group). Vault notes search on for the last step.", steps:[
+   "Start a lesson with &ldquo;act like a teacher teaching computers to a six year old, and start the lesson&rdquo;. Do not touch it for ten minutes, then say &ldquo;continue&rdquo;.",
+   "End the conversation. Start a new one and say &ldquo;continue&rdquo;.",
+   "Turn on Vault notes search, set a role, then ask Vox to paste text or run a command."],
+   expect:"After ten minutes untouched, the lesson is forgotten and does not resume. A new conversation has no role or lesson from the old one. With Vault context on, a role can be set and Vox answers in it, but no paste, command or job runs; Vox only answers.",
+   warn:"Vault notes search is off by default." },
  { id:"jarvis-agent-handoff", title:"Planned: Hey Jarvis hands browser, search and file requests to the agent (not built yet)", mic:true, needs:"Not built yet.", steps:[
    "Say &ldquo;Hey Jarvis, search the web for the weather in London&rdquo;.",
    "Say &ldquo;Hey Jarvis, list the files in my scratch folder&rdquo;."],

@@ -110,8 +110,9 @@ const mustHaveIds = [
   "persona-pick", "persona-custom", "barge-in", "speaker-filter", "smart-turn", "phonon-voice", "natural-voice",
   // install and update scripts
   "update-script", "setup-voice-models-script",
-  // generic assistant (planned): recorded as not built yet so they can be filled when it ships
-  "jarvis-role-spoken", "jarvis-agent-handoff", "jarvis-voice-approval", "jarvis-voice-cancel",
+  // generic assistant: spoken roles are built; hand-off, voice approval and voice cancel are planned
+  "jarvis-role-spoken", "role-set", "role-continue-voice", "role-clear", "role-long-chunks",
+  "role-local-first", "role-limits", "jarvis-agent-handoff", "jarvis-voice-approval", "jarvis-voice-cancel",
 ];
 for (const id of mustHaveIds) if (!seen.has(id)) bad(`missing required test id: ${id}`);
 const mustHaveSections = ["setup", "dictation", "acp-agent", "models-tab", "search", "install-update", "generic-assistant"];
@@ -119,7 +120,8 @@ const secIds = new Set(SECTIONS.map((s) => s.id));
 for (const id of mustHaveSections) if (!secIds.has(id)) bad(`missing required section: ${id}`);
 
 // planned tests must be clearly marked so nobody reports them as failures
-for (const t of tests.filter((x) => x.id.startsWith("jarvis-"))) {
+const plannedIds = new Set(["jarvis-agent-handoff", "jarvis-voice-approval", "jarvis-voice-cancel"]);
+for (const t of tests.filter((x) => plannedIds.has(x.id))) {
   const blob = JSON.stringify({ ...t, ...(PATCH[t.id] || {}) });
   if (!/not built yet|planned/i.test(blob)) bad(`${t.id}: planned test must say 'not built yet' or 'planned'`);
 }
