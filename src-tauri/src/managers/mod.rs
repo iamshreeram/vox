@@ -10,6 +10,9 @@ pub mod acp_permission_broker;
 mod acp_permission_broker_tests;
 #[cfg(test)]
 mod acp_permission_tests;
+pub mod acp_run;
+#[cfg(test)]
+mod acp_run_tests;
 pub mod agent_jobs;
 pub mod agent_jobs_output;
 pub mod agent_tools;
