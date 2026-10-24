@@ -707,3 +707,112 @@ test.describe("Settings search: controls moved into Models and General", () => {
     );
   });
 });
+
+test.describe("Settings search: controls with conditions", () => {
+  const en = translation("en");
+  const label = (key: string): string => textAt(en, key);
+
+  // A transcription model that supports language selection and translation, so the
+  // Model settings card renders (it renders nothing without a selected model).
+  const mockModel = {
+    id: "mock-model",
+    name: "Mock Model",
+    description: "A model used by the tests.",
+    filename: "mock-model.bin",
+    source: "Local",
+    size_mb: 10,
+    is_downloaded: true,
+    is_downloading: false,
+    partial_size: 0,
+    is_directory: false,
+    engine_type: "TranscribeCpp",
+    accuracy_score: 0.5,
+    speed_score: 0.5,
+    supports_translation: true,
+    is_recommended: false,
+    supported_languages: ["en", "de"],
+    supports_language_selection: true,
+    is_custom: false,
+    supports_streaming: false,
+    supports_language_detection: true,
+  };
+
+  test("(18) with a model selected, Language and Translate results highlight their rows on Models", async ({
+    page,
+  }) => {
+    await installTauriMock(page, {
+      commands: {
+        get_available_models: [mockModel],
+        get_current_model: "mock-model",
+      },
+    });
+    await page.goto("/");
+
+    for (const key of [
+      "settings.general.language.title",
+      "settings.advanced.translateToEnglish.label",
+    ]) {
+      await navItem(page, "General").click();
+      await expect(section(page, "general")).toBeVisible();
+      await searchBox(page).fill(label(key));
+      await options(page)
+        .filter({ hasText: label(key) })
+        .first()
+        .click();
+      await expect(section(page, "models")).toBeVisible();
+      await expect(highlighted(page)).toHaveCount(1);
+      await expect(highlighted(page)).toHaveAttribute(
+        "data-setting-title",
+        label(key),
+      );
+    }
+  });
+
+  test("(19) the wake word action result opens the Listening group and highlights its row", async ({
+    page,
+  }) => {
+    await installTauriMock(page, {
+      settings: { experimental_enabled: true, wake_word_enabled: true },
+    });
+    await page.goto("/");
+
+    const key = "settings.advanced.wakeWord.action.label";
+    await searchBox(page).fill(label(key));
+    await options(page)
+      .filter({ hasText: label(key) })
+      .first()
+      .click();
+
+    await expect(section(page, "general")).toBeVisible();
+    const group = page.locator('[data-group-id="listening"]');
+    await expect(group).toHaveCount(1);
+    await expect(group.locator(`.${HIGHLIGHT_CLASS}`)).toHaveCount(1);
+    await expect(highlighted(page)).toHaveAttribute(
+      "data-setting-title",
+      label(key),
+    );
+  });
+
+  test("(20) the interrupt-by-speaking result opens the Voice conversation group", async ({
+    page,
+  }) => {
+    await installTauriMock(page, { settings: { experimental_enabled: true } });
+    await page.goto("/");
+
+    const key = "converse.section.bargeIn.label";
+    await searchBox(page).fill(label(key));
+    await options(page)
+      .filter({ hasText: label(key) })
+      .first()
+      .click();
+
+    await expect(section(page, "general")).toBeVisible();
+    const group = page.locator('[data-group-id="conversation"]');
+    await expect(group).toHaveCount(1);
+    await expect(group.locator(`.${HIGHLIGHT_CLASS}`)).toHaveCount(1);
+    await expect(highlighted(page)).toHaveAttribute(
+      "data-setting-title",
+      label(key),
+    );
+  });
+});
