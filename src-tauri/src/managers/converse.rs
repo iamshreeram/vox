@@ -14,14 +14,18 @@ use crate::managers::converse_context::{
     note_interrupted, note_paste, note_paste_failed, CommandNote,
 };
 use crate::managers::converse_latency::{LatencyReport, ListenTiming, RollingStats};
-use crate::managers::converse_local::{classify_local_with, LocalIntent};
+use crate::managers::converse_local::{classify_local_in_role, LocalIntent};
 use crate::managers::converse_plan::{
     PlanError, PlanInput, PlanKind, TurnPlan, MAX_UTTERANCE_CHARS,
+};
+use crate::managers::converse_role::{
+    split_chunks, Lesson, CLEARED_SPOKEN, CONTINUE_SPOKEN, LESSON_START_FAILED_SPOKEN,
 };
 use crate::managers::converse_stream::{reconcile, PlanStreamer, Reconcile};
 use crate::managers::emotion::Emotion;
 use crate::managers::job_announcer::{Announcer, LowPriorityMouth};
 use futures_util::future::{select, Either};
+use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -379,7 +383,8 @@ fn speech_outcome(kind: &PlanKind) -> TurnOutcome {
         PlanKind::End => TurnOutcome::Ended,
         // Job plans are parsed only when jobs are allowed and are routed through gate_and_run;
         // without a policy they are never produced, so this branch only sees answer-like speech.
-        // Stage 1 (S3 wires the real behaviour): role kinds behave like Answer for now.
+        // Job plans are parsed only when jobs are allowed and are routed through gate_and_run;
+        // role kinds are answer-like for the history label (their own handling is in execute_plan).
         PlanKind::Answer
         | PlanKind::Paste
         | PlanKind::Command
@@ -1110,6 +1115,13 @@ struct Carry {
     last_failed: Option<String>,
     /// Latency instants of the utterance in progress (reset before each dispatch).
     clock: TurnClock,
+    /// Stage 1 roles: the active role text. Never persisted and never in history; it ends with
+    /// the session (a new session starts with a fresh `Carry`).
+    role: Option<String>,
+    /// Stage 1 lessons: the paused lesson, if any (see `converse_role::Lesson`).
+    lesson: Option<Lesson>,
+    /// True when the turn's plan was an Answer delivered in full (see `continue_lesson`).
+    answer_delivered: bool,
 }
 
 /// Consecutive `Ignored` listens that count as one idle turn (T9b).
@@ -1223,6 +1235,17 @@ async fn streamed_outcome(
     if early.dead {
         queue.abort();
         return Ok(None);
+    }
+    if matches!(
+        plan.kind,
+        PlanKind::SetRole | PlanKind::ClearRole | PlanKind::Resume
+    ) {
+        // Role plans are never released as early speech (the streamer accepts only answer and
+        // clarify), so the final plan runs in full through the one-shot path, as `Legacy` does.
+        if early.ack.is_some() {
+            queue.abort();
+        }
+        return execute_plan(deps, cfg, cancel, plan, carry).await;
     }
     let text = match reconcile(&plan, &early.spoken) {
         Reconcile::Abort => {
@@ -1432,19 +1455,21 @@ async fn brain_turn(
     };
     let deps = &timed_deps;
     let start = history.len().saturating_sub(cfg.context_turns);
+    expire_lesson(carry);
     let input = PlanInput {
         utterance,
         history: history.get(start..).unwrap_or_default(),
         last_draft: carry.last_draft.as_deref(),
         style: &cfg.style,
         vault_context: None,
-        role: None,
-        lesson_paused: false,
-        roles_enabled: false,
+        role: carry.role.as_deref(),
+        lesson_paused: carry.lesson.is_some(),
+        roles_enabled: true,
     };
-    let queue = if cfg.answer_only {
-        // Answer-only (DESIGN 8.1): no streamed model text may reach the mouth before a complete
-        // plan is parsed, so the streaming path is never used.
+    // Answer-only (DESIGN 8.1): no streamed model text may reach the mouth before a complete
+    // plan is parsed, so the streaming path is never used. Role-active turns (Stage 1 roles,
+    // DESIGN 2.5) use the final plan only: no early speech and no acknowledgement.
+    let queue = if cfg.answer_only || carry.role.is_some() {
         None
     } else if cfg.early_speech || cfg.ack_after.is_some() {
         deps.mouth.open_queue()
@@ -1532,6 +1557,240 @@ async fn brain_turn(
     turn
 }
 
+/// Drops the paused lesson when it is older than its lifetime. Checked whenever it is read.
+fn expire_lesson(carry: &mut Carry) {
+    if carry
+        .lesson
+        .as_ref()
+        .is_some_and(|lesson| lesson.expired(Instant::now()))
+    {
+        carry.lesson = None;
+    }
+}
+
+/// Says the front chunk of a speech queue. The chunk leaves the queue only when its say returned
+/// `Done`, before the settle steps. `Interrupted` and `Failed` keep it at the front. A session stop
+/// or a reply cancel drops the say and leaves the queue as it was (the queue is owned by the caller,
+/// not by this future).
+async fn say_front_chunk(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    queue: &mut VecDeque<String>,
+    emotion: Emotion,
+) -> Result<SayOutcome, SessionEnd> {
+    let Some(text) = queue.front().cloned() else {
+        return Ok(SayOutcome::Done);
+    };
+    deps.reporter.state(SessionState::Speaking);
+    if is_cancelled(cancel) {
+        return Err(SessionEnd::Cancelled);
+    }
+    let Some(outcome) = race(cancel, deps.mouth.say(&text, emotion)).await else {
+        return Err(SessionEnd::Cancelled);
+    };
+    if outcome == SayOutcome::Done {
+        queue.pop_front();
+    }
+    match settle(deps, cfg, cancel, outcome).await {
+        SpeakResult::Spoken(_) => Ok(outcome),
+        SpeakResult::Cancelled => Err(SessionEnd::Cancelled),
+        SpeakResult::Stuck => Err(SessionEnd::SpeechStuck),
+    }
+}
+
+/// Speaks a queue in order until it is empty or a say does not finish as `Done`. Returns the
+/// outcome of the last say (`Done` for an empty queue).
+async fn speak_queue(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    queue: &mut VecDeque<String>,
+    emotion: Emotion,
+) -> Result<SayOutcome, SessionEnd> {
+    loop {
+        if queue.is_empty() {
+            return Ok(SayOutcome::Done);
+        }
+        match say_front_chunk(deps, cfg, cancel, queue, emotion).await? {
+            SayOutcome::Done => {}
+            other => return Ok(other),
+        }
+    }
+}
+
+/// Speaks the paused lesson from its front. The lesson is dropped once it is fully spoken.
+async fn speak_lesson(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    carry: &mut Carry,
+) -> Result<SayOutcome, SessionEnd> {
+    let Some(lesson) = carry.lesson.as_mut() else {
+        return Ok(SayOutcome::Done);
+    };
+    let outcome = speak_queue(deps, cfg, cancel, &mut lesson.chunks, Emotion::Neutral).await?;
+    if carry.lesson.as_ref().is_some_and(|l| l.chunks.is_empty()) {
+        carry.lesson = None;
+    }
+    Ok(outcome)
+}
+
+/// An Answer plan. With a role active the speech is spoken as chunks from a turn-local queue: an
+/// interrupted answer drops its remainder and never touches the paused lesson. Without a role the
+/// speech is one `say`, as before.
+async fn answer_turn(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    plan: &TurnPlan,
+    carry: &mut Carry,
+) -> Result<String, SessionEnd> {
+    let outcome = if carry.role.is_some() {
+        let mut queue: VecDeque<String> = split_chunks(&plan.speech).into();
+        speak_queue(deps, cfg, cancel, &mut queue, plan.emotion).await?
+    } else {
+        speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?
+    };
+    carry.answer_delivered = outcome == SayOutcome::Done;
+    Ok(answer_summary(&plan.speech, outcome))
+}
+
+/// A SetRole plan. The role is committed before anything is spoken. The acknowledgement is spoken
+/// next; only when it finished (`Done`) and the plan carries a first request is the one extra
+/// planner call made (`lesson_start_turn`). An interrupted acknowledgement keeps the role and makes
+/// no call.
+async fn set_role_turn(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    plan: &TurnPlan,
+    carry: &mut Carry,
+) -> Result<String, SessionEnd> {
+    let Some(directive) = plan.role.as_ref() else {
+        // A role plan without its directive is not validated: nothing is committed.
+        carry.journal.set(TurnOutcome::Failed, None);
+        into_result(speak_or_end(deps, cfg, cancel, MSG_PLAN_FAILED, Emotion::Neutral).await)?;
+        return Ok(failed_summary());
+    };
+    carry.role = Some(directive.role.clone());
+    carry.lesson = None;
+    let outcome = speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?;
+    let summary = answer_summary(&plan.speech, outcome);
+    let task = directive
+        .task
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty());
+    if let (SayOutcome::Done, Some(task)) = (outcome, task) {
+        lesson_start_turn(deps, cfg, cancel, task, directive.resume, carry).await?;
+    }
+    Ok(summary)
+}
+
+/// The one extra planner call of a compound start: the task, answered in role. Only an Answer is
+/// accepted. Any other kind is ignored with no effect. A failed call speaks one fixed line. The
+/// accepted lesson is spoken from `carry.lesson`, so an interruption leaves its remainder paused.
+async fn lesson_start_turn(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    task: &str,
+    resume_auto: bool,
+    carry: &mut Carry,
+) -> Result<(), SessionEnd> {
+    let input = PlanInput {
+        utterance: task,
+        history: &[],
+        last_draft: None,
+        style: &cfg.style,
+        vault_context: None,
+        role: carry.role.as_deref(),
+        lesson_paused: false,
+        roles_enabled: true,
+    };
+    deps.reporter.state(SessionState::Thinking);
+    let Some(planned) = race(cancel, deps.brain.plan(input)).await else {
+        return Err(SessionEnd::Cancelled);
+    };
+    match planned {
+        Ok(plan) if plan.kind == PlanKind::Answer => {
+            let chunks = split_chunks(&plan.speech);
+            carry.lesson =
+                (!chunks.is_empty()).then(|| Lesson::new(chunks, resume_auto, Instant::now()));
+            speak_lesson(deps, cfg, cancel, carry).await?;
+            Ok(())
+        }
+        Ok(_) => Ok(()),
+        Err(_) => into_result(
+            speak_or_end(
+                deps,
+                cfg,
+                cancel,
+                LESSON_START_FAILED_SPOKEN,
+                Emotion::Neutral,
+            )
+            .await,
+        ),
+    }
+}
+
+/// A Resume plan speaks the paused lesson from its front; its own speech is ignored. With no lesson
+/// it behaves like an Answer.
+async fn resume_turn(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    plan: &TurnPlan,
+    carry: &mut Carry,
+) -> Result<String, SessionEnd> {
+    expire_lesson(carry);
+    if carry.lesson.is_none() {
+        return answer_turn(deps, cfg, cancel, plan, carry).await;
+    }
+    let before: Vec<String> = carry
+        .lesson
+        .as_ref()
+        .map(|lesson| lesson.chunks.iter().cloned().collect())
+        .unwrap_or_default();
+    let outcome = speak_lesson(deps, cfg, cancel, carry).await?;
+    let left = carry
+        .lesson
+        .as_ref()
+        .map_or(0, |lesson| lesson.chunks.len());
+    let spoken = before
+        .iter()
+        .take(before.len().saturating_sub(left))
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" ");
+    Ok(answer_summary(&spoken, outcome))
+}
+
+/// After an Answer that was delivered in full, a lesson with `resume_auto` continues: the fixed
+/// continuation line, then the remainder from its front. Runs inside the reply scope of the turn.
+async fn continue_lesson(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    carry: &mut Carry,
+) -> Result<(), SessionEnd> {
+    expire_lesson(carry);
+    if !carry
+        .lesson
+        .as_ref()
+        .is_some_and(|lesson| lesson.resume_auto)
+    {
+        return Ok(());
+    }
+    let outcome = speak_outcome(deps, cfg, cancel, CONTINUE_SPOKEN, Emotion::Neutral).await?;
+    if outcome != SayOutcome::Done {
+        return Ok(());
+    }
+    speak_lesson(deps, cfg, cancel, carry).await?;
+    Ok(())
+}
+
 /// Executes a final plan with the one-shot `Mouth::say` speech. `Ok(None)` = continue the
 /// loop without recording history.
 async fn execute_plan(
@@ -1563,16 +1822,29 @@ async fn execute_plan(
         // Job plans are parsed only when jobs are allowed and are routed through gate_and_run.
         // With no policy a Job plan never reaches this answer path (parsing refuses it), so it
         // is treated as answer text here.
-        // Stage 1 (S3 wires the real behaviour): role kinds speak like Answer for now.
-        PlanKind::Answer
-        | PlanKind::Clarify
-        | PlanKind::Job
-        | PlanKind::SetRole
-        | PlanKind::ClearRole
-        | PlanKind::Resume => {
+        PlanKind::Answer => {
+            carry.journal.set(speech_outcome(&plan.kind), None);
+            answer_turn(deps, cfg, cancel, &plan, carry).await?
+        }
+        PlanKind::Clarify | PlanKind::Job => {
             carry.journal.set(speech_outcome(&plan.kind), None);
             let outcome = speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?;
             answer_summary(&plan.speech, outcome)
+        }
+        PlanKind::SetRole => {
+            carry.journal.set(speech_outcome(&plan.kind), None);
+            set_role_turn(deps, cfg, cancel, &plan, carry).await?
+        }
+        PlanKind::ClearRole => {
+            carry.journal.set(speech_outcome(&plan.kind), None);
+            carry.role = None;
+            carry.lesson = None;
+            let outcome = speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?;
+            answer_summary(&plan.speech, outcome)
+        }
+        PlanKind::Resume => {
+            carry.journal.set(speech_outcome(&plan.kind), None);
+            resume_turn(deps, cfg, cancel, &plan, carry).await?
         }
         PlanKind::Paste => {
             let Some(pasted) = plan.paste_text.clone() else {
@@ -1959,7 +2231,11 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
             .as_deref()
             .map(|watch| (watch.reply_token(), watch.gate()));
         let dispatched = match reply_scope {
-            None => dispatch_utterance(deps, cfg, cancel, &utterance, &history, &mut carry).await,
+            None => {
+                let turn =
+                    dispatch_utterance(deps, cfg, cancel, &utterance, &history, &mut carry).await;
+                finish_answer_with_lesson(deps, cfg, cancel, &mut carry, turn, false).await
+            }
             Some((reply, gate)) => {
                 let mut turn_cancel = cancel.with_reply(reply);
                 let gated = GatedMouth {
@@ -1967,13 +2243,25 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
                     gate,
                 };
                 let turn_deps = deps.with_mouth(&gated);
-                dispatch_utterance(
+                let turn = dispatch_utterance(
                     &turn_deps,
                     cfg,
                     &mut turn_cancel,
                     &utterance,
                     &history,
                     &mut carry,
+                )
+                .await;
+                let latched = barge_watch
+                    .as_deref()
+                    .is_some_and(|watch| watch.cancel_latched());
+                finish_answer_with_lesson(
+                    &turn_deps,
+                    cfg,
+                    &mut turn_cancel,
+                    &mut carry,
+                    turn,
+                    latched,
                 )
                 .await
             }
@@ -2035,10 +2323,20 @@ async fn dispatch_utterance(
     history: &[(String, String)],
     carry: &mut Carry,
 ) -> Result<Option<String>, SessionEnd> {
-    // Local tier: end phrases and explicit dictation.
+    carry.answer_delivered = false;
+    // Local tier: end phrases, explicit dictation and role clear phrases.
     let cancel_enabled =
         deps.policy.is_some_and(|p| p.current().jobs_allowed) || deps.hands.has_active_job();
-    match classify_local_with(utterance, cancel_enabled) {
+    match classify_local_in_role(utterance, cancel_enabled, carry.role.is_some()) {
+        LocalIntent::ClearRole => {
+            carry.role = None;
+            carry.lesson = None;
+            carry.journal.set(TurnOutcome::Acted, None);
+            return match speak_or_end(deps, cfg, cancel, CLEARED_SPOKEN, Emotion::Neutral).await {
+                Some(end) => Err(end),
+                None => Ok(None),
+            };
+        }
         LocalIntent::End => {
             carry.journal.set(TurnOutcome::Ended, None);
             return Err(after_speech(
@@ -2114,6 +2412,25 @@ async fn dispatch_utterance(
     // Brain tier. The plan is dropped if cancel wins the race.
     deps.reporter.state(SessionState::Thinking);
     brain_turn(deps, cfg, cancel, utterance, history, carry).await
+}
+
+/// Stage 1 lessons (DESIGN 2.6): an Answer delivered in full continues a lesson that asked for it.
+/// Called inside the turn's reply scope with that scope's mouth and cancel token. It never runs
+/// after a cancel or a latched barge-in: then the barge utterance becomes the next turn and the
+/// lesson stays paused. `latched` is read synchronously by the caller, so no watch reference is
+/// held across an await.
+async fn finish_answer_with_lesson(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    carry: &mut Carry,
+    turn: Result<Option<String>, SessionEnd>,
+    latched: bool,
+) -> Result<Option<String>, SessionEnd> {
+    if turn.is_ok() && carry.answer_delivered && !latched && !cancel.is_cancelled() {
+        continue_lesson(deps, cfg, cancel, carry).await?;
+    }
+    turn
 }
 
 /// Barge-in capture of the interrupted reply's speech (DESIGN 12.2.3): the endpointer's maximum

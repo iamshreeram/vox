@@ -779,7 +779,9 @@ async fn role_b3_local_clear_drops_a_paused_lesson() {
         says(&r),
         [
             vec![ACK.to_string()],
-            lesson_chunks(),
+            // The second chunk is Interrupted, so speech stops for that turn (design 2.5);
+            // the third chunk is never spoken, exactly as in the b10 twin test.
+            vec![LESSON_PARTS[0].to_string(), LESSON_PARTS[1].to_string()],
             vec!["Okay, back to normal.".to_string(), "Next.".to_string()],
         ]
         .concat(),
@@ -1434,7 +1436,7 @@ async fn role_b8_a_non_answer_interrupting_turn_skips_the_continuation() {
     );
 
     // A local command after an interruption: no continuation.
-    let mut r = rig(
+    let r = rig(
         &["act like a teacher", "open safari for me"],
         vec![compound(true), answer(&lesson_text())],
     );
@@ -1563,7 +1565,14 @@ async fn role_b11_answer_only_allows_role_plans_and_blocks_effects() {
     let mut cfg = lcfg(false, None);
     cfg.answer_only = true;
     let r = rig(
-        &["act like a teacher", "clear it", "paste it", "run it"],
+        // "paste ..." would be taken by the local dictation tier (the user's own words, not a
+        // model-derived effect; unchanged by design), so use words that reach the planner.
+        &[
+            "act like a teacher",
+            "clear it",
+            "make a note of that",
+            "run it",
+        ],
         vec![
             role_only(),
             ok(clear_role("Cleared.")),
