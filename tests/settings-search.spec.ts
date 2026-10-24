@@ -605,22 +605,30 @@ test.describe("Settings search: controls moved into Models and General", () => {
     await expect(group.locator(`.${HIGHLIGHT_CLASS}`)).toHaveCount(1);
   });
 
-  test("(15) persona and latency results open the Voice conversation group on General", async ({
+  test("(15) persona, latency and conversation results open the Voice conversation group on General", async ({
     page,
   }) => {
     await installTauriMock(page, { settings: { experimental_enabled: true } });
     await page.goto("/");
 
-    await searchBox(page).fill("persona");
-    await options(page)
-      .filter({ hasText: label("converse.voice.persona.label") })
-      .first()
-      .click();
+    for (const [query, key] of [
+      ["persona", "converse.voice.persona.label"],
+      ["latency panel", "converse.voice.latency.label"],
+      ["silence before", "converse.section.silenceLabel"],
+    ]) {
+      await searchBox(page).fill(query);
+      await options(page)
+        .filter({ hasText: label(key) })
+        .first()
+        .click();
 
-    await expect(section(page, "general")).toBeVisible();
-    const group = page.locator('[data-group-id="conversation"]');
-    await expect(group).toHaveCount(1);
-    await expect(group.locator(`.${HIGHLIGHT_CLASS}`)).toHaveCount(1);
+      await expect(section(page, "general")).toBeVisible();
+      const group = page.locator('[data-group-id="conversation"]');
+      await expect(group).toHaveCount(1);
+      await expect(group.locator(`.${HIGHLIGHT_CLASS}`)).toHaveCount(1);
+      await navItem(page, "Models").click();
+      await expect(section(page, "models")).toBeVisible();
+    }
   });
 
   test("(16) with Experimental off, language, translation and unload timeout are found on Models and no gated group exists", async ({
