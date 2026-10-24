@@ -534,6 +534,28 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
     "settings.advanced.acpAgent.timeout.description",
     ["timeout", "seconds", "wait", "agent timeout", "turn timeout"],
   ),
+  row(
+    "acpPermissionMode",
+    "acpAgent",
+    "settings.advanced.acpPermission.mode.label",
+    "settings.advanced.acpPermission.mode.description",
+    [
+      "agent permission",
+      "approve",
+      "allow",
+      "deny",
+      "tool approval",
+      "ask before",
+      "permissions",
+    ],
+  ),
+  row(
+    "acpPermissionTimeout",
+    "acpAgent",
+    "settings.advanced.acpPermission.timeout.label",
+    "settings.advanced.acpPermission.timeout.description",
+    ["approval timeout", "agent permission", "approve", "timeout"],
+  ),
 
   // ----- spoken replies (TtsSettings) -----
   row(

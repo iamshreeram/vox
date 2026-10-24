@@ -70,3 +70,21 @@ export function parseAcpTimeout(raw: string): AcpFormResult<number> {
   }
   return { ok: true, value };
 }
+
+/** Bounds for the approval timeout, matching the backend clamp (settings.rs). */
+export const ACP_PERMISSION_TIMEOUT_MIN_SECS = 10;
+export const ACP_PERMISSION_TIMEOUT_MAX_SECS = 300;
+
+/**
+ * Parses an approval timeout draft and clamps it into the allowed range.
+ * Returns null when the draft is not a whole number.
+ */
+export function clampPermissionTimeout(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!INTEGER.test(trimmed)) return null;
+  const value = Number(trimmed);
+  return Math.min(
+    ACP_PERMISSION_TIMEOUT_MAX_SECS,
+    Math.max(ACP_PERMISSION_TIMEOUT_MIN_SECS, value),
+  );
+}

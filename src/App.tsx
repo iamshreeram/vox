@@ -39,6 +39,7 @@ import {
   type AmbientAddressedPayload,
 } from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
+import PermissionPrompt from "./components/agent/PermissionPrompt";
 
 type OnboardingStep = "accessibility" | "model" | "done";
 
@@ -539,6 +540,7 @@ function App() {
     <>
       {toaster}
       {content}
+      <PermissionPrompt />
     </>
   );
 }

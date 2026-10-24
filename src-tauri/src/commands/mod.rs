@@ -1,3 +1,4 @@
+pub mod acp_permission;
 pub mod agent_jobs;
 pub mod agent_tools;
 pub mod ambient;

@@ -12,6 +12,9 @@ pub mod acp_permission_broker;
 mod acp_permission_broker_tests;
 #[cfg(test)]
 mod acp_permission_tests;
+pub mod acp_permission_ui;
+#[cfg(test)]
+mod acp_permission_ui_tests;
 pub mod acp_run;
 #[cfg(test)]
 mod acp_run_tests;

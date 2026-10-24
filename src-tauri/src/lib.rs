@@ -414,7 +414,23 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     }
     app_handle.manage(conversation_log);
     // Persistent ACP agent client used by dictation escalation (DESIGN rev 3.1 section 3).
-    app_handle.manage(Arc::new(managers::acp_agent::AcpAgentManager::new()));
+    // Permission requests are decided by the current settings and approved in the UI.
+    let acp_settings_app = app_handle.clone();
+    let acp_timeout_app = app_handle.clone();
+    let acp_prompter = managers::acp_permission_ui::TauriPermissionPrompter::new(
+        app_handle.clone(),
+        Arc::new(move || {
+            settings::clamp_permission_timeout_secs(
+                get_settings(&acp_timeout_app).acp_permission_timeout_secs,
+            )
+        }),
+    );
+    app_handle.manage(Arc::new(
+        managers::acp_agent::AcpAgentManager::new().with_permissions(
+            Arc::new(acp_prompter),
+            Arc::new(move || get_settings(&acp_settings_app).acp_permission_settings()),
+        ),
+    ));
     app_handle.manage(command_router.clone());
     app_handle.manage(wakeword_listener.clone());
     app_handle.manage(ambient_transcript);
@@ -1254,6 +1270,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_acp_agent_args_setting,
             shortcut::change_acp_agent_turn_timeout_setting,
             shortcut::acp_agent_test_connection,
+            commands::acp_permission::acp_permission_respond,
             commands::voice_shortcuts::set_voice_shortcuts,
             commands::converse::change_converse_silence_ms_setting,
             commands::converse::change_converse_max_idle_turns_setting,
@@ -1741,6 +1758,8 @@ mod acp_agent_settings_tests;
 mod agent_bridge_settings_tests;
 #[cfg(test)]
 mod ambient_settings_tests;
+#[cfg(test)]
+mod settings_acp_permission_tests;
 #[cfg(test)]
 mod settings_validation_tests;
 

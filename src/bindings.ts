@@ -1660,7 +1660,8 @@ async changeAgentBridgePromptFlagSetting(flag: string) : Promise<Result<null, st
 }
 },
 /**
- * Enables or disables the persistent ACP agent client.
+ * Enables or disables the persistent ACP agent client. Turning it off also retires the
+ * running agent so it does not linger until the idle timeout.
  */
 async changeAcpAgentEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
@@ -1717,6 +1718,14 @@ async acpAgentTestConnection() : Promise<Result<string, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Answers the approval prompt `token`. `allow` selects an allow-once option, otherwise the
+ * request is rejected. Returns `false` when there is no broker or the token is not pending
+ * (unknown, already answered or invalidated).
+ */
+async acpPermissionRespond(token: string, allow: boolean) : Promise<boolean> {
+    return await TAURI_INVOKE("acp_permission_respond", { token, allow });
 },
 /**
  * Validates and persists the full list of voice shortcuts.
@@ -2061,6 +2070,14 @@ acp_agent_args?: string;
  * Seconds allowed for one agent turn.
  */
 acp_agent_turn_timeout_secs?: number; 
+/**
+ * How agent permission requests are decided. Defaults to asking before writes.
+ */
+acp_permission_mode?: PermissionMode; 
+/**
+ * Seconds one approval prompt waits for the user before it is rejected.
+ */
+acp_permission_timeout_secs?: number; 
 /**
  * Speak agent replies and a generic confirmation/failure phrase aloud.
  * Opt-in: spoken output audibly exposes agent reply content.
@@ -2455,6 +2472,25 @@ export type OverlayStyle = "none" | "minimal" | "live"
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
+/**
+ * How permission requests are answered without asking the user.
+ * 
+ * `AskWrites` is a metadata-based convenience policy, not a sandbox. Use
+ * `AskAll` for any agent whose behaviour is not fully trusted.
+ */
+export type PermissionMode = 
+/**
+ * Auto-allow read-like operations (read, search, think) when safe. Ask for everything else.
+ */
+"ask_writes" | 
+/**
+ * Ask the user for every request.
+ */
+"ask_all" | 
+/**
+ * Reject every request without asking.
+ */
+"deny"
 /**
  * A persona. `style` feeds `tts_composer_style`; `voice` (a curated natural
  * voice id) feeds `tts_natural_voice` when present.
