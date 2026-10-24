@@ -1,7 +1,7 @@
 # Voice assistant: wake word actions
 
 Vox can start voice work when it hears its wake phrase. What happens next is
-set by the **wake word action**, found under the Wake Word settings (Advanced)
+set by the **wake word action**, found in Settings > General, in the Listening group,
 once the wake word is turned on.
 
 ## The two actions
@@ -16,8 +16,8 @@ until the conversation ends.
 
 ## How conversation mode differs
 
-- It uses the **Conversation** feature. Spoken replies must be turned on in the
-  speech settings, and a reply backend must be set up there.
+- It uses the **Conversation** feature. Spoken replies must be turned on in
+  Settings > Models, and a reply backend must be set up there.
 - It does **not** use the agent bridge path. Replies come from the conversation
   reply backend only.
 - Context is kept for that conversation only. A new conversation starts fresh.

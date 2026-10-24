@@ -17,8 +17,8 @@ again. You do not press a key for every turn.
 - **Shortcut:** press the conversation shortcut (default `control+option+c`
   on macOS). Press it again to stop.
 - **Tray:** choose "Start or stop conversation" from the tray menu.
-- **Settings:** open Settings > Models, then the Spoken replies group (shown when
-  the Experimental switch is on), and use the Start conversation or Stop
+- **Settings:** open Settings > General, then the Voice conversation group (shown
+  when the Experimental switch is on), and use the Start conversation or Stop
   conversation button.
 
 ## What you can say
@@ -68,16 +68,16 @@ by Vox.
 
 The three values are clamped to these ranges. Values outside a range are
 set to the nearest limit. They are saved as soon as you move a slider, and
-they appear in Settings > Models, in the Spoken replies group, below the
-speaking-rate setting. That group is shown only when Experimental features are
-turned on (Settings > Advanced > Experimental features).
+they appear in Settings > General, in the Voice conversation group. That group
+is shown only when Experimental features are turned on (Settings > Advanced >
+Experimental features).
 
 Optional features for conversations (smart turn detection, a latency panel,
 personas, and a speaker filter) are described in [Optional voice features](voice-features.md).
 
 ## Interrupting by speaking (headphones, experimental)
 
-Setting: **Interrupt by speaking** in the Conversation settings. It is off by
+Setting: **Interrupt by speaking** in Settings → General → Voice conversation. It is off by
 default. Its only other option, **Headphones only**, is meant for headphones.
 This feature is experimental and has **not yet been verified on real headsets**;
 the live check below is how that gets confirmed.
