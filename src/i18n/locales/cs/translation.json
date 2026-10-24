@@ -173,7 +173,7 @@
         "loading": "Model loading",
         "smartTurn": "Smart turn model",
         "speakerFilter": "Speaker filter model",
-        "replyStyle": "Reply style model",
+        "replyStyle": "Reply style",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "Vyberte model přepisu nebo stáhněte další modely. Různé modely nabízejí různé úrovně přesnosti a rychlosti.",

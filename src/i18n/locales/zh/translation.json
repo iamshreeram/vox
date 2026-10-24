@@ -173,7 +173,7 @@
         "loading": "Model loading",
         "smartTurn": "Smart turn model",
         "speakerFilter": "Speaker filter model",
-        "replyStyle": "Reply style model",
+        "replyStyle": "Reply style",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "选择转录模型或下载其他模型。不同模型提供不同的准确度和速度。",

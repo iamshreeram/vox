@@ -173,7 +173,7 @@
         "loading": "Model loading",
         "smartTurn": "Smart turn model",
         "speakerFilter": "Speaker filter model",
-        "replyStyle": "Reply style model",
+        "replyStyle": "Reply style",
         "vadEngine": "Voice activity detection engine"
       },
       "description": "Wähle ein Transkriptionsmodell aus oder lade zusätzliche Modelle herunter. Verschiedene Modelle bieten unterschiedliche Genauigkeits- und Geschwindigkeitsstufen.",

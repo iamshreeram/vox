@@ -94,7 +94,7 @@ test.describe("Settings search: navigation and reveal", () => {
     page,
   }) => {
     // Outgoing page (Post Process) has a row titled "Model"; the destination
-    // (Models > Reply style model) has another row titled "Model".
+    // (Models > Reply style) has another row titled "Model".
     await installTauriMock(page, {
       settings: {
         post_process_enabled: true,
@@ -110,7 +110,7 @@ test.describe("Settings search: navigation and reveal", () => {
     await searchBox(page).fill("model");
     await options(page)
       .filter({ hasText: "Model" })
-      .filter({ hasText: "Reply style model" })
+      .filter({ hasText: "Reply style" })
       .first()
       .click();
 
@@ -629,9 +629,13 @@ test.describe("Settings search: controls moved into Models and General", () => {
     await installTauriMock(page);
     await page.goto("/");
 
+    // Language and translation render only for a selected model (ModelSettingsCard keeps
+    // its existing condition), so the mock has none: the results must still be unlocked
+    // and lead to the Models page. The unload timeout always renders and is highlighted.
     for (const key of [
-      "settings.advanced.modelUnload.title",
+      "settings.general.language.title",
       "settings.advanced.translateToEnglish.label",
+      "settings.advanced.modelUnload.title",
     ]) {
       await searchBox(page).fill(label(key));
       const option = options(page)
@@ -640,12 +644,17 @@ test.describe("Settings search: controls moved into Models and General", () => {
       await expect(option).not.toContainText(/Turn on .*first/);
       await option.click();
       await expect(section(page, "models")).toBeVisible();
-      await expect(highlighted(page)).toHaveCount(1);
-      await expect(highlighted(page)).toHaveAttribute(
-        "data-setting-title",
-        label(key),
-      );
+      if (key === "settings.advanced.modelUnload.title") {
+        await expect(highlighted(page)).toHaveCount(1);
+        await expect(highlighted(page)).toHaveAttribute(
+          "data-setting-title",
+          label(key),
+        );
+      }
+      await navItem(page, "General").click();
+      await expect(section(page, "general")).toBeVisible();
     }
+    await navItem(page, "Models").click();
 
     // The gated groups are absent from the DOM while the switch is off.
     await expect(

@@ -139,7 +139,6 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
     id: "acpAgent",
     section: "agents",
     titleKey: "settings.experimental.groups.acpAgent",
-    descriptionKey: "settings.experimental.acpAgent.groupDescription",
     defaultOpen: false,
     controls: [{ id: "acpAgent" }],
   },
