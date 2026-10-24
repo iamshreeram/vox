@@ -18,6 +18,7 @@ fn policy(jobs: bool, ask: bool, agents: &[&str]) -> JobParsePolicy {
         jobs_allowed: jobs,
         ask_allowed: ask,
         agents: agents.iter().map(|a| a.to_string()).collect(),
+        role_active: false,
     }
 }
 
@@ -67,6 +68,9 @@ fn input(utterance: &str) -> PlanInput<'_> {
         last_draft: None,
         style: "",
         vault_context: None,
+        lesson_paused: false,
+        role: None,
+        roles_enabled: false,
     }
 }
 

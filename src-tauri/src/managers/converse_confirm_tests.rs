@@ -28,6 +28,7 @@ fn plan(kind: PlanKind) -> TurnPlan {
         paste_text: None,
         command: None,
         job: None,
+        role: None,
     }
 }
 

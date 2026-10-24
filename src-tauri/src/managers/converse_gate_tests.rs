@@ -269,6 +269,7 @@ fn job_plan(project: &str, task: &str) -> TurnPlan {
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        role: None,
         job: Some(JobRequest {
             project: project.to_string(),
             task: task.to_string(),
@@ -286,6 +287,7 @@ fn paste_plan(text: &str) -> TurnPlan {
         paste_text: Some(text.to_string()),
         command: None,
         job: None,
+        role: None,
     }
 }
 
@@ -297,6 +299,7 @@ fn command_plan(cmd: &str) -> TurnPlan {
         paste_text: None,
         command: Some(cmd.to_string()),
         job: None,
+        role: None,
     }
 }
 
@@ -308,6 +311,7 @@ fn answer_plan(speech: &str) -> TurnPlan {
         paste_text: None,
         command: None,
         job: None,
+        role: None,
     }
 }
 

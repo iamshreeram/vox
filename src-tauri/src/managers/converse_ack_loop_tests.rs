@@ -299,6 +299,7 @@ async fn run(r: &Rig, cfg: &SessionConfig) -> SessionEnd {
 fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
         job: None,
+        role: None,
         kind,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,
@@ -478,6 +479,7 @@ async fn al7_smart_ack_without_ack_after_is_silent_and_opens_no_queue() {
 async fn al8_revision_with_a_draft_gets_a_revise_acknowledgement() {
     let paste = TurnPlan {
         job: None,
+        role: None,
         paste_text: Some("Dogs are loyal companions.".into()),
         ..plan(PlanKind::Paste, "")
     };
@@ -555,6 +557,7 @@ async fn al11_ack_then_paste_plan_aborts_the_queue_pastes_and_records_the_pasted
     let pasted = "Hi team, the release is delayed.";
     let paste = TurnPlan {
         job: None,
+        role: None,
         paste_text: Some(pasted.into()),
         ..plan(PlanKind::Paste, "Done.")
     };
@@ -638,6 +641,7 @@ async fn al12_ack_then_command_plan_runs_the_command_and_records_the_action_note
     let speech = "Opening Safari.";
     let command_plan = TurnPlan {
         job: None,
+        role: None,
         command: Some(cmd.into()),
         ..plan(PlanKind::Command, speech)
     };

@@ -166,6 +166,7 @@ impl Brain for OneReplyBrain {
 fn answer_plan(speech: &str) -> TurnPlan {
     TurnPlan {
         job: None,
+        role: None,
         kind: PlanKind::Answer,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,

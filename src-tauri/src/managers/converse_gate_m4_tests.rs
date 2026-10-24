@@ -222,6 +222,7 @@ fn job_plan(agent: Option<&str>, mode: JobMode) -> TurnPlan {
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        role: None,
         job: Some(JobRequest {
             project: "vox".to_string(),
             task: "fix the build".to_string(),

@@ -114,6 +114,7 @@ fn job_plan_with(project: &str, task: &str, agent: Option<&str>, mode: JobMode) 
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        role: None,
         job: Some(JobRequest {
             project: project.to_string(),
             task: task.to_string(),

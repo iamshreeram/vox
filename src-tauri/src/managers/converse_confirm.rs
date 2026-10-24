@@ -402,7 +402,13 @@ pub async fn prepare_action(
         PlanKind::Paste => prepare_paste(plan),
         PlanKind::Command => prepare_command(plan, hands),
         PlanKind::Job => prepare_job(plan, policy, hands),
-        PlanKind::Answer | PlanKind::Clarify | PlanKind::End => Err(PrepareError::Unsupported),
+        // Stage 1 roles: never prepared as actions (they are speech-only for now).
+        PlanKind::Answer
+        | PlanKind::Clarify
+        | PlanKind::End
+        | PlanKind::SetRole
+        | PlanKind::ClearRole
+        | PlanKind::Resume => Err(PrepareError::Unsupported),
     }
 }
 

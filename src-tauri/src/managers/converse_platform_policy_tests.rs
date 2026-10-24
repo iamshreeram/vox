@@ -167,6 +167,9 @@ fn plan_input<'a>() -> PlanInput<'a> {
         last_draft: None,
         style: "",
         vault_context: None,
+        lesson_paused: false,
+        role: None,
+        roles_enabled: false,
     }
 }
 
@@ -276,6 +279,7 @@ fn job_plan() -> TurnPlan {
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        role: None,
         job: Some(JobRequest {
             project: "alpha".to_string(),
             task: "fix the tests".to_string(),

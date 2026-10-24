@@ -692,8 +692,14 @@ pub(crate) async fn plan_with_tools(
         last_draft: input.last_draft,
         style: input.style,
         vault_context: None,
+        role: input.role,
+        lesson_paused: input.lesson_paused,
+        roles_enabled: input.roles_enabled,
     };
-    let policy = job_parse_policy(settings);
+    let policy = JobParsePolicy {
+        role_active: input.role.is_some(),
+        ..job_parse_policy(settings)
+    };
     let prompt = planner_prompt_for_policy(&base, &policy);
     let system = format!("{}{TOOLS_ADDENDUM}", prompt.system);
     let first_user = match vault {
@@ -1372,6 +1378,7 @@ pub(crate) fn guard_plan(plan: TurnPlan, taint: &TaintState, guard_actions: bool
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        role: None,
     }
 }
 
@@ -1586,6 +1593,7 @@ pub(crate) fn job_parse_policy(settings: &AppSettings) -> JobParsePolicy {
         jobs_allowed,
         ask_allowed,
         agents,
+        role_active: false,
     }
 }
 
@@ -1943,7 +1951,10 @@ async fn plan_plain(
     on_text: Option<&mut (dyn FnMut(&str) + Send)>,
 ) -> Result<TurnPlan, PlanError> {
     let deadline = effective_deadline(settings);
-    let policy = job_parse_policy(settings);
+    let policy = JobParsePolicy {
+        role_active: input.role.is_some(),
+        ..job_parse_policy(settings)
+    };
     let prompt = planner_prompt_for_policy(input, &policy);
     let raw = match on_text {
         Some(on_text) => {

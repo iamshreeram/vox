@@ -177,6 +177,9 @@ fn golden_s1_warm_brief_with_history_is_byte_identical() {
         last_draft: None,
         style: "warm and brief",
         vault_context: None,
+        lesson_paused: false,
+        role: None,
+        roles_enabled: false,
     });
     assert_eq!(p.system, GOLDEN_S1_SYSTEM);
     assert_eq!(p.user, GOLDEN_S1_USER);
@@ -191,6 +194,9 @@ fn golden_s2_empty_style_with_draft_is_byte_identical() {
         last_draft: Some("Draft body."),
         style: "",
         vault_context: None,
+        lesson_paused: false,
+        role: None,
+        roles_enabled: false,
     });
     assert_eq!(p.system, GOLDEN_S2_SYSTEM);
     assert_eq!(p.user, GOLDEN_S2_USER);
@@ -206,6 +212,9 @@ fn golden_s3_formal_style_short_history_is_byte_identical() {
         last_draft: None,
         style: "formal, no slang",
         vault_context: None,
+        lesson_paused: false,
+        role: None,
+        roles_enabled: false,
     });
     assert_eq!(p.system, GOLDEN_S3_SYSTEM);
     assert_eq!(p.user, GOLDEN_S3_USER);
@@ -226,6 +235,9 @@ fn some_block_system_is_base_system_then_block() {
         last_draft: None,
         style: "warm and brief",
         vault_context: Some(BLOCK),
+        lesson_paused: false,
+        role: None,
+        roles_enabled: false,
     });
     assert_eq!(p.system, format!("{base}\n\n{BLOCK}"));
     assert_eq!(p.system, system_with_context(base, Some(BLOCK)));
@@ -240,6 +252,9 @@ fn some_block_user_is_unchanged() {
         last_draft: None,
         style: "warm and brief",
         vault_context: Some(BLOCK),
+        lesson_paused: false,
+        role: None,
+        roles_enabled: false,
     });
     assert_eq!(p.user, GOLDEN_S1_USER);
 }
@@ -253,6 +268,9 @@ fn some_block_combined_is_derived_from_the_final_system_without_duplication() {
         last_draft: None,
         style: "warm and brief",
         vault_context: Some(BLOCK),
+        lesson_paused: false,
+        role: None,
+        roles_enabled: false,
     });
     assert_eq!(p.combined, format!("{}\n\n{}", p.system, p.user));
     let base = GOLDEN_S1_SYSTEM;
@@ -272,6 +290,9 @@ fn some_block_text_appears_exactly_once_in_combined() {
         last_draft: None,
         style: "warm and brief",
         vault_context: Some(BLOCK),
+        lesson_paused: false,
+        role: None,
+        roles_enabled: false,
     });
     assert_eq!(p.combined.matches(BLOCK).count(), 1);
 }

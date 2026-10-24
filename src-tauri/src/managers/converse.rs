@@ -379,9 +379,14 @@ fn speech_outcome(kind: &PlanKind) -> TurnOutcome {
         PlanKind::End => TurnOutcome::Ended,
         // Job plans are parsed only when jobs are allowed and are routed through gate_and_run;
         // without a policy they are never produced, so this branch only sees answer-like speech.
-        PlanKind::Answer | PlanKind::Paste | PlanKind::Command | PlanKind::Job => {
-            TurnOutcome::Answered
-        }
+        // Stage 1 (S3 wires the real behaviour): role kinds behave like Answer for now.
+        PlanKind::Answer
+        | PlanKind::Paste
+        | PlanKind::Command
+        | PlanKind::Job
+        | PlanKind::SetRole
+        | PlanKind::ClearRole
+        | PlanKind::Resume => TurnOutcome::Answered,
     }
 }
 
@@ -1433,6 +1438,9 @@ async fn brain_turn(
         last_draft: carry.last_draft.as_deref(),
         style: &cfg.style,
         vault_context: None,
+        role: None,
+        lesson_paused: false,
+        roles_enabled: false,
     };
     let queue = if cfg.answer_only {
         // Answer-only (DESIGN 8.1): no streamed model text may reach the mouth before a complete
@@ -1555,7 +1563,13 @@ async fn execute_plan(
         // Job plans are parsed only when jobs are allowed and are routed through gate_and_run.
         // With no policy a Job plan never reaches this answer path (parsing refuses it), so it
         // is treated as answer text here.
-        PlanKind::Answer | PlanKind::Clarify | PlanKind::Job => {
+        // Stage 1 (S3 wires the real behaviour): role kinds speak like Answer for now.
+        PlanKind::Answer
+        | PlanKind::Clarify
+        | PlanKind::Job
+        | PlanKind::SetRole
+        | PlanKind::ClearRole
+        | PlanKind::Resume => {
             carry.journal.set(speech_outcome(&plan.kind), None);
             let outcome = speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?;
             answer_summary(&plan.speech, outcome)
@@ -2505,6 +2519,7 @@ mod tests {
     fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
         TurnPlan {
             job: None,
+            role: None,
             kind,
             speech: speech.to_string(),
             emotion: Emotion::Neutral,
@@ -2518,6 +2533,7 @@ mod tests {
     fn paste_plan(text: &str, speech: &str) -> TurnPlan {
         TurnPlan {
             job: None,
+            role: None,
             paste_text: Some(text.to_string()),
             ..plan(PlanKind::Paste, speech)
         }
@@ -2525,6 +2541,7 @@ mod tests {
     fn command_plan(cmd: &str, speech: &str) -> TurnPlan {
         TurnPlan {
             job: None,
+            role: None,
             command: Some(cmd.to_string()),
             ..plan(PlanKind::Command, speech)
         }

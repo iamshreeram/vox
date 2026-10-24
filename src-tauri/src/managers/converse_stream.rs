@@ -545,17 +545,27 @@ pub fn reconcile(plan: &TurnPlan, spoken: &[String]) -> Reconcile {
     if spoken.is_empty() {
         return match plan.kind {
             // M3: Job plans are not produced yet (parsed in S3a, executed in S3b)
-            PlanKind::Answer | PlanKind::Clarify | PlanKind::End | PlanKind::Job => {
-                Reconcile::Remainder {
-                    text: canon(&plan.speech),
-                }
-            }
+            // Stage 1 (S3 wires the real behaviour): role kinds reconcile like Answer for now.
+            PlanKind::Answer
+            | PlanKind::Clarify
+            | PlanKind::End
+            | PlanKind::Job
+            | PlanKind::SetRole
+            | PlanKind::ClearRole
+            | PlanKind::Resume => Reconcile::Remainder {
+                text: canon(&plan.speech),
+            },
             PlanKind::Paste | PlanKind::Command => Reconcile::Legacy,
         };
     }
     if !matches!(
         plan.kind,
-        PlanKind::Answer | PlanKind::Clarify | PlanKind::Job
+        PlanKind::Answer
+            | PlanKind::Clarify
+            | PlanKind::Job
+            | PlanKind::SetRole
+            | PlanKind::ClearRole
+            | PlanKind::Resume
     ) {
         return Reconcile::Abort;
     }

@@ -271,6 +271,7 @@ async fn run(r: &Rig, cfg: &SessionConfig) -> SessionEnd {
 fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
         job: None,
+        role: None,
         kind,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,
@@ -479,6 +480,7 @@ async fn a_final_plan_that_contradicts_early_speech_aborts_and_executes_nothing(
     // streams an "answer" sentence, then the final plan turns out to be a command
     let cmd = TurnPlan {
         job: None,
+        role: None,
         command: Some("delete everything".into()),
         ..plan(PlanKind::Command, "Opening.")
     };
@@ -551,6 +553,7 @@ async fn a_plan_error_after_early_speech_stops_the_speech_and_apologizes() {
 async fn action_plans_without_early_speech_use_the_legacy_path() {
     let paste = TurnPlan {
         job: None,
+        role: None,
         paste_text: Some("hello".into()),
         ..plan(PlanKind::Paste, "")
     };

@@ -769,6 +769,7 @@ mod tests {
             Box::pin(async {
                 Ok(TurnPlan {
                     job: None,
+                    role: None,
                     kind: PlanKind::Answer,
                     speech: "Here it is.".to_string(),
                     emotion: Emotion::Neutral,

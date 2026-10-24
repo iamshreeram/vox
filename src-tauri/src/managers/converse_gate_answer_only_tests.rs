@@ -23,6 +23,7 @@ fn job_plan(speech: &str) -> TurnPlan {
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        role: None,
         job: Some(JobRequest {
             project: "alpha".to_string(),
             task: "fix the tests".to_string(),
@@ -40,6 +41,7 @@ fn paste_plan(speech: &str) -> TurnPlan {
         paste_text: Some("model-written body".to_string()),
         command: None,
         job: None,
+        role: None,
     }
 }
 
