@@ -3958,3 +3958,11 @@ mod role_fix_tests;
 #[cfg(test)]
 #[path = "converse_role_barge_tests.rs"]
 mod role_barge_tests;
+
+#[cfg(test)]
+#[path = "converse_agent_loop_tests.rs"]
+mod converse_agent_loop_tests;
+
+#[cfg(test)]
+#[path = "converse_agent_taint_tests.rs"]
+mod converse_agent_taint_tests;
