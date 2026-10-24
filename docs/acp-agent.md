@@ -29,7 +29,7 @@ Open **Settings > Agents > ACP agent**:
 | Arguments             | Space-separated, for example `--acp`. **No quoting and no shell parsing**: `"a b"` becomes two arguments, `"a` and `b"`. At most 8 arguments, each at most 256 characters, no control characters.                                                                                                                   |
 | Turn timeout          | 10 to 900 seconds. Default 120. A turn that takes longer is cancelled (see [Timeouts and failures](#timeouts-and-failures)).                                                                                                                                                                                        |
 | Approval mode         | Which permission requests from the agent are decided without asking you, and which ones reach you. Four modes: ask before changes, ask before every tool call, never allow, and allow everything. Fresh installs start on allow everything; existing settings keep the mode you saved. See [Approvals](#approvals). |
-| Conversation hand-off | Used by conversations. On by default. When on, open-ended Hey Jarvis requests that need the web, files or running programs are sent to the agent. Local commands such as opening apps stay local. Takes effect only once the conversation hand-off ships in the same release.                                       |
+| Conversation hand-off | Used by conversations. On by default. When on, open-ended Hey Jarvis requests that need the web, files or running programs are sent to the agent. Local commands such as opening apps stay local. Used for each conversation request; see [Used by conversations](#used-by-conversations). |
 | Approval timeout      | 10 to 300 seconds. Default 60. A request you do not answer in time is denied.                                                                                                                                                                                                                                       |
 | Test connection       | Starts the agent if needed and runs the handshake. It reports success or the reason for failure. Use it after you change the command or arguments.                                                                                                                                                                  |
 
@@ -55,6 +55,14 @@ The setting **Agent context** (in the same area as the other agent settings) con
 - **Clear history** and **turning context off** reset the session. The next request starts a fresh one.
 - The agent program may keep its own sessions on disk or in its own storage. **Vox cannot clear those.** Clear them with the agent's own tools if you need to.
 - Restarting Vox starts with no session.
+
+### Used by conversations
+
+Hey Jarvis conversations can hand open-ended requests to this agent. See [Handing work to your agent](conversation.md#handing-work-to-your-agent).
+
+- Each conversation request is a **fresh session**. It does not reuse the session from **Agent context**, and the agent does not remember earlier conversation requests.
+- The conversation's role is carried as plain text inside the request.
+- The **Approval mode** applies to these requests, the same as to dictation.
 
 ## Timeouts and failures
 
@@ -114,7 +122,6 @@ Read this section before you enable the feature.
 - **No spoken approval yet.** Permission requests are answered on screen only, with the dialog described in [Approvals](#approvals). The agent can use its read, search and think tools without asking. It asks for everything else, or nothing at all if you choose **Never allow**.
 - **No streaming into speech.** Vox speaks the reply once the turn is finished.
 - **Background jobs and the spoken-reply composer still use the old one-shot command setting.** They still start a process per request, and their settings are unchanged. They are not part of this feature.
-- **Conversation hand-off.** The **Conversation hand-off** setting is only effective once the conversation hand-off ships in the same release. Until then, starting a conversation does not hand off to the agent.
 - **Platform testing.** The feature is Unix only. In this repository, `.github/workflows/test.yml` runs `cargo test` only on `ubuntu-24.04`. The manually started `build-test.yml` builds the app on macOS, Linux and Windows, but I found no workflow that runs the tests on macOS or Windows. Tests that use Unix process features are therefore checked on Linux only in CI.
 
 ## Troubleshooting
