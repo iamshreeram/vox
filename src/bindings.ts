@@ -1752,6 +1752,17 @@ async changeAcpPermissionTimeoutSecsSetting(secs: number) : Promise<Result<null,
 }
 },
 /**
+ * Stores whether Hey Jarvis conversations may hand open-ended requests to the ACP agent.
+ */
+async changeConversationAgentHandoffSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_conversation_agent_handoff_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Validates and persists the full list of voice shortcuts.
  * 
  * The whole list is validated before anything is written: if any entry is
@@ -2102,6 +2113,11 @@ acp_permission_mode?: PermissionMode;
  * Seconds one approval prompt waits for the user before it is rejected.
  */
 acp_permission_timeout_secs?: number; 
+/**
+ * Let Hey Jarvis conversations hand open-ended requests to the ACP agent. Used by
+ * conversations only; a missing key means on.
+ */
+conversation_agent_handoff?: boolean; 
 /**
  * Speak agent replies and a generic confirmation/failure phrase aloud.
  * Opt-in: spoken output audibly exposes agent reply content.

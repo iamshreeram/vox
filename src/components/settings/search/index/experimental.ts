@@ -556,6 +556,23 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
     "settings.advanced.acpPermission.timeout.description",
     ["approval timeout", "agent permission", "approve", "timeout"],
   ),
+  row(
+    "acpConversationHandoff",
+    "acpAgent",
+    "settings.advanced.acpAgent.conversationHandoff.label",
+    "settings.advanced.acpAgent.conversationHandoff.description",
+    [
+      "conversation",
+      "hey jarvis",
+      "agent",
+      "handoff",
+      "hand off",
+      "web",
+      "files",
+      "programs",
+      "open-ended",
+    ],
+  ),
 
   // ----- spoken replies (TtsSettings) -----
   row(

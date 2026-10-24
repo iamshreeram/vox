@@ -1273,6 +1273,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::acp_permission::acp_permission_respond,
             commands::acp_permission::change_acp_permission_mode_setting,
             commands::acp_permission::change_acp_permission_timeout_secs_setting,
+            commands::acp_permission::change_conversation_agent_handoff_setting,
             commands::voice_shortcuts::set_voice_shortcuts,
             commands::converse::change_converse_silence_ms_setting,
             commands::converse::change_converse_max_idle_turns_setting,

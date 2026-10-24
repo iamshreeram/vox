@@ -380,6 +380,10 @@
           "label": "Turn timeout (seconds)",
           "description": "How long to wait for the agent to finish one reply. Between {{min}} and {{max}} seconds."
         },
+        "conversationHandoff": {
+          "label": "Hand open-ended requests to the agent in conversations",
+          "description": "In Hey Jarvis conversations, requests that need the web, files or running programs are sent to your ACP agent. Local commands such as opening apps stay local."
+        },
         "testConnection": "Test connection",
         "testing": "Testing...",
         "errors": {
@@ -399,8 +403,10 @@
           "options": {
             "ask_writes": "Ask before changes (reads and searches run freely)",
             "ask_all": "Ask before every tool call",
-            "deny": "Never allow (deny all requests)"
-          }
+            "deny": "Never allow (deny all requests)",
+            "allow_all": "Allow everything (never ask)"
+          },
+          "allowAllWarning": "The agent can edit, delete, run and browse without asking. Web pages and files it reads can steer it. Use Ask before changes if you do not fully trust the agent."
         },
         "timeout": {
           "label": "Approval timeout",
@@ -426,7 +432,8 @@
           "queued": "{{count}} more waiting",
           "countdown": "Denied automatically in {{seconds}} s",
           "untrustedNote": "The agent describes this action itself. Vox does not check that description."
-        }
+        },
+        "allowAllNotice": "Vox is set to allow every agent action without asking. Change it in Settings > Agents."
       },
       "agentContext": {
         "title": "Conversation Context",

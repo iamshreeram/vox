@@ -365,6 +365,14 @@ const settingUpdaters: {
       throw new Error(result.error);
     }
   },
+  conversation_agent_handoff: async (value) => {
+    const result = await commands.changeConversationAgentHandoffSetting(
+      value as boolean,
+    );
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
   acp_permission_timeout_secs: async (value) => {
     const result = await commands.changeAcpPermissionTimeoutSecsSetting(
       value as number,

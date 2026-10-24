@@ -77,3 +77,17 @@ fn stored_values_are_reflected_by_acp_permission_settings_immediately() {
         Duration::from_secs(120)
     );
 }
+
+#[test]
+fn conversation_handoff_apply_sets_only_that_flag() {
+    use super::acp_permission::apply_conversation_agent_handoff;
+    let mut settings = get_default_settings();
+    let before = json_without_permission_fields(&settings);
+    apply_conversation_agent_handoff(&mut settings, false);
+    assert!(!settings.conversation_agent_handoff);
+    let mut expected = before;
+    expected["conversation_agent_handoff"] = serde_json::json!(false);
+    assert_eq!(json_without_permission_fields(&settings), expected);
+    apply_conversation_agent_handoff(&mut settings, true);
+    assert!(settings.conversation_agent_handoff);
+}

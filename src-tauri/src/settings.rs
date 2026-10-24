@@ -731,6 +731,10 @@ pub struct AppSettings {
     /// Seconds one approval prompt waits for the user before it is rejected.
     #[serde(default = "default_acp_permission_timeout_secs")]
     pub acp_permission_timeout_secs: u64,
+    /// Let Hey Jarvis conversations hand open-ended requests to the ACP agent. Used by
+    /// conversations only; a missing key means on.
+    #[serde(default = "default_conversation_agent_handoff")]
+    pub conversation_agent_handoff: bool,
     /// Speak agent replies and a generic confirmation/failure phrase aloud.
     /// Opt-in: spoken output audibly exposes agent reply content.
     #[serde(default)]
@@ -1266,6 +1270,11 @@ pub const ACP_PERMISSION_TIMEOUT_MAX_SECS: u64 = 300;
 
 fn default_acp_permission_timeout_secs() -> u64 {
     ACP_PERMISSION_TIMEOUT_DEFAULT_SECS
+}
+
+/// Serde default for `conversation_agent_handoff`: on for stores that lack the key.
+fn default_conversation_agent_handoff() -> bool {
+    true
 }
 
 /// Serde default for a stored object that lacks `acp_permission_mode`. Existing
@@ -2005,6 +2014,7 @@ pub fn get_default_settings() -> AppSettings {
         acp_agent_turn_timeout_secs: default_acp_agent_turn_timeout_secs(),
         acp_permission_mode: PermissionMode::AllowAll,
         acp_permission_timeout_secs: default_acp_permission_timeout_secs(),
+        conversation_agent_handoff: default_conversation_agent_handoff(),
         tts_enabled: false,
         tts_voice: None,
         tts_rate_wpm: default_tts_rate_wpm(),
@@ -2686,10 +2696,11 @@ mod tests {
             serde_json::json!([1, 2, 3]),
         ] {
             let salvaged = salvage_settings(&stored);
-            assert_eq!(
-                serde_json::to_value(&salvaged).unwrap(),
-                default_settings_json()
-            );
+            // An EXISTING store that cannot be read must never recover into the fresh-install
+            // AllowAll default (design Stage 2 rev 3, 2.7): it salvages to AskWrites.
+            let mut expected = default_settings_json();
+            expected["acp_permission_mode"] = serde_json::json!("ask_writes");
+            assert_eq!(serde_json::to_value(&salvaged).unwrap(), expected);
         }
     }
 

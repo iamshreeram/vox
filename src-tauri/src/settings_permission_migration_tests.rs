@@ -169,3 +169,24 @@ fn saved_ask_writes_is_not_upgraded_to_allow_all_by_salvage() {
     let salvaged = salvage_settings(&stored_with_permission(json!("ask_writes")));
     assert_eq!(salvaged.acp_permission_mode, PermissionMode::AskWrites);
 }
+
+#[test]
+fn missing_conversation_agent_handoff_key_salvages_to_on() {
+    // An existing store written before the setting existed keeps the default (on).
+    let mut stored = serde_json::to_value(get_default_settings()).unwrap();
+    stored
+        .as_object_mut()
+        .unwrap()
+        .remove("conversation_agent_handoff");
+    assert!(salvage_settings(&stored).conversation_agent_handoff);
+}
+
+#[test]
+fn saved_conversation_agent_handoff_false_is_preserved_by_salvage() {
+    let mut stored = serde_json::to_value(get_default_settings()).unwrap();
+    stored
+        .as_object_mut()
+        .unwrap()
+        .insert("conversation_agent_handoff".to_string(), json!(false));
+    assert!(!salvage_settings(&stored).conversation_agent_handoff);
+}

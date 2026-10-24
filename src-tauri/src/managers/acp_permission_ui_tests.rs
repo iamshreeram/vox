@@ -17,6 +17,8 @@ use crate::managers::acp_permission_ui::{
     build_closed_payload, build_request_payload, respond, EVENT_CLOSED, EVENT_REQUEST,
 };
 use serde_json::{json, Value};
+use std::cell::Cell;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -244,4 +246,45 @@ fn payload_serializes_to_json_object() {
     ] {
         assert!(value.get(key).is_some(), "missing key {key}: {value}");
     }
+}
+
+// ---- the once-per-launch "allow everything" notice ----
+
+#[test]
+fn allow_all_notice_is_emitted_once_for_allow_all() {
+    use crate::managers::acp_permission::PermissionMode;
+    use crate::managers::acp_permission_ui::{notify_allow_all_once_with, EVENT_ALLOW_ALL_ACTIVE};
+    assert_eq!(EVENT_ALLOW_ALL_ACTIVE, "acp-allow-all-active");
+    let sent = AtomicBool::new(false);
+    let emitted = Cell::new(0);
+    for _ in 0..3 {
+        notify_allow_all_once_with(&sent, PermissionMode::AllowAll, || {
+            emitted.set(emitted.get() + 1)
+        });
+    }
+    assert_eq!(emitted.get(), 1, "at most once per launch");
+}
+
+#[test]
+fn allow_all_notice_is_never_emitted_for_other_modes() {
+    use crate::managers::acp_permission::PermissionMode;
+    use crate::managers::acp_permission_ui::notify_allow_all_once_with;
+    let sent = AtomicBool::new(false);
+    let emitted = Cell::new(0);
+    for mode in [
+        PermissionMode::AskWrites,
+        PermissionMode::AskAll,
+        PermissionMode::Deny,
+    ] {
+        let did = notify_allow_all_once_with(&sent, mode, || emitted.set(emitted.get() + 1));
+        assert!(!did, "{mode:?}");
+    }
+    assert_eq!(emitted.get(), 0);
+    // A later AllowAll run still gets the notice, because nothing was sent before.
+    assert!(notify_allow_all_once_with(
+        &sent,
+        PermissionMode::AllowAll,
+        || emitted.set(emitted.get() + 1)
+    ));
+    assert_eq!(emitted.get(), 1);
 }

@@ -39,6 +39,24 @@ pub fn change_acp_permission_timeout_secs_setting(app: AppHandle, secs: u64) -> 
     Ok(())
 }
 
+/// Stores whether Hey Jarvis conversations may hand open-ended requests to the ACP agent.
+#[tauri::command]
+#[specta::specta]
+pub fn change_conversation_agent_handoff_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+    apply_conversation_agent_handoff(&mut settings, enabled);
+    write_settings(&app, settings);
+    Ok(())
+}
+
+/// Sets the conversation hand-off flag on `settings`. Pure, so it can be tested without Tauri.
+pub fn apply_conversation_agent_handoff(settings: &mut AppSettings, enabled: bool) {
+    settings.conversation_agent_handoff = enabled;
+}
+
 /// Sets the approval policy on `settings`. Pure, so the stored value can be tested without Tauri.
 pub fn apply_acp_permission_mode(settings: &mut AppSettings, mode: PermissionMode) {
     settings.acp_permission_mode = mode;

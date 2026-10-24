@@ -293,6 +293,7 @@ fn escalate_to_acp_agent(app: &AppHandle, settings: &AppSettings, transcript: &s
             return Handoff::Rejected;
         }
     };
+    crate::managers::acp_permission_ui::notify_allow_all_once(app, settings.acp_permission_mode);
     let manager = app.state::<Arc<AcpAgentManager>>().inner().clone();
     let log = app.state::<Arc<ConversationLog>>().inner().clone();
     let memory = app.state::<Arc<MemoryManager>>().inner().clone();
