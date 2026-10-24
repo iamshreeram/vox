@@ -61,6 +61,28 @@ already have the files.
 Vox re-checks the size and SHA-256 of each file during import. It ignores every
 other file in the folder, so the folder can contain other files.
 
+### Installing all voice models with one script
+
+`scripts/setup-voice-models.sh` downloads Phonon, the Natural voice (Kokoro), the
+Smart turn model and the speaker model, checks each file against its pinned size
+and SHA-256, and puts each model in the folder Vox reads it from. It is useful
+when the in-app download is blocked.
+
+```sh
+./scripts/setup-voice-models.sh --dry-run   # show what would happen, change nothing
+./scripts/setup-voice-models.sh             # install everything that is missing
+./scripts/setup-voice-models.sh --only phonon,smart-turn
+```
+
+By default it uses your shell's proxy settings. `--direct` ignores them and connects
+straight to the model hosts; use it only if your network policy allows that. A model
+that already verifies is skipped, an interrupted download resumes, and an existing
+install is replaced only after the whole new set has verified. Each run appends to
+`CONTEXT.md` in the repository root: the destination folder and the size, SHA-256,
+source and result of every file. Proxy addresses and signed links are never logged.
+After a run, quit Vox from the tray and open it again. The tests for the script are
+in `scripts/test-setup-voice-models.sh`.
+
 ## Privacy
 
 - Phonon runs on this computer. The text that is spoken is not sent anywhere
