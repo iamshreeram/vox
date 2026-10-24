@@ -204,6 +204,36 @@ const scenarios: Record<string, () => void> = {
         );
       }
     },
+  "the wake word action and barge-in controls are indexed in their groups":
+    () => {
+      const wanted: Array<[string, string, string]> = [
+        ["settings.advanced.wakeWord.action.label", "listening", "general"],
+        ["converse.section.bargeIn.label", "conversation", "general"],
+      ];
+      for (const [labelKey, groupId, sectionId] of wanted) {
+        const e = SEARCH_ENTRIES.find((x) => x.labelKey === labelKey);
+        assert.ok(e, `${labelKey} has a search row`);
+        assert.equal(e.groupId, groupId, labelKey);
+        assert.equal(String(e.section), sectionId, labelKey);
+        assert.ok(
+          requiresExperimental(e),
+          `${labelKey} must require experimental`,
+        );
+        assert.equal(e.unlockedBy, "advanced.experimentalToggle", labelKey);
+        assert.ok(e.descriptionKey, `${labelKey} has a description`);
+        assert.ok(
+          lookup(e.descriptionKey as string),
+          `${labelKey} description text`,
+        );
+        // searchable by its own English label and locked while the switch is off
+        const label = lookup(labelKey) as string;
+        const hit = search(SEARCH_ENTRIES, label, resolve, ctxOff, {
+          limit: 1000,
+        }).find((h) => h.entry.id === e.id);
+        assert.ok(hit, `${labelKey} is searchable`);
+        assert.equal(hit.locked, true, labelKey);
+      }
+    },
 };
 
 let failed = 0;
