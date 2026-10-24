@@ -31,7 +31,8 @@ fn clock_offset() -> Duration {
     Duration::ZERO
 }
 
-/// Moves the lesson clock forward (tests only).
+/// Moves the lesson clock forward (tests only). The offset is per thread, so tests that use
+/// it must run on tokio's default current-thread test runtime.
 #[cfg(test)]
 pub fn advance_clock(by: Duration) {
     CLOCK_OFFSET.with(|offset| offset.set(offset.get() + by));
