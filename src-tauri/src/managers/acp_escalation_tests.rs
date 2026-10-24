@@ -452,3 +452,28 @@ fn disabling_context_clears_and_resets_but_enabling_does_nothing() {
         "reset runs even without a log"
     );
 }
+
+/// S3 (M2): a cancelled turn and a lost permission response must reach the user as
+/// plain sentences in the `failed:` event, never as Debug text such as `Cancelled`.
+#[test]
+fn cancelled_and_permission_delivery_errors_become_plain_user_messages() {
+    let errors = [AcpAgentError::Cancelled, AcpAgentError::PermissionDelivery];
+    for err in errors {
+        let log = ConversationLog::new();
+        let p = FakePrompter::with(Err(err));
+        let sink = Recorder::default();
+        let e = env(&log, true, false, &no_recall, &yes, &t0);
+        run_escalation(&p, &sink, &e, &cfg(), TRANSCRIPT);
+        let events = sink.events();
+        assert_eq!(events.len(), 1, "{events:?}");
+        let prefix = format!("failed:{TRANSCRIPT}|");
+        assert!(events[0].starts_with(&prefix), "{events:?}");
+        let message = &events[0][prefix.len()..];
+        assert!(!message.trim().is_empty(), "empty message: {events:?}");
+        assert!(
+            !message.contains("Cancelled") && !message.contains("PermissionDelivery"),
+            "debug-style identifier leaked into the message: {events:?}"
+        );
+        assert!(!message.contains('{'), "not plain text: {events:?}");
+    }
+}

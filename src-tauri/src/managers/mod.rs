@@ -1,5 +1,7 @@
 pub mod acp_agent;
 #[cfg(test)]
+mod acp_agent_permission_tests;
+#[cfg(test)]
 mod acp_agent_tests;
 pub mod acp_escalation;
 #[cfg(test)]

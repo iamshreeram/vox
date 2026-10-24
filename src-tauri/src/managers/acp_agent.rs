@@ -9,10 +9,21 @@ use std::io::BufRead;
 use std::path::PathBuf;
 use std::process::Child;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::mpsc::{self, RecvTimeoutError, SyncSender, TrySendError};
+use std::sync::mpsc::{self, RecvTimeoutError, SyncSender, TryRecvError, TrySendError};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
 use std::thread;
 use std::time::{Duration, Instant};
+
+use crate::managers::acp_permission::{
+    decide_auto, outcome_for, outcome_json, parse_permission_request, AutoDecision, Outcome,
+    PermissionMode, PermissionRequest, UserChoice,
+};
+use crate::managers::acp_permission_broker::{
+    CommitFn, PermissionBroker, PermissionPrompter, RequestBinding, SubmitResult,
+};
+use crate::managers::acp_run::{
+    BeginError, ResponseSink, RunHandle, RunRegistry, SessionSet, SinkError, TurnTiming,
+};
 
 #[cfg(unix)]
 use std::io::{ErrorKind, Read, Write};
@@ -58,6 +69,119 @@ pub struct AcpReply {
     pub agent_name: Option<String>,
 }
 
+/// Permission policy read fresh for each agent request.
+#[derive(Debug, Clone)]
+pub struct PermissionSettings {
+    /// How requests are decided: auto-allow reads, ask, or deny.
+    pub mode: PermissionMode,
+    /// How long one approval may wait for the user before it is rejected.
+    pub approval_timeout: Duration,
+}
+
+/// Timing of the active run, keyed by its run token. Read by the broker's commit callback
+/// so that an approval wait ends when its response is committed.
+type RunTimingSlot = Mutex<Option<(u64, Arc<Mutex<TurnTiming>>)>>;
+
+/// Broker and settings source. Present only after `with_permissions`.
+pub(crate) struct PermissionWiring {
+    broker: Arc<PermissionBroker>,
+    settings: Arc<dyn Fn() -> PermissionSettings + Send + Sync>,
+}
+
+/// What one connection needs to answer agent requests and to commit responses.
+pub(crate) struct ConnLink {
+    conn_gen: u64,
+    registry: Arc<RunRegistry>,
+    permissions: Option<Arc<PermissionWiring>>,
+    force_failure: Arc<AtomicBool>,
+}
+
+/// Non-blocking writer sink registered with the run registry for one connection.
+struct ConnSink {
+    outbound: SyncSender<String>,
+    #[cfg_attr(not(test), allow(dead_code))]
+    force_failure: Arc<AtomicBool>,
+}
+
+impl ResponseSink for ConnSink {
+    fn try_send_line(&self, line: String) -> Result<(), SinkError> {
+        #[cfg(test)]
+        if self.force_failure.load(Ordering::SeqCst) {
+            return Err(SinkError::Full);
+        }
+        match self.outbound.try_send(line) {
+            Ok(()) => Ok(()),
+            Err(TrySendError::Full(_)) => Err(SinkError::Full),
+            Err(TrySendError::Disconnected(_)) => Err(SinkError::Disconnected),
+        }
+    }
+}
+
+/// Permission context of the turn running on a connection. The reader uses it to answer
+/// agent requests for exactly this run and session.
+#[derive(Clone)]
+pub(crate) struct PermTurn {
+    handle: RunHandle,
+    session: String,
+    timing: Arc<Mutex<TurnTiming>>,
+}
+
+/// The run a prompt executes under: its handle and its shared turn timing.
+pub(crate) struct TurnRun {
+    handle: RunHandle,
+    timing: Arc<Mutex<TurnTiming>>,
+}
+
+/// Ends a run on every exit path: clears its timing slot, finishes the registry run and
+/// invalidates its prompts. Dropped before the manager reservation is released.
+struct RunGuard {
+    inner: Arc<Inner>,
+    handle: RunHandle,
+}
+
+impl Drop for RunGuard {
+    fn drop(&mut self) {
+        {
+            let mut slot = lock(&self.inner.run_timing);
+            if slot
+                .as_ref()
+                .is_some_and(|(t, _)| *t == self.handle.token())
+            {
+                *slot = None;
+            }
+        }
+        self.inner.registry.finish(&self.handle);
+        let broker = lock(&self.inner.permissions)
+            .as_ref()
+            .map(|w| Arc::clone(&w.broker));
+        if let Some(broker) = broker {
+            broker.invalidate_run(self.handle.token());
+        }
+    }
+}
+
+/// Builds the broker's commit callback. It runs on the broker worker with no broker lock
+/// held. The response is committed first and the approval wait ends after, so the turn
+/// cannot time out between the two.
+fn build_commit(registry: Arc<RunRegistry>, run_timing: Arc<RunTimingSlot>) -> CommitFn {
+    Arc::new(move |binding: RequestBinding, outcome: Outcome| {
+        let line = response_ok_json(&binding.rpc_id, outcome_json(&outcome));
+        let _ = registry.commit(
+            binding.conn_gen,
+            binding.run_token,
+            &binding.session_id,
+            line,
+        );
+        let timing = lock(&run_timing)
+            .as_ref()
+            .filter(|(t, _)| *t == binding.run_token)
+            .map(|(_, timing)| Arc::clone(timing));
+        if let Some(timing) = timing {
+            lock(&timing).exit_approval(Instant::now());
+        }
+    })
+}
+
 #[derive(Debug)]
 pub enum AcpAgentError {
     NotConfigured,
@@ -77,6 +201,10 @@ pub enum AcpAgentError {
     },
     EmptyReply,
     Refused,
+    /// The caller cancelled the turn. The child stays usable.
+    Cancelled,
+    /// A permission response could not be queued for the agent. The turn was stopped.
+    PermissionDelivery,
     Protocol(String),
     // Why: only the ACP tests construct this today.
     #[cfg_attr(not(test), allow(dead_code))]
@@ -112,6 +240,10 @@ impl std::fmt::Display for AcpAgentError {
             }
             Self::EmptyReply => write!(f, "ACP agent returned an empty reply"),
             Self::Refused => write!(f, "ACP agent refused the request"),
+            Self::Cancelled => write!(f, "ACP agent request was cancelled"),
+            Self::PermissionDelivery => {
+                write!(f, "ACP permission response could not be delivered")
+            }
             Self::Protocol(msg) => write!(f, "ACP protocol error: {}", cap_detail(msg)),
             Self::Io(e) => write!(f, "ACP agent I/O error: {}", cap_detail(&e.to_string())),
         }
@@ -191,6 +323,16 @@ pub(crate) struct Inner {
     /// test accessor while it reads the strong count. Why: without it a reaper tick could
     /// make the count read 2 for an instant even though no handle leaked.
     pub(crate) reaper_gate: Arc<Mutex<()>>,
+    /// Run registry: connection generation, writer sink and the single active run.
+    pub(crate) registry: Arc<RunRegistry>,
+    /// Broker and settings source. Set once by `with_permissions`.
+    pub(crate) permissions: Mutex<Option<Arc<PermissionWiring>>>,
+    /// Timing of the active run, read by the broker's commit callback.
+    pub(crate) run_timing: Arc<RunTimingSlot>,
+    /// Source of connection generations. Each spawned child takes the next one.
+    pub(crate) next_conn_gen: AtomicU64,
+    /// Test hook: makes the writer refuse registry-routed lines.
+    pub(crate) force_failure: Arc<AtomicBool>,
 }
 
 /// One long-lived ACP child process behind a small state machine. `Send + Sync`.
@@ -219,6 +361,11 @@ impl AcpAgentManager {
             next_token: AtomicU64::new(1),
             helpers: Arc::new(AtomicUsize::new(0)),
             reaper_gate: Arc::new(Mutex::new(())),
+            registry: RunRegistry::new(),
+            permissions: Mutex::new(None),
+            run_timing: Arc::new(Mutex::new(None)),
+            next_conn_gen: AtomicU64::new(1),
+            force_failure: Arc::new(AtomicBool::new(false)),
         });
         let weak = Arc::downgrade(&inner);
         let gate = Arc::clone(&inner.reaper_gate);
@@ -230,6 +377,53 @@ impl AcpAgentManager {
         Self { inner }
     }
 
+    /// Installs the permission broker. Agent permission requests are then decided by
+    /// `settings` (read for each request) and approvals are shown through `prompter`.
+    pub fn with_permissions(
+        self,
+        prompter: Arc<dyn PermissionPrompter>,
+        settings: Arc<dyn Fn() -> PermissionSettings + Send + Sync>,
+    ) -> Self {
+        let commit = build_commit(
+            Arc::clone(&self.inner.registry),
+            Arc::clone(&self.inner.run_timing),
+        );
+        let broker = PermissionBroker::new(prompter, commit);
+        *lock(&self.inner.permissions) = Some(Arc::new(PermissionWiring { broker, settings }));
+        self
+    }
+
+    /// The permission broker, when permissions are configured.
+    pub fn permission_broker(&self) -> Option<Arc<PermissionBroker>> {
+        lock(&self.inner.permissions)
+            .as_ref()
+            .map(|w| Arc::clone(&w.broker))
+    }
+
+    /// Mints the handle for one prompt. Pass it to `prompt_with_handle` and `cancel`.
+    pub fn new_run_handle(&self) -> RunHandle {
+        self.inner.registry.new_handle()
+    }
+
+    /// Cancels the run `handle`. Returns true only for the call that latched the cancel.
+    /// A stale, finished, or never-begun handle returns false. Pending approvals of the
+    /// run are invalidated, so none can be granted after this returns.
+    pub fn cancel(&self, handle: &RunHandle) -> bool {
+        let cancelled = self.inner.registry.cancel(handle, &|session_id| {
+            notification_json("session/cancel", cancel_params(session_id))
+        });
+        if let Some(broker) = self.permission_broker() {
+            broker.invalidate_run(handle.token());
+        }
+        cancelled
+    }
+
+    /// Test hook: while on, the writer refuses every registry-routed line, as if full.
+    #[cfg(test)]
+    pub(crate) fn force_permission_delivery_failure(&self, on: bool) {
+        self.inner.force_failure.store(on, Ordering::SeqCst);
+    }
+
     /// Blocking. See DESIGN.md sections 4-6.
     pub fn prompt(
         &self,
@@ -237,28 +431,58 @@ impl AcpAgentManager {
         text: &str,
         opts: PromptOptions,
     ) -> Result<AcpReply, AcpAgentError> {
+        let handle = self.new_run_handle();
+        self.prompt_with_handle(cfg, text, opts, &handle)
+    }
+
+    /// Like `prompt`, but the run is identified by `handle`, so `cancel` can stop it. A
+    /// handle begins at most one run.
+    pub fn prompt_with_handle(
+        &self,
+        cfg: &AcpAgentConfig,
+        text: &str,
+        opts: PromptOptions,
+        handle: &RunHandle,
+    ) -> Result<AcpReply, AcpAgentError> {
         // Why before reserve: a blank prompt must never start, reuse or disturb the child.
         if text.trim().is_empty() {
             return Err(AcpAgentError::Protocol("blank prompt".to_owned()));
         }
         check_config(cfg)?;
-        let turn_deadline = Instant::now() + cfg.turn_timeout;
+        let started = Instant::now();
+        let turn_deadline = started + cfg.turn_timeout;
         let handshake_deadline = Instant::now() + cfg.handshake_timeout;
         let (token, epoch, stale) =
             reserve(&self.inner, Reservation::Turn, cfg, handshake_deadline)?;
         // Created first so that every later path, including a panic, releases the op.
-        let _guard = ReservationGuard::new(&self.inner, token);
+        let _reservation = ReservationGuard::new(&self.inner, token);
         if let Some(old) = stale {
             retire(&old, RetireReason::Replaced);
         }
-        let conn = connect(&self.inner, cfg, token, handshake_deadline)?;
+        // Why after reserve: a caller that is Busy never begins, so it can never cancel.
+        self.inner.registry.begin(handle).map_err(|e| match e {
+            BeginError::Busy | BeginError::Consumed => AcpAgentError::Busy,
+        })?;
+        let timing = Arc::new(Mutex::new(TurnTiming::new(started, cfg.turn_timeout)));
+        *lock(&self.inner.run_timing) = Some((handle.token(), Arc::clone(&timing)));
+        // Why after the reservation guard: the run finishes before the op is released.
+        let _run = RunGuard {
+            inner: Arc::clone(&self.inner),
+            handle: *handle,
+        };
+        let run = TurnRun {
+            handle: *handle,
+            timing,
+        };
+        let cancelled = || self.inner.registry.is_cancelled(handle);
+        let conn = connect(&self.inner, cfg, token, handshake_deadline, &cancelled)?;
         let ticket = TurnTicket {
             token,
             epoch,
             turn_deadline,
             handshake_deadline,
         };
-        let outcome = run_turn(&self.inner, &conn, cfg, text, opts, ticket);
+        let outcome = run_turn(&self.inner, &conn, cfg, text, opts, ticket, &run);
         // Why: a retired child must not stay the stored connection; the next call respawns.
         if conn.is_retired() {
             forget_conn(&self.inner, &conn);
@@ -278,7 +502,7 @@ impl AcpAgentManager {
         if let Some(old) = stale {
             retire(&old, RetireReason::Replaced);
         }
-        connect(&self.inner, cfg, token, deadline)?;
+        connect(&self.inner, cfg, token, deadline, &|| false)?;
         let name = lock_state(&self.inner).agent_name.clone();
         Ok(name)
     }
@@ -500,9 +724,13 @@ fn handshake_error(err: AcpAgentError) -> AcpAgentError {
 }
 
 /// `initialize` (DESIGN 6c step 1). Returns the agent name when reported.
-fn handshake(conn: &Conn, deadline: Instant) -> Result<Option<String>, AcpAgentError> {
+fn handshake(
+    conn: &Conn,
+    deadline: Instant,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<Option<String>, AcpAgentError> {
     let outcome = conn
-        .request_raw("initialize", initialize_params(), deadline)
+        .request_until("initialize", initialize_params(), deadline, cancelled)
         .map_err(handshake_error)?;
     let result = match outcome {
         Ok(result) => result,
@@ -529,6 +757,7 @@ fn connect(
     cfg: &AcpAgentConfig,
     token: u64,
     deadline: Instant,
+    cancelled: &dyn Fn() -> bool,
 ) -> Result<Arc<Conn>, AcpAgentError> {
     {
         let s = lock_state(inner);
@@ -548,8 +777,14 @@ fn connect(
             "workspace folder missing".to_owned(),
         ));
     }
-    let conn = Conn::spawn(cfg, Arc::clone(&inner.helpers))?;
-    let name = match handshake(&conn, deadline) {
+    let link = ConnLink {
+        conn_gen: inner.next_conn_gen.fetch_add(1, Ordering::SeqCst),
+        registry: Arc::clone(&inner.registry),
+        permissions: lock(&inner.permissions).as_ref().map(Arc::clone),
+        force_failure: Arc::clone(&inner.force_failure),
+    };
+    let conn = Conn::spawn(cfg, Arc::clone(&inner.helpers), link)?;
+    let name = match handshake(&conn, deadline, cancelled) {
         Ok(name) => name,
         Err(err) => {
             retire(&conn, RetireReason::Protocol("handshake failed".to_owned()));
@@ -607,6 +842,7 @@ fn ensure_session(
     cfg: &AcpAgentConfig,
     opts: PromptOptions,
     ticket: TurnTicket,
+    run: &TurnRun,
 ) -> Result<String, AcpAgentError> {
     if opts.reuse_session {
         let s = lock_state(inner);
@@ -619,10 +855,12 @@ fn ensure_session(
             return Ok(session.id.clone());
         }
     }
-    let outcome = conn.request_raw(
+    let cancelled = || inner.registry.is_cancelled(&run.handle);
+    let outcome = conn.request_until(
         "session/new",
         session_new_params(&cfg.cwd),
         ticket.handshake_deadline,
+        &cancelled,
     );
     let result = match outcome {
         Ok(Ok(result)) => result,
@@ -673,13 +911,23 @@ fn ensure_session(
 
 /// Maps the prompt response to the reply (DESIGN 6c). `raw` is the accumulated text of
 /// this turn only; it is sanitised and capped here.
-fn map_turn_result(result: &Value, raw: &str) -> Result<AcpReply, AcpAgentError> {
+fn map_turn_result(
+    result: &Value,
+    raw: &str,
+    run_cancelled: bool,
+) -> Result<AcpReply, AcpAgentError> {
     let text = sanitize_reply(raw);
     let reply = |text: String| AcpReply {
         text,
         agent_name: None,
     };
-    match map_stop_reason(result.get("stopReason").and_then(Value::as_str)) {
+    let mut stop = map_stop_reason(result.get("stopReason").and_then(Value::as_str));
+    // Why: an agent may echo "cancelled" on a turn that was never cancelled, for example after
+    // a stale cancel from an earlier turn on the same child. That turn is a normal reply.
+    if stop == StopOutcome::Cancelled && !run_cancelled {
+        stop = StopOutcome::Reply;
+    }
+    match stop {
         StopOutcome::Reply if text.is_empty() => Err(AcpAgentError::EmptyReply),
         StopOutcome::Reply => Ok(reply(text)),
         StopOutcome::ReplyIfText if text.is_empty() => Err(AcpAgentError::Protocol(
@@ -687,8 +935,8 @@ fn map_turn_result(result: &Value, raw: &str) -> Result<AcpReply, AcpAgentError>
         )),
         StopOutcome::ReplyIfText => Ok(reply(text)),
         StopOutcome::Refused => Err(AcpAgentError::Refused),
-        // We only send session/cancel on timeout, which never reaches this mapping.
-        StopOutcome::Cancelled => Err(AcpAgentError::Protocol("unexpected cancel".to_owned())),
+        // Why: the agent confirmed our cancel. Its child is healthy, so it is kept.
+        StopOutcome::Cancelled => Err(AcpAgentError::Cancelled),
         StopOutcome::Unknown => Err(AcpAgentError::Protocol("unknown stopReason".to_owned())),
     }
 }
@@ -704,6 +952,78 @@ fn abandon_turn(conn: &Arc<Conn>, session_id: &str, rx: Option<&ResponseRx>, gra
     retire(conn, RetireReason::Timeout);
 }
 
+/// How the wait for a turn's response ended.
+enum TurnWait {
+    Response(Result<Value, Value>),
+    /// The turn deadline passed with no approval in flight.
+    Timeout,
+    /// The run was cancelled and the agent did not answer within the grace period.
+    Cancelled,
+    /// The writer refused a permission response.
+    PermissionDelivery,
+}
+
+/// True once the turn has run out of time at `now`. While an approval is pending, the
+/// deadline is only trusted at the hard cap plus the grace period: the approval itself
+/// ends at that cap, so the turn waits for its commit instead of racing it.
+fn turn_expired(timing: &Mutex<TurnTiming>, now: Instant, grace: Duration) -> bool {
+    let t = lock(timing);
+    if t.pending() == 0 {
+        return t.expired(now);
+    }
+    match t.hard_deadline().checked_add(grace) {
+        Some(limit) => now >= limit,
+        None => true,
+    }
+}
+
+/// Maps one channel message to the wait result.
+fn wait_from(conn: &Conn, msg: Result<Value, ConnFail>) -> Result<TurnWait, AcpAgentError> {
+    match msg {
+        Ok(result) => Ok(TurnWait::Response(Ok(result))),
+        Err(ConnFail::Rpc(err)) => Ok(TurnWait::Response(Err(err))),
+        Err(ConnFail::Retired) => Err(conn.retire_error()),
+    }
+}
+
+/// Waits for the prompt's response in slices of at most `TICK`. A response already queued
+/// wins over the deadline, because the channel is polled before the clock is read. The
+/// deadline is re-read on every slice, so approval pauses extend it. Cancel and delivery
+/// failure are noticed within one slice. Holds no lock while it waits.
+fn await_turn_response(
+    inner: &Inner,
+    conn: &Conn,
+    rx: &ResponseRx,
+    run: &TurnRun,
+    grace: Duration,
+) -> Result<TurnWait, AcpAgentError> {
+    let mut cancelled_at: Option<Instant> = None;
+    loop {
+        match rx.recv_timeout(TICK) {
+            Ok(msg) => return wait_from(conn, msg),
+            Err(RecvTimeoutError::Disconnected) => return Err(conn.retire_error()),
+            Err(RecvTimeoutError::Timeout) => {}
+        }
+        if inner.registry.delivery_failed(&run.handle) {
+            return Ok(TurnWait::PermissionDelivery);
+        }
+        let now = Instant::now();
+        if inner.registry.is_cancelled(&run.handle) {
+            // Why: a cancel ignores the turn deadline and allows only the grace period.
+            let since = *cancelled_at.get_or_insert(now);
+            if now.saturating_duration_since(since) >= grace {
+                return Ok(TurnWait::Cancelled);
+            }
+        } else if turn_expired(&run.timing, now, grace) {
+            return match rx.try_recv() {
+                Ok(msg) => wait_from(conn, msg),
+                Err(TryRecvError::Disconnected) => Err(conn.retire_error()),
+                Err(TryRecvError::Empty) => Ok(TurnWait::Timeout),
+            };
+        }
+    }
+}
+
 /// The turn itself on a live connection: session, prompt, reply mapping, stale check.
 /// Every path ends the turn's accumulation and closes a turn-local or stale session.
 fn run_turn(
@@ -713,13 +1033,32 @@ fn run_turn(
     text: &str,
     opts: PromptOptions,
     ticket: TurnTicket,
+    run: &TurnRun,
 ) -> Result<AcpReply, AcpAgentError> {
-    let session_id = ensure_session(inner, conn, cfg, opts, ticket)?;
+    let session_id = ensure_session(inner, conn, cfg, opts, ticket, run)?;
+    // Why: the registry cancels only sessions it knows. A cancel that latched before the
+    // session was recorded is answered here, and session/prompt is never sent.
+    match inner.registry.set_session(&run.handle, &session_id) {
+        SessionSet::Ok => {}
+        SessionSet::Cancelled => {
+            conn.try_notify("session/cancel", cancel_params(&session_id));
+            return Err(AcpAgentError::Cancelled);
+        }
+        SessionSet::Stale => return Err(AcpAgentError::Stale),
+    }
     if epoch_moved(inner, ticket.epoch) {
         conn.try_notify("session/close", close_params(&session_id));
         return Err(AcpAgentError::Stale);
     }
+    if inner.registry.is_cancelled(&run.handle) {
+        return Err(AcpAgentError::Cancelled);
+    }
     conn.begin_turn(&session_id);
+    conn.attach_turn(PermTurn {
+        handle: run.handle,
+        session: session_id.clone(),
+        timing: Arc::clone(&run.timing),
+    });
     let started = conn.start_request(
         "session/prompt",
         prompt_params(&session_id, text),
@@ -737,24 +1076,33 @@ fn run_turn(
             return Err(other);
         }
     };
-    let response = conn.await_response(&rx, ticket.turn_deadline);
+    let waited = await_turn_response(inner, conn, &rx, run, cfg.cancel_grace);
     // Why before the match: the text is final now. Updates that arrive later (during a
     // cancel, or after the response) must not reach this turn.
     let raw = conn.end_turn();
-    let outcome = match response {
-        Err(AcpAgentError::Timeout) => {
+    let outcome = match waited? {
+        TurnWait::Timeout => {
             abandon_turn(conn, &session_id, Some(&rx), cfg.cancel_grace);
             return Err(AcpAgentError::Timeout);
         }
-        Err(other) => Err(other),
-        Ok(Err(err)) => Err(AcpAgentError::Protocol(error_detail(&err))),
-        Ok(Ok(result)) => {
+        TurnWait::Cancelled => {
+            retire(conn, RetireReason::Timeout);
+            return Err(AcpAgentError::Cancelled);
+        }
+        TurnWait::PermissionDelivery => {
+            abandon_turn(conn, &session_id, None, cfg.cancel_grace);
+            return Err(AcpAgentError::PermissionDelivery);
+        }
+        TurnWait::Response(Err(err)) => Err(AcpAgentError::Protocol(error_detail(&err))),
+        TurnWait::Response(Ok(result)) => {
             // Why: the deadline wins even when the response arrives just after it.
-            if Instant::now() >= ticket.turn_deadline {
+            let cancelled = inner.registry.is_cancelled(&run.handle);
+            let late = !cancelled && turn_expired(&run.timing, Instant::now(), cfg.cancel_grace);
+            if late {
                 abandon_turn(conn, &session_id, None, cfg.cancel_grace);
                 return Err(AcpAgentError::Timeout);
             }
-            map_turn_result(&result, &raw)
+            map_turn_result(&result, &raw, cancelled)
         }
     };
     let stale = epoch_moved(inner, ticket.epoch);
@@ -1094,6 +1442,8 @@ pub(crate) struct TurnAcc {
     text: String,
     /// Set when the aggregate would exceed `MAX_RAW_REPLY_BYTES`.
     overflow: bool,
+    /// Permission context of the same turn. Cleared with `active_session`.
+    perm: Option<PermTurn>,
 }
 
 /// Locks ignoring poisoning. Why: a panicking helper must not turn every later call into
@@ -1167,6 +1517,8 @@ pub(crate) struct Conn {
     exit: Mutex<Option<Option<i32>>>,
     exit_cv: Condvar,
     helpers: Arc<AtomicUsize>,
+    /// Generation and permission wiring of this child. See `ConnLink`.
+    link: Arc<ConnLink>,
 }
 
 impl Conn {
@@ -1301,19 +1653,42 @@ impl Conn {
         }
     }
 
-    /// Registers, sends and waits for one request. Returns the raw JSON-RPC outcome so
-    /// the manager can map initialize/session errors to `HandshakeFailed` itself.
-    pub(crate) fn request_raw(
+    /// Registers, sends and waits for one request. Returns the raw JSON-RPC outcome so the
+    /// manager can map initialize/session errors to `HandshakeFailed` itself. Gives up at
+    /// once with `Cancelled` when `cancelled` turns true.
+    /// Polls in slices of at most `TICK`, so a cancel never waits for the agent's reply.
+    pub(crate) fn request_until(
         &self,
         method: &str,
         params: Value,
         deadline: Instant,
+        cancelled: &dyn Fn() -> bool,
     ) -> Result<Result<Value, Value>, AcpAgentError> {
         let (id, rx) = self.start_request(method, params, deadline)?;
-        let outcome = self.await_response(&rx, deadline);
-        if matches!(outcome, Err(AcpAgentError::Timeout)) {
-            // A late response may still be in the channel; the caller treats the request as
-            // timed out regardless (DESIGN 5.8: timeout precedence).
+        let outcome = loop {
+            if cancelled() {
+                break Err(AcpAgentError::Cancelled);
+            }
+            let wait = deadline.saturating_duration_since(Instant::now()).min(TICK);
+            match rx.recv_timeout(wait) {
+                Ok(Ok(result)) => break Ok(Ok(result)),
+                Ok(Err(ConnFail::Rpc(err))) => break Ok(Err(err)),
+                Ok(Err(ConnFail::Retired)) | Err(RecvTimeoutError::Disconnected) => {
+                    break Err(self.retire_error());
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    if Instant::now() >= deadline {
+                        break Err(AcpAgentError::Timeout);
+                    }
+                }
+            }
+        };
+        // A late response may still be in the channel; the caller treats the request as
+        // not answered (DESIGN 5.8: timeout precedence).
+        if matches!(
+            outcome,
+            Err(AcpAgentError::Timeout | AcpAgentError::Cancelled)
+        ) {
             lock(&self.pending).remove(&id);
         }
         outcome
@@ -1355,11 +1730,18 @@ impl Conn {
         acc.overflow = false;
     }
 
-    /// Stops collecting and takes the accumulated text.
+    /// Stops collecting and takes the accumulated text. Ends the turn's permission context too.
     pub(crate) fn end_turn(&self) -> String {
         let mut acc = lock(&self.acc);
         acc.active_session = None;
+        acc.perm = None;
         std::mem::take(&mut acc.text)
+    }
+
+    /// Attaches the permission context of the turn that `begin_turn` started. Must be called
+    /// before the prompt is sent, so that no agent request can arrive without it.
+    pub(crate) fn attach_turn(&self, turn: PermTurn) {
+        lock(&self.acc).perm = Some(turn);
     }
 }
 
@@ -1375,6 +1757,8 @@ pub(crate) fn retire(conn: &Arc<Conn>, reason: RetireReason) {
     {
         return;
     }
+    // Why: a retired child must receive no more committed responses or cancels.
+    conn.link.registry.clear_connection(conn.link.conn_gen);
     *lock(&conn.reason) = Some(reason);
     let waiters: Vec<Waiter> = lock(&conn.pending).drain().map(|(_, w)| w).collect();
     for waiter in waiters {
@@ -1441,7 +1825,10 @@ fn handle_line(conn: &Arc<Conn>, raw: &[u8]) {
             if let Some(waiter) = waiter {
                 // Why: updates after a response belong to no turn (DESIGN 6b). Closing the turn
                 // here, before the waiter wakes, makes that cut exact; the text stays for the caller.
-                lock(&conn.acc).active_session = None;
+                let mut acc = lock(&conn.acc);
+                acc.active_session = None;
+                acc.perm = None;
+                drop(acc);
                 let outcome = match error.filter(|e| !e.is_null()) {
                     Some(err) => Err(ConnFail::Rpc(err)),
                     None => Ok(result.unwrap_or(Value::Null)),
@@ -1449,19 +1836,11 @@ fn handle_line(conn: &Arc<Conn>, raw: &[u8]) {
                 let _ = waiter.send(outcome);
             }
         }
-        Some(Incoming::Request { id, method, .. }) => {
-            let reply = if method == "session/request_permission" {
-                response_ok_json(&id, permission_denied_result())
+        Some(Incoming::Request { id, method, params }) => {
+            if method == "session/request_permission" {
+                answer_permission_request(conn, &id, &params);
             } else {
-                response_err_json(&id, -32601, "method not found")
-            };
-            // Why try_send: the reader must never block on the writer. A full queue means
-            // the agent floods requests while not reading; that is a protocol failure.
-            if let Err(TrySendError::Full(_)) = conn.outbound.try_send(reply) {
-                retire(
-                    conn,
-                    RetireReason::Protocol("outbound queue full".to_owned()),
-                );
+                write_direct(conn, response_err_json(&id, -32601, "method not found"));
             }
         }
         Some(Incoming::Notification { method, params }) => {
@@ -1474,6 +1853,98 @@ fn handle_line(conn: &Arc<Conn>, raw: &[u8]) {
                     }
                 }
             }
+        }
+    }
+}
+
+/// Queues a line the reader owes the agent, without blocking. A full queue means the agent
+/// floods requests while not reading, which is a protocol failure.
+fn write_direct(conn: &Arc<Conn>, line: String) {
+    if let Err(TrySendError::Full(_)) = conn.outbound.try_send(line) {
+        retire(
+            conn,
+            RetireReason::Protocol("outbound queue full".to_owned()),
+        );
+    }
+}
+
+/// Answers a request that no run decides: cancelled, echoing the id exactly as received.
+fn write_cancelled(conn: &Arc<Conn>, id: &Value) {
+    write_direct(conn, response_ok_json(id, permission_denied_result()));
+}
+
+/// Commits a turn-bound answer through the registry, the linearization point. A refused
+/// commit is recorded by the registry, so nothing more is done here.
+fn commit_decision(conn: &Arc<Conn>, turn: &PermTurn, id: &Value, outcome: &Outcome) {
+    let line = response_ok_json(id, outcome_json(outcome));
+    let _ = conn
+        .link
+        .registry
+        .commit(conn.link.conn_gen, turn.handle.token(), &turn.session, line);
+}
+
+/// Starts an approval wait. The turn's clock pauses and the broker owns the prompt until it
+/// commits. Never blocks: the broker submit is a bounded, non-blocking queue operation.
+fn ask_user(
+    conn: &Arc<Conn>,
+    turn: &PermTurn,
+    wiring: &PermissionWiring,
+    id: &Value,
+    req: PermissionRequest,
+    configured: Duration,
+) {
+    let now = Instant::now();
+    let budget = lock(&turn.timing).approval_budget(now, configured);
+    if budget.is_zero() {
+        return commit_decision(conn, turn, id, &Outcome::Cancelled);
+    }
+    lock(&turn.timing).enter_approval(now);
+    let binding = RequestBinding {
+        conn_gen: conn.link.conn_gen,
+        run_token: turn.handle.token(),
+        session_id: turn.session.clone(),
+        rpc_id: id.clone(),
+    };
+    match wiring.broker.submit(binding, req, now + budget) {
+        SubmitResult::Queued { .. } => {}
+        // Why: a duplicate is dropped without a commit, so its approval wait ends here.
+        SubmitResult::Duplicate => lock(&turn.timing).exit_approval(Instant::now()),
+        // Why: an overflowing request was already committed as Cancelled, which ended its wait.
+        SubmitResult::Overflow => {}
+    }
+}
+
+/// Answers one `session/request_permission` (DESIGN Rev 3, M2). The reader never blocks:
+/// every path either commits through the registry, queues to the broker, or answers
+/// cancelled. Requests outside an active turn, from another session, past the flood
+/// limit, or unparsable are cancelled.
+fn answer_permission_request(conn: &Arc<Conn>, id: &Value, params: &Value) {
+    let turn = lock(&conn.acc).perm.clone();
+    let Some(turn) = turn else {
+        return write_cancelled(conn, id);
+    };
+    if !conn.link.registry.note_permission_request(&turn.handle) {
+        return write_cancelled(conn, id);
+    }
+    let Ok(req) = parse_permission_request(params) else {
+        return write_cancelled(conn, id);
+    };
+    if req.session_id != turn.session {
+        return write_cancelled(conn, id);
+    }
+    let Some(wiring) = conn.link.permissions.clone() else {
+        return write_cancelled(conn, id);
+    };
+    let settings = (wiring.settings)();
+    match decide_auto(settings.mode, &req) {
+        AutoDecision::Allow { option_id } => {
+            commit_decision(conn, &turn, id, &Outcome::Selected(option_id));
+        }
+        AutoDecision::Reject { .. } => {
+            commit_decision(conn, &turn, id, &outcome_for(UserChoice::Reject, &req));
+        }
+        AutoDecision::Ask => {
+            ask_user(conn, &turn, &wiring, id, req, settings.approval_timeout);
         }
     }
 }
@@ -1691,6 +2162,7 @@ impl Conn {
     pub(crate) fn spawn(
         cfg: &AcpAgentConfig,
         helpers: Arc<AtomicUsize>,
+        link: ConnLink,
     ) -> Result<Arc<Self>, AcpAgentError> {
         use std::os::unix::process::CommandExt;
         use std::process::{Command, Stdio};
@@ -1729,6 +2201,10 @@ impl Conn {
 
         // Why bounded(8): a stuck agent must hit `Full` (=> retire), never grow memory.
         let (outbound, rx) = mpsc::sync_channel::<String>(8);
+        let sink = Arc::new(ConnSink {
+            outbound: outbound.clone(),
+            force_failure: Arc::clone(&link.force_failure),
+        });
         let conn = Arc::new(Conn {
             child: Mutex::new(child),
             pgid,
@@ -1745,12 +2221,15 @@ impl Conn {
             exit: Mutex::new(None),
             exit_cv: Condvar::new(),
             helpers,
+            link: Arc::new(link),
         });
         start_helper(&conn, "acp-writer", move |c| {
             writer_loop(c, rx, stdin, fd_in);
         })?;
         start_helper(&conn, "acp-reader", move |c| reader_loop(c, stdout))?;
         start_helper(&conn, "acp-stderr", move |c| stderr_loop(c, stderr))?;
+        // Why last: a sink is registered only for a child that fully started.
+        conn.link.registry.set_connection(conn.link.conn_gen, sink);
         Ok(conn)
     }
 
@@ -1759,6 +2238,7 @@ impl Conn {
     pub(crate) fn spawn(
         _cfg: &AcpAgentConfig,
         _helpers: Arc<AtomicUsize>,
+        _link: ConnLink,
     ) -> Result<Arc<Self>, AcpAgentError> {
         Err(AcpAgentError::Unsupported)
     }

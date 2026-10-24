@@ -128,6 +128,11 @@ pub fn user_message_for(err: &AcpAgentError) -> Option<String> {
         }
         AcpAgentError::Timeout => "The ACP agent did not answer in time.".to_string(),
         AcpAgentError::Busy => "The ACP agent is busy with another request.".to_string(),
+        AcpAgentError::Cancelled => "The agent request was cancelled.".to_string(),
+        AcpAgentError::PermissionDelivery => {
+            "Vox could not deliver your approval to the agent, so the request was stopped."
+                .to_string()
+        }
         AcpAgentError::AgentExited { stderr, .. } => {
             with_detail("The ACP agent exited unexpectedly.", stderr)
         }
