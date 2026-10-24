@@ -127,7 +127,7 @@
       <li>Reading your screen (OCR), and controlling other windows or the browser.</li>
       <li>Coding jobs on Windows (they report "not supported").</li>
       <li>Wake word and Ambient mode are only partly built; Ambient mode only shows a notification. Realtime voice has been tested only against mock servers. Report what you see; a limited result is expected.</li>
-      <li>The generic assistant ("Hey Jarvis" handing requests to an agent, approving actions by voice, saying stop to cancel) is planned and <b>not built yet</b>. See the Generic assistant section; those tests are skipped until it ships.</li>
+      <li>Spoken roles and lessons, and the agent hand-off with voice cancel, are <b>built</b> in the build from branch <code>feature/voice-agent-conversation</code>. You need that build installed, the hand-off setting on and an ACP agent configured. Spoken approval of agent permission prompts is <b>planned and not built yet</b> (Stage 3); those tests are skipped until it ships.</li>
       <li>Voices with accents in their names (for example Am&eacute;lie, T&uuml;nde, M&oacute;nica) are intentionally not in the voice list.</li>
     </ul>
   </div>
@@ -803,10 +803,10 @@ var SECTIONS = [
  { id:"sf-recover", title:"Recovery after a failure", mic:true, steps:[
    "Cause a failure (wrong agent path, offline), then fix it and try again."],
    expect:"Vox recovers without a restart." },
- { id:"sf-approval-default", title:"Approval default changed from always-deny to ask-before-changes", needs:"Agent (ACP) on, or a fresh profile.", steps:[
+ { id:"sf-approval-default", title:"Approval default: Allow everything on a fresh install, saved mode kept on upgrades", needs:"Agent (ACP) on. Use the fresh-profile and upgrade cases in Generic assistant for the default itself.", steps:[
    "On the Agents tab open <b>Agent (ACP)</b> and look at <b>Approval mode</b>.",
    "Set it to <b>Never allow (deny all requests)</b> and send a request that changes something. Then set it back to <b>Ask before changes</b>."],
-   expect:"The default is 'Ask before changes (reads and searches run freely)'. Earlier versions denied every request; the old behaviour is available as 'Never allow', which denies without a dialog." }
+   expect:"The four modes are listed: Ask before changes, Ask before every tool call, Never allow, and Allow everything. A fresh install starts on Allow everything (with its warning); an existing install keeps the mode it saved, or Ask before changes if none was saved. 'Never allow' denies without a dialog." }
 ]},
 { id:"acp-agent", title:"ACP agent and approvals", note:"Agents tab, Agent (ACP) group. Dictation that no voice command matched goes to an agent program you choose. Use a test agent and a scratch folder. Approvals are a convenience policy, not a sandbox.", tests:[
  { id:"acp-setup", title:"Connect an ACP agent", needs:"An ACP-capable agent program that is already installed and signed in, and its full path. Unix only (macOS or Linux).", steps:[
@@ -982,7 +982,7 @@ var SECTIONS = [
    expect:"The dry run changes nothing. The real run checks each file's size and SHA-256 and reports each model. The second run skips verified models. The log is appended to CONTEXT.md in the repository root.",
    warn:"Options (see <code>--help</code>): <code>--only phonon,kokoro,smart-turn,speaker</code> picks models; <code>--data-dir</code> and <code>--context</code> change folders; <code>--direct</code> ignores your proxy settings, so use it only if your network policy allows it." }
 ]},
-{ id:"generic-assistant", title:"Generic assistant (spoken roles built; agent hand-off planned)", note:"Spoken roles and lessons ARE built. They need Spoken replies on, a speech model and a reply backend that works (General tab, Voice conversation group). Interruptions also need headphones and Interrupt by speaking. Agent hand-off, voice approval and voice cancel are still PLANNED, NOT BUILT YET: do not report those three tests as failures.", tests:[
+{ id:"generic-assistant", title:"Generic assistant (spoken roles and agent hand-off built; voice approval planned)", note:"Spoken roles and lessons ARE built. They need Spoken replies on, a speech model and a reply backend that works (General tab, Voice conversation group). Interruptions also need headphones and Interrupt by speaking. The agent hand-off and voice cancel are BUILT in the build from branch feature/voice-agent-conversation; they need that build installed, the hand-off setting on and an ACP agent configured. Spoken approval of agent permission prompts is PLANNED (Stage 3), NOT BUILT YET: do not report that test as a failure.", tests:[
  { id:"jarvis-role-spoken", title:"Spoken role: act like a teacher, lesson, questions, continue", mic:true, needs:"Spoken replies on, a speech model installed and a reply backend that works (General tab, Voice conversation group). Interruptions also need headphones and Interrupt by speaking on.", steps:[
    "Say &ldquo;Hey Jarvis&rdquo; to start a conversation, then say: &ldquo;act like a teacher teaching computers to a six year old, answer questions politely and then continue the lesson, and start the lesson.&rdquo;",
    "Listen to the first lesson part. While Vox is speaking, interrupt it with a question, for example &ldquo;what is a computer?&rdquo;",
@@ -1023,20 +1023,97 @@ var SECTIONS = [
    "Turn on Vault notes search, set a role, then ask Vox to paste text or run a command."],
    expect:"After ten minutes untouched, the lesson is forgotten and does not resume. A new conversation has no role or lesson from the old one. With Vault context on, a role can be set and Vox answers in it, but no paste, command or job runs; Vox only answers.",
    warn:"Vault notes search is off by default." },
- { id:"jarvis-agent-handoff", title:"Planned: Hey Jarvis hands browser, search and file requests to the agent (not built yet)", mic:true, needs:"Not built yet.", steps:[
-   "Say &ldquo;Hey Jarvis, search the web for the weather in London&rdquo;.",
-   "Say &ldquo;Hey Jarvis, list the files in my scratch folder&rdquo;."],
-   expect:"Once built: each request goes to the configured agent, not to a plain answer, and the reply is spoken back. Requests that need approval go through the approval dialog or the voice approval below.",
-   warn:"Not built yet - skip." },
+ { id:"jarvis-agent-handoff", title:"Hand-off: Hey Jarvis sends a web request to the agent and speaks the answer", mic:true, needs:"Build from feature/voice-agent-conversation installed. Agents tab, Agent (ACP) group: Use ACP agent on, a web-capable ACP agent program set, and Hand open-ended requests to the agent in conversations on (it is on by default). Spoken replies on, a speech model and a reply backend that works. No headphones needed for this test.", steps:[
+   "Say &ldquo;Hey Jarvis&rdquo; to start a conversation, then say: &ldquo;Find the latest stable Rust version and tell me.&rdquo;",
+   "Listen for a short spoken acknowledgement. Then say &ldquo;how are you?&rdquo; and check Vox still answers while the agent works.",
+   "Wait about 20 seconds without speaking and listen for a progress line.",
+   "Listen to the answer, then look at the screen."],
+   expect:"Vox acknowledges the request out loud and the conversation stays open, so small talk still gets an answer while the agent works. After about 20 seconds you hear a progress line (for example &ldquo;Still working on it.&rdquo;). The answer is spoken in short parts and the full text is on screen.",
+   warn:"The exact acknowledgement wording is not fixed; write down what you hear. Vox may also say 'The full answer is on screen.' for long answers." },
+ { id:"jarvis-handoff-interrupt", title:"Hand-off: interrupt the progress or the answer by speaking", mic:true, needs:"As the hand-off test, plus headphones (wired or Bluetooth) with Interrupt by speaking set to Headphones only (General tab, Voice conversation). Speakers are not supported.", steps:[
+   "Start the hand-off request from the previous test and wait until Vox starts speaking the answer or a progress line.",
+   "Start speaking a new question, for example &ldquo;what time is it?&rdquo;",
+   "Listen for the new question to be answered."],
+   expect:"Speech stops at once when you start talking. Vox answers the new question. The rest of the earlier answer is not read to the end. The full earlier text stays on screen.",
+   warn:"Headphones only. Not yet verified on real headsets; write down what you hear." },
+ { id:"jarvis-handoff-busy", title:"Hand-off: a second agent request while one is running", mic:true, needs:"As the hand-off test.", steps:[
+   "Start a long agent request, for example &ldquo;Find the latest stable Rust version, then read the release notes and summarise them.&rdquo; Wait for the acknowledgement.",
+   "While it is still running, say: &ldquo;Hey Jarvis, find the latest stable Go version and tell me.&rdquo;",
+   "Then say &ldquo;cancel that&rdquo; to stop the first run."],
+   expect:"Vox says &ldquo;Still working on the last request. Say cancel to stop it.&rdquo; and does not start a second agent run. The first request's answer or cancellation is still the only one you hear.",
+   warn:"The second request must be one that goes to the agent; a plain question answered by the voice model does not test this." },
+ { id:"jarvis-handoff-off", title:"Hand-off setting off: the voice model answers alone", mic:true, needs:"Spoken replies on, a speech model and a reply backend that works. An ACP agent is configured, but it must stay unused for this test.", steps:[
+   "On the Agents tab, Agent (ACP) group, switch off <b>Hand open-ended requests to the agent in conversations</b>.",
+   "Say &ldquo;Hey Jarvis, find the latest stable Rust version and tell me.&rdquo;",
+   "Check in a terminal that no agent program started for it (<code>ps aux | grep &lt;agent program name&gt;</code>).",
+   "Switch the setting back on."],
+   expect:"Vox answers with the voice model only: no acknowledgement that it is checking with an agent, no progress line, and no agent program starts for that request.",
+   warn:"The test is about routing, not about whether the answer is correct." },
+ { id:"jarvis-handoff-unreachable", title:"Agent off or program path empty: 'I can't reach the agent right now.'", mic:true, needs:"Hand-off setting on. Two runs: first with Use ACP agent off, then with Agent program path cleared.", steps:[
+   "Switch off <b>Use ACP agent</b>. Say &ldquo;Hey Jarvis, find the latest stable Rust version and tell me.&rdquo;",
+   "Switch <b>Use ACP agent</b> back on, clear <b>Agent program path</b> so it is empty, then say the same request again."],
+   expect:"Each time Vox says &ldquo;I can't reach the agent right now.&rdquo; and no agent program starts.",
+   warn:"An empty program path turns the agent off, as the setting's own text says. Restore your path afterwards." },
+ { id:"jarvis-local-while-running", title:"Local commands still work while an agent run is active", mic:true, needs:"As the hand-off test, plus an app that opens, for example Safari.", steps:[
+   "Start a long agent request and wait for the acknowledgement.",
+   "While it is working, say &ldquo;open Safari&rdquo;."],
+   expect:"Safari opens at once. The agent keeps running and its answer still arrives later.",
+   warn:"Cancel the run with &ldquo;cancel that&rdquo; afterwards if it is still going." },
+ { id:"jarvis-taint-confirm", title:"After an agent answer, a risky action asks first: only exact 'yes' runs it", mic:true, needs:"As the hand-off test, plus a scratch project folder with a harmless build command.", steps:[
+   "Ask the agent a question and let it answer, for example &ldquo;Hey Jarvis, find the latest stable Rust version and tell me.&rdquo;",
+   "Say &ldquo;Hey Jarvis, now run the build command in my project.&rdquo;",
+   "When Vox asks, say &ldquo;okay&rdquo;. Check that nothing runs.",
+   "Repeat the build request, and when Vox asks again, say &ldquo;yes&rdquo;."],
+   expect:"Vox reads a sentence that starts &ldquo;I am about to&rdquo; and describes the action, and ends with &ldquo;Say yes to go ahead.&rdquo; Saying &ldquo;okay&rdquo; does not run it. Only the exact word &ldquo;yes&rdquo; runs the action.",
+   warn:"Write down the exact sentence Vox reads. Use a harmless command." },
+ { id:"jarvis-agent-crash", title:"Agent program stops mid-run: 'The agent stopped unexpectedly.'", mic:true, needs:"As the hand-off test, plus a terminal to stop the agent program.", steps:[
+   "Start a long agent request and wait for the acknowledgement.",
+   "In a terminal, find the agent program's process id (<code>ps aux | grep &lt;agent program name&gt;</code>) and stop only that process with <code>kill &lt;pid&gt;</code>.",
+   "Listen, then ask an ordinary question such as &ldquo;what time is it?&rdquo;"],
+   expect:"Vox says &ldquo;The agent stopped unexpectedly.&rdquo; Vox does not hang, and the ordinary question gets an answer.",
+   warn:"Do not stop Vox itself, only the agent program." },
+ { id:"jarvis-agent-timeout", title:"Agent runs too long: 'The agent took too long.'", opt:true, mic:true, needs:"As the hand-off test. Agents tab, Agent (ACP) group: set <b>Turn timeout (seconds)</b> to 10, the smallest allowed value. A slow test, about one minute.", steps:[
+   "Set <b>Turn timeout (seconds)</b> to 10 and note the old value.",
+   "Ask for a request that keeps the agent busy for more than a minute, for example a long research task.",
+   "Wait without speaking, and note the time when Vox speaks.",
+   "Set the timeout back to the old value."],
+   expect:"After about 60 seconds (3 x 10 + 30) Vox says &ldquo;The agent took too long.&rdquo; The agent program's process ends.",
+   warn:"If Vox speaks noticeably earlier or later than about 60 seconds, write down the time." },
+ { id:"jarvis-voice-cancel", title:"Voice cancel: each cancel phrase stops the agent request", mic:true, needs:"As the hand-off test. Use a long request, for example &ldquo;Find the latest stable Rust version, then read the release notes and summarise them.&rdquo;", steps:[
+   "Say &ldquo;Hey Jarvis&rdquo;, then the long request. Wait for the acknowledgement.",
+   "Say &ldquo;cancel that&rdquo;. Listen.",
+   "Start a new long request and say &ldquo;cancel the request&rdquo;. Then do the same with &ldquo;cancel the agent&rdquo;, then with &ldquo;stop the agent&rdquo;.",
+   "After each cancel, wait 60 seconds and listen."],
+   expect:"Each phrase makes Vox say &ldquo;Cancelled.&rdquo; and then nothing more about that request arrives: no progress line, no answer and no &ldquo;took too long&rdquo;. The agent program's process stops.",
+   warn:"Test each phrase separately. A phrase that is not recognised is a failure; write down what you heard." },
+ { id:"jarvis-stop-ends", title:"Plain 'stop' ends the conversation and cancels the agent run", mic:true, needs:"As the hand-off test, plus a terminal to list processes.", steps:[
+   "Start a long agent request and wait for the acknowledgement.",
+   "In a terminal, run <code>ps aux | grep &lt;agent program name&gt;</code> and note the process.",
+   "Say &ldquo;stop&rdquo; as the whole sentence.",
+   "Run the same <code>ps</code> command again."],
+   expect:"Speech stops, the conversation ends and Last session ended says Cancelled. The agent program's process is gone on the second check (it may take a few seconds). Nothing more is spoken.",
+   warn:"Unlike 'cancel that', plain 'stop' ends the whole conversation." },
+ { id:"allow-all-fresh", title:"Fresh install: Allow everything is the default, with the warning and a one-time notice", mic:true, needs:"A new user account or throwaway settings folder, so no settings are saved yet. Build from feature/voice-agent-conversation. An ACP agent configured.", steps:[
+   "Start Vox with the new profile. Open the Agents tab, Agent (ACP) group, and read <b>Approval mode</b>.",
+   "Turn on <b>Use ACP agent</b> if needed. Make the first agent run, for example &ldquo;Hey Jarvis, find the latest stable Rust version and tell me.&rdquo;",
+   "Watch for a notice. Then make a second agent run in the same launch."],
+   expect:"Approval mode shows &ldquo;Allow everything (never ask)&rdquo; with the warning paragraph below it: &ldquo;The agent can edit, delete, run and browse without asking. Web pages and files it reads can steer it. Use Ask before changes if you do not fully trust the agent.&rdquo; The first agent run shows a notice that says Vox is set to allow every agent action without asking and can be changed in Settings &gt; Agents. The notice does not appear again in that launch.",
+   warn:"The settings folder location is not in this guide; use a new user account or get the throwaway location from the developer. Allow everything lets the agent act without asking, so use a scratch folder." },
+ { id:"allow-all-upgrade", title:"Upgraded install keeps its saved approval mode; a missing mode becomes Ask before changes", needs:"Two settings files from an older build, provided by the developer: one with an approval mode saved (for example Never allow), one with no approval-mode entry at all. Use throwaway profiles.", steps:[
+   "Start Vox with the file that has a saved approval mode. On the Agents tab, Agent (ACP) group, read <b>Approval mode</b>.",
+   "Quit Vox. Start it with the file that has no approval-mode entry, and read <b>Approval mode</b> again."],
+   expect:"The saved mode is kept as saved; it does not change to Allow everything. The missing mode shows &ldquo;Ask before changes (reads and searches run freely)&rdquo;, not Allow everything.",
+   warn:"If you cannot get the older settings files, mark this test blocked." },
+ { id:"allow-all-warning", title:"Allow everything shows its warning paragraph only while selected", needs:"Agent (ACP) group open on the Agents tab. Any profile.", steps:[
+   "Open <b>Approval mode</b> and choose <b>Allow everything (never ask)</b>.",
+   "Read the paragraph under the selector.",
+   "Choose <b>Ask before changes</b> and check the paragraph goes away."],
+   expect:"With Allow everything selected, the warning paragraph is visible: &ldquo;The agent can edit, delete, run and browse without asking. Web pages and files it reads can steer it. Use Ask before changes if you do not fully trust the agent.&rdquo; It is hidden when another mode is selected.",
+   warn:"Set Ask before changes again when you are done." },
  { id:"jarvis-voice-approval", title:"Planned: approve or deny an agent action by voice (not built yet)", mic:true, needs:"Not built yet.", steps:[
    "Ask for an action that needs approval, for example a file change.",
    "When Vox asks, say &ldquo;yes&rdquo;. On another request say &ldquo;no&rdquo;."],
    expect:"Once built: the spoken answer approves or denies exactly that request, like the dialog's Allow once and Deny. Silence or unclear speech denies. Vox's own voice never counts as an answer.",
-   warn:"Not built yet - skip." },
- { id:"jarvis-voice-cancel", title:"Planned: say stop to cancel a running agent request (not built yet)", mic:true, needs:"Not built yet.", steps:[
-   "Ask the agent for a long task.",
-   "While it is working, say &ldquo;stop&rdquo;."],
-   expect:"Once built: the agent request is cancelled, speech stops, and the conversation says the request was cancelled.",
    warn:"Not built yet - skip." }
 ]}
 ];
@@ -1049,7 +1126,7 @@ var NAV = [
  ["Language", "Models", "<model> Settings (the card named after your speech model)", "Speech language for the selected model. Only appears for models that let you choose a language. Not the app language.", "speech language transcription"],
  ["Translate to English", "Models", "<model> Settings (the card named after your speech model)", "Translates speech from other languages into English during transcription. Only for models that support it.", "translate english canary"],
  ["Unload Model", "Models", "<model> Settings (the card named after your speech model)", "How long an unused model stays in memory: Never, Immediately, 2, 5, 10 or 15 minutes, 1 hour, or 15 seconds (Debug).", "unload timeout memory gpu"],
- ["Approval mode", "Agents", "Agent (ACP)", "Ask before changes (default), Ask before every tool call, or Never allow.", "approval permission acp agent"],
+ ["Approval mode", "Agents", "Agent (ACP)", "Ask before changes, Ask before every tool call, Never allow, or Allow everything (default for fresh installs only).", "approval permission acp agent"],
  ["Approval timeout", "Agents", "Agent (ACP)", "Seconds to wait for your answer before a request is denied (10 to 300, default 60).", "approval timeout deny"],
  ["Use ACP agent", "Agents", "Agent (ACP)", "Off by default. When on, dictation that no built-in command matched goes to the agent program.", "acp agent enable"],
  ["Agent program path", "Agents", "Agent (ACP)", "Absolute path to an ACP agent that is already signed in. Relative paths and bare names are rejected.", "acp command path"],

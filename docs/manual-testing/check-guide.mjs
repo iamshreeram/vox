@@ -120,7 +120,7 @@ const secIds = new Set(SECTIONS.map((s) => s.id));
 for (const id of mustHaveSections) if (!secIds.has(id)) bad(`missing required section: ${id}`);
 
 // planned tests must be clearly marked so nobody reports them as failures
-const plannedIds = new Set(["jarvis-agent-handoff", "jarvis-voice-approval", "jarvis-voice-cancel"]);
+const plannedIds = new Set(["jarvis-voice-approval"]);
 for (const t of tests.filter((x) => plannedIds.has(x.id))) {
   const blob = JSON.stringify({ ...t, ...(PATCH[t.id] || {}) });
   if (!/not built yet|planned/i.test(blob)) bad(`${t.id}: planned test must say 'not built yet' or 'planned'`);
