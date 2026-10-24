@@ -23,7 +23,8 @@
     "history": "Geçmiş",
     "debug": "Hata Ayıklama",
     "about": "Hakkında",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "agents": "Agents"
   },
   "onboarding": {
     "subtitle": "Başlamak için bir transkripsiyon modeli seçin",
@@ -167,6 +168,10 @@
     },
     "models": {
       "title": "Transkripsiyon Modelleri",
+      "transcriptionHeading": "Transcription models",
+      "groups": {
+        "vadEngine": "Voice activity detection engine"
+      },
       "description": "Bir transkripsiyon modeli seçin veya ek modeller indirin. Farklı modeller değişen doğruluk ve hız seviyeleri sunar.",
       "deleteConfirm": "{{modelName}} modelini silmek istediğinizden emin misiniz? Kullanmak için tekrar indirmeniz gerekecek.",
       "deleteActiveConfirm": "{{modelName}} aktif modelinizdir. Silmek, yeni bir model seçene kadar transkripsiyonları durduracaktır. Emin misiniz?",
@@ -242,6 +247,9 @@
           "toggle": "Kaydı başlatmak için kısayola dokunun, durdurmak için tekrar dokunun"
         }
       }
+    },
+    "agents": {
+      "title": "Agents"
     },
     "sound": {
       "title": "Ses",

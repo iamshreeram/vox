@@ -23,7 +23,8 @@
     "history": "היסטוריה",
     "debug": "ניפוי שגיאות",
     "about": "אודות",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "agents": "Agents"
   },
   "onboarding": {
     "subtitle": "כדי להתחיל, בחר מודל תמלול",
@@ -220,8 +221,15 @@
         }
       }
     },
+    "agents": {
+      "title": "Agents"
+    },
     "models": {
       "title": "מודלי תמלול",
+      "transcriptionHeading": "Transcription models",
+      "groups": {
+        "vadEngine": "Voice activity detection engine"
+      },
       "description": "בחר מודל תמלול או הורד מודלים נוספים. מודלים שונים מציעים רמות שונות של דיוק ומהירות.",
       "yourModels": "מודלים שהורדו",
       "availableModels": "זמינים להורדה",

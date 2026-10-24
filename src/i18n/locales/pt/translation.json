@@ -23,7 +23,8 @@
     "history": "Histórico",
     "debug": "Depuração",
     "about": "Sobre",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "agents": "Agents"
   },
   "onboarding": {
     "subtitle": "Para começar, escolha um modelo de transcrição",
@@ -220,8 +221,15 @@
         }
       }
     },
+    "agents": {
+      "title": "Agents"
+    },
     "models": {
       "title": "Modelos de Transcrição",
+      "transcriptionHeading": "Transcription models",
+      "groups": {
+        "vadEngine": "Voice activity detection engine"
+      },
       "description": "Selecione um modelo de transcrição ou baixe modelos adicionais. Diferentes modelos oferecem diferentes níveis de precisão e velocidade.",
       "deleteConfirm": "Tem certeza de que deseja excluir {{modelName}}? Você precisará baixá-lo novamente para usá-lo.",
       "deleteActiveConfirm": "{{modelName}} é o seu modelo ativo. Excluí-lo interromperá as transcrições até que você selecione um novo modelo. Tem certeza?",

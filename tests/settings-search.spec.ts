@@ -56,7 +56,7 @@ const section = (page: Page, id: string): Locator =>
 const navItem = (page: Page, label: string): Locator =>
   page.locator("p", { hasText: new RegExp(`^${label}$`) });
 
-// The "listening" card starts collapsed (defaultOpen: false in experimentalLayout.ts).
+// The "listening" card starts collapsed (defaultOpen: false in settingsPlacement.ts).
 const listeningCard = (page: Page): Locator =>
   page.locator('[data-group-id="listening"]');
 const listeningHeader = (page: Page): Locator =>
@@ -94,7 +94,7 @@ test.describe("Settings search: navigation and reveal", () => {
     page,
   }) => {
     // Outgoing page (Post Process) has a row titled "Model"; the destination
-    // (Experimental > Spoken replies) has another row titled "Model".
+    // (Models > Spoken replies) has another row titled "Model".
     await installTauriMock(page, {
       settings: {
         post_process_enabled: true,
@@ -110,18 +110,18 @@ test.describe("Settings search: navigation and reveal", () => {
     await searchBox(page).fill("model");
     await options(page)
       .filter({ hasText: "Model" })
-      .filter({ hasText: "Experimental" })
+      .filter({ hasText: "Spoken replies" })
       .first()
       .click();
 
-    await expect(section(page, "experimental")).toBeVisible();
+    await expect(section(page, "models")).toBeVisible();
     await expect(highlighted(page)).toHaveCount(1);
     await expect(highlighted(page)).toHaveAttribute(
       "data-setting-title",
       "Model",
     );
     await expect(
-      section(page, "experimental").locator(`.${HIGHLIGHT_CLASS}`),
+      section(page, "models").locator(`.${HIGHLIGHT_CLASS}`),
     ).toHaveCount(1);
     await expect(highlighted(page)).toBeInViewport();
   });
@@ -136,9 +136,8 @@ test.describe("Settings search: navigation and reveal", () => {
     });
     await page.goto("/");
 
-    // Precondition: the listening card is collapsed on the Experimental page.
-    await navItem(page, "Experimental").click();
-    await expect(section(page, "experimental")).toBeVisible();
+    // Precondition: the listening card is collapsed on the General page.
+    await expect(section(page, "general")).toBeVisible();
     await expectListeningCollapsed(page);
 
     // Leave for another page, then reveal from search.
@@ -147,7 +146,7 @@ test.describe("Settings search: navigation and reveal", () => {
     await searchBox(page).fill("wake word");
     await options(page).filter({ hasText: "Wake Word" }).first().click();
 
-    await expect(section(page, "experimental")).toBeVisible();
+    await expect(section(page, "general")).toBeVisible();
     await expect(listeningHeader(page)).toHaveAttribute(
       "aria-expanded",
       "true",
@@ -162,19 +161,18 @@ test.describe("Settings search: navigation and reveal", () => {
     await installTauriMock(page, { settings: { experimental_enabled: true } });
     await page.goto("/");
 
-    // Precondition: visit Experimental, confirm the card is collapsed, leave.
-    await navItem(page, "Experimental").click();
-    await expect(section(page, "experimental")).toBeVisible();
-    await expectListeningCollapsed(page);
-    await navItem(page, "General").click();
+    // Precondition: visit General, confirm the card is collapsed, leave.
     await expect(section(page, "general")).toBeVisible();
-    // The Experimental page is unmounted now; search mounts it late.
-    await expect(section(page, "experimental")).toHaveCount(0);
+    await expectListeningCollapsed(page);
+    await navItem(page, "Advanced").click();
+    await expect(section(page, "advanced")).toBeVisible();
+    // The General page is unmounted now; search mounts it late.
+    await expect(section(page, "general")).toHaveCount(0);
 
     await searchBox(page).fill("wake word");
     await options(page).filter({ hasText: "Wake Word" }).first().click();
 
-    await expect(section(page, "experimental")).toBeVisible();
+    await expect(section(page, "general")).toBeVisible();
     await expect(listeningHeader(page)).toHaveAttribute(
       "aria-expanded",
       "true",
@@ -189,10 +187,10 @@ test.describe("Settings search: navigation and reveal", () => {
     // Mechanism: the reveal advances in requestAnimationFrame and timers, which the
     // Playwright clock controls in the page. The clock is installed and paused, so
     // after the search selection the reveal's first frame is queued but has not run.
-    // The user goes to General and back to Experimental, then time advances past
+    // The user goes to Advanced and back to General, then time advances past
     // the reveal timeout. Sidebar.tsx's nav-click wrapper calls cancelReveal() before
     // onSectionChange. Removing that cancelReveal() call makes the queued frame run
-    // once Experimental is back: it would open the card, scroll to the row and
+    // once General is back: it would open the card, scroll to the row and
     // highlight it, so the assertions below would fail.
     const REVEAL_WINDOW_MS = 1500;
     await installTauriMock(page, { settings: { experimental_enabled: true } });
@@ -203,12 +201,11 @@ test.describe("Settings search: navigation and reveal", () => {
     // cannot overtake the pause time ("Cannot fast-forward to the past").
     await page.clock.pauseAt(new Date("2026-10-16T10:00:30Z"));
 
-    // Precondition: the listening card is collapsed on the Experimental page.
-    await navItem(page, "Experimental").click();
-    await expect(section(page, "experimental")).toBeVisible();
-    await expectListeningCollapsed(page);
-    await navItem(page, "General").click();
+    // Precondition: the listening card is collapsed on the General page.
     await expect(section(page, "general")).toBeVisible();
+    await expectListeningCollapsed(page);
+    await navItem(page, "Advanced").click();
+    await expect(section(page, "advanced")).toBeVisible();
 
     // Count scrolls of the Wake Word row (its own scrollIntoView, nothing else).
     await page.evaluate(() => {
@@ -229,15 +226,15 @@ test.describe("Settings search: navigation and reveal", () => {
     // Select the result: the reveal starts, its frame is queued, nothing has run.
     await searchBox(page).fill("wake word");
     await options(page).filter({ hasText: "Wake Word" }).first().click();
-    await expect(section(page, "experimental")).toBeVisible();
+    await expect(section(page, "general")).toBeVisible();
     await expectListeningCollapsed(page);
     await expect(highlighted(page)).toHaveCount(0);
 
-    // Leave during the reveal, then return to Experimental.
+    // Leave during the reveal, then return to General.
+    await navItem(page, "Advanced").click();
+    await expect(section(page, "advanced")).toBeVisible();
     await navItem(page, "General").click();
     await expect(section(page, "general")).toBeVisible();
-    await navItem(page, "Experimental").click();
-    await expect(section(page, "experimental")).toBeVisible();
 
     // Let time pass the reveal timeout: a surviving reveal would run now.
     await page.clock.runFor(REVEAL_WINDOW_MS);
@@ -299,7 +296,7 @@ test.describe("Settings search: keyboard and composition", () => {
 
     await expect(box).toHaveValue("");
     await expect(listbox(page)).toHaveCount(0);
-    await expect(section(page, "experimental")).toBeVisible();
+    await expect(section(page, "advanced")).toBeVisible();
   });
 
   test("(4c) Escape clears the query, a second Escape blurs", async ({
@@ -497,7 +494,7 @@ test.describe("Settings search: locked and gated results", () => {
     await expect(locked.first()).toBeVisible();
     await locked.first().click();
 
-    await expect(section(page, "experimental")).toBeVisible();
+    await expect(section(page, "advanced")).toBeVisible();
     await expect(highlighted(page)).toHaveAttribute(
       "data-setting-title",
       "Post Processing",
@@ -543,11 +540,11 @@ test.describe("Settings search: debug and language", () => {
   });
 });
 
-test.describe("Settings search: new Experimental controls", () => {
-  test("(11) a control added in this change is found by search and rendered on the Experimental page", async ({
+test.describe("Settings search: new settings controls", () => {
+  test("(11) a control added in this change is found by search and rendered on its settings page", async ({
     page,
   }) => {
-    // Wake word cooldown is a slider on the Experimental page (WakeWordToggle).
+    // Wake word cooldown is a slider in the General page Listening group (WakeWordToggle).
     const cooldownLabel = textAt(
       translation("en"),
       "settings.advanced.wakeWord.cooldownLabel",
@@ -558,9 +555,9 @@ test.describe("Settings search: new Experimental controls", () => {
     await searchBox(page).fill("wake word cooldown");
     await options(page).filter({ hasText: cooldownLabel }).first().click();
 
-    await expect(section(page, "experimental")).toBeVisible();
+    await expect(section(page, "general")).toBeVisible();
     await expect(
-      section(page, "experimental")
+      section(page, "general")
         .getByText(cooldownLabel, { exact: true })
         .first(),
     ).toBeVisible();

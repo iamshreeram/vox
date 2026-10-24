@@ -23,6 +23,7 @@
     "debug": "تصحيح الأخطاء",
     "about": "حول",
     "experimental": "Experimental",
+    "agents": "Agents",
     "models": "النماذج"
   },
   "onboarding": {
@@ -216,6 +217,9 @@
           "toggle": "انقر على الاختصار لبدء التسجيل، وانقر مرة أخرى للإيقاف"
         }
       }
+    },
+    "agents": {
+      "title": "Agents"
     },
     "sound": {
       "title": "الصوت",
@@ -1200,6 +1204,10 @@
     },
     "models": {
       "title": "نماذج النسخ",
+      "transcriptionHeading": "Transcription models",
+      "groups": {
+        "vadEngine": "Voice activity detection engine"
+      },
       "description": "اختر نموذج نسخ أو قم بتنزيل نماذج إضافية. تقدم النماذج المختلفة مستويات متفاوتة من الدقة والسرعة.",
       "yourModels": "النماذج المحمّلة",
       "availableModels": "متاح للتنزيل",

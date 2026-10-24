@@ -53,8 +53,8 @@ const CORE_SECTIONS: SearchSection[] = [
   "debug",
   "about",
 ];
-const ALL_SECTIONS: SearchSection[] = [...CORE_SECTIONS, "experimental"];
-const GATED: SearchSection[] = ["postprocessing", "experimental"];
+const ALL_SECTIONS: SearchSection[] = [...CORE_SECTIONS, "agents"];
+const GATED: SearchSection[] = ["postprocessing", "agents"];
 const ENABLED_BY_DEFAULT: SearchSection[] = [
   "general",
   "history",
@@ -64,6 +64,7 @@ const ENABLED_BY_DEFAULT: SearchSection[] = [
 ];
 const VALID_GROUP_IDS = new Set([
   "engine",
+  "vadEngine",
   "voiceCommands",
   "listening",
   "memory",
@@ -90,12 +91,7 @@ const own: SearchEntry[] =
     : SCOPE === "experimental"
       ? scoped(EXPERIMENTAL_ENTRIES)
       : scoped(SEARCH_ENTRIES);
-const scopeSections =
-  SCOPE === "core"
-    ? CORE_SECTIONS
-    : SCOPE === "experimental"
-      ? ["experimental" as SearchSection]
-      : ALL_SECTIONS;
+const scopeSections = SCOPE === "core" ? CORE_SECTIONS : ALL_SECTIONS;
 
 // ---------- 4a: local integrity ----------
 const seen = new Set<string>();
@@ -104,8 +100,12 @@ for (const e of own) {
   const who = `entry ${e.id}`;
   if (seen.has(e.id)) fail(`${who}: duplicate id`);
   seen.add(e.id);
-  if (!e.id.startsWith(`${e.section}.`) || e.id.length <= e.section.length + 1)
-    fail(`${who}: id must be "<section>.<slug>"`);
+  // Moved rows keep their "experimental.<slug>" id although their page is a real section.
+  const idPrefix = e.requiresExperimental ? "experimental" : e.section;
+  if (!e.id.startsWith(`${idPrefix}.`) || e.id.length <= idPrefix.length + 1)
+    fail(
+      `${who}: id must be "<section>.<slug>" (moved rows: "experimental.<slug>")`,
+    );
   if (!ALL_SECTIONS.includes(e.section))
     fail(`${who}: unknown section ${e.section}`);
   else if (!scopeSections.includes(e.section))
@@ -116,13 +116,13 @@ for (const e of own) {
     fail(`${who}: descriptionKey ${e.descriptionKey} missing in en`);
   if (e.groupKey !== undefined && !hasText(e.groupKey))
     fail(`${who}: groupKey ${e.groupKey} missing in en`);
-  if (e.section === "experimental") {
+  if (e.requiresExperimental) {
     if (!e.groupId || !e.groupKey)
-      fail(`${who}: experimental rows need groupId and groupKey`);
+      fail(`${who}: moved rows need groupId and groupKey`);
     else if (!VALID_GROUP_IDS.has(e.groupId))
       fail(`${who}: unknown groupId ${e.groupId}`);
   } else if (e.groupId !== undefined)
-    fail(`${who}: groupId only applies to the experimental page`);
+    fail(`${who}: groupId only applies to moved rows (requiresExperimental)`);
   if (GATED.includes(e.section) && !e.unlockedBy)
     fail(`${who}: section ${e.section} is gated, unlockedBy is required`);
   if (

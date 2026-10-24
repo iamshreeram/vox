@@ -8,8 +8,8 @@ export const SECTION_IDS = [
   "models",
   "advanced",
   "postprocessing",
+  "agents",
   "debug",
-  "experimental",
   "about",
 ] as const;
 
@@ -22,8 +22,8 @@ export const SECTION_ICON_CLASS: Record<SidebarSectionId, string> = {
   models: "text-emerald-500",
   advanced: "text-orange-500",
   postprocessing: "text-pink-500",
+  agents: "text-fuchsia-500",
   debug: "text-amber-500",
-  experimental: "text-fuchsia-500",
   about: "text-blue-500",
 };
 

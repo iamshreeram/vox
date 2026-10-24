@@ -53,7 +53,7 @@ const TEXT: Record<string, TextPair> = {
   "sidebar.advanced": pair("Advanced"),
   "sidebar.postProcessing": pair("Post Process"),
   "sidebar.debug": pair("Debug"),
-  "sidebar.experimental": pair("Experimental"),
+  "sidebar.agents": pair("Agents"),
   "sidebar.about": pair("About"),
 };
 for (let n = 0; n < 40; n++) TEXT[`l.item.${n}`] = pair(`Item ${n}`);
@@ -145,7 +145,7 @@ const ENTRIES: SearchEntry[] = [
   }),
   E({
     id: "experimental.postProcessing",
-    section: "experimental",
+    section: "agents",
     groupKey: "g.engine",
     groupId: "engine",
     labelKey: "l.postProc",
@@ -153,7 +153,7 @@ const ENTRIES: SearchEntry[] = [
   }),
   E({
     id: "experimental.lazyStreamClose",
-    section: "experimental",
+    section: "agents",
     groupKey: "g.engine",
     groupId: "engine",
     labelKey: "l.lazy",
@@ -163,7 +163,7 @@ const ENTRIES: SearchEntry[] = [
   }),
   E({
     id: "experimental.accelT",
-    section: "experimental",
+    section: "agents",
     groupKey: "g.engine",
     groupId: "engine",
     labelKey: "l.accelT",
@@ -173,7 +173,7 @@ const ENTRIES: SearchEntry[] = [
   }),
   E({
     id: "experimental.accelO",
-    section: "experimental",
+    section: "agents",
     groupKey: "g.engine",
     groupId: "engine",
     labelKey: "l.accelO",
@@ -183,7 +183,7 @@ const ENTRIES: SearchEntry[] = [
   }),
   E({
     id: "experimental.vad",
-    section: "experimental",
+    section: "agents",
     groupKey: "g.engine",
     groupId: "engine",
     labelKey: "l.vad",
@@ -193,19 +193,19 @@ const ENTRIES: SearchEntry[] = [
   }),
   E({
     id: "experimental.cycA",
-    section: "experimental",
+    section: "agents",
     labelKey: "l.cycA",
     unlockedBy: "experimental.cycB",
   }),
   E({
     id: "experimental.cycB",
-    section: "experimental",
+    section: "agents",
     labelKey: "l.cycB",
     unlockedBy: "experimental.cycA",
   }),
   E({
     id: "experimental.orphan",
-    section: "experimental",
+    section: "agents",
     labelKey: "l.orphan",
     unlockedBy: "nope.missing",
   }),
@@ -233,7 +233,7 @@ const ALL_ON: SearchSection[] = [
   ...DEFAULT_ON,
   "postprocessing",
   "debug",
-  "experimental",
+  "agents",
 ];
 const ctx = (
   on: SearchSection[],
@@ -446,7 +446,7 @@ assert.equal(
     "advanced.experimentalToggle",
   );
 
-  const expOnly = ctx([...DEFAULT_ON, "experimental"]);
+  const expOnly = ctx([...DEFAULT_ON, "agents"]);
   const provider2 = first("provider", expOnly);
   assert.deepEqual(
     provider2.unlockChain,

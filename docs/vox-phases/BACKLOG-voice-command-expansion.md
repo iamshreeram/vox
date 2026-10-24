@@ -22,8 +22,8 @@ re-discovers or re-implements what's already here.
   wake-word-triggered transcriptions, since `WakeWordListener::
 handle_detection` calls the same `send_transcription_input()` path as
   hotkey dictation.
-- Gated by the `voice_commands_enabled` setting (Settings → Advanced →
-  Experimental group → "Voice Commands"), default off.
+- Gated by the `voice_commands_enabled` setting (Settings → General →
+  Voice commands group, shown when the Experimental switch is on), default off.
 - Leaving the dictated/transcribed text on the system clipboard instead of
   only auto-pasting it is also already built: `ClipboardHandling::
 CopyToClipboard` (Settings → Advanced → Output group → "Clipboard

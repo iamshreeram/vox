@@ -2,13 +2,16 @@
 //! The real implementation lives in lib.rs (M2-3); tests use a fake.
 
 /// Settings section ids accepted by `open_settings`: general, history, models, advanced,
-/// postprocessing, experimental, about (NOT debug).
+/// postprocessing, agents, experimental, about (NOT debug).
+/// `experimental` is a legacy alias that the UI maps to `agents` (it is kept so old
+/// tool calls and stored links still resolve). `debug` is deliberately not accepted.
 pub const OPEN_SETTINGS_SECTIONS: &[&str] = &[
     "general",
     "history",
     "models",
     "advanced",
     "postprocessing",
+    "agents",
     "experimental",
     "about",
 ];

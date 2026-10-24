@@ -23,7 +23,8 @@
     "history": "Lịch sử",
     "debug": "Gỡ lỗi",
     "about": "Giới thiệu",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "agents": "Agents"
   },
   "onboarding": {
     "subtitle": "Để bắt đầu, hãy chọn một mô hình chuyển đổi giọng nói",
@@ -167,6 +168,10 @@
     },
     "models": {
       "title": "Mô hình chuyển đổi",
+      "transcriptionHeading": "Transcription models",
+      "groups": {
+        "vadEngine": "Voice activity detection engine"
+      },
       "description": "Chọn mô hình chuyển đổi hoặc tải thêm mô hình. Các mô hình khác nhau có mức độ chính xác và tốc độ khác nhau.",
       "deleteConfirm": "Bạn có chắc chắn muốn xóa {{modelName}}? Bạn sẽ cần tải lại để sử dụng.",
       "deleteActiveConfirm": "{{modelName}} là mô hình đang hoạt động của bạn. Xóa nó sẽ dừng phiên âm cho đến khi bạn chọn một mô hình mới. Bạn có chắc không?",
@@ -242,6 +247,9 @@
           "toggle": "Nhấn phím tắt để bắt đầu ghi âm, nhấn lại để dừng"
         }
       }
+    },
+    "agents": {
+      "title": "Agents"
     },
     "sound": {
       "title": "Âm thanh",

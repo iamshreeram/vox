@@ -23,7 +23,8 @@
     "history": "Історія",
     "debug": "Дебаг",
     "about": "Інфо",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "agents": "Agents"
   },
   "onboarding": {
     "subtitle": "Для початку оберіть модель транскрипції",
@@ -220,8 +221,15 @@
         }
       }
     },
+    "agents": {
+      "title": "Agents"
+    },
     "models": {
       "title": "Моделі транскрипції",
+      "transcriptionHeading": "Transcription models",
+      "groups": {
+        "vadEngine": "Voice activity detection engine"
+      },
       "description": "Виберіть модель транскрипції або завантажте додаткові моделі. Різні моделі пропонують різні рівні точності та швидкості.",
       "deleteConfirm": "Ви впевнені, що хочете видалити {{modelName}}? Вам потрібно буде завантажити її знову, щоб використовувати.",
       "deleteActiveConfirm": "{{modelName}} — ваша активна модель. Видалення зупинить транскрипцію, доки ви не оберете нову модель. Ви впевнені?",

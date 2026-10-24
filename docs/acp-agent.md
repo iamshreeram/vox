@@ -20,7 +20,7 @@ Vox does not name or bundle any agent. You choose the program and its arguments.
 
 ## Configuration
 
-Open **Settings > Experimental > ACP agent**:
+Open **Settings > Agents > ACP agent**:
 
 | Setting         | Value                                                                                                                                                                                             |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -86,7 +86,7 @@ Read this section before you enable the feature.
 
 | Message           | Likely cause                                                                                                                                   | What to do                                                                                                                 |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Not configured    | The feature is on but the command is empty or invalid.                                                                                         | Enter an absolute path to the agent program in **Settings > Experimental > ACP agent**.                                    |
+| Not configured    | The feature is on but the command is empty or invalid.                                                                                         | Enter an absolute path to the agent program in **Settings > Agents > ACP agent**.                                          |
 | Command not found | The path does not exist, or it is not a file Vox can run.                                                                                      | Check the path. Use the full absolute path, not a name on your `PATH`.                                                     |
 | Handshake failed  | The program started but did not answer the ACP handshake. It may not be an ACP agent, or the arguments are wrong.                              | Check the arguments (for example `--acp`). Use **Test connection**. The message includes a short, capped detail.           |
 | Timeout           | The turn took longer than the turn timeout.                                                                                                    | Ask a shorter question, or raise the turn timeout (up to 900 seconds). The agent process is restarted on the next request. |

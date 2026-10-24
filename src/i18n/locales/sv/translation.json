@@ -23,7 +23,8 @@
     "history": "Historik",
     "debug": "Felsökning",
     "about": "Om",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "agents": "Agents"
   },
   "onboarding": {
     "subtitle": "För att komma igång, välj en transkriptionsmodell",
@@ -220,8 +221,15 @@
         }
       }
     },
+    "agents": {
+      "title": "Agents"
+    },
     "models": {
       "title": "Transkriptionsmodeller",
+      "transcriptionHeading": "Transcription models",
+      "groups": {
+        "vadEngine": "Voice activity detection engine"
+      },
       "description": "Välj en transkriptionsmodell eller ladda ner ytterligare modeller. Olika modeller erbjuder varierande nivåer av noggrannhet och hastighet.",
       "yourModels": "Nedladdade modeller",
       "availableModels": "Tillgängliga att ladda ner",

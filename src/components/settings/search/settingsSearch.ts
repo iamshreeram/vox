@@ -136,13 +136,27 @@ function fieldsOf(entry: SearchEntry, resolve: Resolve): SearchFields {
   };
 }
 
+/**
+ * True when the entry can be used now. A row that needs the Experimental switch is not
+ * reachable while the switch is off, even when its page is always visible.
+ */
+function isReachable(entry: SearchEntry, ctx: SearchContext): boolean {
+  if (
+    entry.requiresExperimental === true &&
+    ctx.experimentalEnabled === false
+  ) {
+    return false;
+  }
+  return ctx.isSectionEnabled(entry.section);
+}
+
 /** Returns null when the entry must be dropped because of its gating. */
 function gateEntry(
   entry: SearchEntry,
   byId: ReadonlyMap<string, SearchEntry>,
   ctx: SearchContext,
 ): Gate | null {
-  if (ctx.isSectionEnabled(entry.section)) {
+  if (isReachable(entry, ctx)) {
     return { locked: false, unlockChain: [] };
   }
   if (entry.unlockedBy === undefined) return null;
@@ -157,7 +171,7 @@ function gateEntry(
     if (enabler === undefined) return null;
     chain.push(nextId);
     if (chain.length > MAX_UNLOCK_DEPTH) return null;
-    if (ctx.isSectionEnabled(enabler.section)) {
+    if (isReachable(enabler, ctx)) {
       return { locked: true, unlockChain: chain };
     }
     nextId = enabler.unlockedBy;

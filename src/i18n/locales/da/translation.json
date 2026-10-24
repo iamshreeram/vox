@@ -23,7 +23,8 @@
     "history": "Historik",
     "debug": "Fejlfinding",
     "about": "Om",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "agents": "Agents"
   },
   "onboarding": {
     "subtitle": "For at komme i gang skal du vælge en transskriptionsmodel",
@@ -220,8 +221,15 @@
         }
       }
     },
+    "agents": {
+      "title": "Agents"
+    },
     "models": {
       "title": "Transskriptionsmodeller",
+      "transcriptionHeading": "Transcription models",
+      "groups": {
+        "vadEngine": "Voice activity detection engine"
+      },
       "description": "Vælg en transskriptionsmodel, eller download flere modeller. Forskellige modeller tilbyder varierende niveauer af nøjagtighed og hastighed.",
       "searchPlaceholder": "Søg efter modeller ved navn…",
       "yourModels": "Downloadede modeller",

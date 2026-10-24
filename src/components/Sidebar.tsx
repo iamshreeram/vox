@@ -1,6 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import {
+  Bot,
   Cog,
   FlaskConical,
   History,
@@ -8,7 +9,6 @@ import {
   Sparkles,
   Cpu,
   Mic,
-  Beaker,
 } from "lucide-react";
 import VoxTextLogo from "./icons/VoxTextLogo";
 import { useSettings } from "../hooks/useSettings";
@@ -21,7 +21,7 @@ import {
   AboutSettings,
   PostProcessingSettings,
   ModelsSettings,
-  ExperimentalSettings,
+  AgentsSettings,
 } from "./settings";
 import { SettingsSearchBox } from "./settings/search/SettingsSearchBox";
 import { cancelReveal } from "./settings/search/settingsReveal";
@@ -80,17 +80,17 @@ export const SECTIONS_CONFIG = {
     component: PostProcessingSettings,
     enabled: (settings) => settings?.post_process_enabled ?? false,
   },
+  agents: {
+    labelKey: "sidebar.agents",
+    icon: Bot,
+    component: AgentsSettings,
+    enabled: (settings) => settings?.experimental_enabled ?? false,
+  },
   debug: {
     labelKey: "sidebar.debug",
     icon: FlaskConical,
     component: DebugSettings,
     enabled: (settings) => settings?.debug_mode ?? false,
-  },
-  experimental: {
-    labelKey: "sidebar.experimental",
-    icon: Beaker,
-    component: ExperimentalSettings,
-    enabled: (settings) => settings?.experimental_enabled ?? false,
   },
   about: {
     labelKey: "sidebar.about",
@@ -126,6 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="flex flex-col w-full items-center gap-1 pt-2 border-t border-mid-gray/20">
         <SettingsSearchBox
           isSectionEnabled={isSectionEnabled}
+          experimentalEnabled={settings?.experimental_enabled === true}
           onNavigate={onSectionChange}
         />
         {availableSections.map((section) => {

@@ -3,7 +3,9 @@ import {
   MAX_PROJECT_ROOTS,
   appendProjectRoot,
   canAddProjectRoot,
+  SETTINGS_SECTION_IDS,
   isSettingsSectionId,
+  resolveSectionAlias,
 } from "./agentToolsForm";
 
 // Every existing sidebar section except "debug" is accepted.
@@ -64,5 +66,36 @@ const original = ["/a"];
 const appended = appendProjectRoot(original, "  /b  ");
 assert.deepEqual(appended, ["/a", "/b"]);
 assert.deepEqual(original, ["/a"]);
+
+// The Agents tab id is accepted; the old "experimental" id stays accepted as a legacy
+// alias that resolves to it; "debug" stays unreachable.
+assert.equal(isSettingsSectionId("agents"), true);
+assert.equal(isSettingsSectionId("experimental"), true);
+assert.equal(isSettingsSectionId("debug"), false);
+assert.deepEqual(
+  [...SETTINGS_SECTION_IDS],
+  [
+    "general",
+    "history",
+    "models",
+    "advanced",
+    "postprocessing",
+    "agents",
+    "experimental",
+    "about",
+  ],
+);
+assert.equal(resolveSectionAlias("experimental"), "agents");
+for (const id of [
+  "general",
+  "history",
+  "models",
+  "advanced",
+  "postprocessing",
+  "agents",
+  "about",
+] as const) {
+  assert.equal(resolveSectionAlias(id), id);
+}
 
 console.log("agentToolsForm.test.ts: all assertions passed");

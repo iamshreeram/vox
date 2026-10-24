@@ -23,7 +23,8 @@
     "history": "Verlauf",
     "debug": "Debug",
     "about": "Info",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "agents": "Agents"
   },
   "onboarding": {
     "subtitle": "Wähle ein Transkriptionsmodell, um loszulegen",
@@ -167,6 +168,10 @@
     },
     "models": {
       "title": "Transkriptionsmodelle",
+      "transcriptionHeading": "Transcription models",
+      "groups": {
+        "vadEngine": "Voice activity detection engine"
+      },
       "description": "Wähle ein Transkriptionsmodell aus oder lade zusätzliche Modelle herunter. Verschiedene Modelle bieten unterschiedliche Genauigkeits- und Geschwindigkeitsstufen.",
       "deleteConfirm": "Bist du sicher, dass du {{modelName}} löschen möchtest? Du musst es erneut herunterladen, um es zu verwenden.",
       "deleteActiveConfirm": "{{modelName}} ist dein aktives Modell. Das Löschen stoppt Transkriptionen, bis du ein neues Modell auswählst. Bist du sicher?",
@@ -242,6 +247,9 @@
           "toggle": "Tastenkombination antippen, um die Aufnahme zu starten, erneut antippen zum Stoppen"
         }
       }
+    },
+    "agents": {
+      "title": "Agents"
     },
     "sound": {
       "title": "Ton",

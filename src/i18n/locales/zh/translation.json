@@ -23,7 +23,8 @@
     "history": "历史记录",
     "debug": "调试",
     "about": "关于",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "agents": "Agents"
   },
   "onboarding": {
     "subtitle": "请选择一个转录模型以开始使用",
@@ -167,6 +168,10 @@
     },
     "models": {
       "title": "转录模型",
+      "transcriptionHeading": "Transcription models",
+      "groups": {
+        "vadEngine": "Voice activity detection engine"
+      },
       "description": "选择转录模型或下载其他模型。不同模型提供不同的准确度和速度。",
       "deleteConfirm": "确定要删除 {{modelName}} 吗？您需要重新下载才能使用。",
       "deleteActiveConfirm": "{{modelName}} 是您当前使用的模型。删除后将停止转录，直到您选择新的模型。确定要删除吗？",
@@ -242,6 +247,9 @@
           "toggle": "轻按快捷键开始录音，再次轻按停止"
         }
       }
+    },
+    "agents": {
+      "title": "Agents"
     },
     "sound": {
       "title": "声音",

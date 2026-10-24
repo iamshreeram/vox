@@ -26,7 +26,10 @@ import {
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
 import { shouldFallBackToGeneral } from "./components/sectionGate";
-import { isSettingsSectionId } from "./components/settings/agentToolsForm";
+import {
+  isSettingsSectionId,
+  resolveSectionAlias,
+} from "./components/settings/agentToolsForm";
 import { WhatsNewGate } from "./components/whats-new";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -212,7 +215,8 @@ function App() {
       // Rust shows the window; the frontend only switches the section, and
       // only for ids that are known, non-debug sidebar sections.
       if (isSettingsSectionId(event.payload)) {
-        setCurrentSection(event.payload);
+        // "experimental" is a legacy alias for "agents"; it is never a sidebar section.
+        setCurrentSection(resolveSectionAlias(event.payload));
       }
     });
     return () => {

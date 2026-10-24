@@ -12,8 +12,8 @@ const scenarios: Record<string, () => void> = {
       [
         "about",
         "advanced",
+        "agents",
         "debug",
-        "experimental",
         "general",
         "history",
         "models",

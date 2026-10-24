@@ -23,7 +23,8 @@
     "history": "Historique",
     "debug": "Débogage",
     "about": "À propos",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "agents": "Agents"
   },
   "onboarding": {
     "subtitle": "Pour commencer, choisissez un modèle de transcription",
@@ -167,6 +168,10 @@
     },
     "models": {
       "title": "Modèles de Transcription",
+      "transcriptionHeading": "Transcription models",
+      "groups": {
+        "vadEngine": "Voice activity detection engine"
+      },
       "description": "Sélectionnez un modèle de transcription ou téléchargez des modèles supplémentaires. Différents modèles offrent différents niveaux de précision et de vitesse.",
       "deleteConfirm": "Êtes-vous sûr de vouloir supprimer {{modelName}} ? Vous devrez le télécharger à nouveau pour l'utiliser.",
       "deleteActiveConfirm": "{{modelName}} est votre modèle actif. Le supprimer arrêtera les transcriptions jusqu'à ce que vous sélectionniez un nouveau modèle. Êtes-vous sûr ?",
@@ -242,6 +247,9 @@
           "toggle": "Appuyez sur le raccourci pour démarrer l'enregistrement, appuyez à nouveau pour arrêter"
         }
       }
+    },
+    "agents": {
+      "title": "Agents"
     },
     "sound": {
       "title": "Son",

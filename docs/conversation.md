@@ -17,8 +17,9 @@ again. You do not press a key for every turn.
 - **Shortcut:** press the conversation shortcut (default `control+option+c`
   on macOS). Press it again to stop.
 - **Tray:** choose "Start or stop conversation" from the tray menu.
-- **Settings:** open Settings, then Experimental, then the Spoken replies group,
-  and use the Start conversation or Stop conversation button.
+- **Settings:** open Settings > Models, then the Spoken replies group (shown when
+  the Experimental switch is on), and use the Start conversation or Stop
+  conversation button.
 
 ## What you can say
 
@@ -67,9 +68,9 @@ by Vox.
 
 The three values are clamped to these ranges. Values outside a range are
 set to the nearest limit. They are saved as soon as you move a slider, and
-they appear in the Experimental settings page, in the Spoken replies group,
-below the speaking-rate setting. That page is shown only when Experimental
-features are turned on.
+they appear in Settings > Models, in the Spoken replies group, below the
+speaking-rate setting. That group is shown only when Experimental features are
+turned on (Settings > Advanced > Experimental features).
 
 Optional features for conversations (smart turn detection, a latency panel,
 personas, and a speaker filter) are described in [Optional voice features](voice-features.md).

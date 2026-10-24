@@ -70,11 +70,13 @@ const comboboxTag = (markup: string): string => {
 const render = (
   isSectionEnabled: (section: SearchSection) => boolean,
   defaultQuery?: string,
+  experimentalEnabled = true,
 ): string =>
   renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
       <SettingsSearchBox
         isSectionEnabled={isSectionEnabled}
+        experimentalEnabled={experimentalEnabled}
         platform="macos"
         onNavigate={() => {}}
         defaultQuery={defaultQuery}
@@ -83,8 +85,6 @@ const render = (
   );
 
 const allEnabled = (): boolean => true;
-const experimentalDisabled = (section: SearchSection): boolean =>
-  section !== "experimental";
 
 const scenarios: Record<string, () => void> = {
   "empty query: closed combobox, no active descendant, no listbox, en placeholder":
@@ -168,7 +168,7 @@ const scenarios: Record<string, () => void> = {
       );
       const setting = enText("settings.advanced.experimentalToggle.label");
       const expected = interpolate(template, { setting });
-      const markup = render(experimentalDisabled, "acceleration");
+      const markup = render(allEnabled, "acceleration", false);
       assert.ok(
         markup.includes(htmlEscape(expected)),
         `expected unlock hint "${expected}"`,
