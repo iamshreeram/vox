@@ -385,7 +385,12 @@
         "advancedLabel": "Pokročilé",
         "promptFlagLabel": "Příznak dotazu",
         "promptFlagDescription": "Příznak, který předá váš požadavek příkazu agenta, například -p. Musí se lišit od příznaku agenta.",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

@@ -90,6 +90,29 @@ impl EscalationSink for Recorder {
             .unwrap()
             .push(format!("error:{user_message}"));
     }
+    fn failed(&self, transcript: &str, message: &str) {
+        self.events
+            .lock()
+            .unwrap()
+            .push(format!("failed:{transcript}|{message}"));
+    }
+}
+
+/// Implements only the required methods, so `failed` must use the default.
+#[derive(Default)]
+struct ErrorOnlySink {
+    events: Mutex<Vec<String>>,
+}
+
+impl EscalationSink for ErrorOnlySink {
+    fn reply(&self, _text: &str) {}
+    fn exchange(&self, _user: &str, _reply: &str) {}
+    fn error(&self, user_message: &str) {
+        self.events
+            .lock()
+            .unwrap()
+            .push(format!("error:{user_message}"));
+    }
 }
 
 fn cfg() -> AcpAgentConfig {
@@ -295,8 +318,42 @@ fn an_error_emits_one_error_event_and_nothing_else() {
     let e = env(&log, true, false, &no_recall, &yes, &t0);
     run_escalation(&p, &sink, &e, &cfg(), TRANSCRIPT);
     let expected = user_message_for(&AcpAgentError::Timeout).expect("timeout has a message");
-    assert_eq!(sink.events(), vec![format!("error:{expected}")]);
+    assert_eq!(
+        sink.events(),
+        vec![format!("failed:{TRANSCRIPT}|{expected}")]
+    );
     assert_eq!(log.len(), 0);
+}
+
+#[test]
+fn escalation_failure_reports_transcript_via_failed() {
+    let log = ConversationLog::new();
+    let p = FakePrompter::with(Err(AcpAgentError::Timeout));
+    let sink = Recorder::default();
+    let e = env(&log, true, false, &no_recall, &yes, &t0);
+    run_escalation(&p, &sink, &e, &cfg(), TRANSCRIPT);
+    let expected = user_message_for(&AcpAgentError::Timeout).expect("timeout has a message");
+    let events = sink.events();
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert!(
+        events[0].starts_with(&format!("failed:{TRANSCRIPT}|")),
+        "{events:?}"
+    );
+    assert!(events[0].ends_with(&expected), "{events:?}");
+    assert!(
+        events.iter().all(|ev| !ev.starts_with("error:")),
+        "plain error line must not be emitted: {events:?}"
+    );
+}
+
+#[test]
+fn sink_default_failed_delegates_to_error() {
+    let sink = ErrorOnlySink::default();
+    sink.failed(TRANSCRIPT, "boom");
+    assert_eq!(
+        sink.events.lock().unwrap().clone(),
+        vec!["error:boom".to_string()]
+    );
 }
 
 fn every_error() -> Vec<AcpAgentError> {

@@ -297,6 +297,40 @@ function App() {
     };
   }, [t]);
 
+  // A request that was accepted but then failed: the agent may have partly run
+  // it, so offer the original request for copying rather than retrying blindly.
+  useEffect(() => {
+    const unlisten = listen<{ transcript: string; message: string }>(
+      "agent-bridge-failed",
+      (event) => {
+        const { transcript, message } = event.payload;
+        toast.error(t("settings.advanced.agentBridge.requestFailedTitle"), {
+          description: `${message} ${t("settings.advanced.agentBridge.mayHavePartlyRun")}`,
+          action: {
+            label: t("settings.advanced.agentBridge.copyRequest"),
+            onClick: () => {
+              navigator.clipboard
+                .writeText(transcript)
+                .then(() => {
+                  toast.success(
+                    t("settings.advanced.agentBridge.requestCopied"),
+                  );
+                })
+                .catch(() => {
+                  toast.error(
+                    t("settings.advanced.agentBridge.copyRequestFailed"),
+                  );
+                });
+            },
+          },
+        });
+      },
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [t]);
+
   // Listen for transcription failures and show a toast.
   // The payload is the backend error message (also logged to handy.log).
   useEffect(() => {

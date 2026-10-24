@@ -385,7 +385,12 @@
         "advancedLabel": "高级",
         "promptFlagLabel": "提示参数",
         "promptFlagDescription": "把您的请求传给智能体命令的参数，例如 -p。必须与智能体参数不同。",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

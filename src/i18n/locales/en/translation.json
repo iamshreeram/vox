@@ -385,7 +385,12 @@
         "advancedLabel": "Advanced (background jobs only)",
         "promptFlagLabel": "Prompt flag",
         "promptFlagDescription": "Background jobs only: the flag that passes your request to the agent command, for example -p. It must differ from the agent flag.",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

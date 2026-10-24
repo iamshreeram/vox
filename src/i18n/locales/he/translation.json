@@ -385,7 +385,12 @@
         "advancedLabel": "מתקדם",
         "promptFlagLabel": "דגל בקשה",
         "promptFlagDescription": "הדגל שמעביר את הבקשה שלכם לפקודת הסוכן, למשל -p. הוא חייב להיות שונה מדגל הסוכן.",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

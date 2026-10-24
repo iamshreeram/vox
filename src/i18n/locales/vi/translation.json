@@ -385,7 +385,12 @@
         "advancedLabel": "Nâng cao",
         "promptFlagLabel": "Cờ yêu cầu",
         "promptFlagDescription": "Cờ truyền yêu cầu của bạn đến lệnh của tác nhân, ví dụ -p. Cờ này phải khác cờ của tác nhân.",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

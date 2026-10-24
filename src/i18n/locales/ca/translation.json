@@ -385,7 +385,12 @@
         "advancedLabel": "Avançat",
         "promptFlagLabel": "Indicador de sol·licitud",
         "promptFlagDescription": "L'indicador que passa la vostra sol·licitud a l'ordre de l'agent, per exemple -p. Ha de ser diferent de l'indicador de l'agent.",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

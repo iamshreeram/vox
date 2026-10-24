@@ -385,7 +385,12 @@
         "advancedLabel": "Додатково",
         "promptFlagLabel": "Прапорець запиту",
         "promptFlagDescription": "Прапорець, який передає ваш запит команді агента, наприклад -p. Він має відрізнятися від прапорця агента.",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

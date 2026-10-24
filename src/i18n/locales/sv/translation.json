@@ -385,7 +385,12 @@
         "advancedLabel": "Avancerat",
         "promptFlagLabel": "Flagga för begäran",
         "promptFlagDescription": "Flaggan som skickar din begäran till agentkommandot, till exempel -p. Den måste skilja sig från agentflaggan.",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

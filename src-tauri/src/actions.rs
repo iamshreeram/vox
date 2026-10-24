@@ -211,15 +211,86 @@ fn should_escalate_to_agent_bridge(
     voice_commands_enabled && acp_agent_enabled && matches!(route, RouteDecision::NoMatch)
 }
 
+/// Outcome of handing a dictation transcript to the ACP agent.
+///
+/// `Queued` means the work was accepted by the blocking pool; it does NOT mean
+/// the agent turn has started. From then on the request is never auto-pasted.
+/// `Rejected` means a synchronous preflight check failed (the error event was
+/// already emitted) and the dictation is pasted as usual.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Handoff {
+    Queued,
+    Rejected,
+}
+
+/// What the caller must do after the built-in router has looked at a transcript.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct RouteEffect {
+    /// `true` when the dictation must NOT be pasted into the active window.
+    pub(crate) skip_paste: bool,
+    /// Description of a voice command that ran successfully.
+    pub(crate) executed: Option<String>,
+    /// Error text from a voice command that failed.
+    pub(crate) exec_error: Option<String>,
+    /// Result of an ACP hand-off, when one was attempted.
+    pub(crate) handoff: Option<Handoff>,
+}
+
+/// Pure routing of one transcript (DESIGN rev 3, section M1). Injected closures
+/// keep it testable: `decide` routes the transcript, `execute` runs a matched
+/// command, `escalate` hands a NoMatch to the ACP agent. With voice commands
+/// off nothing is called. Returned effects are applied by the caller.
+pub(crate) fn apply_route_decision(
+    voice_commands_enabled: bool,
+    acp_agent_enabled: bool,
+    decide: &mut dyn FnMut() -> RouteDecision,
+    execute: &mut dyn FnMut(&CommandAction) -> Result<String, String>,
+    escalate: &mut dyn FnMut() -> Handoff,
+) -> RouteEffect {
+    if !voice_commands_enabled {
+        return RouteEffect::default();
+    }
+    match decide() {
+        RouteDecision::Matched { action } => match execute(&action) {
+            Ok(description) => RouteEffect {
+                skip_paste: true,
+                executed: Some(description),
+                ..RouteEffect::default()
+            },
+            Err(err) => RouteEffect {
+                exec_error: Some(err),
+                ..RouteEffect::default()
+            },
+        },
+        route @ RouteDecision::NoMatch
+            if should_escalate_to_agent_bridge(
+                &route,
+                voice_commands_enabled,
+                acp_agent_enabled,
+            ) =>
+        {
+            let handoff = escalate();
+            RouteEffect {
+                skip_paste: handoff == Handoff::Queued,
+                handoff: Some(handoff),
+                ..RouteEffect::default()
+            }
+        }
+        RouteDecision::NoMatch => RouteEffect::default(),
+    }
+}
+
 /// Sends one finished dictation transcript to the persistent ACP agent (DESIGN
 /// rev 3.1 section 3). Blocking work runs on a blocking thread; results go out
-/// as the existing `agent-bridge-*` events.
-fn escalate_to_acp_agent(app: &AppHandle, settings: &AppSettings, transcript: &str) {
+/// as the existing `agent-bridge-*` events. Returns `Rejected` only for the
+/// synchronous config error (its error event is already emitted), otherwise
+/// `Queued`: accepted by the blocking pool, not necessarily started.
+fn escalate_to_acp_agent(app: &AppHandle, settings: &AppSettings, transcript: &str) -> Handoff {
     let cfg = match acp_agent_config(app, settings) {
         Ok(cfg) => cfg,
         Err(message) => {
             let _ = app.emit("agent-bridge-error", message);
-            return;
+            return Handoff::Rejected;
         }
     };
     let manager = app.state::<Arc<AcpAgentManager>>().inner().clone();
@@ -252,6 +323,7 @@ fn escalate_to_acp_agent(app: &AppHandle, settings: &AppSettings, transcript: &s
         let sink = TauriEscalationSink(app.clone());
         run_escalation(&*manager, &sink, &env, &cfg, &transcript);
     });
+    Handoff::Queued
 }
 
 /// Builds the ACP agent config from settings. A blank command is a user-facing error.
@@ -307,6 +379,15 @@ fn create_private_dir(dir: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)
 }
 
+/// Payload of `agent-bridge-failed`: a request that was accepted but then
+/// failed, so the agent may have partly run it. The transcript lets the user
+/// copy the request. It is never logged.
+#[derive(Clone, serde::Serialize)]
+pub(crate) struct AgentBridgeFailed {
+    pub(crate) transcript: String,
+    pub(crate) message: String,
+}
+
 /// Tauri-event sink for escalation results. Event names and payloads are unchanged.
 struct TauriEscalationSink(AppHandle);
 
@@ -324,6 +405,18 @@ impl EscalationSink for TauriEscalationSink {
 
     fn error(&self, user_message: &str) {
         let _ = self.0.emit("agent-bridge-error", user_message.to_string());
+    }
+
+    /// Later failures emit only `agent-bridge-failed` (one toast, with the
+    /// transcript for copying); `agent-bridge-error` is not emitted for them.
+    fn failed(&self, transcript: &str, message: &str) {
+        let _ = self.0.emit(
+            "agent-bridge-failed",
+            AgentBridgeFailed {
+                transcript: transcript.to_string(),
+                message: message.to_string(),
+            },
+        );
     }
 }
 
@@ -1411,38 +1504,33 @@ impl ShortcutAction for TranscribeAction {
                                 }
                             }
 
-                            if !hook_consumed && hook_settings.voice_commands_enabled {
+                            if !hook_consumed {
                                 let router = ah.state::<Arc<CommandRouter>>();
-                                match router.route(&transcription) {
-                                    RouteDecision::Matched { action } => {
-                                        match execute_command_action(&ah, &action) {
-                                            Ok(description) => {
-                                                info!("Voice command executed: {description}");
-                                                let _ =
-                                                    ah.emit("voice-command-executed", description);
-                                                skip_paste_for_command = true;
-                                            }
-                                            Err(err) => {
-                                                error!("Failed to execute voice command: {err}");
-                                                let _ = ah.emit(
-                                                    "voice-command-error",
-                                                    "Voice command failed.".to_string(),
-                                                );
-                                            }
-                                        }
-                                    }
-                                    RouteDecision::NoMatch
-                                        if should_escalate_to_agent_bridge(
-                                            &RouteDecision::NoMatch,
-                                            hook_settings.voice_commands_enabled,
-                                            hook_settings.acp_agent_enabled,
-                                        ) =>
-                                    {
-                                        let settings = hook_settings.clone();
-                                        escalate_to_acp_agent(&ah, &settings, &transcription);
-                                    }
-                                    RouteDecision::NoMatch => {}
+                                let voice_enabled = hook_settings.voice_commands_enabled;
+                                let acp_enabled = hook_settings.acp_agent_enabled;
+                                let effect = apply_route_decision(
+                                    voice_enabled,
+                                    acp_enabled,
+                                    &mut || router.route(&transcription),
+                                    &mut |action: &CommandAction| {
+                                        execute_command_action(&ah, action)
+                                    },
+                                    &mut || {
+                                        escalate_to_acp_agent(&ah, &hook_settings, &transcription)
+                                    },
+                                );
+                                if let Some(description) = effect.executed {
+                                    info!("Voice command executed: {description}");
+                                    let _ = ah.emit("voice-command-executed", description);
                                 }
+                                if let Some(err) = effect.exec_error {
+                                    error!("Failed to execute voice command: {err}");
+                                    let _ = ah.emit(
+                                        "voice-command-error",
+                                        "Voice command failed.".to_string(),
+                                    );
+                                }
+                                skip_paste_for_command = effect.skip_paste;
                             }
 
                             if hook_settings.memory_enabled {
@@ -2551,3 +2639,7 @@ mod dictation_guard_tests {
 #[cfg(test)]
 #[path = "actions_validate_tests.rs"]
 mod actions_validate_tests;
+
+#[cfg(test)]
+#[path = "actions_route_tests.rs"]
+mod actions_route_tests;

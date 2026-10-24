@@ -385,7 +385,12 @@
         "advancedLabel": "Avanceret",
         "promptFlagLabel": "Forespørgselsflag",
         "promptFlagDescription": "Flaget der sender din forespørgsel til agentkommandoen, for eksempel -p. Det skal være forskelligt fra agentflaget.",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

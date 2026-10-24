@@ -385,7 +385,12 @@
         "advancedLabel": "Gelişmiş",
         "promptFlagLabel": "İstek bayrağı",
         "promptFlagDescription": "İsteğinizi ajan komutuna ileten bayrak, örneğin -p. Ajan bayrağından farklı olmalıdır.",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

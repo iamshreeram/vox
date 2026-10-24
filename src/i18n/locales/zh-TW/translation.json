@@ -385,7 +385,12 @@
         "advancedLabel": "進階",
         "promptFlagLabel": "提示旗標",
         "promptFlagDescription": "將您的請求傳給代理程式指令的旗標，例如 -p。必須與代理程式旗標不同。",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

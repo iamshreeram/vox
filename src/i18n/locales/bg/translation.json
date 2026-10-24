@@ -385,7 +385,12 @@
         "advancedLabel": "Разширени",
         "promptFlagLabel": "Флаг за заявка",
         "promptFlagDescription": "Флагът, който предава вашата заявка на командата на агента, например -p. Трябва да се различава от флага на агента.",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

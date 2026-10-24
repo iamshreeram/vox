@@ -385,7 +385,12 @@
         "advancedLabel": "Lanjutan",
         "promptFlagLabel": "Flag permintaan",
         "promptFlagDescription": "Flag yang meneruskan permintaan Anda ke perintah agen, misalnya -p. Harus berbeda dari flag agen.",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

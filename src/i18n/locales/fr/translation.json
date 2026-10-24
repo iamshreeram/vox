@@ -385,7 +385,12 @@
         "advancedLabel": "Avancé",
         "promptFlagLabel": "Option de requête",
         "promptFlagDescription": "L'option qui transmet votre demande à la commande de l'agent, par exemple -p. Elle doit être différente de l'option de l'agent.",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

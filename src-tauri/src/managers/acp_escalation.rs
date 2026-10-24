@@ -42,6 +42,12 @@ pub trait EscalationSink {
     fn reply(&self, text: &str);
     fn exchange(&self, user: &str, reply: &str);
     fn error(&self, user_message: &str);
+    /// A request that was accepted but then failed after the agent may have
+    /// started work. `transcript` is the original request so the user can copy
+    /// it. Defaults to `error` for sinks that do not need the transcript.
+    fn failed(&self, _transcript: &str, message: &str) {
+        self.error(message);
+    }
 }
 
 pub struct EscalationEnv<'a> {
@@ -83,7 +89,7 @@ pub fn run_escalation<P: AcpPrompter, S: EscalationSink>(
         }
         Err(err) => {
             if let Some(message) = user_message_for(&err) {
-                sink.error(&message);
+                sink.failed(transcript, &message);
             }
         }
     }

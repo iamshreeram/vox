@@ -385,7 +385,12 @@
         "advancedLabel": "Geavanceerd",
         "promptFlagLabel": "Verzoekvlag",
         "promptFlagDescription": "De vlag die je verzoek doorgeeft aan het agentcommando, bijvoorbeeld -p. Die moet verschillen van de agentvlag.",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

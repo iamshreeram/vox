@@ -385,7 +385,12 @@
         "advancedLabel": "詳細設定",
         "promptFlagLabel": "プロンプト用フラグ",
         "promptFlagDescription": "依頼内容をエージェントコマンドに渡すフラグです（例: -p）。エージェント用フラグとは異なる必要があります。",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",

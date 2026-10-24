@@ -385,7 +385,12 @@
         "advancedLabel": "उन्नत",
         "promptFlagLabel": "प्रम्प्ट फ्ल्याग",
         "promptFlagDescription": "तपाईंको अनुरोध एजेन्ट कमान्डमा पठाउने फ्ल्याग, जस्तै -p। यो एजेन्ट फ्ल्यागभन्दा फरक हुनुपर्छ।",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",
