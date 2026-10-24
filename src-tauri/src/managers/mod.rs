@@ -4,6 +4,9 @@ mod acp_agent_tests;
 pub mod acp_escalation;
 #[cfg(test)]
 mod acp_escalation_tests;
+pub mod acp_permission;
+#[cfg(test)]
+mod acp_permission_tests;
 pub mod agent_jobs;
 pub mod agent_jobs_output;
 pub mod agent_tools;
