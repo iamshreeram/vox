@@ -11,8 +11,10 @@ const count = (haystack: string, needle: string): number =>
   haystack.split(needle).length - 1;
 
 const models = read("./models/ModelsSettings.tsx");
-// Everything after the last `return (` is the page's JSX.
-const modelsJsx = models.slice(models.lastIndexOf("return ("));
+// The page JSX starts at the first rendered card (the file also holds hooks and helpers).
+const modelsJsx = models.slice(models.indexOf("<ModelSettingsCard"));
+// A bare `loading` identifier (not a translation key like `groups.loading`, not `downloading`).
+const LOADING_IDENT = /(?<![.\w"'])loading(?![\w"'])/;
 
 const scenarios: Record<string, () => void> = {
   "language/translate card and unload timeout are on the Models page": () => {
@@ -44,7 +46,7 @@ const scenarios: Record<string, () => void> = {
         !/if \(loading\)\s*\{\s*return/.test(models),
         "no whole-page early return while the catalog loads",
       );
-      const firstLoading = modelsJsx.indexOf("loading");
+      const firstLoading = modelsJsx.search(LOADING_IDENT);
       assert.ok(firstLoading > 0, "the list area still shows a loading state");
       const heading = modelsJsx.indexOf("settings.models.transcriptionHeading");
       assert.ok(heading > 0);
