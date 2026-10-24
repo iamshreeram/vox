@@ -54,6 +54,8 @@ pub enum AgentStartError {
     /// The agent is disabled or has no command.
     NotConfigured,
     /// Another agent request holds the agent.
+    // Why: production maps a busy worker to a Failed event; only the loop's tests construct this.
+    #[allow(dead_code)]
     Busy,
     /// Any other failure, with a short user-safe reason.
     Failed(String),
@@ -154,4 +156,25 @@ pub fn cap_result(text: &str) -> String {
 /// True when the hand-off can run: the agent is enabled and has a non-blank command.
 pub fn hand_off_configured(enabled: bool, command: Option<&str>) -> bool {
     enabled && command.is_some_and(|c| !c.trim().is_empty())
+}
+
+/// True when an agent launch is allowed right now: the agent is configured (see
+/// `hand_off_configured`) and the conversation hand-off setting is on. Used by the session
+/// config and again at launch time, so turning the setting off mid-session stops a launch.
+pub fn agent_launch_allowed(enabled: bool, command: Option<&str>, handoff: bool) -> bool {
+    handoff && hand_off_configured(enabled, command)
+}
+
+#[cfg(test)]
+mod agent_launch_gate_tests {
+    use super::agent_launch_allowed;
+
+    #[test]
+    fn launch_needs_the_agent_configured_and_the_handoff_setting_on() {
+        assert!(agent_launch_allowed(true, Some("agent"), true));
+        assert!(!agent_launch_allowed(true, Some("agent"), false));
+        assert!(!agent_launch_allowed(false, Some("agent"), true));
+        assert!(!agent_launch_allowed(true, None, true));
+        assert!(!agent_launch_allowed(true, Some("  "), true));
+    }
 }

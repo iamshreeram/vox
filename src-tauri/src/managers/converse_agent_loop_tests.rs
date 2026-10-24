@@ -1322,7 +1322,7 @@ async fn b4_end_phrase_while_pending_ends_and_cancels_once() {
 /// B4: a session cancel while the run is pending ends the session and cancels the run once.
 #[tokio::test]
 async fn b4_session_cancel_while_pending_cancels_once() {
-    let mut r = rig_with(vec![heard(REQ)], vec![agent_turn(TASK, ACK_TEXT)]);
+    let r = rig_with(vec![heard(REQ)], vec![agent_turn(TASK, ACK_TEXT)]);
     let run_ctl = queue_run(&r);
     let tx = r.cancel.clone();
     r.ears

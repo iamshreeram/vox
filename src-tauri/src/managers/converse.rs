@@ -748,10 +748,11 @@ impl SessionConfig {
             timing_log: rt.timing_log,
             smart_ack: rt.ack,
             answer_only: crate::managers::conversation_save::answer_only_for(s),
-            agent_handoff: crate::managers::converse_agent::hand_off_configured(
+            agent_handoff: crate::managers::converse_agent::agent_launch_allowed(
                 s.acp_agent_enabled,
                 s.acp_agent_command.as_deref(),
-            ) && s.conversation_agent_handoff,
+                s.conversation_agent_handoff,
+            ),
         }
     }
 }
@@ -2424,8 +2425,11 @@ async fn run_turns_loop(
             }
             ListenOutcome::TooLong => {
                 idle_turns = 0;
-                // While the agent is occupied, too-long captures do not count toward the streak.
-                if !converse_agent_loop::agent_occupied(carry) {
+                // While the agent is occupied, too-long captures do not count toward the streak
+                // and do not use the turn budget (max_turns counts user turns only, 2.3).
+                if converse_agent_loop::agent_occupied(carry) {
+                    turns -= 1;
+                } else {
                     consecutive_too_long += 1;
                     if consecutive_too_long >= 2 {
                         return after_speech(
@@ -2460,8 +2464,10 @@ async fn run_turns_loop(
         consecutive_too_long = 0;
 
         if utterance.trim().is_empty() {
-            // While the agent is occupied (run or owed speech), silence does not count (2.3).
+            // While the agent is occupied (run or owed speech), silence does not count and does
+            // not use the turn budget (2.3).
             if converse_agent_loop::agent_occupied(carry) {
+                turns -= 1;
                 continue;
             }
             idle_turns += 1;
@@ -4183,3 +4189,7 @@ mod converse_agent_loop;
 #[cfg(test)]
 #[path = "converse_agent_taint_tests.rs"]
 mod converse_agent_taint_tests;
+
+#[cfg(test)]
+#[path = "converse_agent_fix_tests.rs"]
+mod converse_agent_fix_tests;

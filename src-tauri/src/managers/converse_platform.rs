@@ -24,7 +24,7 @@ use crate::managers::converse::{
     QuietOutcome, SayOutcome, SessionConfig, SessionEnd, SpeechQueue, TranscriptSink,
 };
 use crate::managers::converse_agent::{
-    cap_result, hand_off_configured, AgentEvent, AgentPoll, AgentRun, AgentStartError,
+    agent_launch_allowed, cap_result, AgentEvent, AgentPoll, AgentRun, AgentStartError,
     PreparedAgentLaunch, AGENT_FAILED_FALLBACK,
 };
 use crate::managers::converse_audio::{wait_for_speech_end, SpeechProbe, WaitOutcome};
@@ -587,9 +587,11 @@ impl Hands for RealHands {
         role: Option<&str>,
     ) -> Result<PreparedAgentLaunch, AgentStartError> {
         let settings = get_settings(&self.app);
-        if !hand_off_configured(
+        // Re-read here: turning the hand-off setting off mid-session stops a forced launch.
+        if !agent_launch_allowed(
             settings.acp_agent_enabled,
             settings.acp_agent_command.as_deref(),
+            settings.conversation_agent_handoff,
         ) {
             return Err(AgentStartError::NotConfigured);
         }
@@ -649,6 +651,10 @@ impl Hands for RealHands {
             let event = match worker.prompt_with_handle(&cfg, &prompt, opts, &handle) {
                 Ok(reply) => AgentEvent::Done(cap_result(&reply.text)),
                 Err(AcpAgentError::Cancelled) => AgentEvent::Cancelled,
+                // Same words as the loop's busy line, so the user hears one fixed line.
+                Err(AcpAgentError::Busy) => {
+                    AgentEvent::Failed("The agent is busy right now.".to_string())
+                }
                 Err(err) => AgentEvent::Failed(
                     user_message_for(&err).unwrap_or_else(|| AGENT_FAILED_FALLBACK.to_string()),
                 ),

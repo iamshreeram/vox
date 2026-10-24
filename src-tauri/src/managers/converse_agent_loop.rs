@@ -70,6 +70,16 @@ pub(super) struct AgentSlot {
     phase: Phase,
     /// Run time of the last progress line, if one was spoken.
     last_progress: Option<Duration>,
+    /// Set once the run was cancelled or reported a terminal event. Nothing is cancelled again.
+    settled: bool,
+}
+
+/// A slot dropped without a terminal event (for example by a panic that unwinds through the loop)
+/// cancels its run once, so no agent keeps running after its owner is gone.
+impl Drop for AgentSlot {
+    fn drop(&mut self) {
+        self.cancel();
+    }
 }
 
 impl AgentSlot {
@@ -79,6 +89,7 @@ impl AgentSlot {
             turn_timeout,
             phase: Phase::Running,
             last_progress: None,
+            settled: false,
         }
     }
 
@@ -90,8 +101,12 @@ impl AgentSlot {
         lock_or_recover(&self.run).elapsed()
     }
 
-    fn cancel(&self) {
-        lock_or_recover(&self.run).cancel();
+    /// Asks the run to stop, at most once. Never waits.
+    fn cancel(&mut self) {
+        if !self.settled {
+            self.settled = true;
+            lock_or_recover(&self.run).cancel();
+        }
     }
     /// Absolute deadline from the start of the run: three launch timeouts plus the slack.
     fn deadline(&self) -> Duration {
@@ -194,15 +209,20 @@ pub(super) fn collect_agent_events(
         }
         Phase::Running => match poll {
             AgentPoll::Event(AgentEvent::Done(text)) => {
+                slot.settled = true;
                 finish_done(carry, history, cfg, hands, &text);
                 false
             }
             AgentPoll::Event(AgentEvent::Failed(message)) => {
+                slot.settled = true;
                 push_line(carry, &failure_line(&message));
                 false
             }
             // The Cancelled line was spoken by the voice cancel; nothing more to say.
-            AgentPoll::Event(AgentEvent::Cancelled) => false,
+            AgentPoll::Event(AgentEvent::Cancelled) => {
+                slot.settled = true;
+                false
+            }
             AgentPoll::Lost => {
                 slot.cancel();
                 push_line(carry, LINE_LOST);
@@ -396,7 +416,7 @@ pub(super) fn cancel_agent_run(carry: &mut Carry) {
 /// Session end (2.3): a run still `Running` is cancelled once and dropped. Nothing is spoken and
 /// nothing waits. A `Cancelling` run was already cancelled.
 pub(super) fn end_agent_session(carry: &mut Carry) {
-    if let Some(slot) = carry.agent.take() {
+    if let Some(mut slot) = carry.agent.take() {
         if slot.phase == Phase::Running {
             slot.cancel();
         }
