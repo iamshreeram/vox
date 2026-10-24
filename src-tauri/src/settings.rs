@@ -723,8 +723,10 @@ pub struct AppSettings {
     /// Seconds allowed for one agent turn.
     #[serde(default = "default_acp_agent_turn_timeout_secs")]
     pub acp_agent_turn_timeout_secs: u64,
-    /// How agent permission requests are decided. Defaults to asking before writes.
-    #[serde(default)]
+    /// How agent permission requests are decided. A stored object without this key
+    /// (or with an invalid value) keeps asking before writes. Only a fresh store
+    /// starts from the fresh-install default.
+    #[serde(default = "default_acp_permission_mode")]
     pub acp_permission_mode: PermissionMode,
     /// Seconds one approval prompt waits for the user before it is rejected.
     #[serde(default = "default_acp_permission_timeout_secs")]
@@ -1264,6 +1266,12 @@ pub const ACP_PERMISSION_TIMEOUT_MAX_SECS: u64 = 300;
 
 fn default_acp_permission_timeout_secs() -> u64 {
     ACP_PERMISSION_TIMEOUT_DEFAULT_SECS
+}
+
+/// Serde default for a stored object that lacks `acp_permission_mode`. Existing
+/// stores never gain `AllowAll` implicitly.
+fn default_acp_permission_mode() -> PermissionMode {
+    PermissionMode::AskWrites
 }
 
 /// Clamps an approval timeout into 10..=300 seconds. Applied on every read, because a
@@ -1995,7 +2003,7 @@ pub fn get_default_settings() -> AppSettings {
         acp_agent_command: None,
         acp_agent_args: String::new(),
         acp_agent_turn_timeout_secs: default_acp_agent_turn_timeout_secs(),
-        acp_permission_mode: PermissionMode::default(),
+        acp_permission_mode: PermissionMode::AllowAll,
         acp_permission_timeout_secs: default_acp_permission_timeout_secs(),
         tts_enabled: false,
         tts_voice: None,
@@ -2208,13 +2216,22 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
 /// (e.g. an enum variant written by a newer or older version) fall back to
 /// their default. This means one bad field can never reset the rest of the
 /// user's configuration (#1619).
+/// Defaults for an EXISTING store that could not be read as a whole. Identical to
+/// the fresh-install defaults except the approval mode, which stays `AskWrites`, so
+/// a missing or invalid stored mode never becomes `AllowAll` implicitly.
+fn existing_store_defaults() -> AppSettings {
+    let mut settings = get_default_settings();
+    settings.acp_permission_mode = PermissionMode::AskWrites;
+    settings
+}
+
 fn salvage_settings(stored: &serde_json::Value) -> AppSettings {
     let Some(stored_map) = stored.as_object() else {
         warn!("Stored settings are not a JSON object; falling back to defaults");
-        return get_default_settings();
+        return existing_store_defaults();
     };
 
-    let mut merged = serde_json::to_value(get_default_settings())
+    let mut merged = serde_json::to_value(existing_store_defaults())
         .expect("default settings serialize to a JSON object");
 
     for (key, value) in stored_map {
@@ -2237,7 +2254,7 @@ fn salvage_settings(stored: &serde_json::Value) -> AppSettings {
 
     serde_json::from_value(merged).unwrap_or_else(|e| {
         warn!("Failed to reassemble salvaged settings ({e}); falling back to defaults");
-        get_default_settings()
+        existing_store_defaults()
     })
 }
 
@@ -2397,6 +2414,12 @@ pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeri
     let settings = get_settings(app);
     settings.recording_retention_period
 }
+
+// Why a child module here: `salvage_settings` is private, so the migration tests
+// must be a child of `settings`. Test-only; no production code.
+#[cfg(test)]
+#[path = "settings_permission_migration_tests.rs"]
+mod permission_migration_tests;
 
 #[cfg(test)]
 mod tests {

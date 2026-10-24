@@ -71,6 +71,8 @@ fn acp_permission_settings_applies_clamp_and_mode() {
 #[test]
 fn default_settings_use_ask_writes_and_60() {
     let defaults = get_default_settings();
-    assert_eq!(defaults.acp_permission_mode, PermissionMode::AskWrites);
+    // Changed by the user's decision of 2026-10-24: a FRESH install defaults to AllowAll.
+    // Existing stores keep AskWrites (see settings_permission_migration_tests.rs).
+    assert_eq!(defaults.acp_permission_mode, PermissionMode::AllowAll);
     assert_eq!(defaults.acp_permission_timeout_secs, 60);
 }

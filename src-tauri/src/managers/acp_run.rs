@@ -22,12 +22,18 @@
 //! Poisoned mutexes are recovered with `into_inner`: the state is plain data
 //! and every transition leaves it consistent.
 
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 /// Multiple of the base turn timeout that bounds the whole turn, approval
 /// pauses included.
 const HARD_DEADLINE_TURNS: u32 = 3;
+
+/// Maximum number of cancelled-before-begin tokens remembered at once. When the
+/// set is full the oldest entry is evicted and `cancel_floor` is raised past it,
+/// so an evicted token can never become startable (fail closed).
+const PRECANCEL_CAP: usize = 64;
 
 /// Maximum permission requests one run may present to the user (flood guard).
 /// Further requests in the same run are answered Cancelled without prompting.
@@ -60,6 +66,9 @@ pub enum BeginError {
     Busy,
     /// This handle's token already began once. Tokens are never reused.
     Consumed,
+    /// This handle was cancelled before it began (or its latch was evicted
+    /// past the cancel floor). The token is consumed.
+    Cancelled,
 }
 
 /// Result of recording the agent's session id for a run.
@@ -215,6 +224,32 @@ struct State {
     run: Option<ActiveRun>,
     next_token: u64,
     last_begun: u64,
+    /// Tokens cancelled before they began. Bounded by `PRECANCEL_CAP`.
+    precancelled: BTreeSet<u64>,
+    /// Every token `<= cancel_floor` is refused at begin.
+    cancel_floor: u64,
+}
+
+impl State {
+    /// Latches a not-yet-begun `token`. Evicts the oldest entry when full and
+    /// raises the floor past it, so evicted tokens stay refused.
+    fn latch_precancel(&mut self, token: u64) {
+        if token <= self.cancel_floor || self.precancelled.contains(&token) {
+            return;
+        }
+        if self.precancelled.len() >= PRECANCEL_CAP {
+            if let Some(evicted) = self.precancelled.pop_first() {
+                self.cancel_floor = self.cancel_floor.max(evicted);
+            }
+        }
+        self.precancelled.insert(token);
+    }
+
+    /// Records that `token` was consumed by a rejected begin.
+    fn consume(&mut self, token: u64) {
+        self.last_begun = self.last_begun.max(token);
+        self.precancelled.remove(&token);
+    }
 }
 
 /// Returns the active run if it is `token` and has not finished.
@@ -277,15 +312,23 @@ impl RunRegistry {
 
     /// Makes `handle` the active run.
     ///
-    /// Fails with [`BeginError::Busy`] while another run is unfinished, and with
-    /// [`BeginError::Consumed`] for a token that has already begun. A Busy handle
-    /// never becomes active and so can never cancel.
+    /// Fails with [`BeginError::Cancelled`] for a token that was cancelled before
+    /// it began (or is at or below the cancel floor), with [`BeginError::Busy`]
+    /// while another run is unfinished, and with [`BeginError::Consumed`] for a
+    /// token that has already begun. A begin rejected by a cancel, latch or floor
+    /// consumes the token, so a retry is refused. A Busy rejection does not
+    /// consume it. A rejected handle never becomes active and so can never cancel.
     pub fn begin(&self, handle: &RunHandle) -> Result<(), BeginError> {
         let mut state = self.lock();
+        let token = handle.token;
+        if token <= state.cancel_floor || state.precancelled.contains(&token) {
+            state.consume(token);
+            return Err(BeginError::Cancelled);
+        }
         if state.run.as_ref().is_some_and(|r| !r.finished) {
             return Err(BeginError::Busy);
         }
-        if handle.token <= state.last_begun {
+        if token <= state.last_begun {
             return Err(BeginError::Consumed);
         }
         state.last_begun = handle.token;
@@ -366,8 +409,13 @@ impl RunRegistry {
         }
     }
 
-    /// Cancels the live run `handle`. Returns true only for the call that
-    /// latched the cancel; repeats and stale or Busy handles return false.
+    /// Cancels `handle`.
+    ///
+    /// Returns true only when this call cancelled a LIVE (begun) run. A handle
+    /// that has not begun is latched silently (bounded, see `PRECANCEL_CAP`) and
+    /// returns false; its later begin is refused with [`BeginError::Cancelled`].
+    /// Repeats, finished runs and tokens already consumed return false and never
+    /// un-cancel anything.
     ///
     /// The latch is set under the lock. If the session is known, `cancel_line`
     /// formats the session/cancel line outside the lock (it is a user callback),
@@ -378,6 +426,11 @@ impl RunRegistry {
             let mut state = self.lock();
             let conn_gen = state.connection.as_ref().map(|c| c.conn_gen);
             let Some(run) = live_run(&mut state, handle.token) else {
+                // Not live. A token above `last_begun` has never begun: latch it.
+                // Anything at or below it is finished or consumed: nothing to do.
+                if handle.token > state.last_begun {
+                    state.latch_precancel(handle.token);
+                }
                 return false;
             };
             if run.cancel_latched {

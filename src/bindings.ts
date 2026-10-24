@@ -2514,7 +2514,12 @@ export type PermissionMode =
 /**
  * Reject every request without asking.
  */
-"deny"
+"deny" | 
+/**
+ * Select the request's `allow_once` option without asking ("Allow everything").
+ * Never selects `allow_always`. With no `allow_once` offered it asks.
+ */
+"allow_all"
 /**
  * A persona. `style` feeds `tts_composer_style`; `voice` (a curated natural
  * voice id) feeds `tts_natural_voice` when present.

@@ -3,9 +3,13 @@ pub mod acp_agent;
 mod acp_agent_permission_tests;
 #[cfg(test)]
 mod acp_agent_tests;
+#[cfg(test)]
+mod acp_allow_all_tests;
 pub mod acp_escalation;
 #[cfg(test)]
 mod acp_escalation_tests;
+#[cfg(test)]
+mod acp_latch_tests;
 pub mod acp_permission;
 pub mod acp_permission_broker;
 #[cfg(test)]

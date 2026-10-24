@@ -460,8 +460,10 @@ impl AcpAgentManager {
             retire(&old, RetireReason::Replaced);
         }
         // Why after reserve: a caller that is Busy never begins, so it can never cancel.
+        // A cancelled-before-begin handle is refused here, before any connect or prompt.
         self.inner.registry.begin(handle).map_err(|e| match e {
             BeginError::Busy | BeginError::Consumed => AcpAgentError::Busy,
+            BeginError::Cancelled => AcpAgentError::Cancelled,
         })?;
         let timing = Arc::new(Mutex::new(TurnTiming::new(started, cfg.turn_timeout)));
         *lock(&self.inner.run_timing) = Some((handle.token(), Arc::clone(&timing)));
