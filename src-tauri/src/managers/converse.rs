@@ -2428,7 +2428,7 @@ async fn run_turns_loop(
                 // While the agent is occupied, too-long captures do not count toward the streak
                 // and do not use the turn budget (max_turns counts user turns only, 2.3).
                 if converse_agent_loop::agent_occupied(carry) {
-                    turns -= 1;
+                    turns = turns.saturating_sub(1);
                 } else {
                     consecutive_too_long += 1;
                     if consecutive_too_long >= 2 {
@@ -2448,7 +2448,7 @@ async fn run_turns_loop(
             ListenOutcome::NoSpeech => String::new(),
             ListenOutcome::Ignored => {
                 // A foreign voice: no turn budget, no brain, no speech, not a too-long streak.
-                turns -= 1;
+                turns = turns.saturating_sub(1);
                 consecutive_too_long = 0;
                 consecutive_ignored += 1;
                 if consecutive_ignored < IGNORED_STREAK_LIMIT {
@@ -2456,6 +2456,8 @@ async fn run_turns_loop(
                 }
                 // The fifth in a row counts exactly like NoSpeech.
                 consecutive_ignored = 0;
+                // Restore the turn taken above: this capture counts exactly like NoSpeech.
+                turns += 1;
                 String::new()
             }
             ListenOutcome::Utterance(text) => text,
@@ -2467,7 +2469,7 @@ async fn run_turns_loop(
             // While the agent is occupied (run or owed speech), silence does not count and does
             // not use the turn budget (2.3).
             if converse_agent_loop::agent_occupied(carry) {
-                turns -= 1;
+                turns = turns.saturating_sub(1);
                 continue;
             }
             idle_turns += 1;

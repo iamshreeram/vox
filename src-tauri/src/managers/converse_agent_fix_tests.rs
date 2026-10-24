@@ -222,3 +222,98 @@ async fn fix_session_end_after_a_terminal_event_does_not_cancel_again() {
     assert_eq!(end, SessionEnd::UserEnded);
     assert_eq!(run_ctl.cancels(), 0, "a finished run is not cancelled");
 }
+
+/// `n` foreign-voice listens (`ListenOutcome::Ignored`).
+fn ignored(n: usize) -> Vec<Step> {
+    (0..n).map(|_| outcome(ListenOutcome::Ignored)).collect()
+}
+
+/// (2d-a) Twelve foreign-voice listens in a row while the run is pending (max_turns = 3) do not
+/// consume the user-turn budget, do not panic (debug builds) and do not end the session. The result
+/// is delivered; the user's stop ends the session normally.
+#[tokio::test]
+async fn fix_ignored_listens_while_a_run_is_pending_do_not_use_the_turn_budget() {
+    let run_ctl = RunCtl::new();
+    let mut steps = vec![heard(REQ)];
+    steps.extend(ignored(12));
+    steps.push(finish_run_here(&run_ctl));
+    steps.push(heard("stop"));
+    let r = rig_with(steps, vec![agent_turn(TASK, ACK_TEXT)]);
+    r.hands
+        .starts
+        .lock()
+        .unwrap()
+        .push_back(Ok(run_ctl.clone()));
+    let cfg = SessionConfig {
+        max_turns: 3,
+        ..acfg()
+    };
+    let end = run(&r, &cfg).await;
+    assert_eq!(
+        end,
+        SessionEnd::UserEnded,
+        "foreign voices must not end the session by turn limit: {:?}",
+        entries(&r)
+    );
+    assert!(
+        spoken(&r).iter().any(|s| s == RESULT),
+        "the result was spoken"
+    );
+    assert_eq!(published(&r), vec![RESULT.to_string()], "published once");
+}
+
+/// (2d-b) Twenty-three foreign-voice listens in runs of six, separated by silence, while the run
+/// is pending: the same guarantee as (a) with the streak limit reached several times.
+#[tokio::test]
+async fn fix_ignored_listens_interleaved_with_silence_do_not_use_the_turn_budget() {
+    let run_ctl = RunCtl::new();
+    let mut steps = vec![heard(REQ)];
+    for i in 0..23 {
+        steps.push(outcome(ListenOutcome::Ignored));
+        if (i + 1) % 6 == 0 {
+            steps.push(silent());
+        }
+    }
+    steps.push(finish_run_here(&run_ctl));
+    steps.push(heard("stop"));
+    let r = rig_with(steps, vec![agent_turn(TASK, ACK_TEXT)]);
+    r.hands
+        .starts
+        .lock()
+        .unwrap()
+        .push_back(Ok(run_ctl.clone()));
+    let cfg = SessionConfig {
+        max_turns: 3,
+        ..acfg()
+    };
+    let end = run(&r, &cfg).await;
+    assert_eq!(
+        end,
+        SessionEnd::UserEnded,
+        "interleaved foreign voices must not end the session by turn limit: {:?}",
+        entries(&r)
+    );
+    assert!(
+        spoken(&r).iter().any(|s| s == RESULT),
+        "the result was spoken"
+    );
+    assert_eq!(published(&r), vec![RESULT.to_string()], "published once");
+}
+
+/// (2d-c) Guard: with NO run pending, five foreign-voice listens in a row count like one NoSpeech
+/// at the idle limit: the session ends Idle with the stop line, and the turn budget is unchanged.
+#[tokio::test]
+async fn fix_five_ignored_without_a_run_end_idle_like_nospeech() {
+    let r = rig_with(ignored(5), vec![]);
+    let cfg = SessionConfig {
+        max_idle_turns: 1,
+        max_turns: 3,
+        ..acfg()
+    };
+    let end = run(&r, &cfg).await;
+    assert_eq!(end, SessionEnd::Idle, "{:?}", entries(&r));
+    assert_eq!(
+        spoken(&r).last().map(String::as_str),
+        Some(MSG_STOP_LISTENING)
+    );
+}
