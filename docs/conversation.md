@@ -32,6 +32,39 @@ again. You do not press a key for every turn.
 - **Actions** can open apps and web links, and send media keys (play, pause,
   next). See the safety notes below.
 - **Questions** get a spoken answer from the reply backend.
+- **Roles** change who Vox is for the rest of the conversation. See below.
+
+## Roles and lessons
+
+Say it in your own words: "act like a teacher teaching computers to a six
+year old", "pretend you are a quiz host", "you are now a pirate". Vox
+confirms the role out loud and stays in it until you take it away or the
+conversation ends. The role is kept apart from the recent exchanges, so it
+does not fall out of context after a few turns. Vox adds no topic or role
+filter of its own. The reply model's own rules still apply.
+
+- **Start a task in the same breath.** "Act like a teacher teaching computers
+  to a six year old, and start the lesson" confirms the role, then begins the
+  lesson. A role with no task is only confirmed; Vox does not start talking.
+- **Long answers are spoken in short parts** of up to three sentences, so you
+  can interrupt between them. Turn on "Interrupt by speaking" (headphones)
+  to cut in with a question.
+- **Continue after a question.** Say "and then continue" when you set the
+  role and Vox answers each interruption, says "Let's continue." and picks
+  up where it stopped. Otherwise say "continue", "go on" or "carry on".
+  A part that was cut off is repeated from its start. If a question's own
+  answer is interrupted, the unspoken rest of that answer is dropped; the
+  lesson itself is kept.
+- **Stop the role** by saying "back to normal", "stop acting", "stop the
+  role", "drop the role" or "end the role". These are matched only when they
+  are the whole sentence, and they clear a paused lesson too. "I am back to
+  normal" is treated as an ordinary sentence.
+- **Limits.** A role lasts 1500 characters. A lesson that stays paused for
+  ten minutes is forgotten. Nothing is saved after the conversation ends.
+  With Vault context on, Vox still only answers: a role can be set but no
+  paste, command or job runs.
+- Open apps, media keys, dictation, ending the conversation and cancelling a
+  job are still handled locally first, whatever the role.
 
 ## Context
 
