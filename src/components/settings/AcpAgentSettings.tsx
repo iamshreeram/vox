@@ -52,8 +52,8 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
       getSetting("acp_permission_timeout_secs") ?? 60;
     const conversationHandoff =
       getSetting("conversation_agent_handoff") ?? true;
-    // Shown as off until the stored value loads; the stored value decides after that.
-    const conversationPlanner = getSetting("conversation_planner") ?? false;
+    // The backend default is on; the stored value decides once settings load.
+    const conversationPlanner = getSetting("conversation_planner") ?? true;
 
     const [commandDraft, setCommandDraft] = useState(storedCommand ?? "");
     const [commandError, setCommandError] = useState<AcpFormError | null>(null);

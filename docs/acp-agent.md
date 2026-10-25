@@ -64,6 +64,27 @@ Hey Jarvis conversations can hand open-ended requests to this agent. See [Handin
 - The conversation's role is carried as plain text inside the request.
 - The **Approval mode** applies to these requests, the same as to dictation.
 
+### Specialist agents
+
+Conversation plans can run different steps on different agents. See
+[Plans and specialist agents](conversation.md#plans-and-specialist-agents).
+
+- Four optional profiles exist: **research**, **browser**, **code** and
+  **files**. Each has a command and arguments.
+- A blank command means that step type uses the main agent. **General** steps
+  always use the main agent.
+- The main agent must still be on, with a command set. A specialist profile
+  alone does not enable anything.
+- The specialist rows sit on the same Agent settings page as the ACP agent,
+  next to the **Plan multi-step requests** toggle. That toggle is on by default
+  but does nothing unless hand-off is on. Turn it off to keep single-agent
+  hand-off.
+- Commands follow the same rules as the main command: absolute path, no control
+  characters. Arguments are split on spaces, with no quoting.
+- Do not put secrets in arguments.
+- The working folder, the approval mode and the turn timeout come from the main
+  agent settings.
+
 ## Timeouts and failures
 
 - **Turn timeout.** When a turn exceeds the turn timeout, Vox cancels the request, discards any partial text, and **stops the agent process**. The next request starts a new process. Time spent waiting for your answer to an approval does not count toward this timeout, but a turn never runs longer than three times the turn timeout.
