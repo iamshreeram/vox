@@ -264,50 +264,62 @@ impl LowPriorityMouth for RecordingLowMouth {
 
 fn job_plan(project: &str, task: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         kind: PlanKind::Job,
         speech: "On it.".to_string(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        role: None,
         job: Some(JobRequest {
             project: project.to_string(),
             task: task.to_string(),
             agent: None,
             mode: crate::managers::converse_plan::JobMode::Task,
         }),
+        agent: None,
     }
 }
 
 fn paste_plan(text: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         kind: PlanKind::Paste,
         speech: "Typing.".to_string(),
         emotion: Emotion::Neutral,
         paste_text: Some(text.to_string()),
         command: None,
         job: None,
+        role: None,
+        agent: None,
     }
 }
 
 fn command_plan(cmd: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         kind: PlanKind::Command,
         speech: "Opening.".to_string(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: Some(cmd.to_string()),
         job: None,
+        role: None,
+        agent: None,
     }
 }
 
 fn answer_plan(speech: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         kind: PlanKind::Answer,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
         job: None,
+        role: None,
+        agent: None,
     }
 }
 

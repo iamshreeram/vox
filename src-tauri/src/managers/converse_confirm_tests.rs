@@ -22,12 +22,15 @@ use std::time::{Duration, Instant};
 
 fn plan(kind: PlanKind) -> TurnPlan {
     TurnPlan {
+        plan: None,
         kind,
         speech: String::new(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
         job: None,
+        role: None,
+        agent: None,
     }
 }
 

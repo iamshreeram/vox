@@ -358,7 +358,10 @@ while True:
     }
 
     fn opts(reuse_session: bool) -> PromptOptions {
-        PromptOptions { reuse_session }
+        PromptOptions {
+            reuse_session,
+            expected_epoch: None,
+        }
     }
 
     struct Fake {
@@ -1382,6 +1385,7 @@ mod non_unix_tests {
                 "hi",
                 PromptOptions {
                     reuse_session: true,
+                    expected_epoch: None,
                 },
             )
             .unwrap_err();

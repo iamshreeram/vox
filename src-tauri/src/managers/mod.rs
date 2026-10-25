@@ -3,9 +3,13 @@ pub mod acp_agent;
 mod acp_agent_permission_tests;
 #[cfg(test)]
 mod acp_agent_tests;
+#[cfg(test)]
+mod acp_allow_all_tests;
 pub mod acp_escalation;
 #[cfg(test)]
 mod acp_escalation_tests;
+#[cfg(test)]
+mod acp_latch_tests;
 pub mod acp_permission;
 pub mod acp_permission_broker;
 #[cfg(test)]
@@ -20,6 +24,9 @@ pub mod acp_run;
 mod acp_run_tests;
 pub mod agent_jobs;
 pub mod agent_jobs_output;
+pub mod agent_settings_gate;
+#[cfg(test)]
+mod agent_settings_gate_tests;
 pub mod agent_tools;
 pub mod ambient;
 pub mod ambient_listener;
@@ -40,6 +47,7 @@ pub mod conversation_store;
 mod conversation_store_tests;
 pub mod converse;
 pub mod converse_ack;
+pub mod converse_agent;
 pub mod converse_audio;
 pub mod converse_barge;
 #[cfg(test)]
@@ -62,12 +70,19 @@ pub mod converse_overlay;
 pub mod converse_plan;
 #[cfg(test)]
 mod converse_plan_vault_tests;
+#[cfg(test)]
+mod converse_planner_launch_tests;
+#[cfg(test)]
+mod converse_planner_loop_tests;
+#[cfg(test)]
+mod converse_planner_wiring_tests;
 pub mod converse_platform;
 pub mod converse_queue;
 #[cfg(test)]
 mod converse_rag_probe_tests;
 #[cfg(test)]
 mod converse_rag_tests;
+pub mod converse_role;
 pub mod converse_runtime;
 pub mod converse_stream;
 pub mod emotion;
@@ -135,6 +150,7 @@ pub mod natural_voices;
 pub mod ort_sessions;
 pub mod ownership;
 pub mod persona;
+mod plan_clock;
 pub mod realtime_complete;
 pub mod realtime_config;
 pub mod redact;

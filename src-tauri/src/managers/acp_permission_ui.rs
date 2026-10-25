@@ -5,12 +5,14 @@
 //! `resolve`. Titles, details and tokens are never logged.
 
 use crate::managers::acp_agent::AcpAgentManager;
+use crate::managers::acp_permission::PermissionMode;
 use crate::managers::acp_permission::UserChoice;
 use crate::managers::acp_permission::{OperationDetails, ToolKind};
 use crate::managers::acp_permission_broker::{
     PermissionBroker, PermissionPrompter, PermissionView,
 };
 use serde::Serialize;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -18,6 +20,12 @@ use tauri::{AppHandle, Emitter, Manager};
 pub const EVENT_REQUEST: &str = "acp-permission-request";
 /// Event emitted when a permission prompt is hidden, whatever the reason.
 pub const EVENT_CLOSED: &str = "acp-permission-closed";
+/// Event emitted (no payload) at most once per launch, when an agent run starts under
+/// `AllowAll`, so the user sees that approvals are off.
+pub const EVENT_ALLOW_ALL_ACTIVE: &str = "acp-allow-all-active";
+
+/// Set once the `acp-allow-all-active` event has been emitted in this process.
+static ALLOW_ALL_NOTICE_SENT: AtomicBool = AtomicBool::new(false);
 
 /// Payload of [`EVENT_REQUEST`]. Title and details are untrusted text for display only.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -140,6 +148,34 @@ impl PermissionPrompter for TauriPermissionPrompter {
             log::debug!("permission close event not delivered: {err}");
         }
     }
+}
+
+/// Calls `emit` when `mode` is `AllowAll` and no notice was sent through `sent` yet. Returns
+/// whether it emitted. `sent` and `emit` are parameters so tests need neither a static nor an
+/// `AppHandle`.
+pub fn notify_allow_all_once_with(
+    sent: &AtomicBool,
+    mode: PermissionMode,
+    emit: impl FnOnce(),
+) -> bool {
+    if mode != PermissionMode::AllowAll {
+        return false;
+    }
+    if sent.swap(true, Ordering::SeqCst) {
+        return false;
+    }
+    emit();
+    true
+}
+
+/// Tells the frontend, once per launch, that every agent action is allowed without asking.
+/// Called right before an agent run starts. Does nothing for other modes.
+pub fn notify_allow_all_once(app: &AppHandle, mode: PermissionMode) {
+    notify_allow_all_once_with(&ALLOW_ALL_NOTICE_SENT, mode, || {
+        if let Err(err) = app.emit(EVENT_ALLOW_ALL_ACTIVE, ()) {
+            log::debug!("allow-all notice not delivered: {err}");
+        }
+    });
 }
 
 /// Returns the broker of the managed [`AcpAgentManager`], or `None` when permissions are not

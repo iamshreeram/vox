@@ -7,6 +7,10 @@
 //! Session audio is never saved and never written to history.
 
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
+use crate::managers::acp_agent::{AcpAgentConfig, AcpAgentError, AcpAgentManager, PromptOptions};
+use crate::managers::acp_escalation::user_message_for;
+use crate::managers::acp_run::RunHandle;
+use crate::managers::agent_settings_gate::{process_gate, read_stable};
 use crate::managers::agent_tools::tauri_backends::build_tauri_executor;
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::composer_config::{settings_from_app, TtsComposerMode};
@@ -19,6 +23,10 @@ use crate::managers::conversation_store::ConversationStore;
 use crate::managers::converse::{
     endpoint_config, BoxFuture, Brain, Ears, Hands, ListenOutcome, Mouth, PhraseOutcome,
     QuietOutcome, SayOutcome, SessionConfig, SessionEnd, SpeechQueue, TranscriptSink,
+};
+use crate::managers::converse_agent::{
+    agent_launch_allowed, cap_result, resolve_step_agent, AgentEvent, AgentPoll, AgentRun,
+    AgentStartError, PreparedAgentLaunch, AGENT_FAILED_FALLBACK,
 };
 use crate::managers::converse_audio::{wait_for_speech_end, SpeechProbe, WaitOutcome};
 use crate::managers::converse_barge::BargeIn;
@@ -36,7 +44,8 @@ use crate::managers::converse_confirm::{
 use crate::managers::converse_latency::{LatencyEvent, EVENT_NAME};
 use crate::managers::converse_overlay::{OverlayDispatcher, ReadyGate};
 use crate::managers::converse_plan::{
-    build_plan_prompt, JobParsePolicy, PlanError, PlanInput, PlanKind, PlanPrompt, TurnPlan,
+    build_plan_prompt, JobParsePolicy, PlanError, PlanInput, PlanKind, PlanPrompt, StepKind,
+    TurnPlan,
 };
 use crate::managers::converse_queue::TtsQueueSession;
 use crate::managers::converse_runtime::{
@@ -63,6 +72,7 @@ use crate::overlay::{RealOverlayExecutor, RealOverlaySink};
 use crate::settings::{get_settings, AppSettings};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
@@ -572,6 +582,228 @@ impl Hands for RealHands {
     fn has_active_job(&self) -> bool {
         has_active_job_on(self.jobs.as_ref())
     }
+
+    fn prepare_agent_launch(
+        &self,
+        task: &str,
+        role: Option<&str>,
+    ) -> Result<PreparedAgentLaunch, AgentStartError> {
+        let (epoch, launch) = read_stable(&process_gate(), || {
+            let settings = get_settings(&self.app);
+            // Re-read here: turning the hand-off setting off mid-session stops a forced launch.
+            if !agent_launch_allowed(
+                settings.acp_agent_enabled,
+                settings.acp_agent_command.as_deref(),
+                settings.conversation_agent_handoff,
+            ) {
+                return Err(AgentStartError::NotConfigured);
+            }
+            let cfg = crate::actions::acp_agent_config(&self.app, &settings)
+                .map_err(AgentStartError::Failed)?;
+            Ok(PreparedAgentLaunch::new(
+                task.to_string(),
+                role.map(str::to_string),
+                cfg.command.to_string_lossy().into_owned(),
+                cfg.args,
+                cfg.cwd.to_string_lossy().into_owned(),
+                cfg.turn_timeout,
+            ))
+        })
+        .map_err(settings_changing)?;
+        // Why: the epoch is the generation the settings were read under (A3-R3); start refuses it
+        // once the settings change.
+        Ok(launch.with_epoch(epoch))
+    }
+
+    fn prepare_agent_launch_for(
+        &self,
+        kind: StepKind,
+        task: &str,
+        role: Option<&str>,
+    ) -> Result<PreparedAgentLaunch, AgentStartError> {
+        prepare_typed_launch(&self.app, kind, task, role, true)
+    }
+
+    fn prepare_agent_launch_typed(
+        &self,
+        kind: StepKind,
+        task: &str,
+        role: Option<&str>,
+    ) -> Result<PreparedAgentLaunch, AgentStartError> {
+        prepare_typed_launch(&self.app, kind, task, role, false)
+    }
+
+    fn agent_launch_still_valid(&self, launch: &PreparedAgentLaunch) -> bool {
+        let settings = get_settings(&self.app);
+        // A plan step also needs the planner setting on (DESIGN 2.5, A2).
+        if launch.in_plan && !settings.conversation_planner {
+            return false;
+        }
+        // Revalidate each launch the way it was prepared: a plan step, a typed single request, or
+        // a general single request on the main agent (today's path).
+        let live = if launch.in_plan {
+            self.prepare_agent_launch_for(launch.step_kind, &launch.task, launch.role.as_deref())
+        } else if launch.step_kind == StepKind::General {
+            self.prepare_agent_launch(&launch.task, launch.role.as_deref())
+        } else {
+            self.prepare_agent_launch_typed(launch.step_kind, &launch.task, launch.role.as_deref())
+        };
+        match live {
+            Ok(live) => live.fingerprint == launch.fingerprint,
+            Err(_) => false,
+        }
+    }
+
+    fn start_agent(
+        &self,
+        launch: PreparedAgentLaunch,
+    ) -> Result<Box<dyn AgentRun>, AgentStartError> {
+        let manager = self
+            .app
+            .try_state::<Arc<AcpAgentManager>>()
+            .map(|state| state.inner().clone())
+            .ok_or(AgentStartError::Unsupported)?;
+        let settings = get_settings(&self.app);
+        crate::managers::acp_permission_ui::notify_allow_all_once(
+            &self.app,
+            settings.acp_permission_mode,
+        );
+        // Built from the prepared launch only: the settings are not read again here.
+        let cfg = AcpAgentConfig {
+            command: PathBuf::from(&launch.command),
+            args: launch.args.clone(),
+            cwd: PathBuf::from(&launch.cwd),
+            turn_timeout: launch.turn_timeout,
+            handshake_timeout: AGENT_HANDSHAKE_TIMEOUT,
+            cancel_grace: AGENT_CANCEL_GRACE,
+        };
+        let prompt = launch.wire_prompt();
+        let handle = manager.new_run_handle();
+        let (tx, rx) = std::sync::mpsc::channel::<AgentEvent>();
+        let worker = manager.clone();
+        // A fresh ACP session per request, so nothing carries over between requests or into
+        // dictation. The worker sends exactly one terminal event; if it panics, `tx` is dropped
+        // and the run reports `Lost`.
+        // Why: admission refuses the run if the settings changed after it was prepared (A3-R3).
+        let opts = PromptOptions {
+            reuse_session: false,
+            expected_epoch: Some(launch.epoch),
+        };
+        drop(tauri::async_runtime::spawn_blocking(move || {
+            let event = match worker.prompt_with_handle(&cfg, &prompt, opts, &handle) {
+                Ok(reply) => AgentEvent::Done(cap_result(&reply.text)),
+                Err(AcpAgentError::Cancelled) => AgentEvent::Cancelled,
+                // Same words as the loop's busy line, so the user hears one fixed line.
+                Err(AcpAgentError::Busy) => {
+                    AgentEvent::Failed("The agent is busy right now.".to_string())
+                }
+                Err(err) => AgentEvent::Failed(
+                    user_message_for(&err).unwrap_or_else(|| AGENT_FAILED_FALLBACK.to_string()),
+                ),
+            };
+            let _ = tx.send(event);
+        }));
+        Ok(Box::new(AcpAgentRun {
+            events: rx,
+            manager,
+            handle,
+            started: Instant::now(),
+            delivered: false,
+        }))
+    }
+
+    fn publish_agent_result(&self, text: &str) {
+        let _ = self.app.emit("agent-bridge-reply", text.to_string());
+    }
+}
+
+/// The fixed line of a launch prepared while the settings were being changed (A3-R3). The loop
+/// speaks its own line for a failed preparation, so this text is never spoken as is.
+const SETTINGS_CHANGING: &str = "The agent settings are changing.";
+
+/// Stage 4: the launch of a typed step (`in_plan` true) or of a typed single request (`in_plan`
+/// false), read under the settings gate. The profile is resolved here; the working directory is
+/// the main agent's, as for every step (DESIGN 2.2).
+fn prepare_typed_launch(
+    app: &AppHandle,
+    kind: StepKind,
+    task: &str,
+    role: Option<&str>,
+    in_plan: bool,
+) -> Result<PreparedAgentLaunch, AgentStartError> {
+    let (epoch, launch) = read_stable(&process_gate(), || {
+        let settings = get_settings(app);
+        // Same master gates as the single agent (DESIGN 2.5).
+        if !agent_launch_allowed(
+            settings.acp_agent_enabled,
+            settings.acp_agent_command.as_deref(),
+            settings.conversation_agent_handoff,
+        ) {
+            return Err(AgentStartError::NotConfigured);
+        }
+        let resolved = resolve_step_agent(&settings, kind)?;
+        let cfg =
+            crate::actions::acp_agent_config(app, &settings).map_err(AgentStartError::Failed)?;
+        Ok(PreparedAgentLaunch::for_step(
+            resolved,
+            cfg.cwd.to_string_lossy().into_owned(),
+            kind,
+            task,
+            role,
+            in_plan,
+        ))
+    })
+    .map_err(settings_changing)?;
+    Ok(launch.with_epoch(epoch))
+}
+
+/// Maps a failed guarded read to the preparation error (A3-R3): a read during an update, or one
+/// that kept changing, is a transient failure.
+fn settings_changing(err: Option<AgentStartError>) -> AgentStartError {
+    err.unwrap_or_else(|| AgentStartError::Failed(SETTINGS_CHANGING.to_string()))
+}
+
+/// Handshake limit of an agent run (the same value `acp_agent_config` uses).
+const AGENT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(60);
+/// Cancel grace of an agent run (the same value `acp_agent_config` uses).
+const AGENT_CANCEL_GRACE: Duration = Duration::from_secs(3);
+
+/// One agent run started by `RealHands::start_agent`. `poll` never blocks; `cancel` only asks the
+/// manager to stop the run and returns at once.
+struct AcpAgentRun {
+    events: std::sync::mpsc::Receiver<AgentEvent>,
+    manager: Arc<AcpAgentManager>,
+    handle: RunHandle,
+    started: Instant,
+    /// Set once a terminal event (or `Lost`) was returned; later polls stay `Pending`.
+    delivered: bool,
+}
+
+impl AgentRun for AcpAgentRun {
+    fn poll(&mut self) -> AgentPoll {
+        if self.delivered {
+            return AgentPoll::Pending;
+        }
+        match self.events.try_recv() {
+            Ok(event) => {
+                self.delivered = true;
+                AgentPoll::Event(event)
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => AgentPoll::Pending,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.delivered = true;
+                AgentPoll::Lost
+            }
+        }
+    }
+
+    fn cancel(&self) {
+        let _ = self.manager.cancel(&self.handle);
+    }
+
+    fn elapsed(&self) -> Duration {
+        self.started.elapsed()
+    }
 }
 
 struct RealBrain {
@@ -692,8 +924,16 @@ pub(crate) async fn plan_with_tools(
         last_draft: input.last_draft,
         style: input.style,
         vault_context: None,
+        role: input.role,
+        lesson_paused: input.lesson_paused,
+        roles_enabled: input.roles_enabled,
+        agent_enabled: input.agent_enabled,
+        planner_enabled: input.planner_enabled,
     };
-    let policy = job_parse_policy(settings);
+    let policy = JobParsePolicy {
+        role_active: input.role.is_some(),
+        ..job_parse_policy(settings)
+    };
     let prompt = planner_prompt_for_policy(&base, &policy);
     let system = format!("{}{TOOLS_ADDENDUM}", prompt.system);
     let first_user = match vault {
@@ -1366,12 +1606,15 @@ pub(crate) fn guard_plan(plan: TurnPlan, taint: &TaintState, guard_actions: bool
         return plan;
     }
     TurnPlan {
+        plan: None,
         job: None,
         kind: PlanKind::Answer,
         speech: REFUSAL_SPEECH.to_string(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        role: None,
+        agent: None,
     }
 }
 
@@ -1586,6 +1829,7 @@ pub(crate) fn job_parse_policy(settings: &AppSettings) -> JobParsePolicy {
         jobs_allowed,
         ask_allowed,
         agents,
+        role_active: false,
     }
 }
 
@@ -1624,6 +1868,10 @@ mod converse_platform_policy_tests;
 #[cfg(test)]
 #[path = "converse_platform_m4_tests.rs"]
 mod converse_platform_m4_tests;
+
+#[cfg(test)]
+#[path = "converse_role_seam_tests.rs"]
+mod converse_role_seam_tests;
 
 // ---------------------------------------------------------------------
 // Vault RAG wiring, tool probe and the BrainCore seam (DESIGN Rev 5, 3.2, 3.3, 3.6).
@@ -1943,7 +2191,10 @@ async fn plan_plain(
     on_text: Option<&mut (dyn FnMut(&str) + Send)>,
 ) -> Result<TurnPlan, PlanError> {
     let deadline = effective_deadline(settings);
-    let policy = job_parse_policy(settings);
+    let policy = JobParsePolicy {
+        role_active: input.role.is_some(),
+        ..job_parse_policy(settings)
+    };
     let prompt = planner_prompt_for_policy(input, &policy);
     let raw = match on_text {
         Some(on_text) => {

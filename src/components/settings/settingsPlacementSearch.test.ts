@@ -247,6 +247,11 @@ const scenarios: Record<string, () => void> = {
           "settings.advanced.acpPermission.timeout.label",
           "settings.advanced.acpPermission.timeout.description",
         ],
+        [
+          "experimental.acpConversationHandoff",
+          "settings.advanced.acpAgent.conversationHandoff.label",
+          "settings.advanced.acpAgent.conversationHandoff.description",
+        ],
       ];
       for (const [id, labelKey, descriptionKey] of wanted) {
         const e = SEARCH_ENTRIES.find((x) => x.id === id);

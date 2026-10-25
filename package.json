@@ -35,6 +35,7 @@
     "test:realtime-form": "bun src/components/settings/realtimeForm.test.ts",
     "test:vault-rag": "bun src/components/settings/vaultRagForm.test.ts",
     "test:acp-agent-form": "bun src/components/settings/acpAgentForm.test.ts",
+    "test:step-agents-form": "bun src/components/settings/stepAgentsForm.test.ts",
     "test:permission-prompt": "bun src/components/agent/permissionViewModel.test.ts",
     "test:agent-jobs": "bun src/lib/agentJobs.test.ts",
     "test:tts-voices": "bun src/lib/ttsVoices.test.ts",

@@ -365,6 +365,9 @@ pub enum PermissionMode {
     AskAll,
     /// Reject every request without asking.
     Deny,
+    /// Select the request's `allow_once` option without asking ("Allow everything").
+    /// Never selects `allow_always`. With no `allow_once` offered it asks.
+    AllowAll,
 }
 
 /// Result of the automatic policy for one request.
@@ -386,7 +389,8 @@ pub enum AutoDecision {
 
 /// Applies the automatic policy for `mode`. See the module docs for the trust boundary.
 ///
-/// `Deny` rejects. `AskAll` always asks. `AskWrites` allows only when the kind
+/// `Deny` rejects. `AskAll` always asks. `AllowAll` selects `allow_once` for every
+/// request that offers one, whatever its kind or `rawInput`. `AskWrites` allows only when the kind
 /// is Read, Search or Think, `rawInput` has no contradicting key, and an
 /// `allow_once` option exists. Everything else asks. `allow_always` is never
 /// selected.
@@ -396,6 +400,10 @@ pub fn decide_auto(mode: PermissionMode, req: &PermissionRequest) -> AutoDecisio
             option_id: first_option(req, PermOptionKind::RejectOnce),
         },
         PermissionMode::AskAll => AutoDecision::Ask,
+        PermissionMode::AllowAll => match first_option(req, PermOptionKind::AllowOnce) {
+            Some(option_id) => AutoDecision::Allow { option_id },
+            None => AutoDecision::Ask,
+        },
         PermissionMode::AskWrites => {
             let read_like = matches!(
                 req.kind,

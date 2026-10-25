@@ -473,6 +473,7 @@ main()
     fn opts() -> PromptOptions {
         PromptOptions {
             reuse_session: true,
+            expected_epoch: None,
         }
     }
 
@@ -489,6 +490,7 @@ main()
                 text,
                 PromptOptions {
                     reuse_session: reuse,
+                    expected_epoch: None,
                 },
             )
         })
@@ -1052,6 +1054,7 @@ main()
                 "first",
                 PromptOptions {
                     reuse_session: false,
+                    expected_epoch: None,
                 },
                 &h,
             )
@@ -1066,6 +1069,7 @@ main()
                 "second",
                 PromptOptions {
                     reuse_session: false,
+                    expected_epoch: None,
                 },
             )
             .unwrap();

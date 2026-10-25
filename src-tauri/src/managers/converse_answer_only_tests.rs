@@ -132,18 +132,22 @@ impl Brain for ABrain {
 
 fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         job: None,
+        role: None,
         kind,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        agent: None,
     }
 }
 
 fn paste_plan() -> TurnPlan {
     TurnPlan {
         job: None,
+        role: None,
         paste_text: Some("model-written body".to_string()),
         ..plan(PlanKind::Paste, "Pasted it.")
     }
@@ -152,6 +156,7 @@ fn paste_plan() -> TurnPlan {
 fn command_plan() -> TurnPlan {
     TurnPlan {
         job: None,
+        role: None,
         command: Some("open safari".to_string()),
         ..plan(PlanKind::Command, "Opening Safari.")
     }

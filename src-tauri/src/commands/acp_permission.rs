@@ -2,7 +2,9 @@
 
 use crate::managers::acp_permission::PermissionMode;
 use crate::managers::acp_permission_ui::{broker_from_app, respond};
-use crate::settings::{clamp_permission_timeout_secs, get_settings, write_settings, AppSettings};
+use crate::settings::{
+    clamp_permission_timeout_secs, get_settings, write_settings, write_settings_gated, AppSettings,
+};
 use tauri::AppHandle;
 
 /// Answers the approval prompt `token`. `allow` selects an allow-once option, otherwise the
@@ -22,9 +24,7 @@ pub fn change_acp_permission_mode_setting(
     app: AppHandle,
     mode: PermissionMode,
 ) -> Result<(), String> {
-    let mut settings = get_settings(&app);
-    apply_acp_permission_mode(&mut settings, mode);
-    write_settings(&app, settings);
+    write_settings_gated(&app, |settings| apply_acp_permission_mode(settings, mode));
     Ok(())
 }
 
@@ -37,6 +37,33 @@ pub fn change_acp_permission_timeout_secs_setting(app: AppHandle, secs: u64) -> 
     apply_acp_permission_timeout(&mut settings, secs);
     write_settings(&app, settings);
     Ok(())
+}
+
+/// Stores whether Hey Jarvis conversations may hand open-ended requests to the ACP agent.
+#[tauri::command]
+#[specta::specta]
+pub fn change_conversation_agent_handoff_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    write_settings_gated(&app, |settings| {
+        apply_conversation_agent_handoff(settings, enabled)
+    });
+    Ok(())
+}
+
+/// Stores whether conversation mode may run a multi-step plan (Stage 4). Effective only with the
+/// hand-off on. A change is gated like the hand-off flag.
+#[tauri::command]
+#[specta::specta]
+pub fn change_conversation_planner_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    write_settings_gated(&app, |settings| settings.conversation_planner = enabled);
+    Ok(())
+}
+
+/// Sets the conversation hand-off flag on `settings`. Pure, so it can be tested without Tauri.
+pub fn apply_conversation_agent_handoff(settings: &mut AppSettings, enabled: bool) {
+    settings.conversation_agent_handoff = enabled;
 }
 
 /// Sets the approval policy on `settings`. Pure, so the stored value can be tested without Tauri.

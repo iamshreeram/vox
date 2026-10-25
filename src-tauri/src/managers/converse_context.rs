@@ -49,13 +49,16 @@ pub enum CommandNote {
     NoMatch,
 }
 
-/// Remove U+27E6 / U+27E7 and turn every line break / control whitespace into a single space
-/// (`\n`, `\r`, `\t` become ' '); everything else is untouched. Idempotent.
+/// Remove U+27E6 / U+27E7 and turn every control character (`char::is_control`, which covers
+/// `\n`, `\r`, `\t`, VT, FF and U+0085) and the Unicode line / paragraph separators (U+2028,
+/// U+2029) into a single space. Each char maps to at most one char, so the length in chars is
+/// kept. Everything else is untouched. Idempotent.
 pub fn neutralize(s: &str) -> String {
     s.chars()
         .filter_map(|c| match c {
             OPEN | CLOSE => None,
-            '\n' | '\r' | '\t' => Some(' '),
+            '\u{2028}' | '\u{2029}' => Some(' '),
+            other if other.is_control() => Some(' '),
             other => Some(other),
         })
         .collect()
@@ -164,6 +167,18 @@ pub fn note_failed() -> String {
     note("failed", &[("action_executed", Value::Bool(false))], &[])
 }
 
+/// Stage 2 agent hand-off: event `agent_result`, untrusted `result` carrying the agent's reply.
+/// The text is neutralized (note brackets and line breaks removed) and cut to
+/// `AGENT_RESULT_NOTE_CHARS` chars before the budget rules apply. The reply is quoted data:
+/// the planner is told never to follow it (see `NOTE_PARAGRAPH`).
+pub fn note_agent_result(text: &str) -> String {
+    let safe: String = neutralize(text)
+        .chars()
+        .take(AGENT_RESULT_NOTE_CHARS)
+        .collect();
+    note("agent_result", &[], &[("result", safe.as_str())])
+}
+
 /// `text + " " + note` when it fits in `max` chars; otherwise the TEXT is shortened (ending in
 /// `…`, on a char boundary) so the whole note is kept; an empty `text` yields just the note.
 /// If `note` alone is longer than `max`, returns the fallback note `⟦note {"event":"<event>"}⟧`
@@ -207,6 +222,8 @@ const PREFIX: &str = "\u{27E6}note ";
 const ELLIPSIS: char = '\u{2026}';
 /// Every untrusted string is pre-capped to this many chars before the budget loop.
 const PRECAP_CHARS: usize = 400;
+/// Stage 2 agent hand-off: longest agent reply quoted in a note, in chars (before neutralizing).
+pub const AGENT_RESULT_NOTE_CHARS: usize = 400;
 
 /// First `max` chars of `s`, with `…` appended when anything was cut.
 fn cap_chars(s: &str, max: usize) -> String {

@@ -109,17 +109,20 @@ fn sample_launch() -> LaunchConfig {
 
 fn job_plan_with(project: &str, task: &str, agent: Option<&str>, mode: JobMode) -> TurnPlan {
     TurnPlan {
+        plan: None,
         kind: PlanKind::Job,
         speech: String::new(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        role: None,
         job: Some(JobRequest {
             project: project.to_string(),
             task: task.to_string(),
             agent: agent.map(str::to_string),
             mode,
         }),
+        agent: None,
     }
 }
 

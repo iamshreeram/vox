@@ -723,12 +723,26 @@ pub struct AppSettings {
     /// Seconds allowed for one agent turn.
     #[serde(default = "default_acp_agent_turn_timeout_secs")]
     pub acp_agent_turn_timeout_secs: u64,
-    /// How agent permission requests are decided. Defaults to asking before writes.
-    #[serde(default)]
+    /// How agent permission requests are decided. A stored object without this key
+    /// (or with an invalid value) keeps asking before writes. Only a fresh store
+    /// starts from the fresh-install default.
+    #[serde(default = "default_acp_permission_mode")]
     pub acp_permission_mode: PermissionMode,
     /// Seconds one approval prompt waits for the user before it is rejected.
     #[serde(default = "default_acp_permission_timeout_secs")]
     pub acp_permission_timeout_secs: u64,
+    /// Let Hey Jarvis conversations hand open-ended requests to the ACP agent. Used by
+    /// conversations only; a missing key means on.
+    #[serde(default = "default_conversation_agent_handoff")]
+    pub conversation_agent_handoff: bool,
+    /// Stage 4 planner: let conversations split one open-ended request into typed steps (a
+    /// `plan`). Effective only together with `conversation_agent_handoff`. A missing key means on.
+    #[serde(default = "default_conversation_planner")]
+    pub conversation_planner: bool,
+    /// Stage 4: optional specialist agents, one per step type. Every slot unset means each step
+    /// runs on the main ACP agent.
+    #[serde(default)]
+    pub acp_step_agents: StepAgents,
     /// Speak agent replies and a generic confirmation/failure phrase aloud.
     /// Opt-in: spoken output audibly exposes agent reply content.
     #[serde(default)]
@@ -1264,6 +1278,94 @@ pub const ACP_PERMISSION_TIMEOUT_MAX_SECS: u64 = 300;
 
 fn default_acp_permission_timeout_secs() -> u64 {
     ACP_PERMISSION_TIMEOUT_DEFAULT_SECS
+}
+
+/// Stage 4: one specialist agent for a step type, the program and its arguments.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
+pub struct StepAgentProfile {
+    /// Absolute path to the agent program.
+    pub command: String,
+    /// Arguments, split on ASCII whitespace like the main agent's arguments.
+    pub args: String,
+}
+
+/// Stage 4: the optional specialist agents, one slot per step type. An unset slot means the
+/// step runs on the main ACP agent. `general` steps have no slot and always use the main agent.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, Type)]
+pub struct StepAgents {
+    #[serde(default)]
+    pub research: Option<StepAgentProfile>,
+    #[serde(default)]
+    pub browser: Option<StepAgentProfile>,
+    #[serde(default)]
+    pub code: Option<StepAgentProfile>,
+    #[serde(default)]
+    pub files: Option<StepAgentProfile>,
+}
+
+impl StepAgents {
+    /// The slot for a step type word. Any other word, `general` included, has no slot.
+    fn slot_mut(&mut self, step_type: &str) -> Result<&mut Option<StepAgentProfile>, String> {
+        match step_type {
+            "research" => Ok(&mut self.research),
+            "browser" => Ok(&mut self.browser),
+            "code" => Ok(&mut self.code),
+            "files" => Ok(&mut self.files),
+            _ => Err("Unknown step type for a specialist agent".to_string()),
+        }
+    }
+}
+
+/// Stage 4: stores or clears one specialist agent. A blank or missing `command` clears the slot.
+/// The command goes through `normalize_acp_agent_command` and the arguments through
+/// `validate_acp_agent_args`, and the step type must name a slot. Every check runs before the
+/// write, so a rejected value leaves `settings` untouched.
+pub fn apply_step_agent_setting(
+    settings: &mut AppSettings,
+    step_type: &str,
+    command: Option<&str>,
+    args: &str,
+) -> Result<(), String> {
+    let command = normalize_acp_agent_command(command.unwrap_or(""))?;
+    validate_acp_agent_args(args)?;
+    let slot = settings.acp_step_agents.slot_mut(step_type)?;
+    *slot = command.map(|command| StepAgentProfile {
+        command,
+        args: args.trim().to_string(),
+    });
+    Ok(())
+}
+
+/// Stage 4 (A8): the launch fields of `committed`, which only `write_settings_gated` may change:
+/// the hand-off and planner flags, the main agent's enablement, command, arguments, turn timeout
+/// and approval mode, and the specialist agents. Returns `incoming` with those fields replaced by
+/// the committed values, and every other field as incoming.
+pub fn preserve_launch_fields(mut incoming: AppSettings, committed: &AppSettings) -> AppSettings {
+    incoming.acp_agent_enabled = committed.acp_agent_enabled;
+    incoming.acp_agent_command = committed.acp_agent_command.clone();
+    incoming.acp_agent_args = committed.acp_agent_args.clone();
+    incoming.acp_agent_turn_timeout_secs = committed.acp_agent_turn_timeout_secs;
+    incoming.acp_permission_mode = committed.acp_permission_mode;
+    incoming.acp_step_agents = committed.acp_step_agents.clone();
+    incoming.conversation_agent_handoff = committed.conversation_agent_handoff;
+    incoming.conversation_planner = committed.conversation_planner;
+    incoming
+}
+
+/// Serde default for `conversation_agent_handoff`: on for stores that lack the key.
+fn default_conversation_agent_handoff() -> bool {
+    true
+}
+
+/// Serde default for `conversation_planner`: on for stores that lack the key.
+fn default_conversation_planner() -> bool {
+    true
+}
+
+/// Serde default for a stored object that lacks `acp_permission_mode`. Existing
+/// stores never gain `AllowAll` implicitly.
+fn default_acp_permission_mode() -> PermissionMode {
+    PermissionMode::AskWrites
 }
 
 /// Clamps an approval timeout into 10..=300 seconds. Applied on every read, because a
@@ -1995,8 +2097,11 @@ pub fn get_default_settings() -> AppSettings {
         acp_agent_command: None,
         acp_agent_args: String::new(),
         acp_agent_turn_timeout_secs: default_acp_agent_turn_timeout_secs(),
-        acp_permission_mode: PermissionMode::default(),
+        acp_permission_mode: PermissionMode::AllowAll,
         acp_permission_timeout_secs: default_acp_permission_timeout_secs(),
+        conversation_agent_handoff: default_conversation_agent_handoff(),
+        conversation_planner: default_conversation_planner(),
+        acp_step_agents: StepAgents::default(),
         tts_enabled: false,
         tts_voice: None,
         tts_rate_wpm: default_tts_rate_wpm(),
@@ -2186,18 +2291,18 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         }
 
         if updated {
-            store.set("settings", serde_json::to_value(&settings).unwrap());
+            write_settings(app, settings.clone());
         }
 
         settings
     } else {
         let default_settings = get_default_settings();
-        store.set("settings", serde_json::to_value(&default_settings).unwrap());
+        write_settings(app, default_settings.clone());
         default_settings
     };
 
     if ensure_post_process_defaults(&mut settings) {
-        store.set("settings", serde_json::to_value(&settings).unwrap());
+        write_settings(app, settings.clone());
     }
 
     settings
@@ -2208,13 +2313,22 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
 /// (e.g. an enum variant written by a newer or older version) fall back to
 /// their default. This means one bad field can never reset the rest of the
 /// user's configuration (#1619).
+/// Defaults for an EXISTING store that could not be read as a whole. Identical to
+/// the fresh-install defaults except the approval mode, which stays `AskWrites`, so
+/// a missing or invalid stored mode never becomes `AllowAll` implicitly.
+fn existing_store_defaults() -> AppSettings {
+    let mut settings = get_default_settings();
+    settings.acp_permission_mode = PermissionMode::AskWrites;
+    settings
+}
+
 fn salvage_settings(stored: &serde_json::Value) -> AppSettings {
     let Some(stored_map) = stored.as_object() else {
         warn!("Stored settings are not a JSON object; falling back to defaults");
-        return get_default_settings();
+        return existing_store_defaults();
     };
 
-    let mut merged = serde_json::to_value(get_default_settings())
+    let mut merged = serde_json::to_value(existing_store_defaults())
         .expect("default settings serialize to a JSON object");
 
     for (key, value) in stored_map {
@@ -2237,7 +2351,7 @@ fn salvage_settings(stored: &serde_json::Value) -> AppSettings {
 
     serde_json::from_value(merged).unwrap_or_else(|e| {
         warn!("Failed to reassemble salvaged settings ({e}); falling back to defaults");
-        get_default_settings()
+        existing_store_defaults()
     })
 }
 
@@ -2366,12 +2480,58 @@ pub fn update_checks_effectively_enabled(settings: &AppSettings) -> bool {
     settings.update_checks_enabled && !update_checks_forced_disabled()
 }
 
-pub fn write_settings(app: &AppHandle, settings: AppSettings) {
+/// Serializes whole-object writes of the stored settings. `write_settings` reads the committed
+/// launch fields and then writes, and that pair must not interleave with another writer.
+static SETTINGS_WRITE_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn lock_settings_writes() -> std::sync::MutexGuard<'static, ()> {
+    SETTINGS_WRITE_GUARD
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Writes `incoming` as the stored settings object, except the launch fields, which keep their
+/// committed values (Stage 4 A8). A caller that holds a stale whole object (for example one read
+/// before a launch-field change) cannot restore an old executable, flag, hand-off or specialist
+/// profile. Launch fields change only through `write_settings_gated`.
+pub fn write_settings(app: &AppHandle, incoming: AppSettings) {
     let store = app
         .store(crate::portable::store_path(SETTINGS_STORE_PATH))
         .expect("Failed to initialize store");
+    let _guard = lock_settings_writes();
+    let settings = match store.get("settings") {
+        Some(stored) => {
+            let committed = serde_json::from_value::<AppSettings>(stored.clone())
+                .unwrap_or_else(|_| salvage_settings(&stored));
+            preserve_launch_fields(incoming, &committed)
+        }
+        None => incoming,
+    };
+    match serde_json::to_value(&settings) {
+        Ok(value) => store.set("settings", value),
+        Err(e) => warn!("Failed to serialize settings ({e}); the stored settings are unchanged"),
+    }
+}
 
-    store.set("settings", serde_json::to_value(&settings).unwrap());
+/// Changes launch-affecting settings (Stage 4 A3-R3, A8). `apply` runs on the settings read
+/// inside the process-wide gate, so a concurrent setter's change is never overwritten by a stale
+/// object. The gate is odd while the store is written. Only the setters of the launch fields call
+/// this; every other writer uses `write_settings`, which keeps the committed launch fields.
+pub(crate) fn write_settings_gated(app: &AppHandle, apply: impl FnOnce(&mut AppSettings)) {
+    crate::managers::agent_settings_gate::process_gate().with_update(|| {
+        let mut settings = get_settings(app);
+        apply(&mut settings);
+        let store = app
+            .store(crate::portable::store_path(SETTINGS_STORE_PATH))
+            .expect("Failed to initialize store");
+        let _guard = lock_settings_writes();
+        match serde_json::to_value(&settings) {
+            Ok(value) => store.set("settings", value),
+            Err(e) => {
+                warn!("Failed to serialize settings ({e}); the stored settings are unchanged")
+            }
+        }
+    });
 }
 
 pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {
@@ -2397,6 +2557,18 @@ pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeri
     let settings = get_settings(app);
     settings.recording_retention_period
 }
+
+// Why a child module here: `salvage_settings` is private, so the migration tests
+// must be a child of `settings`. Test-only; no production code.
+#[cfg(test)]
+#[path = "settings_permission_migration_tests.rs"]
+mod permission_migration_tests;
+
+// Why a child module here: the step-agent and planner settings tests need the private
+// `salvage_settings`. Test-only; no production code.
+#[cfg(test)]
+#[path = "settings_step_agents_tests.rs"]
+mod step_agents_tests;
 
 #[cfg(test)]
 mod tests {
@@ -2663,10 +2835,11 @@ mod tests {
             serde_json::json!([1, 2, 3]),
         ] {
             let salvaged = salvage_settings(&stored);
-            assert_eq!(
-                serde_json::to_value(&salvaged).unwrap(),
-                default_settings_json()
-            );
+            // An EXISTING store that cannot be read must never recover into the fresh-install
+            // AllowAll default (design Stage 2 rev 3, 2.7): it salvages to AskWrites.
+            let mut expected = default_settings_json();
+            expected["acp_permission_mode"] = serde_json::json!("ask_writes");
+            assert_eq!(serde_json::to_value(&salvaged).unwrap(), expected);
         }
     }
 
