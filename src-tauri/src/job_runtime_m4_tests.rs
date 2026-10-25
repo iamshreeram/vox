@@ -64,6 +64,16 @@ fn quick_shutdown() -> ShutdownConfig {
     }
 }
 
+/// Cancels the manager's job when dropped, so a failing assertion never leaves the
+/// `sleep 30` fake CLI group running (cancel is a no-op when idle).
+struct CancelOnDrop(Arc<JobManager>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
 /// Writes an executable `sh` script named `fake-cli` into `dir`.
 #[cfg(unix)]
 fn write_cli(dir: &Path, body: &str) -> PathBuf {
@@ -265,6 +275,7 @@ fn install_hooks_admit_the_started_job_and_drop_the_previous_one() {
     let dir = tempfile::tempdir().expect("tempdir");
     let bin = write_cli(dir.path(), "sleep 30");
     let mgr = fast_manager();
+    let _cancel = CancelOnDrop(Arc::clone(&mgr));
     let tokens = SummaryTokens::new();
     install_summary_hooks(&mgr, Arc::clone(&tokens));
 
@@ -290,6 +301,7 @@ fn close_admission_closes_the_tokens_for_good() {
     let dir = tempfile::tempdir().expect("tempdir");
     let bin = write_cli(dir.path(), "sleep 30");
     let mgr = fast_manager();
+    let _cancel = CancelOnDrop(Arc::clone(&mgr));
     let tokens = SummaryTokens::new();
     install_summary_hooks(&mgr, Arc::clone(&tokens));
 
@@ -313,6 +325,7 @@ fn direct_shutdown_without_exit_coordinator_also_closes_the_tokens() {
     let dir = tempfile::tempdir().expect("tempdir");
     let bin = write_cli(dir.path(), "sleep 30");
     let mgr = fast_manager();
+    let _cancel = CancelOnDrop(Arc::clone(&mgr));
     let tokens = SummaryTokens::new();
     install_summary_hooks(&mgr, Arc::clone(&tokens));
 
@@ -335,6 +348,7 @@ fn installing_hooks_twice_replaces_the_first_set_without_panicking() {
     let dir = tempfile::tempdir().expect("tempdir");
     let bin = write_cli(dir.path(), "sleep 30");
     let mgr = fast_manager();
+    let _cancel = CancelOnDrop(Arc::clone(&mgr));
     let old_tokens = SummaryTokens::new();
     let new_tokens = SummaryTokens::new();
     install_summary_hooks(&mgr, Arc::clone(&old_tokens));

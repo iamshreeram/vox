@@ -185,7 +185,7 @@ async fn child_ignoring_sigterm_is_killed_after_timeout() {
     let dir = tempfile::tempdir().unwrap();
     let pidfile: PathBuf = dir.path().join("shell.pid");
     let script = format!(
-        "trap '' TERM; echo $$ > '{}'; while :; do sleep 0.1; done",
+        "trap '' TERM; echo $$ > '{}'; i=0; while [ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done",
         pidfile.display()
     );
     let started = Instant::now();
