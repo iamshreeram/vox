@@ -1770,6 +1770,8 @@ mod ambient_settings_tests;
 mod settings_acp_permission_tests;
 #[cfg(test)]
 mod settings_validation_tests;
+#[cfg(test)]
+mod settings_write_audit_tests;
 
 #[cfg(test)]
 mod tts_listener_tests {

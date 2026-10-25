@@ -1081,10 +1081,14 @@ fn shutdown_managed_acp_agent(app: &AppHandle) {
 #[tauri::command]
 #[specta::specta]
 pub fn change_acp_agent_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
-    settings::write_settings_gated(&app, |settings| settings.acp_agent_enabled = enabled);
-    if !enabled {
-        shutdown_managed_acp_agent(&app);
-    }
+    // Why: the shutdown runs inside the gate's update (F3), so a launch prepared under the new
+    // generation cannot be retired by a trailing shutdown.
+    settings::write_settings_gated(&app, |settings| {
+        settings.acp_agent_enabled = enabled;
+        if !enabled {
+            shutdown_managed_acp_agent(&app);
+        }
+    });
     Ok(())
 }
 
@@ -1098,10 +1102,13 @@ pub fn change_acp_agent_command_setting(
 ) -> Result<(), String> {
     let normalized = settings::normalize_acp_agent_command(command.as_deref().unwrap_or(""))?;
     let changed = settings::get_settings(&app).acp_agent_command != normalized;
-    settings::write_settings_gated(&app, |settings| settings.acp_agent_command = normalized);
-    if changed {
-        shutdown_managed_acp_agent(&app);
-    }
+    // Why: inside the gate's update (F3); see `change_acp_agent_enabled_setting`.
+    settings::write_settings_gated(&app, |settings| {
+        settings.acp_agent_command = normalized;
+        if changed {
+            shutdown_managed_acp_agent(&app);
+        }
+    });
     Ok(())
 }
 
@@ -1112,10 +1119,13 @@ pub fn change_acp_agent_command_setting(
 pub fn change_acp_agent_args_setting(app: AppHandle, args: String) -> Result<(), String> {
     settings::validate_acp_agent_args(&args)?;
     let changed = settings::get_settings(&app).acp_agent_args != args;
-    settings::write_settings_gated(&app, |settings| settings.acp_agent_args = args);
-    if changed {
-        shutdown_managed_acp_agent(&app);
-    }
+    // Why: inside the gate's update (F3); see `change_acp_agent_enabled_setting`.
+    settings::write_settings_gated(&app, |settings| {
+        settings.acp_agent_args = args;
+        if changed {
+            shutdown_managed_acp_agent(&app);
+        }
+    });
     Ok(())
 }
 
@@ -1149,10 +1159,11 @@ pub fn change_acp_step_agent_setting(
         // Re-applied to the settings read inside the gate, so a concurrent change to another
         // field is kept. The values were validated above.
         let _ = settings::apply_step_agent_setting(settings, &step_type, command.as_deref(), &args);
+        // Why: inside the gate's update (F3); see `change_acp_agent_enabled_setting`.
+        if changed {
+            shutdown_managed_acp_agent(&app);
+        }
     });
-    if changed {
-        shutdown_managed_acp_agent(&app);
-    }
     Ok(())
 }
 

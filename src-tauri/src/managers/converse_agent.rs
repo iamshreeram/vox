@@ -171,6 +171,28 @@ impl PreparedAgentLaunch {
         self
     }
 
+    /// Builds the launch of one typed step or typed single request from its resolved agent (the
+    /// specialist profile, or the main agent as a fallback). `in_plan` is true for a plan step
+    /// and false for a single agent request, so the two never share a fingerprint.
+    pub fn for_step(
+        resolved: ResolvedAgent,
+        cwd: String,
+        kind: StepKind,
+        task: &str,
+        role: Option<&str>,
+        in_plan: bool,
+    ) -> Self {
+        PreparedAgentLaunch::new(
+            task.to_string(),
+            role.map(str::to_string),
+            resolved.command,
+            resolved.args,
+            cwd,
+            resolved.turn_timeout,
+        )
+        .with_step(kind, resolved.source, in_plan)
+    }
+
     /// Sets the settings generation the launch was prepared under (`read_stable`). Stored, not
     /// fingerprinted: admission compares it with the live generation.
     pub fn with_epoch(mut self, epoch: u64) -> Self {

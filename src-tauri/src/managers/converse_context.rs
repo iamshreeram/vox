@@ -49,13 +49,16 @@ pub enum CommandNote {
     NoMatch,
 }
 
-/// Remove U+27E6 / U+27E7 and turn every line break / control whitespace into a single space
-/// (`\n`, `\r`, `\t` become ' '); everything else is untouched. Idempotent.
+/// Remove U+27E6 / U+27E7 and turn every control character (`char::is_control`, which covers
+/// `\n`, `\r`, `\t`, VT, FF and U+0085) and the Unicode line / paragraph separators (U+2028,
+/// U+2029) into a single space. Each char maps to at most one char, so the length in chars is
+/// kept. Everything else is untouched. Idempotent.
 pub fn neutralize(s: &str) -> String {
     s.chars()
         .filter_map(|c| match c {
             OPEN | CLOSE => None,
-            '\n' | '\r' | '\t' => Some(' '),
+            '\u{2028}' | '\u{2029}' => Some(' '),
+            other if other.is_control() => Some(' '),
             other => Some(other),
         })
         .collect()

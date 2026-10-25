@@ -193,3 +193,146 @@ fn a_single_agent_prompt_has_no_step_role() {
     );
     assert_eq!(single.prompt_text(), "list files");
 }
+
+// ---------------- typed single agent requests (validator round 1, F2) ----------------
+
+/// The stored defaults with the given top-level keys replaced (serde, like the settings tests).
+fn settings_with(patch: serde_json::Value) -> crate::settings::AppSettings {
+    let mut value =
+        serde_json::to_value(crate::settings::get_default_settings()).expect("settings serialize");
+    let map = value.as_object_mut().expect("object");
+    for (key, val) in patch.as_object().expect("patch object") {
+        map.insert(key.clone(), val.clone());
+    }
+    serde_json::from_value(value).expect("settings deserialize")
+}
+
+/// A configured main agent (absolute command, one plain arg) and one research profile.
+fn typed_settings(research: serde_json::Value) -> crate::settings::AppSettings {
+    settings_with(serde_json::json!({
+        "acp_agent_enabled": true,
+        "acp_agent_command": "/usr/bin/main-agent",
+        "acp_agent_args": "--main",
+        "acp_agent_turn_timeout_secs": 120,
+        "acp_step_agents": {"research": research},
+    }))
+}
+
+fn resolve_or_panic(
+    settings: &crate::settings::AppSettings,
+    kind: crate::managers::converse_plan::StepKind,
+) -> crate::managers::converse_agent::ResolvedAgent {
+    match crate::managers::converse_agent::resolve_step_agent(settings, kind) {
+        Ok(agent) => agent,
+        Err(e) => panic!("{kind:?} should resolve, got {e:?}"),
+    }
+}
+
+#[test]
+fn a_typed_single_request_resolves_the_specialist_and_carries_its_step_role() {
+    use crate::managers::converse_agent::{AgentSource, PreparedAgentLaunch, STEP_ROLE_RESEARCH};
+    use crate::managers::converse_plan::StepKind;
+    let settings = typed_settings(serde_json::json!({
+        "command": "/opt/research-agent", "args": "--fast"
+    }));
+    let resolved = resolve_or_panic(&settings, StepKind::Research);
+    let launch = PreparedAgentLaunch::for_step(
+        resolved,
+        "/ws".to_string(),
+        StepKind::Research,
+        "find the newest release",
+        None,
+        false,
+    );
+    assert_eq!(launch.command, "/opt/research-agent");
+    assert_eq!(launch.args, vec!["--fast".to_string()]);
+    assert_eq!(launch.step_kind, StepKind::Research);
+    assert!(matches!(launch.source, AgentSource::Specialist));
+    assert!(!launch.in_plan, "a single request is not a plan step");
+    assert_eq!(
+        launch.wire_prompt(),
+        format!("Step role: {STEP_ROLE_RESEARCH}\n\nfind the newest release")
+    );
+}
+
+#[test]
+fn an_absent_or_general_type_uses_the_main_agent_with_no_step_role() {
+    use crate::managers::converse_agent::{AgentSource, PreparedAgentLaunch};
+    use crate::managers::converse_plan::StepKind;
+    let settings =
+        typed_settings(serde_json::json!({"command": "/opt/research-agent", "args": ""}));
+    let resolved = resolve_or_panic(&settings, StepKind::General);
+    let timeout = resolved.turn_timeout;
+    let args = resolved.args.clone();
+    let launch = PreparedAgentLaunch::for_step(
+        resolved,
+        "/ws".to_string(),
+        StepKind::General,
+        "list files",
+        None,
+        false,
+    );
+    assert!(matches!(launch.source, AgentSource::Main));
+    assert_eq!(launch.command, "/usr/bin/main-agent");
+    assert_eq!(launch.wire_prompt(), "list files", "no step role");
+    let plain = PreparedAgentLaunch::new(
+        "list files".to_string(),
+        None,
+        "/usr/bin/main-agent".to_string(),
+        args,
+        "/ws".to_string(),
+        timeout,
+    );
+    assert_eq!(
+        launch.fingerprint, plain.fingerprint,
+        "a general single request keeps today's launch fingerprint"
+    );
+}
+
+#[test]
+fn a_blank_profile_falls_back_to_the_main_agent_for_a_typed_single_request() {
+    use crate::managers::converse_agent::{AgentSource, PreparedAgentLaunch};
+    use crate::managers::converse_plan::StepKind;
+    let settings = typed_settings(serde_json::json!({"command": "   ", "args": "--x"}));
+    let resolved = resolve_or_panic(&settings, StepKind::Research);
+    let launch = PreparedAgentLaunch::for_step(
+        resolved,
+        "/ws".to_string(),
+        StepKind::Research,
+        "find it",
+        None,
+        false,
+    );
+    assert!(matches!(launch.source, AgentSource::Main));
+    assert_eq!(launch.command, "/usr/bin/main-agent");
+    assert_eq!(launch.args, vec!["--main".to_string()]);
+}
+
+#[test]
+fn a_single_request_and_a_plan_step_of_the_same_kind_have_different_fingerprints() {
+    use crate::managers::converse_agent::PreparedAgentLaunch;
+    use crate::managers::converse_plan::StepKind;
+    let settings =
+        typed_settings(serde_json::json!({"command": "/opt/research-agent", "args": ""}));
+    let as_single = PreparedAgentLaunch::for_step(
+        resolve_or_panic(&settings, StepKind::Research),
+        "/ws".to_string(),
+        StepKind::Research,
+        "find it",
+        None,
+        false,
+    );
+    let as_step = PreparedAgentLaunch::for_step(
+        resolve_or_panic(&settings, StepKind::Research),
+        "/ws".to_string(),
+        StepKind::Research,
+        "find it",
+        None,
+        true,
+    );
+    assert!(!as_single.in_plan && as_step.in_plan);
+    assert_ne!(
+        as_single.fingerprint, as_step.fingerprint,
+        "plan membership is part of the fingerprint, so neither kind is valid as the other"
+    );
+}

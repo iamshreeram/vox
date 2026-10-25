@@ -28,6 +28,9 @@ use crate::managers::converse_role::{
 use crate::managers::converse_stream::{reconcile, PlanStreamer, Reconcile};
 use crate::managers::emotion::Emotion;
 use crate::managers::job_announcer::{Announcer, LowPriorityMouth};
+// Re-exported so the planner modules and the tests reach the plan clock through `converse::`.
+// `advance_plan_clock` is only called from cfg(test) code, so a non-test build can leave the
+// re-export without a user; the allow keeps that build free of unused-import warnings.
 #[allow(unused_imports)]
 pub(crate) use crate::managers::plan_clock::{advance_plan_clock, agent_now};
 use futures_util::future::{select, Either};
@@ -304,6 +307,18 @@ pub trait Hands: Send + Sync {
     ) -> Result<PreparedAgentLaunch, AgentStartError> {
         self.prepare_agent_launch(task, role)
             .map(|launch| launch.with_step(kind, AgentSource::Main, true))
+    }
+    /// Stage 4 (validator round 1, F2): prepares a typed single agent request (`type` given, not
+    /// `general`). It uses the specialist profile of that type and the step role, and is not a
+    /// plan step. Default: the single-agent preparation recorded as a main-agent single request.
+    fn prepare_agent_launch_typed(
+        &self,
+        kind: StepKind,
+        task: &str,
+        role: Option<&str>,
+    ) -> Result<PreparedAgentLaunch, AgentStartError> {
+        self.prepare_agent_launch(task, role)
+            .map(|launch| launch.with_step(kind, AgentSource::Main, false))
     }
 }
 

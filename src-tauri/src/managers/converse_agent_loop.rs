@@ -538,10 +538,17 @@ pub(super) async fn prepare_agent_plan(
             .await
             .map(Err);
     }
-    match deps
-        .hands
-        .prepare_agent_launch(&request.task, carry.role.as_deref())
-    {
+    // Stage 4 (F2): a typed single request uses its type's specialist profile and step role;
+    // the general (or absent) type keeps the main agent with no step role.
+    let prepared = match request.kind {
+        StepKind::General => deps
+            .hands
+            .prepare_agent_launch(&request.task, carry.role.as_deref()),
+        kind => deps
+            .hands
+            .prepare_agent_launch_typed(kind, &request.task, carry.role.as_deref()),
+    };
+    match prepared {
         Ok(launch) => Ok(Ok(launch)),
         Err(_) => refuse(
             deps,

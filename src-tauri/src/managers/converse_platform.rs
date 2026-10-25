@@ -621,32 +621,16 @@ impl Hands for RealHands {
         task: &str,
         role: Option<&str>,
     ) -> Result<PreparedAgentLaunch, AgentStartError> {
-        let (epoch, launch) = read_stable(&process_gate(), || {
-            let settings = get_settings(&self.app);
-            // Same master gates as the single agent (DESIGN 2.5); the step's profile is resolved here.
-            if !agent_launch_allowed(
-                settings.acp_agent_enabled,
-                settings.acp_agent_command.as_deref(),
-                settings.conversation_agent_handoff,
-            ) {
-                return Err(AgentStartError::NotConfigured);
-            }
-            let resolved = resolve_step_agent(&settings, kind)?;
-            // The working directory is the main agent's, as for every step (DESIGN 2.2).
-            let cfg = crate::actions::acp_agent_config(&self.app, &settings)
-                .map_err(AgentStartError::Failed)?;
-            Ok(PreparedAgentLaunch::new(
-                task.to_string(),
-                role.map(str::to_string),
-                resolved.command,
-                resolved.args,
-                cfg.cwd.to_string_lossy().into_owned(),
-                resolved.turn_timeout,
-            )
-            .with_step(kind, resolved.source, true))
-        })
-        .map_err(settings_changing)?;
-        Ok(launch.with_epoch(epoch))
+        prepare_typed_launch(&self.app, kind, task, role, true)
+    }
+
+    fn prepare_agent_launch_typed(
+        &self,
+        kind: StepKind,
+        task: &str,
+        role: Option<&str>,
+    ) -> Result<PreparedAgentLaunch, AgentStartError> {
+        prepare_typed_launch(&self.app, kind, task, role, false)
     }
 
     fn agent_launch_still_valid(&self, launch: &PreparedAgentLaunch) -> bool {
@@ -655,10 +639,14 @@ impl Hands for RealHands {
         if launch.in_plan && !settings.conversation_planner {
             return false;
         }
+        // Revalidate each launch the way it was prepared: a plan step, a typed single request, or
+        // a general single request on the main agent (today's path).
         let live = if launch.in_plan {
             self.prepare_agent_launch_for(launch.step_kind, &launch.task, launch.role.as_deref())
-        } else {
+        } else if launch.step_kind == StepKind::General {
             self.prepare_agent_launch(&launch.task, launch.role.as_deref())
+        } else {
+            self.prepare_agent_launch_typed(launch.step_kind, &launch.task, launch.role.as_deref())
         };
         match live {
             Ok(live) => live.fingerprint == launch.fingerprint,
@@ -735,6 +723,42 @@ const SETTINGS_CHANGING: &str = "The agent settings are changing.";
 
 /// Maps a failed guarded read to the preparation error (A3-R3): a read during an update, or one
 /// that kept changing, is a transient failure.
+/// Stage 4: the launch of a typed step (`in_plan` true) or of a typed single request (`in_plan`
+/// false), read under the settings gate. The profile is resolved here; the working directory is
+/// the main agent's, as for every step (DESIGN 2.2).
+fn prepare_typed_launch(
+    app: &AppHandle,
+    kind: StepKind,
+    task: &str,
+    role: Option<&str>,
+    in_plan: bool,
+) -> Result<PreparedAgentLaunch, AgentStartError> {
+    let (epoch, launch) = read_stable(&process_gate(), || {
+        let settings = get_settings(app);
+        // Same master gates as the single agent (DESIGN 2.5).
+        if !agent_launch_allowed(
+            settings.acp_agent_enabled,
+            settings.acp_agent_command.as_deref(),
+            settings.conversation_agent_handoff,
+        ) {
+            return Err(AgentStartError::NotConfigured);
+        }
+        let resolved = resolve_step_agent(&settings, kind)?;
+        let cfg =
+            crate::actions::acp_agent_config(app, &settings).map_err(AgentStartError::Failed)?;
+        Ok(PreparedAgentLaunch::for_step(
+            resolved,
+            cfg.cwd.to_string_lossy().into_owned(),
+            kind,
+            task,
+            role,
+            in_plan,
+        ))
+    })
+    .map_err(settings_changing)?;
+    Ok(launch.with_epoch(epoch))
+}
+
 fn settings_changing(err: Option<AgentStartError>) -> AgentStartError {
     err.unwrap_or_else(|| AgentStartError::Failed(SETTINGS_CHANGING.to_string()))
 }
