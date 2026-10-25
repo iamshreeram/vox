@@ -97,15 +97,21 @@ fn step_kind_source_and_plan_membership_change_the_fingerprint() {
     let research_main = base
         .clone()
         .with_step(StepKind::Research, AgentSource::Main, false);
-    let general_specialist = base
-        .clone()
-        .with_step(StepKind::General, AgentSource::Specialist, false);
+    let general_specialist =
+        base.clone()
+            .with_step(StepKind::General, AgentSource::Specialist, false);
     let general_in_plan = base
         .clone()
         .with_step(StepKind::General, AgentSource::Main, true);
     assert_ne!(general_main.fingerprint, research_main.fingerprint, "kind");
-    assert_ne!(general_main.fingerprint, general_specialist.fingerprint, "source");
-    assert_ne!(general_main.fingerprint, general_in_plan.fingerprint, "in_plan");
+    assert_ne!(
+        general_main.fingerprint, general_specialist.fingerprint,
+        "source"
+    );
+    assert_ne!(
+        general_main.fingerprint, general_in_plan.fingerprint,
+        "in_plan"
+    );
 }
 
 #[test]
@@ -123,8 +129,14 @@ fn epoch_and_inputs_are_stored_but_not_fingerprinted() {
     let base = launch("do it", None).with_step(StepKind::Research, AgentSource::Specialist, true);
     let with_epoch = base.clone().with_epoch(9);
     let with_inputs = base.clone().with_inputs(vec![input(1, "t", "result")]);
-    assert_eq!(with_epoch.fingerprint, base.fingerprint, "epoch is not fingerprinted");
-    assert_eq!(with_inputs.fingerprint, base.fingerprint, "inputs are not fingerprinted");
+    assert_eq!(
+        with_epoch.fingerprint, base.fingerprint,
+        "epoch is not fingerprinted"
+    );
+    assert_eq!(
+        with_inputs.fingerprint, base.fingerprint,
+        "inputs are not fingerprinted"
+    );
     assert_ne!(with_epoch, base, "the epoch is stored");
     assert_ne!(with_inputs, base, "the inputs are stored");
     assert_ne!(base.clone().with_epoch(9), base.clone().with_epoch(10));
@@ -152,7 +164,9 @@ fn builders_keep_the_task_and_settings_of_the_launch() {
 fn prompt_is_the_task_alone_without_a_role_or_inputs() {
     assert_eq!(launch("list files", None).prompt_text(), "list files");
     assert_eq!(
-        launch("list files", None).with_inputs(Vec::new()).prompt_text(),
+        launch("list files", None)
+            .with_inputs(Vec::new())
+            .prompt_text(),
         "list files"
     );
 }
@@ -204,10 +218,16 @@ fn inputs_render_in_the_order_given() {
 #[test]
 fn empty_text_inputs_are_omitted() {
     let text = launch("write it", None)
-        .with_inputs(vec![input(1, "research x", ""), input(2, "files y", "kept")])
+        .with_inputs(vec![
+            input(1, "research x", ""),
+            input(2, "files y", "kept"),
+        ])
         .prompt_text();
     assert!(!text.contains("[step 1:"), "{text}");
-    assert!(text.contains("[step 2: files y] \u{27E6}kept\u{27E7}"), "{text}");
+    assert!(
+        text.contains("[step 2: files y] \u{27E6}kept\u{27E7}"),
+        "{text}"
+    );
 }
 
 #[test]
@@ -218,8 +238,16 @@ fn injected_result_text_is_neutralised_and_cannot_start_a_request_line() {
         .prompt_text();
     let expected_line = format!("[step 1: research] \u{27E6}{}\u{27E7}", neutralize(hostile));
     assert!(text.contains(&expected_line), "{text}");
-    assert_eq!(text.matches('\u{27E6}').count(), 1, "brackets are neutralised");
-    assert_eq!(text.matches('\u{27E7}').count(), 1, "brackets are neutralised");
+    assert_eq!(
+        text.matches('\u{27E6}').count(),
+        1,
+        "brackets are neutralised"
+    );
+    assert_eq!(
+        text.matches('\u{27E7}').count(),
+        1,
+        "brackets are neutralised"
+    );
     let request_lines = text.lines().filter(|l| l.starts_with("Request: ")).count();
     assert_eq!(request_lines, 1, "no forged request line: {text}");
 }
@@ -230,7 +258,10 @@ fn the_task_in_each_line_is_capped_at_120_chars() {
     let text = launch("write it", None)
         .with_inputs(vec![input(1, &long, "x")])
         .prompt_text();
-    assert!(text.contains(&format!("[step 1: {}] ", "t".repeat(120))), "{text}");
+    assert!(
+        text.contains(&format!("[step 1: {}] ", "t".repeat(120))),
+        "{text}"
+    );
     assert!(!text.contains(&"t".repeat(121)), "task capped at 120");
 }
 
@@ -282,19 +313,15 @@ fn short_plan_confirmation_lists_each_step_whole() {
 #[test]
 fn maximum_plan_confirmation_stays_within_700_chars_and_keeps_every_label() {
     let steps: Vec<PlanStep> = (1u8..=5)
-        .map(|id| {
-            step(
-                id,
-                StepKind::General,
-                &"\u{416}".repeat(600),
-                Vec::new(),
-            )
-        })
+        .map(|id| step(id, StepKind::General, &"\u{416}".repeat(600), Vec::new()))
         .collect();
     let prompt = plan_confirmation_prompt(&steps);
     let chars = prompt.chars().count();
     assert!(chars <= 700, "prompt is {chars} chars");
-    assert!(prompt.starts_with("I am about to run a plan of 5 steps. "), "{prompt}");
+    assert!(
+        prompt.starts_with("I am about to run a plan of 5 steps. "),
+        "{prompt}"
+    );
     assert!(prompt.ends_with("Say yes to go ahead."), "{prompt}");
     for k in 1..=5 {
         assert!(
@@ -330,7 +357,10 @@ fn a_disabled_or_unconfigured_main_agent_is_not_configured() {
             StepKind::General,
         ] {
             assert!(
-                matches!(resolve_step_agent(s, kind), Err(AgentStartError::NotConfigured)),
+                matches!(
+                    resolve_step_agent(s, kind),
+                    Err(AgentStartError::NotConfigured)
+                ),
                 "{kind:?}"
             );
         }

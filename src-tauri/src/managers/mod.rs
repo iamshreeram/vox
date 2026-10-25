@@ -70,6 +70,8 @@ pub mod converse_overlay;
 pub mod converse_plan;
 #[cfg(test)]
 mod converse_plan_vault_tests;
+#[cfg(test)]
+mod converse_planner_launch_tests;
 pub mod converse_platform;
 pub mod converse_queue;
 #[cfg(test)]
