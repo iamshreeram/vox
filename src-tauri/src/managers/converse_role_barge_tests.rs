@@ -452,6 +452,7 @@ fn lesson_text() -> String {
 
 fn tp(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         job: None,
         role: None,
         kind,

@@ -2,7 +2,9 @@
 
 use crate::managers::acp_permission::PermissionMode;
 use crate::managers::acp_permission_ui::{broker_from_app, respond};
-use crate::settings::{clamp_permission_timeout_secs, get_settings, write_settings, AppSettings};
+use crate::settings::{
+    clamp_permission_timeout_secs, get_settings, write_settings, write_settings_gated, AppSettings,
+};
 use tauri::AppHandle;
 
 /// Answers the approval prompt `token`. `allow` selects an allow-once option, otherwise the
@@ -24,7 +26,7 @@ pub fn change_acp_permission_mode_setting(
 ) -> Result<(), String> {
     let mut settings = get_settings(&app);
     apply_acp_permission_mode(&mut settings, mode);
-    write_settings(&app, settings);
+    write_settings_gated(&app, settings);
     Ok(())
 }
 
@@ -48,7 +50,7 @@ pub fn change_conversation_agent_handoff_setting(
 ) -> Result<(), String> {
     let mut settings = get_settings(&app);
     apply_conversation_agent_handoff(&mut settings, enabled);
-    write_settings(&app, settings);
+    write_settings_gated(&app, settings);
     Ok(())
 }
 

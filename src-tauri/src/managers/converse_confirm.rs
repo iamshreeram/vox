@@ -511,6 +511,8 @@ pub async fn prepare_action(
         | PlanKind::ClearRole
         // Stage 2 (C3 wires the real behaviour): agent plans are never prepared as actions yet.
         | PlanKind::Agent
+        // Stage 4 (S4 wires the executor): plans are never prepared as actions yet.
+        | PlanKind::Plan
         | PlanKind::Resume => Err(PrepareError::Unsupported),
     }
 }

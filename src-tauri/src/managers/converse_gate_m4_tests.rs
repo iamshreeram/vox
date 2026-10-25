@@ -217,6 +217,7 @@ fn add_unrelated_agent(p: &M4GatePolicy) {
 
 fn job_plan(agent: Option<&str>, mode: JobMode) -> TurnPlan {
     TurnPlan {
+        plan: None,
         kind: PlanKind::Job,
         speech: "On it.".to_string(),
         emotion: Emotion::Neutral,

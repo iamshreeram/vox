@@ -95,6 +95,7 @@ fn plain_input<'a>(role: Option<&'a str>, roles_enabled: bool) -> PlanInput<'a> 
         lesson_paused: false,
         roles_enabled,
         agent_enabled: false,
+        planner_enabled: false,
     }
 }
 

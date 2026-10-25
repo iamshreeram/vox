@@ -22,6 +22,7 @@ use std::time::{Duration, Instant};
 
 fn plan(kind: PlanKind) -> TurnPlan {
     TurnPlan {
+        plan: None,
         kind,
         speech: String::new(),
         emotion: Emotion::Neutral,

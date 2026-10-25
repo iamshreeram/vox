@@ -40,6 +40,16 @@ pub const MAX_JOB_PROJECT_CHARS: usize = 64;
 pub const MAX_JOB_TASK_CHARS: usize = 300;
 /// Largest JSON object candidate considered by `parse_plan`.
 pub const MAX_CANDIDATE_CHARS: usize = 20_000;
+/// Stage 4 planner: fewest steps one plan may hold.
+pub const MIN_PLAN_STEPS: usize = 2;
+/// Stage 4 planner: most steps one plan may hold.
+pub const MAX_PLAN_STEPS: usize = 5;
+/// Stage 4 planner: most earlier steps one step may list in `needs`.
+pub const MAX_STEP_NEEDS: usize = 3;
+/// Stage 4 planner: longest accepted step task, counted in chars after cleaning.
+pub const MAX_STEP_TASK_CHARS: usize = 600;
+/// Stage 4 planner: longest accepted planner speech, counted in chars.
+pub const PLAN_SPEECH_CAP: usize = 200;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlanKind {
@@ -58,6 +68,8 @@ pub enum PlanKind {
     Resume,
     /// Stage 2 agent hand-off: a request for real work the configured ACP agent should do.
     Agent,
+    /// Stage 4 planner: two to five typed steps that run one at a time.
+    Plan,
 }
 
 /// M4: what a coding job does with its result. `Task` changes files; `Ask` asks a
@@ -115,10 +127,67 @@ pub struct RoleDirective {
     pub resume: bool,
 }
 
+/// Stage 4 planner: the kind of work one step (or a single agent request) does. It selects the
+/// step's agent profile and role text. Parsed from the lower-case words `research`, `browser`,
+/// `code`, `files` and `general`; any other word rejects the candidate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StepKind {
+    Research,
+    Browser,
+    Code,
+    Files,
+    /// Always runs on the main agent (never on a specialist profile).
+    General,
+}
+
+impl StepKind {
+    /// The kind for a lower-case type word, or `None` for any other word.
+    pub fn from_type_word(word: &str) -> Option<StepKind> {
+        match word {
+            "research" => Some(StepKind::Research),
+            "browser" => Some(StepKind::Browser),
+            "code" => Some(StepKind::Code),
+            "files" => Some(StepKind::Files),
+            "general" => Some(StepKind::General),
+            _ => None,
+        }
+    }
+
+    /// The words the announcement speaks for this kind.
+    pub fn spoken_word(self) -> &'static str {
+        match self {
+            StepKind::Research => "research",
+            StepKind::Browser => "browsing",
+            StepKind::Code => "coding",
+            StepKind::Files => "files",
+            StepKind::General => "general work",
+        }
+    }
+}
+
+/// Stage 4 planner: one typed step of a plan. Ids are exactly 1..=n in order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlanStep {
+    pub id: u8,
+    pub kind: StepKind,
+    /// The cleaned task for this step.
+    pub task: String,
+    /// Ids of earlier steps whose results this step may read.
+    pub needs: Vec<u8>,
+}
+
+/// Stage 4 planner: the steps of one plan, in order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentPlan {
+    pub steps: Vec<PlanStep>,
+}
+
 /// Stage 2 agent hand-off: the task the agent should carry out, cleaned like role text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentRequest {
     pub task: String,
+    /// Stage 4 planner: the work kind, `General` unless the planner named one.
+    pub kind: StepKind,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -135,6 +204,8 @@ pub struct TurnPlan {
     pub role: Option<RoleDirective>,
     /// Stage 2 agent hand-off: the request, set only for `PlanKind::Agent` plans.
     pub agent: Option<AgentRequest>,
+    /// Stage 4 planner: the steps, set only for `PlanKind::Plan` plans.
+    pub plan: Option<AgentPlan>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,6 +236,9 @@ pub struct PlanInput<'a> {
     /// Stage 2 agent hand-off: adds the agent teaching (`AGENT_PLAN_ADDENDUM`) to the system
     /// prompt. `false` keeps the prompt byte-identical to the Stage 1 prompt.
     pub agent_enabled: bool,
+    /// Stage 4 planner: adds the plan teaching (`PLAN_PLAN_ADDENDUM`) after the agent teaching.
+    /// Only effective together with `agent_enabled`. `false` keeps the prompt byte-identical.
+    pub planner_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -188,6 +262,7 @@ pub fn build_plan_prompt(input: &PlanInput) -> PlanPrompt {
             input.lesson_paused,
             input.roles_enabled,
             input.agent_enabled,
+            input.planner_enabled,
         ),
         input.vault_context,
     );
@@ -350,6 +425,7 @@ fn build_system(
     lesson_paused: bool,
     roles_enabled: bool,
     agent_enabled: bool,
+    planner_enabled: bool,
 ) -> String {
     let style: String = style
         .chars()
@@ -388,6 +464,10 @@ fn build_system(
     if agent_enabled {
         system.push_str("\n\n");
         system.push_str(AGENT_PLAN_ADDENDUM);
+        if planner_enabled {
+            system.push_str("\n\n");
+            system.push_str(PLAN_PLAN_ADDENDUM);
+        }
     }
     if let Some(role) = role {
         let text: String = role
@@ -414,6 +494,10 @@ const ROLE_PLAN_ADDENDUM: &str = r##"Roles: when the user asks you to act as, pr
 /// Stage 2 agent hand-off: teaches the `agent` kind. Appended to the system prompt only when
 /// `agent_enabled` is set. Its text must stay exactly as the design states it.
 const AGENT_PLAN_ADDENDUM: &str = r##"Use kind agent only when the request needs the web, files, a browser, running programs or several steps of real work. task = the user's request restated in their own words. Do not use agent for chat or knowledge questions, or for opening apps, websites or media (use command). Reply speech: one short acknowledgement. {"kind":"agent","task":"...","speech":"..."}"##;
+
+/// Stage 4 planner: teaches the `plan` kind. Appended after `AGENT_PLAN_ADDENDUM` only when
+/// both `agent_enabled` and `planner_enabled` are set.
+pub const PLAN_PLAN_ADDENDUM: &str = r##"Plan kind: use kind plan only when the request clearly needs 2 to 5 different kinds of work in sequence, for example research, then write, then save a file. One kind of work is kind agent, and a question or chat is kind answer. Reply with kind plan using this shape: {"kind":"plan","speech":"...","steps":[{"id":1,"type":"research|browser|code|files|general","task":"...","needs":[]}]}. Number the steps 1, 2, 3 in order. Each step names one type and one concrete task. A later step may list earlier step ids in needs; leave needs out to use the previous step. Speech is one short sentence saying what you will do."##;
 
 /// Stage 1 lessons: appended to the system prompt when a lesson is paused.
 const LESSON_PAUSED_LINE: &str = "A lesson is paused with unspoken content. If the user asks to continue, reply with kind resume.";
@@ -447,6 +531,7 @@ fn plain_plan(text: &str, cap: usize) -> Result<TurnPlan, PlanError> {
             job: None,
             role: None,
             agent: None,
+            plan: None,
         }),
         None => Err(PlanError::Empty),
     }
@@ -581,6 +666,8 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
         // Stage 2: `agent` is accepted whatever the policy says. A session that cannot hand off
         // runs it as a plain answer (see the converse loop), so parsing never refuses it.
         "agent" => PlanKind::Agent,
+        // Stage 4: `plan` is accepted whatever the policy says; the loop decides whether it runs.
+        "plan" => PlanKind::Plan,
         _ => return None,
     };
     let emotion = obj
@@ -592,6 +679,7 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
         PlanKind::Job => job_plan(obj, emotion, policy),
         PlanKind::SetRole => set_role_plan(obj, emotion),
         PlanKind::Agent => agent_plan(obj, emotion),
+        PlanKind::Plan => plan_plan(obj, emotion),
         PlanKind::ClearRole => Some(TurnPlan {
             kind,
             speech: speech_from(obj).unwrap_or_else(|| CLEAR_ROLE_SPEECH.to_string()),
@@ -601,6 +689,7 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
             job: None,
             role: None,
             agent: None,
+            plan: None,
         }),
         PlanKind::Resume => Some(TurnPlan {
             kind,
@@ -611,6 +700,7 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
             job: None,
             role: None,
             agent: None,
+            plan: None,
         }),
         PlanKind::Answer => Some(TurnPlan {
             kind,
@@ -621,6 +711,7 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
             job: None,
             role: None,
             agent: None,
+            plan: None,
         }),
         PlanKind::Clarify | PlanKind::End => Some(TurnPlan {
             kind,
@@ -631,6 +722,7 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
             job: None,
             role: None,
             agent: None,
+            plan: None,
         }),
         PlanKind::Paste => {
             let paste_text = clean_paste(obj.get("paste_text")?.as_str()?)?;
@@ -643,6 +735,7 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
                 job: None,
                 role: None,
                 agent: None,
+                plan: None,
             })
         }
         PlanKind::Command => {
@@ -656,6 +749,7 @@ fn plan_from_value(value: &Value, policy: &JobParsePolicy) -> Option<TurnPlan> {
                 job: None,
                 role: None,
                 agent: None,
+                plan: None,
             })
         }
     }
@@ -684,6 +778,7 @@ fn set_role_plan(obj: &serde_json::Map<String, Value>, emotion: Emotion) -> Opti
         job: None,
         role: Some(RoleDirective { role, task, resume }),
         agent: None,
+        plan: None,
     })
 }
 
@@ -695,6 +790,11 @@ fn agent_plan(obj: &serde_json::Map<String, Value>, emotion: Emotion) -> Option<
     if task.is_empty() {
         return None;
     }
+    let kind = match obj.get("type") {
+        None | Some(Value::Null) => StepKind::General,
+        Some(Value::String(word)) => StepKind::from_type_word(word)?,
+        Some(_) => return None,
+    };
     Some(TurnPlan {
         kind: PlanKind::Agent,
         speech: speech_from(obj).unwrap_or_else(|| AGENT_SPEECH.to_string()),
@@ -703,8 +803,106 @@ fn agent_plan(obj: &serde_json::Map<String, Value>, emotion: Emotion) -> Option<
         command: None,
         job: None,
         role: None,
-        agent: Some(AgentRequest { task }),
+        agent: Some(AgentRequest { task, kind }),
+        plan: None,
     })
+}
+
+/// Stage 4 planner: a `plan` with 2..=5 steps. Ids must be 1..=n in order, every step needs a
+/// known type word and a non-empty task, and `needs` may only name earlier steps (at most three,
+/// no duplicates). Any violation rejects the whole candidate. `speech` is capped at
+/// `PLAN_SPEECH_CAP` and defaults to `default_plan_speech`.
+fn plan_plan(obj: &serde_json::Map<String, Value>, emotion: Emotion) -> Option<TurnPlan> {
+    let raw_steps = obj.get("steps")?.as_array()?;
+    if !(MIN_PLAN_STEPS..=MAX_PLAN_STEPS).contains(&raw_steps.len()) {
+        return None;
+    }
+    let steps = raw_steps
+        .iter()
+        .enumerate()
+        .map(|(index, raw)| plan_step(raw, index))
+        .collect::<Option<Vec<PlanStep>>>()?;
+    let plan = AgentPlan { steps };
+    let speech =
+        speech_from_capped(obj, PLAN_SPEECH_CAP).unwrap_or_else(|| default_plan_speech(&plan));
+    Some(TurnPlan {
+        kind: PlanKind::Plan,
+        speech,
+        emotion,
+        paste_text: None,
+        command: None,
+        job: None,
+        role: None,
+        agent: None,
+        plan: Some(plan),
+    })
+}
+
+/// Stage 4 planner: one step at zero-based position `index`, which must have id `index + 1`.
+fn plan_step(raw: &Value, index: usize) -> Option<PlanStep> {
+    let obj = raw.as_object()?;
+    let id = u8::try_from(obj.get("id")?.as_u64()?).ok()?;
+    if usize::from(id) != index + 1 {
+        return None;
+    }
+    let kind = StepKind::from_type_word(obj.get("type")?.as_str()?)?;
+    let task = clean_role_text(obj.get("task")?.as_str()?, MAX_STEP_TASK_CHARS);
+    if task.is_empty() {
+        return None;
+    }
+    let needs = match obj.get("needs") {
+        None | Some(Value::Null) if id == 1 => Vec::new(),
+        None | Some(Value::Null) => vec![id - 1],
+        Some(value) => step_needs(value, id)?,
+    };
+    Some(PlanStep {
+        id,
+        kind,
+        task,
+        needs,
+    })
+}
+
+/// Stage 4 planner: the `needs` list of step `id`. Each entry must be an earlier step id, with at
+/// most `MAX_STEP_NEEDS` entries and no duplicates.
+fn step_needs(value: &Value, id: u8) -> Option<Vec<u8>> {
+    let items = value.as_array()?;
+    if items.len() > MAX_STEP_NEEDS {
+        return None;
+    }
+    let mut needs: Vec<u8> = Vec::with_capacity(items.len());
+    for item in items {
+        let need = u8::try_from(item.as_u64()?).ok()?;
+        if need == 0 || need >= id || needs.contains(&need) {
+            return None;
+        }
+        needs.push(need);
+    }
+    Some(needs)
+}
+
+/// Stage 4 planner: the announcement used when the planner gives no usable speech, for example
+/// `I will do this in 3 steps: research, coding and files.`
+pub fn default_plan_speech(plan: &AgentPlan) -> String {
+    let words: Vec<&str> = plan
+        .steps
+        .iter()
+        .map(|step| step.kind.spoken_word())
+        .collect();
+    format!(
+        "I will do this in {} steps: {}.",
+        plan.steps.len(),
+        join_words(&words)
+    )
+}
+
+/// Joins words as an English list: `a`, `a and b`, `a, b and c`.
+fn join_words(words: &[&str]) -> String {
+    match words.split_last() {
+        None => String::new(),
+        Some((last, [])) => (*last).to_string(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+    }
 }
 
 /// Stage 1 roles: one line of role text. Control characters are removed, newlines and tabs
@@ -790,6 +988,7 @@ fn job_plan(
         job: Some(request),
         role: None,
         agent: None,
+        plan: None,
     })
 }
 
@@ -827,6 +1026,7 @@ fn refusal_plan(speech: &str) -> TurnPlan {
         job: None,
         role: None,
         agent: None,
+        plan: None,
     }
 }
 
@@ -1013,6 +1213,7 @@ mod tests {
             lesson_paused: false,
             roles_enabled: false,
             agent_enabled: false,
+            planner_enabled: false,
         }
     }
 
@@ -1330,3 +1531,7 @@ mod converse_role_plan_tests;
 #[cfg(test)]
 #[path = "converse_agent_plan_tests.rs"]
 mod converse_agent_plan_tests;
+
+#[cfg(test)]
+#[path = "converse_planner_plan_tests.rs"]
+mod converse_planner_plan_tests;

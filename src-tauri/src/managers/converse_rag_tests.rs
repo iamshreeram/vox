@@ -212,6 +212,7 @@ pub(super) fn input_with(utterance: &str) -> PlanInput<'_> {
         role: None,
         roles_enabled: false,
         agent_enabled: false,
+        planner_enabled: false,
     }
 }
 

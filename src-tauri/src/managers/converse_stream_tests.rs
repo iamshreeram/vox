@@ -258,6 +258,7 @@ fn a_truncated_stream_releases_no_partial_sentence() {
 
 fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         job: None,
         role: None,
         kind,

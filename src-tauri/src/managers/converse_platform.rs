@@ -840,6 +840,7 @@ pub(crate) async fn plan_with_tools(
         lesson_paused: input.lesson_paused,
         roles_enabled: input.roles_enabled,
         agent_enabled: input.agent_enabled,
+        planner_enabled: input.planner_enabled,
     };
     let policy = JobParsePolicy {
         role_active: input.role.is_some(),
@@ -1517,6 +1518,7 @@ pub(crate) fn guard_plan(plan: TurnPlan, taint: &TaintState, guard_actions: bool
         return plan;
     }
     TurnPlan {
+        plan: None,
         job: None,
         kind: PlanKind::Answer,
         speech: REFUSAL_SPEECH.to_string(),

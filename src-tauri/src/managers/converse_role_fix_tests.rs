@@ -552,6 +552,7 @@ fn lesson_chunks() -> Vec<String> {
 
 fn tp(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         job: None,
         role: None,
         kind,
@@ -883,6 +884,7 @@ fn plan_input(role: Option<&str>) -> PlanInput<'_> {
         lesson_paused: false,
         roles_enabled: true,
         agent_enabled: false,
+        planner_enabled: false,
     }
 }
 

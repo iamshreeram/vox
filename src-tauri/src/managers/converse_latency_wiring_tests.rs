@@ -269,6 +269,7 @@ impl Brain for Brain1 {
 
 fn answer_plan(speech: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         job: None,
         role: None,
         kind: PlanKind::Answer,

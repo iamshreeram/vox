@@ -290,6 +290,7 @@ async fn run(r: &Rig, cfg: &SessionConfig) -> SessionEnd {
 
 fn tp(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         job: None,
         role: None,
         kind,

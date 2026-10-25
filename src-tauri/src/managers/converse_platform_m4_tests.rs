@@ -49,6 +49,7 @@ fn plain_input() -> PlanInput<'static> {
         role: None,
         roles_enabled: false,
         agent_enabled: false,
+        planner_enabled: false,
     }
 }
 

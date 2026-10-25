@@ -421,6 +421,8 @@ fn speech_outcome(kind: &PlanKind) -> TurnOutcome {
         | PlanKind::ClearRole
         // Stage 2 (C3 wires the real behaviour): an agent plan is answer-like until then.
         | PlanKind::Agent
+        // Stage 4 (S4 wires the executor): a plan is answer-like for the history label.
+        | PlanKind::Plan
         | PlanKind::Resume => TurnOutcome::Answered,
     }
 }
@@ -1290,6 +1292,7 @@ async fn streamed_outcome(
             | PlanKind::ClearRole
             | PlanKind::Resume
             | PlanKind::Agent
+            | PlanKind::Plan
             | PlanKind::Job
     ) {
         // Agent and Job plans too: the streamer never releases them as early speech (2.1). A Job
@@ -1520,6 +1523,7 @@ async fn brain_turn(
         lesson_paused: carry.lesson.is_some(),
         roles_enabled: true,
         agent_enabled: converse_agent_loop::handoff_effective(cfg),
+        planner_enabled: false,
     };
     // Answer-only (DESIGN 8.1): no streamed model text may reach the mouth before a complete
     // plan is parsed, so the streaming path is never used. Role-active turns (Stage 1 roles,
@@ -1789,6 +1793,7 @@ async fn lesson_start_turn(
         lesson_paused: false,
         roles_enabled: true,
         agent_enabled: converse_agent_loop::handoff_effective(cfg),
+        planner_enabled: false,
     };
     deps.reporter.state(SessionState::Thinking);
     let Some(planned) = race(cancel, deps.brain.plan(input)).await else {
@@ -1887,7 +1892,7 @@ async fn execute_plan(
     if cfg.answer_only
         && matches!(
             plan.kind,
-            PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::Agent
+            PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::Agent | PlanKind::Plan
         )
     {
         // Answer-only boundary (DESIGN 3.6): zero paste/command/job calls; only the fixed refusal.
@@ -1922,6 +1927,13 @@ async fn execute_plan(
                 }
                 answer_turn(deps, cfg, cancel, &as_answer, carry).await?
             }
+        }
+        // Stage 4 (S4 wires the executor): a plan runs nothing yet, so it speaks the refusal.
+        PlanKind::Plan => {
+            carry.journal.set(speech_outcome(&plan.kind), None);
+            let mut as_answer = plan.clone();
+            as_answer.speech = converse_agent_loop::LINE_NOT_EFFECTIVE.to_string();
+            answer_turn(deps, cfg, cancel, &as_answer, carry).await?
         }
         PlanKind::Clarify | PlanKind::Job => {
             carry.journal.set(speech_outcome(&plan.kind), None);
@@ -2012,7 +2024,7 @@ async fn gate_and_run(
     if cfg.answer_only
         && matches!(
             plan.kind,
-            PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::Agent
+            PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::Agent | PlanKind::Plan
         )
     {
         return execute_plan(deps, cfg, cancel, plan, carry).await;
@@ -2091,7 +2103,7 @@ async fn run_final_plan(
     if cfg.answer_only
         && matches!(
             plan.kind,
-            PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::Agent
+            PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::Agent | PlanKind::Plan
         )
     {
         return execute_plan(deps, cfg, cancel, plan, carry).await;
@@ -2118,6 +2130,8 @@ fn needs_forced_confirmation(cfg: &SessionConfig, plan: &TurnPlan) -> bool {
     match plan.kind {
         PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::SetRole => true,
         PlanKind::Agent => converse_agent_loop::handoff_effective(cfg),
+        // Stage 4: a plan runs nothing yet (S4 adds its confirmation prompt).
+        PlanKind::Plan => false,
         _ => false,
     }
 }
@@ -3132,6 +3146,7 @@ mod tests {
     }
     fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
         TurnPlan {
+            plan: None,
             job: None,
             role: None,
             agent: None,

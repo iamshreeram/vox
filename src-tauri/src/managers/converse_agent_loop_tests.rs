@@ -733,6 +733,7 @@ pub(super) async fn run(r: &Rig, cfg: &SessionConfig) -> SessionEnd {
 
 pub(super) fn tp(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         job: None,
         role: None,
         kind,
@@ -747,6 +748,7 @@ pub(super) fn tp(kind: PlanKind, speech: &str) -> TurnPlan {
 pub(super) fn agent_plan(task: &str, speech: &str) -> TurnPlan {
     TurnPlan {
         agent: Some(AgentRequest {
+            kind: crate::managers::converse_plan::StepKind::General,
             task: task.to_string(),
         }),
         ..tp(PlanKind::Agent, speech)

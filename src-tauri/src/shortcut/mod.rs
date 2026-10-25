@@ -1083,7 +1083,7 @@ fn shutdown_managed_acp_agent(app: &AppHandle) {
 pub fn change_acp_agent_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.acp_agent_enabled = enabled;
-    settings::write_settings(&app, settings);
+    settings::write_settings_gated(&app, settings);
     if !enabled {
         shutdown_managed_acp_agent(&app);
     }
@@ -1102,7 +1102,7 @@ pub fn change_acp_agent_command_setting(
     let mut settings = settings::get_settings(&app);
     let changed = settings.acp_agent_command != normalized;
     settings.acp_agent_command = normalized;
-    settings::write_settings(&app, settings);
+    settings::write_settings_gated(&app, settings);
     if changed {
         shutdown_managed_acp_agent(&app);
     }
@@ -1118,7 +1118,7 @@ pub fn change_acp_agent_args_setting(app: AppHandle, args: String) -> Result<(),
     let mut settings = settings::get_settings(&app);
     let changed = settings.acp_agent_args != args;
     settings.acp_agent_args = args;
-    settings::write_settings(&app, settings);
+    settings::write_settings_gated(&app, settings);
     if changed {
         shutdown_managed_acp_agent(&app);
     }
@@ -1133,7 +1133,7 @@ pub fn change_acp_agent_turn_timeout_setting(app: AppHandle, secs: u64) -> Resul
     let secs = settings::validate_acp_agent_turn_timeout_secs(secs)?;
     let mut settings = settings::get_settings(&app);
     settings.acp_agent_turn_timeout_secs = secs;
-    settings::write_settings(&app, settings);
+    settings::write_settings_gated(&app, settings);
     Ok(())
 }
 
