@@ -74,6 +74,8 @@ mod converse_plan_vault_tests;
 mod converse_planner_launch_tests;
 #[cfg(test)]
 mod converse_planner_loop_tests;
+#[cfg(test)]
+mod converse_planner_wiring_tests;
 pub mod converse_platform;
 pub mod converse_queue;
 #[cfg(test)]

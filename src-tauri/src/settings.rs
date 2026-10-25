@@ -1305,7 +1305,6 @@ pub struct StepAgents {
 
 impl StepAgents {
     /// The slot for a step type word. Any other word, `general` included, has no slot.
-    #[allow(dead_code)] // Stage 4: used by the specialist setter command (later step).
     fn slot_mut(&mut self, step_type: &str) -> Result<&mut Option<StepAgentProfile>, String> {
         match step_type {
             "research" => Ok(&mut self.research),
@@ -1321,7 +1320,6 @@ impl StepAgents {
 /// The command goes through `normalize_acp_agent_command` and the arguments through
 /// `validate_acp_agent_args`, and the step type must name a slot. Every check runs before the
 /// write, so a rejected value leaves `settings` untouched.
-#[allow(dead_code)] // Stage 4: used by the specialist setter command (later step).
 pub fn apply_step_agent_setting(
     settings: &mut AppSettings,
     step_type: &str,
@@ -2293,18 +2291,18 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         }
 
         if updated {
-            store.set("settings", serde_json::to_value(&settings).unwrap());
+            write_settings(app, settings.clone());
         }
 
         settings
     } else {
         let default_settings = get_default_settings();
-        store.set("settings", serde_json::to_value(&default_settings).unwrap());
+        write_settings(app, default_settings.clone());
         default_settings
     };
 
     if ensure_post_process_defaults(&mut settings) {
-        store.set("settings", serde_json::to_value(&settings).unwrap());
+        write_settings(app, settings.clone());
     }
 
     settings
@@ -2515,17 +2513,25 @@ pub fn write_settings(app: &AppHandle, incoming: AppSettings) {
     }
 }
 
-/// Writes `settings` as the stored settings object with its launch fields as given. Only the
-/// setters of the launch fields call this; every other writer uses `write_settings`.
-pub(crate) fn write_settings_gated(app: &AppHandle, settings: AppSettings) {
-    let store = app
-        .store(crate::portable::store_path(SETTINGS_STORE_PATH))
-        .expect("Failed to initialize store");
-    let _guard = lock_settings_writes();
-    match serde_json::to_value(&settings) {
-        Ok(value) => store.set("settings", value),
-        Err(e) => warn!("Failed to serialize settings ({e}); the stored settings are unchanged"),
-    }
+/// Changes launch-affecting settings (Stage 4 A3-R3, A8). `apply` runs on the settings read
+/// inside the process-wide gate, so a concurrent setter's change is never overwritten by a stale
+/// object. The gate is odd while the store is written. Only the setters of the launch fields call
+/// this; every other writer uses `write_settings`, which keeps the committed launch fields.
+pub(crate) fn write_settings_gated(app: &AppHandle, apply: impl FnOnce(&mut AppSettings)) {
+    crate::managers::agent_settings_gate::process_gate().with_update(|| {
+        let mut settings = get_settings(app);
+        apply(&mut settings);
+        let store = app
+            .store(crate::portable::store_path(SETTINGS_STORE_PATH))
+            .expect("Failed to initialize store");
+        let _guard = lock_settings_writes();
+        match serde_json::to_value(&settings) {
+            Ok(value) => store.set("settings", value),
+            Err(e) => {
+                warn!("Failed to serialize settings ({e}); the stored settings are unchanged")
+            }
+        }
+    });
 }
 
 pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {

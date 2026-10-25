@@ -10,6 +10,7 @@ use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error
 use crate::managers::acp_agent::{AcpAgentConfig, AcpAgentError, AcpAgentManager, PromptOptions};
 use crate::managers::acp_escalation::user_message_for;
 use crate::managers::acp_run::RunHandle;
+use crate::managers::agent_settings_gate::{process_gate, read_stable};
 use crate::managers::agent_tools::tauri_backends::build_tauri_executor;
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::composer_config::{settings_from_app, TtsComposerMode};
@@ -587,25 +588,31 @@ impl Hands for RealHands {
         task: &str,
         role: Option<&str>,
     ) -> Result<PreparedAgentLaunch, AgentStartError> {
-        let settings = get_settings(&self.app);
-        // Re-read here: turning the hand-off setting off mid-session stops a forced launch.
-        if !agent_launch_allowed(
-            settings.acp_agent_enabled,
-            settings.acp_agent_command.as_deref(),
-            settings.conversation_agent_handoff,
-        ) {
-            return Err(AgentStartError::NotConfigured);
-        }
-        let cfg = crate::actions::acp_agent_config(&self.app, &settings)
-            .map_err(AgentStartError::Failed)?;
-        Ok(PreparedAgentLaunch::new(
-            task.to_string(),
-            role.map(str::to_string),
-            cfg.command.to_string_lossy().into_owned(),
-            cfg.args,
-            cfg.cwd.to_string_lossy().into_owned(),
-            cfg.turn_timeout,
-        ))
+        let (epoch, launch) = read_stable(&process_gate(), || {
+            let settings = get_settings(&self.app);
+            // Re-read here: turning the hand-off setting off mid-session stops a forced launch.
+            if !agent_launch_allowed(
+                settings.acp_agent_enabled,
+                settings.acp_agent_command.as_deref(),
+                settings.conversation_agent_handoff,
+            ) {
+                return Err(AgentStartError::NotConfigured);
+            }
+            let cfg = crate::actions::acp_agent_config(&self.app, &settings)
+                .map_err(AgentStartError::Failed)?;
+            Ok(PreparedAgentLaunch::new(
+                task.to_string(),
+                role.map(str::to_string),
+                cfg.command.to_string_lossy().into_owned(),
+                cfg.args,
+                cfg.cwd.to_string_lossy().into_owned(),
+                cfg.turn_timeout,
+            ))
+        })
+        .map_err(settings_changing)?;
+        // Why: the epoch is the generation the settings were read under (A3-R3); start refuses it
+        // once the settings change.
+        Ok(launch.with_epoch(epoch))
     }
 
     fn prepare_agent_launch_for(
@@ -614,28 +621,32 @@ impl Hands for RealHands {
         task: &str,
         role: Option<&str>,
     ) -> Result<PreparedAgentLaunch, AgentStartError> {
-        let settings = get_settings(&self.app);
-        // Same master gates as the single agent (DESIGN 2.5); the step's profile is resolved here.
-        if !agent_launch_allowed(
-            settings.acp_agent_enabled,
-            settings.acp_agent_command.as_deref(),
-            settings.conversation_agent_handoff,
-        ) {
-            return Err(AgentStartError::NotConfigured);
-        }
-        let resolved = resolve_step_agent(&settings, kind)?;
-        // The working directory is the main agent's, as for every step (DESIGN 2.2).
-        let cfg = crate::actions::acp_agent_config(&self.app, &settings)
-            .map_err(AgentStartError::Failed)?;
-        Ok(PreparedAgentLaunch::new(
-            task.to_string(),
-            role.map(str::to_string),
-            resolved.command,
-            resolved.args,
-            cfg.cwd.to_string_lossy().into_owned(),
-            resolved.turn_timeout,
-        )
-        .with_step(kind, resolved.source, true))
+        let (epoch, launch) = read_stable(&process_gate(), || {
+            let settings = get_settings(&self.app);
+            // Same master gates as the single agent (DESIGN 2.5); the step's profile is resolved here.
+            if !agent_launch_allowed(
+                settings.acp_agent_enabled,
+                settings.acp_agent_command.as_deref(),
+                settings.conversation_agent_handoff,
+            ) {
+                return Err(AgentStartError::NotConfigured);
+            }
+            let resolved = resolve_step_agent(&settings, kind)?;
+            // The working directory is the main agent's, as for every step (DESIGN 2.2).
+            let cfg = crate::actions::acp_agent_config(&self.app, &settings)
+                .map_err(AgentStartError::Failed)?;
+            Ok(PreparedAgentLaunch::new(
+                task.to_string(),
+                role.map(str::to_string),
+                resolved.command,
+                resolved.args,
+                cfg.cwd.to_string_lossy().into_owned(),
+                resolved.turn_timeout,
+            )
+            .with_step(kind, resolved.source, true))
+        })
+        .map_err(settings_changing)?;
+        Ok(launch.with_epoch(epoch))
     }
 
     fn agent_launch_still_valid(&self, launch: &PreparedAgentLaunch) -> bool {
@@ -678,16 +689,17 @@ impl Hands for RealHands {
             handshake_timeout: AGENT_HANDSHAKE_TIMEOUT,
             cancel_grace: AGENT_CANCEL_GRACE,
         };
-        let prompt = launch.prompt_text();
+        let prompt = launch.wire_prompt();
         let handle = manager.new_run_handle();
         let (tx, rx) = std::sync::mpsc::channel::<AgentEvent>();
         let worker = manager.clone();
         // A fresh ACP session per request, so nothing carries over between requests or into
         // dictation. The worker sends exactly one terminal event; if it panics, `tx` is dropped
         // and the run reports `Lost`.
+        // Why: admission refuses the run if the settings changed after it was prepared (A3-R3).
         let opts = PromptOptions {
             reuse_session: false,
-            expected_epoch: None,
+            expected_epoch: Some(launch.epoch),
         };
         drop(tauri::async_runtime::spawn_blocking(move || {
             let event = match worker.prompt_with_handle(&cfg, &prompt, opts, &handle) {
@@ -715,6 +727,16 @@ impl Hands for RealHands {
     fn publish_agent_result(&self, text: &str) {
         let _ = self.app.emit("agent-bridge-reply", text.to_string());
     }
+}
+
+/// The fixed line of a launch prepared while the settings were being changed (A3-R3). The loop
+/// speaks its own line for a failed preparation, so this text is never spoken as is.
+const SETTINGS_CHANGING: &str = "The agent settings are changing.";
+
+/// Maps a failed guarded read to the preparation error (A3-R3): a read during an update, or one
+/// that kept changing, is a transient failure.
+fn settings_changing(err: Option<AgentStartError>) -> AgentStartError {
+    err.unwrap_or_else(|| AgentStartError::Failed(SETTINGS_CHANGING.to_string()))
 }
 
 /// Handshake limit of an agent run (the same value `acp_agent_config` uses).

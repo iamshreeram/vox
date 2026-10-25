@@ -171,9 +171,8 @@ impl PreparedAgentLaunch {
         self
     }
 
-    /// Sets the plan run epoch. The epoch is stored but not fingerprinted.
-    // Why: the planner executor (a later step) is the only production caller.
-    #[allow(dead_code)]
+    /// Sets the settings generation the launch was prepared under (`read_stable`). Stored, not
+    /// fingerprinted: admission compares it with the live generation.
     pub fn with_epoch(mut self, epoch: u64) -> Self {
         self.epoch = epoch;
         self
@@ -217,6 +216,37 @@ impl PreparedAgentLaunch {
                 }
             }
         }
+    }
+
+    /// The text RealHands sends to the agent: the fixed role instruction of a typed step, then
+    /// `prompt_text`. A single agent (`General`) sends `prompt_text` unchanged.
+    pub fn wire_prompt(&self) -> String {
+        match step_role_text(self.step_kind) {
+            Some(text) => format!("Step role: {text}\n\n{}", self.prompt_text()),
+            None => self.prompt_text(),
+        }
+    }
+}
+
+/// Stage 4 (DESIGN 2.3): the fixed role instruction of a research step. Plain text, no placeholders.
+pub const STEP_ROLE_RESEARCH: &str =
+    "Look things up on the web and report concise findings with sources. Do not modify files.";
+/// Stage 4 (DESIGN 2.3): the fixed role instruction of a browser step.
+pub const STEP_ROLE_BROWSER: &str = "Use a browser to do what is asked and report what you saw.";
+/// Stage 4 (DESIGN 2.3): the fixed role instruction of a code step.
+pub const STEP_ROLE_CODE: &str =
+    "Write or change code, or run commands, in the project and report what changed.";
+/// Stage 4 (DESIGN 2.3): the fixed role instruction of a files step.
+pub const STEP_ROLE_FILES: &str = "Read, create or edit files and report what changed.";
+
+/// Stage 4 (DESIGN 2.3): the role instruction a step kind adds to its prompt. `General` has none.
+pub fn step_role_text(kind: StepKind) -> Option<&'static str> {
+    match kind {
+        StepKind::Research => Some(STEP_ROLE_RESEARCH),
+        StepKind::Browser => Some(STEP_ROLE_BROWSER),
+        StepKind::Code => Some(STEP_ROLE_CODE),
+        StepKind::Files => Some(STEP_ROLE_FILES),
+        StepKind::General => None,
     }
 }
 

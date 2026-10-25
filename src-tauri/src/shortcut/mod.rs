@@ -1081,9 +1081,7 @@ fn shutdown_managed_acp_agent(app: &AppHandle) {
 #[tauri::command]
 #[specta::specta]
 pub fn change_acp_agent_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    settings.acp_agent_enabled = enabled;
-    settings::write_settings_gated(&app, settings);
+    settings::write_settings_gated(&app, |settings| settings.acp_agent_enabled = enabled);
     if !enabled {
         shutdown_managed_acp_agent(&app);
     }
@@ -1099,10 +1097,8 @@ pub fn change_acp_agent_command_setting(
     command: Option<String>,
 ) -> Result<(), String> {
     let normalized = settings::normalize_acp_agent_command(command.as_deref().unwrap_or(""))?;
-    let mut settings = settings::get_settings(&app);
-    let changed = settings.acp_agent_command != normalized;
-    settings.acp_agent_command = normalized;
-    settings::write_settings_gated(&app, settings);
+    let changed = settings::get_settings(&app).acp_agent_command != normalized;
+    settings::write_settings_gated(&app, |settings| settings.acp_agent_command = normalized);
     if changed {
         shutdown_managed_acp_agent(&app);
     }
@@ -1115,10 +1111,8 @@ pub fn change_acp_agent_command_setting(
 #[specta::specta]
 pub fn change_acp_agent_args_setting(app: AppHandle, args: String) -> Result<(), String> {
     settings::validate_acp_agent_args(&args)?;
-    let mut settings = settings::get_settings(&app);
-    let changed = settings.acp_agent_args != args;
-    settings.acp_agent_args = args;
-    settings::write_settings_gated(&app, settings);
+    let changed = settings::get_settings(&app).acp_agent_args != args;
+    settings::write_settings_gated(&app, |settings| settings.acp_agent_args = args);
     if changed {
         shutdown_managed_acp_agent(&app);
     }
@@ -1131,9 +1125,34 @@ pub fn change_acp_agent_args_setting(app: AppHandle, args: String) -> Result<(),
 #[specta::specta]
 pub fn change_acp_agent_turn_timeout_setting(app: AppHandle, secs: u64) -> Result<(), String> {
     let secs = settings::validate_acp_agent_turn_timeout_secs(secs)?;
-    let mut settings = settings::get_settings(&app);
-    settings.acp_agent_turn_timeout_secs = secs;
-    settings::write_settings_gated(&app, settings);
+    settings::write_settings_gated(&app, |settings| settings.acp_agent_turn_timeout_secs = secs);
+    Ok(())
+}
+
+/// Stores or clears one specialist agent (Stage 4). `step_type` is `research`, `browser`,
+/// `code` or `files`. A blank command clears the slot. The command and arguments are validated
+/// before any write, so a rejected value leaves the setting and the running agent untouched.
+#[tauri::command]
+#[specta::specta]
+pub fn change_acp_step_agent_setting(
+    app: AppHandle,
+    step_type: String,
+    command: Option<String>,
+    args: String,
+) -> Result<(), String> {
+    // Validate on a copy first: nothing is written and no agent is retired on a rejected value.
+    let mut candidate = settings::get_settings(&app);
+    let before = candidate.acp_step_agents.clone();
+    settings::apply_step_agent_setting(&mut candidate, &step_type, command.as_deref(), &args)?;
+    let changed = candidate.acp_step_agents != before;
+    settings::write_settings_gated(&app, |settings| {
+        // Re-applied to the settings read inside the gate, so a concurrent change to another
+        // field is kept. The values were validated above.
+        let _ = settings::apply_step_agent_setting(settings, &step_type, command.as_deref(), &args);
+    });
+    if changed {
+        shutdown_managed_acp_agent(&app);
+    }
     Ok(())
 }
 

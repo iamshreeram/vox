@@ -374,8 +374,6 @@ impl AcpAgentManager {
 
     /// Like `new`, but gated launches are admitted against `gate`, which the settings writers
     /// share with this manager.
-    // Why: only the gate tests call this until the settings writers are wired.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn new_with_gate(gate: Arc<AgentSettingsGate>) -> Self {
         Self::with_idle_shutdown_and_gate(Duration::from_secs(30 * 60), gate)
     }

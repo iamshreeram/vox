@@ -426,7 +426,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         }),
     );
     app_handle.manage(Arc::new(
-        managers::acp_agent::AcpAgentManager::new().with_permissions(
+        managers::acp_agent::AcpAgentManager::new_with_gate(
+            managers::agent_settings_gate::process_gate(),
+        )
+        .with_permissions(
             Arc::new(acp_prompter),
             Arc::new(move || get_settings(&acp_settings_app).acp_permission_settings()),
         ),
@@ -1269,11 +1272,13 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_acp_agent_command_setting,
             shortcut::change_acp_agent_args_setting,
             shortcut::change_acp_agent_turn_timeout_setting,
+            shortcut::change_acp_step_agent_setting,
             shortcut::acp_agent_test_connection,
             commands::acp_permission::acp_permission_respond,
             commands::acp_permission::change_acp_permission_mode_setting,
             commands::acp_permission::change_acp_permission_timeout_secs_setting,
             commands::acp_permission::change_conversation_agent_handoff_setting,
+            commands::acp_permission::change_conversation_planner_setting,
             commands::voice_shortcuts::set_voice_shortcuts,
             commands::converse::change_converse_silence_ms_setting,
             commands::converse::change_converse_max_idle_turns_setting,

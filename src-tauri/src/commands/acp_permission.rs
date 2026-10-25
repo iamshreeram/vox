@@ -24,9 +24,7 @@ pub fn change_acp_permission_mode_setting(
     app: AppHandle,
     mode: PermissionMode,
 ) -> Result<(), String> {
-    let mut settings = get_settings(&app);
-    apply_acp_permission_mode(&mut settings, mode);
-    write_settings_gated(&app, settings);
+    write_settings_gated(&app, |settings| apply_acp_permission_mode(settings, mode));
     Ok(())
 }
 
@@ -48,9 +46,18 @@ pub fn change_conversation_agent_handoff_setting(
     app: AppHandle,
     enabled: bool,
 ) -> Result<(), String> {
-    let mut settings = get_settings(&app);
-    apply_conversation_agent_handoff(&mut settings, enabled);
-    write_settings_gated(&app, settings);
+    write_settings_gated(&app, |settings| {
+        apply_conversation_agent_handoff(settings, enabled)
+    });
+    Ok(())
+}
+
+/// Stores whether conversation mode may run a multi-step plan (Stage 4). Effective only with the
+/// hand-off on. A change is gated like the hand-off flag.
+#[tauri::command]
+#[specta::specta]
+pub fn change_conversation_planner_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    write_settings_gated(&app, |settings| settings.conversation_planner = enabled);
     Ok(())
 }
 
