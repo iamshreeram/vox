@@ -721,8 +721,6 @@ impl Hands for RealHands {
 /// speaks its own line for a failed preparation, so this text is never spoken as is.
 const SETTINGS_CHANGING: &str = "The agent settings are changing.";
 
-/// Maps a failed guarded read to the preparation error (A3-R3): a read during an update, or one
-/// that kept changing, is a transient failure.
 /// Stage 4: the launch of a typed step (`in_plan` true) or of a typed single request (`in_plan`
 /// false), read under the settings gate. The profile is resolved here; the working directory is
 /// the main agent's, as for every step (DESIGN 2.2).
@@ -759,6 +757,8 @@ fn prepare_typed_launch(
     Ok(launch.with_epoch(epoch))
 }
 
+/// Maps a failed guarded read to the preparation error (A3-R3): a read during an update, or one
+/// that kept changing, is a transient failure.
 fn settings_changing(err: Option<AgentStartError>) -> AgentStartError {
     err.unwrap_or_else(|| AgentStartError::Failed(SETTINGS_CHANGING.to_string()))
 }

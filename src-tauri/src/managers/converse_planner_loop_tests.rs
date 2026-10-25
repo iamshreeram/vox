@@ -447,6 +447,8 @@ struct PHands {
     launches: Mutex<Vec<PreparedAgentLaunch>>,
     /// Every prepare call: (kind, task, role).
     prepares: Mutex<Vec<(StepKind, String, Option<String>)>>,
+    /// Which preparation method each call used, in order: "single", "for" or "typed".
+    methods: Mutex<Vec<&'static str>>,
     /// The task whose prepare fails.
     prepare_fail: Mutex<Option<String>>,
     /// The live settings the prepare resolves against.
@@ -465,6 +467,7 @@ impl PHands {
             runs: Mutex::new(Vec::new()),
             launches: Mutex::new(Vec::new()),
             prepares: Mutex::new(Vec::new()),
+            methods: Mutex::new(Vec::new()),
             prepare_fail: Mutex::new(None),
             settings: Mutex::new(main_settings()),
             valid: Arc::new(AtomicBool::new(true)),
@@ -496,6 +499,7 @@ impl Hands for PHands {
         role: Option<&str>,
     ) -> Result<PreparedAgentLaunch, AgentStartError> {
         note(&self.log, format!("prepare:{task}"));
+        self.methods.lock().unwrap().push("single");
         self.prepares.lock().unwrap().push((
             StepKind::General,
             task.to_string(),
@@ -518,6 +522,7 @@ impl Hands for PHands {
         role: Option<&str>,
     ) -> Result<PreparedAgentLaunch, AgentStartError> {
         note(&self.log, format!("prepare:{task}"));
+        self.methods.lock().unwrap().push("for");
         self.prepares
             .lock()
             .unwrap()
@@ -536,6 +541,31 @@ impl Hands for PHands {
             resolved.turn_timeout,
         )
         .with_step(kind, resolved.source, true))
+    }
+
+    fn prepare_agent_launch_typed(
+        &self,
+        kind: StepKind,
+        task: &str,
+        role: Option<&str>,
+    ) -> Result<PreparedAgentLaunch, AgentStartError> {
+        note(&self.log, format!("prepare:{task}"));
+        self.methods.lock().unwrap().push("typed");
+        self.prepares
+            .lock()
+            .unwrap()
+            .push((kind, task.to_string(), role.map(str::to_string)));
+        let settings = self.settings.lock().unwrap().clone();
+        let resolved = resolve_step_agent(&settings, kind)?;
+        Ok(PreparedAgentLaunch::new(
+            task.to_string(),
+            role.map(str::to_string),
+            resolved.command,
+            resolved.args,
+            "/tmp/fake-work".to_string(),
+            resolved.turn_timeout,
+        )
+        .with_step(kind, resolved.source, false))
     }
 
     fn agent_launch_still_valid(&self, _launch: &PreparedAgentLaunch) -> bool {
@@ -739,6 +769,19 @@ fn agent_turn(task: &str, speech: &str) -> Turn {
     })
 }
 
+/// A one-step Agent request with a type: a typed single request, not a plan.
+fn typed_agent_turn(kind: StepKind, task: &str, speech: &str) -> Turn {
+    Ok(TurnPlan {
+        kind: PlanKind::Agent,
+        speech: speech.to_string(),
+        agent: Some(AgentRequest {
+            kind,
+            task: task.to_string(),
+        }),
+        ..base_plan()
+    })
+}
+
 fn set_role_turn(role: &str, speech: &str) -> Turn {
     Ok(TurnPlan {
         kind: PlanKind::SetRole,
@@ -793,6 +836,10 @@ fn starts_of(r: &Rig) -> Vec<String> {
 
 fn prepares(r: &Rig) -> usize {
     r.hands.prepares.lock().unwrap().len()
+}
+
+fn prepare_methods(r: &Rig) -> Vec<&'static str> {
+    r.hands.methods.lock().unwrap().clone()
 }
 
 fn published(r: &Rig) -> Vec<String> {
@@ -1811,6 +1858,40 @@ async fn plan_steps_do_not_consume_the_turn_budget() {
     run(&r, &cfg).await;
 
     assert_eq!(published(&r), vec![FINAL.to_string()]);
+}
+
+/// A single Agent request with a type goes through the typed preparation and is not a plan step,
+/// so its launch carries that step kind; a request without a type keeps the general single path.
+#[tokio::test]
+async fn single_agent_request_prepares_by_its_type_and_untyped_stays_general() {
+    let r = rig(
+        vec![heard(REQ), heard("thanks")],
+        vec![
+            typed_agent_turn(StepKind::Research, TASK, ACK_TEXT),
+            answer_turn("You're welcome."),
+        ],
+    );
+    queue(&r, vec![done(RESULT)]);
+    run(&r, &pcfg()).await;
+
+    assert_eq!(prepare_methods(&r), vec!["typed"], "the typed path is used");
+    let typed = launch_of(&r, 0);
+    assert_eq!(typed.step_kind, StepKind::Research);
+    assert!(!typed.in_plan, "a typed single request is not a plan step");
+
+    let r = rig(
+        vec![heard(REQ), heard("thanks")],
+        vec![agent_turn(TASK, ACK_TEXT), answer_turn("You're welcome.")],
+    );
+    queue(&r, vec![done(RESULT)]);
+    run(&r, &pcfg()).await;
+
+    assert_eq!(
+        prepare_methods(&r),
+        vec!["single"],
+        "the untyped path is used"
+    );
+    assert_eq!(launch_of(&r, 0).step_kind, StepKind::General);
 }
 
 /// Registers an existing run control as the next started run.

@@ -1068,8 +1068,12 @@ pub fn change_agent_bridge_prompt_flag_setting(app: AppHandle, flag: String) -> 
     Ok(())
 }
 
-/// Retires the managed ACP agent child, if one is managed. Returns at once: `shutdown`
-/// retires the child and does not wait for it.
+/// Retires the managed ACP agent child, if one is managed. `shutdown` retires the child and then
+/// waits for it (`Conn::terminate`, up to about 2 s), so the settings generation stays odd for that
+/// time. A launch prepared or admitted in that window is refused with a transient "settings
+/// changing" error; that is acceptable and safe. The shutdown runs inside the gate's update, after
+/// the setting is applied in memory, and before `write_settings_gated` writes the store; the order
+/// is kept because the store write lives in `settings.rs`, outside this closure.
 fn shutdown_managed_acp_agent(app: &AppHandle) {
     if let Some(manager) = app.try_state::<Arc<crate::managers::acp_agent::AcpAgentManager>>() {
         manager.inner().shutdown();
