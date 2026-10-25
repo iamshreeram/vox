@@ -103,10 +103,30 @@ _run_start() {
   _run_record "$_RUN_PID"
 }
 
+# _run_idle SECONDS : waits with builtin timed reads on an idle O_RDWR fifo, so
+# no helper process is started (no sleep).
+_run_idle() {
+  local i=0 junk=""
+  if [ ! -p "$_RUN_W/idle" ] && ! mkfifo "$_RUN_W/idle"; then
+    return 0
+  fi
+  if ! exec 4<>"$_RUN_W/idle"; then
+    return 0
+  fi
+  while [ "$i" -lt "$1" ]; do
+    read -r -t 1 -u 4 junk || true
+    i=$((i + 1))
+  done
+  exec 4<&-
+  return 0
+}
+
 # _run_wait LIMIT : waits for _RUN_PID (bounded by LIMIT and the test budget).
 # Sets _RG_RC (exit status) and _RG_HUNG=1 when the watchdog had to KILL it.
+# After a KILL the pid gets up to 5 s to die. If it does not, a failure is
+# recorded and wait is skipped; the pid stays in _RUN_PIDS for the EXIT retry.
 _run_wait() {
-  local limit="$1" start="$SECONDS" left
+  local limit="$1" start="$SECONDS" left i=0
   _RG_HUNG=0
   left=$((_RUN_DEADLINE - SECONDS))
   if [ "$left" -lt "$limit" ]; then
@@ -120,6 +140,17 @@ _run_wait() {
     fi
     sleep 0.2
   done
+  if [ "$_RG_HUNG" -eq 1 ]; then
+    while kill -0 "$_RUN_PID" 2>/dev/null && [ "$i" -lt 5 ]; do
+      _run_idle 1
+      i=$((i + 1))
+    done
+    if kill -0 "$_RUN_PID" 2>/dev/null; then
+      _report fail "guard-run did not die after KILL (pid $_RUN_PID)"
+      _RG_RC=137
+      return 0
+    fi
+  fi
   wait "$_RUN_PID" 2>/dev/null
   _RG_RC=$?
 }
