@@ -24,8 +24,8 @@ use crate::managers::converse::{
     QuietOutcome, SayOutcome, SessionConfig, SessionEnd, SpeechQueue, TranscriptSink,
 };
 use crate::managers::converse_agent::{
-    agent_launch_allowed, cap_result, AgentEvent, AgentPoll, AgentRun, AgentStartError,
-    PreparedAgentLaunch, AGENT_FAILED_FALLBACK,
+    agent_launch_allowed, cap_result, resolve_step_agent, AgentEvent, AgentPoll, AgentRun,
+    AgentStartError, PreparedAgentLaunch, AGENT_FAILED_FALLBACK,
 };
 use crate::managers::converse_audio::{wait_for_speech_end, SpeechProbe, WaitOutcome};
 use crate::managers::converse_barge::BargeIn;
@@ -43,7 +43,8 @@ use crate::managers::converse_confirm::{
 use crate::managers::converse_latency::{LatencyEvent, EVENT_NAME};
 use crate::managers::converse_overlay::{OverlayDispatcher, ReadyGate};
 use crate::managers::converse_plan::{
-    build_plan_prompt, JobParsePolicy, PlanError, PlanInput, PlanKind, PlanPrompt, TurnPlan,
+    build_plan_prompt, JobParsePolicy, PlanError, PlanInput, PlanKind, PlanPrompt, StepKind,
+    TurnPlan,
 };
 use crate::managers::converse_queue::TtsQueueSession;
 use crate::managers::converse_runtime::{
@@ -607,8 +608,48 @@ impl Hands for RealHands {
         ))
     }
 
+    fn prepare_agent_launch_for(
+        &self,
+        kind: StepKind,
+        task: &str,
+        role: Option<&str>,
+    ) -> Result<PreparedAgentLaunch, AgentStartError> {
+        let settings = get_settings(&self.app);
+        // Same master gates as the single agent (DESIGN 2.5); the step's profile is resolved here.
+        if !agent_launch_allowed(
+            settings.acp_agent_enabled,
+            settings.acp_agent_command.as_deref(),
+            settings.conversation_agent_handoff,
+        ) {
+            return Err(AgentStartError::NotConfigured);
+        }
+        let resolved = resolve_step_agent(&settings, kind)?;
+        // The working directory is the main agent's, as for every step (DESIGN 2.2).
+        let cfg = crate::actions::acp_agent_config(&self.app, &settings)
+            .map_err(AgentStartError::Failed)?;
+        Ok(PreparedAgentLaunch::new(
+            task.to_string(),
+            role.map(str::to_string),
+            resolved.command,
+            resolved.args,
+            cfg.cwd.to_string_lossy().into_owned(),
+            resolved.turn_timeout,
+        )
+        .with_step(kind, resolved.source, true))
+    }
+
     fn agent_launch_still_valid(&self, launch: &PreparedAgentLaunch) -> bool {
-        match self.prepare_agent_launch(&launch.task, launch.role.as_deref()) {
+        let settings = get_settings(&self.app);
+        // A plan step also needs the planner setting on (DESIGN 2.5, A2).
+        if launch.in_plan && !settings.conversation_planner {
+            return false;
+        }
+        let live = if launch.in_plan {
+            self.prepare_agent_launch_for(launch.step_kind, &launch.task, launch.role.as_deref())
+        } else {
+            self.prepare_agent_launch(&launch.task, launch.role.as_deref())
+        };
+        match live {
             Ok(live) => live.fingerprint == launch.fingerprint,
             Err(_) => false,
         }

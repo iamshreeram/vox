@@ -3,7 +3,9 @@
 //! the traits below. Contract: DESIGN.md section 3.3 (Revision 4).
 
 use crate::managers::converse_ack::choose;
-use crate::managers::converse_agent::{AgentRun, AgentStartError, PreparedAgentLaunch};
+use crate::managers::converse_agent::{
+    AgentRun, AgentSource, AgentStartError, PreparedAgentLaunch,
+};
 use crate::managers::converse_barge::{BargeCapture, BargeIn, BargeWatch, ReplyGate};
 use crate::managers::converse_confirm::{
     confirm_action, confirm_forced, confirmation_question, decline_message, fingerprint_for,
@@ -17,7 +19,7 @@ use crate::managers::converse_context::{
 use crate::managers::converse_latency::{LatencyReport, ListenTiming, RollingStats};
 use crate::managers::converse_local::{classify_local_in_session, LocalIntent};
 use crate::managers::converse_plan::{
-    PlanError, PlanInput, PlanKind, TurnPlan, MAX_UTTERANCE_CHARS,
+    PlanError, PlanInput, PlanKind, StepKind, TurnPlan, MAX_UTTERANCE_CHARS,
 };
 use crate::managers::converse_role::{
     now as lesson_now, split_chunks, Lesson, CLEARED_SPOKEN, CONTINUE_SPOKEN,
@@ -26,6 +28,8 @@ use crate::managers::converse_role::{
 use crate::managers::converse_stream::{reconcile, PlanStreamer, Reconcile};
 use crate::managers::emotion::Emotion;
 use crate::managers::job_announcer::{Announcer, LowPriorityMouth};
+#[allow(unused_imports)]
+pub(crate) use crate::managers::plan_clock::{advance_plan_clock, agent_now};
 use futures_util::future::{select, Either};
 use std::collections::VecDeque;
 use std::future::Future;
@@ -290,6 +294,17 @@ pub trait Hands: Send + Sync {
     /// Stage 2 agent hand-off: publishes the full agent reply to the UI. Default: nothing.
     #[allow(dead_code)]
     fn publish_agent_result(&self, _text: &str) {}
+    /// Stage 4: prepares the launch of one plan step, with its step kind (its agent profile).
+    /// Default: the single-agent preparation, recorded as a main-agent step of a plan.
+    fn prepare_agent_launch_for(
+        &self,
+        kind: StepKind,
+        task: &str,
+        role: Option<&str>,
+    ) -> Result<PreparedAgentLaunch, AgentStartError> {
+        self.prepare_agent_launch(task, role)
+            .map(|launch| launch.with_step(kind, AgentSource::Main, true))
+    }
 }
 
 pub trait Brain: Send + Sync {
@@ -709,6 +724,9 @@ pub struct SessionConfig {
     /// Stage 2 agent hand-off: the ACP agent is enabled with a command and the conversation
     /// hand-off setting is on (`from_settings`). Default false.
     pub agent_handoff: bool,
+    /// Stage 4 planner: a plan may run, that is the hand-off and the planner setting are both on
+    /// (`from_settings`). Default false.
+    pub agent_planner: bool,
 }
 
 impl Default for SessionConfig {
@@ -726,6 +744,7 @@ impl Default for SessionConfig {
             smart_ack: false,
             answer_only: false,
             agent_handoff: false,
+            agent_planner: false,
         }
     }
 }
@@ -734,6 +753,11 @@ impl SessionConfig {
     /// Session settings from the user's AppSettings (clamped; DESIGN 3.3).
     pub fn from_settings(s: &crate::settings::AppSettings) -> SessionConfig {
         let rt = crate::managers::realtime_config::RealtimeConfig::from_settings(s);
+        let agent_handoff = crate::managers::converse_agent::agent_launch_allowed(
+            s.acp_agent_enabled,
+            s.acp_agent_command.as_deref(),
+            s.conversation_agent_handoff,
+        );
         SessionConfig {
             max_idle_turns: s.converse_max_idle_turns.clamp(1, 5),
             context_turns: usize::from(s.converse_context_turns.min(12)),
@@ -750,11 +774,8 @@ impl SessionConfig {
             timing_log: rt.timing_log,
             smart_ack: rt.ack,
             answer_only: crate::managers::conversation_save::answer_only_for(s),
-            agent_handoff: crate::managers::converse_agent::agent_launch_allowed(
-                s.acp_agent_enabled,
-                s.acp_agent_command.as_deref(),
-                s.conversation_agent_handoff,
-            ),
+            agent_handoff,
+            agent_planner: agent_handoff && s.conversation_planner,
         }
     }
 }
@@ -1523,7 +1544,7 @@ async fn brain_turn(
         lesson_paused: carry.lesson.is_some(),
         roles_enabled: true,
         agent_enabled: converse_agent_loop::handoff_effective(cfg),
-        planner_enabled: false,
+        planner_enabled: cfg.agent_planner,
     };
     // Answer-only (DESIGN 8.1): no streamed model text may reach the mouth before a complete
     // plan is parsed, so the streaming path is never used. Role-active turns (Stage 1 roles,
@@ -1793,7 +1814,7 @@ async fn lesson_start_turn(
         lesson_paused: false,
         roles_enabled: true,
         agent_enabled: converse_agent_loop::handoff_effective(cfg),
-        planner_enabled: false,
+        planner_enabled: cfg.agent_planner,
     };
     deps.reporter.state(SessionState::Thinking);
     let Some(planned) = race(cancel, deps.brain.plan(input)).await else {
@@ -1928,12 +1949,19 @@ async fn execute_plan(
                 answer_turn(deps, cfg, cancel, &as_answer, carry).await?
             }
         }
-        // Stage 4 (S4 wires the executor): a plan runs nothing yet, so it speaks the refusal.
+        // Stage 4 (DESIGN 2.1, 2.5): the planner runs only when effective; otherwise the plan is
+        // answered as plain speech.
         PlanKind::Plan => {
             carry.journal.set(speech_outcome(&plan.kind), None);
-            let mut as_answer = plan.clone();
-            as_answer.speech = converse_agent_loop::LINE_NOT_EFFECTIVE.to_string();
-            answer_turn(deps, cfg, cancel, &as_answer, carry).await?
+            if converse_agent_loop::plan_effective(cfg) {
+                converse_agent_loop::plan_turn(deps, cfg, cancel, &plan, carry, false).await?
+            } else {
+                let mut as_answer = plan.clone();
+                if as_answer.speech.trim().is_empty() {
+                    as_answer.speech = converse_agent_loop::LINE_NOT_EFFECTIVE.to_string();
+                }
+                answer_turn(deps, cfg, cancel, &as_answer, carry).await?
+            }
         }
         PlanKind::Clarify | PlanKind::Job => {
             carry.journal.set(speech_outcome(&plan.kind), None);
@@ -2114,6 +2142,11 @@ async fn run_final_plan(
     if plan.kind == PlanKind::Agent {
         return forced_agent(deps, cfg, cancel, plan, carry).await;
     }
+    if plan.kind == PlanKind::Plan {
+        return converse_agent_loop::plan_turn(deps, cfg, cancel, &plan, carry, true)
+            .await
+            .map(Some);
+    }
     let confirmed = plan.clone();
     let Some(question) = forced_prompt(&confirmed) else {
         return gate_and_run(deps, cfg, cancel, confirmed, carry).await;
@@ -2130,8 +2163,7 @@ fn needs_forced_confirmation(cfg: &SessionConfig, plan: &TurnPlan) -> bool {
     match plan.kind {
         PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::SetRole => true,
         PlanKind::Agent => converse_agent_loop::handoff_effective(cfg),
-        // Stage 4: a plan runs nothing yet (S4 adds its confirmation prompt).
-        PlanKind::Plan => false,
+        PlanKind::Plan => converse_agent_loop::plan_effective(cfg),
         _ => false,
     }
 }
@@ -2384,9 +2416,10 @@ async fn run_turns_loop(
             return SessionEnd::Cancelled;
         }
         // Agent events are collected first; speech is delivered only here, outside any listen
-        // and outside any reply scope, and never while a captured barge-in is pending (2.4).
-        converse_agent_loop::collect_agent_events(carry, &mut history, cfg, deps.hands);
+        // and outside any reply scope. A captured barge-in is dispatched before anything else:
+        // while one is pending, nothing is collected or advanced (2.4, A1).
         if barge_next.is_none() {
+            converse_agent_loop::collect_agent_events(carry, &mut history, cfg, deps.hands);
             if let Some(mut narration) = carry.undelivered.pop_front() {
                 match converse_agent_loop::speak_unsolicited(deps, cfg, cancel, &mut narration)
                     .await
@@ -2397,6 +2430,10 @@ async fn run_turns_loop(
                 if carry.undelivered.is_empty() {
                     idle_turns = 0;
                 }
+                continue;
+            }
+            // Safe boundary (A1): the successor of a finished plan step starts only here.
+            if converse_agent_loop::advance_plan(carry, deps.hands) {
                 continue;
             }
         }

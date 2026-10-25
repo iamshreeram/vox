@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crate::managers::command_router::CommandAction;
 use crate::managers::converse::{Ears, Hands, ListenOutcome, Mouth, QuietOutcome, SayOutcome};
+use crate::managers::converse_agent::plan_confirmation_prompt;
 #[cfg(test)]
 pub use crate::managers::converse_plan::JobRequest;
 use crate::managers::converse_plan::{
@@ -286,6 +287,10 @@ pub fn forced_prompt(plan: &TurnPlan) -> Option<String> {
             Some(format!(
                 "I am about to take this role: {start}. Say yes to go ahead."
             ))
+        }
+        PlanKind::Plan => {
+            let agent_plan = plan.plan.as_ref()?;
+            Some(plan_confirmation_prompt(&agent_plan.steps))
         }
         _ => None,
     }

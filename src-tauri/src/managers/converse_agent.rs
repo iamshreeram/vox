@@ -163,8 +163,6 @@ impl PreparedAgentLaunch {
     }
 
     /// Sets the step kind, the agent source and plan membership, and refreshes the fingerprint.
-    // Why: the planner executor (a later step) is the only production caller.
-    #[allow(dead_code)]
     pub fn with_step(mut self, kind: StepKind, source: AgentSource, in_plan: bool) -> Self {
         self.step_kind = kind;
         self.source = source;
@@ -182,8 +180,6 @@ impl PreparedAgentLaunch {
     }
 
     /// Sets the earlier step results. The inputs are stored but not fingerprinted.
-    // Why: the planner executor (a later step) is the only production caller.
-    #[allow(dead_code)]
     pub fn with_inputs(mut self, inputs: Vec<StepInput>) -> Self {
         self.inputs = inputs;
         self
@@ -265,7 +261,6 @@ fn render_inputs(inputs: &[StepInput]) -> Option<String> {
 
 /// Stage 4: the forced confirmation spoken before a plan runs. It lists every step, each
 /// preview cut so the whole text stays within `PLAN_CONFIRM_MAX_CHARS`.
-#[allow(dead_code)]
 pub fn plan_confirmation_prompt(steps: &[PlanStep]) -> String {
     let head = format!("I am about to run a plan of {} steps. ", steps.len());
     let tail = "Say yes to go ahead.";
@@ -297,7 +292,6 @@ fn plan_step_segment(step: &PlanStep, budget: usize) -> String {
 /// command, or the step is `NotConfigured`. A specialist profile is used only for its own
 /// step type, and only when its command is not blank. `General` always uses the main agent.
 /// The turn timeout always comes from the main settings, clamped.
-#[allow(dead_code)]
 pub fn resolve_step_agent(
     settings: &AppSettings,
     kind: StepKind,

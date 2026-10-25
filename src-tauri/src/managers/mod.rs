@@ -72,6 +72,8 @@ pub mod converse_plan;
 mod converse_plan_vault_tests;
 #[cfg(test)]
 mod converse_planner_launch_tests;
+#[cfg(test)]
+mod converse_planner_loop_tests;
 pub mod converse_platform;
 pub mod converse_queue;
 #[cfg(test)]
@@ -146,6 +148,7 @@ pub mod natural_voices;
 pub mod ort_sessions;
 pub mod ownership;
 pub mod persona;
+mod plan_clock;
 pub mod realtime_complete;
 pub mod realtime_config;
 pub mod redact;
