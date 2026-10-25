@@ -46,11 +46,17 @@ fn the_generation_is_odd_inside_the_update_and_even_after_it() {
 fn a_panicking_update_still_leaves_the_generation_even_and_the_gate_usable() {
     let gate = AgentSettingsGate::new();
     let before = gate.generation();
-    let result = catch_unwind(AssertUnwindSafe(|| gate.with_update(|| panic!("update failed"))));
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        gate.with_update(|| panic!("update failed"))
+    }));
     assert!(result.is_err(), "the panic propagates");
     assert_eq!(gate.generation() % 2, 0, "the guard finished the update");
     assert_eq!(gate.generation(), before + 2);
-    assert_eq!(gate.with_update(|| 7), 7, "the lock is not poisoned for good");
+    assert_eq!(
+        gate.with_update(|| 7),
+        7,
+        "the lock is not poisoned for good"
+    );
 }
 
 #[test]
@@ -79,8 +85,16 @@ fn concurrent_updates_never_overlap() {
     for worker in workers {
         worker.join().expect("worker finished");
     }
-    assert_eq!(max_seen.load(Ordering::SeqCst), 1, "two updates were inside at once");
-    assert_eq!(gate.generation() - before, 200, "100 updates, two bumps each");
+    assert_eq!(
+        max_seen.load(Ordering::SeqCst),
+        1,
+        "two updates were inside at once"
+    );
+    assert_eq!(
+        gate.generation() - before,
+        200,
+        "100 updates, two bumps each"
+    );
 }
 
 // ---------------- prepare and stability (T1, T4) ----------------
@@ -92,7 +106,10 @@ fn a_launch_cannot_be_prepared_while_an_update_is_in_progress() {
     gate.with_update(|| {
         assert_eq!(gate.prepare_stable(), None);
     });
-    assert!(gate.prepare_stable().is_some(), "prepares again once stable");
+    assert!(
+        gate.prepare_stable().is_some(),
+        "prepares again once stable"
+    );
 }
 
 #[test]
@@ -103,7 +120,10 @@ fn a_launch_prepared_before_an_update_is_stale_after_it() {
     assert_eq!(old % 2, 0);
     assert!(gate.is_stable_at(old));
     gate.with_update(|| {});
-    assert!(!gate.is_stable_at(old), "the old generation no longer matches");
+    assert!(
+        !gate.is_stable_at(old),
+        "the old generation no longer matches"
+    );
     let new = gate.prepare_stable().expect("prepares after the update");
     assert_ne!(new, old);
     assert!(gate.is_stable_at(new));
@@ -157,8 +177,14 @@ fn admission_allows_only_the_current_stable_epoch_or_no_epoch() {
     assert!(!admission_allowed(Some(4), 6), "the settings moved on");
     assert!(!admission_allowed(Some(6), 4), "newer than the settings");
     assert!(!admission_allowed(Some(2), 3), "an update is in progress");
-    assert!(!admission_allowed(Some(3), 3), "odd expected while updating");
-    assert!(!admission_allowed(Some(1), 1), "odd expected while updating");
+    assert!(
+        !admission_allowed(Some(3), 3),
+        "odd expected while updating"
+    );
+    assert!(
+        !admission_allowed(Some(1), 1),
+        "odd expected while updating"
+    );
 }
 
 // ---------------- a rejected setter changes nothing (T5) ----------------
@@ -171,7 +197,8 @@ fn a_rejected_setter_value_bumps_no_generation() {
     let gate = AgentSettingsGate::new();
     let before = gate.generation();
     let mut s = crate::settings::get_default_settings();
-    let result = crate::settings::apply_step_agent_setting(&mut s, "research", Some("bin/relative"), "");
+    let result =
+        crate::settings::apply_step_agent_setting(&mut s, "research", Some("bin/relative"), "");
     assert!(result.is_err());
     assert_eq!(gate.generation(), before);
 }
@@ -180,7 +207,9 @@ fn a_rejected_setter_value_bumps_no_generation() {
 
 #[cfg(unix)]
 mod manager_admission {
-    use crate::managers::acp_agent::{AcpAgentConfig, AcpAgentError, AcpAgentManager, PromptOptions};
+    use crate::managers::acp_agent::{
+        AcpAgentConfig, AcpAgentError, AcpAgentManager, PromptOptions,
+    };
     use crate::managers::agent_settings_gate::AgentSettingsGate;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -192,10 +221,8 @@ mod manager_admission {
     const SETTLE: Duration = Duration::from_millis(500);
 
     fn marker_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "vox-settings-gate-{tag}-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("vox-settings-gate-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("create marker dir");
         dir
@@ -251,9 +278,15 @@ mod manager_admission {
             &handle,
         );
 
-        assert!(matches!(out, Err(AcpAgentError::SettingsChanged)), "{out:?}");
+        assert!(
+            matches!(out, Err(AcpAgentError::SettingsChanged)),
+            "{out:?}"
+        );
         thread::sleep(SETTLE);
-        assert!(!marker.exists(), "a stale launch must never spawn the agent");
+        assert!(
+            !marker.exists(),
+            "a stale launch must never spawn the agent"
+        );
     }
 
     #[test]
@@ -271,7 +304,10 @@ mod manager_admission {
                 opts(Some(gate.generation())),
                 &handle,
             );
-            assert!(matches!(out, Err(AcpAgentError::SettingsChanged)), "{out:?}");
+            assert!(
+                matches!(out, Err(AcpAgentError::SettingsChanged)),
+                "{out:?}"
+            );
         });
         thread::sleep(SETTLE);
         assert!(!marker.exists(), "no spawn while the settings are updating");
@@ -287,15 +323,17 @@ mod manager_admission {
         let manager = AcpAgentManager::new_with_gate(Arc::clone(&gate));
         let handle = manager.new_run_handle();
 
-        let out = manager.prompt_with_handle(
-            &marker_cfg(&marker),
-            "hello",
-            opts(Some(current)),
-            &handle,
-        );
+        let out =
+            manager.prompt_with_handle(&marker_cfg(&marker), "hello", opts(Some(current)), &handle);
 
-        assert!(!matches!(out, Err(AcpAgentError::SettingsChanged)), "{out:?}");
-        assert!(wait_for_file(&marker, 5), "an admitted launch spawns the agent");
+        assert!(
+            !matches!(out, Err(AcpAgentError::SettingsChanged)),
+            "{out:?}"
+        );
+        assert!(
+            wait_for_file(&marker, 5),
+            "an admitted launch spawns the agent"
+        );
     }
 
     #[test]
@@ -310,7 +348,10 @@ mod manager_admission {
 
         let out = manager.prompt_with_handle(&marker_cfg(&marker), "hello", opts(None), &handle);
 
-        assert!(!matches!(out, Err(AcpAgentError::SettingsChanged)), "{out:?}");
+        assert!(
+            !matches!(out, Err(AcpAgentError::SettingsChanged)),
+            "{out:?}"
+        );
         assert!(wait_for_file(&marker, 5), "a legacy caller still spawns");
     }
 }

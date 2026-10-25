@@ -24,6 +24,9 @@ pub mod acp_run;
 mod acp_run_tests;
 pub mod agent_jobs;
 pub mod agent_jobs_output;
+pub mod agent_settings_gate;
+#[cfg(test)]
+mod agent_settings_gate_tests;
 pub mod agent_tools;
 pub mod ambient;
 pub mod ambient_listener;

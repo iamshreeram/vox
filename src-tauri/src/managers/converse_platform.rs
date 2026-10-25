@@ -646,6 +646,7 @@ impl Hands for RealHands {
         // and the run reports `Lost`.
         let opts = PromptOptions {
             reuse_session: false,
+            expected_epoch: None,
         };
         drop(tauri::async_runtime::spawn_blocking(move || {
             let event = match worker.prompt_with_handle(&cfg, &prompt, opts, &handle) {

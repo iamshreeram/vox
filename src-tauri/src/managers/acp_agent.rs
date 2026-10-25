@@ -24,6 +24,7 @@ use crate::managers::acp_permission_broker::{
 use crate::managers::acp_run::{
     BeginError, ResponseSink, RunHandle, RunRegistry, SessionSet, SinkError, TurnTiming,
 };
+use crate::managers::agent_settings_gate::AgentSettingsGate;
 
 #[cfg(unix)]
 use std::io::{ErrorKind, Read, Write};
@@ -61,6 +62,19 @@ pub struct AcpAgentConfig {
 pub struct PromptOptions {
     /// true: reuse one ACP session across turns. false: a fresh session per turn.
     pub reuse_session: bool,
+    /// Settings generation the launch was prepared under (`AgentSettingsGate`). `None` means
+    /// the caller is not gated. `Some(e)` is admitted only while the gate is stable at `e`.
+    pub expected_epoch: Option<u64>,
+}
+
+/// Admission rule for a prepared launch (A3-R3). `None` is never refused. `Some(expected)`
+/// is admitted only when `expected` is even and equals the current generation, so a launch
+/// from before a settings change, or one prepared during an update, is refused.
+pub(crate) fn admission_allowed(expected: Option<u64>, current: u64) -> bool {
+    match expected {
+        None => true,
+        Some(expected) => expected % 2 == 0 && expected == current,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,6 +215,9 @@ pub enum AcpAgentError {
     },
     EmptyReply,
     Refused,
+    /// The agent settings changed (or are changing) after the launch was prepared. Nothing
+    /// was spawned.
+    SettingsChanged,
     /// The caller cancelled the turn. The child stays usable.
     Cancelled,
     /// A permission response could not be queued for the agent. The turn was stopped.
@@ -240,6 +257,7 @@ impl std::fmt::Display for AcpAgentError {
             }
             Self::EmptyReply => write!(f, "ACP agent returned an empty reply"),
             Self::Refused => write!(f, "ACP agent refused the request"),
+            Self::SettingsChanged => write!(f, "ACP agent settings changed"),
             Self::Cancelled => write!(f, "ACP agent request was cancelled"),
             Self::PermissionDelivery => {
                 write!(f, "ACP permission response could not be delivered")
@@ -333,6 +351,8 @@ pub(crate) struct Inner {
     pub(crate) next_conn_gen: AtomicU64,
     /// Test hook: makes the writer refuse registry-routed lines.
     pub(crate) force_failure: Arc<AtomicBool>,
+    /// Settings generation gate. Admission of gated launches is checked under `m`.
+    pub(crate) gate: Arc<AgentSettingsGate>,
 }
 
 /// One long-lived ACP child process behind a small state machine. `Send + Sync`.
@@ -352,10 +372,23 @@ impl AcpAgentManager {
         Self::with_idle_shutdown(Duration::from_secs(30 * 60))
     }
 
+    /// Like `new`, but gated launches are admitted against `gate`, which the settings writers
+    /// share with this manager.
+    // Why: only the gate tests call this until the settings writers are wired.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn new_with_gate(gate: Arc<AgentSettingsGate>) -> Self {
+        Self::with_idle_shutdown_and_gate(Duration::from_secs(30 * 60), gate)
+    }
+
     /// Starts the manager and its single reaper thread (DESIGN 5.7). The reaper holds only
     /// a `Weak`, so it exits as soon as the last handle is dropped.
     pub fn with_idle_shutdown(idle: Duration) -> Self {
+        Self::with_idle_shutdown_and_gate(idle, Arc::new(AgentSettingsGate::new()))
+    }
+
+    fn with_idle_shutdown_and_gate(idle: Duration, gate: Arc<AgentSettingsGate>) -> Self {
         let inner = Arc::new(Inner {
+            gate,
             m: Mutex::new(State::new()),
             cv: Condvar::new(),
             next_token: AtomicU64::new(1),
@@ -452,8 +485,13 @@ impl AcpAgentManager {
         let started = Instant::now();
         let turn_deadline = started + cfg.turn_timeout;
         let handshake_deadline = Instant::now() + cfg.handshake_timeout;
-        let (token, epoch, stale) =
-            reserve(&self.inner, Reservation::Turn, cfg, handshake_deadline)?;
+        let (token, epoch, stale) = reserve(
+            &self.inner,
+            Reservation::Turn,
+            cfg,
+            handshake_deadline,
+            opts.expected_epoch,
+        )?;
         // Created first so that every later path, including a panic, releases the op.
         let _reservation = ReservationGuard::new(&self.inner, token);
         if let Some(old) = stale {
@@ -498,7 +536,7 @@ impl AcpAgentManager {
     pub fn warm_up(&self, cfg: &AcpAgentConfig) -> Result<Option<String>, AcpAgentError> {
         check_config(cfg)?;
         let deadline = Instant::now() + cfg.handshake_timeout;
-        let (token, _epoch, stale) = reserve(&self.inner, Reservation::Warm, cfg, deadline)?;
+        let (token, _epoch, stale) = reserve(&self.inner, Reservation::Warm, cfg, deadline, None)?;
         // Created first so that every later path, including a panic, releases the op.
         let _guard = ReservationGuard::new(&self.inner, token);
         if let Some(old) = stale {
@@ -593,11 +631,17 @@ fn reserve(
     kind: Reservation,
     cfg: &AcpAgentConfig,
     deadline: Instant,
+    expected_epoch: Option<u64>,
 ) -> Result<(u64, u64, Option<Arc<Conn>>), AcpAgentError> {
     loop {
         let mut s = lock_state(inner);
         if s.closed {
             return Err(AcpAgentError::Closed);
+        }
+        // Why here, under the manager lock and before any spawn: a launch prepared under an
+        // older settings generation (or during an update) never starts an agent.
+        if !admission_allowed(expected_epoch, inner.gate.generation()) {
+            return Err(AcpAgentError::SettingsChanged);
         }
         let warming = match &s.op {
             Op::Turn { .. } => return Err(AcpAgentError::Busy),

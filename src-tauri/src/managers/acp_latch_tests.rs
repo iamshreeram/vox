@@ -371,6 +371,7 @@ mod agent_level {
     fn opts() -> PromptOptions {
         PromptOptions {
             reuse_session: true,
+            expected_epoch: None,
         }
     }
 

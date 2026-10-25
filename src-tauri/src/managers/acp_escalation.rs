@@ -79,6 +79,7 @@ pub fn run_escalation<P: AcpPrompter, S: EscalationSink>(
     };
     let opts = PromptOptions {
         reuse_session: env.ctx_enabled,
+        expected_epoch: None,
     };
 
     match p.prompt(cfg, &prompt_text, opts) {
@@ -128,6 +129,7 @@ pub fn user_message_for(err: &AcpAgentError) -> Option<String> {
         }
         AcpAgentError::Timeout => "The ACP agent did not answer in time.".to_string(),
         AcpAgentError::Busy => "The ACP agent is busy with another request.".to_string(),
+        AcpAgentError::SettingsChanged => "The agent settings changed.".to_string(),
         AcpAgentError::Cancelled => "The agent request was cancelled.".to_string(),
         AcpAgentError::PermissionDelivery => {
             "Vox could not deliver your approval to the agent, so the request was stopped."
