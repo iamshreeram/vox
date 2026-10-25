@@ -31,6 +31,7 @@ _PG_INTERVAL=10
 _PG_COUNT=""
 _PG_LEVEL=""
 _PG_UNKNOWN=0
+_PG_BYTES=0
 _PG_ISO=""
 _PG_EPOCH=""
 _PG_FAKE=""
@@ -164,24 +165,59 @@ _pg_now() {
   return 0
 }
 
-# _pg_rotate : when the log exceeds the limit, keeps .1 and .2 and drops the
-# older copy. The limit is DG_ROTATE_BYTES (test knob) or 5 MB.
+# _pg_bytes_load : sets _PG_BYTES, the approximate log size, from the counter
+# file DG_HOME/log.bytes (builtins only). Only when that file is missing or
+# garbled does one stat seed the counter from the log, and only if the log
+# exists; a missing log is size 0 with no stat at all.
+_pg_bytes_load() {
+  local line="" size=""
+  _PG_BYTES=0
+  if [ -r "$DG_HOME/log.bytes" ] && IFS= read -r line <"$DG_HOME/log.bytes" && _pg_digits "$line"; then
+    _PG_BYTES=$line
+    return 0
+  fi
+  if [ -f "$_PG_LOG" ]; then
+    size=$(stat -f %z "$_PG_LOG" 2>/dev/null) || size=""
+    if _pg_digits "$size"; then
+      _PG_BYTES=$size
+    fi
+  fi
+  return 0
+}
+
+# _pg_bytes_save : writes _PG_BYTES back to DG_HOME/log.bytes (best effort).
+_pg_bytes_save() {
+  printf '%s\n' "$_PG_BYTES" >"$DG_HOME/log.bytes" 2>/dev/null || true
+  return 0
+}
+
+# _pg_emit LINE : appends LINE and a newline to the log, then adds the length
+# to _PG_BYTES. ${#line} counts characters; the guard writes ASCII names, and
+# the counter is an approximation anyway.
+_pg_emit() {
+  printf '%s\n' "$1" >>"$_PG_LOG"
+  _PG_BYTES=$((_PG_BYTES + ${#1} + 1))
+  return 0
+}
+
+# _pg_rotate : when the counter reaches DG_ROTATE_BYTES (test knob) or 5 MB,
+# keeps .1 and .2 and drops the older copy, then resets the counter to 0.
 _pg_rotate() {
-  local size max=$_PG_DEFAULT_ROTATE
+  local max=$_PG_DEFAULT_ROTATE
   if [ "${DG_TEST:-}" = 1 ] && _dg_is_uint "${DG_ROTATE_BYTES:-}"; then
     max=$DG_ROTATE_BYTES
   fi
-  [ -f "$_PG_LOG" ] || return 0
-  size=$(stat -f %z "$_PG_LOG" 2>/dev/null) || return 0
-  _pg_digits "$size" || return 0
-  if [ "$size" -le "$max" ]; then
+  if [ "$_PG_BYTES" -lt "$max" ]; then
     return 0
   fi
-  rm -f -- "$_PG_LOG.2"
-  if [ -f "$_PG_LOG.1" ]; then
-    mv -- "$_PG_LOG.1" "$_PG_LOG.2"
+  if [ -f "$_PG_LOG" ]; then
+    rm -f -- "$_PG_LOG.2"
+    if [ -f "$_PG_LOG.1" ]; then
+      mv -- "$_PG_LOG.1" "$_PG_LOG.2"
+    fi
+    mv -- "$_PG_LOG" "$_PG_LOG.1"
   fi
-  mv -- "$_PG_LOG" "$_PG_LOG.1"
+  _PG_BYTES=0
   return 0
 }
 
@@ -237,13 +273,11 @@ _pg_diag() {
   head -n 8 "$s4" >"$s5" 2>/dev/null
   ps -u "$UID" -o ppid=,comm= >"$s6" 2>/dev/null
   _pg_orphan_summary "$s6"
-  {
-    printf '%s DIAG level=%s\n' "$_PG_ISO" "$_PG_LEVEL"
-    while IFS= read -r line; do
-      printf '%s DIAG %s\n' "$_PG_ISO" "$line"
-    done <"$s5"
-    printf '%s DIAG ppid1_total=%s names=%s\n' "$_PG_ISO" "$_PG_ORPH_TOTAL" "$_PG_ORPH_NAMES"
-  } >>"$_PG_LOG"
+  _pg_emit "$_PG_ISO DIAG level=$_PG_LEVEL"
+  while IFS= read -r line; do
+    _pg_emit "$_PG_ISO DIAG $line"
+  done <"$s5"
+  _pg_emit "$_PG_ISO DIAG ppid1_total=$_PG_ORPH_TOTAL names=$_PG_ORPH_NAMES"
   return 0
 }
 
@@ -259,33 +293,44 @@ _pg_alert() {
     return 0
   fi
   printf '%s\n' "$_PG_EPOCH" >"$f"
-  printf '%s ALERT level=hard count=%s\n' "$_PG_ISO" "$_PG_COUNT" >>"$_PG_LOG"
+  _pg_emit "$_PG_ISO ALERT level=hard count=$_PG_COUNT"
   osascript -e "display notification \"process count $_PG_COUNT is at the hard level\" with title \"dev-guard\"" \
     >/dev/null 2>&1 || true
   return 0
 }
 
-# _pg_tick : one sample. Ordinary ticks run ps, date and stat (for the
-# rotation size check). Warn and hard add the diagnostic block. Hard adds the
-# ALERT line. Nothing is killed, and only names and counts are written.
+# _pg_tick : one sample. Ordinary ticks run ps and date only; the log size comes
+# from the DG_HOME/log.bytes counter. Warn and hard add the diagnostic block.
+# Hard adds the ALERT line. A failed date is still an unknown sample (no clock,
+# so no diagnostic or ALERT). Nothing is killed; only names and counts are written.
 _pg_tick() {
-  local sample_rc=0
+  local sample_rc=0 now_rc=0
   _PG_UNKNOWN=0
   _pg_sample || sample_rc=$?
-  _pg_now || return 1
+  _pg_bytes_load
+  _pg_now || now_rc=1
   _pg_rotate
-  if [ "$sample_rc" -ne 0 ]; then
+  if [ "$now_rc" -ne 0 ]; then
     _PG_UNKNOWN=1
-    printf '%s unknown\n' "$_PG_ISO" >>"$_PG_LOG"
+    _PG_ISO=unknown-time
+    _pg_emit "$_PG_ISO unknown"
+    _pg_bytes_save
     return 0
   fi
-  printf '%s %s %s\n' "$_PG_ISO" "$_PG_COUNT" "$_PG_LEVEL" >>"$_PG_LOG"
+  if [ "$sample_rc" -ne 0 ]; then
+    _PG_UNKNOWN=1
+    _pg_emit "$_PG_ISO unknown"
+    _pg_bytes_save
+    return 0
+  fi
+  _pg_emit "$_PG_ISO $_PG_COUNT $_PG_LEVEL"
   case "$_PG_LEVEL" in
     warn|hard) _pg_diag ;;
   esac
   if [ "$_PG_LEVEL" = hard ]; then
     _pg_alert
   fi
+  _pg_bytes_save
   return 0
 }
 
@@ -397,7 +442,11 @@ _pg_watch_stop() {
     i=$((i + 1))
   done
   if kill -0 "$_PG_OPID" 2>/dev/null; then
-    kill -KILL "$_PG_OPID" 2>/dev/null
+    # Re-check the start time right before KILL: the pid may have exited and
+    # been reused by another process. Skip the KILL when it no longer matches.
+    if _pg_lstart "$_PG_OPID" && [ "$_PG_LST_CUR" = "$_PG_OLST" ]; then
+      kill -KILL "$_PG_OPID" 2>/dev/null
+    fi
   fi
   echo "stopped pid $_PG_OPID"
   return 0

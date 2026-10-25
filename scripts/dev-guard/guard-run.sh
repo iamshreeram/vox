@@ -60,7 +60,7 @@ open(my $gr, "<", $go) or exit 125;
 my $line = <$gr>;
 close($gr);
 exit 125 unless defined $line && $line eq "GO\n";
-exec @ARGV or exit 127;'
+exec { $ARGV[0] } @ARGV or exit 127;'
 
 _gr_usage_error() {
   printf 'guard: usage: %s\n' "$1" >&2

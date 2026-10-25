@@ -472,6 +472,36 @@ test_own_status_outputs() {
   assert_zero "own: status initializing returns 0" dg_own_status "$D"
 }
 
+# Tokens: letters, digits, dot, underscore, hyphen (max 64 chars); no slash. A
+# record with any other token is malformed, so the status is initializing (fail
+# closed) and the token is never used to build a path.
+test_own_token_alphabet() {
+  _own_require "own: token alphabet" || return 0
+  _own_setup
+  local D out lst
+  lst=$(_own_lstart $$)
+  D=$(_own_dir tok-dotdot)
+  mkdir "$D"
+  printf '%s\n' "$$ ../x $lst" >"$D/owner"
+  out=$(dg_own_status "$D")
+  assert_eq "own: token ../x is malformed (initializing)" "initializing" "$out"
+  D=$(_own_dir tok-slash)
+  mkdir "$D"
+  printf '%s\n' "$$ a/b $lst" >"$D/owner"
+  out=$(dg_own_status "$D")
+  assert_eq "own: token a/b is malformed (initializing)" "initializing" "$out"
+  D=$(_own_dir tok-accept)
+  mkdir "$D"
+  printf '%s\n' "$$ OLDTOK-1.a_b $lst" >"$D/owner"
+  out=$(dg_own_status "$D")
+  assert_eq "own: token OLDTOK-1.a_b is accepted" "owner $$ OLDTOK-1.a_b" "$out"
+  D=$(_own_dir tok-long)
+  mkdir "$D"
+  printf '%s\n' "$$ 1234567890123456789012345678901234567890123456789012345678901234567890 $lst" >"$D/owner"
+  out=$(dg_own_status "$D")
+  assert_eq "own: token over 64 chars is malformed (initializing)" "initializing" "$out"
+}
+
 # ------------------------------------------------------------ run them
 
 test_own_basic_cycle
@@ -487,4 +517,5 @@ test_own_paused_reclaimer_not_displaced
 test_own_paused_releaser_not_renamed
 test_own_leftover_siblings_cleaned
 test_own_spaces_in_home
+test_own_token_alphabet
 test_own_status_outputs

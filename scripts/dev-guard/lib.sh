@@ -251,6 +251,14 @@ _dg_own_read() {
   if ! _dg_is_uint "$_DG_R_PID" || [ -z "$_DG_R_TOK" ] || [ -z "$_DG_R_LST" ]; then
     return 1
   fi
+  # Tokens: ASCII letters, digits, dot, underscore, hyphen; 1 to 64 characters.
+  # No slash is allowed, so a token can never add a path component.
+  case "$_DG_R_TOK" in
+    *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]*) return 1 ;;
+  esac
+  if [ "${#_DG_R_TOK}" -gt 64 ]; then
+    return 1
+  fi
   return 0
 }
 

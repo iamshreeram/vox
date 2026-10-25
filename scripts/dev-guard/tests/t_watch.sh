@@ -61,7 +61,7 @@ _wt_need() {
 _wt_stubs() {
   local dir="$1" name real
   mkdir -p "$dir" || return 1
-  for name in ps sort uniq head date mv rm osascript; do
+  for name in ps sort uniq head date mv rm osascript stat; do
     case "$name" in
       ps) real=/bin/ps ;;
       date) real=/bin/date ;;
@@ -70,6 +70,7 @@ _wt_stubs() {
       sort) real=/usr/bin/sort ;;
       uniq) real=/usr/bin/uniq ;;
       head) real=/usr/bin/head ;;
+      stat) real=/usr/bin/stat ;;
       osascript) real=/usr/bin/true ;;
     esac
     printf '%s\n' '#!/bin/bash' \
@@ -135,6 +136,51 @@ _wt_names() {
 _wt_peak() {
   awk '/^ENTER /{d++; if (d > m) m = d} /^EXIT /{d--} END {print m + 0}' "$DG_STUB_LOG"
 }
+# _wt_names_tick : helper names of a one-shot CLI tick after the home-setup
+# prefix. dg_home_check runs its stat calls before the first ps, so the leading
+# stat entries are stripped and the rest must be the tick's own sequence.
+_wt_names_tick() {
+  local n
+  n=$(_wt_names)
+  while :; do
+    case "$n" in
+      stat) n= ;;
+      stat\ *) n=${n#stat } ;;
+      *) break ;;
+    esac
+  done
+  echo "$n"
+}
+
+# _wt_steady_check FILE : FILE holds one helper name per line (a snapshot of the
+# stub log taken while the watcher loop runs). Each tick is the segment that
+# starts at a ps entry. The first segment that is exactly date is tick 1;
+# every complete segment after it must be exactly date. Prints ticks=N bad=[..].
+_wt_steady_check() {
+  local name seg="" seen=0 started=0 ticks=0 bad=""
+  while IFS= read -r name; do
+    if [ "$name" = ps ]; then
+      if [ "$seen" -eq 1 ]; then
+        if [ "$started" -eq 0 ]; then
+          if [ "$seg" = " date" ]; then
+            started=1
+            ticks=1
+          fi
+        elif [ "$seg" = " date" ]; then
+          ticks=$((ticks + 1))
+        else
+          bad="$bad[$seg ]"
+        fi
+      fi
+      seen=1
+      seg=""
+    else
+      seg="$seg $name"
+    fi
+  done <"$1"
+  echo "ticks=$ticks bad=$bad"
+}
+
 _wt_nhelper() {
   grep -c "^ENTER $1\$" "$DG_STUB_LOG" 2>/dev/null
 }
@@ -189,13 +235,16 @@ _wt_check_dead() {
   fi
 }
 
-# _wt_prefill : writes a log bigger than DG_ROTATE_BYTES (2000).
+# _wt_prefill : writes a log bigger than DG_ROTATE_BYTES (2000). The log is
+# written outside the guard, so the byte counter is dropped and the next tick
+# re-seeds it from the file size.
 _wt_prefill() {
   local i=0
   while [ "$i" -lt 100 ]; do
     echo "filler line $i padding padding padding"
     i=$((i + 1))
   done >"$DG_HOME/proc-watch.log"
+  rm -f "$DG_HOME/log.bytes"
 }
 
 test_watch_check_levels() {
@@ -236,7 +285,7 @@ test_watch_tick_ordinary() {
   assert_eq "ordinary tick exit 0" 0 "$_WT_RC"
   assert_eq "ordinary tick appends exactly one line" 1 "$(_wt_lines "$DG_HOME/proc-watch.log")"
   assert_zero "ordinary tick line is ISO COUNT LEVEL" grep -E -q '^[^ ]+ 5 ok$' "$DG_HOME/proc-watch.log"
-  assert_eq "ordinary tick launches exactly ps then date" "ps date" "$(_wt_names)"
+  assert_eq "ordinary tick (after home setup) launches exactly ps then date" "ps date" "$(_wt_names_tick)"
   assert_eq "ordinary tick peak helper concurrency 1" 1 "$(_wt_peak)"
 }
 
@@ -246,7 +295,7 @@ test_watch_tick_warn_diagnostic() {
   _wt_fake 15
   _wt_tick
   assert_eq "warn tick: ordinary ps,date then 6 diagnostic helpers in order" \
-    "ps date ps sort uniq sort head ps" "$(_wt_names)"
+    "ps date ps sort uniq sort head ps" "$(_wt_names_tick)"
   assert_eq "warn tick peak helper concurrency 1" 1 "$(_wt_peak)"
   assert_zero "warn tick logs a 15 warn line" grep -E -q '^[^ ]+ 15 warn$' "$DG_HOME/proc-watch.log"
   _wt_ge "warn tick appends a diagnostic block (more than one line)" \
@@ -262,7 +311,7 @@ test_watch_tick_diag_throttle() {
   assert_eq "diagnostic at t=1000" 1 "$(_wt_nhelper head)"
   _wt_now 1030
   _wt_tick
-  assert_eq "no diagnostic at t=1030 (under 60 s)" "ps date" "$(_wt_names)"
+  assert_eq "no diagnostic at t=1030 (under 60 s, after home setup)" "ps date" "$(_wt_names_tick)"
   _wt_now 1061
   _wt_tick
   assert_eq "diagnostic again at t=1061" 1 "$(_wt_nhelper head)"
@@ -316,6 +365,130 @@ test_watch_tick_unknown() {
   export DG_FAKE_COUNT
   assert_zero "failed sample logged as ISO unknown" grep -E -q '^[^ ]+ unknown$' "$DG_HOME/proc-watch.log"
   assert_not_contains "failed sample is never logged as ok" "$(tail -n 1 "$DG_HOME/proc-watch.log")" " ok"
+}
+
+test_watch_tick_steady_state() {
+  _wt_need "$PROC_GUARD" "tick steady: proc-guard.sh present" || return 0
+  _wt_init || return 0
+  _wt_fake 5
+  _wt_tick
+  _wt_tick
+  assert_eq "steady ordinary tick (log present, after home setup) launches exactly ps then date" "ps date" "$(_wt_names_tick)"
+  assert_eq "steady ordinary tick adds no stat beyond the home check" "$_WT_HOME_STATS" "$(_wt_nhelper stat)"
+  assert_eq "two ordinary ticks append two lines" 2 "$(_wt_lines "$DG_HOME/proc-watch.log")"
+}
+
+test_watch_tick_steady_warn() {
+  _wt_need "$PROC_GUARD" "tick steady warn: proc-guard.sh present" || return 0
+  _wt_init || return 0
+  _wt_fake 5
+  _wt_tick
+  _wt_fake 15
+  _wt_tick
+  assert_eq "steady warn tick: ps date then 6 diagnostic helpers, no stat" \
+    "ps date ps sort uniq sort head ps" "$(_wt_names_tick)"
+}
+
+# Every CLI invocation runs dg_home_check, which costs 2 stat calls (owner and
+# mode) before any tick work. HOME_STATS is that baseline. A tick that needs no
+# seed adds no stat beyond it; a seed adds exactly one.
+_WT_HOME_STATS=2
+
+# The counter alone decides rotation: reaching DG_ROTATE_BYTES rotates on the
+# next tick, and the rotation adds no stat beyond the home check.
+test_watch_tick_counter_rotation() {
+  _wt_need "$PROC_GUARD" "tick counter rotation: proc-guard.sh present" || return 0
+  _wt_init || return 0
+  export DG_ROTATE_BYTES=2000
+  echo 'old content line' >"$DG_HOME/proc-watch.log"
+  printf '%s\n' 2000 >"$DG_HOME/log.bytes"
+  _wt_tick
+  assert_zero "counter at the limit rotates to proc-watch.log.1" grep -q 'old content line' "$DG_HOME/proc-watch.log.1"
+  assert_eq "counter at the limit adds no stat beyond the home check" "$_WT_HOME_STATS" "$(_wt_nhelper stat)"
+  assert_eq "counter reset to 0 then one new line counted" \
+    "$(( $(wc -c <"$DG_HOME/proc-watch.log") ))" "$(cat "$DG_HOME/log.bytes")"
+}
+
+# A missing or garbled counter is seeded by exactly one stat; then none.
+test_watch_counter_seed_once() {
+  _wt_need "$PROC_GUARD" "counter seed: proc-guard.sh present" || return 0
+  _wt_init || return 0
+  echo 'seed line' >"$DG_HOME/proc-watch.log"
+  rm -f "$DG_HOME/log.bytes"
+  _wt_tick
+  assert_eq "missing counter: one seed stat beyond the home check" "$((_WT_HOME_STATS + 1))" "$(_wt_nhelper stat)"
+  _wt_tick
+  assert_eq "after seeding, the next tick adds no seed stat" "$_WT_HOME_STATS" "$(_wt_nhelper stat)"
+  printf '%s\n' garbled-xx >"$DG_HOME/log.bytes"
+  _wt_tick
+  assert_eq "garbled counter: one re-seed stat beyond the home check" "$((_WT_HOME_STATS + 1))" "$(_wt_nhelper stat)"
+}
+
+# date cannot fork: the tick is an unknown sample, written as unknown-time.
+_wt_make_failing_date() {
+  mkdir -p "$DG_HOME/failbin" || return 1
+  printf '%s\n' '#!/bin/bash' 'exit 1' >"$DG_HOME/failbin/date" || return 1
+  chmod 700 "$DG_HOME/failbin/date"
+}
+
+test_watch_date_failure_tick() {
+  _wt_need "$PROC_GUARD" "date failure tick: proc-guard.sh present" || return 0
+  _wt_init || return 0
+  _wt_make_failing_date || return 0
+  _wt_fake 5
+  PATH="$DG_HOME/failbin:$_WT_STUBS:$PATH" "$PROC_GUARD" tick >"$DG_HOME/out.txt" 2>&1
+  assert_eq "date failure tick exit 0" 0 "$?"
+  assert_zero "date failure logs unknown-time unknown" grep -q '^unknown-time unknown$' "$DG_HOME/proc-watch.log"
+}
+
+test_watch_date_failure_backoff() {
+  _wt_need "$PROC_GUARD" "date failure backoff: proc-guard.sh present" || return 0
+  _wt_init || return 0
+  _wt_make_failing_date || return 0
+  _wt_fake 5
+  PATH="$DG_HOME/failbin:$_WT_STUBS:$PATH" "$PROC_GUARD" watch start >"$DG_HOME/out.txt" 2>&1
+  local pid waited all
+  pid=$(_wt_pid_from "$(cat "$DG_HOME/out.txt")")
+  _wt_record "$pid"
+  waited=0
+  while [ "$(_wt_lines "$DG_DEBUG_DELAYS")" -lt 3 ] && [ "$waited" -lt 250 ]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  _wt_capture watch stop
+  all=" $(tr '\n' ' ' <"$DG_DEBUG_DELAYS" 2>/dev/null) "
+  case "$all" in
+    *" 2 4 "*) _report pass "date failure samples back off by doubling (2 then 4)" ;;
+    *) _report fail "date failure samples back off by doubling (2 then 4)" "delays: $all" ;;
+  esac
+}
+
+# The real steady state: the watcher loop itself. Home setup runs once at loop
+# start, so each later ordinary sample must be exactly ps then date. The stub
+# log is snapshotted before watch stop, so stop-time helper calls are excluded.
+test_watch_loop_steady_state() {
+  _wt_need "$PROC_GUARD" "loop steady: proc-guard.sh present" || return 0
+  _wt_init || return 0
+  _wt_fake 5
+  _wt_now 1000
+  _wt_capture watch start
+  local pid waited res ticks
+  pid=$(_wt_pid_from "$_WT_OUT")
+  _wt_record "$pid"
+  waited=0
+  while [ "$(_wt_lines "$DG_HOME/proc-watch.log")" -lt 4 ] && [ "$waited" -lt 200 ]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  grep '^ENTER ' "$DG_STUB_LOG" | cut -d' ' -f2 >"$DG_HOME/loop-names.txt"
+  res=$(_wt_steady_check "$DG_HOME/loop-names.txt")
+  _wt_capture watch stop
+  assert_contains "loop steady: watcher stopped" "$_WT_OUT" "stopped"
+  ticks=${res#ticks=}
+  ticks=${ticks%% *}
+  _wt_ge "loop steady: at least 3 ordinary samples observed" "$ticks" 3
+  assert_eq "loop steady: every sample after the first is exactly ps then date" \
+    "" "${res#*bad=}"
 }
 
 test_watch_hard_no_kill_no_secrets() {
@@ -481,10 +654,17 @@ _wt_case "tick: diagnostic throttled to once per 60 s" test_watch_tick_diag_thro
 _wt_case "tick: hard notifies at most once per 600 s, logs ALERT" test_watch_tick_hard_alert_throttle
 _wt_case "tick: rotation keeps 2 copies (.1, .2) and no .3" test_watch_tick_rotation
 _wt_case "tick: failed sample logged as unknown, never ok" test_watch_tick_unknown
-_wt_case "tick: hard kills nothing, log has no env or argv secrets" test_watch_hard_no_kill_no_secrets
+_wt_case "tick: steady ordinary tick (second tick) is ps+date only, no stat" test_watch_tick_steady_state
+_wt_case "tick: steady warn tick is ps+date+6 helpers, no stat" test_watch_tick_steady_warn
+_wt_case "tick: counter at DG_ROTATE_BYTES rotates with no stat" test_watch_tick_counter_rotation
+_wt_case "tick: missing or garbled counter seeded by exactly one stat" test_watch_counter_seed_once
+_wt_case "tick: date failure is an unknown sample (unknown-time), exit 0" test_watch_date_failure_tick
+_wt_case "watch: date failure doubles the delay (2 then 4)" test_watch_date_failure_backoff
 _wt_case "orphans: lists ppid==1 fixture by command name, no arguments" test_watch_orphans
 _wt_case "report: no samples, then max count and ALERT and sample count" test_watch_report
 _wt_case "watch: start single instance, owner pid, status, stop" test_watch_lifecycle
 _wt_case "watch: stale loop record replaced by a later start" test_watch_stale_replaced
 _wt_case "watch: stop refuses a pid that fails owner verification" test_watch_stop_refuses_unrelated
+_wt_case "watch loop: steady samples are exactly ps then date" test_watch_loop_steady_state
+_wt_case "tick: hard kills nothing, log has no env or argv secrets" test_watch_hard_no_kill_no_secrets
 _wt_case "watch: unknown samples back off, good sample resets" test_watch_backoff_and_reset

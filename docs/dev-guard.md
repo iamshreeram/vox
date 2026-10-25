@@ -36,7 +36,9 @@ Run any other command through `guard-run.sh`:
 scripts/dev-guard/guard-run.sh --timeout 600 -- ./some-tool
 ```
 
-`guard-run.sh` takes `--timeout SECS`, `--lock NAME` and `--headroom N`. Exit 75 means the guard refused the run. Exit 124 means the timeout hit. Exit 126 means the setup failed and the command never ran.
+`guard-run.sh` takes `--timeout SECS`, `--lock NAME` and `--headroom N`. Exit 75 means the guard refused the run. Exit 124 means the timeout hit. guard-run exits 126 for setup failures BEFORE the command starts; once the command has started its own 126/127 status is passed through unchanged.
+
+INT handling requires the guard-run process to have SIGINT enabled. A job started with `&` from a non-interactive shell inherits SIGINT as ignored, and bash cannot trap it. From agents, use TERM (exit 143) to cancel.
 
 ## What is enforced by the machine
 
@@ -72,6 +74,7 @@ This is a best-effort observation. The guard cannot tie these processes to the c
 `DG_HOME` defaults to `~/.vox-guard`. It must be a real directory owned by you with mode 0700.
 
 - `proc-watch.log`: one line per sample, `ISO COUNT LEVEL` or `ISO unknown`. It also holds diagnostic blocks and ALERT lines. It rotates at 5 MB and keeps `.1` and `.2`.
+- `log.bytes`: the approximate size of `proc-watch.log`, kept by the guard so an ordinary tick needs no stat call. It is seeded from the file size only when missing or garbled, and it resets to 0 at each rotation.
 - `guard-run.log`: one line per guarded run. It holds the exit code, the duration and the census count.
 - `locks/NAME.lock`: a lock directory. It holds an `owner` file with the pid, a token and the start time.
 - `locks/watch.lock`: the watcher's lock. Its owner pid is the watcher's own pid.
@@ -94,6 +97,7 @@ Only remove the directory after you confirm that no guard process is running. Ch
 - The guard does not change kernel limits such as `kern.maxproc` or `kern.maxprocperuid`.
 - The inherited limit is a ceiling for the child. Other processes of the same user still use the same count.
 - The scripts target macOS `/bin/bash` 3.2. They avoid bash 4 features.
+- The `.reclaim-NAME` stale-lock retirement is check-then-act. This is a documented residual race that can at worst let two cargo runs overlap.
 
 ## Agent policy
 

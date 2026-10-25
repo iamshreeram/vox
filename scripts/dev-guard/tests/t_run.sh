@@ -549,6 +549,29 @@ _run_t_no_secrets_in_logs() {
     "$(grep -r -e sekrit-7f3a9 -e DG_SECRET_PROBE -e argmark-5d2e "$DG_HOME" 2>/dev/null)"
 }
 
+# A single argument is one program path, never a shell line. A path with a
+# space must run that tool; a single argument with ';' must not run a shell.
+_run_t_single_arg_space_path() {
+  mkdir -p "$_RUN_W/my dir"
+  printf '%s\n' '#!/bin/sh' 'echo tool-marker-x1' >"$_RUN_W/my dir/tool"
+  chmod 700 "$_RUN_W/my dir/tool"
+  _run_guard 10 "$_RUN_W/o" "$_RUN_W/e" -- "$_RUN_W/my dir/tool"
+  _run_assert_rc "run: single path argument containing a space runs that tool => 0" 0
+  assert_contains "run: single space-path tool prints its marker" "$(cat "$_RUN_W/o")" "tool-marker-x1"
+}
+
+_run_t_single_arg_shell_text() {
+  _run_guard 10 "$_RUN_W/o" "$_RUN_W/e" -- 'echo one; echo two'
+  _run_assert_rc "run: one argument 'echo one; echo two' is not a shell line => 127" 127
+  assert_not_contains "run: one argument never ran a shell (no second echo output)" "$(cat "$_RUN_W/o")" "two"
+}
+
+_run_t_multi_arg_still_works() {
+  _run_guard 10 "$_RUN_W/o" "$_RUN_W/e" -- /bin/echo multi arg ok
+  _run_assert_rc "run: multi-argument command => 0" 0
+  assert_eq "run: multi-argument command output" "multi arg ok" "$(cat "$_RUN_W/o")"
+}
+
 # ------------------------------------------------------- registration
 
 _run_case "run: usage: missing -- separator => 64" _run_t_usage_no_sep
@@ -563,6 +586,9 @@ _run_case "run: refuse when count unknown (garbled) => 75" _run_t_refuse_garbled
 _run_case "run: refuse when count unknown (missing file) => 75" _run_t_refuse_missing
 _run_case "run: 12 runs cycling 0/7/126/127" _run_t_status_cycle
 _run_case "run: stdout/stderr pass through" _run_t_passthrough
+_run_case "run: single argument with a space in its path runs that tool" _run_t_single_arg_space_path
+_run_case "run: single argument 'echo one; echo two' is not run by a shell" _run_t_single_arg_shell_text
+_run_case "run: multi-argument command still runs" _run_t_multi_arg_still_works
 _run_case "run: timeout => 124 and group grandchild dead" _run_t_timeout_group
 _run_case "run: fast exit with --timeout 3600 leaves nothing, exits promptly" _run_t_fast_exit_long_timeout
 _run_case "run: same-group leftover child killed at exit" _run_t_leftover_group_child
