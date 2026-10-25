@@ -428,6 +428,38 @@
           "argTooLong": "Each argument must be at most 256 characters.",
           "outOfRange": "Enter a number of seconds from 10 to 900.",
           "notInteger": "Enter a whole number of seconds."
+        },
+        "conversationPlanner": {
+          "label": "Plan multi-step requests",
+          "description": "When on, a request with several steps is turned into a fixed plan that runs one step after another. Only works when hand-off to the agent is on."
+        },
+        "stepAgents": {
+          "title": "Specialist agents (optional)",
+          "description": "Use a different agent program for each kind of step. Leave a row blank to use the main agent above. General steps always use the main agent. Same rules as the main agent: an absolute path, and arguments separated by spaces.",
+          "command": {
+            "label": "Program path",
+            "placeholder": "Blank: use the main agent"
+          },
+          "args": {
+            "label": "Arguments",
+            "placeholder": "Optional"
+          },
+          "research": {
+            "label": "Research steps",
+            "description": "Steps that look up information."
+          },
+          "browser": {
+            "label": "Browser steps",
+            "description": "Steps that open and read web pages."
+          },
+          "code": {
+            "label": "Code steps",
+            "description": "Steps that write or change code."
+          },
+          "files": {
+            "label": "File steps",
+            "description": "Steps that read or change files."
+          }
         }
       },
       "acpPermission": {

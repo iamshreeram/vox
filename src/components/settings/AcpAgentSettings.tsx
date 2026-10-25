@@ -7,6 +7,7 @@ import { Input } from "../ui/Input";
 import { SettingContainer } from "../ui/SettingContainer";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
+import { StepAgentSettings } from "./StepAgentSettings";
 import { useSettingsStore } from "../../stores/settingsStore";
 import {
   ACP_PERMISSION_TIMEOUT_MAX_SECS,
@@ -51,6 +52,8 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
       getSetting("acp_permission_timeout_secs") ?? 60;
     const conversationHandoff =
       getSetting("conversation_agent_handoff") ?? true;
+    // Shown as off until the stored value loads; the stored value decides after that.
+    const conversationPlanner = getSetting("conversation_planner") ?? false;
 
     const [commandDraft, setCommandDraft] = useState(storedCommand ?? "");
     const [commandError, setCommandError] = useState<AcpFormError | null>(null);
@@ -390,6 +393,18 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
           grouped={grouped}
           tooltipPosition="bottom"
         />
+        <ToggleSwitch
+          checked={conversationPlanner}
+          onChange={(value) => updateSetting("conversation_planner", value)}
+          isUpdating={isUpdating("conversation_planner")}
+          label={t("settings.advanced.acpAgent.conversationPlanner.label")}
+          description={t(
+            "settings.advanced.acpAgent.conversationPlanner.description",
+          )}
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+          tooltipPosition="bottom"
+        />
         <div className="flex flex-col items-start gap-1 px-4 py-2">
           <Button
             variant="secondary"
@@ -405,6 +420,10 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
             {testLine ?? ""}
           </p>
         </div>
+        <StepAgentSettings
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+        />
       </>
     );
   },
