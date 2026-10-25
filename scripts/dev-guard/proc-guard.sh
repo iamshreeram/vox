@@ -165,20 +165,32 @@ _pg_now() {
   return 0
 }
 
+# _pg_counter_valid VALUE : 0 only for 0 or [1-9] followed by up to 10 more
+# digits. Leading zeros (which bash reads as octal), signs, spaces, empty text,
+# longer values and anything non-numeric are rejected.
+_pg_counter_valid() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+    0) return 0 ;;
+    0*) return 1 ;;
+  esac
+  [ "${#1}" -le 11 ]
+}
+
 # _pg_bytes_load : sets _PG_BYTES, the approximate log size, from the counter
-# file DG_HOME/log.bytes (builtins only). Only when that file is missing or
-# garbled does one stat seed the counter from the log, and only if the log
-# exists; a missing log is size 0 with no stat at all.
+# file DG_HOME/log.bytes (builtins only). A valid counter is used as is. A
+# garbled one is reseeded: one stat of the log when it exists, else 0 with no
+# stat. _pg_bytes_save rewrites the counter at the end of the tick.
 _pg_bytes_load() {
   local line="" size=""
   _PG_BYTES=0
-  if [ -r "$DG_HOME/log.bytes" ] && IFS= read -r line <"$DG_HOME/log.bytes" && _pg_digits "$line"; then
+  if [ -r "$DG_HOME/log.bytes" ] && IFS= read -r line <"$DG_HOME/log.bytes" && _pg_counter_valid "$line"; then
     _PG_BYTES=$line
     return 0
   fi
   if [ -f "$_PG_LOG" ]; then
     size=$(stat -f %z "$_PG_LOG" 2>/dev/null) || size=""
-    if _pg_digits "$size"; then
+    if _pg_counter_valid "$size"; then
       _PG_BYTES=$size
     fi
   fi
@@ -196,7 +208,7 @@ _pg_bytes_save() {
 # the counter is an approximation anyway.
 _pg_emit() {
   printf '%s\n' "$1" >>"$_PG_LOG"
-  _PG_BYTES=$((_PG_BYTES + ${#1} + 1))
+  _PG_BYTES=$((10#$_PG_BYTES + ${#1} + 1))
   return 0
 }
 

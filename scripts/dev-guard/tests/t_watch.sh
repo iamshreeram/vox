@@ -491,6 +491,75 @@ test_watch_loop_steady_state() {
     "" "${res#*bad=}"
 }
 
+# _wt_small_log : a 501-byte log, below DG_ROTATE_BYTES (2000).
+_wt_small_log() {
+  printf '%0500d\n' 0 >"$DG_HOME/proc-watch.log"
+}
+
+# _wt_counter_valid : 0 when log.bytes holds 0 or [1-9] plus up to 10 digits.
+_wt_counter_valid() {
+  grep -E -q '^(0|[1-9][0-9]{0,10})$' "$DG_HOME/log.bytes" 2>/dev/null
+}
+
+# Garbled counter values must never break a tick. Each one is reseeded from the
+# log size (one stat beyond the home check) and rewritten as a valid decimal.
+test_watch_garbled_counter_values() {
+  _wt_need "$PROC_GUARD" "garbled counter: proc-guard.sh present" || return 0
+  _wt_init || return 0
+  export DG_ROTATE_BYTES=2000
+  local v
+  for v in 08 0000099 " 12" -5 99999999999999999999 abc ""; do
+    _wt_small_log
+    printf '%s\n' "$v" >"$DG_HOME/log.bytes"
+    _wt_tick
+    assert_eq "garbled counter [$v]: tick exits 0" 0 "$_WT_RC"
+    assert_zero "garbled counter [$v]: rewritten as a valid decimal" _wt_counter_valid
+    _wt_ge "garbled counter [$v]: reseeded from the log size (>= 501)" "$(cat "$DG_HOME/log.bytes")" 501
+    assert_eq "garbled counter [$v]: exactly one reseed stat beyond the home check" 3 "$(_wt_nhelper stat)"
+  done
+}
+
+# A reseeded size over DG_ROTATE_BYTES still rotates.
+test_watch_garbled_counter_rotation() {
+  _wt_need "$PROC_GUARD" "garbled rotation: proc-guard.sh present" || return 0
+  _wt_init || return 0
+  export DG_ROTATE_BYTES=2000
+  local v
+  for v in 08 0000099 99999999999999999999 abc; do
+    _wt_prefill
+    printf '%s\n' "$v" >"$DG_HOME/log.bytes"
+    _wt_tick
+    assert_eq "garbled [$v] rotation: tick exits 0" 0 "$_WT_RC"
+    assert_zero "garbled [$v] rotation: reseeded size over the limit rotates to log.1" \
+      grep -q 'filler line 0' "$DG_HOME/proc-watch.log.1"
+    assert_zero "garbled [$v] rotation: rewritten counter is valid" _wt_counter_valid
+  done
+}
+
+# A garbled counter must not stop the watcher: it starts, samples and reports running.
+test_watch_garbled_counter_watch_start() {
+  _wt_need "$PROC_GUARD" "garbled watch start: proc-guard.sh present" || return 0
+  _wt_init || return 0
+  printf '%s\n' 0000099 >"$DG_HOME/log.bytes"
+  _wt_capture watch start
+  local pid waited
+  pid=$(_wt_pid_from "$_WT_OUT")
+  _wt_record "$pid"
+  assert_contains "garbled counter: watch start starts a loop" "$_WT_OUT" "started pid"
+  waited=0
+  while ! _wt_counter_valid && [ "$waited" -lt 200 ]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  assert_zero "garbled counter: loop rewrote the counter as a valid decimal" _wt_counter_valid
+  assert_eq "garbled counter: loop took at least one sample" 1 "$([ "$(_wt_lines "$DG_HOME/proc-watch.log")" -ge 1 ] && echo 1 || echo 0)"
+  _wt_capture watch status
+  assert_eq "garbled counter: watch status running exit 0" 0 "$_WT_RC"
+  assert_contains "garbled counter: watch status prints running pid" "$_WT_OUT" "running pid $pid"
+  _wt_capture watch stop
+  assert_contains "garbled counter: watch stop prints stopped" "$_WT_OUT" "stopped"
+}
+
 test_watch_hard_no_kill_no_secrets() {
   _wt_need "$PROC_GUARD" "tick secrets: proc-guard.sh present" || return 0
   _wt_init || return 0
@@ -666,5 +735,8 @@ _wt_case "watch: start single instance, owner pid, status, stop" test_watch_life
 _wt_case "watch: stale loop record replaced by a later start" test_watch_stale_replaced
 _wt_case "watch: stop refuses a pid that fails owner verification" test_watch_stop_refuses_unrelated
 _wt_case "watch loop: steady samples are exactly ps then date" test_watch_loop_steady_state
+_wt_case "tick: garbled counter values (08, 0000099, ...) reseeded, rewritten, tick exits 0" test_watch_garbled_counter_values
+_wt_case "tick: garbled counter still rotates when the reseeded size is over the limit" test_watch_garbled_counter_rotation
+_wt_case "watch: garbled counter does not stop the loop" test_watch_garbled_counter_watch_start
 _wt_case "tick: hard kills nothing, log has no env or argv secrets" test_watch_hard_no_kill_no_secrets
 _wt_case "watch: unknown samples back off, good sample resets" test_watch_backoff_and_reset

@@ -36,7 +36,7 @@ Run any other command through `guard-run.sh`:
 scripts/dev-guard/guard-run.sh --timeout 600 -- ./some-tool
 ```
 
-`guard-run.sh` takes `--timeout SECS`, `--lock NAME` and `--headroom N`. Exit 75 means the guard refused the run. Exit 124 means the timeout hit. guard-run exits 126 for setup failures BEFORE the command starts; once the command has started its own 126/127 status is passed through unchanged.
+`guard-run.sh` takes `--timeout SECS`, `--lock NAME` and `--headroom N`. Exit 75 means the guard refused the run. Exit 124 means the timeout hit. guard-run exits 126 for setup failures BEFORE the command starts; once the command has started its own 126/127 status is passed through unchanged. Note that 127 can also mean the exec itself failed after GO (command not found or not executable), so a 127 does not prove that the command ran.
 
 INT handling requires the guard-run process to have SIGINT enabled. A job started with `&` from a non-interactive shell inherits SIGINT as ignored, and bash cannot trap it. From agents, use TERM (exit 143) to cancel.
 
