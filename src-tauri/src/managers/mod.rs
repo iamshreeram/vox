@@ -35,6 +35,9 @@ pub mod aux_model;
 pub mod command_router;
 pub mod composer_config;
 pub mod composer_rules;
+pub mod chat_log;
+#[cfg(test)]
+mod chat_log_tests;
 pub mod conversation;
 pub mod conversation_record;
 #[cfg(test)]
