@@ -2,10 +2,6 @@
 //!
 //! Implementation of the contract (DESIGN-CHAT Rev 6). Do not change public signatures
 //! without a design revision; do not weaken `chat_log_tests.rs`.
-
-// Nothing outside the tests consumes the log yet (the chat window wiring comes in a later
-// step), so the public items would otherwise all be reported as dead code.
-#![allow(dead_code)]
 //!
 //! Contract summary (see the design file for the reasoning):
 //! * Hooks (`say`, `reset`, `set_state`, `set_recording`) never wait on the worker, never emit
@@ -483,6 +479,9 @@ fn apply_batch(shared: &Shared, emitter: &dyn ChatEmitter, batch: Batch) {
         }
         None => false,
     };
+    // Drops counted before a wipe belong to the old session. Announcing them after the wipe
+    // would report them in the new one, so a wiped batch never carries a drop marker.
+    let dropped = if wiped { 0 } else { dropped };
     for (_, reply) in waiters {
         let answer = if wiped { Ok(()) } else { Err(ClearError::Dead) };
         let _ = reply.send(answer);
@@ -627,6 +626,7 @@ impl ChatLog {
     }
 
     /// Current recording flag as seen by the hooks.
+    #[cfg_attr(not(test), allow(dead_code))] // Only tests read it; production reads the snapshot.
     pub fn recording(&self) -> bool {
         self.shared.recording.load(Ordering::Acquire)
     }
@@ -695,6 +695,7 @@ impl ChatLog {
     }
 
     /// Wait until the worker thread has exited; false on timeout.
+    #[cfg_attr(not(test), allow(dead_code))] // Only tests wait for the worker to stop.
     pub fn wait_stopped(&self, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         let mut stopped = self

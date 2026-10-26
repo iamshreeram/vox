@@ -759,3 +759,97 @@ async fn default_noop_chat_leaves_every_outcome_unchanged() {
         "identical call log with the default no-op"
     );
 }
+
+// ---- 13. acknowledgement push site (`push_ack`) -------------------------------------------------
+
+/// A brain turn that stays silent for `delay` ms and then answers, so the acknowledgement timer
+/// (`SessionConfig::ack_after`) fires first.
+fn slow_answer(delay: u64, speech: &str) -> Turn {
+    Turn {
+        deltas: vec![],
+        delay,
+        plan: Ok(tp(PlanKind::Answer, speech)),
+    }
+}
+
+/// The acknowledgement timer fires, `push_ack` queues the acknowledgement, and it is recorded
+/// exactly once as Assistant, between the user line and the final answer.
+#[tokio::test]
+async fn acknowledgement_push_is_recorded_once_between_user_and_answer() {
+    let r = crig(
+        vec![heard("explain it"), outcome(ListenOutcome::Aborted)],
+        vec![slow_answer(300, "Rust is a language.")],
+    );
+    let rep = ChatRep::default();
+    let cfg = SessionConfig {
+        ack_after: Some(Duration::from_millis(10)),
+        ..ccfg()
+    };
+    crun(&r, &cfg, &rep).await;
+    assert_eq!(
+        said_oracle(&r.log),
+        vec![MSG_ACK.to_string(), "Rust is a language.".to_string()],
+        "precondition: the acknowledgement was pushed before the answer"
+    );
+    assert_eq!(
+        lines(&rep),
+        vec![
+            (ChatRole::User, "explain it".to_string()),
+            (ChatRole::Assistant, MSG_ACK.to_string()),
+            (ChatRole::Assistant, "Rust is a language.".to_string()),
+        ]
+    );
+}
+
+/// The queue REJECTS the acknowledgement push: the turn goes silent and nothing is recorded as
+/// Assistant. Control: the same turn with the timer disabled (answer arrives first) is spoken
+/// and recorded, so the silence is caused by the rejected acknowledgement push.
+#[tokio::test]
+async fn rejected_acknowledgement_push_is_not_recorded() {
+    let control = crig(
+        vec![heard("explain it"), outcome(ListenOutcome::Aborted)],
+        vec![slow_answer(0, "Rust is a language.")],
+    );
+    let control_rep = ChatRep::default();
+    let cfg = SessionConfig {
+        ack_after: Some(Duration::from_secs(5)),
+        ..ccfg()
+    };
+    crun(&control, &cfg, &control_rep).await;
+    assert_eq!(
+        said_oracle(&control.log),
+        vec!["Rust is a language.".to_string()],
+        "precondition (control): the answer was spoken without the timer"
+    );
+
+    let mut r = crig(
+        vec![heard("explain it"), outcome(ListenOutcome::Aborted)],
+        vec![slow_answer(300, "Rust is a language.")],
+    );
+    r.mouth.accept = Some(0);
+    let rep = ChatRep::default();
+    let cfg = SessionConfig {
+        ack_after: Some(Duration::from_millis(10)),
+        ..ccfg()
+    };
+    crun(&r, &cfg, &rep).await;
+    assert!(
+        count_log(&r.log, "open") >= 1,
+        "precondition: the early-speech queue was opened"
+    );
+    assert!(
+        said_oracle(&r.log).is_empty(),
+        "precondition: the rejected push was never accepted: {:?}",
+        r.log.lock().unwrap()
+    );
+    assert!(
+        assistants(&lines(&rep)).is_empty(),
+        "a rejected acknowledgement push is never recorded: {:?}",
+        lines(&rep)
+    );
+    assert_eq!(
+        users(&lines(&rep)),
+        vec!["explain it".to_string()],
+        "the user line is still recorded"
+    );
+}

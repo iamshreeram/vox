@@ -51,12 +51,23 @@ pub fn chat_command_allowed(window_label: &str, command: &str) -> bool {
     !chat_only
 }
 
-/// Accepts only the app's own pages: the `tauri` scheme, or the bundled origin on localhost
-/// (dev server and the production `tauri.localhost` host). Any other URL is refused.
+/// Dev server port. Must match `devUrl` in `tauri.conf.json`. Only debug builds accept it.
+const DEV_SERVER_PORT: u16 = 1420;
+
+/// Accepts only the app's own pages: the `tauri` scheme (production macOS and Linux), the
+/// production `tauri.localhost` host (Windows and Android), and in debug builds the dev
+/// server on `localhost:1420`. Any other URL is refused.
 fn is_app_navigation(url: &tauri::Url) -> bool {
     match url.scheme() {
         "tauri" => true,
-        "http" | "https" => matches!(url.host_str(), Some("localhost" | "tauri.localhost")),
+        "http" | "https" => {
+            if url.host_str() == Some("tauri.localhost") {
+                return true;
+            }
+            cfg!(debug_assertions)
+                && url.host_str() == Some("localhost")
+                && url.port() == Some(DEV_SERVER_PORT)
+        }
         _ => false,
     }
 }

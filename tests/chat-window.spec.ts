@@ -184,6 +184,9 @@ test.describe("Conversation window: live events, scrolling and resync", () => {
     await expect(bubbles(page)).toHaveCount(60);
     await log(page).evaluate((el) => {
       el.scrollTop = 0;
+      // Chrome delivers scroll events asynchronously; dispatch one so the page has handled the
+      // scroll before the next entry arrives (otherwise the page still thinks it is pinned).
+      el.dispatchEvent(new Event("scroll"));
     });
     await emitMockEvent(page, EVENT, entryEvent(61, entry(61, "while away")));
     await expect(jumpButton(page)).toBeVisible();

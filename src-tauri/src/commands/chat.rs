@@ -2,6 +2,7 @@
 //! The log itself lives in `managers::chat_log`; this file only adapts it to the app. Nothing
 //! here writes text to disk or to the log output.
 
+use crate::chat_window::CHAT_WINDOW_LABEL;
 use crate::managers::chat_log::{
     ChatEmitter, ChatEvent, ChatLog, ChatSnapshot, ClearError, CHAT_EVENT,
 };
@@ -9,16 +10,18 @@ use crate::settings;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-/// Emits every chat event to the frontend as the `converse-chat` Tauri event. Delivery errors
-/// are ignored so the conversation never notices them.
+/// Emits every chat event to the conversation window only (label `chat`), as the
+/// `converse-chat` Tauri event, so transcript text never reaches other webviews. Delivery
+/// errors are ignored so the conversation never notices them. The window hydrates from the
+/// snapshot when it opens, so events sent while it is closed can be dropped safely.
 pub struct TauriChatEmitter {
-    /// The app whose webviews receive the events.
+    /// The app whose conversation window receives the events.
     pub app: AppHandle,
 }
 
 impl ChatEmitter for TauriChatEmitter {
     fn emit(&self, event: &ChatEvent) {
-        let _ = self.app.emit(CHAT_EVENT, event);
+        let _ = self.app.emit_to(CHAT_WINDOW_LABEL, CHAT_EVENT, event);
     }
 }
 

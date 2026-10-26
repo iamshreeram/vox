@@ -656,3 +656,46 @@ fn module_source_has_no_io_or_logging() {
         }
     }
 }
+
+// ---- dropped count does not leak across a reset (session boundary) -------------------------------
+
+/// Lines dropped before a reset belong to the old session: after the Reset event no
+/// `system:dropped:` marker appears and no dropped count is announced for the new session.
+#[test]
+fn drops_before_a_reset_are_not_announced_in_the_next_session() {
+    let rec = Rec::new(false);
+    let log = ChatLog::start(rec.clone(), true);
+    // The gate is closed, so the worker cannot release pending lines: at least 10 are dropped.
+    for i in 0..PENDING_CAP + 10 {
+        log.say(ChatRole::User, &format!("old{i}"));
+    }
+    log.reset();
+    log.say(ChatRole::User, "new1");
+    log.say(ChatRole::User, "new2");
+    rec.set_open(true);
+    assert!(
+        rec.wait_for(|e| has_text(e, "new2"), 3000),
+        "precondition: the new session's lines were applied"
+    );
+    settle(&log, &rec);
+    let ev = rec.events();
+    assert_seq_increasing(&ev);
+    let reset_pos = ev
+        .iter()
+        .position(|x| x.kind == ChatEventKind::Reset)
+        .expect("a Reset event follows the reset");
+    let after = &ev[reset_pos..];
+    assert!(
+        !after.iter().any(|e| matches!(
+            &e.kind,
+            ChatEventKind::Entry { entry } if entry.text.starts_with("system:dropped:")
+        )),
+        "no dropped marker after the reset: {:?}",
+        texts(after)
+    );
+    assert_eq!(
+        dropped_total(after),
+        0,
+        "dropped count over the events after the reset"
+    );
+}
