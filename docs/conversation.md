@@ -60,7 +60,8 @@ filter of its own. The reply model's own rules still apply.
   are the whole sentence, and they clear a paused lesson too. "I am back to
   normal" is treated as an ordinary sentence.
 - **Limits.** A role description can be up to 1500 characters. A lesson that nobody has
-  touched for ten minutes is forgotten. Nothing is saved after the conversation ends.
+  touched for ten minutes is forgotten. Nothing is kept after the conversation ends,
+  except the optional records described under [Privacy](#privacy).
   With Vault context on, Vox still only answers: a role can be set but no
   paste, command or job runs.
 - Open apps, media keys, dictation, ending the conversation and cancelling a
@@ -307,9 +308,19 @@ It is off by default; see [vault-rag.md](vault-rag.md).
 ## Privacy
 
 What you say and Vox's replies are sent to your configured reply backend. That
-is either a local command-line agent or a model API you configured. Nothing is
-stored beyond the in-memory session. Conversation text is not written to disk
-by Vox.
+is either a local command-line agent or a model API you configured. The
+conversation context is kept in memory only and is cleared when the conversation
+ends. The live transcript for the [conversation window](#conversation-window) is
+also kept in memory only. When its setting is on, it stays until the next
+conversation starts, you press Clear, or Vox quits. The window never writes it
+to disk or to logs.
+
+The one exception is the optional **Save conversation records** setting (off by
+default). When it is on, Vox saves each finished conversation to its own local
+database, with a short summary. A model writes the summary when one is
+configured. Otherwise a simple fallback is used. If the vault option under that
+setting is on and a vault folder is set, a Markdown note is written too.
+Redaction of sensitive text is best-effort, so review what is saved.
 
 ## Safety
 
