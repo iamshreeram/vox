@@ -2,15 +2,17 @@
 //! listen. Pure and trait-generic (no tauri types); all hardware sits behind
 //! the traits below. Contract: DESIGN.md section 3.3 (Revision 4).
 
+use crate::managers::chat_log::ChatRole;
 use crate::managers::converse_ack::choose;
 use crate::managers::converse_agent::{
     AgentRun, AgentSource, AgentStartError, PreparedAgentLaunch,
 };
 use crate::managers::converse_barge::{BargeCapture, BargeIn, BargeWatch, ReplyGate};
 use crate::managers::converse_confirm::{
-    confirm_action, confirm_forced, confirmation_question, decline_message, fingerprint_for,
-    forced_prompt, prepare_action, ConfirmConfig, Decision, DeclineReason, DirFd, JobLaunch,
-    JobStartOutcome, PinError, PolicySource, PrepareError, PreparedAction, ValidatedCommand,
+    confirm_action_recorded, confirm_forced, confirmation_question, decline_message,
+    fingerprint_for, forced_prompt, prepare_action, ConfirmConfig, Decision, DeclineReason, DirFd,
+    JobLaunch, JobStartOutcome, PinError, PolicySource, PrepareError, PreparedAction,
+    ValidatedCommand,
 };
 use crate::managers::converse_context::{
     compose, neutralize, note_command, note_delivery_failed, note_failed, note_incomplete,
@@ -525,11 +527,24 @@ impl Drop for UtteranceLog<'_> {
 struct JournalMouth<'m> {
     inner: &'m dyn Mouth,
     journal: Journal,
+    /// Chat window recording of every line handed to `say` (DESIGN-CHAT 2.2, A10).
+    reporter: &'m dyn Reporter,
+}
+
+/// Records one assistant line for the chat window: the speech-normalised form, and only when
+/// something speakable remains (DESIGN-CHAT A10). Speech-path safe: one call, no waiting.
+fn record_speech(reporter: &dyn Reporter, text: &str) {
+    if let Some(spoken) = crate::managers::tts::sanitize_speech_text(text) {
+        if !spoken.is_empty() {
+            reporter.chat(ChatRole::Assistant, &spoken);
+        }
+    }
 }
 
 impl Mouth for JournalMouth<'_> {
     fn say<'a>(&'a self, text: &'a str, emotion: Emotion) -> BoxFuture<'a, SayOutcome> {
         self.journal.submit(text);
+        record_speech(self.reporter, text);
         self.inner.say(text, emotion)
     }
     fn wait_quiet(&self, max: Duration) -> BoxFuture<'_, QuietOutcome> {
@@ -1176,6 +1191,7 @@ fn on_delta(
     }
     for sentence in early.streamer.push(delta) {
         if queue.push(&sentence.text, sentence.emotion) {
+            record_speech(reporter, &sentence.text);
             early.journal.submit(&sentence.text);
             early.spoken.push(sentence.text);
             mark_speaking(&mut early, reporter);
@@ -1280,6 +1296,7 @@ fn push_ack(
         return;
     }
     if queue.push(text, Emotion::Neutral) {
+        record_speech(reporter, text);
         early.ack = Some(text);
         mark_speaking(&mut early, reporter);
     } else {
@@ -1365,6 +1382,7 @@ async fn streamed_outcome(
             queue.abort();
             return Ok(None);
         }
+        record_speech(deps.reporter, &text);
         carry.journal.submit(&text);
     }
     let Some(outcome) = race(cancel, queue.finish()).await else {
@@ -2240,7 +2258,14 @@ async fn ask_forced(
     let fallback = Announcer::new(Arc::new(NoAnnounce));
     let announcer = deps.announcer.unwrap_or(&fallback);
     let config = ConfirmConfig::default();
-    let asked = confirm_forced(deps.ears, deps.mouth, announcer, question, &config);
+    let asked = confirm_forced(
+        deps.ears,
+        deps.mouth,
+        announcer,
+        question,
+        &config,
+        Some(deps.reporter),
+    );
     let decision = match race(cancel, asked).await {
         Some(decision) => decision,
         None => Decision::Declined(DeclineReason::Cancelled),
@@ -2289,7 +2314,14 @@ async fn ask_confirmation(
 ) -> Decision {
     let before = carry.journal.submitted_len();
     let cfg = ConfirmConfig::default();
-    let asked = confirm_action(deps.ears, deps.mouth, announcer, question, &cfg);
+    let asked = confirm_action_recorded(
+        deps.ears,
+        deps.mouth,
+        announcer,
+        question,
+        &cfg,
+        Some(deps.reporter),
+    );
     let decision = match race(cancel, asked).await {
         Some(decision) => decision,
         None => Decision::Declined(DeclineReason::Cancelled),
@@ -2418,6 +2450,7 @@ async fn run_turns_loop(
     let tap = JournalMouth {
         inner: outer.mouth,
         journal: carry.journal.clone(),
+        reporter: outer.reporter,
     };
     let tapped = Deps {
         policy: outer.policy,
@@ -2561,6 +2594,8 @@ async fn run_turns_loop(
             continue;
         }
 
+        // Accepted for dispatch: the chat window records the user line once (DESIGN-CHAT 2.2).
+        deps.reporter.chat(ChatRole::User, &utterance);
         // Accepted for dispatch: exactly one transcript event follows (DESIGN 8.2).
         let log = UtteranceLog::new(deps.reporter, &utterance, &carry.journal);
         carry.clock = TurnClock::default();

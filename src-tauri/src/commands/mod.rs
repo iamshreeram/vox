@@ -6,6 +6,7 @@ pub mod agent_tools;
 pub mod ambient;
 pub mod audio;
 pub mod aux_model;
+pub mod chat;
 pub mod conversation_records;
 pub mod converse;
 pub mod converse_extras;

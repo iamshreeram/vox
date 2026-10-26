@@ -604,11 +604,23 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Background coding jobs: one manager, one announcer, one exit coordinator (M3 S3d).
     let (job_wiring, job_runtime) = job_runtime::build(app_handle, tts_manager.clone());
     app_handle.manage(job_wiring);
+
+    // Chat window transcript (DESIGN-CHAT 2.1): one in-memory log, fed by the conversation
+    // platform and emitted through the app. Recording follows the saved setting.
+    let chat_log = managers::chat_log::ChatLog::start(
+        Arc::new(commands::chat::TauriChatEmitter {
+            app: app_handle.clone(),
+        }),
+        get_settings(app_handle).converse_chat_log,
+    );
+    app_handle.manage(chat_log.clone());
+    let chat_tap = Arc::new(managers::chat_tap::ChatTap::new(chat_log));
     // Conversation sessions: one controller, built with the app-backed platform.
     app_handle.manage(Arc::new(
         managers::converse_runtime::ConverseController::new(Arc::new(
             managers::converse_platform::RealPlatform::new(app_handle.clone())
-                .with_job_runtime(job_runtime),
+                .with_job_runtime(job_runtime)
+                .with_chat_tap(chat_tap),
         )),
     ));
     register_tts_listeners(app_handle, tts_manager);
@@ -1304,6 +1316,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::speaker::speaker_delete_voiceprint,
             commands::converse_extras::change_converse_smart_turn_setting,
             commands::converse_extras::change_converse_latency_panel_setting,
+            commands::chat::get_chat_snapshot,
+            commands::chat::clear_chat_log,
+            commands::chat::change_converse_chat_log_setting,
             commands::converse_extras::change_speaker_filter_enabled_setting,
             commands::converse_extras::change_speaker_filter_sensitivity_setting,
             commands::realtime::change_exp_rt_bool_setting,
@@ -1755,6 +1770,10 @@ pub fn run(cli_args: CliArgs) {
             }
             if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
                 let _ = tm.unload_model();
+            }
+            // Chat transcript: stop the worker. Memory only, nothing to flush.
+            if let Some(chat) = app.try_state::<Arc<managers::chat_log::ChatLog>>() {
+                chat.shutdown();
             }
         }
         _ => {}

@@ -39,7 +39,7 @@ pub const CLEAR_WAITERS_CAP: usize = 8;
 pub const CHAT_EVENT: &str = "converse-chat";
 
 /// Who said it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum ChatRole {
     /// The person speaking to Vox.
@@ -51,7 +51,7 @@ pub enum ChatRole {
 }
 
 /// One transcript line.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatEntry {
     /// Equals the `seq` of the event that carried the entry.
@@ -102,7 +102,7 @@ pub struct ChatEvent {
 }
 
 /// Authoritative state at one `seq`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatSnapshot {
     /// Highest `seq` applied when the snapshot was taken.

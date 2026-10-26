@@ -59,6 +59,11 @@ pub trait Platform: Send + Sync + 'static {
     fn parts(&self, capture: &CaptureHandle) -> SessionParts;
     /// Emit one `converse-state` event: `(state_label, end_label)`.
     fn on_state(&self, state: &'static str, end: Option<&'static str>);
+    /// Chat window: one recorded line (DESIGN-CHAT 2.2). Default: not recorded.
+    fn on_chat(&self, _role: crate::managers::chat_log::ChatRole, _text: &str) {}
+    /// Chat window: a session was admitted and is about to run (before its first state).
+    /// Default: nothing.
+    fn on_session_start(&self) {}
     /// Claim whatever exclusive resource a session needs (the real platform
     /// takes the ownership lease). Called first by `start`; the returned guard
     /// is held for the whole session. Default: claims nothing.
@@ -140,6 +145,10 @@ impl Reporter for ForwardReporter {
         if let Some(sink) = self.transcript.as_ref() {
             sink.record(ev);
         }
+    }
+
+    fn chat(&self, role: crate::managers::chat_log::ChatRole, text: &str) {
+        self.platform.on_chat(role, text);
     }
 
     fn latency(&self, report: &LatencyReport, stats: &LatencyStats) {
@@ -231,6 +240,8 @@ impl ConverseController {
             }
         };
 
+        // Chat window: the session is admitted and built; its log starts here (DESIGN-CHAT 2.2).
+        self.platform.on_session_start();
         let platform = self.platform.clone();
         let registry = self.registry.clone();
         let latency_sink = self.platform.latency_sink();
