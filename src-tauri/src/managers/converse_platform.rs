@@ -13,6 +13,8 @@ use crate::managers::acp_run::RunHandle;
 use crate::managers::agent_settings_gate::{process_gate, read_stable};
 use crate::managers::agent_tools::tauri_backends::build_tauri_executor;
 use crate::managers::audio::AudioRecordingManager;
+use crate::managers::chat_log::ChatRole;
+use crate::managers::chat_tap::ChatTap;
 use crate::managers::composer_config::{settings_from_app, TtsComposerMode};
 use crate::managers::conversation_record::SessionRecord;
 use crate::managers::conversation_save::{
@@ -1135,6 +1137,8 @@ pub struct RealPlatform {
     pub app: AppHandle,
     /// `None` keeps the legacy behavior: no policy, no announcer, no job support.
     job_runtime: Option<JobRuntime>,
+    /// Chat window tap (DESIGN-CHAT 2.2). `None`: nothing is recorded.
+    chat_tap: Option<Arc<ChatTap>>,
 }
 
 impl RealPlatform {
@@ -1143,7 +1147,14 @@ impl RealPlatform {
         RealPlatform {
             app,
             job_runtime: None,
+            chat_tap: None,
         }
+    }
+
+    /// Records the conversation into the chat window through `tap`.
+    pub fn with_chat_tap(mut self, tap: Arc<ChatTap>) -> Self {
+        self.chat_tap = Some(tap);
+        self
     }
 
     /// Enables background jobs, the confirmation gate and the planner job rules.
@@ -1325,7 +1336,22 @@ impl Platform for RealPlatform {
         if self.app.emit(CONVERSE_STATE_EVENT, payload).is_err() {
             log::debug!("converse: state event not delivered");
         }
+        if let Some(tap) = self.chat_tap.as_ref() {
+            tap.on_state(state, end);
+        }
         overlay_dispatcher(&self.app).apply_state(state);
+    }
+
+    fn on_chat(&self, role: ChatRole, text: &str) {
+        if let Some(tap) = self.chat_tap.as_ref() {
+            tap.on_chat(role, text);
+        }
+    }
+
+    fn on_session_start(&self) {
+        if let Some(tap) = self.chat_tap.as_ref() {
+            tap.on_session_start();
+        }
     }
 }
 

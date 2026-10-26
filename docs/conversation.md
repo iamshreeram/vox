@@ -60,7 +60,9 @@ filter of its own. The reply model's own rules still apply.
   are the whole sentence, and they clear a paused lesson too. "I am back to
   normal" is treated as an ordinary sentence.
 - **Limits.** A role description can be up to 1500 characters. A lesson that nobody has
-  touched for ten minutes is forgotten. Nothing is saved after the conversation ends.
+  touched for ten minutes is forgotten. Nothing is kept after the conversation ends,
+  except the optional records described under [Privacy](#privacy) and the transcript
+  shown in the [conversation window](#conversation-window).
   With Vault context on, Vox still only answers: a role can be set but no
   paste, command or job runs.
 - Open apps, media keys, dictation, ending the conversation and cancelling a
@@ -295,6 +297,66 @@ are covered by automated tests in the code. They have **not yet been checked
 with a real agent or with a microphone.** Treat plans as experimental until
 that check is done.
 
+## Conversation window
+
+The conversation window shows the live transcript of a voice conversation.
+
+Open it with the global shortcut: Control+Option+T on macOS, Ctrl+Alt+Shift+T
+on other systems. You can change the shortcut under "Conversation window" in the
+shortcut settings. You can also use the "Conversation window" item in the tray
+menu, or the "Open conversation window" button in Settings > General, in the
+Voice conversation group (shown when Experimental features are on).
+
+What it shows:
+
+- What you said, as recognised.
+- What Vox says, or began to say. Text that was accepted for speech and then cut
+  off because you spoke over it stays shown.
+- The plan announcement and the final result of a plan.
+- Notes for the start and the end of each session.
+- An animated avatar. Its face follows the state: listening, thinking, working
+  or speaking. It is asleep after a session ends, and concerned after a session
+  ends with an error. The speaking animation is not synced to the audio.
+
+What it does not show:
+
+- Raw agent output and intermediate plan results.
+- Anything that was never spoken, including the text of voices that were rejected.
+- Dictation outside conversation mode.
+- Background job announcements.
+
+The window is read-only in this version. You cannot type in it. The only action
+is Clear.
+
+Controls and settings:
+
+- **Clear** empties the transcript.
+- **Keep conversation transcript** (setting key `converse_chat_log`, on by
+  default). When it is off, nothing new is recorded. Lines that were already
+  queued a moment earlier may still appear. Existing lines stay until you press
+  Clear or the next conversation starts.
+- Closing the window only hides it. The transcript is kept.
+
+Display notes:
+
+- Text is plain. Nothing in the window is clickable.
+- When the window is very busy, some lines can be skipped. A note says so.
+- The window can lag a moment behind the conversation. It never slows the
+  conversation down.
+
+Privacy:
+
+- While the setting is on, the transcript stays in memory after the conversation
+  ends. It stays until the next conversation starts, you press Clear, or Vox
+  quits. The window never writes it to disk or to logs.
+- The optional **Save conversation records** feature is separate. See
+  [Privacy](#privacy).
+
+Safety:
+
+- The window page is bundled with the app. It has no network access. It can only
+  read the transcript and clear it.
+
 ## Context
 
 Vox keeps the last N exchanges (the "turns kept in context" setting) and
@@ -307,9 +369,19 @@ It is off by default; see [vault-rag.md](vault-rag.md).
 ## Privacy
 
 What you say and Vox's replies are sent to your configured reply backend. That
-is either a local command-line agent or a model API you configured. Nothing is
-stored beyond the in-memory session. Conversation text is not written to disk
-by Vox.
+is either a local command-line agent or a model API you configured. The
+conversation context is kept in memory only and is cleared when the conversation
+ends. The live transcript for the [conversation window](#conversation-window) is
+also kept in memory only. When its setting is on, it stays until the next
+conversation starts, you press Clear, or Vox quits. The window never writes it
+to disk or to logs.
+
+The one exception is the optional **Save conversation records** setting (off by
+default). When it is on, Vox saves each finished conversation to its own local
+database, with a short summary. A model writes the summary when one is
+configured. Otherwise a simple fallback is used. If the vault option under that
+setting is on and a vault folder is set, a Markdown note is written too.
+Redaction of sensitive text is best-effort, so review what is saved.
 
 ## Safety
 

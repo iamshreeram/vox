@@ -1974,6 +1974,42 @@ async changeConverseSmartTurnSetting(enabled: boolean) : Promise<void> {
 async changeConverseLatencyPanelSetting(enabled: boolean) : Promise<void> {
     await TAURI_INVOKE("change_converse_latency_panel_setting", { enabled });
 },
+/**
+ * Authoritative snapshot of the transcript, state and recording flag (brief lock, no wait).
+ */
+async getChatSnapshot() : Promise<ChatSnapshot> {
+    return await TAURI_INVOKE("get_chat_snapshot");
+},
+/**
+ * Empties the transcript. Runs on a blocking thread because the log waits up to two seconds
+ * for its worker to apply the wipe.
+ */
+async clearChatLog() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_chat_log") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Turns recording of the chat transcript on or off and persists the choice.
+ */
+async changeConverseChatLogSetting(enabled: boolean) : Promise<void> {
+    await TAURI_INVOKE("change_converse_chat_log_setting", { enabled });
+},
+/**
+ * Shows the conversation window, or hides it when it is visible and focused. The settings
+ * button calls this; the hotkey and the tray item use the same path.
+ */
+async toggleChatWindowCommand() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("toggle_chat_window_command") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeSpeakerFilterEnabledSetting(enabled: boolean) : Promise<void> {
     await TAURI_INVOKE("change_speaker_filter_enabled_setting", { enabled });
 },
@@ -2259,6 +2295,11 @@ converse_latency_panel?: boolean;
  */
 converse_barge_in?: ConverseBargeIn; 
 /**
+ * Record the conversation into the in-memory chat window transcript (DESIGN-CHAT A5).
+ * On by default; stores without the key get on. Nothing is written to disk.
+ */
+converse_chat_log?: boolean; 
+/**
  * Ignore utterances that do not sound like the enrolled voice (convenience
  * filter, NOT authentication; needs the model and an enrolled voice).
  */
@@ -2361,6 +2402,66 @@ export type AuxState = "not_installed" | "downloading" | "verifying" | "ready" |
 export type AuxStatus = { kind: AuxKind; state: AuxState; size_bytes: number }
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
+/**
+ * One transcript line.
+ */
+export type ChatEntry = { 
+/**
+ * Equals the `seq` of the event that carried the entry.
+ */
+id: number; 
+/**
+ * Milliseconds since the Unix epoch when applied.
+ */
+tsMs: number; 
+/**
+ * Speaker.
+ */
+role: ChatRole; 
+/**
+ * Cleaned, capped text.
+ */
+text: string }
+/**
+ * Who said it.
+ */
+export type ChatRole = 
+/**
+ * The person speaking to Vox.
+ */
+"user" | 
+/**
+ * Vox (text actually handed to speech).
+ */
+"assistant" | 
+/**
+ * A fixed note such as `system:started` or `system:dropped:3`.
+ */
+"system"
+/**
+ * Authoritative state at one `seq`.
+ */
+export type ChatSnapshot = { 
+/**
+ * Highest `seq` applied when the snapshot was taken.
+ */
+seq: number; 
+/**
+ * Current entries, oldest first (at most `LOG_CAP`).
+ */
+entries: ChatEntry[]; 
+/**
+ * Current conversation state label (`idle` initially).
+ */
+state: string; 
+/**
+ * End reason of the last session, if any.
+ */
+end: string | null; 
+/**
+ * Whether new lines are currently recorded.
+ */
+recording: boolean }
 /**
  * Script applied to Mandarin and Cantonese output. Other languages are never
  * converted.

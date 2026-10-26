@@ -1691,6 +1691,18 @@ impl ShortcutAction for ConverseAction {
     fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
 }
 
+/// Conversation window hotkey: pressing the binding shows or hides the window. Release does
+/// nothing.
+struct ChatWindowAction;
+
+impl ShortcutAction for ChatWindowAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        let _ = crate::chat_window::toggle_chat_window(app);
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+}
+
 // Static Action Map
 pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::new(|| {
     let mut map = HashMap::new();
@@ -1715,6 +1727,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "converse".to_string(),
         Arc::new(ConverseAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "chat_window".to_string(),
+        Arc::new(ChatWindowAction) as Arc<dyn ShortcutAction>,
     );
     map
 });

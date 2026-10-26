@@ -622,6 +622,9 @@ fn build_menu(
     // other locales fall back to the English label (see localized_or_english).
     let converse_label = localized_or_english(&strings.converse, &english_converse());
     let converse_i = MenuItem::with_id(app, "converse", &converse_label, true, None::<&str>)?;
+    // Conversation window toggle (DESIGN-CHAT A5). Same English-fallback rule as converse.
+    let chat_label = localized_or_english(&strings.chat, &english_chat());
+    let chat_i = MenuItem::with_id(app, "chat", &chat_label, true, None::<&str>)?;
     // "Cancel coding job" (M3 S3c-2, DESIGN D6): English-only label, enabled only while a job
     // runs and a cancel handler is registered (see `cancel_job_item_enabled`).
     let cancel_job_i = MenuItem::with_id(
@@ -663,6 +666,7 @@ fn build_menu(
                 &separator()?,
                 &copy_last_transcript_i,
                 &converse_i,
+                &chat_i,
                 &separator()?,
                 &settings_i,
                 &check_updates_i,
@@ -702,6 +706,7 @@ fn build_menu(
                 &separator()?,
                 &copy_last_transcript_i,
                 &converse_i,
+                &chat_i,
                 &cancel_job_i,
                 &separator()?,
                 &model_submenu,
@@ -789,6 +794,14 @@ fn english_converse() -> String {
     crate::tray_i18n::TRANSLATIONS
         .get("en")
         .map(|strings| strings.converse.clone())
+        .unwrap_or_default()
+}
+
+/// English conversation-window label from the generated translations.
+fn english_chat() -> String {
+    crate::tray_i18n::TRANSLATIONS
+        .get("en")
+        .map(|strings| strings.chat.clone())
         .unwrap_or_default()
 }
 

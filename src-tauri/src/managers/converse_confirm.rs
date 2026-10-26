@@ -4,8 +4,11 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::managers::chat_log::ChatRole;
 use crate::managers::command_router::CommandAction;
-use crate::managers::converse::{Ears, Hands, ListenOutcome, Mouth, QuietOutcome, SayOutcome};
+use crate::managers::converse::{
+    Ears, Hands, ListenOutcome, Mouth, QuietOutcome, Reporter, SayOutcome,
+};
 use crate::managers::converse_agent::plan_confirmation_prompt;
 #[cfg(test)]
 pub use crate::managers::converse_plan::JobRequest;
@@ -168,6 +171,7 @@ impl Default for ConfirmConfig {
 /// Sequence: hold the announcer guard, speak the question, wait for quiet (one
 /// retry), wait the post-speech guard, then arm exactly one listen bounded by
 /// the listen timeout. Dropping the listen future cancels the capture.
+#[cfg_attr(not(test), allow(dead_code))]
 pub async fn confirm_action(
     ears: &dyn Ears,
     mouth: &dyn Mouth,
@@ -175,9 +179,31 @@ pub async fn confirm_action(
     question: &str,
     cfg: &ConfirmConfig,
 ) -> Decision {
-    match ask_and_listen(ears, mouth, announcer, question, cfg).await {
+    confirm_action_recorded(ears, mouth, announcer, question, cfg, None).await
+}
+
+/// `confirm_action` that also reports an accepted answer to the chat window (DESIGN-CHAT A2).
+pub async fn confirm_action_recorded(
+    ears: &dyn Ears,
+    mouth: &dyn Mouth,
+    announcer: &Announcer,
+    question: &str,
+    cfg: &ConfirmConfig,
+    chat: Option<&dyn Reporter>,
+) -> Decision {
+    match ask_and_listen(ears, mouth, announcer, question, cfg, chat).await {
         Ok(outcome) => decision_for(outcome),
         Err(reason) => Decision::Declined(reason),
+    }
+}
+
+/// Chat recording of a confirmation answer (DESIGN-CHAT A2, A11): only an accepted, non-empty
+/// utterance, reported before any classification. Silence, noise and rejected voices are not.
+fn record_answer(chat: Option<&dyn Reporter>, outcome: &ListenOutcome) {
+    if let (Some(reporter), ListenOutcome::Utterance(text)) = (chat, outcome) {
+        if !text.trim().is_empty() {
+            reporter.chat(ChatRole::User, text);
+        }
     }
 }
 
@@ -189,6 +215,7 @@ async fn ask_and_listen(
     announcer: &Announcer,
     question: &str,
     cfg: &ConfirmConfig,
+    chat: Option<&dyn Reporter>,
 ) -> Result<ListenOutcome, DeclineReason> {
     let _guard = announcer.confirmation_guard();
     match mouth.say(question, Emotion::Neutral).await {
@@ -201,7 +228,10 @@ async fn ask_and_listen(
     }
     tokio::time::sleep(cfg.post_speech_guard).await;
     match tokio::time::timeout(cfg.listen_timeout, ears.listen()).await {
-        Ok(outcome) => Ok(outcome),
+        Ok(outcome) => {
+            record_answer(chat, &outcome);
+            Ok(outcome)
+        }
         Err(_) => Err(DeclineReason::Silence),
     }
 }
@@ -228,8 +258,9 @@ pub async fn confirm_forced(
     announcer: &Announcer,
     question: &str,
     cfg: &ConfirmConfig,
+    chat: Option<&dyn Reporter>,
 ) -> Decision {
-    match ask_and_listen(ears, mouth, announcer, question, cfg).await {
+    match ask_and_listen(ears, mouth, announcer, question, cfg, chat).await {
         Ok(ListenOutcome::Utterance(text)) if classify_strict_yes(&text) => Decision::Approved,
         Ok(ListenOutcome::Utterance(text)) if text.trim().is_empty() => {
             Decision::Declined(DeclineReason::Silence)

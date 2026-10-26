@@ -918,6 +918,10 @@ pub struct AppSettings {
     /// when a conversation starts.
     #[serde(default)]
     pub converse_barge_in: ConverseBargeIn,
+    /// Record the conversation into the in-memory chat window transcript (DESIGN-CHAT A5).
+    /// On by default; stores without the key get on. Nothing is written to disk.
+    #[serde(default = "default_converse_chat_log")]
+    pub converse_chat_log: bool,
     /// Ignore utterances that do not sound like the enrolled voice (convenience
     /// filter, NOT authentication; needs the model and an enrolled voice).
     #[serde(default)]
@@ -1359,6 +1363,11 @@ fn default_conversation_agent_handoff() -> bool {
 
 /// Serde default for `conversation_planner`: on for stores that lack the key.
 fn default_conversation_planner() -> bool {
+    true
+}
+
+/// Serde default for `converse_chat_log`: on for stores that lack the key (DESIGN-CHAT A5).
+fn default_converse_chat_log() -> bool {
     true
 }
 
@@ -2054,6 +2063,22 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
+    // Conversation window toggle (DESIGN-CHAT A5). Must not collide with any other default.
+    #[cfg(target_os = "macos")]
+    let default_chat_window_shortcut = "control+option+t";
+    #[cfg(not(target_os = "macos"))]
+    let default_chat_window_shortcut = "ctrl+alt+shift+t";
+    bindings.insert(
+        "chat_window".to_string(),
+        ShortcutBinding {
+            id: "chat_window".to_string(),
+            name: "Conversation window".to_string(),
+            description: "Show or hide the conversation window".to_string(),
+            default_binding: default_chat_window_shortcut.to_string(),
+            current_binding: default_chat_window_shortcut.to_string(),
+        },
+    );
+
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
         bindings,
@@ -2167,6 +2192,7 @@ pub fn get_default_settings() -> AppSettings {
         converse_smart_turn: false,
         converse_latency_panel: false,
         converse_barge_in: ConverseBargeIn::Off,
+        converse_chat_log: default_converse_chat_log(),
         speaker_filter_enabled: false,
         speaker_filter_sensitivity: SpeakerSensitivity::default(),
         personas: Vec::new(),
