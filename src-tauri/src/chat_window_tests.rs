@@ -1,0 +1,569 @@
+//! Spec tests for the conversation window: toggle decision, command allow-list (A8), capability
+//! files (A3), default bindings and settings (A5), tray entry, window construction (A3/A5) and
+//! the shortcut registration path. Tests are written first: the implementation step makes them
+//! green. Workers must not edit this file.
+//!
+//! Most checks are source contracts (`include_str!` or runtime reads of repo files) so this file
+//! compiles while other workers edit `lib.rs`, `settings.rs` or the tray.
+
+use super::*;
+use regex::Regex;
+use serde_json::Value;
+use std::collections::{BTreeSet, HashSet};
+use std::path::Path;
+
+/// Commands added by DESIGN-CHAT. Asserted by name, independent of how far `lib.rs` has got.
+const NEW_CHAT_COMMANDS: [&str; 4] = [
+    "get_chat_snapshot",
+    "clear_chat_log",
+    "toggle_chat_window_command",
+    "change_converse_chat_log_setting",
+];
+
+/// The only commands the chat webview may call (A8).
+const CHAT_ALLOWED: [&str; 2] = ["get_chat_snapshot", "clear_chat_log"];
+
+/// Locales that must carry the chat keys (the repo's 26 locale directories).
+const LOCALE_COUNT: usize = 26;
+
+/// Reads a file under the crate root (`src-tauri/`) at runtime.
+fn read_crate_file(rel: &str) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(rel);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
+}
+
+/// Reads and parses a JSON file under the crate root.
+fn read_crate_json(rel: &str) -> Value {
+    let text = read_crate_file(rel);
+    serde_json::from_str(&text).unwrap_or_else(|e| panic!("{rel} is not valid JSON: {e}"))
+}
+
+/// Source text with `//` comment lines removed (code only).
+fn code_only(src: &str) -> String {
+    src.lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Every command name in the `collect_commands![ ... ]` list of `lib.rs`, last path segment only.
+fn registered_commands() -> Vec<String> {
+    let src = include_str!("lib.rs");
+    let marker = "collect_commands![";
+    assert_eq!(
+        src.matches(marker).count(),
+        1,
+        "lib.rs must contain exactly one collect_commands! list"
+    );
+    let start = src.find(marker).expect("marker present") + marker.len();
+    let mut depth = 1usize;
+    let mut end = None;
+    for (offset, ch) in src[start..].char_indices() {
+        match ch {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(start + offset);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let body = &src[start..end.expect("collect_commands! list is closed")];
+    body.lines()
+        .map(|line| line.split("//").next().unwrap_or(""))
+        .flat_map(|line| line.split(','))
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(|item| item.rsplit("::").next().unwrap_or(item).trim().to_string())
+        .collect()
+}
+
+/// Every command the table tests must cover: the registered list plus the four new names.
+fn all_commands() -> BTreeSet<String> {
+    let mut set: BTreeSet<String> = registered_commands().into_iter().collect();
+    set.extend(NEW_CHAT_COMMANDS.iter().map(|c| c.to_string()));
+    set
+}
+
+/// Formats a list of failures for one assertion, so one run reports every offender.
+fn assert_no_failures(what: &str, failures: Vec<String>) {
+    assert!(
+        failures.is_empty(),
+        "{what}: {} failure(s):\n  {}",
+        failures.len(),
+        failures.join("\n  ")
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// 1. Toggle decision truth table
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn toggle_hidden_always_shows_whatever_focus_says() {
+    assert_eq!(toggle_decision(false, false), ToggleAction::Show);
+    assert_eq!(toggle_decision(false, true), ToggleAction::Show);
+}
+
+#[test]
+fn toggle_visible_but_unfocused_brings_to_front() {
+    assert_eq!(toggle_decision(true, false), ToggleAction::Show);
+}
+
+#[test]
+fn toggle_visible_and_focused_hides() {
+    assert_eq!(toggle_decision(true, true), ToggleAction::Hide);
+}
+
+// ---------------------------------------------------------------------------------------------
+// 2. Command allow-list (A8), every command in lib.rs plus the four new names
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn chat_label_is_allowed_exactly_two_commands() {
+    let mut failures = Vec::new();
+    for command in all_commands() {
+        let expected = CHAT_ALLOWED.contains(&command.as_str());
+        if chat_command_allowed("chat", &command) != expected {
+            failures.push(format!(
+                "label=chat command={command} expected allowed={expected}"
+            ));
+        }
+    }
+    assert_no_failures("chat label allow-list", failures);
+}
+
+#[test]
+fn chat_label_allows_get_chat_snapshot_and_clear_chat_log_by_name() {
+    assert!(chat_command_allowed("chat", "get_chat_snapshot"));
+    assert!(chat_command_allowed("chat", "clear_chat_log"));
+}
+
+#[test]
+fn chat_snapshot_and_clear_are_denied_from_main_overlay_and_unknown_labels() {
+    let mut failures = Vec::new();
+    for label in ["main", "recording_overlay", "no_such_window"] {
+        for command in ["get_chat_snapshot", "clear_chat_log"] {
+            if chat_command_allowed(label, command) {
+                failures.push(format!("label={label} command={command} must be denied"));
+            }
+        }
+    }
+    assert_no_failures("chat-only commands outside the chat window", failures);
+}
+
+#[test]
+fn chat_label_denies_toggle_and_converse_chat_log_setter() {
+    assert!(!chat_command_allowed("chat", "toggle_chat_window_command"));
+    assert!(!chat_command_allowed(
+        "chat",
+        "change_converse_chat_log_setting"
+    ));
+}
+
+#[test]
+fn main_and_overlay_keep_every_other_command_allowed() {
+    let new: HashSet<&str> = NEW_CHAT_COMMANDS.iter().copied().collect();
+    let mut failures = Vec::new();
+    for command in all_commands() {
+        if new.contains(command.as_str()) {
+            continue;
+        }
+        for label in ["main", "recording_overlay"] {
+            if !chat_command_allowed(label, &command) {
+                failures.push(format!("label={label} command={command} must stay allowed"));
+            }
+        }
+    }
+    assert_no_failures("existing commands from main and overlay", failures);
+}
+
+#[test]
+fn main_may_call_toggle_and_converse_chat_log_setter() {
+    assert!(chat_command_allowed("main", "toggle_chat_window_command"));
+    assert!(chat_command_allowed(
+        "main",
+        "change_converse_chat_log_setting"
+    ));
+}
+
+#[test]
+fn lib_command_list_registers_all_four_chat_commands() {
+    let registered: HashSet<String> = registered_commands().into_iter().collect();
+    let missing: Vec<&str> = NEW_CHAT_COMMANDS
+        .iter()
+        .copied()
+        .filter(|c| !registered.contains(*c))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "lib.rs collect_commands! is missing: {missing:?}"
+    );
+}
+
+#[test]
+fn lib_installs_the_single_command_guard_wrapper() {
+    let src = code_only(include_str!("lib.rs"));
+    assert!(
+        src.contains("chat_command_allowed("),
+        "lib.rs must call chat_command_allowed in the invoke handler wrapper"
+    );
+    assert!(
+        src.contains("command not allowed from this window"),
+        "the rejection message from A8 must be used"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// 3. Capability files (A3)
+// ---------------------------------------------------------------------------------------------
+
+/// The permission identifiers of a capability file (string entries or `{ "identifier": .. }`).
+fn permission_ids(capability: &Value) -> Vec<String> {
+    capability["permissions"]
+        .as_array()
+        .expect("permissions is an array")
+        .iter()
+        .map(|entry| match entry {
+            Value::String(s) => s.clone(),
+            Value::Object(obj) => obj["identifier"]
+                .as_str()
+                .expect("permission object has an identifier")
+                .to_string(),
+            other => panic!("unexpected permission entry: {other}"),
+        })
+        .collect()
+}
+
+#[test]
+fn chat_capability_file_exists() {
+    assert!(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("capabilities/chat.json")
+            .is_file(),
+        "src-tauri/capabilities/chat.json must exist (A3)"
+    );
+}
+
+#[test]
+fn chat_capability_is_scoped_to_chat_window_with_exact_event_permissions() {
+    let chat = read_crate_json("capabilities/chat.json");
+    let windows: Vec<String> = chat["windows"]
+        .as_array()
+        .expect("windows is an array")
+        .iter()
+        .map(|w| w.as_str().expect("window is a string").to_string())
+        .collect();
+    assert_eq!(windows, vec!["chat".to_string()]);
+
+    let actual: BTreeSet<String> = permission_ids(&chat).into_iter().collect();
+    let expected: BTreeSet<String> = ["core:event:allow-listen", "core:event:allow-unlisten"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    assert_eq!(
+        actual, expected,
+        "chat.json permissions must be exactly the two event permissions"
+    );
+}
+
+#[test]
+fn chat_capability_grants_no_plugin_or_filesystem_permission() {
+    let forbidden = [
+        "fs:",
+        "opener:",
+        "store:",
+        "shell:",
+        "updater:",
+        "global-shortcut:",
+        "autostart:",
+        "dialog:",
+        "http:",
+        "process:",
+        "os:",
+    ];
+    let chat = read_crate_json("capabilities/chat.json");
+    let mut failures = Vec::new();
+    for permission in permission_ids(&chat) {
+        if forbidden.iter().any(|p| permission.starts_with(p)) {
+            failures.push(permission);
+        }
+    }
+    assert_no_failures("forbidden permission in chat.json", failures);
+}
+
+#[test]
+fn default_and_desktop_capabilities_do_not_list_chat() {
+    for rel in ["capabilities/default.json", "capabilities/desktop.json"] {
+        let cap = read_crate_json(rel);
+        let windows = cap["windows"].as_array().cloned().unwrap_or_default();
+        assert!(
+            !windows.iter().any(|w| w.as_str() == Some("chat")),
+            "{rel} must not grant the chat window (A3: chat has its own capability file)"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// 4. Default bindings, ACTION_MAP, settings deserialization, shortcut registration path
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn chat_window_binding_has_the_per_os_default() {
+    let expected = if cfg!(target_os = "macos") {
+        "control+option+t"
+    } else {
+        "ctrl+alt+shift+t"
+    };
+    let settings = crate::settings::get_default_settings();
+    let binding = settings
+        .bindings
+        .get("chat_window")
+        .expect("default bindings contain chat_window");
+    assert_eq!(binding.default_binding, expected);
+    assert_eq!(binding.current_binding, expected);
+}
+
+#[test]
+fn all_default_binding_strings_are_unique() {
+    let settings = crate::settings::get_default_settings();
+    let mut seen = HashSet::new();
+    let mut duplicates = Vec::new();
+    for (id, binding) in &settings.bindings {
+        if binding.default_binding.is_empty() {
+            continue;
+        }
+        if !seen.insert(binding.default_binding.clone()) {
+            duplicates.push(format!("{id}={}", binding.default_binding));
+        }
+    }
+    assert!(
+        duplicates.is_empty(),
+        "duplicate default bindings: {duplicates:?}"
+    );
+}
+
+#[test]
+fn action_map_registers_chat_window() {
+    assert!(
+        crate::actions::ACTION_MAP.contains_key("chat_window"),
+        "ACTION_MAP must contain the chat_window action (ChatWindowAction)"
+    );
+}
+
+#[test]
+fn default_settings_json_has_chat_log_on_and_no_open_on_start_key() {
+    let value = serde_json::to_value(crate::settings::get_default_settings())
+        .expect("default settings serialize");
+    assert_eq!(
+        value["converse_chat_log"],
+        Value::Bool(true),
+        "converse_chat_log defaults to true (A5)"
+    );
+    assert!(
+        value.get("converse_chat_open_on_start").is_none(),
+        "converse_chat_open_on_start is removed from v1 (A5)"
+    );
+}
+
+#[test]
+fn stored_settings_without_new_keys_deserialize_with_defaults() {
+    let mut stored = serde_json::to_value(crate::settings::get_default_settings())
+        .expect("default settings serialize");
+    let obj = stored.as_object_mut().expect("settings is an object");
+    obj.remove("converse_chat_log");
+    obj.get_mut("bindings")
+        .and_then(Value::as_object_mut)
+        .expect("bindings is an object")
+        .remove("chat_window");
+
+    let loaded: crate::settings::AppSettings = serde_json::from_value(stored)
+        .expect("a store written before this feature must still deserialize");
+    let back = serde_json::to_value(&loaded).expect("loaded settings serialize");
+    assert_eq!(back["converse_chat_log"], Value::Bool(true));
+    if let Some(binding) = loaded.bindings.get("chat_window") {
+        assert_eq!(binding.current_binding, binding.default_binding);
+    }
+}
+
+#[test]
+fn shortcut_registration_has_no_hard_coded_exclusion_for_chat_window() {
+    let src = code_only(&read_crate_file("src/shortcut/mod.rs"));
+    assert!(
+        src.contains("for (id, default_binding) in &default_bindings"),
+        "registration must iterate the default bindings map"
+    );
+    // Every bare `<...id> == "x"` or `!= "x"` comparison in shortcut/mod.rs (field accesses such
+    // as `provider.id` are not binding ids and are skipped). The only binding ids that may be
+    // special-cased are the two existing exclusions.
+    let re = Regex::new(r#"(?:^|[^.\w])(\w*id)\s*(?:==|!=)\s*"([a-z_]+)""#).expect("valid regex");
+    let special: BTreeSet<String> = re.captures_iter(&src).map(|c| c[2].to_string()).collect();
+    let allowed: BTreeSet<String> = ["cancel", "transcribe_with_post_process"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    assert_eq!(
+        special, allowed,
+        "shortcut/mod.rs must not special-case binding ids beyond the existing two"
+    );
+    assert!(!src.contains("\"chat_window\""));
+}
+
+// ---------------------------------------------------------------------------------------------
+// 5. Tray: menu item, menu-event arm, localized label
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn tray_menu_has_a_chat_item_built_with_with_id() {
+    let tray = read_crate_file("src/tray.rs");
+    let re = Regex::new(r#"MenuItem::with_id\(\s*app\s*,\s*"chat"\s*,"#).expect("valid regex");
+    assert!(
+        re.is_match(&tray),
+        "tray.rs must build MenuItem::with_id(app, \"chat\", ..)"
+    );
+    assert!(
+        tray.contains("strings.chat"),
+        "the chat label must come from the localized TrayStrings (same as converse)"
+    );
+}
+
+#[test]
+fn menu_event_chat_arm_calls_the_chat_window() {
+    let lib = read_crate_file("src/lib.rs");
+    let arm = lib
+        .find("\"chat\" => {")
+        .expect("lib.rs on_menu_event must have a \"chat\" arm");
+    let window = &lib[arm..(arm + 300).min(lib.len())];
+    assert!(
+        window.contains("chat_window::"),
+        "the \"chat\" arm must call into chat_window (toggle)"
+    );
+}
+
+#[test]
+fn every_locale_has_a_non_empty_tray_chat_label() {
+    let locales_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/i18n/locales");
+    let mut locales = Vec::new();
+    for entry in std::fs::read_dir(&locales_dir).expect("locales dir readable") {
+        let entry = entry.expect("dir entry");
+        if entry.path().is_dir() {
+            locales.push(entry.path().join("translation.json"));
+        }
+    }
+    assert_eq!(
+        locales.len(),
+        LOCALE_COUNT,
+        "expected {LOCALE_COUNT} locale directories"
+    );
+    let mut failures = Vec::new();
+    for path in locales {
+        let text = std::fs::read_to_string(&path).expect("locale readable");
+        let json: Value = serde_json::from_str(&text).expect("locale is JSON");
+        let label = json["tray"]["chat"].as_str().unwrap_or("");
+        if label.trim().is_empty() {
+            failures.push(path.display().to_string());
+        }
+    }
+    assert_no_failures("tray.chat missing or empty", failures);
+}
+
+// ---------------------------------------------------------------------------------------------
+// 6. Window construction (A3, A5, A8): source contract on non-comment lines
+// ---------------------------------------------------------------------------------------------
+
+fn window_code() -> String {
+    code_only(include_str!("chat_window.rs"))
+}
+
+#[test]
+fn window_label_constant_is_chat() {
+    assert_eq!(CHAT_WINDOW_LABEL, "chat");
+    assert!(window_code().contains("pub const CHAT_WINDOW_LABEL: &str = \"chat\";"));
+}
+
+#[test]
+fn window_is_built_from_the_bundled_entry_page_hidden_and_not_always_on_top() {
+    let code = window_code();
+    assert!(
+        code.contains("WebviewWindowBuilder"),
+        "must build with WebviewWindowBuilder"
+    );
+    assert!(
+        code.contains("WebviewUrl::App(") && code.contains("CHAT_ENTRY_URL"),
+        "must load WebviewUrl::App(CHAT_ENTRY_URL ...)"
+    );
+    assert!(
+        code.contains(".visible(false)"),
+        "window must be created hidden"
+    );
+    assert!(
+        !code.contains("always_on_top"),
+        "window must not be always-on-top (A5)"
+    );
+}
+
+#[test]
+fn window_close_hides_instead_of_destroying() {
+    let code = window_code();
+    assert!(
+        code.contains("prevent_close"),
+        "close request must call prevent_close"
+    );
+    assert!(
+        code.contains(".hide()"),
+        "close request must hide the window"
+    );
+}
+
+#[test]
+fn window_denies_navigation_and_new_windows() {
+    let code = window_code();
+    assert!(
+        code.contains(".on_navigation("),
+        "must install an on_navigation closure"
+    );
+    assert!(
+        code.contains(".on_new_window("),
+        "must deny new windows via on_new_window"
+    );
+}
+
+#[test]
+fn window_show_path_calls_show_and_set_focus() {
+    let code = window_code();
+    assert!(code.contains(".show()"), "show path must call show()");
+    assert!(
+        code.contains(".set_focus()"),
+        "show path must call set_focus()"
+    );
+}
+
+#[test]
+fn window_code_has_no_filesystem_or_logging() {
+    let re = Regex::new(
+        r"\bstd::fs\b|\bfs::|\bFile::|\b(?:log|tracing)::|\b(?:trace|debug|info|warn|error)!\s*\(|\b(?:e)?println!|\bdbg!",
+    )
+    .expect("valid regex");
+    let code = window_code();
+    let hits: Vec<&str> = code.lines().filter(|l| re.is_match(l)).collect();
+    assert!(
+        hits.is_empty(),
+        "chat_window.rs must not touch fs or log: {hits:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// 7. Toggle wiring from the tray and hotkey already points at the window module
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn chat_window_module_is_wired_in_lib_rs() {
+    let lib = read_crate_file("src/lib.rs");
+    assert!(
+        lib.contains("mod chat_window;"),
+        "lib.rs must declare mod chat_window"
+    );
+}
