@@ -63,10 +63,19 @@ const KNOWN_END_LABELS = new Set([
 ]);
 
 /** Ends that mean something went wrong: the avatar looks concerned instead of asleep. */
-const ERROR_ENDS = new Set(["not_configured", "audio_unavailable", "speech_stuck"]);
+const ERROR_ENDS = new Set([
+  "not_configured",
+  "audio_unavailable",
+  "speech_stuck",
+]);
 
 /** States that drive their own face; any other state is shown as idle. */
-const ACTIVE_STATES = new Set<AvatarFace>(["listening", "thinking", "speaking", "acting"]);
+const ACTIVE_STATES = new Set<AvatarFace>([
+  "listening",
+  "thinking",
+  "speaking",
+  "acting",
+]);
 
 export function initialView(): ChatView {
   return {
@@ -80,7 +89,9 @@ export function initialView(): ChatView {
 }
 
 function capEntries(entries: ChatEntry[]): ChatEntry[] {
-  return entries.length > VIEW_CAP ? entries.slice(entries.length - VIEW_CAP) : entries;
+  return entries.length > VIEW_CAP
+    ? entries.slice(entries.length - VIEW_CAP)
+    : entries;
 }
 
 export function applyEvent(view: ChatView, ev: ChatEvent): ChatView {
@@ -138,7 +149,8 @@ export function shouldAutoScroll(
   metrics: { scrollTop: number; scrollHeight: number; clientHeight: number },
   threshold = 48,
 ): boolean {
-  const distanceFromBottom = metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight;
+  const distanceFromBottom =
+    metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight;
   return distanceFromBottom <= threshold;
 }
 

@@ -53,7 +53,9 @@ const SETTINGS_KEYS = [
 function endLabels(): string[] {
   const src = read("src-tauri/src/managers/converse_runtime.rs");
   const start = src.indexOf("pub fn end_label");
-  expect(start, "end_label must exist in converse_runtime.rs").toBeGreaterThan(-1);
+  expect(start, "end_label must exist in converse_runtime.rs").toBeGreaterThan(
+    -1,
+  );
   const body = src.slice(start, src.indexOf("\n}", start));
   const labels = [...body.matchAll(/=>\s*"([a-z_]+)"/g)].map((m) => m[1]);
   expect(labels.length, "end_label must map 7 SessionEnd variants").toBe(7);
@@ -97,8 +99,13 @@ describe("src/chat/index.html", () => {
 
   it("loads the module script /src/chat/main.tsx", () => {
     const tags = [...html().matchAll(/<script\b[^>]*>/gi)].map((m) => m[0]);
-    const entry = tags.find((tag) => /\bsrc\s*=\s*["']\/src\/chat\/main\.tsx["']/.test(tag));
-    expect(entry, "a <script src=\"/src/chat/main.tsx\"> tag must exist").toBeDefined();
+    const entry = tags.find((tag) =>
+      /\bsrc\s*=\s*["']\/src\/chat\/main\.tsx["']/.test(tag),
+    );
+    expect(
+      entry,
+      'a <script src="/src/chat/main.tsx"> tag must exist',
+    ).toBeDefined();
     expect(entry).toMatch(/\btype\s*=\s*["']module["']/);
   });
 
@@ -128,7 +135,9 @@ describe("src/chat/main.tsx", () => {
 
   it("imports the chat-local i18n bootstrap (not @/i18n) and renders ChatWindow", () => {
     const src = main();
-    expect(src).toMatch(/import\s+["']\.\/i18n(?:\.ts)?["']|from\s+["']\.\/i18n(?:\.ts)?["']/);
+    expect(src).toMatch(
+      /import\s+["']\.\/i18n(?:\.ts)?["']|from\s+["']\.\/i18n(?:\.ts)?["']/,
+    );
     expect(src).not.toMatch(/["']@\/i18n["']/);
     expect(src).toMatch(/from\s+["']\.\/ChatWindow(?:\.tsx)?["']/);
     expect(src).toMatch(/<ChatWindow\b/);
@@ -154,9 +163,15 @@ describe("i18n keys used by the chat window", () => {
   const required = allRequiredKeys();
 
   it("parses seven session end labels from converse_runtime.rs", () => {
-    expect(endLabels().sort()).toEqual(
-      ["audio_unavailable", "cancelled", "idle", "not_configured", "speech_stuck", "turn_limit", "user_ended"],
-    );
+    expect(endLabels().sort()).toEqual([
+      "audio_unavailable",
+      "cancelled",
+      "idle",
+      "not_configured",
+      "speech_stuck",
+      "turn_limit",
+      "user_ended",
+    ]);
   });
 
   it("finds exactly the 26 locale directories", () => {
@@ -164,7 +179,9 @@ describe("i18n keys used by the chat window", () => {
   });
 
   it("has every required key in the English reference locale", () => {
-    const en = JSON.parse(read("src/i18n/locales/en/translation.json")) as unknown;
+    const en = JSON.parse(
+      read("src/i18n/locales/en/translation.json"),
+    ) as unknown;
     const missing = required.filter((key) => {
       const value = getPath(en, key);
       return typeof value !== "string" || value.trim() === "";

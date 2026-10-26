@@ -969,7 +969,13 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
     "conversation",
     "settings.conversation.openChatWindow",
     "settings.conversation.chatLog.description",
-    ["chat window", "open chat", "conversation window", "transcript", "show chat"],
+    [
+      "chat window",
+      "open chat",
+      "conversation window",
+      "transcript",
+      "show chat",
+    ],
   ),
   row(
     "converseBargeIn",

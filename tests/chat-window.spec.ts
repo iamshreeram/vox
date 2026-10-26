@@ -32,7 +32,11 @@ interface HarnessConfig {
 
 interface ChatWindowLike {
   __TAURI_INTERNALS__: {
-    invoke: (command: string, args?: unknown, options?: unknown) => Promise<unknown>;
+    invoke: (
+      command: string,
+      args?: unknown,
+      options?: unknown,
+    ) => Promise<unknown>;
   };
   __pwAllInvokes: string[];
   __pwSnapshotQueue: WireSnapshot[];
@@ -44,19 +48,33 @@ const CLEAR_COMMAND = "clear_chat_log";
 const ALLOWED_PREFIX = "plugin:event|";
 const CHAT_PAGE = "/src/chat/index.html";
 
-function entry(id: number, text: string, role: "user" | "assistant" = "user"): WireEntry {
+function entry(
+  id: number,
+  text: string,
+  role: "user" | "assistant" = "user",
+): WireEntry {
   return { id, tsMs: 1000 + id, role, text };
 }
 
-function snapshot(seq: number, entries: WireEntry[], extra: Partial<WireSnapshot> = {}): WireSnapshot {
+function snapshot(
+  seq: number,
+  entries: WireEntry[],
+  extra: Partial<WireSnapshot> = {},
+): WireSnapshot {
   return { seq, entries, state: "idle", end: null, recording: true, ...extra };
 }
 
-function entryEvent(seq: number, e: WireEntry): { seq: number; kind: { type: "entry"; entry: WireEntry } } {
+function entryEvent(
+  seq: number,
+  e: WireEntry,
+): { seq: number; kind: { type: "entry"; entry: WireEntry } } {
   return { seq, kind: { type: "entry", entry: e } };
 }
 
-async function installChatHarness(page: Page, config: HarnessConfig): Promise<void> {
+async function installChatHarness(
+  page: Page,
+  config: HarnessConfig,
+): Promise<void> {
   await installTauriMock(page);
   await page.addInitScript((cfg: HarnessConfig) => {
     const win = window as unknown as ChatWindowLike;
@@ -72,7 +90,9 @@ async function installChatHarness(page: Page, config: HarnessConfig): Promise<vo
       if (name === "get_chat_snapshot") {
         const next = win.__pwSnapshotQueue.shift();
         if (next !== undefined) last = next;
-        return Promise.resolve(last === null ? null : JSON.parse(JSON.stringify(last)));
+        return Promise.resolve(
+          last === null ? null : JSON.parse(JSON.stringify(last)),
+        );
       }
       return original(name, args, options);
     };
@@ -80,7 +100,9 @@ async function installChatHarness(page: Page, config: HarnessConfig): Promise<vo
 }
 
 async function invokes(page: Page): Promise<string[]> {
-  return page.evaluate(() => (window as unknown as ChatWindowLike).__pwAllInvokes);
+  return page.evaluate(
+    () => (window as unknown as ChatWindowLike).__pwAllInvokes,
+  );
 }
 
 async function snapshotCalls(page: Page): Promise<number> {
@@ -97,9 +119,12 @@ async function waitForSubscription(page: Page): Promise<void> {
 }
 
 const log = (page: Page): Locator => page.getByRole("log");
-const bubbles = (page: Page): Locator => page.getByRole("log").locator("[data-role]");
-const clearButton = (page: Page): Locator => page.getByRole("button", { name: "Clear", exact: true });
-const jumpButton = (page: Page): Locator => page.getByRole("button", { name: "Jump to latest", exact: true });
+const bubbles = (page: Page): Locator =>
+  page.getByRole("log").locator("[data-role]");
+const clearButton = (page: Page): Locator =>
+  page.getByRole("button", { name: "Clear", exact: true });
+const jumpButton = (page: Page): Locator =>
+  page.getByRole("button", { name: "Jump to latest", exact: true });
 
 async function openChat(page: Page, config: HarnessConfig): Promise<void> {
   await installChatHarness(page, config);
@@ -108,13 +133,21 @@ async function openChat(page: Page, config: HarnessConfig): Promise<void> {
 }
 
 test.describe("Conversation window: hydration and content", () => {
-  test("shows the empty state when the snapshot has no entries", async ({ page }) => {
+  test("shows the empty state when the snapshot has no entries", async ({
+    page,
+  }) => {
     await openChat(page, { snapshots: [snapshot(0, [])], clearFails: false });
-    await expect(page.getByText("No conversation yet. Say your wake phrase to start.", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("No conversation yet. Say your wake phrase to start.", {
+        exact: true,
+      }),
+    ).toBeVisible();
     await expect(bubbles(page)).toHaveCount(0);
   });
 
-  test("hydrates entries, status caption and recording-off note from the snapshot", async ({ page }) => {
+  test("hydrates entries, status caption and recording-off note from the snapshot", async ({
+    page,
+  }) => {
     await openChat(page, {
       snapshots: [
         snapshot(3, [entry(1, "hi"), entry(2, "hello back", "assistant")], {
@@ -128,32 +161,53 @@ test.describe("Conversation window: hydration and content", () => {
     await expect(page.locator('[data-role="user"]')).toHaveCount(1);
     await expect(page.locator('[data-role="assistant"]')).toHaveCount(1);
     await expect(page.getByText("Listening", { exact: true })).toBeVisible();
-    await expect(page.getByText("Recording is off", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Recording is off", { exact: true }),
+    ).toBeVisible();
   });
 
-  test("shows the ended reason in the caption when the session has ended", async ({ page }) => {
+  test("shows the ended reason in the caption when the session has ended", async ({
+    page,
+  }) => {
     await openChat(page, {
       snapshots: [snapshot(2, [], { state: "idle", end: "turn_limit" })],
       clearFails: false,
     });
-    await expect(page.getByText("Session ended", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Session ended", { exact: true }),
+    ).toBeVisible();
   });
 
-  test("the transcript is a polite live log and the avatar is hidden from assistive tech", async ({ page }) => {
+  test("the transcript is a polite live log and the avatar is hidden from assistive tech", async ({
+    page,
+  }) => {
     await openChat(page, { snapshots: [snapshot(0, [])], clearFails: false });
     await expect(log(page)).toHaveAttribute("aria-live", "polite");
-    await expect(page.locator('svg[aria-hidden="true"]').first()).toBeAttached();
+    await expect(
+      page.locator('svg[aria-hidden="true"]').first(),
+    ).toBeAttached();
   });
 
-  test("renders markup in entry text as literal text (no elements, raw text kept)", async ({ page }) => {
-    const hostile = ["<img src=x onerror=alert(1)>", "<b>x</b>", "[link](http://evil)"];
+  test("renders markup in entry text as literal text (no elements, raw text kept)", async ({
+    page,
+  }) => {
+    const hostile = [
+      "<img src=x onerror=alert(1)>",
+      "<b>x</b>",
+      "[link](http://evil)",
+    ];
     const dialogs: string[] = [];
     page.on("dialog", (d) => {
       dialogs.push(d.message());
       void d.dismiss();
     });
     await openChat(page, {
-      snapshots: [snapshot(3, hostile.map((t, i) => entry(i + 1, t)))],
+      snapshots: [
+        snapshot(
+          3,
+          hostile.map((t, i) => entry(i + 1, t)),
+        ),
+      ],
       clearFails: false,
     });
     await expect(bubbles(page)).toHaveText(hostile);
@@ -163,9 +217,16 @@ test.describe("Conversation window: hydration and content", () => {
 });
 
 test.describe("Conversation window: live events, scrolling and resync", () => {
-  test("live entries append in order and stay pinned to the bottom", async ({ page }) => {
-    const filler = Array.from({ length: 60 }, (_, i) => entry(i + 1, `old ${i + 1}`));
-    await openChat(page, { snapshots: [snapshot(60, filler)], clearFails: false });
+  test("live entries append in order and stay pinned to the bottom", async ({
+    page,
+  }) => {
+    const filler = Array.from({ length: 60 }, (_, i) =>
+      entry(i + 1, `old ${i + 1}`),
+    );
+    await openChat(page, {
+      snapshots: [snapshot(60, filler)],
+      clearFails: false,
+    });
     await expect(bubbles(page)).toHaveCount(60);
     await emitMockEvent(page, EVENT, entryEvent(61, entry(61, "fresh A")));
     await emitMockEvent(page, EVENT, entryEvent(62, entry(62, "fresh B")));
@@ -173,14 +234,23 @@ test.describe("Conversation window: live events, scrolling and resync", () => {
     await expect(bubbles(page)).toHaveCount(62);
     await expect
       .poll(() =>
-        log(page).evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight),
+        log(page).evaluate(
+          (el) => el.scrollHeight - el.scrollTop - el.clientHeight,
+        ),
       )
       .toBeLessThanOrEqual(48);
   });
 
-  test("Jump to latest appears when scrolled away and new entries arrive, and scrolls to the bottom", async ({ page }) => {
-    const filler = Array.from({ length: 60 }, (_, i) => entry(i + 1, `old ${i + 1}`));
-    await openChat(page, { snapshots: [snapshot(60, filler)], clearFails: false });
+  test("Jump to latest appears when scrolled away and new entries arrive, and scrolls to the bottom", async ({
+    page,
+  }) => {
+    const filler = Array.from({ length: 60 }, (_, i) =>
+      entry(i + 1, `old ${i + 1}`),
+    );
+    await openChat(page, {
+      snapshots: [snapshot(60, filler)],
+      clearFails: false,
+    });
     await expect(bubbles(page)).toHaveCount(60);
     await log(page).evaluate((el) => {
       el.scrollTop = 0;
@@ -195,7 +265,9 @@ test.describe("Conversation window: live events, scrolling and resync", () => {
     await expect(bubbles(page).last()).toHaveText("while away");
   });
 
-  test("a gap in the sequence triggers exactly one extra snapshot fetch", async ({ page }) => {
+  test("a gap in the sequence triggers exactly one extra snapshot fetch", async ({
+    page,
+  }) => {
     await openChat(page, {
       snapshots: [
         snapshot(2, [entry(1, "one"), entry(2, "two")]),
@@ -214,7 +286,9 @@ test.describe("Conversation window: live events, scrolling and resync", () => {
     expect(await snapshotCalls(page)).toBe(2);
   });
 
-  test("a stale snapshot response is discarded and refetched at most once more", async ({ page }) => {
+  test("a stale snapshot response is discarded and refetched at most once more", async ({
+    page,
+  }) => {
     await openChat(page, {
       snapshots: [
         snapshot(2, [entry(1, "current")]),
@@ -230,11 +304,16 @@ test.describe("Conversation window: live events, scrolling and resync", () => {
     await emitMockEvent(page, EVENT, entryEvent(5, entry(5, "next")));
     await expect(bubbles(page)).toHaveText(["current", "fresh", "next"]);
     expect(await snapshotCalls(page)).toBe(3);
-    await expect(page.getByText("STALE-RESPONSE", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("STALE-RESPONSE", { exact: true })).toHaveCount(
+      0,
+    );
   });
 
   test("a duplicate or older event is ignored", async ({ page }) => {
-    await openChat(page, { snapshots: [snapshot(2, [entry(1, "one"), entry(2, "two")])], clearFails: false });
+    await openChat(page, {
+      snapshots: [snapshot(2, [entry(1, "one"), entry(2, "two")])],
+      clearFails: false,
+    });
     await expect(bubbles(page)).toHaveText(["one", "two"]);
     await emitMockEvent(page, EVENT, entryEvent(2, entry(9, "DUPLICATE")));
     await emitMockEvent(page, EVENT, entryEvent(1, entry(8, "OLDER")));
@@ -243,8 +322,13 @@ test.describe("Conversation window: live events, scrolling and resync", () => {
     expect(await snapshotCalls(page)).toBe(1);
   });
 
-  test("a window focus event refetches the snapshot exactly once", async ({ page }) => {
-    await openChat(page, { snapshots: [snapshot(2, [entry(1, "one")])], clearFails: false });
+  test("a window focus event refetches the snapshot exactly once", async ({
+    page,
+  }) => {
+    await openChat(page, {
+      snapshots: [snapshot(2, [entry(1, "one")])],
+      clearFails: false,
+    });
     await expect(bubbles(page)).toHaveText(["one"]);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => snapshotCalls(page)).toBe(2);
@@ -255,30 +339,52 @@ test.describe("Conversation window: live events, scrolling and resync", () => {
 });
 
 test.describe("Conversation window: Clear and command allow-list", () => {
-  test("Clear calls clear_chat_log once and empties the view on success", async ({ page }) => {
-    await openChat(page, { snapshots: [snapshot(1, [entry(1, "gone soon")])], clearFails: false });
+  test("Clear calls clear_chat_log once and empties the view on success", async ({
+    page,
+  }) => {
+    await openChat(page, {
+      snapshots: [snapshot(1, [entry(1, "gone soon")])],
+      clearFails: false,
+    });
     await expect(bubbles(page)).toHaveText(["gone soon"]);
     await clearButton(page).click();
-    await expect(page.getByText("No conversation yet. Say your wake phrase to start.", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("No conversation yet. Say your wake phrase to start.", {
+        exact: true,
+      }),
+    ).toBeVisible();
     expect(await clearCalls(page)).toBe(1);
   });
 
-  test("a failed Clear keeps the transcript and shows the failure note", async ({ page }) => {
-    await openChat(page, { snapshots: [snapshot(1, [entry(1, "still here")])], clearFails: true });
+  test("a failed Clear keeps the transcript and shows the failure note", async ({
+    page,
+  }) => {
+    await openChat(page, {
+      snapshots: [snapshot(1, [entry(1, "still here")])],
+      clearFails: true,
+    });
     await expect(bubbles(page)).toHaveText(["still here"]);
     await clearButton(page).click();
-    await expect(page.getByText("Could not clear the conversation. Try again.", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Could not clear the conversation. Try again.", {
+        exact: true,
+      }),
+    ).toBeVisible();
     await expect(bubbles(page)).toHaveText(["still here"]);
   });
 
-  test("the page calls no command other than get_chat_snapshot and clear_chat_log", async ({ page }) => {
+  test("the page calls no command other than get_chat_snapshot and clear_chat_log", async ({
+    page,
+  }) => {
     await openChat(page, { snapshots: [snapshot(0, [])], clearFails: false });
     await clearButton(page).click();
     await expect.poll(() => clearCalls(page)).toBe(1);
     const names = await invokes(page);
     for (const name of names) {
       const allowed =
-        name === SNAPSHOT_COMMAND || name === CLEAR_COMMAND || name.startsWith(ALLOWED_PREFIX);
+        name === SNAPSHOT_COMMAND ||
+        name === CLEAR_COMMAND ||
+        name.startsWith(ALLOWED_PREFIX);
       expect(allowed, `unexpected command ${name}`).toBe(true);
     }
   });

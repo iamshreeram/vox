@@ -28,7 +28,11 @@ body,
   box-sizing: border-box;
   background: var(--color-background);
   color: var(--color-text);
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font:
+    14px/1.45 system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
 }
 
 /* ---- state colours: dark stage (system dark, dark, aurora, custom) ---- */
@@ -77,17 +81,33 @@ body,
   gap: 6px;
   padding: 8px 12px;
   background:
-    radial-gradient(ellipse at 50% 42%, color-mix(in srgb, var(--face) 24%, transparent), transparent 62%),
+    radial-gradient(
+      ellipse at 50% 42%,
+      color-mix(in srgb, var(--face) 24%, transparent),
+      transparent 62%
+    ),
     var(--stage-bg);
   overflow: hidden;
 }
 
-.chat-stage[data-face="listening"] { --face: var(--face-listening); }
-.chat-stage[data-face="thinking"] { --face: var(--face-thinking); }
-.chat-stage[data-face="acting"] { --face: var(--face-acting); }
-.chat-stage[data-face="speaking"] { --face: var(--face-speaking); }
-.chat-stage[data-face="sleep"] { --face: var(--face-sleep); }
-.chat-stage[data-face="concerned"] { --face: var(--face-concerned); }
+.chat-stage[data-face="listening"] {
+  --face: var(--face-listening);
+}
+.chat-stage[data-face="thinking"] {
+  --face: var(--face-thinking);
+}
+.chat-stage[data-face="acting"] {
+  --face: var(--face-acting);
+}
+.chat-stage[data-face="speaking"] {
+  --face: var(--face-speaking);
+}
+.chat-stage[data-face="sleep"] {
+  --face: var(--face-sleep);
+}
+.chat-stage[data-face="concerned"] {
+  --face: var(--face-concerned);
+}
 
 .chat-caption {
   margin: 0;
@@ -112,84 +132,234 @@ body,
   overflow: visible;
 }
 
-.vox-glow { fill: var(--face); opacity: 0.2; }
-.vox-ring { fill: none; stroke: var(--face); stroke-width: 3; opacity: 0.55; transform-box: view-box; transform-origin: 80px 80px; }
-.vox-arc { fill: none; stroke: var(--face); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 110 305; opacity: 0; transform-box: view-box; transform-origin: 80px 80px; }
-.vox-stop-hi { stop-color: color-mix(in srgb, var(--face) 30%, #ffffff); }
-.vox-stop-lo { stop-color: color-mix(in srgb, var(--face) 60%, #ffffff); }
-.vox-float, .vox-pulse { transform-box: view-box; transform-origin: 80px 80px; }
-.vox-eye { fill: var(--eye-ink); transform-box: fill-box; transform-origin: center; }
-.vox-closed { opacity: 0; }
-.vox-closed path, .vox-mouth { fill: none; stroke: var(--eye-ink); stroke-width: 4; stroke-linecap: round; }
-.vox-closed path { stroke-width: 3.5; }
-.vox-mouth { transform-box: fill-box; transform-origin: center; }
-.vox-brows { opacity: 0; }
-.vox-brow { stroke: var(--eye-ink); stroke-width: 3.5; stroke-linecap: round; fill: none; }
-.vox-dots { opacity: 0; transform-box: view-box; transform-origin: 80px 80px; }
-.vox-dots circle { fill: var(--face); }
-.vox-z { opacity: 0; fill: none; stroke: var(--face); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; transform-box: fill-box; transform-origin: center; }
+.vox-glow {
+  fill: var(--face);
+  opacity: 0.2;
+}
+.vox-ring {
+  fill: none;
+  stroke: var(--face);
+  stroke-width: 3;
+  opacity: 0.55;
+  transform-box: view-box;
+  transform-origin: 80px 80px;
+}
+.vox-arc {
+  fill: none;
+  stroke: var(--face);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 110 305;
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: 80px 80px;
+}
+.vox-stop-hi {
+  stop-color: color-mix(in srgb, var(--face) 30%, #ffffff);
+}
+.vox-stop-lo {
+  stop-color: color-mix(in srgb, var(--face) 60%, #ffffff);
+}
+.vox-float,
+.vox-pulse {
+  transform-box: view-box;
+  transform-origin: 80px 80px;
+}
+.vox-eye {
+  fill: var(--eye-ink);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.vox-closed {
+  opacity: 0;
+}
+.vox-closed path,
+.vox-mouth {
+  fill: none;
+  stroke: var(--eye-ink);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.vox-closed path {
+  stroke-width: 3.5;
+}
+.vox-mouth {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.vox-brows {
+  opacity: 0;
+}
+.vox-brow {
+  stroke: var(--eye-ink);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  fill: none;
+}
+.vox-dots {
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: 80px 80px;
+}
+.vox-dots circle {
+  fill: var(--face);
+}
+.vox-z {
+  opacity: 0;
+  fill: none;
+  stroke: var(--face);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform-box: fill-box;
+  transform-origin: center;
+}
 
-.vox-avatar[data-face="idle"] .vox-float { animation: vox-float 3.6s ease-in-out infinite; }
-.vox-avatar[data-face="idle"] .vox-eye { animation: vox-blink 4.8s ease-in-out infinite; }
+.vox-avatar[data-face="idle"] .vox-float {
+  animation: vox-float 3.6s ease-in-out infinite;
+}
+.vox-avatar[data-face="idle"] .vox-eye {
+  animation: vox-blink 4.8s ease-in-out infinite;
+}
 
-.vox-avatar[data-face="listening"] .vox-ring { animation: vox-ring-pulse 1.6s ease-out infinite; }
-.vox-avatar[data-face="listening"] .vox-eye { transform: scaleY(1.2); }
-.vox-avatar[data-face="listening"] .vox-glow { opacity: 0.3; }
+.vox-avatar[data-face="listening"] .vox-ring {
+  animation: vox-ring-pulse 1.6s ease-out infinite;
+}
+.vox-avatar[data-face="listening"] .vox-eye {
+  transform: scaleY(1.2);
+}
+.vox-avatar[data-face="listening"] .vox-glow {
+  opacity: 0.3;
+}
 
-.vox-avatar[data-face="thinking"] .vox-eyes { animation: vox-drift 3s ease-in-out infinite; }
-.vox-avatar[data-face="thinking"] .vox-dots { opacity: 1; animation: vox-orbit 2.4s linear infinite; }
+.vox-avatar[data-face="thinking"] .vox-eyes {
+  animation: vox-drift 3s ease-in-out infinite;
+}
+.vox-avatar[data-face="thinking"] .vox-dots {
+  opacity: 1;
+  animation: vox-orbit 2.4s linear infinite;
+}
 
-.vox-avatar[data-face="acting"] .vox-arc { opacity: 1; animation: vox-spin 1.2s linear infinite; }
-.vox-avatar[data-face="acting"] .vox-eye { transform: scaleY(0.6); }
+.vox-avatar[data-face="acting"] .vox-arc {
+  opacity: 1;
+  animation: vox-spin 1.2s linear infinite;
+}
+.vox-avatar[data-face="acting"] .vox-eye {
+  transform: scaleY(0.6);
+}
 
-.vox-avatar[data-face="speaking"] .vox-pulse { animation: vox-breathe 0.84s ease-in-out infinite; }
-.vox-avatar[data-face="speaking"] .vox-mouth { animation: vox-talk 0.42s ease-in-out infinite alternate; }
+.vox-avatar[data-face="speaking"] .vox-pulse {
+  animation: vox-breathe 0.84s ease-in-out infinite;
+}
+.vox-avatar[data-face="speaking"] .vox-mouth {
+  animation: vox-talk 0.42s ease-in-out infinite alternate;
+}
 
-.vox-avatar[data-face="sleep"] .vox-float { animation: vox-float 6s ease-in-out infinite; }
-.vox-avatar[data-face="sleep"] .vox-eye { opacity: 0; }
-.vox-avatar[data-face="sleep"] .vox-closed { opacity: 1; }
-.vox-avatar[data-face="sleep"] .vox-z { opacity: 1; animation: vox-z-drift 3.2s ease-in-out infinite; }
-.vox-avatar[data-face="sleep"] .vox-glow { opacity: 0.12; }
+.vox-avatar[data-face="sleep"] .vox-float {
+  animation: vox-float 6s ease-in-out infinite;
+}
+.vox-avatar[data-face="sleep"] .vox-eye {
+  opacity: 0;
+}
+.vox-avatar[data-face="sleep"] .vox-closed {
+  opacity: 1;
+}
+.vox-avatar[data-face="sleep"] .vox-z {
+  opacity: 1;
+  animation: vox-z-drift 3.2s ease-in-out infinite;
+}
+.vox-avatar[data-face="sleep"] .vox-glow {
+  opacity: 0.12;
+}
 
-.vox-avatar[data-face="concerned"] .vox-brows { opacity: 1; }
-.vox-avatar[data-face="concerned"] .vox-eye { transform: scaleY(0.85); }
-.vox-avatar[data-face="concerned"] .vox-glow { opacity: 0.08; }
+.vox-avatar[data-face="concerned"] .vox-brows {
+  opacity: 1;
+}
+.vox-avatar[data-face="concerned"] .vox-eye {
+  transform: scaleY(0.85);
+}
+.vox-avatar[data-face="concerned"] .vox-glow {
+  opacity: 0.08;
+}
 
 @keyframes vox-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
 }
 @keyframes vox-blink {
-  0%, 92%, 100% { transform: scaleY(1); }
-  95% { transform: scaleY(0.1); }
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
 }
 @keyframes vox-ring-pulse {
-  0% { transform: scale(1); opacity: 0.6; }
-  100% { transform: scale(1.22); opacity: 0; }
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.22);
+    opacity: 0;
+  }
 }
 @keyframes vox-drift {
-  0%, 100% { transform: translate(0, 0); }
-  50% { transform: translate(-3px, -3px); }
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(-3px, -3px);
+  }
 }
 @keyframes vox-orbit {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 @keyframes vox-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 @keyframes vox-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.025); }
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.025);
+  }
 }
 @keyframes vox-talk {
-  from { transform: scaleY(0.3); }
-  to { transform: scaleY(1.6); }
+  from {
+    transform: scaleY(0.3);
+  }
+  to {
+    transform: scaleY(1.6);
+  }
 }
 @keyframes vox-z-drift {
-  0% { transform: translate(0, 6px); }
-  100% { transform: translate(-6px, -8px); }
+  0% {
+    transform: translate(0, 6px);
+  }
+  100% {
+    transform: translate(-6px, -8px);
+  }
 }
 
 /* ---- header, transcript, footer ---- */
@@ -200,7 +370,8 @@ body,
   justify-content: space-between;
   gap: 8px;
   padding: 8px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-text) 14%, transparent);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--color-text) 14%, transparent);
 }
 
 .chat-rec-off {
@@ -244,7 +415,11 @@ body,
 .chat-user {
   align-self: flex-end;
   border-bottom-right-radius: 4px;
-  background: color-mix(in srgb, var(--color-logo-primary) 22%, var(--color-background));
+  background: color-mix(
+    in srgb,
+    var(--color-logo-primary) 22%,
+    var(--color-background)
+  );
 }
 
 .chat-assistant {

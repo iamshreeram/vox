@@ -110,7 +110,8 @@ describe("applyEvent", () => {
     });
     expect(off.recording).toBe(false);
     expect(
-      applyEvent(off, { seq: 2, kind: { type: "config", recording: true } }).recording,
+      applyEvent(off, { seq: 2, kind: { type: "config", recording: true } })
+        .recording,
     ).toBe(true);
   });
 });
@@ -163,7 +164,12 @@ describe("applySnapshot", () => {
     expect(result.view.ready).toBe(true);
     expect(result.view.seq).toBe(12);
     expect(result.view.state).toBe("listening");
-    expect(result.view.entries.map((e) => e.text)).toEqual(["a", "b", "c", "d"]);
+    expect(result.view.entries.map((e) => e.text)).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+    ]);
   });
 
   it("applies buffered events in ascending seq even when they arrive out of order", () => {
@@ -216,19 +222,31 @@ describe("shouldAutoScroll", () => {
   // distance from bottom = scrollHeight - scrollTop - clientHeight
   it("is true exactly at the threshold distance from the bottom", () => {
     expect(
-      shouldAutoScroll({ scrollTop: 452, scrollHeight: 1000, clientHeight: 500 }),
+      shouldAutoScroll({
+        scrollTop: 452,
+        scrollHeight: 1000,
+        clientHeight: 500,
+      }),
     ).toBe(true);
   });
 
   it("is false one pixel beyond the threshold", () => {
     expect(
-      shouldAutoScroll({ scrollTop: 451, scrollHeight: 1000, clientHeight: 500 }),
+      shouldAutoScroll({
+        scrollTop: 451,
+        scrollHeight: 1000,
+        clientHeight: 500,
+      }),
     ).toBe(false);
   });
 
   it("is true when scrolled fully to the bottom", () => {
     expect(
-      shouldAutoScroll({ scrollTop: 500, scrollHeight: 1000, clientHeight: 500 }),
+      shouldAutoScroll({
+        scrollTop: 500,
+        scrollHeight: 1000,
+        clientHeight: 500,
+      }),
     ).toBe(true);
   });
 
@@ -246,7 +264,10 @@ describe("describeSystem", () => {
     ["system:dropped:abc", { key: "chat.system.unknown" }],
     ["system:dropped:", { key: "chat.system.unknown" }],
     ["system:end:user_ended", { key: "chat.system.end.user_ended" }],
-    ["system:end:audio_unavailable", { key: "chat.system.end.audio_unavailable" }],
+    [
+      "system:end:audio_unavailable",
+      { key: "chat.system.end.audio_unavailable" },
+    ],
     ["system:end:", { key: "chat.system.unknown" }],
     ["system:bogus", { key: "chat.system.unknown" }],
     ["hello there", { key: "chat.system.unknown" }],

@@ -4,7 +4,11 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
-import { THEME_STORAGE_KEY, applyTheme, getStoredAppearance } from "@/lib/utils/theme";
+import {
+  THEME_STORAGE_KEY,
+  applyTheme,
+  getStoredAppearance,
+} from "@/lib/utils/theme";
 import "./i18n";
 import "./chat.css";
 import ChatWindow from "./ChatWindow";
@@ -18,9 +22,11 @@ applyStoredAppearance();
 window.addEventListener("storage", (event) => {
   if (event.key === THEME_STORAGE_KEY) applyStoredAppearance();
 });
-listen("theme-changed", () => applyStoredAppearance()).catch((error: unknown) => {
-  console.warn("chat: failed to subscribe to theme-changed", error);
-});
+listen("theme-changed", () => applyStoredAppearance()).catch(
+  (error: unknown) => {
+    console.warn("chat: failed to subscribe to theme-changed", error);
+  },
+);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

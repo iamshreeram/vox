@@ -19,26 +19,34 @@ function markup(face: AvatarFace): string {
 }
 
 describe("VoxAvatar", () => {
-  it.each(FACES)("renders an aria-hidden inline svg with data-face=%s", (face) => {
-    const html = markup(face);
-    expect(html).toMatch(/^<svg\b/);
-    expect(html).toMatch(/<svg\b[^>]*\baria-hidden="true"/);
-    expect(html).toMatch(new RegExp(`<svg\\b[^>]*\\bdata-face="${face}"`));
-  });
+  it.each(FACES)(
+    "renders an aria-hidden inline svg with data-face=%s",
+    (face) => {
+      const html = markup(face);
+      expect(html).toMatch(/^<svg\b/);
+      expect(html).toMatch(/<svg\b[^>]*\baria-hidden="true"/);
+      expect(html).toMatch(new RegExp(`<svg\\b[^>]*\\bdata-face="${face}"`));
+    },
+  );
 
-  it.each(FACES)("contains no external assets or forbidden elements for %s", (face) => {
-    const html = markup(face);
-    expect(html).not.toMatch(/<image\b/i);
-    expect(html).not.toMatch(/<img\b/i);
-    expect(html).not.toMatch(/<foreignObject\b/i);
-    expect(html).not.toMatch(/<script\b/i);
-    expect(html).not.toMatch(/https?:\/\//i);
-    expect(html).not.toMatch(/\bxlink:href=/i);
-  });
+  it.each(FACES)(
+    "contains no external assets or forbidden elements for %s",
+    (face) => {
+      const html = markup(face);
+      expect(html).not.toMatch(/<image\b/i);
+      expect(html).not.toMatch(/<img\b/i);
+      expect(html).not.toMatch(/<foreignObject\b/i);
+      expect(html).not.toMatch(/<script\b/i);
+      expect(html).not.toMatch(/https?:\/\//i);
+      expect(html).not.toMatch(/\bxlink:href=/i);
+    },
+  );
 
   it.each(FACES)("only uses fragment-id href values for %s", (face) => {
     const html = markup(face);
-    const hrefs = [...html.matchAll(/\bhref="([^"]*)"/g)].map((m) => m[1] ?? "");
+    const hrefs = [...html.matchAll(/\bhref="([^"]*)"/g)].map(
+      (m) => m[1] ?? "",
+    );
     for (const value of hrefs) {
       expect(value.startsWith("#")).toBe(true);
     }

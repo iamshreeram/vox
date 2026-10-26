@@ -36,7 +36,11 @@ describe("src/chat static safety scan", () => {
   it("finds the production chat sources it is supposed to scan", () => {
     const names = TEXT.map((f) => f.name).sort();
     expect(names).toEqual(
-      expect.arrayContaining(["ChatWindow.tsx", "VoxAvatar.tsx", "chatModel.ts"]),
+      expect.arrayContaining([
+        "ChatWindow.tsx",
+        "VoxAvatar.tsx",
+        "chatModel.ts",
+      ]),
     );
   });
 
@@ -68,8 +72,12 @@ describe("src/chat static safety scan", () => {
   });
 
   it("writes nothing to localStorage or sessionStorage", () => {
-    expect(offenders(/(localStorage|sessionStorage)\s*\.\s*setItem/)).toEqual([]);
-    expect(offenders(/(localStorage|sessionStorage)\s*\[[^\]]*\]\s*=/)).toEqual([]);
+    expect(offenders(/(localStorage|sessionStorage)\s*\.\s*setItem/)).toEqual(
+      [],
+    );
+    expect(offenders(/(localStorage|sessionStorage)\s*\[[^\]]*\]\s*=/)).toEqual(
+      [],
+    );
   });
 
   it("builds no href from an expression (only literal fragment hrefs are allowed)", () => {

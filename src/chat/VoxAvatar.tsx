@@ -23,10 +23,28 @@ export default function VoxAvatar({ face }: { face: AvatarFace }) {
       <circle className="vox-arc" cx="80" cy="80" r="66" />
       <g className="vox-float">
         <g className="vox-pulse">
-          <circle className="vox-body" cx="80" cy="82" r="48" fill="url(#vox-body-fill)" />
+          <circle
+            className="vox-body"
+            cx="80"
+            cy="82"
+            r="48"
+            fill="url(#vox-body-fill)"
+          />
           <g className="vox-eyes">
-            <ellipse className="vox-eye vox-eye-l" cx="63" cy="76" rx="7" ry="9" />
-            <ellipse className="vox-eye vox-eye-r" cx="97" cy="76" rx="7" ry="9" />
+            <ellipse
+              className="vox-eye vox-eye-l"
+              cx="63"
+              cy="76"
+              rx="7"
+              ry="9"
+            />
+            <ellipse
+              className="vox-eye vox-eye-r"
+              cx="97"
+              cy="76"
+              rx="7"
+              ry="9"
+            />
           </g>
           <g className="vox-closed">
             <path d="M56 78 q7 6 14 0" />

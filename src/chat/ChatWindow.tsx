@@ -2,7 +2,13 @@
 // buffer until the first snapshot is applied, then apply live events; a gap refetches once,
 // a stale snapshot is discarded and refetched at most once more, window focus refetches once.
 // The only commands used are get_chat_snapshot and clear_chat_log (A8).
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { commands } from "@/bindings";
@@ -26,7 +32,10 @@ const PRE_HYDRATE_BUFFER_CAP = 1000;
 
 type TFn = ReturnType<typeof useTranslation>["t"];
 
-function captionFor(state: string, end: string | null): { key: string; reasonKey?: string } {
+function captionFor(
+  state: string,
+  end: string | null,
+): { key: string; reasonKey?: string } {
   const face = avatarFace(state, end);
   if (face === "listening") return { key: "chat.status.listening" };
   if (face === "thinking") return { key: "chat.status.thinking" };
@@ -34,7 +43,8 @@ function captionFor(state: string, end: string | null): { key: string; reasonKey
   if (face === "acting") return { key: "chat.status.acting" };
   if (state === "idle" && end) {
     const reason = describeSystem(`system:end:${end}`);
-    const reasonKey = reason.key === "chat.system.unknown" ? undefined : reason.key;
+    const reasonKey =
+      reason.key === "chat.system.unknown" ? undefined : reason.key;
     return { key: "chat.status.ended", reasonKey };
   }
   return { key: "chat.status.idle" };
@@ -44,7 +54,10 @@ function Bubble({ entry, t }: { entry: ChatEntry; t: TFn }) {
   const when = new Date(entry.tsMs).toLocaleTimeString();
   if (entry.role === "system") {
     const note = describeSystem(entry.text);
-    const label = note.count === undefined ? t(note.key) : t(note.key, { count: note.count });
+    const label =
+      note.count === undefined
+        ? t(note.key)
+        : t(note.key, { count: note.count });
     return (
       <li className="chat-bubble chat-system" data-role="system" title={when}>
         {label}
@@ -52,7 +65,11 @@ function Bubble({ entry, t }: { entry: ChatEntry; t: TFn }) {
     );
   }
   return (
-    <li className={`chat-bubble chat-${entry.role}`} data-role={entry.role} title={when}>
+    <li
+      className={`chat-bubble chat-${entry.role}`}
+      data-role={entry.role}
+      title={when}
+    >
       <div className="chat-text">{entry.text}</div>
     </li>
   );
@@ -102,7 +119,8 @@ export default function ChatWindow() {
       const current = viewRef.current;
       if (!current.ready) {
         bufferRef.current.push(ev);
-        if (bufferRef.current.length > PRE_HYDRATE_BUFFER_CAP) bufferRef.current.shift();
+        if (bufferRef.current.length > PRE_HYDRATE_BUFFER_CAP)
+          bufferRef.current.shift();
         return;
       }
       if (needsResync(current, ev)) {
@@ -118,7 +136,9 @@ export default function ChatWindow() {
 
     const start = async () => {
       try {
-        const unlisten = await listen<ChatEvent>("converse-chat", (event) => onEvent(event.payload));
+        const unlisten = await listen<ChatEvent>("converse-chat", (event) =>
+          onEvent(event.payload),
+        );
         if (disposed) {
           unlisten();
           return;
@@ -144,7 +164,8 @@ export default function ChatWindow() {
   useLayoutEffect(() => {
     const el = logRef.current;
     const entries = view.entries;
-    const lastId = entries.length > 0 ? entries[entries.length - 1]?.id : undefined;
+    const lastId =
+      entries.length > 0 ? entries[entries.length - 1]?.id : undefined;
     const changed = lastId !== lastEntryIdRef.current;
     lastEntryIdRef.current = lastId;
     if (!el || !changed) return;
@@ -198,12 +219,21 @@ export default function ChatWindow() {
         <VoxAvatar face={face} />
         <p className="chat-caption">
           <span>{t(caption.key)}</span>
-          {caption.reasonKey ? <span className="chat-reason">{t(caption.reasonKey)}</span> : null}
+          {caption.reasonKey ? (
+            <span className="chat-reason">{t(caption.reasonKey)}</span>
+          ) : null}
         </p>
       </section>
       <header className="chat-header">
-        {view.recording ? null : <span className="chat-rec-off">{t("chat.recordingOff")}</span>}
-        <button type="button" className="chat-clear" onClick={onClear} disabled={clearing}>
+        {view.recording ? null : (
+          <span className="chat-rec-off">{t("chat.recordingOff")}</span>
+        )}
+        <button
+          type="button"
+          className="chat-clear"
+          onClick={onClear}
+          disabled={clearing}
+        >
           {t("chat.clear")}
         </button>
       </header>
@@ -223,7 +253,9 @@ export default function ChatWindow() {
           {view.entries.length === 0 ? (
             <li className="chat-empty">{t("chat.empty")}</li>
           ) : (
-            view.entries.map((entry) => <Bubble key={entry.id} entry={entry} t={t} />)
+            view.entries.map((entry) => (
+              <Bubble key={entry.id} entry={entry} t={t} />
+            ))
           )}
         </ol>
         {unseen ? (
