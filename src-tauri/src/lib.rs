@@ -750,6 +750,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "converse" => {
                 commands::converse::toggle_conversation(app);
             }
+            "chat" => {
+                let _ = chat_window::toggle_chat_window(app);
+            }
             "listening_mode:hotkey" => {
                 let _ = commands::wakeword::wakeword_set_enabled(app.clone(), false);
                 let _ = commands::ambient::ambient_set_enabled(app.clone(), false);
@@ -1319,6 +1322,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::chat::get_chat_snapshot,
             commands::chat::clear_chat_log,
             commands::chat::change_converse_chat_log_setting,
+            commands::chat::toggle_chat_window_command,
             commands::converse_extras::change_speaker_filter_enabled_setting,
             commands::converse_extras::change_speaker_filter_sensitivity_setting,
             commands::realtime::change_exp_rt_bool_setting,
@@ -1393,7 +1397,21 @@ pub fn run(cli_args: CliArgs) {
         );
     }
 
-    let invoke_handler = specta_builder.invoke_handler();
+    let specta_invoke_handler = specta_builder.invoke_handler();
+    // Single choke point for the per-window command allow-list (DESIGN-CHAT A8). The chat
+    // webview may call only its two commands; plugin commands never reach this handler.
+    let invoke_handler = move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
+        if !chat_window::chat_command_allowed(
+            invoke.message.webview().label(),
+            invoke.message.command(),
+        ) {
+            invoke
+                .resolver
+                .reject("command not allowed from this window");
+            return true;
+        }
+        specta_invoke_handler(invoke)
+    };
 
     // The headless path must run as its own instance (see the single-instance
     // note below), not forward to an already-running app.

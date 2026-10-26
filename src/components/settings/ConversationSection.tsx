@@ -60,6 +60,7 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
     // True while the session is draining; cleared only by the final idle event.
     const [stopping, setStopping] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [chatWindowError, setChatWindowError] = useState<string | null>(null);
 
     const converseBinding = getSetting("bindings")?.converse;
     const bargeIn = normalizeConverseBargeIn(getSetting("converse_barge_in"));
@@ -122,6 +123,14 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
 
     const action = buttonAction(active, busy);
     const buttonDisabled = action === "disabled" || stopping;
+
+    const handleOpenChatWindow = async () => {
+      setChatWindowError(null);
+      const result = await commands.toggleChatWindowCommand();
+      if (result.status === "error") {
+        setChatWindowError(result.error);
+      }
+    };
 
     const handleClick = async () => {
       if (action === "disabled") return;
@@ -280,6 +289,28 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
             {converseBinding
               ? formatKeyCombination(converseBinding.current_binding, osType)
               : t("converse.section.shortcutNone")}
+          </div>
+        </SettingContainer>
+
+        <SettingContainer
+          title={t("settings.conversation.openChatWindow")}
+          description={t("settings.conversation.chatLog.description")}
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+        >
+          <div className="flex flex-col gap-2">
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => void handleOpenChatWindow()}
+            >
+              {t("settings.conversation.openChatWindow")}
+            </Button>
+            {chatWindowError !== null && (
+              <p role="alert" className="text-xs text-red-400">
+                {chatWindowError}
+              </p>
+            )}
           </div>
         </SettingContainer>
 

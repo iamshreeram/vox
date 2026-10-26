@@ -1998,6 +1998,18 @@ async clearChatLog() : Promise<Result<null, string>> {
 async changeConverseChatLogSetting(enabled: boolean) : Promise<void> {
     await TAURI_INVOKE("change_converse_chat_log_setting", { enabled });
 },
+/**
+ * Shows the conversation window, or hides it when it is visible and focused. The settings
+ * button calls this; the hotkey and the tray item use the same path.
+ */
+async toggleChatWindowCommand() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("toggle_chat_window_command") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeSpeakerFilterEnabledSetting(enabled: boolean) : Promise<void> {
     await TAURI_INVOKE("change_speaker_filter_enabled_setting", { enabled });
 },

@@ -62,3 +62,11 @@ pub fn change_converse_chat_log_setting(app: AppHandle, enabled: bool) {
         chat.set_recording(enabled);
     }
 }
+
+/// Shows the conversation window, or hides it when it is visible and focused. The settings
+/// button calls this; the hotkey and the tray item use the same path.
+#[tauri::command]
+#[specta::specta]
+pub async fn toggle_chat_window_command(app: AppHandle) -> Result<(), String> {
+    crate::chat_window::toggle_chat_window(&app).map_err(|err| err.to_string())
+}

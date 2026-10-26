@@ -2063,6 +2063,22 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
+    // Conversation window toggle (DESIGN-CHAT A5). Must not collide with any other default.
+    #[cfg(target_os = "macos")]
+    let default_chat_window_shortcut = "control+option+t";
+    #[cfg(not(target_os = "macos"))]
+    let default_chat_window_shortcut = "ctrl+alt+shift+t";
+    bindings.insert(
+        "chat_window".to_string(),
+        ShortcutBinding {
+            id: "chat_window".to_string(),
+            name: "Conversation window".to_string(),
+            description: "Show or hide the conversation window".to_string(),
+            default_binding: default_chat_window_shortcut.to_string(),
+            current_binding: default_chat_window_shortcut.to_string(),
+        },
+    );
+
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
         bindings,
