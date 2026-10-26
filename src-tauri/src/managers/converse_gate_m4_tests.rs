@@ -217,17 +217,20 @@ fn add_unrelated_agent(p: &M4GatePolicy) {
 
 fn job_plan(agent: Option<&str>, mode: JobMode) -> TurnPlan {
     TurnPlan {
+        plan: None,
         kind: PlanKind::Job,
         speech: "On it.".to_string(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        role: None,
         job: Some(JobRequest {
             project: "vox".to_string(),
             task: "fix the build".to_string(),
             agent: agent.map(str::to_string),
             mode,
         }),
+        agent: None,
     }
 }
 

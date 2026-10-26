@@ -445,6 +445,11 @@ fn input_with<'a>(utterance: &'a str, vault: Option<&'a str>) -> PlanInput<'a> {
         last_draft: None,
         style: "",
         vault_context: vault,
+        lesson_paused: false,
+        role: None,
+        roles_enabled: false,
+        agent_enabled: false,
+        planner_enabled: false,
     }
 }
 
@@ -461,34 +466,43 @@ fn plan_json(kind: &str, speech: &str) -> String {
 
 fn command_plan() -> TurnPlan {
     TurnPlan {
+        plan: None,
         job: None,
+        role: None,
         kind: PlanKind::Command,
         speech: "Opening.".into(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: Some("open https://example.invalid/?q=PRIVATE".into()),
+        agent: None,
     }
 }
 
 fn paste_plan() -> TurnPlan {
     TurnPlan {
+        plan: None,
         job: None,
+        role: None,
         kind: PlanKind::Paste,
         speech: "Pasting.".into(),
         emotion: Emotion::Neutral,
         paste_text: Some("hello".into()),
         command: None,
+        agent: None,
     }
 }
 
 fn answer_plan_value() -> TurnPlan {
     TurnPlan {
+        plan: None,
         job: None,
+        role: None,
         kind: PlanKind::Answer,
         speech: "Fine.".into(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        agent: None,
     }
 }
 
@@ -821,20 +835,26 @@ fn guard_plan_tainted_with_guard_on_refuses_paste_and_command_only() {
     assert!(refused(&guard_plan(paste_plan(), &taint, true)));
 
     let clarify = TurnPlan {
+        plan: None,
         job: None,
+        role: None,
         kind: PlanKind::Clarify,
         speech: "Which one?".into(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        agent: None,
     };
     let end = TurnPlan {
+        plan: None,
         job: None,
+        role: None,
         kind: PlanKind::End,
         speech: "Bye.".into(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        agent: None,
     };
     for plan in [answer_plan_value(), clarify, end] {
         assert_eq!(

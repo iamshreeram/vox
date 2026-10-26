@@ -290,18 +290,22 @@ async fn run(r: &Rig, cfg: &SessionConfig) -> SessionEnd {
 
 fn tp(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         job: None,
+        role: None,
         kind,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        agent: None,
     }
 }
 
 fn paste_plan(text: &str, speech: &str) -> TurnPlan {
     TurnPlan {
         job: None,
+        role: None,
         paste_text: Some(text.to_string()),
         ..tp(PlanKind::Paste, speech)
     }
@@ -310,6 +314,7 @@ fn paste_plan(text: &str, speech: &str) -> TurnPlan {
 fn cmd_plan(command: &str, speech: &str) -> TurnPlan {
     TurnPlan {
         job: None,
+        role: None,
         command: Some(command.to_string()),
         ..tp(PlanKind::Command, speech)
     }
@@ -731,6 +736,7 @@ async fn cl15_reconcile_abort_after_early_speech_records_the_prefix_and_executes
     // The stream speaks sentences as an answer, then the final plan is a command: Abort.
     let cmd = TurnPlan {
         job: None,
+        role: None,
         command: Some("delete everything".into()),
         ..tp(PlanKind::Command, "Opening.")
     };

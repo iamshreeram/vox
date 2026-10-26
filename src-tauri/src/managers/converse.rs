@@ -3,25 +3,38 @@
 //! the traits below. Contract: DESIGN.md section 3.3 (Revision 4).
 
 use crate::managers::converse_ack::choose;
+use crate::managers::converse_agent::{
+    AgentRun, AgentSource, AgentStartError, PreparedAgentLaunch,
+};
 use crate::managers::converse_barge::{BargeCapture, BargeIn, BargeWatch, ReplyGate};
 use crate::managers::converse_confirm::{
-    confirm_action, confirmation_question, decline_message, fingerprint_for, prepare_action,
-    ConfirmConfig, Decision, DeclineReason, DirFd, JobLaunch, JobStartOutcome, PinError,
-    PolicySource, PrepareError, PreparedAction, ValidatedCommand,
+    confirm_action, confirm_forced, confirmation_question, decline_message, fingerprint_for,
+    forced_prompt, prepare_action, ConfirmConfig, Decision, DeclineReason, DirFd, JobLaunch,
+    JobStartOutcome, PinError, PolicySource, PrepareError, PreparedAction, ValidatedCommand,
 };
 use crate::managers::converse_context::{
     compose, neutralize, note_command, note_delivery_failed, note_failed, note_incomplete,
     note_interrupted, note_paste, note_paste_failed, CommandNote,
 };
 use crate::managers::converse_latency::{LatencyReport, ListenTiming, RollingStats};
-use crate::managers::converse_local::{classify_local_with, LocalIntent};
+use crate::managers::converse_local::{classify_local_in_session, LocalIntent};
 use crate::managers::converse_plan::{
-    PlanError, PlanInput, PlanKind, TurnPlan, MAX_UTTERANCE_CHARS,
+    PlanError, PlanInput, PlanKind, StepKind, TurnPlan, MAX_UTTERANCE_CHARS,
+};
+use crate::managers::converse_role::{
+    now as lesson_now, split_chunks, Lesson, CLEARED_SPOKEN, CONTINUE_SPOKEN,
+    LESSON_START_FAILED_SPOKEN,
 };
 use crate::managers::converse_stream::{reconcile, PlanStreamer, Reconcile};
 use crate::managers::emotion::Emotion;
 use crate::managers::job_announcer::{Announcer, LowPriorityMouth};
+// Re-exported so the planner modules and the tests reach the plan clock through `converse::`.
+// `advance_plan_clock` is only called from cfg(test) code, so a non-test build can leave the
+// re-export without a user; the allow keeps that build free of unused-import warnings.
+#[allow(unused_imports)]
+pub(crate) use crate::managers::plan_clock::{advance_plan_clock, agent_now};
 use futures_util::future::{select, Either};
+use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -257,6 +270,56 @@ pub trait Hands: Send + Sync {
     fn has_active_job(&self) -> bool {
         false
     }
+    /// Stage 2 agent hand-off: prepares an agent launch from the live settings, with the task
+    /// and role fixed. Default: unsupported.
+    #[allow(dead_code)]
+    fn prepare_agent_launch(
+        &self,
+        _task: &str,
+        _role: Option<&str>,
+    ) -> Result<PreparedAgentLaunch, AgentStartError> {
+        Err(AgentStartError::Unsupported)
+    }
+    /// Stage 2 agent hand-off: whether a prepared launch still matches the live settings (the
+    /// fingerprint is recomputed). Default: false.
+    #[allow(dead_code)]
+    fn agent_launch_still_valid(&self, _launch: &PreparedAgentLaunch) -> bool {
+        false
+    }
+    /// Stage 2 agent hand-off: starts a prepared agent run. Default: unsupported.
+    #[allow(dead_code)]
+    fn start_agent(
+        &self,
+        _launch: PreparedAgentLaunch,
+    ) -> Result<Box<dyn AgentRun>, AgentStartError> {
+        Err(AgentStartError::Unsupported)
+    }
+    /// Stage 2 agent hand-off: publishes the full agent reply to the UI. Default: nothing.
+    #[allow(dead_code)]
+    fn publish_agent_result(&self, _text: &str) {}
+    /// Stage 4: prepares the launch of one plan step, with its step kind (its agent profile).
+    /// Default: the single-agent preparation, recorded as a main-agent step of a plan.
+    fn prepare_agent_launch_for(
+        &self,
+        kind: StepKind,
+        task: &str,
+        role: Option<&str>,
+    ) -> Result<PreparedAgentLaunch, AgentStartError> {
+        self.prepare_agent_launch(task, role)
+            .map(|launch| launch.with_step(kind, AgentSource::Main, true))
+    }
+    /// Stage 4 (validator round 1, F2): prepares a typed single agent request (`type` given, not
+    /// `general`). It uses the specialist profile of that type and the step role, and is not a
+    /// plan step. Default: the single-agent preparation recorded as a main-agent single request.
+    fn prepare_agent_launch_typed(
+        &self,
+        kind: StepKind,
+        task: &str,
+        role: Option<&str>,
+    ) -> Result<PreparedAgentLaunch, AgentStartError> {
+        self.prepare_agent_launch(task, role)
+            .map(|launch| launch.with_step(kind, AgentSource::Main, false))
+    }
 }
 
 pub trait Brain: Send + Sync {
@@ -379,9 +442,18 @@ fn speech_outcome(kind: &PlanKind) -> TurnOutcome {
         PlanKind::End => TurnOutcome::Ended,
         // Job plans are parsed only when jobs are allowed and are routed through gate_and_run;
         // without a policy they are never produced, so this branch only sees answer-like speech.
-        PlanKind::Answer | PlanKind::Paste | PlanKind::Command | PlanKind::Job => {
-            TurnOutcome::Answered
-        }
+        // role kinds are answer-like for the history label (their own handling is in execute_plan).
+        PlanKind::Answer
+        | PlanKind::Paste
+        | PlanKind::Command
+        | PlanKind::Job
+        | PlanKind::SetRole
+        | PlanKind::ClearRole
+        // Stage 2 (C3 wires the real behaviour): an agent plan is answer-like until then.
+        | PlanKind::Agent
+        // Stage 4 (S4 wires the executor): a plan is answer-like for the history label.
+        | PlanKind::Plan
+        | PlanKind::Resume => TurnOutcome::Answered,
     }
 }
 
@@ -664,6 +736,12 @@ pub struct SessionConfig {
     pub smart_ack: bool,
     /// Vault-context boundary (DESIGN Rev 3, 3.6): no model-derived paste or command. Default false.
     pub answer_only: bool,
+    /// Stage 2 agent hand-off: the ACP agent is enabled with a command and the conversation
+    /// hand-off setting is on (`from_settings`). Default false.
+    pub agent_handoff: bool,
+    /// Stage 4 planner: a plan may run, that is the hand-off and the planner setting are both on
+    /// (`from_settings`). Default false.
+    pub agent_planner: bool,
 }
 
 impl Default for SessionConfig {
@@ -680,6 +758,8 @@ impl Default for SessionConfig {
             timing_log: false,
             smart_ack: false,
             answer_only: false,
+            agent_handoff: false,
+            agent_planner: false,
         }
     }
 }
@@ -688,6 +768,11 @@ impl SessionConfig {
     /// Session settings from the user's AppSettings (clamped; DESIGN 3.3).
     pub fn from_settings(s: &crate::settings::AppSettings) -> SessionConfig {
         let rt = crate::managers::realtime_config::RealtimeConfig::from_settings(s);
+        let agent_handoff = crate::managers::converse_agent::agent_launch_allowed(
+            s.acp_agent_enabled,
+            s.acp_agent_command.as_deref(),
+            s.conversation_agent_handoff,
+        );
         SessionConfig {
             max_idle_turns: s.converse_max_idle_turns.clamp(1, 5),
             context_turns: usize::from(s.converse_context_turns.min(12)),
@@ -704,6 +789,8 @@ impl SessionConfig {
             timing_log: rt.timing_log,
             smart_ack: rt.ack,
             answer_only: crate::managers::conversation_save::answer_only_for(s),
+            agent_handoff,
+            agent_planner: agent_handoff && s.conversation_planner,
         }
     }
 }
@@ -777,6 +864,8 @@ const MSG_DONE: &str = "Done.";
 /// Spoken instead of any model-proposed paste or command while vault context is on (DESIGN 3.6).
 /// Spoken when a gated job's settings changed between approval and dispatch (DESIGN R3-2).
 const MSG_SETTINGS_CHANGED: &str = "Settings changed, so I didn't start it.";
+/// Spoken when a forced confirmation is not an exact yes (DESIGN 2.5, C6).
+const MSG_FORCED_DECLINED: &str = "Okay, I won't.";
 const MSG_ANSWER_ONLY: &str =
     "Vault context is on, so I can only answer questions. Turn it off to dictate text or open things.";
 /// Queued once when the brain is slow (`SessionConfig::ack_after`).
@@ -1105,6 +1194,20 @@ struct Carry {
     last_failed: Option<String>,
     /// Latency instants of the utterance in progress (reset before each dispatch).
     clock: TurnClock,
+    /// Stage 1 roles: the active role text. Never persisted and never in history; it ends with
+    /// the session (a new session starts with a fresh `Carry`).
+    role: Option<String>,
+    /// Stage 1 lessons: the paused lesson, if any (see `converse_role::Lesson`).
+    lesson: Option<Lesson>,
+    /// True when the turn's plan was an Answer delivered in full (see `continue_lesson`).
+    answer_delivered: bool,
+    /// Stage 2: the agent run owned by the loop (`converse_agent_loop`). Ends with the session.
+    agent: Option<converse_agent_loop::AgentSlot>,
+    /// Stage 2: speech owed to the user from the agent run, delivered at loop boundaries.
+    undelivered: VecDeque<converse_agent_loop::Narration>,
+    /// Stage 2: set when an agent result was recorded. Lasts the rest of the session and makes
+    /// `run_final_plan` ask a forced yes/no question before each planner-derived effect.
+    tainted: bool,
 }
 
 /// Consecutive `Ignored` listens that count as one idle turn (T9b).
@@ -1219,6 +1322,24 @@ async fn streamed_outcome(
         queue.abort();
         return Ok(None);
     }
+    if matches!(
+        plan.kind,
+        PlanKind::SetRole
+            | PlanKind::ClearRole
+            | PlanKind::Resume
+            | PlanKind::Agent
+            | PlanKind::Plan
+            | PlanKind::Job
+    ) {
+        // Agent and Job plans too: the streamer never releases them as early speech (2.1). A Job
+        // plan is executed through `run_final_plan` like the other effect kinds (DESIGN 2.5).
+        // Role plans are never released as early speech (the streamer accepts only answer and
+        // clarify), so the final plan runs in full through the one-shot path, as `Legacy` does.
+        if early.ack.is_some() {
+            queue.abort();
+        }
+        return run_final_plan(deps, cfg, cancel, plan, carry).await;
+    }
     let text = match reconcile(&plan, &early.spoken) {
         Reconcile::Abort => {
             queue.abort();
@@ -1230,7 +1351,7 @@ async fn streamed_outcome(
             if early.ack.is_some() {
                 queue.abort();
             }
-            return execute_plan(deps, cfg, cancel, plan, carry).await;
+            return run_final_plan(deps, cfg, cancel, plan, carry).await;
         }
         Reconcile::Remainder { text } => text,
     };
@@ -1427,16 +1548,23 @@ async fn brain_turn(
     };
     let deps = &timed_deps;
     let start = history.len().saturating_sub(cfg.context_turns);
+    expire_lesson(carry);
     let input = PlanInput {
         utterance,
         history: history.get(start..).unwrap_or_default(),
         last_draft: carry.last_draft.as_deref(),
         style: &cfg.style,
         vault_context: None,
+        role: carry.role.as_deref(),
+        lesson_paused: carry.lesson.is_some(),
+        roles_enabled: true,
+        agent_enabled: converse_agent_loop::handoff_effective(cfg),
+        planner_enabled: cfg.agent_planner,
     };
-    let queue = if cfg.answer_only {
-        // Answer-only (DESIGN 8.1): no streamed model text may reach the mouth before a complete
-        // plan is parsed, so the streaming path is never used.
+    // Answer-only (DESIGN 8.1): no streamed model text may reach the mouth before a complete
+    // plan is parsed, so the streaming path is never used. Role-active turns (Stage 1 roles,
+    // DESIGN 2.5) use the final plan only: no early speech and no acknowledgement.
+    let queue = if cfg.answer_only || carry.role.is_some() {
         None
     } else if cfg.early_speech || cfg.ack_after.is_some() {
         deps.mouth.open_queue()
@@ -1452,7 +1580,7 @@ async fn brain_turn(
         carry.clock.plan_ready = Some(plan_at);
         carry.clock.plan_ok = planned.is_ok();
         let turn = match planned {
-            Ok(plan) => gate_and_run(deps, cfg, cancel, plan, carry).await,
+            Ok(plan) => run_final_plan(deps, cfg, cancel, plan, carry).await,
             Err(err) => plan_failed(deps, cfg, cancel, err, &[], &carry.journal).await,
         };
         carry.clock.speech_at = timed.first_call();
@@ -1524,6 +1652,269 @@ async fn brain_turn(
     turn
 }
 
+/// Drops the paused lesson when it is older than its lifetime. Checked whenever it is read.
+fn expire_lesson(carry: &mut Carry) {
+    if carry
+        .lesson
+        .as_ref()
+        .is_some_and(|lesson| lesson.expired(lesson_now()))
+    {
+        carry.lesson = None;
+    }
+}
+
+/// Says the front chunk of a speech queue. The chunk leaves the queue only when its say returned
+/// `Done`, before the settle steps. `Interrupted` and `Failed` keep it at the front. A session stop
+/// or a reply cancel drops the say and leaves the queue as it was (the queue is owned by the caller,
+/// not by this future).
+async fn say_front_chunk(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    queue: &mut VecDeque<String>,
+    emotion: Emotion,
+) -> Result<SayOutcome, SessionEnd> {
+    let Some(text) = queue.front().cloned() else {
+        return Ok(SayOutcome::Done);
+    };
+    deps.reporter.state(SessionState::Speaking);
+    if is_cancelled(cancel) {
+        return Err(SessionEnd::Cancelled);
+    }
+    let Some(outcome) = race(cancel, deps.mouth.say(&text, emotion)).await else {
+        return Err(SessionEnd::Cancelled);
+    };
+    if outcome == SayOutcome::Done {
+        queue.pop_front();
+    }
+    match settle(deps, cfg, cancel, outcome).await {
+        SpeakResult::Spoken(_) => Ok(outcome),
+        SpeakResult::Cancelled => Err(SessionEnd::Cancelled),
+        SpeakResult::Stuck => Err(SessionEnd::SpeechStuck),
+    }
+}
+
+/// Speaks a queue in order until it is empty or a say does not finish as `Done`. Returns the
+/// outcome of the last say (`Done` for an empty queue).
+async fn speak_queue(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    queue: &mut VecDeque<String>,
+    emotion: Emotion,
+) -> Result<SayOutcome, SessionEnd> {
+    loop {
+        if queue.is_empty() {
+            return Ok(SayOutcome::Done);
+        }
+        match say_front_chunk(deps, cfg, cancel, queue, emotion).await? {
+            SayOutcome::Done => {}
+            other => return Ok(other),
+        }
+    }
+}
+
+/// Speaks the paused lesson from its front. The lesson is dropped once it is fully spoken. Each
+/// chunk that is committed (said `Done`) touches the lesson, so its ten minutes run from the last
+/// chunk rather than from creation.
+async fn speak_lesson(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    carry: &mut Carry,
+) -> Result<SayOutcome, SessionEnd> {
+    loop {
+        let Some(lesson) = carry.lesson.as_mut() else {
+            return Ok(SayOutcome::Done);
+        };
+        if lesson.chunks.is_empty() {
+            carry.lesson = None;
+            return Ok(SayOutcome::Done);
+        }
+        let outcome =
+            say_front_chunk(deps, cfg, cancel, &mut lesson.chunks, Emotion::Neutral).await?;
+        if outcome != SayOutcome::Done {
+            return Ok(outcome);
+        }
+        touch_lesson(carry);
+    }
+}
+
+/// Marks the paused lesson, if any, as used now.
+fn touch_lesson(carry: &mut Carry) {
+    if let Some(lesson) = carry.lesson.as_mut() {
+        lesson.touch(lesson_now());
+    }
+}
+
+/// The lesson chunks still unspoken, in speaking order (empty without a lesson).
+fn lesson_chunks_left(carry: &Carry) -> Vec<String> {
+    carry
+        .lesson
+        .as_ref()
+        .map(|lesson| lesson.chunks.iter().cloned().collect())
+        .unwrap_or_default()
+}
+
+/// An Answer plan. With a role active the speech is spoken as chunks from a turn-local queue: an
+/// interrupted answer drops its remainder and never touches the paused lesson. Without a role the
+/// speech is one `say`, as before.
+async fn answer_turn(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    plan: &TurnPlan,
+    carry: &mut Carry,
+) -> Result<String, SessionEnd> {
+    let outcome = if carry.role.is_some() {
+        let mut queue: VecDeque<String> = split_chunks(&plan.speech).into();
+        speak_queue(deps, cfg, cancel, &mut queue, plan.emotion).await?
+    } else {
+        speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?
+    };
+    carry.answer_delivered = outcome == SayOutcome::Done;
+    Ok(answer_summary(&plan.speech, outcome))
+}
+
+/// A SetRole plan. The role is committed before anything is spoken. The acknowledgement is spoken
+/// next; only when it finished (`Done`) and the plan carries a first request is the one extra
+/// planner call made (`lesson_start_turn`). An interrupted acknowledgement keeps the role and makes
+/// no call.
+async fn set_role_turn(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    plan: &TurnPlan,
+    carry: &mut Carry,
+) -> Result<String, SessionEnd> {
+    let Some(directive) = plan.role.as_ref() else {
+        // A role plan without its directive is not validated: nothing is committed.
+        carry.journal.set(TurnOutcome::Failed, None);
+        into_result(speak_or_end(deps, cfg, cancel, MSG_PLAN_FAILED, Emotion::Neutral).await)?;
+        return Ok(failed_summary());
+    };
+    carry.role = Some(directive.role.clone());
+    carry.lesson = None;
+    let outcome = speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?;
+    let summary = answer_summary(&plan.speech, outcome);
+    let task = directive
+        .task
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty());
+    if let (SayOutcome::Done, Some(task)) = (outcome, task) {
+        lesson_start_turn(deps, cfg, cancel, task, directive.resume, carry).await?;
+    }
+    Ok(summary)
+}
+
+/// The one extra planner call of a compound start: the task, answered in role. Only an Answer is
+/// accepted. Any other kind is ignored with no effect. A failed call speaks one fixed line. The
+/// accepted lesson is spoken from `carry.lesson`, so an interruption leaves its remainder paused.
+async fn lesson_start_turn(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    task: &str,
+    resume_auto: bool,
+    carry: &mut Carry,
+) -> Result<(), SessionEnd> {
+    let input = PlanInput {
+        utterance: task,
+        history: &[],
+        last_draft: None,
+        style: &cfg.style,
+        vault_context: None,
+        role: carry.role.as_deref(),
+        lesson_paused: false,
+        roles_enabled: true,
+        agent_enabled: converse_agent_loop::handoff_effective(cfg),
+        planner_enabled: cfg.agent_planner,
+    };
+    deps.reporter.state(SessionState::Thinking);
+    let Some(planned) = race(cancel, deps.brain.plan(input)).await else {
+        return Err(SessionEnd::Cancelled);
+    };
+    match planned {
+        Ok(plan) if plan.kind == PlanKind::Answer => {
+            let chunks = split_chunks(&plan.speech);
+            carry.lesson =
+                (!chunks.is_empty()).then(|| Lesson::new(chunks, resume_auto, lesson_now()));
+            speak_lesson(deps, cfg, cancel, carry).await?;
+            Ok(())
+        }
+        Ok(_) => Ok(()),
+        Err(_) => into_result(
+            speak_or_end(
+                deps,
+                cfg,
+                cancel,
+                LESSON_START_FAILED_SPOKEN,
+                Emotion::Neutral,
+            )
+            .await,
+        ),
+    }
+}
+
+/// A Resume plan speaks the paused lesson from its front; its own speech is ignored. With no lesson
+/// it behaves like an Answer.
+async fn resume_turn(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    plan: &TurnPlan,
+    carry: &mut Carry,
+) -> Result<String, SessionEnd> {
+    expire_lesson(carry);
+    if carry.lesson.is_none() {
+        return answer_turn(deps, cfg, cancel, plan, carry).await;
+    }
+    touch_lesson(carry);
+    let before = lesson_chunks_left(carry);
+    let outcome = speak_lesson(deps, cfg, cancel, carry).await?;
+    let left = lesson_chunks_left(carry).len();
+    let spoken = before
+        .iter()
+        .take(before.len().saturating_sub(left))
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" ");
+    Ok(answer_summary(&spoken, outcome))
+}
+
+/// After an Answer that was delivered in full, a lesson with `resume_auto` continues: the fixed
+/// continuation line, then the remainder from its front. Runs inside the reply scope of the turn.
+/// `Ok(None)` when nothing continues; otherwise the history side of what was spoken (the line and
+/// the chunks actually committed), with the usual note when it was not delivered in full.
+async fn continue_lesson(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    carry: &mut Carry,
+) -> Result<Option<String>, SessionEnd> {
+    expire_lesson(carry);
+    if !carry
+        .lesson
+        .as_ref()
+        .is_some_and(|lesson| lesson.resume_auto)
+    {
+        return Ok(None);
+    }
+    touch_lesson(carry);
+    let outcome = speak_outcome(deps, cfg, cancel, CONTINUE_SPOKEN, Emotion::Neutral).await?;
+    if outcome != SayOutcome::Done {
+        return Ok(Some(answer_summary(CONTINUE_SPOKEN, outcome)));
+    }
+    let before = lesson_chunks_left(carry);
+    let lesson_outcome = speak_lesson(deps, cfg, cancel, carry).await?;
+    let spoken_count = before.len().saturating_sub(lesson_chunks_left(carry).len());
+    let spoken: Vec<String> = std::iter::once(CONTINUE_SPOKEN.to_string())
+        .chain(before.into_iter().take(spoken_count))
+        .collect();
+    Ok(Some(answer_summary(&spoken.join(" "), lesson_outcome)))
+}
+
 /// Executes a final plan with the one-shot `Mouth::say` speech. `Ok(None)` = continue the
 /// loop without recording history.
 async fn execute_plan(
@@ -1537,7 +1928,7 @@ async fn execute_plan(
     if cfg.answer_only
         && matches!(
             plan.kind,
-            PlanKind::Paste | PlanKind::Command | PlanKind::Job
+            PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::Agent | PlanKind::Plan
         )
     {
         // Answer-only boundary (DESIGN 3.6): zero paste/command/job calls; only the fixed refusal.
@@ -1555,10 +1946,57 @@ async fn execute_plan(
         // Job plans are parsed only when jobs are allowed and are routed through gate_and_run.
         // With no policy a Job plan never reaches this answer path (parsing refuses it), so it
         // is treated as answer text here.
-        PlanKind::Answer | PlanKind::Clarify | PlanKind::Job => {
+        PlanKind::Answer => {
+            carry.journal.set(speech_outcome(&plan.kind), None);
+            answer_turn(deps, cfg, cancel, &plan, carry).await?
+        }
+        // Stage 2: the hand-off is effective only when enabled and not answer-only. Otherwise the
+        // plan is a plain Answer (2.1).
+        PlanKind::Agent => {
+            carry.journal.set(speech_outcome(&plan.kind), None);
+            if converse_agent_loop::handoff_effective(cfg) {
+                converse_agent_loop::agent_turn(deps, cfg, cancel, &plan, carry).await?
+            } else {
+                let mut as_answer = plan.clone();
+                if as_answer.speech.trim().is_empty() {
+                    as_answer.speech = converse_agent_loop::LINE_NOT_EFFECTIVE.to_string();
+                }
+                answer_turn(deps, cfg, cancel, &as_answer, carry).await?
+            }
+        }
+        // Stage 4 (DESIGN 2.1, 2.5): the planner runs only when effective; otherwise the plan is
+        // answered as plain speech.
+        PlanKind::Plan => {
+            carry.journal.set(speech_outcome(&plan.kind), None);
+            if converse_agent_loop::plan_effective(cfg) {
+                converse_agent_loop::plan_turn(deps, cfg, cancel, &plan, carry, false).await?
+            } else {
+                let mut as_answer = plan.clone();
+                if as_answer.speech.trim().is_empty() {
+                    as_answer.speech = converse_agent_loop::LINE_NOT_EFFECTIVE.to_string();
+                }
+                answer_turn(deps, cfg, cancel, &as_answer, carry).await?
+            }
+        }
+        PlanKind::Clarify | PlanKind::Job => {
             carry.journal.set(speech_outcome(&plan.kind), None);
             let outcome = speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?;
             answer_summary(&plan.speech, outcome)
+        }
+        PlanKind::SetRole => {
+            carry.journal.set(speech_outcome(&plan.kind), None);
+            set_role_turn(deps, cfg, cancel, &plan, carry).await?
+        }
+        PlanKind::ClearRole => {
+            carry.journal.set(speech_outcome(&plan.kind), None);
+            carry.role = None;
+            carry.lesson = None;
+            let outcome = speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?;
+            answer_summary(&plan.speech, outcome)
+        }
+        PlanKind::Resume => {
+            carry.journal.set(speech_outcome(&plan.kind), None);
+            resume_turn(deps, cfg, cancel, &plan, carry).await?
         }
         PlanKind::Paste => {
             let Some(pasted) = plan.paste_text.clone() else {
@@ -1629,7 +2067,7 @@ async fn gate_and_run(
     if cfg.answer_only
         && matches!(
             plan.kind,
-            PlanKind::Paste | PlanKind::Command | PlanKind::Job
+            PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::Agent | PlanKind::Plan
         )
     {
         return execute_plan(deps, cfg, cancel, plan, carry).await;
@@ -1690,6 +2128,139 @@ async fn gate_and_run(
         }
         other => dispatch_prepared(deps, cfg, cancel, other, carry).await,
     }
+}
+
+/// The one entry for planner-derived plans (DESIGN 2.5, C6): every final plan from the brain
+/// (streamed or not) passes here and nothing else sends it to `gate_and_run` or `execute_plan`.
+/// Order: (1) the answer-only refusal (`execute_plan` speaks it for Paste, Command, Job, Agent);
+/// (2) while the session is tainted by an agent result, a forced yes/no question for Paste,
+/// Command, Job, Agent and SetRole, which runs an immutable clone of the plan only on an exact
+/// yes; (3) the gate and execute path. Local user-intent paths never reach this function.
+async fn run_final_plan(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    plan: TurnPlan,
+    carry: &mut Carry,
+) -> Result<Option<String>, SessionEnd> {
+    if cfg.answer_only
+        && matches!(
+            plan.kind,
+            PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::Agent | PlanKind::Plan
+        )
+    {
+        return execute_plan(deps, cfg, cancel, plan, carry).await;
+    }
+    if !(carry.tainted && needs_forced_confirmation(cfg, &plan)) {
+        return gate_and_run(deps, cfg, cancel, plan, carry).await;
+    }
+    if plan.kind == PlanKind::Agent {
+        return forced_agent(deps, cfg, cancel, plan, carry).await;
+    }
+    if plan.kind == PlanKind::Plan {
+        return converse_agent_loop::plan_turn(deps, cfg, cancel, &plan, carry, true)
+            .await
+            .map(Some);
+    }
+    let confirmed = plan.clone();
+    let Some(question) = forced_prompt(&confirmed) else {
+        return gate_and_run(deps, cfg, cancel, confirmed, carry).await;
+    };
+    match ask_forced(deps, cancel, carry, &question).await {
+        Decision::Approved => gate_and_run(deps, cfg, cancel, confirmed, carry).await,
+        Decision::Declined(_) => decline_forced(deps, cfg, cancel, carry).await,
+    }
+}
+
+/// True for the planner-derived kinds that need the forced question while tainted. An Agent plan
+/// needs it only when the hand-off is effective; otherwise it is answered as plain speech.
+fn needs_forced_confirmation(cfg: &SessionConfig, plan: &TurnPlan) -> bool {
+    match plan.kind {
+        PlanKind::Paste | PlanKind::Command | PlanKind::Job | PlanKind::SetRole => true,
+        PlanKind::Agent => converse_agent_loop::handoff_effective(cfg),
+        PlanKind::Plan => converse_agent_loop::plan_effective(cfg),
+        _ => false,
+    }
+}
+
+/// A tainted Agent plan (DESIGN 2.5, C6): the launch is prepared before the question, and after
+/// an exact yes it is started only if the settings still produce the same launch. The same
+/// prepared launch is the one started.
+async fn forced_agent(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    plan: TurnPlan,
+    carry: &mut Carry,
+) -> Result<Option<String>, SessionEnd> {
+    carry.journal.set(speech_outcome(&plan.kind), None);
+    let launch =
+        match converse_agent_loop::prepare_agent_plan(deps, cfg, cancel, &plan, carry).await? {
+            Ok(launch) => launch,
+            Err(summary) => return Ok(Some(summary)),
+        };
+    let Some(question) = forced_prompt(&plan) else {
+        return Ok(Some(failed_summary()));
+    };
+    if let Decision::Declined(_) = ask_forced(deps, cancel, carry, &question).await {
+        return decline_forced(deps, cfg, cancel, carry).await;
+    }
+    if !deps.hands.agent_launch_still_valid(&launch) {
+        carry.journal.set(TurnOutcome::Blocked, None);
+        let line = converse_agent_loop::LINE_SETTINGS_CHANGED;
+        into_result(speak_or_end(deps, cfg, cancel, line, Emotion::Neutral).await)?;
+        return Ok(Some(compose(line, "")));
+    }
+    let summary = converse_agent_loop::run_prepared_agent(
+        deps,
+        cfg,
+        cancel,
+        launch,
+        &plan.speech,
+        plan.emotion,
+        carry,
+    )
+    .await?;
+    Ok(Some(summary))
+}
+
+/// Speaks one forced question and waits for the answer (DESIGN 2.5). The question's own speech
+/// is rolled back out of the transcript journal, as for `ask_confirmation`.
+async fn ask_forced(
+    deps: &Deps<'_>,
+    cancel: &mut CancelToken,
+    carry: &Carry,
+    question: &str,
+) -> Decision {
+    let before = carry.journal.submitted_len();
+    let fallback = Announcer::new(Arc::new(NoAnnounce));
+    let announcer = deps.announcer.unwrap_or(&fallback);
+    let config = ConfirmConfig::default();
+    let asked = confirm_forced(deps.ears, deps.mouth, announcer, question, &config);
+    let decision = match race(cancel, asked).await {
+        Some(decision) => decision,
+        None => Decision::Declined(DeclineReason::Cancelled),
+    };
+    carry.journal.truncate_submitted(before);
+    decision
+}
+
+/// Declines a forced question: nothing runs and the decline line is spoken. A cancelled
+/// session ends without speaking.
+async fn decline_forced(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    carry: &mut Carry,
+) -> Result<Option<String>, SessionEnd> {
+    if is_cancelled(cancel) {
+        return Err(SessionEnd::Cancelled);
+    }
+    carry
+        .journal
+        .set(TurnOutcome::Blocked, Some("declined".to_string()));
+    into_result(speak_or_end(deps, cfg, cancel, MSG_FORCED_DECLINED, Emotion::Neutral).await)?;
+    Ok(Some(compose(MSG_FORCED_DECLINED, "")))
 }
 
 /// Announcer stand-in used when the session has none: it never speaks queued text, so a
@@ -1815,9 +2386,21 @@ async fn speak_pending(
 }
 
 /// The turn loop. Returns the end; the wrapper reports Idle and stops.
+/// Ends the session's agent run (cancel once, nothing spoken) on every return path (2.3).
 async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelToken) -> SessionEnd {
-    let mut history: Vec<(String, String)> = Vec::new();
     let mut carry = Carry::default();
+    let end = run_turns_loop(outer, cfg, cancel, &mut carry).await;
+    converse_agent_loop::end_agent_session(&mut carry);
+    end
+}
+
+async fn run_turns_loop(
+    outer: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    carry: &mut Carry,
+) -> SessionEnd {
+    let mut history: Vec<(String, String)> = Vec::new();
     let mut idle_turns: u32 = 0;
     let mut consecutive_too_long: u32 = 0;
     let mut consecutive_ignored: u8 = 0;
@@ -1847,6 +2430,28 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
         if is_cancelled(cancel) {
             return SessionEnd::Cancelled;
         }
+        // Agent events are collected first; speech is delivered only here, outside any listen
+        // and outside any reply scope. A captured barge-in is dispatched before anything else:
+        // while one is pending, nothing is collected or advanced (2.4, A1).
+        if barge_next.is_none() {
+            converse_agent_loop::collect_agent_events(carry, &mut history, cfg, deps.hands);
+            if let Some(mut narration) = carry.undelivered.pop_front() {
+                match converse_agent_loop::speak_unsolicited(deps, cfg, cancel, &mut narration)
+                    .await
+                {
+                    Ok(captured) => barge_next = captured,
+                    Err(end) => return end,
+                }
+                if carry.undelivered.is_empty() {
+                    idle_turns = 0;
+                }
+                continue;
+            }
+            // Safe boundary (A1): the successor of a finished plan step starts only here.
+            if converse_agent_loop::advance_plan(carry, deps.hands) {
+                continue;
+            }
+        }
         if turns >= cfg.max_turns {
             return SessionEnd::TurnLimit;
         }
@@ -1873,6 +2478,9 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
         if !matches!(heard, ListenOutcome::Ignored) {
             consecutive_ignored = 0;
         }
+        if !matches!(heard, ListenOutcome::Utterance(_)) {
+            converse_agent_loop::collect_agent_events(carry, &mut history, cfg, deps.hands);
+        }
         let utterance = match heard {
             ListenOutcome::Aborted => return SessionEnd::Cancelled,
             ListenOutcome::Failed(_) => {
@@ -1883,12 +2491,18 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
             }
             ListenOutcome::TooLong => {
                 idle_turns = 0;
-                consecutive_too_long += 1;
-                if consecutive_too_long >= 2 {
-                    return after_speech(
-                        speak(deps, cfg, cancel, MSG_CANT_HEAR, Emotion::Neutral).await,
-                        SessionEnd::AudioUnavailable,
-                    );
+                // While the agent is occupied, too-long captures do not count toward the streak
+                // and do not use the turn budget (max_turns counts user turns only, 2.3).
+                if converse_agent_loop::agent_occupied(carry) {
+                    turns = turns.saturating_sub(1);
+                } else {
+                    consecutive_too_long += 1;
+                    if consecutive_too_long >= 2 {
+                        return after_speech(
+                            speak(deps, cfg, cancel, MSG_CANT_HEAR, Emotion::Neutral).await,
+                            SessionEnd::AudioUnavailable,
+                        );
+                    }
                 }
                 if let Some(end) =
                     speak_or_end(deps, cfg, cancel, MSG_TOO_LONG, Emotion::Neutral).await
@@ -1900,7 +2514,7 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
             ListenOutcome::NoSpeech => String::new(),
             ListenOutcome::Ignored => {
                 // A foreign voice: no turn budget, no brain, no speech, not a too-long streak.
-                turns -= 1;
+                turns = turns.saturating_sub(1);
                 consecutive_too_long = 0;
                 consecutive_ignored += 1;
                 if consecutive_ignored < IGNORED_STREAK_LIMIT {
@@ -1908,6 +2522,8 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
                 }
                 // The fifth in a row counts exactly like NoSpeech.
                 consecutive_ignored = 0;
+                // Restore the turn taken above: this capture counts exactly like NoSpeech.
+                turns += 1;
                 String::new()
             }
             ListenOutcome::Utterance(text) => text,
@@ -1916,6 +2532,12 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
         consecutive_too_long = 0;
 
         if utterance.trim().is_empty() {
+            // While the agent is occupied (run or owed speech), silence does not count and does
+            // not use the turn budget (2.3).
+            if converse_agent_loop::agent_occupied(carry) {
+                turns = turns.saturating_sub(1);
+                continue;
+            }
             idle_turns += 1;
             if idle_turns >= u32::from(cfg.max_idle_turns) {
                 return after_speech(
@@ -1945,7 +2567,10 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
             .as_deref()
             .map(|watch| (watch.reply_token(), watch.gate()));
         let dispatched = match reply_scope {
-            None => dispatch_utterance(deps, cfg, cancel, &utterance, &history, &mut carry).await,
+            None => {
+                let turn = dispatch_utterance(deps, cfg, cancel, &utterance, &history, carry).await;
+                finish_answer_with_lesson(deps, cfg, cancel, carry, turn, false).await
+            }
             Some((reply, gate)) => {
                 let mut turn_cancel = cancel.with_reply(reply);
                 let gated = GatedMouth {
@@ -1953,15 +2578,20 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
                     gate,
                 };
                 let turn_deps = deps.with_mouth(&gated);
-                dispatch_utterance(
+                let turn = dispatch_utterance(
                     &turn_deps,
                     cfg,
                     &mut turn_cancel,
                     &utterance,
                     &history,
-                    &mut carry,
+                    carry,
                 )
-                .await
+                .await;
+                let latched = barge_watch
+                    .as_deref()
+                    .is_some_and(|watch| watch.cancel_latched());
+                finish_answer_with_lesson(&turn_deps, cfg, &mut turn_cancel, carry, turn, latched)
+                    .await
             }
         };
         // T9b: one latency report per completed turn (plan succeeded, speech handed to the voice).
@@ -1986,7 +2616,7 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
             log.finish(true);
             record_turn(
                 &mut history,
-                &mut carry,
+                carry,
                 cfg,
                 &utterance,
                 &interrupted_summary(&spoken),
@@ -2005,9 +2635,12 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
             Ok(None) => log.finish(false),
             Ok(Some(summary)) => {
                 log.finish(false);
-                record_turn(&mut history, &mut carry, cfg, &utterance, &summary);
+                record_turn(&mut history, carry, cfg, &utterance, &summary);
             }
         }
+        // Agent events that arrived during this turn are queued now; they are spoken at the top
+        // of the next iteration (2.3, collection point after dispatch).
+        converse_agent_loop::collect_agent_events(carry, &mut history, cfg, deps.hands);
     }
 }
 
@@ -2021,10 +2654,26 @@ async fn dispatch_utterance(
     history: &[(String, String)],
     carry: &mut Carry,
 ) -> Result<Option<String>, SessionEnd> {
-    // Local tier: end phrases and explicit dictation.
+    carry.answer_delivered = false;
+    // Local tier: end phrases, explicit dictation and role clear phrases.
     let cancel_enabled =
         deps.policy.is_some_and(|p| p.current().jobs_allowed) || deps.hands.has_active_job();
-    match classify_local_with(utterance, cancel_enabled) {
+    let agent_active = converse_agent_loop::agent_running(carry);
+    match classify_local_in_session(
+        utterance,
+        cancel_enabled,
+        carry.role.is_some(),
+        agent_active,
+    ) {
+        LocalIntent::ClearRole => {
+            carry.role = None;
+            carry.lesson = None;
+            carry.journal.set(TurnOutcome::Acted, None);
+            return match speak_or_end(deps, cfg, cancel, CLEARED_SPOKEN, Emotion::Neutral).await {
+                Some(end) => Err(end),
+                None => Ok(None),
+            };
+        }
         LocalIntent::End => {
             carry.journal.set(TurnOutcome::Ended, None);
             return Err(after_speech(
@@ -2067,6 +2716,27 @@ async fn dispatch_utterance(
                 None => Ok(None),
             };
         }
+        // Stage 2 (2.6): voice cancel of a running agent request. Non-blocking; the slot waits in
+        // `Cancelling` for the worker's report.
+        LocalIntent::CancelAgent => {
+            if is_cancelled(cancel) {
+                return Err(SessionEnd::Cancelled);
+            }
+            converse_agent_loop::cancel_agent_run(carry);
+            carry.journal.set(TurnOutcome::Acted, None);
+            return match speak_or_end(
+                deps,
+                cfg,
+                cancel,
+                converse_agent_loop::LINE_CANCELLED,
+                Emotion::Neutral,
+            )
+            .await
+            {
+                Some(end) => Err(end),
+                None => Ok(Some(compose(converse_agent_loop::LINE_CANCELLED, ""))),
+            };
+        }
         LocalIntent::None => {}
     }
 
@@ -2100,6 +2770,30 @@ async fn dispatch_utterance(
     // Brain tier. The plan is dropped if cancel wins the race.
     deps.reporter.state(SessionState::Thinking);
     brain_turn(deps, cfg, cancel, utterance, history, carry).await
+}
+
+/// Stage 1 lessons (DESIGN 2.6): an Answer delivered in full continues a lesson that asked for it.
+/// Called inside the turn's reply scope with that scope's mouth and cancel token. It never runs
+/// after a cancel or a latched barge-in: then the barge utterance becomes the next turn and the
+/// lesson stays paused. `latched` is read synchronously by the caller, so no watch reference is
+/// held across an await.
+async fn finish_answer_with_lesson(
+    deps: &Deps<'_>,
+    cfg: &SessionConfig,
+    cancel: &mut CancelToken,
+    carry: &mut Carry,
+    turn: Result<Option<String>, SessionEnd>,
+    latched: bool,
+) -> Result<Option<String>, SessionEnd> {
+    if turn.is_err() || !carry.answer_delivered || latched || cancel.is_cancelled() {
+        return turn;
+    }
+    let continuation = continue_lesson(deps, cfg, cancel, carry).await?;
+    // The continued speech joins the turn's history side, so the next plan sees what was spoken.
+    match (turn, continuation) {
+        (Ok(Some(answer)), Some(spoken)) => Ok(Some(format!("{answer} {spoken}"))),
+        (turn, _) => turn,
+    }
 }
 
 /// Barge-in capture of the interrupted reply's speech (DESIGN 12.2.3): the endpointer's maximum
@@ -2504,7 +3198,10 @@ mod tests {
     }
     fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
         TurnPlan {
+            plan: None,
             job: None,
+            role: None,
+            agent: None,
             kind,
             speech: speech.to_string(),
             emotion: Emotion::Neutral,
@@ -2518,6 +3215,7 @@ mod tests {
     fn paste_plan(text: &str, speech: &str) -> TurnPlan {
         TurnPlan {
             job: None,
+            role: None,
             paste_text: Some(text.to_string()),
             ..plan(PlanKind::Paste, speech)
         }
@@ -2525,6 +3223,7 @@ mod tests {
     fn command_plan(cmd: &str, speech: &str) -> TurnPlan {
         TurnPlan {
             job: None,
+            role: None,
             command: Some(cmd.to_string()),
             ..plan(PlanKind::Command, speech)
         }
@@ -3536,3 +4235,30 @@ mod converse_timing_m4_tests;
 #[cfg(test)]
 #[path = "converse_loop_voice_tests.rs"]
 mod loop_voice_tests;
+
+#[cfg(test)]
+#[path = "converse_role_loop_tests.rs"]
+mod role_loop_tests;
+
+#[cfg(test)]
+#[path = "converse_role_fix_tests.rs"]
+mod role_fix_tests;
+
+#[cfg(test)]
+#[path = "converse_role_barge_tests.rs"]
+mod role_barge_tests;
+
+#[cfg(test)]
+#[path = "converse_agent_loop_tests.rs"]
+mod converse_agent_loop_tests;
+
+#[path = "converse_agent_loop.rs"]
+mod converse_agent_loop;
+
+#[cfg(test)]
+#[path = "converse_agent_taint_tests.rs"]
+mod converse_agent_taint_tests;
+
+#[cfg(test)]
+#[path = "converse_agent_fix_tests.rs"]
+mod converse_agent_fix_tests;

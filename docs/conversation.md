@@ -32,6 +32,268 @@ again. You do not press a key for every turn.
 - **Actions** can open apps and web links, and send media keys (play, pause,
   next). See the safety notes below.
 - **Questions** get a spoken answer from the reply backend.
+- **Roles** change who Vox is for the rest of the conversation. See below.
+
+## Roles and lessons
+
+Say it in your own words: "act like a teacher teaching computers to a six
+year old", "pretend you are a quiz host", "you are now a pirate". Vox
+confirms the role out loud and stays in it until you take it away or the
+conversation ends. The role is kept apart from the recent exchanges, so it
+does not fall out of context after a few turns. Vox adds no topic or role
+filter of its own. The reply model's own rules still apply.
+
+- **Start a task in the same breath.** "Act like a teacher teaching computers
+  to a six year old, and start the lesson" confirms the role, then begins the
+  lesson. A role with no task is only confirmed; Vox does not start talking.
+- **Long answers are spoken in short parts** of up to three sentences, so you
+  can interrupt between them. Turn on "Interrupt by speaking" (headphones)
+  to cut in with a question.
+- **Continue after a question.** Say "and then continue" when you set the
+  role and Vox answers each interruption, says "Let's continue." and picks
+  up where it stopped. Otherwise say "continue", "go on" or "carry on".
+  A part that was cut off is repeated from its start. If a question's own
+  answer is interrupted, the unspoken rest of that answer is dropped; the
+  lesson itself is kept.
+- **Stop the role** by saying "back to normal", "stop acting", "stop the
+  role", "drop the role" or "end the role". These are matched only when they
+  are the whole sentence, and they clear a paused lesson too. "I am back to
+  normal" is treated as an ordinary sentence.
+- **Limits.** A role description can be up to 1500 characters. A lesson that nobody has
+  touched for ten minutes is forgotten. Nothing is saved after the conversation ends.
+  With Vault context on, Vox still only answers: a role can be set but no
+  paste, command or job runs.
+- Open apps, media keys, dictation, ending the conversation and cancelling a
+  job are still handled locally first, whatever the role.
+
+## Handing work to your agent
+
+Some requests need more than an answer. Vox can hand these to your ACP agent.
+See [ACP agent](acp-agent.md) for how the agent is set up.
+
+- **What goes to the agent.** In a Hey Jarvis conversation, an open-ended request
+  that needs the web, files, a browser, running programs or several steps is
+  sent to your ACP agent. Chat and general knowledge questions are still
+  answered by the voice model.
+- **Local commands still win.** Opening apps, media keys, dictation, memory and
+  ending the conversation stay local. They never go to the agent.
+
+### What you need
+
+- An ACP agent that is turned on, with a command set (see [ACP agent](acp-agent.md)).
+- **Settings > Agents > "Hand open-ended requests to the agent in conversations"** turned on.
+- A reply backend set up. Vox needs it to speak the answer.
+
+### How it works
+
+1. You make a request. Vox says it is on it.
+2. The conversation keeps going. You can ask something else.
+3. If the agent is slow, Vox says a short progress line after 20 seconds, then
+   about once a minute.
+4. When the agent answers, Vox speaks the answer in short chunks. Each chunk is
+   about 600 characters at most. The full text is shown on screen.
+5. You can talk over the answer. Speaking interrupts it, and what you say becomes
+   your next turn.
+
+### Cancelling
+
+- While a request is running, say "cancel that", "cancel the request", "cancel the
+  agent" or "stop the agent". Vox cancels the request and says "Cancelled."
+- Plain "stop" ends the conversation. That also cancels a running request.
+
+### One request at a time
+
+Vox runs one agent request at a time. If you ask for another while one is
+running, Vox says: "Still working on the last request. Say cancel to stop it."
+
+### Safety
+
+- **The agent's answer is untrusted text.** After the agent has answered, Vox
+  treats anything the voice model then wants to do as a risk. Examples are
+  typing text, running a command, starting a job, asking the agent again, or
+  taking a new role.
+- **Those actions need a spoken "yes".** Vox reads back what it is about to do.
+  It runs only if you say exactly "yes". Any other answer cancels it.
+- **Local commands you say yourself are not asked about.** Only actions that
+  come from the agent's answer need the "yes".
+- **The approval mode is a separate setting.** The approval mode in
+  [ACP agent](acp-agent.md#approvals) decides what the agent itself may do. Its
+  default for new installs is "Allow everything". The "yes" check does not change
+  when you change that mode.
+
+### Spoken lines
+
+| What you hear                                               | When                                                                      |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------- |
+| "Still working on the last request. Say cancel to stop it." | You ask for a second request while one is running.                        |
+| "Cancelled."                                                | You cancel a running request.                                             |
+| "I can't reach the agent right now."                        | The agent cannot be started or reached.                                   |
+| "The agent stopped unexpectedly."                           | The agent process stopped during a request.                               |
+| "The agent took too long."                                  | The request ran longer than three times the turn timeout plus 30 seconds. |
+
+### Limits
+
+- **Permission prompts are not spoken yet.** With the "Ask" approval modes, a
+  permission prompt from the agent appears on screen. You answer it there.
+  Spoken approval is not built yet.
+- **One conversation, no memory of agent sessions.** Each request starts a fresh
+  agent session. The agent does not remember earlier requests from the
+  conversation. Vox carries the role as text in the request.
+- **Use headphones when you talk over the assistant.** Without them, the
+  microphone can hear the spoken answer and treat it as your voice.
+- **Not tested with every agent.** Results depend on the agent you choose.
+
+## Plans and specialist agents
+
+Some requests need more than one kind of work. For example: "look up the
+latest release notes, then write a summary into a file". The voice model can
+split these into a **plan** of two to five steps. Vox runs the steps one at a
+time, each as its own agent run.
+
+### How a plan runs
+
+1. The voice model decides that the request needs several kinds of work in
+   sequence. It lists the steps. Each step has a type and one task.
+2. Each step type is one of: **research**, **browser**, **code**, **files** or
+   **general**.
+3. Vox says one short line, for example "I will do this in 3 steps: research,
+   coding, files." Then it starts the first step.
+4. Each step runs as a separate agent run, one at a time. Vox does not start
+   the next step until the one before has finished.
+5. Each later step gets the results of the earlier steps it depends on. These
+   results are passed as quoted text, marked as untrusted data.
+6. Vox speaks a progress line when each later step starts: "Step 2 of 3: coding."
+7. When the last step finishes, Vox speaks its result in short chunks and shows
+   the full text on screen.
+
+A plan is fixed once it is announced. Vox does not change, add, remove or
+reorder steps while it runs. Steps do not run in parallel.
+
+Requests that need only one kind of work still go to the agent as a single
+request, as described in [Handing work to your agent](#handing-work-to-your-agent).
+
+### Turning it on
+
+- The planner setting is **Plan multi-step requests** (`conversation_planner`).
+  It is **on by default**, but it does nothing unless agent hand-off is
+  enabled. Hand-off must be set up first: **Hand open-ended requests to the
+  agent in conversations** on, the ACP agent on, and a command set (see
+  [ACP agent](acp-agent.md)). Without the hand-off, plans do not run.
+- **Existing installs.** If you already use hand-off, upgrading turns on plan
+  announcements for multi-step requests, because the planner is on by default.
+  To keep single-agent hand-off, turn **Plan multi-step requests** off.
+- The planner toggle and the four specialist rows (**Research steps**,
+  **Browser steps**, **Code steps**, **File steps**) are on the same Agent
+  settings page as the ACP agent (**Settings > Agents > ACP agent**).
+
+### Specialist agents for step types
+
+By default every step runs on your main ACP agent. You can name a different
+agent for a step type: research, browser, code or files. Each one takes a
+command and optional arguments, in the same form as the main agent.
+
+- A blank command means that step type uses the main agent.
+- **General** steps always use the main agent.
+- Specialist commands follow the same rules as the main command. Relative
+  paths and control characters are refused. Use an absolute path.
+- Arguments are split on spaces. There is no quoting, as for the main agent.
+  Do not put secrets, tokens or passwords in arguments.
+- The working folder and the turn timeout always come from the main agent
+  settings. Only the program and its arguments change per step type.
+- A specialist command alone does not turn the hand-off on. The main agent
+  must be on, with a command.
+- Changing the program between steps starts a new process, which can take a
+  few seconds.
+
+### Cancelling a plan
+
+- Say "cancel that", "cancel the request", "cancel the agent" or "stop the
+  agent" at any time while a plan runs. Vox cancels the live step and says
+  "Cancelled."
+- Steps after the live one never start, even one that was about to start.
+- Plain "stop" ends the conversation and also cancels the plan.
+
+### Timeouts
+
+- **Each step** may run for three times the turn timeout, plus 30 seconds. With
+  the default turn timeout of 120 seconds, that is 390 seconds.
+- **The whole plan** may run for 15 minutes. Time between steps counts too.
+- A step that goes over its limit stops the plan. Vox says "Step 2 of 3 took
+  too long. Stopping the plan." If the whole plan goes over 15 minutes, Vox
+  says "The plan took too long. Stopping."
+- Once the plan is past 15 minutes, no further step starts. A final result that
+  arrives after that point is still shown and spoken.
+
+### What you hear
+
+| What you hear                                          | When                                                     |
+| ------------------------------------------------------ | -------------------------------------------------------- |
+| "I will do this in 3 steps: research, coding, files."  | The plan is announced.                                   |
+| "Step 2 of 3: coding."                                 | Each later step starts.                                  |
+| "Still working on it."                                 | A step has run for 20 seconds, then about once a minute. |
+| "Step 2 of 3 failed. <reason>"                         | A step reports an error. The plan stops.                 |
+| "Step 2 of 3 stopped unexpectedly. Stopping the plan." | The agent process stopped during a step.                 |
+| "Step 2 of 3 took too long. Stopping the plan."        | A step went over its time limit.                         |
+| "The plan took too long. Stopping."                    | The whole plan went over 15 minutes.                     |
+| "The agent settings changed. Stopping the plan."       | An agent setting changed during the plan.                |
+| "Cancelled."                                           | You cancelled the plan by voice.                         |
+
+Intermediate step results are **not spoken and not kept**. Only the final
+result is spoken, shown on screen and added to the conversation history.
+
+### Safety
+
+- **Agent output is untrusted.** Results from earlier steps are passed to later
+  steps as quoted data, with a note that they must not be followed. Brackets
+  and delimiters are removed from them, and they are capped in length.
+- **Results cannot change the plan.** No agent output can add a step, change a
+  step's type, or change an agent setting.
+- **Local commands still win.** Opening apps, media keys, dictation, memory and
+  ending the conversation stay local, as before.
+- **Actions after agent output need a spoken yes.** If the voice model then
+  proposes an action that changes something, such as pasting text, running a
+  command, starting a job or running a plan, Vox reads back what it is about to
+  do. Vox runs it only if you say exactly "yes". Any other answer cancels it.
+  The "yes" check does not depend on the approval mode.
+- **A confirmed plan runs as read back.** After "yes", Vox checks the agent
+  settings again. If they changed, Vox asks you to ask again and runs nothing.
+- **A settings change stops the plan.** If an agent setting or the planner
+  setting changes during a plan, the next step does not start, and Vox says so.
+- **Agent permissions are separate.** Each step runs with the approval mode of
+  the main agent. See [ACP agent](acp-agent.md#approvals).
+
+### Limits
+
+- **Sequential only.** Steps run one after another. There is no parallel work.
+- **No replanning.** If a step fails, the plan stops. Vox does not try another
+  plan.
+- **No memory between plans.** A later plan does not see the results of an
+  earlier one.
+- **Permission prompts are not spoken.** When the agent asks for permission, the
+  prompt appears on screen, as described in [ACP agent](acp-agent.md#approvals).
+  Spoken approval is not built yet.
+- **Use headphones when you talk over the assistant.** Without them, the
+  microphone can hear the spoken answer.
+
+### Troubleshooting plans
+
+- **Vox answers instead of running a plan.** Check that the planner setting is
+  on, that **Hand open-ended requests to the agent in conversations** is on,
+  and that the conversation is not in answer-only mode. Vox never runs a plan
+  in answer-only mode.
+- **A step says "The agent settings changed. Stopping the plan."** An agent
+  setting or the planner setting changed while the plan was running. Ask again
+  once the settings are final.
+- **A plan says "took too long".** The step or the whole plan went over its
+  limit. Check that the agent responds at all (use **Test connection** in
+  [ACP agent](acp-agent.md)), and consider a longer turn timeout.
+
+### Status
+
+The plan flow, the specialist agent settings, and the cancel and timeout rules
+are covered by automated tests in the code. They have **not yet been checked
+with a real agent or with a microphone.** Treat plans as experimental until
+that check is done.
 
 ## Context
 

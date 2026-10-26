@@ -18,28 +18,34 @@ use tokio::sync::watch;
 
 fn job_plan(speech: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         kind: PlanKind::Job,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        role: None,
         job: Some(JobRequest {
             project: "alpha".to_string(),
             task: "fix the tests".to_string(),
             agent: None,
             mode: crate::managers::converse_plan::JobMode::Task,
         }),
+        agent: None,
     }
 }
 
 fn paste_plan(speech: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         kind: PlanKind::Paste,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,
         paste_text: Some("model-written body".to_string()),
         command: None,
         job: None,
+        role: None,
+        agent: None,
     }
 }
 

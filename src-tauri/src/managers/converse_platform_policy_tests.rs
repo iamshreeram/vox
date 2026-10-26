@@ -167,6 +167,11 @@ fn plan_input<'a>() -> PlanInput<'a> {
         last_draft: None,
         style: "",
         vault_context: None,
+        lesson_paused: false,
+        role: None,
+        roles_enabled: false,
+        agent_enabled: false,
+        planner_enabled: false,
     }
 }
 
@@ -271,17 +276,20 @@ fn parse_with_jobs_off_for_a_plain_answer_is_unchanged() {
 
 fn job_plan() -> TurnPlan {
     TurnPlan {
+        plan: None,
         kind: PlanKind::Job,
         speech: "Starting.".to_string(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        role: None,
         job: Some(JobRequest {
             project: "alpha".to_string(),
             task: "fix the tests".to_string(),
             agent: None,
             mode: crate::managers::converse_plan::JobMode::Task,
         }),
+        agent: None,
     }
 }
 

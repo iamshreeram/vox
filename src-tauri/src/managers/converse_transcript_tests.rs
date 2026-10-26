@@ -114,12 +114,15 @@ fn cfg(context_turns: usize) -> SessionConfig {
 
 fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         job: None,
+        role: None,
         kind,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        agent: None,
     }
 }
 
@@ -294,6 +297,7 @@ async fn t5_brain_answer_records_the_submitted_speech() {
 async fn t5_brain_paste_records_the_confirmation_and_never_the_pasted_text() {
     let brain = TBrain(Mutex::new(VecDeque::from(vec![Ok(TurnPlan {
         job: None,
+        role: None,
         paste_text: Some("SECRET BODY".to_string()),
         ..plan(PlanKind::Paste, "Done, pasted.")
     })])));
@@ -317,6 +321,7 @@ async fn t5_brain_paste_records_the_confirmation_and_never_the_pasted_text() {
 async fn t5_brain_command_records_an_action_kind_without_the_command_text() {
     let brain = TBrain(Mutex::new(VecDeque::from(vec![Ok(TurnPlan {
         job: None,
+        role: None,
         command: Some("open safari".to_string()),
         ..plan(PlanKind::Command, "")
     })])));

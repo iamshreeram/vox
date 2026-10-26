@@ -1281,10 +1281,22 @@ mod tests {
 
         #[test]
         fn kill_stops_a_long_running_child_and_confirms_it() {
+            // Own process group, and SIGKILL the whole group on every exit path (incl. panic).
+            struct GroupKill(i32);
+            impl Drop for GroupKill {
+                fn drop(&mut self) {
+                    // SAFETY: killpg only sends SIGKILL to a group this test created; ESRCH is harmless.
+                    unsafe {
+                        libc::killpg(self.0, libc::SIGKILL);
+                    }
+                }
+            }
             let mut cmd = Command::new("/bin/sh");
             cmd.arg("-c").arg("sleep 30");
+            std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
             let mut handle = spawn_process_handle(&mut cmd, "").expect("spawn");
             let pid = handle.pid();
+            let _group = GroupKill(pid as i32);
             assert!(handle.is_running());
             let started = Instant::now();
             assert!(handle.kill(), "kill must be confirmed");

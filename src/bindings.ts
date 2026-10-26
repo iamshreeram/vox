@@ -1660,7 +1660,8 @@ async changeAgentBridgePromptFlagSetting(flag: string) : Promise<Result<null, st
 }
 },
 /**
- * Enables or disables the persistent ACP agent client.
+ * Enables or disables the persistent ACP agent client. Turning it off also retires the
+ * running agent so it does not linger until the idle timeout.
  */
 async changeAcpAgentEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
@@ -1707,12 +1708,80 @@ async changeAcpAgentTurnTimeoutSetting(secs: number) : Promise<Result<null, stri
 }
 },
 /**
+ * Stores or clears one specialist agent (Stage 4). `step_type` is `research`, `browser`,
+ * `code` or `files`. A blank command clears the slot. The command and arguments are validated
+ * before any write, so a rejected value leaves the setting and the running agent untouched.
+ */
+async changeAcpStepAgentSetting(stepType: string, command: string | null, args: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_acp_step_agent_setting", { stepType, command, args }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Spawns the configured ACP agent and completes the handshake, without sending a prompt.
  * Requires the agent to be enabled and configured. Errors are short and user-safe.
  */
 async acpAgentTestConnection() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("acp_agent_test_connection") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Answers the approval prompt `token`. `allow` selects an allow-once option, otherwise the
+ * request is rejected. Returns `false` when there is no broker or the token is not pending
+ * (unknown, already answered or invalidated).
+ */
+async acpPermissionRespond(token: string, allow: boolean) : Promise<boolean> {
+    return await TAURI_INVOKE("acp_permission_respond", { token, allow });
+},
+/**
+ * Stores the approval policy for agent permission requests. The permission manager reads
+ * the settings on every request, so the change applies to the next request without a restart.
+ */
+async changeAcpPermissionModeSetting(mode: PermissionMode) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_acp_permission_mode_setting", { mode }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stores the approval timeout in seconds, clamped to the accepted range. Unlike the agent turn
+ * timeout, an out-of-range value is clamped rather than rejected.
+ */
+async changeAcpPermissionTimeoutSecsSetting(secs: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_acp_permission_timeout_secs_setting", { secs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stores whether Hey Jarvis conversations may hand open-ended requests to the ACP agent.
+ */
+async changeConversationAgentHandoffSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_conversation_agent_handoff_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stores whether conversation mode may run a multi-step plan (Stage 4). Effective only with the
+ * hand-off on. A change is gated like the hand-off flag.
+ */
+async changeConversationPlannerSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_conversation_planner_setting", { enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2061,6 +2130,31 @@ acp_agent_args?: string;
  * Seconds allowed for one agent turn.
  */
 acp_agent_turn_timeout_secs?: number; 
+/**
+ * How agent permission requests are decided. A stored object without this key
+ * (or with an invalid value) keeps asking before writes. Only a fresh store
+ * starts from the fresh-install default.
+ */
+acp_permission_mode?: PermissionMode; 
+/**
+ * Seconds one approval prompt waits for the user before it is rejected.
+ */
+acp_permission_timeout_secs?: number; 
+/**
+ * Let Hey Jarvis conversations hand open-ended requests to the ACP agent. Used by
+ * conversations only; a missing key means on.
+ */
+conversation_agent_handoff?: boolean; 
+/**
+ * Stage 4 planner: let conversations split one open-ended request into typed steps (a
+ * `plan`). Effective only together with `conversation_agent_handoff`. A missing key means on.
+ */
+conversation_planner?: boolean; 
+/**
+ * Stage 4: optional specialist agents, one per step type. Every slot unset means each step
+ * runs on the main ACP agent.
+ */
+acp_step_agents?: StepAgents; 
 /**
  * Speak agent replies and a generic confirmation/failure phrase aloud.
  * Opt-in: spoken output audibly exposes agent reply content.
@@ -2456,6 +2550,30 @@ export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
 /**
+ * How permission requests are answered without asking the user.
+ * 
+ * `AskWrites` is a metadata-based convenience policy, not a sandbox. Use
+ * `AskAll` for any agent whose behaviour is not fully trusted.
+ */
+export type PermissionMode = 
+/**
+ * Auto-allow read-like operations (read, search, think) when safe. Ask for everything else.
+ */
+"ask_writes" | 
+/**
+ * Ask the user for every request.
+ */
+"ask_all" | 
+/**
+ * Reject every request without asking.
+ */
+"deny" | 
+/**
+ * Select the request's `allow_once` option without asking ("Allow everything").
+ * Never selects `allow_always`. With no `allow_once` offered it asks.
+ */
+"allow_all"
+/**
  * A persona. `style` feeds `tts_composer_style`; `voice` (a curated natural
  * voice id) feeds `tts_natural_voice` when present.
  */
@@ -2605,6 +2723,23 @@ export type SpeakerSensitivity = "lenient" | "balanced" | "strict"
  * Numbers and booleans only.
  */
 export type SpeakerStatus = { enrolled: boolean; enrollment_active: boolean; model_ready: boolean }
+/**
+ * Stage 4: one specialist agent for a step type, the program and its arguments.
+ */
+export type StepAgentProfile = { 
+/**
+ * Absolute path to the agent program.
+ */
+command: string; 
+/**
+ * Arguments, split on ASCII whitespace like the main agent's arguments.
+ */
+args: string }
+/**
+ * Stage 4: the optional specialist agents, one slot per step type. An unset slot means the
+ * step runs on the main ACP agent. `general` steps have no slot and always use the main agent.
+ */
+export type StepAgents = { research?: StepAgentProfile | null; browser?: StepAgentProfile | null; code?: StepAgentProfile | null; files?: StepAgentProfile | null }
 /**
  * Result of one counted step. Numbers and booleans only.
  */

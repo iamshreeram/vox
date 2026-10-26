@@ -385,7 +385,12 @@
         "advancedLabel": "詳細設定",
         "promptFlagLabel": "プロンプト用フラグ",
         "promptFlagDescription": "依頼内容をエージェントコマンドに渡すフラグです（例: -p）。エージェント用フラグとは異なる必要があります。",
-        "suggestionFailedTitle": "Agent suggestion failed"
+        "suggestionFailedTitle": "Agent suggestion failed",
+        "requestFailedTitle": "Agent request failed",
+        "mayHavePartlyRun": "The agent may have partly run this request.",
+        "copyRequest": "Copy request",
+        "requestCopied": "Request copied",
+        "copyRequestFailed": "Could not copy the request"
       },
       "acpAgent": {
         "title": "Agent (ACP)",
@@ -409,6 +414,10 @@
           "label": "Turn timeout (seconds)",
           "description": "How long to wait for the agent to finish one reply. Between {{min}} and {{max}} seconds."
         },
+        "conversationHandoff": {
+          "label": "Hand open-ended requests to the agent in conversations",
+          "description": "In Hey Jarvis conversations, requests that need the web, files or running programs are sent to your ACP agent. Local commands such as opening apps stay local."
+        },
         "testConnection": "Test connection",
         "testing": "Testing...",
         "errors": {
@@ -419,7 +428,78 @@
           "argTooLong": "Each argument must be at most 256 characters.",
           "outOfRange": "Enter a number of seconds from 10 to 900.",
           "notInteger": "Enter a whole number of seconds."
+        },
+        "conversationPlanner": {
+          "label": "Plan multi-step requests",
+          "description": "When on, a request with several steps is turned into a fixed plan that runs one step after another. Only works when hand-off to the agent is on."
+        },
+        "stepAgents": {
+          "title": "Specialist agents (optional)",
+          "description": "Use a different agent program for each kind of step. Leave a row blank to use the main agent above. General steps always use the main agent. Same rules as the main agent: an absolute path, and arguments separated by spaces.",
+          "command": {
+            "label": "Program path",
+            "placeholder": "Blank: use the main agent"
+          },
+          "args": {
+            "label": "Arguments",
+            "placeholder": "Optional"
+          },
+          "research": {
+            "label": "Research steps",
+            "description": "Steps that look up information."
+          },
+          "browser": {
+            "label": "Browser steps",
+            "description": "Steps that open and read web pages."
+          },
+          "code": {
+            "label": "Code steps",
+            "description": "Steps that write or change code."
+          },
+          "files": {
+            "label": "File steps",
+            "description": "Steps that read or change files."
+          }
         }
+      },
+      "acpPermission": {
+        "mode": {
+          "label": "Approval mode",
+          "description": "The agent reports what each tool call does, and Vox trusts that report. This is a convenience policy, not a sandbox. Use 'Ask before every tool call' for agents you do not fully trust. Earlier versions denied every request; this setting changes that behaviour.",
+          "options": {
+            "ask_writes": "Ask before changes (reads and searches run freely)",
+            "ask_all": "Ask before every tool call",
+            "deny": "Never allow (deny all requests)",
+            "allow_all": "Allow everything (never ask)"
+          },
+          "allowAllWarning": "The agent can edit, delete, run and browse without asking. Web pages and files it reads can steer it. Use Ask before changes if you do not fully trust the agent."
+        },
+        "timeout": {
+          "label": "Approval timeout",
+          "description": "Seconds to wait for your answer before a request is denied ({{min}}-{{max}} seconds)."
+        },
+        "kind": {
+          "read": "Read",
+          "edit": "Edit",
+          "delete": "Delete",
+          "move": "Move or rename",
+          "search": "Search",
+          "execute": "Run a command",
+          "think": "Reasoning",
+          "fetch": "Fetch from the internet",
+          "switch_mode": "Switch mode",
+          "other": "Other action"
+        },
+        "prompt": {
+          "title": "The agent wants to perform an action",
+          "allowOnce": "Allow once",
+          "deny": "Deny",
+          "detailsUnavailable": "Operation details unavailable - the agent did not say what it will change.",
+          "queued": "{{count}} more waiting",
+          "countdown": "Denied automatically in {{seconds}} s",
+          "untrustedNote": "The agent describes this action itself. Vox does not check that description."
+        },
+        "allowAllNotice": "Vox is set to allow every agent action without asking. Change it in Settings > Agents."
       },
       "agentContext": {
         "title": "Conversation Context",

@@ -208,6 +208,11 @@ pub(super) fn input_with(utterance: &str) -> PlanInput<'_> {
         last_draft: None,
         style: "",
         vault_context: None,
+        lesson_paused: false,
+        role: None,
+        roles_enabled: false,
+        agent_enabled: false,
+        planner_enabled: false,
     }
 }
 

@@ -146,3 +146,8 @@ fn a_hand_edited_turn_timeout_is_clamped_before_use() {
     assert_eq!(clamped_acp_agent_turn_timeout_secs(901), 900);
     assert_eq!(clamped_acp_agent_turn_timeout_secs(u64::MAX), 900);
 }
+
+#[test]
+fn conversation_agent_handoff_defaults_on() {
+    assert!(get_default_settings().conversation_agent_handoff);
+}

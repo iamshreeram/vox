@@ -1,20 +1,36 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { commands } from "@/bindings";
+import { commands, type PermissionMode } from "@/bindings";
 import { Button } from "../ui/Button";
+import { Dropdown } from "../ui/Dropdown";
 import { Input } from "../ui/Input";
 import { SettingContainer } from "../ui/SettingContainer";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
+import { StepAgentSettings } from "./StepAgentSettings";
 import { useSettingsStore } from "../../stores/settingsStore";
 import {
+  ACP_PERMISSION_TIMEOUT_MAX_SECS,
+  ACP_PERMISSION_TIMEOUT_MIN_SECS,
   ACP_TIMEOUT_MAX_SECS,
   ACP_TIMEOUT_MIN_SECS,
   type AcpFormError,
+  clampPermissionTimeout,
   parseAcpArgs,
   parseAcpCommand,
   parseAcpTimeout,
 } from "./acpAgentForm";
+
+const PERMISSION_MODES: readonly PermissionMode[] = [
+  "ask_writes",
+  "ask_all",
+  "deny",
+  "allow_all",
+];
+
+function isPermissionMode(value: string): value is PermissionMode {
+  return (PERMISSION_MODES as readonly string[]).includes(value);
+}
 
 interface AcpAgentSettingsProps {
   descriptionMode?: "inline" | "tooltip";
@@ -30,6 +46,14 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
     const storedCommand = getSetting("acp_agent_command") ?? null;
     const storedArgs = getSetting("acp_agent_args") ?? "";
     const storedTimeout = getSetting("acp_agent_turn_timeout_secs") ?? 120;
+    const storedPermissionMode =
+      getSetting("acp_permission_mode") ?? "ask_writes";
+    const storedPermissionTimeout =
+      getSetting("acp_permission_timeout_secs") ?? 60;
+    const conversationHandoff =
+      getSetting("conversation_agent_handoff") ?? true;
+    // The backend default is on; the stored value decides once settings load.
+    const conversationPlanner = getSetting("conversation_planner") ?? true;
 
     const [commandDraft, setCommandDraft] = useState(storedCommand ?? "");
     const [commandError, setCommandError] = useState<AcpFormError | null>(null);
@@ -37,6 +61,9 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
     const [argsError, setArgsError] = useState<AcpFormError | null>(null);
     const [timeoutDraft, setTimeoutDraft] = useState(String(storedTimeout));
     const [timeoutError, setTimeoutError] = useState<AcpFormError | null>(null);
+    const [permissionTimeoutDraft, setPermissionTimeoutDraft] = useState(
+      String(storedPermissionTimeout),
+    );
     const [testing, setTesting] = useState(false);
     const [testLine, setTestLine] = useState<string | null>(null);
 
@@ -49,6 +76,10 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
       setArgsDraft(storedArgs);
       setArgsError(null);
     }, [storedArgs]);
+
+    useEffect(() => {
+      setPermissionTimeoutDraft(String(storedPermissionTimeout));
+    }, [storedPermissionTimeout]);
 
     useEffect(() => {
       setTimeoutDraft(String(storedTimeout));
@@ -123,6 +154,44 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
         ),
       );
     };
+
+    const commitPermissionTimeout = async () => {
+      const clamped = clampPermissionTimeout(permissionTimeoutDraft);
+      if (clamped === null) {
+        setPermissionTimeoutDraft(String(storedPermissionTimeout));
+        return;
+      }
+      if (clamped === storedPermissionTimeout) {
+        setPermissionTimeoutDraft(String(clamped));
+        return;
+      }
+      await updateSetting("acp_permission_timeout_secs", clamped);
+      setPermissionTimeoutDraft(
+        String(
+          useSettingsStore.getState().settings?.acp_permission_timeout_secs ??
+            storedPermissionTimeout,
+        ),
+      );
+    };
+
+    const permissionModeOptions = [
+      {
+        value: "ask_writes",
+        label: t("settings.advanced.acpPermission.mode.options.ask_writes"),
+      },
+      {
+        value: "ask_all",
+        label: t("settings.advanced.acpPermission.mode.options.ask_all"),
+      },
+      {
+        value: "deny",
+        label: t("settings.advanced.acpPermission.mode.options.deny"),
+      },
+      {
+        value: "allow_all",
+        label: t("settings.advanced.acpPermission.mode.options.allow_all"),
+      },
+    ];
 
     const canTest = enabled && !!storedCommand && !testing;
 
@@ -260,6 +329,82 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
             )}
           </div>
         </SettingContainer>
+        <SettingContainer
+          title={t("settings.advanced.acpPermission.mode.label")}
+          description={t("settings.advanced.acpPermission.mode.description")}
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+        >
+          <Dropdown
+            options={permissionModeOptions}
+            selectedValue={storedPermissionMode}
+            onSelect={(value) => {
+              if (isPermissionMode(value)) {
+                void updateSetting("acp_permission_mode", value);
+              }
+            }}
+            disabled={isUpdating("acp_permission_mode")}
+          />
+        </SettingContainer>
+        {storedPermissionMode === "allow_all" && (
+          <div
+            role="note"
+            className="mx-4 my-2 rounded-md border border-warning/60 bg-warning/10 p-3 text-xs font-medium text-warning"
+          >
+            {t("settings.advanced.acpPermission.mode.allowAllWarning")}
+          </div>
+        )}
+        <SettingContainer
+          title={t("settings.advanced.acpPermission.timeout.label")}
+          description={t(
+            "settings.advanced.acpPermission.timeout.description",
+            {
+              min: ACP_PERMISSION_TIMEOUT_MIN_SECS,
+              max: ACP_PERMISSION_TIMEOUT_MAX_SECS,
+            },
+          )}
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+        >
+          <Input
+            type="text"
+            inputMode="numeric"
+            value={permissionTimeoutDraft}
+            onChange={(event) => setPermissionTimeoutDraft(event.target.value)}
+            onBlur={() => void commitPermissionTimeout()}
+            onKeyDown={blurOnEnter}
+            aria-label={t("settings.advanced.acpPermission.timeout.label")}
+            disabled={isUpdating("acp_permission_timeout_secs")}
+            variant="compact"
+            className="w-28"
+          />
+        </SettingContainer>
+        <ToggleSwitch
+          checked={conversationHandoff}
+          onChange={(value) =>
+            updateSetting("conversation_agent_handoff", value)
+          }
+          isUpdating={isUpdating("conversation_agent_handoff")}
+          label={t("settings.advanced.acpAgent.conversationHandoff.label")}
+          description={t(
+            "settings.advanced.acpAgent.conversationHandoff.description",
+          )}
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+          tooltipPosition="bottom"
+        />
+        <ToggleSwitch
+          checked={conversationPlanner}
+          onChange={(value) => updateSetting("conversation_planner", value)}
+          isUpdating={isUpdating("conversation_planner")}
+          label={t("settings.advanced.acpAgent.conversationPlanner.label")}
+          description={t(
+            "settings.advanced.acpAgent.conversationPlanner.description",
+          )}
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+          tooltipPosition="bottom"
+        />
         <div className="flex flex-col items-start gap-1 px-4 py-2">
           <Button
             variant="secondary"
@@ -275,6 +420,10 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
             {testLine ?? ""}
           </p>
         </div>
+        <StepAgentSettings
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+        />
       </>
     );
   },

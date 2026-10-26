@@ -44,6 +44,11 @@ fn kind_name(kind: PlanKind) -> &'static str {
         PlanKind::Clarify => "Clarify",
         PlanKind::End => "End",
         PlanKind::Job => "Job",
+        PlanKind::SetRole => "SetRole",
+        PlanKind::ClearRole => "ClearRole",
+        PlanKind::Resume => "Resume",
+        PlanKind::Agent => "Agent",
+        PlanKind::Plan => "Plan",
     }
 }
 
@@ -82,6 +87,11 @@ async fn planner_call(
         last_draft: draft,
         style: STYLE,
         vault_context: None,
+        lesson_paused: false,
+        role: None,
+        roles_enabled: false,
+        agent_enabled: false,
+        planner_enabled: false,
     });
     let start = Instant::now();
     let mut streamer = PlanStreamer::new();
@@ -285,6 +295,11 @@ async fn context_call(
         last_draft: draft,
         style: STYLE,
         vault_context: None,
+        lesson_paused: false,
+        role: None,
+        roles_enabled: false,
+        agent_enabled: false,
+        planner_enabled: false,
     });
     let start = Instant::now();
     let mut streamer = PlanStreamer::new();

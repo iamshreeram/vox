@@ -45,6 +45,11 @@ fn plain_input() -> PlanInput<'static> {
         last_draft: None,
         style: "plain",
         vault_context: None,
+        lesson_paused: false,
+        role: None,
+        roles_enabled: false,
+        agent_enabled: false,
+        planner_enabled: false,
     }
 }
 
@@ -208,6 +213,7 @@ fn prompt_with_jobs_refused_is_byte_identical_to_the_plain_builder() {
         jobs_allowed: false,
         ask_allowed: false,
         agents: vec!["alphaagent".to_string()],
+        role_active: false,
     };
     let input = plain_input();
     assert_eq!(
@@ -223,6 +229,7 @@ fn prompt_with_jobs_allowed_no_agents_and_ask_off_matches_today_jobs_prompt() {
         jobs_allowed: true,
         ask_allowed: false,
         agents: Vec::new(),
+        role_active: false,
     };
     let input = plain_input();
     assert_eq!(
@@ -238,6 +245,7 @@ fn prompt_with_agents_and_ask_lists_each_agent_once_and_explains_ask() {
         jobs_allowed: true,
         ask_allowed: true,
         agents: vec!["alphaagent".to_string(), "betaagent".to_string()],
+        role_active: false,
     };
     let prompt = planner_prompt_for_policy(&plain_input(), &policy);
     for name in ["alphaagent", "betaagent"] {
@@ -260,16 +268,19 @@ fn prompt_combined_is_system_blank_line_user_for_every_policy_shape() {
             jobs_allowed: false,
             ask_allowed: false,
             agents: Vec::new(),
+            role_active: false,
         },
         JobParsePolicy {
             jobs_allowed: true,
             ask_allowed: false,
             agents: Vec::new(),
+            role_active: false,
         },
         JobParsePolicy {
             jobs_allowed: true,
             ask_allowed: true,
             agents: vec!["alphaagent".to_string()],
+            role_active: false,
         },
     ];
     for policy in &shapes {

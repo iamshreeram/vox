@@ -39,6 +39,16 @@ impl Drop for GroupGuard {
     }
 }
 
+/// Cancels the manager's job when dropped, so a failing assertion never leaves the
+/// `sleep 60` fake CLI group running (cancel is a no-op when idle).
+struct CancelOnDrop(Arc<JobManager>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
 /// Records the order of observer calls as "progress" / "finish" strings.
 #[derive(Default)]
 struct RecordingObserver {
@@ -610,7 +620,7 @@ fn sigterm_ignoring_child_is_killed_after_grace() {
         tmp.path(),
         "cli",
         &format!(
-            "trap '' TERM; echo $$ > '{}'; while true; do sleep 1; done",
+            "trap '' TERM; echo $$ > '{}'; i=0; while [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done",
             pidfile.display()
         ),
     );
@@ -927,6 +937,7 @@ fn start_racing_close_admission_never_leaks_a_running_job() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let bin = write_script(tmp.path(), "cli", "sleep 60");
     let mgr = JobManager::new();
+    let _cancel = CancelOnDrop(Arc::clone(&mgr));
     let racer = {
         let mgr = Arc::clone(&mgr);
         let s = spec(tmp.path(), &bin, "task");

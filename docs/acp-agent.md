@@ -22,13 +22,16 @@ Vox does not name or bundle any agent. You choose the program and its arguments.
 
 Open **Settings > Agents > ACP agent**:
 
-| Setting         | Value                                                                                                                                                                                             |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Enable          | Off by default. Turning it on is the switch that sends unmatched dictation to the agent.                                                                                                          |
-| Command         | Absolute path to the agent program, for example `/path/to/my-agent`. Relative paths are rejected. At most 1024 characters, no control characters.                                                 |
-| Arguments       | Space-separated, for example `--acp`. **No quoting and no shell parsing**: `"a b"` becomes two arguments, `"a` and `b"`. At most 8 arguments, each at most 256 characters, no control characters. |
-| Turn timeout    | 10 to 900 seconds. Default 120. A turn that takes longer is cancelled (see [Timeouts and failures](#timeouts-and-failures)).                                                                      |
-| Test connection | Starts the agent if needed and runs the handshake. It reports success or the reason for failure. Use it after you change the command or arguments.                                                |
+| Setting               | Value                                                                                                                                                                                                                                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enable                | Off by default. Turning it on is the switch that sends unmatched dictation to the agent.                                                                                                                                                                                                                            |
+| Command               | Absolute path to the agent program, for example `/path/to/my-agent`. Relative paths are rejected. At most 1024 characters, no control characters.                                                                                                                                                                   |
+| Arguments             | Space-separated, for example `--acp`. **No quoting and no shell parsing**: `"a b"` becomes two arguments, `"a` and `b"`. At most 8 arguments, each at most 256 characters, no control characters.                                                                                                                   |
+| Turn timeout          | 10 to 900 seconds. Default 120. A turn that takes longer is cancelled (see [Timeouts and failures](#timeouts-and-failures)).                                                                                                                                                                                        |
+| Approval mode         | Which permission requests from the agent are decided without asking you, and which ones reach you. Four modes: ask before changes, ask before every tool call, never allow, and allow everything. Fresh installs start on allow everything; existing settings keep the mode you saved. See [Approvals](#approvals). |
+| Conversation hand-off | Used by conversations. On by default. When on, open-ended Hey Jarvis requests that need the web, files or running programs are sent to the agent. Local commands such as opening apps stay local. Used for each conversation request; see [Used by conversations](#used-by-conversations).                          |
+| Approval timeout      | 10 to 300 seconds. Default 60. A request you do not answer in time is denied.                                                                                                                                                                                                                                       |
+| Test connection       | Starts the agent if needed and runs the handshake. It reports success or the reason for failure. Use it after you change the command or arguments.                                                                                                                                                                  |
 
 The agent runs with a working folder of its own: `acp_workspace` inside Vox's app data directory. Vox creates it with permissions `0700` (only your user can read it). The agent does not run in your home folder or in a project folder.
 
@@ -53,12 +56,73 @@ The setting **Agent context** (in the same area as the other agent settings) con
 - The agent program may keep its own sessions on disk or in its own storage. **Vox cannot clear those.** Clear them with the agent's own tools if you need to.
 - Restarting Vox starts with no session.
 
+### Used by conversations
+
+Hey Jarvis conversations can hand open-ended requests to this agent. See [Handing work to your agent](conversation.md#handing-work-to-your-agent).
+
+- Each conversation request is a **fresh session**. It does not reuse the session from **Agent context**, and the agent does not remember earlier conversation requests.
+- The conversation's role is carried as plain text inside the request.
+- The **Approval mode** applies to these requests, the same as to dictation.
+
+### Specialist agents
+
+Conversation plans can run different steps on different agents. See
+[Plans and specialist agents](conversation.md#plans-and-specialist-agents).
+
+- Four optional profiles exist: **research**, **browser**, **code** and
+  **files**. Each has a command and arguments.
+- A blank command means that step type uses the main agent. **General** steps
+  always use the main agent.
+- The main agent must still be on, with a command set. A specialist profile
+  alone does not enable anything.
+- The specialist rows sit on the same Agent settings page as the ACP agent,
+  next to the **Plan multi-step requests** toggle. That toggle is on by default
+  but does nothing unless hand-off is on. Turn it off to keep single-agent
+  hand-off.
+- Commands follow the same rules as the main command: absolute path, no control
+  characters. Arguments are split on spaces, with no quoting.
+- Do not put secrets in arguments.
+- The working folder, the approval mode and the turn timeout come from the main
+  agent settings.
+
 ## Timeouts and failures
 
-- **Turn timeout.** When a turn exceeds the turn timeout, Vox cancels the request, discards any partial text, and **stops the agent process**. The next request starts a new process.
+- **Turn timeout.** When a turn exceeds the turn timeout, Vox cancels the request, discards any partial text, and **stops the agent process**. The next request starts a new process. Time spent waiting for your answer to an approval does not count toward this timeout, but a turn never runs longer than three times the turn timeout.
 - **Agent exits.** If the agent process exits (for example after a crash), Vox reports the failure. It starts a new process automatically on the next request.
 - **Idle shutdown.** If the agent receives no request for 30 minutes, Vox stops it. The next request starts it again.
 - **Start-up time.** The first start can take several seconds, because the agent has to start and complete the handshake. Prewarming at launch hides most of this.
+
+## Approvals
+
+When the agent wants to use one of its own tools, it asks Vox for permission. Vox shows a dialog with the request's title, the operation details (when the agent gives them), a countdown and two buttons: **Allow once** and **Deny**. Deny has the focus, so Enter and Escape also deny. Allow needs an explicit click. If several requests are waiting, the dialog shows how many are queued.
+
+The **Approval mode** setting decides which requests reach you. Each mode is one choice in **Settings > Agents > ACP agent**:
+
+| Mode                         | Allowed without asking                                                                                                                              | Asks you                                        | Denied without asking |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | --------------------- |
+| Ask before changes           | Read, search and think requests, only when the agent offers an allow-once option for that request and the request input does not look like a change | Every other request                             | None                  |
+| Ask before every tool call   | None                                                                                                                                                | Every request                                   | None                  |
+| Never allow                  | None                                                                                                                                                | None                                            | Every request         |
+| Allow everything (never ask) | Every request that offers an allow-once option, whatever its kind                                                                                   | Only a request that offers no allow-once option | None                  |
+
+**Allow everything** is the default for a **fresh install only**. Existing settings are never switched to it on upgrade. A saved mode is kept as it is, and a settings file with no saved mode uses **Ask before changes**. Earlier versions denied every request; choose **Never allow** to get that behaviour back.
+
+> **Allow everything is not a sandbox and removes the questions.** When you choose it, Settings shows this warning: "The agent can edit, delete, run and browse without asking. Web pages and files it reads can steer it. Use Ask before changes if you do not fully trust the agent." Vox shows a notice, once per launch, when an agent run starts under this mode. Choose **Ask before changes** to get the questions back.
+
+These rules apply in every mode:
+
+- Vox only ever grants **allow once**. It never grants "always allow" and never remembers an answer.
+- If you do not answer within the **Approval timeout**, the request is denied.
+- Waiting for your answer does not count toward the turn timeout. A turn still cannot run longer than three times its turn timeout, however long the approvals take.
+- Cancelling a turn withdraws any request that is still open, and the dialog closes. Vox does not send an answer for a withdrawn request, so the agent is not told allow or deny. If the agent does not stop on its own, Vox retires its process after a short grace period. The engine supports cancelling. Voice cancel and hand-off from conversation mode are not connected yet.
+- If Vox cannot send an answer back to the agent, the turn fails. You then see a notice with **Copy request**, which copies your original dictation. The agent may have partly run the request, so check what it did before you repeat it.
+
+### What an approval does and does not protect
+
+- **The agent reports what each tool does.** Its kind, title and operation details come from the agent, and Vox trusts that report. An agent that labels an action as a read will have that action allowed without a question. Approvals are a convenience policy, **not a sandbox**.
+- **Use Ask before every tool call for agents you do not fully trust.**
+- **The dialog is not a security boundary.** An agent that can control your desktop input could click Allow itself.
+- **Titles and details are shown as plain text** and are never run. They are not written to the log.
 
 ## Trust model and privacy
 
@@ -67,7 +131,7 @@ Read this section before you enable the feature.
 - **The agent program is fully trusted and is not sandboxed.** It runs as your user, with your permissions.
 - **It inherits Vox's environment variables.** Anything Vox can see in its environment, the agent can also see.
 - **Its own tools are not controlled by Vox.** If the agent can run commands, edit files or reach the network with its own tools, Vox cannot stop it. Vox does not see or approve those actions.
-- **Vox denies every ACP permission request** and does not offer the agent file-system or terminal capabilities. This limits only what goes through Vox's protocol. **It does not limit what the agent does with its own tools.** Denying requests is not a sandbox.
+- **Vox answers the agent's permission requests using the Approval mode** (see [Approvals](#approvals)). This limits only what goes through Vox's protocol. **It does not limit what the agent does with its own tools.** Approvals are not a sandbox.
 - **Recommendation:** configure the agent itself to be read-only, or to ask before it changes anything. Do this in the agent's own settings, not in Vox.
 - **Process cleanup is best effort.** When Vox stops the agent, it signals the agent's whole process group. A child process that moves to a different process group can keep running after Vox stops the agent.
 - **Privacy.** While the feature is on, every dictation that no built-in or custom voice command matched is sent to the agent program. Vox does not filter what you say. The agent program may log, store or send that text according to its own rules.
@@ -76,10 +140,9 @@ Read this section before you enable the feature.
 
 ## Known limits and follow-ups
 
-- **No spoken approval flow yet.** Vox denies permission requests. The agent can use only the tools that need no approval through Vox's protocol.
+- **No spoken approval yet.** Permission requests are answered on screen only, with the dialog described in [Approvals](#approvals). The agent can use its read, search and think tools without asking. It asks for everything else, or nothing at all if you choose **Never allow**.
 - **No streaming into speech.** Vox speaks the reply once the turn is finished.
 - **Background jobs and the spoken-reply composer still use the old one-shot command setting.** They still start a process per request, and their settings are unchanged. They are not part of this feature.
-- **Conversation mode is not included.** Starting a conversation does not hand off to the agent.
 - **Platform testing.** The feature is Unix only. In this repository, `.github/workflows/test.yml` runs `cargo test` only on `ubuntu-24.04`. The manually started `build-test.yml` builds the app on macOS, Linux and Windows, but I found no workflow that runs the tests on macOS or Windows. Tests that use Unix process features are therefore checked on Linux only in CI.
 
 ## Troubleshooting

@@ -14,6 +14,12 @@ pub enum LocalIntent {
     /// `classify_local_with` with `cancel_job_enabled == true`).
     #[allow(dead_code)] // M3: wired in S3b
     CancelJob,
+    /// Stage 1 roles: the user ends the active role (only from `classify_local_in_role` while a
+    /// role is active).
+    ClearRole,
+    /// Stage 2 agent hand-off: the user cancels the running agent request (only from
+    /// `classify_local_in_session` while an agent run is active).
+    CancelAgent,
     /// Nothing local matched.
     None,
 }
@@ -138,6 +144,67 @@ fn is_cancel_job_utterance(words: &[Word]) -> bool {
     CANCEL_JOB_PHRASES
         .iter()
         .any(|phrase| words.len() == phrase.len() && match_prefix(words, phrase).is_some())
+}
+
+/// Stage 1 roles: whole-utterance phrases that end an active role (compared on word keys).
+const CLEAR_ROLE_PHRASES: &[&[&str]] = &[
+    &["back", "to", "normal"],
+    &["stop", "acting"],
+    &["stop", "the", "role"],
+    &["drop", "the", "role"],
+    &["end", "the", "role"],
+];
+
+/// Stage 1 roles: `classify_local_with`, preceded by the role clear phrases when a role is active.
+/// Without an active role the result is exactly `classify_local_with`.
+pub fn classify_local_in_role(
+    text: &str,
+    cancel_job_enabled: bool,
+    role_active: bool,
+) -> LocalIntent {
+    if role_active && is_clear_role_utterance(&tokenize(text)) {
+        return LocalIntent::ClearRole;
+    }
+    classify_local_with(text, cancel_job_enabled)
+}
+
+/// True when the words, in full, equal one role clear phrase.
+fn is_clear_role_utterance(words: &[Word]) -> bool {
+    CLEAR_ROLE_PHRASES
+        .iter()
+        .any(|phrase| words.len() == phrase.len() && match_prefix(words, phrase).is_some())
+}
+
+/// Stage 2 agent hand-off: whole-utterance phrases that cancel a running agent request
+/// (compared on word keys). Recognised only while an agent run is active.
+const CANCEL_AGENT_PHRASES: &[&[&str]] = &[
+    &["cancel", "that"],
+    &["cancel", "the", "request"],
+    &["cancel", "the", "agent"],
+    &["stop", "the", "agent"],
+];
+
+/// True when the words, in full, equal one agent cancel phrase.
+fn is_cancel_agent_utterance(words: &[Word]) -> bool {
+    CANCEL_AGENT_PHRASES
+        .iter()
+        .any(|phrase| words.len() == phrase.len() && match_prefix(words, phrase).is_some())
+}
+
+/// Stage 2 agent hand-off: `classify_local_in_role`, preceded by the agent cancel phrases when
+/// an agent run is active. Without an active run the result is exactly `classify_local_in_role`,
+/// so "cancel that" and "stop the agent" are not local then (the planner handles them).
+/// The bare word "stop" stays End.
+pub fn classify_local_in_session(
+    text: &str,
+    cancel_job_enabled: bool,
+    role_active: bool,
+    agent_active: bool,
+) -> LocalIntent {
+    if agent_active && is_cancel_agent_utterance(&tokenize(text)) {
+        return LocalIntent::CancelAgent;
+    }
+    classify_local_in_role(text, cancel_job_enabled, role_active)
 }
 
 /// Classify one utterance. See DESIGN.md 3.1 for the exact word model.
@@ -278,6 +345,39 @@ mod tests {
             "",
         ] {
             assert_eq!(classify_local(p), LocalIntent::None, "phrase: {p:?}");
+        }
+    }
+
+    #[test]
+    fn clear_role_phrases_match_only_while_a_role_is_active() {
+        for p in [
+            "back to normal",
+            "Stop acting.",
+            "stop the role",
+            "drop the role",
+            "End the role!",
+        ] {
+            assert_eq!(
+                classify_local_in_role(p, false, true),
+                LocalIntent::ClearRole,
+                "phrase: {p:?}"
+            );
+            assert_eq!(
+                classify_local_in_role(p, false, false),
+                classify_local(p),
+                "no role: {p:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn clear_role_needs_the_whole_utterance() {
+        for p in ["I am back to normal", "back to normal please", "stop"] {
+            assert_ne!(
+                classify_local_in_role(p, false, true),
+                LocalIntent::ClearRole,
+                "phrase: {p:?}"
+            );
         }
     }
 

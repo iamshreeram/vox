@@ -130,6 +130,16 @@ fn file_id(path: &Path) -> FileId {
 }
 
 /// Writes an executable `sh` script named `name` into `dir`.
+/// Cancels whatever job the manager still runs when dropped, so a panicking test
+/// never leaves a `sleep 60` job group alive (cancel is a no-op when idle).
+struct CancelOnDrop(Arc<JobManager>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
 fn write_script(dir: &Path, name: &str, body: &str) -> PathBuf {
     let path = dir.join(name);
     std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("write fake cli");
@@ -517,6 +527,7 @@ fn ask_job_cancelled_delivers_no_result() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let bin = write_script(tmp.path(), "cli", "echo partial-answer; sleep 60");
     let mgr = JobManager::new();
+    let _cancel = CancelOnDrop(Arc::clone(&mgr));
     let log = Arc::new(Log::default());
     let _ = mgr.start(
         spec_of(ask_launch(tmp.path(), &bin, Duration::from_secs(20))),
@@ -537,6 +548,7 @@ fn ask_job_timed_out_delivers_no_result() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let bin = write_script(tmp.path(), "cli", "echo partial-answer; sleep 60");
     let mgr = JobManager::new();
+    let _cancel = CancelOnDrop(Arc::clone(&mgr));
     let log = Arc::new(Log::default());
     let _ = mgr.start(
         spec_of(ask_launch(tmp.path(), &bin, Duration::from_millis(400))),
@@ -777,6 +789,7 @@ fn blocking_on_result_does_not_block_cancel_or_admission_and_finish_stays_ordere
     let ask_bin = write_script(tmp.path(), "ask-cli", "echo answer-line");
     let sleep_bin = write_script(tmp.path(), "sleep-cli", "sleep 60");
     let mgr = JobManager::new();
+    let _cancel = CancelOnDrop(Arc::clone(&mgr));
     let log1 = Arc::new(Log::default());
     let (entered_tx, entered_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel();
@@ -901,6 +914,7 @@ fn rejected_busy_start_does_not_call_on_admit() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let sleep_bin = write_script(tmp.path(), "sleep-cli", "sleep 60");
     let mgr = JobManager::new();
+    let _cancel = CancelOnDrop(Arc::clone(&mgr));
     let log = Arc::new(Log::default());
     let (admits, _) = install_hooks(&mgr, &log);
     let _first = mgr
@@ -1037,6 +1051,7 @@ fn on_close_runs_before_direct_shutdown_kills_a_running_child() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let sleep_bin = write_script(tmp.path(), "sleep-cli", "sleep 60");
     let mgr = JobManager::new();
+    let _cancel = CancelOnDrop(Arc::clone(&mgr));
     let log = Arc::new(Log::default());
     let (_, closes) = install_hooks(&mgr, &log);
     let _ = mgr.start(
@@ -1146,6 +1161,7 @@ fn panicking_on_close_is_isolated_and_shutdown_completes() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let sleep_bin = write_script(tmp.path(), "sleep-cli", "sleep 60");
     let mgr = JobManager::new();
+    let _cancel = CancelOnDrop(Arc::clone(&mgr));
     let calls = Arc::new(AtomicUsize::new(0));
     let c = Arc::clone(&calls);
     mgr.set_hooks(JobHooks {
@@ -1184,6 +1200,7 @@ fn on_admit_runs_synchronously_on_the_starting_thread_before_start_returns() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let bin = write_script(tmp.path(), "cli", "sleep 60");
     let mgr = JobManager::new();
+    let _cancel = CancelOnDrop(Arc::clone(&mgr));
     let hook_thread = Arc::new(Mutex::new(None));
     let h = Arc::clone(&hook_thread);
     mgr.set_hooks(JobHooks {

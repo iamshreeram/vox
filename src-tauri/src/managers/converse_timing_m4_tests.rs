@@ -211,12 +211,15 @@ async fn run_turn(
 
 fn answer(speech: &str) -> TurnPlan {
     TurnPlan {
+        plan: None,
         job: None,
+        role: None,
         kind: PlanKind::Answer,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,
         paste_text: None,
         command: None,
+        agent: None,
     }
 }
 

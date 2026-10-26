@@ -768,12 +768,15 @@ mod tests {
         fn plan<'a>(&'a self, _i: PlanInput<'a>) -> BoxFuture<'a, Result<TurnPlan, PlanError>> {
             Box::pin(async {
                 Ok(TurnPlan {
+                    plan: None,
                     job: None,
+                    role: None,
                     kind: PlanKind::Answer,
                     speech: "Here it is.".to_string(),
                     emotion: Emotion::Neutral,
                     paste_text: None,
                     command: None,
+                    agent: None,
                 })
             })
         }
