@@ -94,7 +94,12 @@ fn has_text(events: &[ChatEvent], t: &str) -> bool {
 fn assert_seq_increasing(events: &[ChatEvent]) {
     let mut last = 0u64;
     for e in events {
-        assert!(e.seq > last, "seq must strictly increase: {} after {}", e.seq, last);
+        assert!(
+            e.seq > last,
+            "seq must strictly increase: {} after {}",
+            e.seq,
+            last
+        );
         if let ChatEventKind::Entry { entry } = &e.kind {
             assert_eq!(entry.id, e.seq, "entry id equals its event seq");
         }
@@ -126,10 +131,7 @@ fn settle(log: &ChatLog, rec: &Rec) {
 fn cleaning_strips_controls_keeps_newline_and_trims() {
     let rec = Rec::new(true);
     let log = ChatLog::start(rec.clone(), true);
-    log.say(
-        ChatRole::User,
-        "  hi\u{7}\u{0} there\nline2\u{1b}[31m \t ",
-    );
+    log.say(ChatRole::User, "  hi\u{7}\u{0} there\nline2\u{1b}[31m \t ");
     log.say(ChatRole::User, "a\tb\r\nc");
     settle(&log, &rec);
     let t = texts(&rec.events());
@@ -154,10 +156,17 @@ fn text_cap_is_exact_and_char_boundary_safe() {
     log.say(ChatRole::Assistant, &"a".repeat(TEXT_CAP));
     log.say(ChatRole::Assistant, &"a".repeat(TEXT_CAP + 1));
     log.say(ChatRole::Assistant, &"é".repeat(3000));
-    log.say(ChatRole::Assistant, &"\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}".repeat(800));
+    log.say(
+        ChatRole::Assistant,
+        &"\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}".repeat(800),
+    );
     settle(&log, &rec);
     let t = texts(&rec.events());
-    assert_eq!(t[0], "a".repeat(TEXT_CAP), "exactly at the cap is untouched");
+    assert_eq!(
+        t[0],
+        "a".repeat(TEXT_CAP),
+        "exactly at the cap is untouched"
+    );
     assert_eq!(t[1].chars().count(), TEXT_CAP);
     assert!(t[1].ends_with('…'));
     assert_eq!(t[1].chars().filter(|c| *c == 'a').count(), TEXT_CAP - 1);
@@ -243,7 +252,10 @@ fn concurrent_hooks_keep_unique_ids_and_per_thread_order() {
     for t in 0..8 {
         let mine: Vec<usize> = texts(&ev)
             .iter()
-            .filter_map(|x| x.strip_prefix(&format!("t{t}-")).map(|n| n.parse().unwrap()))
+            .filter_map(|x| {
+                x.strip_prefix(&format!("t{t}-"))
+                    .map(|n| n.parse().unwrap())
+            })
             .collect();
         assert_eq!(mine, (0..25).collect::<Vec<_>>(), "thread {t} order");
     }
@@ -259,15 +271,15 @@ fn reset_empties_log_and_ids_keep_growing() {
     log.say(ChatRole::Assistant, "b");
     assert!(rec.wait_for(|e| entry_count(e) == 2, 3000));
     log.reset();
-    assert!(rec.wait_for(
-        |e| e.iter().any(|x| x.kind == ChatEventKind::Reset),
-        3000
-    ));
+    assert!(rec.wait_for(|e| e.iter().any(|x| x.kind == ChatEventKind::Reset), 3000));
     log.say(ChatRole::User, "c");
     assert!(rec.wait_for(|e| has_text(e, "c"), 3000));
     let ev = rec.events();
     assert_seq_increasing(&ev);
-    let reset_pos = ev.iter().position(|x| x.kind == ChatEventKind::Reset).unwrap();
+    let reset_pos = ev
+        .iter()
+        .position(|x| x.kind == ChatEventKind::Reset)
+        .unwrap();
     let c_pos = ev
         .iter()
         .position(|x| matches!(&x.kind, ChatEventKind::Entry { entry } if entry.text == "c"))
@@ -275,7 +287,10 @@ fn reset_empties_log_and_ids_keep_growing() {
     assert!(reset_pos < c_pos);
     let snap = log.snapshot();
     assert_eq!(
-        snap.entries.iter().map(|e| e.text.clone()).collect::<Vec<_>>(),
+        snap.entries
+            .iter()
+            .map(|e| e.text.clone())
+            .collect::<Vec<_>>(),
         vec!["c".to_string()]
     );
 }
@@ -313,7 +328,10 @@ fn pending_entries_before_a_reset_never_appear_after_it() {
     }
     let snap = log.snapshot();
     assert_eq!(
-        snap.entries.iter().map(|e| e.text.clone()).collect::<Vec<_>>(),
+        snap.entries
+            .iter()
+            .map(|e| e.text.clone())
+            .collect::<Vec<_>>(),
         vec!["new1".to_string()]
     );
 }
@@ -330,7 +348,9 @@ fn recording_off_blocks_new_lines_keeps_old_and_emits_config() {
     assert!(!log.recording());
     log.say(ChatRole::User, "not recorded");
     assert!(rec.wait_for(
-        |e| e.iter().any(|x| x.kind == ChatEventKind::Config { recording: false }),
+        |e| e
+            .iter()
+            .any(|x| x.kind == ChatEventKind::Config { recording: false }),
         3000
     ));
     thread::sleep(Duration::from_millis(100));
@@ -350,7 +370,9 @@ fn state_updates_land_and_snapshot_reports_them() {
     let log = ChatLog::start(rec.clone(), true);
     log.set_state("listening", None);
     assert!(rec.wait_for(
-        |e| e.iter().any(|x| matches!(&x.kind, ChatEventKind::State { state, .. } if state == "listening")),
+        |e| e
+            .iter()
+            .any(|x| matches!(&x.kind, ChatEventKind::State { state, .. } if state == "listening")),
         3000
     ));
     log.set_state("idle", Some("user_ended"));
@@ -384,13 +406,23 @@ fn sleeping_worker_applies_each_single_stimulus_alone() {
     let log = ChatLog::start(rec.clone(), true);
     thread::sleep(Duration::from_millis(50));
     log.set_state("idle", Some("idle"));
-    assert!(rec.wait_for(|e| e.iter().any(|x| matches!(x.kind, ChatEventKind::State { .. })), 2000));
+    assert!(rec.wait_for(
+        |e| e
+            .iter()
+            .any(|x| matches!(x.kind, ChatEventKind::State { .. })),
+        2000
+    ));
     // config only
     let rec = Rec::new(true);
     let log = ChatLog::start(rec.clone(), true);
     thread::sleep(Duration::from_millis(50));
     log.set_recording(false);
-    assert!(rec.wait_for(|e| e.iter().any(|x| matches!(x.kind, ChatEventKind::Config { .. })), 2000));
+    assert!(rec.wait_for(
+        |e| e
+            .iter()
+            .any(|x| matches!(x.kind, ChatEventKind::Config { .. })),
+        2000
+    ));
     // reset only
     let rec = Rec::new(true);
     let log = ChatLog::start(rec.clone(), true);
@@ -428,7 +460,11 @@ fn hooks_never_wait_for_a_stuck_worker_and_memory_is_bounded() {
     assert_seq_increasing(&ev);
     let applied = texts(&ev).iter().filter(|t| t.starts_with('e')).count();
     assert!(applied <= 2 * PENDING_CAP, "applied {applied} > bound");
-    assert_eq!(applied + dropped_total(&ev), 5000, "every line is applied or counted");
+    assert_eq!(
+        applied + dropped_total(&ev),
+        5000,
+        "every line is applied or counted"
+    );
 }
 
 #[test]
@@ -467,7 +503,13 @@ fn final_state_and_recording_win_after_saturation() {
         3000
     ));
     assert!(rec.wait_for(
-        |e| matches!(e.iter().rev().find(|x| matches!(x.kind, ChatEventKind::Config { .. })).map(|x| &x.kind), Some(ChatEventKind::Config { recording: false })),
+        |e| matches!(
+            e.iter()
+                .rev()
+                .find(|x| matches!(x.kind, ChatEventKind::Config { .. }))
+                .map(|x| &x.kind),
+            Some(ChatEventKind::Config { recording: false })
+        ),
         3000
     ));
     let s = log.snapshot();
@@ -496,9 +538,18 @@ fn clear_waiters_are_bounded_and_cleaned_up() {
         }));
     }
     let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-    let busy = results.iter().filter(|r| **r == Err(ClearError::Busy)).count();
-    let timeout = results.iter().filter(|r| **r == Err(ClearError::Timeout)).count();
-    assert!(results.iter().all(|r| r.is_err()), "stuck worker cannot ack");
+    let busy = results
+        .iter()
+        .filter(|r| **r == Err(ClearError::Busy))
+        .count();
+    let timeout = results
+        .iter()
+        .filter(|r| **r == Err(ClearError::Timeout))
+        .count();
+    assert!(
+        results.iter().all(|r| r.is_err()),
+        "stuck worker cannot ack"
+    );
     assert!(busy >= 20 - CLEAR_WAITERS_CAP, "busy was {busy}");
     assert!(timeout <= CLEAR_WAITERS_CAP, "timeouts were {timeout}");
     // earlier waiters are gone: a new request is admitted (Timeout), not Busy
@@ -539,7 +590,11 @@ fn shutdown_with_pending_work_completes_waiters_and_stops_worker() {
     log.say(ChatRole::User, "late");
     log.set_state("speaking", None);
     thread::sleep(Duration::from_millis(150));
-    assert_eq!(rec.events().len(), before, "hooks after shutdown are no-ops");
+    assert_eq!(
+        rec.events().len(),
+        before,
+        "hooks after shutdown are no-ops"
+    );
 }
 
 #[test]
@@ -579,10 +634,25 @@ fn module_source_has_no_io_or_logging() {
             continue;
         }
         for bad in [
-            "std::fs", "File::", "OpenOptions", "log::", "tracing::", "println!", "eprintln!",
-            "dbg!", "debug!(", "info!(", "warn!(", "error!(", "trace!(",
+            "std::fs",
+            "File::",
+            "OpenOptions",
+            "log::",
+            "tracing::",
+            "println!",
+            "eprintln!",
+            "dbg!",
+            "debug!(",
+            "info!(",
+            "warn!(",
+            "error!(",
+            "trace!(",
         ] {
-            assert!(!t.contains(bad), "chat_log.rs line {} uses `{bad}`: {line}", n + 1);
+            assert!(
+                !t.contains(bad),
+                "chat_log.rs line {} uses `{bad}`: {line}",
+                n + 1
+            );
         }
     }
 }
