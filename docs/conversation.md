@@ -304,7 +304,8 @@ The conversation window shows the live transcript of a voice conversation.
 Open it with the global shortcut: Control+Option+T on macOS, Ctrl+Alt+Shift+T
 on other systems. You can change the shortcut under "Conversation window" in the
 shortcut settings. You can also use the "Conversation window" item in the tray
-menu, or the "Open conversation window" button in Settings > Conversation.
+menu, or the "Open conversation window" button in Settings > General, in the
+Voice conversation group (shown when Experimental features are on).
 
 What it shows:
 
