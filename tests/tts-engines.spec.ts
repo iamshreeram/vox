@@ -40,7 +40,7 @@ async function openExperimental(page: Page): Promise<void> {
     .fill("voice engine");
   await page
     .getByRole("option")
-    .filter({ hasText: "Experimental" })
+    .filter({ hasText: "Voice engine" })
     .first()
     .click();
   await expect(page.locator('[data-testid="tts-engine-picker"]')).toBeVisible();

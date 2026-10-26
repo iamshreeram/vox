@@ -48,3 +48,9 @@ __pycache__/
 
 # Parallel phase-development worktrees (docs/vox-phases/WORKTREE-CONVENTION.md)
 .worktrees/
+
+# Manual test guide: personal feedback records (never commit)
+docs/manual-testing/feedback.json
+docs/manual-testing/feedback.prev.json
+docs/manual-testing/feedback.json.tmp
+docs/manual-testing/feedback-history/

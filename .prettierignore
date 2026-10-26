@@ -22,3 +22,6 @@ src-tauri/src/catalog/catalog.json
 
 # Hash-pinned voice test fixtures must stay byte-exact (see their manifest.json)
 src-tauri/tests/fixtures/voice
+
+# Hand-styled single-file manual test guide; its structure is checked by docs/manual-testing/check-guide.mjs
+docs/manual-testing/experimental-features.html

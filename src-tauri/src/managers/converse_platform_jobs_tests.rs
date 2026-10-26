@@ -313,6 +313,16 @@ fn launch_in(dir: &TempDir, binary: &Path, task: &str) -> JobLaunch {
     }
 }
 
+/// Cancels the manager's job when dropped, so a failing assertion never leaves the
+/// `sleep 15` fake CLI group running (cancel is a no-op when idle).
+struct CancelOnDrop(Arc<JobManager>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn start_without_a_manager_is_unsupported() {
@@ -329,6 +339,7 @@ fn start_with_a_manager_starts_then_second_start_is_busy() {
     // Sleeps long enough that the second start happens while the first still runs.
     let bin = write_fake_cli(dir.path(), "sleep 15");
     let mgr = JobManager::new();
+    let _cancel = CancelOnDrop(Arc::clone(&mgr));
     let first = start_job_on(
         Some(&mgr),
         launch_in(&dir, &bin, "task one"),
