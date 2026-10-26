@@ -97,6 +97,8 @@ export default function ChatWindow() {
     };
 
     const onEvent = (ev: ChatEvent) => {
+      // A handler from a disposed effect (StrictMode double-mount, or an unlisten that failed) must not act.
+      if (disposed) return;
       const current = viewRef.current;
       if (!current.ready) {
         bufferRef.current.push(ev);

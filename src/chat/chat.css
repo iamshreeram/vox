@@ -3,6 +3,14 @@
    Motion is CSS keyframes on transform/opacity only; prefers-reduced-motion stops all of it. */
 @import "../styles/theme.css";
 
+/* The page fills the window so the transcript (the scroll container) gets a bounded height. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
 /* ---- state colours: light stage ---- */
 .chat-root {
   --stage-bg: #eef1f5;

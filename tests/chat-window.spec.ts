@@ -98,8 +98,8 @@ async function waitForSubscription(page: Page): Promise<void> {
 
 const log = (page: Page): Locator => page.getByRole("log");
 const bubbles = (page: Page): Locator => page.getByRole("log").locator("[data-role]");
-const clearButton = (page: Page): Locator => page.getByRole("button", { name: "chat.clear", exact: true });
-const jumpButton = (page: Page): Locator => page.getByRole("button", { name: "chat.jumpToLatest", exact: true });
+const clearButton = (page: Page): Locator => page.getByRole("button", { name: "Clear", exact: true });
+const jumpButton = (page: Page): Locator => page.getByRole("button", { name: "Jump to latest", exact: true });
 
 async function openChat(page: Page, config: HarnessConfig): Promise<void> {
   await installChatHarness(page, config);
@@ -110,7 +110,7 @@ async function openChat(page: Page, config: HarnessConfig): Promise<void> {
 test.describe("Conversation window: hydration and content", () => {
   test("shows the empty state when the snapshot has no entries", async ({ page }) => {
     await openChat(page, { snapshots: [snapshot(0, [])], clearFails: false });
-    await expect(page.getByText("chat.empty", { exact: true })).toBeVisible();
+    await expect(page.getByText("No conversation yet. Say your wake phrase to start.", { exact: true })).toBeVisible();
     await expect(bubbles(page)).toHaveCount(0);
   });
 
@@ -127,8 +127,8 @@ test.describe("Conversation window: hydration and content", () => {
     await expect(bubbles(page)).toHaveText(["hi", "hello back"]);
     await expect(page.locator('[data-role="user"]')).toHaveCount(1);
     await expect(page.locator('[data-role="assistant"]')).toHaveCount(1);
-    await expect(page.getByText("chat.status.listening", { exact: true })).toBeVisible();
-    await expect(page.getByText("chat.recordingOff", { exact: true })).toBeVisible();
+    await expect(page.getByText("Listening", { exact: true })).toBeVisible();
+    await expect(page.getByText("Recording is off", { exact: true })).toBeVisible();
   });
 
   test("shows the ended reason in the caption when the session has ended", async ({ page }) => {
@@ -136,7 +136,7 @@ test.describe("Conversation window: hydration and content", () => {
       snapshots: [snapshot(2, [], { state: "idle", end: "turn_limit" })],
       clearFails: false,
     });
-    await expect(page.getByText("chat.status.ended", { exact: true })).toBeVisible();
+    await expect(page.getByText("Session ended", { exact: true })).toBeVisible();
   });
 
   test("the transcript is a polite live log and the avatar is hidden from assistive tech", async ({ page }) => {
@@ -256,7 +256,7 @@ test.describe("Conversation window: Clear and command allow-list", () => {
     await openChat(page, { snapshots: [snapshot(1, [entry(1, "gone soon")])], clearFails: false });
     await expect(bubbles(page)).toHaveText(["gone soon"]);
     await clearButton(page).click();
-    await expect(page.getByText("chat.empty", { exact: true })).toBeVisible();
+    await expect(page.getByText("No conversation yet. Say your wake phrase to start.", { exact: true })).toBeVisible();
     expect(await clearCalls(page)).toBe(1);
   });
 
@@ -264,7 +264,7 @@ test.describe("Conversation window: Clear and command allow-list", () => {
     await openChat(page, { snapshots: [snapshot(1, [entry(1, "still here")])], clearFails: true });
     await expect(bubbles(page)).toHaveText(["still here"]);
     await clearButton(page).click();
-    await expect(page.getByText("chat.clearFailed", { exact: true })).toBeVisible();
+    await expect(page.getByText("Could not clear the conversation. Try again.", { exact: true })).toBeVisible();
     await expect(bubbles(page)).toHaveText(["still here"]);
   });
 
