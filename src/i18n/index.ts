@@ -122,13 +122,26 @@ export const syncLanguageFromSettings = async () => {
 };
 
 // Run language sync on init
-syncLanguageFromSettings();
+syncLanguageFromSettings().then(() => {
+  // The chat window (src/chat/i18n.ts) reads this key; store the synced language once.
+  try {
+    localStorage.setItem("vox-ui-language", i18n.language);
+  } catch {
+    // Storage unavailable: the chat window falls back to the browser language.
+  }
+});
 
 // Listen for language changes to update HTML dir and lang attributes
 i18n.on("languageChanged", (lng) => {
   const dir = getLanguageDirection(lng);
   updateDocumentDirection(dir);
   updateDocumentLanguage(lng);
+  // Shared with the chat window's bootstrap (src/chat/i18n.ts); a failed write is harmless.
+  try {
+    localStorage.setItem("vox-ui-language", lng);
+  } catch {
+    // Storage unavailable: the chat window falls back to the browser language.
+  }
 });
 
 // Re-export RTL utilities for convenience

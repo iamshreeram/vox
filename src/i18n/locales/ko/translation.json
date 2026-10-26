@@ -5,6 +5,7 @@
     "updateAvailable": "Update available",
     "copyLastTranscript": "마지막 녹음 내용 복사",
     "converse": "Start or stop conversation",
+    "chat": "Conversation window",
     "unloadModel": "모델 언로드",
     "model": "모델",
     "quit": "종료",
@@ -191,6 +192,10 @@
           "converse": {
             "name": "Conversation Shortcut",
             "description": "The keyboard shortcut to start or stop a hands-free conversation."
+          },
+          "chat_window": {
+            "name": "Conversation window",
+            "description": "Show or hide the conversation window"
           }
         },
         "errors": {
@@ -1323,6 +1328,13 @@
       "noResults": "“{{query}}”에 대한 설정을 찾을 수 없습니다",
       "unlockHint": "먼저 “{{setting}}”을(를) 켜세요",
       "showing": "“{{setting}}” 표시 중"
+    },
+    "conversation": {
+      "chatLog": {
+        "title": "Keep conversation transcript",
+        "description": "Keep a live transcript of the conversation in memory for the conversation window. It is never saved to disk."
+      },
+      "openChatWindow": "Open conversation window"
     }
   },
   "footer": {
@@ -1641,6 +1653,37 @@
         "deleteConfirmButton": "예, 삭제합니다",
         "deleteKeep": "유지",
         "deleteError": "음성 지문을 삭제할 수 없습니다. 다시 시도하세요."
+      }
+    }
+  },
+  "chat": {
+    "title": "Vox Conversation",
+    "status": {
+      "listening": "Listening",
+      "thinking": "Thinking",
+      "speaking": "Speaking",
+      "acting": "Working",
+      "idle": "Idle",
+      "ended": "Session ended"
+    },
+    "empty": "No conversation yet. Say your wake phrase to start.",
+    "footerHint": "Say your wake phrase or press your conversation shortcut to start.",
+    "clear": "Clear",
+    "clearFailed": "Could not clear the conversation. Try again.",
+    "jumpToLatest": "Jump to latest",
+    "recordingOff": "Recording is off",
+    "system": {
+      "started": "Conversation started",
+      "dropped": "{{count}} lines were skipped while the window was busy.",
+      "unknown": "Conversation note",
+      "end": {
+        "user_ended": "You ended the conversation.",
+        "idle": "Stopped after no speech for several turns.",
+        "cancelled": "Cancelled.",
+        "not_configured": "Spoken replies are not set up. Turn on spoken replies and choose a reply backend.",
+        "audio_unavailable": "The microphone is unavailable.",
+        "speech_stuck": "Speech output got stuck, so the conversation stopped.",
+        "turn_limit": "Stopped at the turn limit."
       }
     }
   }

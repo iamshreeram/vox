@@ -6,6 +6,7 @@ import { Button } from "../ui/Button";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import { Slider } from "../ui/Slider";
+import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
 import { useOsType } from "../../hooks/useOsType";
 import { formatKeyCombination } from "../../lib/utils/keyboard";
@@ -62,6 +63,7 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
 
     const converseBinding = getSetting("bindings")?.converse;
     const bargeIn = normalizeConverseBargeIn(getSetting("converse_barge_in"));
+    const chatLogEnabled = getSetting("converse_chat_log") ?? true;
 
     useEffect(() => {
       let cancelled = false;
@@ -280,6 +282,17 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
               : t("converse.section.shortcutNone")}
           </div>
         </SettingContainer>
+
+        <ToggleSwitch
+          checked={chatLogEnabled}
+          onChange={(next) => void updateSetting("converse_chat_log", next)}
+          disabled={isUpdating("converse_chat_log")}
+          isUpdating={isUpdating("converse_chat_log")}
+          label={t("settings.conversation.chatLog.title")}
+          description={t("settings.conversation.chatLog.description")}
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+        />
 
         <p className="text-xs text-mid-gray px-4">
           {t("converse.section.privacyNote")}

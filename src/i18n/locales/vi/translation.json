@@ -5,6 +5,7 @@
     "updateAvailable": "Update available",
     "copyLastTranscript": "Sao chép bản chép lời mới nhất",
     "converse": "Start or stop conversation",
+    "chat": "Conversation window",
     "unloadModel": "Dỡ mô hình",
     "model": "Mô hình",
     "quit": "Thoát",
@@ -222,6 +223,10 @@
           "converse": {
             "name": "Conversation Shortcut",
             "description": "The keyboard shortcut to start or stop a hands-free conversation."
+          },
+          "chat_window": {
+            "name": "Conversation window",
+            "description": "Show or hide the conversation window"
           }
         },
         "errors": {
@@ -1323,6 +1328,13 @@
       "noResults": "Không tìm thấy cài đặt nào cho “{{query}}”",
       "unlockHint": "Bật “{{setting}}” trước",
       "showing": "Đang hiển thị “{{setting}}”"
+    },
+    "conversation": {
+      "chatLog": {
+        "title": "Keep conversation transcript",
+        "description": "Keep a live transcript of the conversation in memory for the conversation window. It is never saved to disk."
+      },
+      "openChatWindow": "Open conversation window"
     }
   },
   "footer": {
@@ -1641,6 +1653,37 @@
         "deleteConfirmButton": "Có, xóa",
         "deleteKeep": "Giữ lại",
         "deleteError": "Không thể xóa dấu vân giọng nói. Vui lòng thử lại."
+      }
+    }
+  },
+  "chat": {
+    "title": "Vox Conversation",
+    "status": {
+      "listening": "Listening",
+      "thinking": "Thinking",
+      "speaking": "Speaking",
+      "acting": "Working",
+      "idle": "Idle",
+      "ended": "Session ended"
+    },
+    "empty": "No conversation yet. Say your wake phrase to start.",
+    "footerHint": "Say your wake phrase or press your conversation shortcut to start.",
+    "clear": "Clear",
+    "clearFailed": "Could not clear the conversation. Try again.",
+    "jumpToLatest": "Jump to latest",
+    "recordingOff": "Recording is off",
+    "system": {
+      "started": "Conversation started",
+      "dropped": "{{count}} lines were skipped while the window was busy.",
+      "unknown": "Conversation note",
+      "end": {
+        "user_ended": "You ended the conversation.",
+        "idle": "Stopped after no speech for several turns.",
+        "cancelled": "Cancelled.",
+        "not_configured": "Spoken replies are not set up. Turn on spoken replies and choose a reply backend.",
+        "audio_unavailable": "The microphone is unavailable.",
+        "speech_stuck": "Speech output got stuck, so the conversation stopped.",
+        "turn_limit": "Stopped at the turn limit."
       }
     }
   }

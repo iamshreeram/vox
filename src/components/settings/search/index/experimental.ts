@@ -958,6 +958,13 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
     ],
   ),
   row(
+    "conversationChatLog",
+    "conversation",
+    "settings.conversation.chatLog.title",
+    "settings.conversation.chatLog.description",
+    ["chat", "chat log", "transcript", "conversation window", "log", "history"],
+  ),
+  row(
     "converseBargeIn",
     "conversation",
     "converse.section.bargeIn.label",

@@ -126,9 +126,10 @@ describe("src/chat/main.tsx", () => {
     expect(existsSync(join(CHAT_DIR, "main.tsx"))).toBe(true);
   });
 
-  it("imports the i18n side-effect module and renders ChatWindow", () => {
+  it("imports the chat-local i18n bootstrap (not @/i18n) and renders ChatWindow", () => {
     const src = main();
-    expect(src).toMatch(/import\s+["']@\/i18n["']|from\s+["']@\/i18n["']/);
+    expect(src).toMatch(/import\s+["']\.\/i18n(?:\.ts)?["']|from\s+["']\.\/i18n(?:\.ts)?["']/);
+    expect(src).not.toMatch(/["']@\/i18n["']/);
     expect(src).toMatch(/from\s+["']\.\/ChatWindow(?:\.tsx)?["']/);
     expect(src).toMatch(/<ChatWindow\b/);
   });

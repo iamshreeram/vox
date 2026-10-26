@@ -454,6 +454,8 @@ const settingUpdaters: {
     commands.changeConverseSmartTurnSetting(value as boolean),
   converse_latency_panel: (value) =>
     commands.changeConverseLatencyPanelSetting(value as boolean),
+  converse_chat_log: (value) =>
+    commands.changeConverseChatLogSetting(value as boolean),
   speaker_filter_enabled: (value) =>
     commands.changeSpeakerFilterEnabledSetting(value as boolean),
   speaker_filter_sensitivity: (value) =>
