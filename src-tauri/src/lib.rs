@@ -5,6 +5,7 @@ mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
 mod catalog;
+mod chat_window;
 mod chinese_script;
 pub mod cli;
 mod clipboard;

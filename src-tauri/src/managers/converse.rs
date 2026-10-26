@@ -668,6 +668,10 @@ pub trait Reporter: Send + Sync {
     /// Receives one transcript event per accepted utterance. Default: ignored.
     fn transcript(&self, _ev: TranscriptEvent) {}
 
+    /// Chat window: receives one recorded line (user text or speech handed to the voice).
+    /// Default: ignored (DESIGN-CHAT 2.2). Stub: the spec tests are red until the hooks land.
+    fn chat(&self, _role: crate::managers::chat_log::ChatRole, _text: &str) {}
+
     /// M4: receives one timing line (observability only). Default: written to the log at info.
     fn timing_line(&self, line: &str) {
         log::info!("{line}");
@@ -4211,6 +4215,10 @@ mod ack_loop_tests;
 #[cfg(test)]
 #[path = "converse_transcript_tests.rs"]
 mod transcript_tests;
+
+#[cfg(test)]
+#[path = "converse_chat_tests.rs"]
+mod chat_tests;
 
 #[cfg(test)]
 #[path = "converse_answer_only_tests.rs"]
