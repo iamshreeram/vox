@@ -54,7 +54,7 @@ pub fn cancel_operation(app: AppHandle) {
 pub fn cancel_routed(app: &AppHandle) {
     let conversation_active = app
         .state::<Arc<crate::managers::converse_runtime::ConverseController>>()
-        .is_active();
+        .is_voice_active();
     match crate::managers::converse_overlay::cancel_route(conversation_active) {
         crate::managers::converse_overlay::CancelRoute::Conversation => {
             app.state::<Arc<crate::managers::converse_runtime::ConverseController>>()

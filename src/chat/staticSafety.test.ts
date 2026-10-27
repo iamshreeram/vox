@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const CHAT_DIR = fileURLToPath(new URL(".", import.meta.url));
-const ALLOWED_COMMANDS = new Set(["getChatSnapshot", "clearChatLog"]);
+// DESIGN-TYPE Rev 1: the user asked to type, so exactly one command is added.
+const ALLOWED_COMMANDS = new Set([
+  "getChatSnapshot",
+  "clearChatLog",
+  "sendChatMessage",
+]);
 
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
@@ -85,7 +90,7 @@ describe("src/chat static safety scan", () => {
     expect(offenders(/\bhref\s*:/)).toEqual([]);
   });
 
-  it("calls only the two allowed backend commands through bindings", () => {
+  it("calls only the three allowed backend commands through bindings", () => {
     const called = new Set<string>();
     for (const file of TEXT) {
       for (const match of file.src.matchAll(/\bcommands\.(\w+)\s*\(/g)) {

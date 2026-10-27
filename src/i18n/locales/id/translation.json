@@ -1670,8 +1670,19 @@
       "idle": "Idle",
       "ended": "Session ended"
     },
-    "empty": "No conversation yet. Say your wake phrase to start.",
-    "footerHint": "Say your wake phrase or press your conversation shortcut to start.",
+    "empty": "No conversation yet. Type a message below, or say your wake phrase.",
+    "footerHint": "Type a message, or say your wake phrase or press your conversation shortcut.",
+    "input": {
+      "label": "Message to Vox",
+      "placeholder": "Type a message to Vox…"
+    },
+    "send": "Send",
+    "sendError": {
+      "not_configured": "Set up a reply model in Settings first.",
+      "busy": "Vox is busy. Try again in a moment.",
+      "too_long": "That message is too long.",
+      "failed": "Could not send your message."
+    },
     "clear": "Clear",
     "clearFailed": "Could not clear the conversation. Try again.",
     "jumpToLatest": "Jump to latest",

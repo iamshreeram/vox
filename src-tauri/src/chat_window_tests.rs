@@ -13,15 +13,18 @@ use std::collections::{BTreeSet, HashSet};
 use std::path::Path;
 
 /// Commands added by DESIGN-CHAT. Asserted by name, independent of how far `lib.rs` has got.
-const NEW_CHAT_COMMANDS: [&str; 4] = [
+const NEW_CHAT_COMMANDS: [&str; 5] = [
     "get_chat_snapshot",
     "clear_chat_log",
     "toggle_chat_window_command",
     "change_converse_chat_log_setting",
+    // TYPING SPEC (DESIGN-TYPE Rev 1): the one command added on the user's request to type.
+    "send_chat_message",
 ];
 
-/// The only commands the chat webview may call (A8).
-const CHAT_ALLOWED: [&str; 2] = ["get_chat_snapshot", "clear_chat_log"];
+/// The only commands the chat webview may call (A8). TYPING SPEC (DESIGN-TYPE Rev 1): the
+/// v1 pair plus `send_chat_message`; nothing else, and the new one is refused elsewhere.
+const CHAT_ALLOWED: [&str; 3] = ["get_chat_snapshot", "clear_chat_log", "send_chat_message"];
 
 /// Locales that must carry the chat keys (the repo's 26 locale directories).
 const LOCALE_COUNT: usize = 26;
@@ -123,7 +126,7 @@ fn toggle_visible_and_focused_hides() {
 // ---------------------------------------------------------------------------------------------
 
 #[test]
-fn chat_label_is_allowed_exactly_two_commands() {
+fn chat_label_is_allowed_exactly_three_commands() {
     let mut failures = Vec::new();
     for command in all_commands() {
         let expected = CHAT_ALLOWED.contains(&command.as_str());
@@ -191,7 +194,7 @@ fn main_may_call_toggle_and_converse_chat_log_setter() {
 }
 
 #[test]
-fn lib_command_list_registers_all_four_chat_commands() {
+fn lib_command_list_registers_all_chat_commands() {
     let registered: HashSet<String> = registered_commands().into_iter().collect();
     let missing: Vec<&str> = NEW_CHAT_COMMANDS
         .iter()
@@ -738,5 +741,168 @@ fn auto_open_never_focuses_and_window_is_dark_and_sized() {
     assert!(
         src.contains("inner_size(480.0, 720.0)") && src.contains("min_inner_size(360.0, 420.0)"),
         "window size 480x720, min 360x420"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// TYPING SPEC (DESIGN-TYPE Rev 1, written by ram-ai; workers must not edit)
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn send_chat_message_is_chat_only_and_never_offered_to_other_windows() {
+    assert!(chat_command_allowed("chat", "send_chat_message"));
+    assert!(!chat_command_allowed("main", "send_chat_message"));
+    assert!(!chat_command_allowed(
+        "recording_overlay",
+        "send_chat_message"
+    ));
+}
+
+#[test]
+fn the_send_command_validates_and_never_logs_the_text() {
+    let src = code_only(&read_crate_file("src/commands/chat.rs"));
+    let start = src
+        .find("fn send_chat_message")
+        .expect("send_chat_message command exists");
+    let body: String = src[start..].chars().take(1500).collect();
+    assert!(
+        body.contains("send_typed"),
+        "must go through ConverseController::send_typed"
+    );
+    for banned in ["log::", "println!", "eprintln!", "dbg!", "tracing::"] {
+        assert!(
+            !body.contains(banned),
+            "must not log the typed text ({banned})"
+        );
+    }
+    // returns a stable code, never the text
+    assert!(
+        body.contains(".code()"),
+        "errors are returned as TypedError::code()"
+    );
+}
+
+#[test]
+fn typed_text_modules_never_log() {
+    for rel in ["src/managers/converse_text.rs"] {
+        let src = code_only(&read_crate_file(rel));
+        for banned in ["log::", "println!", "eprintln!", "dbg!", "tracing::"] {
+            assert!(!src.contains(banned), "{rel} must not use {banned}");
+        }
+    }
+}
+
+/// Body of `fn name` (brace matched), so tests do not depend on function order or length.
+fn fn_body(src: &str, name: &str) -> String {
+    let start = src
+        .find(&format!("fn {name}"))
+        .unwrap_or_else(|| panic!("fn {name} must exist"));
+    let open = start + src[start..].find('{').expect("body brace");
+    let mut depth = 0usize;
+    for (i, ch) in src[open..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return src[open..open + i + 1].to_string();
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("unbalanced braces in fn {name}");
+}
+
+#[test]
+fn the_text_session_never_arms_the_microphone_or_speaks_in_the_real_platform() {
+    let src = code_only(&read_crate_file("src/managers/converse_platform.rs"));
+    let body = fn_body(&src, "parts_text");
+    assert!(body.contains("PendingEars"), "text ears are PendingEars");
+    assert!(body.contains("SilentMouth"), "text mouth is SilentMouth");
+    assert!(
+        body.contains("TextHands"),
+        "text hands refuse paste and jobs"
+    );
+    for banned in ["RealEars", "RealMouth", "BargeMonitor", "SpeakerGate"] {
+        assert!(!body.contains(banned), "parts_text must not build {banned}");
+    }
+}
+
+#[test]
+fn text_sessions_persist_nothing_and_run_no_job_announcer() {
+    let src = code_only(&read_crate_file("src/managers/converse_platform.rs"));
+    let body = fn_body(&src, "parts_text");
+    assert!(
+        body.contains("transcript: None"),
+        "text sessions collect no transcript"
+    );
+    assert!(
+        body.contains("on_complete: None"),
+        "text sessions save nothing at the end"
+    );
+    assert!(
+        body.contains("announcer: None"),
+        "no job announcer (it would speak)"
+    );
+}
+
+#[test]
+fn text_hands_refuse_background_jobs_so_nothing_can_speak_later() {
+    let src = code_only(&read_crate_file("src/managers/converse_text.rs"));
+    let body = fn_body(&src, "start_job");
+    assert!(
+        body.contains("Unsupported"),
+        "TextHands::start_job must be Unsupported"
+    );
+    let has = fn_body(&src, "has_active_job");
+    assert!(
+        has.contains("false"),
+        "TextHands::has_active_job must be false"
+    );
+}
+
+#[test]
+fn text_mode_text_sessions_use_the_long_confirmation_window_and_a_high_turn_limit() {
+    let src = code_only(&read_crate_file("src/managers/converse_platform.rs"));
+    let body = fn_body(&src, "parts_text");
+    assert!(
+        body.contains("confirm_listen_timeout") && body.contains("from_secs(60)"),
+        "text sessions confirm with a 60 s window"
+    );
+    assert!(body.contains("max_turns"), "text sessions raise max_turns");
+}
+
+#[test]
+fn send_typed_binds_every_enqueue_to_the_session_generation() {
+    let src = code_only(&read_crate_file("src/managers/converse_runtime.rs"));
+    let body = fn_body(&src, "send_typed");
+    assert!(
+        body.contains("push_for"),
+        "send_typed must enqueue with push_for(generation, ..)"
+    );
+    assert!(
+        !body.contains(".push("),
+        "send_typed must never use the unbound push"
+    );
+}
+
+#[test]
+fn the_cancel_button_only_stops_voice_sessions_not_a_text_chat() {
+    let src = code_only(&read_crate_file("src/commands/mod.rs"));
+    let body = fn_body(&src, "cancel_routed");
+    assert!(
+        body.contains("is_voice_active"),
+        "cancel_routed must route to the conversation only for a voice session"
+    );
+}
+
+#[test]
+fn text_state_changes_never_reach_the_floating_overlay() {
+    let src = code_only(&read_crate_file("src/managers/converse_platform.rs"));
+    let body = fn_body(&src, "on_state_text");
+    assert!(
+        !body.contains("overlay_dispatcher"),
+        "on_state_text must not drive the recording overlay"
     );
 }

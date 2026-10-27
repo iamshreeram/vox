@@ -17,7 +17,9 @@ pub const CHAT_WINDOW_LABEL: &str = "chat";
 pub const CHAT_ENTRY_URL: &str = "src/chat/index.html";
 
 /// Commands only the chat window may call (A8). Every other app command is refused from it.
-const CHAT_ALLOWED_COMMANDS: [&str; 2] = ["get_chat_snapshot", "clear_chat_log"];
+/// `send_chat_message` is the typing command (DESIGN-TYPE Rev 4); it is refused everywhere else.
+const CHAT_ALLOWED_COMMANDS: [&str; 3] =
+    ["get_chat_snapshot", "clear_chat_log", "send_chat_message"];
 
 /// The main window label, used to decide the macOS activation policy on hide.
 const MAIN_WINDOW_LABEL: &str = "main";

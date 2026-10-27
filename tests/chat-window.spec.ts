@@ -35,6 +35,10 @@ interface WireSnapshot {
 interface HarnessConfig {
   snapshots: WireSnapshot[];
   clearFails: boolean;
+  /** TYPING SPEC: reject send_chat_message with this error code (tauri-specta turns a non-Error rejection into status:error). */
+  sendError?: string;
+  /** TYPING SPEC: resolve send_chat_message only after this many ms. */
+  sendDelayMs?: number;
 }
 
 interface ChatWindowLike {
@@ -47,11 +51,13 @@ interface ChatWindowLike {
   };
   __pwAllInvokes: string[];
   __pwSnapshotQueue: WireSnapshot[];
+  __pwSent: string[];
 }
 
 const EVENT = "converse-chat";
 const SNAPSHOT_COMMAND = "get_chat_snapshot";
 const CLEAR_COMMAND = "clear_chat_log";
+const SEND_COMMAND = "send_chat_message";
 const ALLOWED_PREFIX = "plugin:event|";
 const CHAT_PAGE = "/src/chat/index.html";
 
@@ -86,6 +92,7 @@ async function installChatHarness(
   await page.addInitScript((cfg: HarnessConfig) => {
     const win = window as unknown as ChatWindowLike;
     win.__pwAllInvokes = [];
+    win.__pwSent = [];
     win.__pwSnapshotQueue = cfg.snapshots.slice();
     let last: WireSnapshot | null = null;
     const original = win.__TAURI_INTERNALS__.invoke;
@@ -93,6 +100,16 @@ async function installChatHarness(
       win.__pwAllInvokes.push(name);
       if (name === "clear_chat_log" && cfg.clearFails) {
         return Promise.reject(new Error("boom"));
+      }
+      if (name === "send_chat_message") {
+        const text = (args as { text?: string } | undefined)?.text ?? "";
+        win.__pwSent.push(text);
+        if (cfg.sendError !== undefined) {
+          return Promise.reject(cfg.sendError);
+        }
+        return new Promise((resolve) =>
+          setTimeout(() => resolve(null), cfg.sendDelayMs ?? 0),
+        );
       }
       if (name === "get_chat_snapshot") {
         const next = win.__pwSnapshotQueue.shift();
@@ -110,6 +127,10 @@ async function invokes(page: Page): Promise<string[]> {
   return page.evaluate(
     () => (window as unknown as ChatWindowLike).__pwAllInvokes,
   );
+}
+
+async function sentTexts(page: Page): Promise<string[]> {
+  return page.evaluate(() => (window as unknown as ChatWindowLike).__pwSent);
 }
 
 async function snapshotCalls(page: Page): Promise<number> {
@@ -147,9 +168,12 @@ test.describe("Conversation window: hydration and content", () => {
   }) => {
     await openChat(page, { snapshots: [snapshot(0, [])], clearFails: false });
     await expect(
-      page.getByText("No conversation yet. Say your wake phrase to start.", {
-        exact: true,
-      }),
+      page.getByText(
+        "No conversation yet. Type a message below, or say your wake phrase.",
+        {
+          exact: true,
+        },
+      ),
     ).toBeVisible();
     await expect(bubbles(page)).toHaveCount(0);
   });
@@ -358,9 +382,12 @@ test.describe("Conversation window: Clear and command allow-list", () => {
     await expect(bubbles(page)).toHaveText(["gone soon"]);
     await clearButton(page).click();
     await expect(
-      page.getByText("No conversation yet. Say your wake phrase to start.", {
-        exact: true,
-      }),
+      page.getByText(
+        "No conversation yet. Type a message below, or say your wake phrase.",
+        {
+          exact: true,
+        },
+      ),
     ).toBeVisible();
     expect(await clearCalls(page)).toBe(1);
   });
@@ -382,7 +409,7 @@ test.describe("Conversation window: Clear and command allow-list", () => {
     await expect(bubbles(page)).toHaveText(["still here"]);
   });
 
-  test("the page calls no command other than get_chat_snapshot and clear_chat_log", async ({
+  test("the page calls no command other than get_chat_snapshot, clear_chat_log and send_chat_message", async ({
     page,
   }) => {
     await openChat(page, { snapshots: [snapshot(0, [])], clearFails: false });
@@ -393,6 +420,7 @@ test.describe("Conversation window: Clear and command allow-list", () => {
       const allowed =
         name === SNAPSHOT_COMMAND ||
         name === CLEAR_COMMAND ||
+        name === SEND_COMMAND ||
         name.startsWith(ALLOWED_PREFIX);
       expect(allowed, `unexpected command ${name}`).toBe(true);
     }
@@ -839,5 +867,348 @@ test.describe("Conversation window: enterprise look and state colours", () => {
       const nums = (bg.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
       expect(nums.reduce((a, b) => a + b, 0) / 3).toBeLessThan(40);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// TYPING SPEC (DESIGN-TYPE Rev 1, written by ram-ai; workers must not weaken or delete these)
+// Markup contract: composer is <form data-testid="chat-composer"> below the log and above the
+// footer, holding <textarea data-testid="chat-input" aria-label="Message to Vox"
+// placeholder="Type a message to Vox…" maxlength=2000 rows=1> and
+// <button type="submit" data-testid="chat-send" accessible name "Send">. Enter sends, Shift+Enter
+// is a newline, Enter while composing (IME) does nothing. Errors render as role=alert text.
+// The transcript line is NOT added locally: it arrives from the backend through the events.
+// ---------------------------------------------------------------------------------------------
+
+const input = (page: Page): Locator => page.getByTestId("chat-input");
+const sendButton = (page: Page): Locator =>
+  page.getByRole("button", { name: "Send", exact: true });
+
+async function openTyping(
+  page: Page,
+  extra: Partial<HarnessConfig> = {},
+): Promise<void> {
+  await openChat(page, {
+    snapshots: [snapshot(0, [])],
+    clearFails: false,
+    ...extra,
+  });
+}
+
+test.describe("Conversation window: typing", () => {
+  test("the composer sits between the transcript and the footer and is labelled", async ({
+    page,
+  }) => {
+    await openTyping(page);
+    await expect(input(page)).toBeVisible();
+    await expect(input(page)).toHaveAttribute("aria-label", "Message to Vox");
+    await expect(input(page)).toHaveAttribute(
+      "placeholder",
+      "Type a message to Vox…",
+    );
+    await expect(input(page)).toHaveAttribute("maxlength", "2000");
+    const [l, c, f] = await Promise.all([
+      log(page).boundingBox(),
+      page.getByTestId("chat-composer").boundingBox(),
+      page.locator(".chat-footer").boundingBox(),
+    ]);
+    if (!l || !c || !f) throw new Error("boxes");
+    expect(c.y).toBeGreaterThanOrEqual(l.y + l.height - 1);
+    expect(f.y).toBeGreaterThanOrEqual(c.y + c.height - 1);
+  });
+
+  test("Send is disabled for empty or whitespace-only text and enabled otherwise", async ({
+    page,
+  }) => {
+    await openTyping(page);
+    await expect(sendButton(page)).toBeDisabled();
+    await input(page).fill("   ");
+    await expect(sendButton(page)).toBeDisabled();
+    await input(page).fill("hello");
+    await expect(sendButton(page)).toBeEnabled();
+  });
+
+  test("clicking Send calls send_chat_message once with the trimmed text, clears the box and keeps focus", async ({
+    page,
+  }) => {
+    await openTyping(page);
+    await input(page).fill("  what is the weather  ");
+    await sendButton(page).click();
+    await expect.poll(() => sentTexts(page)).toEqual(["what is the weather"]);
+    await expect(input(page)).toHaveValue("");
+    await expect(input(page)).toBeFocused();
+  });
+
+  test("Enter sends and Shift+Enter inserts a newline without sending", async ({
+    page,
+  }) => {
+    await openTyping(page);
+    await input(page).click();
+    await page.keyboard.type("line one");
+    await page.keyboard.press("Shift+Enter");
+    await page.keyboard.type("line two");
+    expect(await sentTexts(page)).toEqual([]);
+    await expect(input(page)).toHaveValue("line one\nline two");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => sentTexts(page)).toEqual(["line one\nline two"]);
+    await expect(input(page)).toHaveValue("");
+  });
+
+  test("Enter while an IME composition is active does not send", async ({
+    page,
+  }) => {
+    await openTyping(page);
+    await input(page).fill("konnichiwa");
+    await input(page).evaluate((el) => {
+      el.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          isComposing: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    await page.waitForTimeout(100);
+    expect(await sentTexts(page)).toEqual([]);
+    await expect(input(page)).toHaveValue("konnichiwa");
+  });
+
+  test("a message in flight blocks a second send; a newer draft survives the first one succeeding", async ({
+    page,
+  }) => {
+    await openTyping(page, { sendDelayMs: 400 });
+    await input(page).fill("first");
+    await page.keyboard.press("Enter");
+    await input(page).fill("second");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(150);
+    expect(await sentTexts(page)).toEqual(["first"]);
+    await expect(sendButton(page)).toBeDisabled();
+    await expect(sendButton(page)).toBeEnabled({ timeout: 3000 });
+    // the first send succeeded but the box now holds a newer draft: it must not be wiped
+    await expect(input(page)).toHaveValue("second");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => sentTexts(page)).toEqual(["first", "second"]);
+    await expect(input(page)).toHaveValue("");
+  });
+
+  test("two submits in the same tick invoke the command once", async ({
+    page,
+  }) => {
+    await openTyping(page, { sendDelayMs: 300 });
+    await input(page).fill("only once");
+    await input(page).evaluate((el) => {
+      for (let i = 0; i < 2; i += 1) {
+        el.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Enter",
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }
+    });
+    await page.waitForTimeout(500);
+    expect(await sentTexts(page)).toEqual(["only once"]);
+  });
+
+  test("the typed line is not echoed locally; it appears when the backend event arrives", async ({
+    page,
+  }) => {
+    await openTyping(page);
+    await input(page).fill("hello vox");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => sentTexts(page)).toEqual(["hello vox"]);
+    await expect(bubbles(page)).toHaveCount(0);
+    await emitMockEvent(page, EVENT, entryEvent(1, entry(1, "hello vox")));
+    await expect(bubbles(page)).toHaveText(["hello vox"]);
+  });
+
+  const ERROR_TEXT: Array<[string, string]> = [
+    ["not_configured", "Set up a reply model in Settings first."],
+    ["busy", "Vox is busy. Try again in a moment."],
+    ["too_long", "That message is too long."],
+    ["failed", "Could not send your message."],
+    ["something_new", "Could not send your message."],
+  ];
+  for (const [code, text] of ERROR_TEXT) {
+    test(`a ${code} failure keeps the text, shows "${text}" as an alert and clears when typing resumes`, async ({
+      page,
+    }) => {
+      await openTyping(page, { sendError: code });
+      await input(page).fill("keep me");
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("alert")).toHaveText(text);
+      await expect(input(page)).toHaveValue("keep me");
+      await input(page).press("End");
+      await page.keyboard.type("!");
+      await expect(page.getByRole("alert")).toHaveCount(0);
+    });
+  }
+
+  test("the character counter appears from 1800 characters and the box is capped at 2000", async ({
+    page,
+  }) => {
+    await openTyping(page);
+    await input(page).fill("a".repeat(1799));
+    await expect(page.getByTestId("chat-count")).toHaveCount(0);
+    await input(page).fill("a".repeat(1850));
+    await expect(page.getByTestId("chat-count")).toContainText("1850");
+    await expect(page.getByTestId("chat-count")).toContainText("2000");
+    await input(page).fill("a".repeat(2500));
+    const len = await input(page).evaluate(
+      (el) => (el as HTMLTextAreaElement).value.length,
+    );
+    expect(len).toBeLessThanOrEqual(2000);
+  });
+
+  test("the box grows with its content up to four lines, then scrolls", async ({
+    page,
+  }) => {
+    await openTyping(page);
+    const h = async () => (await input(page).boundingBox())?.height ?? 0;
+    const one = await h();
+    await input(page).fill("1\n2\n3");
+    const three = await h();
+    expect(three).toBeGreaterThan(one);
+    await input(page).fill(
+      Array.from({ length: 12 }, (_, i) => `${i}`).join("\n"),
+    );
+    const many = await h();
+    expect(many).toBeLessThanOrEqual(one * 4 + 24);
+    const scrollable = await input(page).evaluate(
+      (el) => el.scrollHeight > el.clientHeight,
+    );
+    expect(scrollable).toBe(true);
+  });
+
+  test("typed text is shown and sent as plain text (markup stays literal)", async ({
+    page,
+  }) => {
+    await openTyping(page);
+    await input(page).fill("<img src=x onerror=alert(1)> & <b>bold</b>");
+    await page.keyboard.press("Enter");
+    await expect
+      .poll(() => sentTexts(page))
+      .toEqual(["<img src=x onerror=alert(1)> & <b>bold</b>"]);
+    await expect(page.locator(".chat-root img[src='x']")).toHaveCount(0);
+  });
+
+  test("at 360px the composer does not overflow and Send stays visible", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 360, height: 640 });
+    await openTyping(page);
+    await input(page).fill("x".repeat(500));
+    const o = await page.evaluate(() => {
+      const f = document.querySelector(
+        '[data-testid="chat-composer"]',
+      ) as HTMLElement;
+      return {
+        doc:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+        form: f.scrollWidth - f.clientWidth,
+      };
+    });
+    expect(o.doc).toBeLessThanOrEqual(0);
+    expect(o.form).toBeLessThanOrEqual(0);
+    await expect(sendButton(page)).toBeVisible();
+  });
+
+  test("input text, placeholder and Send meet 4.5:1 contrast on opaque backgrounds", async ({
+    page,
+  }) => {
+    await openTyping(page);
+    await input(page).fill("hello");
+    const failures = await page.evaluate(() => {
+      const parse = (v: string): [number, number, number, number] | null => {
+        const m = v.match(/rgba?\(([^)]+)\)/);
+        if (!m || !m[1]) return null;
+        const p = m[1]
+          .split(/[ ,/]+/)
+          .filter(Boolean)
+          .map(Number);
+        return [p[0] ?? 0, p[1] ?? 0, p[2] ?? 0, p[3] ?? 1];
+      };
+      const lum = (r: number, g: number, b: number) => {
+        const f = (x: number) => {
+          const s = x / 255;
+          return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+        };
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+      };
+      const bgOf = (el: Element) => {
+        let node: Element | null = el;
+        while (node) {
+          const cs = getComputedStyle(node);
+          if (cs.backgroundImage !== "none") return "gradient";
+          const b = parse(cs.backgroundColor);
+          if (b && b[3] >= 0.99) return b;
+          if (b && b[3] > 0) return "translucent";
+          node = node.parentElement;
+        }
+        return null;
+      };
+      const out: string[] = [];
+      const ta = document.querySelector(
+        '[data-testid="chat-input"]',
+      ) as HTMLElement;
+      const btn = document.querySelector(
+        '[data-testid="chat-send"]',
+      ) as HTMLElement;
+      const checks: Array<[string, Element, string | null]> = [
+        ["input text", ta, getComputedStyle(ta).color],
+        ["placeholder", ta, getComputedStyle(ta, "::placeholder").color],
+        ["send", btn, getComputedStyle(btn).color],
+      ];
+      for (const [name, el, color] of checks) {
+        const fg = color ? parse(color) : null;
+        const bg = bgOf(el);
+        if (!fg || !bg || typeof bg === "string") {
+          out.push(`${name}: bad colours (${String(bg)})`);
+          continue;
+        }
+        const a = lum(fg[0], fg[1], fg[2]);
+        const b = lum(bg[0], bg[1], bg[2]);
+        const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+        if (name !== "send" && ratio < 4.5)
+          out.push(`${name}: ${ratio.toFixed(2)}`);
+      }
+      return out;
+    });
+    // the Send button is enabled here (text typed) so it is also checked
+    expect(failures).toEqual([]);
+  });
+
+  test("keyboard focus on the input and on Send is clearly visible", async ({
+    page,
+  }) => {
+    await openTyping(page);
+    await input(page).fill("hello");
+    await input(page).focus();
+    const visible = async (loc: Locator) =>
+      loc.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return (
+          (s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0) ||
+          s.boxShadow !== "none"
+        );
+      });
+    expect(await visible(input(page))).toBe(true);
+    await page.keyboard.press("Tab");
+    await expect(sendButton(page)).toBeFocused();
+    expect(await visible(sendButton(page))).toBe(true);
+  });
+
+  test("typing works in the ended and error states too", async ({ page }) => {
+    await openTyping(page, {
+      snapshots: [snapshot(1, [], { state: "idle", end: "user_ended" })],
+    });
+    await expect(input(page)).toBeEnabled();
+    await input(page).fill("start again");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => sentTexts(page)).toEqual(["start again"]);
   });
 });
