@@ -906,3 +906,125 @@ fn text_state_changes_never_reach_the_floating_overlay() {
         "on_state_text must not drive the recording overlay"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// FRONT SPEC (DESIGN-A Rev 1, written by ram-ai; workers must not weaken or delete these)
+// The window must come to the front when the user toggles it, even from tray-only (accessory)
+// mode, and every show/build failure must leave a log line (no window content, no text).
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn toggling_the_window_promotes_the_app_before_showing_and_focusing() {
+    let src = code_only(&read_crate_file("src/chat_window.rs"));
+    let body = fn_body(&src, "show_existing");
+    let policy = body
+        .find("set_activation_policy")
+        .expect("show_existing must set the macOS activation policy");
+    let show = body
+        .find(".show()")
+        .expect("show_existing must show the window");
+    let focus = body
+        .find(".set_focus()")
+        .expect("show_existing must focus the window");
+    assert!(policy < show, "activation policy must be set before show()");
+    assert!(show < focus, "show() must come before set_focus()");
+}
+
+#[test]
+fn window_operations_are_never_silently_discarded() {
+    let src = code_only(&read_crate_file("src/chat_window.rs"));
+    for banned in [
+        "let _ = window.show()",
+        "let _ = window.set_focus()",
+        "let _ = window.unminimize()",
+        "let _ = window.hide()",
+        "let _ = chat.hide()",
+    ] {
+        assert!(
+            !src.contains(banned),
+            "chat_window.rs must log failures instead of `{banned}`"
+        );
+    }
+}
+
+#[test]
+fn toggling_and_opening_log_what_they_decided_and_what_failed() {
+    let src = code_only(&read_crate_file("src/chat_window.rs"));
+    let toggle = fn_body(&src, "toggle_on_main_thread");
+    assert!(
+        toggle.contains("info!") || toggle.contains("debug!"),
+        "toggle_on_main_thread must log exists/visible/focused and the chosen action"
+    );
+    let open = fn_body(&src, "open_on_main_thread");
+    assert!(
+        open.contains("warn!") || open.contains("error!"),
+        "open_on_main_thread must log a failed build"
+    );
+    let build = fn_body(&src, "build_chat_window");
+    assert!(
+        build.contains("warn!") || build.contains("error!") || build.contains("info!"),
+        "build_chat_window must log its result"
+    );
+}
+
+#[test]
+fn a_failed_toggle_is_logged_not_dropped() {
+    let src = code_only(&read_crate_file("src/chat_window.rs"));
+    let body = fn_body(&src, "toggle_chat_window");
+    assert!(
+        !body.contains("let _ = toggle_on_main_thread"),
+        "the toggle result must be logged"
+    );
+}
+
+#[test]
+fn chat_window_logging_never_prints_conversation_content() {
+    let src = code_only(&read_crate_file("src/chat_window.rs"));
+    for line in src.lines() {
+        let l = line.trim();
+        if l.starts_with("log::")
+            || l.contains("info!(")
+            || l.contains("warn!(")
+            || l.contains("debug!(")
+            || l.contains("error!(")
+        {
+            for banned in ["text", "message", "transcript", "entry", "snapshot"] {
+                assert!(
+                    !l.to_lowercase().contains(banned),
+                    "chat_window.rs log line must not mention `{banned}`: {l}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn closing_the_window_goes_through_hide_existing() {
+    let src = code_only(&read_crate_file("src/chat_window.rs"));
+    let body = fn_body(&src, "build_chat_window");
+    assert!(
+        body.contains("hide_existing"),
+        "the close-requested handler must hide through hide_existing so the Dock policy is restored"
+    );
+    assert!(
+        !body.contains("chat.hide()"),
+        "no direct hide in the close handler"
+    );
+}
+
+#[test]
+fn the_dock_policy_is_demoted_only_after_a_successful_hide() {
+    let src = code_only(&read_crate_file("src/chat_window.rs"));
+    let body = fn_body(&src, "hide_existing");
+    let hide = body
+        .find(".hide()")
+        .expect("hide_existing hides the window");
+    let policy = body
+        .find("set_activation_policy")
+        .expect("hide_existing restores the policy");
+    assert!(hide < policy, "hide first, then the policy");
+    assert!(
+        body.contains("is_ok()") || body.contains("Ok(()) =>") || body.contains("if let Err"),
+        "the policy change must depend on the hide result"
+    );
+}

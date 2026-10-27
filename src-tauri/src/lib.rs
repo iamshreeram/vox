@@ -1807,6 +1807,8 @@ mod agent_bridge_settings_tests;
 #[cfg(test)]
 mod ambient_settings_tests;
 #[cfg(test)]
+mod acp_dictation_switch_tests;
+#[cfg(test)]
 mod settings_acp_permission_tests;
 #[cfg(test)]
 mod settings_validation_tests;
