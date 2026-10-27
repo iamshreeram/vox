@@ -1,6 +1,8 @@
-// Original "orb" avatar: inline SVG + CSS only. The face is a pure function of `face`
-// (see avatarFace in chatModel.ts); all motion is CSS keyframes in chat.css (transform/opacity).
-// The SVG is decorative: the status caption and the transcript carry the meaning.
+// Vox orb avatar: inline SVG + CSS only. The orb is the Vox icon (gold sphere with halo rings);
+// it has no face. The face value is a pure function of `face` (see avatarFace in chatModel.ts);
+// all motion is CSS keyframes in chat.css (transform/opacity). The SVG is decorative: the
+// status pill and the transcript carry the meaning. Halo, glow, arc and dots take the state
+// accent through var(--chat-accent) (set on .chat-root from chatTheme.accentStyle).
 import type { AvatarFace } from "./chatModel";
 
 export default function VoxAvatar({ face }: { face: AvatarFace }) {
@@ -13,56 +15,43 @@ export default function VoxAvatar({ face }: { face: AvatarFace }) {
       viewBox="0 0 160 160"
     >
       <defs>
-        <radialGradient id="vox-body-fill" cx="40%" cy="34%" r="72%">
-          <stop offset="0" className="vox-stop-hi" />
-          <stop offset="1" className="vox-stop-lo" />
+        <radialGradient id="vox-orb" cx="36%" cy="30%" r="75%">
+          <stop offset="0" stopColor="#FFE27A" />
+          <stop offset="0.55" stopColor="#F5B921" />
+          <stop offset="1" stopColor="#B97A00" />
+        </radialGradient>
+        <radialGradient id="vox-glow-fill">
+          <stop offset="0" stopColor="currentColor" stopOpacity="0.38" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0" />
         </radialGradient>
       </defs>
-      <circle className="vox-glow" cx="80" cy="80" r="74" />
-      <circle className="vox-ring" cx="80" cy="80" r="66" />
+      <circle className="vox-glow" cx="80" cy="80" r="78" />
+      <circle className="vox-ring vox-ring-1" cx="80" cy="80" r="50" />
+      <circle className="vox-ring vox-ring-2" cx="80" cy="80" r="60" />
+      <circle className="vox-ring vox-ring-3" cx="80" cy="80" r="70" />
       <circle className="vox-arc" cx="80" cy="80" r="66" />
-      <g className="vox-float">
-        <g className="vox-pulse">
-          <circle
-            className="vox-body"
-            cx="80"
-            cy="82"
-            r="48"
-            fill="url(#vox-body-fill)"
-          />
-          <g className="vox-eyes">
-            <ellipse
-              className="vox-eye vox-eye-l"
-              cx="63"
-              cy="76"
-              rx="7"
-              ry="9"
-            />
-            <ellipse
-              className="vox-eye vox-eye-r"
-              cx="97"
-              cy="76"
-              rx="7"
-              ry="9"
-            />
-          </g>
-          <g className="vox-closed">
-            <path d="M56 78 q7 6 14 0" />
-            <path d="M90 78 q7 6 14 0" />
-          </g>
-          <g className="vox-brows">
-            <path className="vox-brow vox-brow-l" d="M55 62 l14 -6" />
-            <path className="vox-brow vox-brow-r" d="M105 62 l-14 -6" />
-          </g>
-          <path className="vox-mouth" d="M66 102 q14 10 28 0" />
-        </g>
-      </g>
       <g className="vox-dots">
-        <circle cx="80" cy="8" r="4" />
-        <circle cx="134" cy="112" r="4" />
-        <circle cx="26" cy="112" r="4" />
+        <circle cx="80" cy="10" r="3.5" />
+        <circle cx="140.6" cy="115" r="3.5" />
+        <circle cx="19.4" cy="115" r="3.5" />
       </g>
-      <path className="vox-z" d="M124 26 h10 l-10 12 h10" />
+      <g className="vox-body-group">
+        <circle
+          className="vox-body"
+          cx="80"
+          cy="80"
+          r="42"
+          fill="url(#vox-orb)"
+        />
+        <ellipse
+          className="vox-shine"
+          cx="66"
+          cy="62"
+          rx="15"
+          ry="9"
+          transform="rotate(-28 66 62)"
+        />
+      </g>
     </svg>
   );
 }

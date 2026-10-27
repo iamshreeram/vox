@@ -1,5 +1,12 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import {
+  test,
+  expect,
+  type BrowserContext,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 import { emitMockEvent, installTauriMock } from "./fixtures/tauriMock";
+import { CHAT_COLORS, FACE_ACCENT } from "../src/chat/chatTheme";
 
 /*
  * Standalone conversation window (src/chat/index.html) against the Vite dev server
@@ -119,8 +126,10 @@ async function waitForSubscription(page: Page): Promise<void> {
 }
 
 const log = (page: Page): Locator => page.getByRole("log");
+// UI-REFRESH (DESIGN-UI Rev 2): each [data-role] entry holds its plain entry text in exactly one
+// [data-testid="chat-text"] element; sender label and time live in separate meta elements.
 const bubbles = (page: Page): Locator =>
-  page.getByRole("log").locator("[data-role]");
+  page.getByRole("log").locator('[data-role] [data-testid="chat-text"]');
 const clearButton = (page: Page): Locator =>
   page.getByRole("button", { name: "Clear", exact: true });
 const jumpButton = (page: Page): Locator =>
@@ -386,6 +395,449 @@ test.describe("Conversation window: Clear and command allow-list", () => {
         name === CLEAR_COMMAND ||
         name.startsWith(ALLOWED_PREFIX);
       expect(allowed, `unexpected command ${name}`).toBe(true);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// UI-REFRESH SPEC (DESIGN-UI Rev 2, written by ram-ai; workers must not weaken or delete these)
+// Markup contract: .chat-root[data-face] carries style --chat-accent (set from chatTheme);
+// header: img[data-testid=chat-brand-icon][alt=""], [data-testid=chat-brand-name]="Vox",
+// [data-testid=chat-brand-sub]="Conversation", Clear button, recording-off badge;
+// stage: svg orb, .chat-eq bars, ONE status pill .chat-pill holding the status text;
+// bubbles: li[data-role] > .chat-meta(.chat-sender, time.chat-time) + [data-testid=chat-text];
+// system notes have no sender. Backgrounds of root, bubbles, pill, header are opaque background-color.
+// ---------------------------------------------------------------------------------------------
+
+const FACE_CASES = [
+  { face: "idle", state: "idle", end: null },
+  { face: "listening", state: "listening", end: null },
+  { face: "thinking", state: "thinking", end: null },
+  { face: "acting", state: "acting", end: null },
+  { face: "speaking", state: "speaking", end: null },
+  { face: "sleep", state: "idle", end: "user_ended" },
+  { face: "concerned", state: "idle", end: "audio_unavailable" },
+] as const;
+
+/**
+ * One harness installation per page (C8): every iteration of a multi-state test gets its own
+ * fresh page, so init scripts never accumulate and each page sees only its own snapshot.
+ */
+async function withFreshChat<T>(
+  context: BrowserContext,
+  config: HarnessConfig,
+  fn: (page: Page) => Promise<T>,
+  prepare?: (page: Page) => Promise<void>,
+): Promise<T> {
+  const page = await context.newPage();
+  try {
+    if (prepare) await prepare(page);
+    await openChat(page, config);
+    return await fn(page);
+  } finally {
+    await page.close();
+  }
+}
+
+const root = (page: Page): Locator => page.locator(".chat-root");
+
+async function rootAccent(page: Page): Promise<string> {
+  return root(page).evaluate((el) =>
+    getComputedStyle(el).getPropertyValue("--chat-accent").trim().toLowerCase(),
+  );
+}
+
+test.describe("Conversation window: enterprise look and state colours", () => {
+  for (const c of FACE_CASES) {
+    test(`face ${c.face}: root data-face and --chat-accent come from the palette`, async ({
+      page,
+    }) => {
+      await openChat(page, {
+        snapshots: [
+          snapshot(1, [entry(1, "hi")], { state: c.state, end: c.end }),
+        ],
+        clearFails: false,
+      });
+      await expect(root(page)).toHaveAttribute("data-face", c.face);
+      expect(await rootAccent(page)).toBe(FACE_ACCENT[c.face].toLowerCase());
+    });
+  }
+
+  test("listening and speaking use different accents, both different from idle", async ({
+    context,
+  }) => {
+    const seen: Record<string, string> = {};
+    for (const face of ["idle", "listening", "speaking"] as const) {
+      const c = FACE_CASES.find((x) => x.face === face);
+      if (!c) throw new Error("case");
+      seen[face] = await withFreshChat(
+        context,
+        {
+          snapshots: [snapshot(1, [], { state: c.state, end: c.end })],
+          clearFails: false,
+        },
+        rootAccent,
+      );
+    }
+    expect(new Set(Object.values(seen)).size).toBe(3);
+  });
+
+  test("a live state event changes the accent without a reload", async ({
+    page,
+  }) => {
+    await openChat(page, { snapshots: [snapshot(1, [])], clearFails: false });
+    expect(await rootAccent(page)).toBe(FACE_ACCENT.idle.toLowerCase());
+    await emitMockEvent(page, EVENT, {
+      seq: 2,
+      kind: { type: "state", state: "listening", end: null },
+    });
+    await expect
+      .poll(() => rootAccent(page))
+      .toBe(FACE_ACCENT.listening.toLowerCase());
+    await emitMockEvent(page, EVENT, {
+      seq: 3,
+      kind: { type: "state", state: "speaking", end: null },
+    });
+    await expect
+      .poll(() => rootAccent(page))
+      .toBe(FACE_ACCENT.speaking.toLowerCase());
+  });
+
+  test("the header shows the Vox icon, name and subtitle; the icon loads", async ({
+    page,
+  }) => {
+    await openChat(page, { snapshots: [snapshot(0, [])], clearFails: false });
+    const icon = page.getByTestId("chat-brand-icon");
+    await expect(icon).toBeVisible();
+    await expect(icon).toHaveAttribute("alt", "");
+    const loaded = await icon.evaluate(
+      (el) =>
+        (el as HTMLImageElement).complete &&
+        (el as HTMLImageElement).naturalWidth > 0,
+    );
+    expect(loaded).toBe(true);
+    await expect(page.getByTestId("chat-brand-name")).toHaveText("Vox");
+    await expect(page.getByTestId("chat-brand-sub")).toHaveText("Conversation");
+  });
+
+  test("the status text appears exactly once (in the pill)", async ({
+    page,
+  }) => {
+    await openChat(page, {
+      snapshots: [snapshot(1, [], { state: "speaking" })],
+      clearFails: false,
+    });
+    await expect(page.getByText("Speaking", { exact: true })).toHaveCount(1);
+    await expect(page.locator(".chat-pill")).toContainText("Speaking");
+  });
+
+  test("bubbles carry a sender label and a visible time; system notes carry no sender", async ({
+    page,
+  }) => {
+    await openChat(page, {
+      snapshots: [
+        snapshot(
+          3,
+          [
+            entry(1, "hello"),
+            entry(2, "hi there", "assistant"),
+            {
+              id: 3,
+              tsMs: 1003,
+              role: "system",
+              text: "system:started",
+            },
+          ],
+          { state: "listening" },
+        ),
+      ],
+      clearFails: false,
+    });
+    const user = page.locator('[data-role="user"]');
+    const assistant = page.locator('[data-role="assistant"]');
+    const system = page.locator('[data-role="system"]');
+    await expect(user.locator(".chat-sender")).toHaveText("You");
+    await expect(assistant.locator(".chat-sender")).toHaveText("Vox");
+    await expect(user.locator("time.chat-time")).toBeVisible();
+    await expect(assistant.locator("time.chat-time")).not.toHaveText("");
+    await expect(system.locator(".chat-sender")).toHaveCount(0);
+    await expect(user.locator('[data-testid="chat-text"]')).toHaveText("hello");
+    await expect(assistant.locator('[data-testid="chat-text"]')).toHaveText(
+      "hi there",
+    );
+  });
+
+  test("user and assistant bubbles are visually distinct and aligned to opposite sides", async ({
+    page,
+  }) => {
+    await openChat(page, {
+      snapshots: [
+        snapshot(2, [entry(1, "hello"), entry(2, "hi there", "assistant")]),
+      ],
+      clearFails: false,
+    });
+    const ub = await page.locator('[data-role="user"]').boundingBox();
+    const ab = await page.locator('[data-role="assistant"]').boundingBox();
+    const lb = await log(page).boundingBox();
+    if (!ub || !ab || !lb) throw new Error("boxes");
+    expect(ub.x + ub.width / 2).toBeGreaterThan(lb.x + lb.width / 2);
+    expect(ab.x + ab.width / 2).toBeLessThan(lb.x + lb.width / 2);
+    const bg = async (sel: string) =>
+      page.locator(sel).evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(await bg('[data-role="user"]')).not.toBe(
+      await bg('[data-role="assistant"]'),
+    );
+  });
+
+  test("small text meets 4.5:1 on solid, gradient-free, opaque backgrounds in every state", async ({
+    context,
+  }) => {
+    for (const c of FACE_CASES) {
+      const failures = await withFreshChat(
+        context,
+        {
+          snapshots: [
+            snapshot(
+              4,
+              [
+                entry(1, "hello"),
+                entry(2, "hi there", "assistant"),
+                { id: 3, tsMs: 1003, role: "system", text: "system:started" },
+                { id: 4, tsMs: 1004, role: "system", text: "system:end:idle" },
+              ],
+              { state: c.state, end: c.end },
+            ),
+          ],
+          clearFails: false,
+        },
+        (page) =>
+          page.evaluate(() => {
+            const parse = (
+              v: string,
+            ): [number, number, number, number] | null => {
+              const m = v.match(/rgba?\(([^)]+)\)/);
+              if (!m || !m[1]) return null;
+              const p = m[1]
+                .split(/[ ,/]+/)
+                .filter(Boolean)
+                .map(Number);
+              return [p[0] ?? 0, p[1] ?? 0, p[2] ?? 0, p[3] ?? 1];
+            };
+            const lum = (r: number, g: number, b: number) => {
+              const f = (x: number) => {
+                const s = x / 255;
+                return s <= 0.03928
+                  ? s / 12.92
+                  : Math.pow((s + 0.055) / 1.055, 2.4);
+              };
+              return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+            };
+            const out: string[] = [];
+            const sels = [
+              ".chat-time",
+              ".chat-sender",
+              ".chat-pill",
+              ".chat-footer",
+              '[data-testid="chat-brand-name"]',
+              '[data-testid="chat-brand-sub"]',
+              '[data-role="system"] [data-testid="chat-text"]',
+              '[data-role="user"] [data-testid="chat-text"]',
+              '[data-role="assistant"] [data-testid="chat-text"]',
+            ];
+            for (const sel of sels) {
+              const found = Array.from(document.querySelectorAll(sel));
+              if (found.length === 0) out.push(`${sel}: not found`);
+              for (const el of found) {
+                const fg = parse(getComputedStyle(el).color);
+                let node: Element | null = el;
+                let bg: [number, number, number, number] | null = null;
+                while (node) {
+                  const cs = getComputedStyle(node);
+                  if (cs.backgroundImage !== "none") {
+                    out.push(
+                      `${sel}: gradient/image behind text on ${node.tagName}.${node.getAttribute("class")}`,
+                    );
+                    break;
+                  }
+                  const b = parse(cs.backgroundColor);
+                  if (b && b[3] >= 0.99) {
+                    bg = b;
+                    break;
+                  }
+                  if (b && b[3] > 0) {
+                    out.push(
+                      `${sel}: translucent fill behind text on ${node.tagName}.${node.getAttribute("class")}`,
+                    );
+                    break;
+                  }
+                  node = node.parentElement;
+                }
+                if (!fg || !bg) continue;
+                const l1 = lum(fg[0], fg[1], fg[2]);
+                const l2 = lum(bg[0], bg[1], bg[2]);
+                const ratio =
+                  (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+                if (ratio < 4.5) out.push(`${sel}: ${ratio.toFixed(2)}`);
+              }
+            }
+            return out;
+          }),
+      );
+      expect(failures, `face ${c.face}`).toEqual([]);
+    }
+  });
+
+  test("reduced motion switches off every decorative animation and transition in every state", async ({
+    context,
+  }) => {
+    for (const c of FACE_CASES) {
+      const result = await withFreshChat(
+        context,
+        {
+          snapshots: [
+            snapshot(2, [entry(1, "x"), entry(2, "y", "assistant")], {
+              state: c.state,
+              end: c.end,
+            }),
+          ],
+          clearFails: false,
+        },
+        async (page) => {
+          const active = await page.evaluate(() => {
+            const els = Array.from(
+              document.querySelectorAll(".chat-root, .chat-root *"),
+            );
+            const bad: string[] = [];
+            for (const el of els) {
+              const cs = getComputedStyle(el);
+              if (cs.animationName !== "none")
+                bad.push(`anim:${el.getAttribute("class") ?? el.tagName}`);
+              const longest = Math.max(
+                0,
+                ...cs.transitionDuration
+                  .split(",")
+                  .map((d) => parseFloat(d) || 0),
+              );
+              if (longest > 0)
+                bad.push(
+                  `transition:${el.getAttribute("class") ?? el.tagName}`,
+                );
+            }
+            return bad;
+          });
+          const smooth = await log(page).evaluate(
+            (el) => getComputedStyle(el).scrollBehavior,
+          );
+          return { active, smooth };
+        },
+        (page) => page.emulateMedia({ reducedMotion: "reduce" }),
+      );
+      expect(result.active, `face ${c.face}`).toEqual([]);
+      expect(result.smooth).not.toBe("smooth");
+    }
+  });
+
+  test("decorative animations do run in the speaking state without reduced motion", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await openChat(page, {
+      snapshots: [snapshot(1, [], { state: "speaking" })],
+      clearFails: false,
+    });
+    const running = await page.evaluate(
+      () =>
+        Array.from(
+          document.querySelectorAll(".vox-avatar *, .chat-eq *"),
+        ).filter((el) => getComputedStyle(el).animationName !== "none").length,
+    );
+    expect(running).toBeGreaterThan(0);
+  });
+
+  test("at 360px wide nothing overflows horizontally, even with an unbroken long word", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 360, height: 640 });
+    await openChat(page, {
+      snapshots: [
+        snapshot(
+          2,
+          [entry(1, "A".repeat(400)), entry(2, "B".repeat(400), "assistant")],
+          {
+            state: "idle",
+            end: "audio_unavailable",
+          },
+        ),
+      ],
+      clearFails: false,
+    });
+    const overflow = await page.evaluate(() => ({
+      doc:
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+      header:
+        (document.querySelector(".chat-header") as HTMLElement).scrollWidth -
+        (document.querySelector(".chat-header") as HTMLElement).clientWidth,
+      log:
+        (document.querySelector('[role="log"]') as HTMLElement).scrollWidth -
+        (document.querySelector('[role="log"]') as HTMLElement).clientWidth,
+    }));
+    expect(overflow.doc).toBeLessThanOrEqual(0);
+    expect(overflow.header).toBeLessThanOrEqual(0);
+    expect(overflow.log).toBeLessThanOrEqual(0);
+  });
+
+  test("keyboard focus on Clear is clearly visible", async ({ page }) => {
+    await openChat(page, { snapshots: [snapshot(0, [])], clearFails: false });
+    for (let i = 0; i < 6; i += 1) {
+      await page.keyboard.press("Tab");
+      const isClear = await clearButton(page).evaluate(
+        (el) => el === document.activeElement,
+      );
+      if (isClear) break;
+    }
+    await expect(clearButton(page)).toBeFocused();
+    const style = await clearButton(page).evaluate((el) => {
+      const s = getComputedStyle(el);
+      return {
+        outline: s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0,
+        shadow: s.boxShadow !== "none",
+      };
+    });
+    expect(style.outline || style.shadow).toBe(true);
+  });
+
+  test("the palette module is the one the page uses (text colour token)", async ({
+    page,
+  }) => {
+    await openChat(page, { snapshots: [snapshot(0, [])], clearFails: false });
+    const bg = await root(page).evaluate(
+      (el) => getComputedStyle(el).backgroundColor,
+    );
+    // The root background is opaque and dark (luma below 0.1) regardless of the OS theme.
+    const m = bg.match(/rgba?\(([^)]+)\)/);
+    expect(m).not.toBeNull();
+    const [r, g, b] = (m?.[1] ?? "")
+      .split(/[ ,/]+/)
+      .filter(Boolean)
+      .map(Number);
+    expect(((r ?? 255) + (g ?? 255) + (b ?? 255)) / 3).toBeLessThan(40);
+    expect(CHAT_COLORS.bg).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+
+  test("the dark theme does not depend on the OS colour scheme", async ({
+    context,
+  }) => {
+    for (const scheme of ["light", "dark"] as const) {
+      const bg = await withFreshChat(
+        context,
+        { snapshots: [snapshot(0, [])], clearFails: false },
+        (page) =>
+          root(page).evaluate((el) => getComputedStyle(el).backgroundColor),
+        (page) => page.emulateMedia({ colorScheme: scheme }),
+      );
+      const nums = (bg.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+      expect(nums.reduce((a, b) => a + b, 0) / 3).toBeLessThan(40);
     }
   });
 });

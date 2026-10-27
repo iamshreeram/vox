@@ -1322,6 +1322,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::chat::get_chat_snapshot,
             commands::chat::clear_chat_log,
             commands::chat::change_converse_chat_log_setting,
+            commands::chat::change_converse_chat_open_on_start_setting,
             commands::chat::toggle_chat_window_command,
             commands::converse_extras::change_speaker_filter_enabled_setting,
             commands::converse_extras::change_speaker_filter_sensitivity_setting,

@@ -965,6 +965,20 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
     ["chat", "chat log", "transcript", "conversation window", "log", "history"],
   ),
   row(
+    "conversationChatOpenOnStart",
+    "conversation",
+    "settings.conversation.chatOpenOnStart.label",
+    "settings.conversation.chatOpenOnStart.description",
+    [
+      "conversation window",
+      "open window",
+      "hey jarvis",
+      "show chat",
+      "auto open",
+      "open on start",
+    ],
+  ),
+  row(
     "conversationChatWindow",
     "conversation",
     "settings.conversation.openChatWindow",
