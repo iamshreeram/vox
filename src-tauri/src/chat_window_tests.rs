@@ -886,3 +886,23 @@ fn send_typed_binds_every_enqueue_to_the_session_generation() {
         "send_typed must never use the unbound push"
     );
 }
+
+#[test]
+fn the_cancel_button_only_stops_voice_sessions_not_a_text_chat() {
+    let src = code_only(&read_crate_file("src/commands/mod.rs"));
+    let body = fn_body(&src, "cancel_routed");
+    assert!(
+        body.contains("is_voice_active"),
+        "cancel_routed must route to the conversation only for a voice session"
+    );
+}
+
+#[test]
+fn text_state_changes_never_reach_the_floating_overlay() {
+    let src = code_only(&read_crate_file("src/managers/converse_platform.rs"));
+    let body = fn_body(&src, "on_state_text");
+    assert!(
+        !body.contains("overlay_dispatcher"),
+        "on_state_text must not drive the recording overlay"
+    );
+}

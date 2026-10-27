@@ -76,6 +76,8 @@ struct TextPlatform {
     text_preflight: Mutex<Result<(), String>>,
     port: Arc<CountingPort>,
     events: Mutex<Vec<(&'static str, Option<&'static str>)>>,
+    /// States a TEXT session emits through `on_state_text` (no floating overlay in text mode).
+    text_events: Mutex<Vec<(&'static str, Option<&'static str>)>>,
     chat: Mutex<Vec<(ChatRole, String)>>,
     voice_parts: AtomicUsize,
     text_parts: AtomicUsize,
@@ -91,6 +93,7 @@ impl TextPlatform {
                 starts: AtomicUsize::new(0),
             }),
             events: Mutex::new(vec![]),
+            text_events: Mutex::new(vec![]),
             chat: Mutex::new(vec![]),
             voice_parts: AtomicUsize::new(0),
             text_parts: AtomicUsize::new(0),
@@ -168,6 +171,9 @@ impl Platform for TextPlatform {
     }
     fn on_state(&self, state: &'static str, end: Option<&'static str>) {
         self.events.lock().unwrap().push((state, end));
+    }
+    fn on_state_text(&self, state: &'static str, end: Option<&'static str>) {
+        self.text_events.lock().unwrap().push((state, end));
     }
     fn on_chat(&self, role: ChatRole, text: &str) {
         self.chat.lock().unwrap().push((role, text.to_string()));
@@ -498,5 +504,95 @@ fn a_stale_sender_bound_to_the_previous_session_cannot_feed_the_next_one() {
     assert!(p.user_lines().is_empty(), "B never saw the stale 'yes'");
     c.stop();
     wait_until("idle", || c.status() == ConverseStatus::Idle);
+    reset_hooks();
+}
+
+// ---- validator round 1: wake word, overlay and cancel routing during a text chat
+
+#[test]
+fn a_text_session_leaves_the_wake_word_and_the_installed_capture_alone() {
+    let _g = lock();
+    reset_hooks();
+    let p = TextPlatform::new();
+    let c = controller(&p);
+    c.start_text().unwrap();
+    wait_until("running", || c.status() == ConverseStatus::Running);
+    assert!(
+        !converse_hooks::session_active(),
+        "the wake-word listener must keep working during a text chat"
+    );
+    assert!(
+        !converse_hooks::capture_active(),
+        "no capture is installed for a text chat"
+    );
+    c.stop();
+    wait_until("idle", || c.status() == ConverseStatus::Idle);
+    reset_hooks();
+}
+
+#[test]
+fn a_voice_session_still_marks_the_hooks_active() {
+    let _g = lock();
+    reset_hooks();
+    let p = TextPlatform::new();
+    let c = controller(&p);
+    c.start().unwrap();
+    wait_until("running", || c.status() == ConverseStatus::Running);
+    assert!(converse_hooks::session_active());
+    c.stop();
+    wait_until("idle", || c.status() == ConverseStatus::Idle);
+    reset_hooks();
+}
+
+#[test]
+fn a_text_session_never_reports_listening_or_speaking_and_never_touches_the_overlay_states() {
+    let _g = lock();
+    reset_hooks();
+    let p = TextPlatform::new();
+    let c = controller(&p);
+    c.send_typed("hello there").unwrap();
+    wait_until("user line", || !p.user_lines().is_empty());
+    std::thread::sleep(Duration::from_millis(150));
+    let text_events = p.text_events.lock().unwrap().clone();
+    assert!(
+        text_events
+            .iter()
+            .all(|(s, _)| *s != "listening" && *s != "speaking"),
+        "text states must never be listening or speaking: {text_events:?}"
+    );
+    assert!(
+        !text_events.is_empty(),
+        "text sessions report their states through on_state_text"
+    );
+    let events = p.events.lock().unwrap().clone();
+    assert!(
+        events
+            .iter()
+            .all(|(s, _)| !matches!(*s, "listening" | "speaking" | "thinking" | "acting")),
+        "the overlay path (on_state) only gets the final idle in text mode: {events:?}"
+    );
+    c.stop();
+    wait_until("idle", || c.status() == ConverseStatus::Idle);
+    reset_hooks();
+}
+
+#[test]
+fn only_a_voice_session_counts_as_voice_active_for_the_cancel_button() {
+    let _g = lock();
+    reset_hooks();
+    let p = TextPlatform::new();
+    let c = controller(&p);
+    c.start_text().unwrap();
+    wait_until("running", || c.status() == ConverseStatus::Running);
+    assert!(c.is_active());
+    assert!(!c.is_voice_active(), "a text chat is not a voice session");
+    c.stop();
+    wait_until("idle", || c.status() == ConverseStatus::Idle);
+    c.start().unwrap();
+    wait_until("running", || c.status() == ConverseStatus::Running);
+    assert!(c.is_active() && c.is_voice_active());
+    c.stop();
+    wait_until("idle", || c.status() == ConverseStatus::Idle);
+    assert!(!c.is_voice_active());
     reset_hooks();
 }
