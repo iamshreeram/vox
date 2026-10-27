@@ -1191,6 +1191,21 @@ impl RealPlatform {
         self.job_runtime = Some(runtime);
         self
     }
+
+    /// Emits the `converse-state` event and records the state in the chat window. The overlay is
+    /// the caller's choice: voice shows it, a text chat never does.
+    fn publish_state(&self, state: &'static str, end: Option<&'static str>) {
+        let payload = ConverseStateEvent {
+            state: state.to_string(),
+            end: end.map(str::to_string),
+        };
+        if self.app.emit(CONVERSE_STATE_EVENT, payload).is_err() {
+            log::debug!("converse: state event not delivered");
+        }
+        if let Some(tap) = self.chat_tap.as_ref() {
+            tap.on_state(state, end);
+        }
+    }
 }
 
 impl Platform for RealPlatform {
@@ -1412,17 +1427,13 @@ impl Platform for RealPlatform {
     }
 
     fn on_state(&self, state: &'static str, end: Option<&'static str>) {
-        let payload = ConverseStateEvent {
-            state: state.to_string(),
-            end: end.map(str::to_string),
-        };
-        if self.app.emit(CONVERSE_STATE_EVENT, payload).is_err() {
-            log::debug!("converse: state event not delivered");
-        }
-        if let Some(tap) = self.chat_tap.as_ref() {
-            tap.on_state(state, end);
-        }
+        self.publish_state(state, end);
         overlay_dispatcher(&self.app).apply_state(state);
+    }
+
+    /// A text chat's state: the same event and chat log, never the floating recording overlay.
+    fn on_state_text(&self, state: &'static str, end: Option<&'static str>) {
+        self.publish_state(state, end);
     }
 
     fn on_chat(&self, role: ChatRole, text: &str) {
@@ -1966,6 +1977,10 @@ pub(crate) fn parse_with_policy(
 #[cfg(test)]
 #[path = "converse_platform_jobs_tests.rs"]
 mod converse_platform_jobs_tests;
+
+#[cfg(test)]
+#[path = "converse_platform_text_tests.rs"]
+mod converse_platform_text_tests;
 
 #[cfg(test)]
 #[path = "converse_platform_glue_tests.rs"]

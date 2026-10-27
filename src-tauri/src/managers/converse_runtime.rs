@@ -118,6 +118,11 @@ pub trait Platform: Send + Sync + 'static {
     fn parts(&self, capture: &CaptureHandle) -> SessionParts;
     /// Emit one `converse-state` event: `(state_label, end_label)`.
     fn on_state(&self, state: &'static str, end: Option<&'static str>);
+    /// Emits one text-chat state: like `on_state`, but never the floating recording overlay
+    /// (a text chat shows no recording pill over other apps). Default: the voice path.
+    fn on_state_text(&self, state: &'static str, end: Option<&'static str>) {
+        self.on_state(state, end)
+    }
     /// Chat window: one recorded line (DESIGN-CHAT 2.2). Default: not recorded.
     fn on_chat(&self, _role: crate::managers::chat_log::ChatRole, _text: &str) {}
     /// Chat window: a session was admitted and is about to run (before its first state).
@@ -183,8 +188,10 @@ struct ForwardReporter {
     latency_sink: Option<LatencySink>,
 }
 
-/// Wraps the forwarding reporter of a text session: its listening state is shown as idle, so no
-/// live microphone is ever shown. Every other call goes to the wrapped reporter unchanged.
+/// Wraps the forwarding reporter of a text session. Every state of a text session goes through
+/// `on_state_text` (no floating overlay), and its listening and speaking states are shown as
+/// idle, so no live microphone or voice is ever shown. The final idle is emitted only by the
+/// finalizer. Every other call goes to the wrapped reporter unchanged.
 struct TextModeReporter {
     inner: ForwardReporter,
     /// True for a text session; a voice session passes every state through unchanged.
@@ -193,11 +200,16 @@ struct TextModeReporter {
 
 impl Reporter for TextModeReporter {
     fn state(&self, state: SessionState) {
-        if self.text_mode && state == SessionState::Listening {
-            self.inner.platform.on_state("idle", None);
-        } else {
+        if !self.text_mode {
             self.inner.state(state);
+            return;
         }
+        let label = match state {
+            SessionState::Idle => return,
+            SessionState::Listening | SessionState::Speaking => "idle",
+            other => state_label(other),
+        };
+        self.inner.platform.on_state_text(label, None);
     }
 
     fn transcript(&self, ev: TranscriptEvent) {
@@ -343,14 +355,21 @@ impl ConverseController {
         };
         preflight.map_err(StartFail::Preflight)?;
         let (id, cancel) = self.registry.try_begin().ok_or(StartFail::AlreadyRunning)?;
-        converse_hooks::set_session_active(true);
+        // A text session never touches the wake-word hooks or the installed capture: the wake-word
+        // listener drops every frame while the session is marked active.
+        let voice = mode == SessionMode::Voice;
+        if voice {
+            converse_hooks::set_session_active(true);
+        }
         // Build the capture worker and collaborators. A panic here must undo
         // the whole start, so nothing is left claimed.
         let mut created: Option<CaptureHandle> = None;
         let built = std::panic::catch_unwind(AssertUnwindSafe(|| {
             let capture = self.platform.capture();
             created = Some(capture.clone());
-            converse_hooks::install_capture(Some(capture.clone()));
+            if voice {
+                converse_hooks::install_capture(Some(capture.clone()));
+            }
             (capture.clone(), self.build_parts(mode, &capture))
         }));
         let (capture, parts) = match built {
@@ -359,8 +378,10 @@ impl ConverseController {
                 if let Some(capture) = created {
                     capture.shutdown();
                 }
-                converse_hooks::install_capture(None);
-                converse_hooks::set_session_active(false);
+                if voice {
+                    converse_hooks::install_capture(None);
+                    converse_hooks::set_session_active(false);
+                }
                 self.registry.finish(id);
                 return Err(StartFail::Failed);
             }
@@ -435,8 +456,10 @@ impl ConverseController {
             })
             .await;
             let _ = tauri::async_runtime::spawn_blocking(move || capture.shutdown()).await;
-            converse_hooks::install_capture(None);
-            converse_hooks::set_session_active(false);
+            if !text_mode {
+                converse_hooks::install_capture(None);
+                converse_hooks::set_session_active(false);
+            }
             platform.on_state("idle", Some(end_label(end)));
             // Typed messages end with the session: nothing queued survives it.
             inbox.close();
@@ -465,6 +488,18 @@ impl ConverseController {
     /// True for Running and Stopping (draining).
     pub fn is_active(&self) -> bool {
         self.registry.is_active()
+    }
+
+    /// True only while a VOICE session runs (Running or draining). A text chat is not voice.
+    pub fn is_voice_active(&self) -> bool {
+        self.is_active()
+            && matches!(
+                *self
+                    .session_mode
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()),
+                Some((_, SessionMode::Voice))
+            )
     }
 
     /// The collaborators of one session of `mode`, built from the capture handle.
