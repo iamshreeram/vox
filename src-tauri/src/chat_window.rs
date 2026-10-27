@@ -220,7 +220,7 @@ pub fn open_chat_window_on_session_start(app: &AppHandle) {
 }
 
 /// Main-thread body of the auto-open. Builds the window if needed, or shows it without
-/// taking focus. Errors are ignored: auto-open must never disturb the conversation.
+/// taking focus. Errors are logged and otherwise ignored: auto-open must never disturb the conversation.
 fn open_on_main_thread(app: &AppHandle) {
     let existing = app.get_webview_window(CHAT_WINDOW_LABEL);
     let exists = existing.is_some();

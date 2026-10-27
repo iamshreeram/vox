@@ -1673,7 +1673,7 @@ async changeAcpAgentEnabledSetting(enabled: boolean) : Promise<Result<null, stri
 },
 /**
  * Stores whether dictation that matches no voice command is sent to the ACP agent
- * instead of being pasted. Independent of the agent switch; off by default.
+ * instead of being pasted. Only effective together with the agent switch; off by default.
  */
 async changeAcpDictationEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
@@ -2186,7 +2186,7 @@ voice_media_controls_enabled?: boolean; agent_bridge_enabled?: boolean; agent_br
 acp_agent_enabled?: boolean; 
 /**
  * Dictation that matches no voice command is sent to the ACP agent instead of being
- * pasted. Independent of `acp_agent_enabled`; a missing key means off.
+ * pasted. Only effective together with `acp_agent_enabled`; a missing key means off.
  */
 acp_dictation_enabled?: boolean; 
 /**

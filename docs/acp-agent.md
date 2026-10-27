@@ -2,7 +2,7 @@
 
 This page describes the persistent agent connection that Vox uses for dictation that no voice command matched. It replaces the old one-shot command-line bridge for that purpose. The old bridge still runs background coding jobs (see [Known limits](#known-limits-and-follow-ups)).
 
-> **Trust warning.** The agent program you configure is **fully trusted and is not sandboxed**. While this feature is on, every dictation that no built-in or custom voice command matched is sent to that program. Read [Trust model and privacy](#trust-model-and-privacy) before you turn it on.
+> **Trust warning.** The agent program you configure is **fully trusted and is not sandboxed**. While this feature is on, requests you hand over in conversations are sent to that program. Dictation that no built-in or custom voice command matched is sent to it only if you also turn on [Send dictation to the agent](#send-dictation-to-the-agent). Read [Trust model and privacy](#trust-model-and-privacy) before you turn it on.
 
 ## What it is
 
@@ -24,7 +24,7 @@ Open **Settings > Agents > ACP agent**:
 
 | Setting               | Value                                                                                                                                                                                                                                                                                                               |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Enable                | Off by default. Turning it on is the switch that sends unmatched dictation to the agent.                                                                                                                                                                                                                            |
+| Enable                | Off by default. Turning it on lets conversations and typed chat hand work to the agent. It does not send dictation: see **Send dictation to the agent** below.                                                                                                                                                      |
 | Command               | Absolute path to the agent program, for example `/path/to/my-agent`. Relative paths are rejected. At most 1024 characters, no control characters.                                                                                                                                                                   |
 | Arguments             | Space-separated, for example `--acp`. **No quoting and no shell parsing**: `"a b"` becomes two arguments, `"a` and `b"`. At most 8 arguments, each at most 256 characters, no control characters.                                                                                                                   |
 | Turn timeout          | 10 to 900 seconds. Default 120. A turn that takes longer is cancelled (see [Timeouts and failures](#timeouts-and-failures)).                                                                                                                                                                                        |
@@ -143,7 +143,7 @@ Read this section before you enable the feature.
 - **Vox answers the agent's permission requests using the Approval mode** (see [Approvals](#approvals)). This limits only what goes through Vox's protocol. **It does not limit what the agent does with its own tools.** Approvals are not a sandbox.
 - **Recommendation:** configure the agent itself to be read-only, or to ask before it changes anything. Do this in the agent's own settings, not in Vox.
 - **Process cleanup is best effort.** When Vox stops the agent, it signals the agent's whole process group. A child process that moves to a different process group can keep running after Vox stops the agent.
-- **Privacy.** While the feature is on, every dictation that no built-in or custom voice command matched is sent to the agent program. Vox does not filter what you say. The agent program may log, store or send that text according to its own rules.
+- **Privacy.** What the agent receives: requests you hand over in conversations and typed chat, and, only if **Send dictation to the agent** is on, dictation that no built-in or custom voice command matched. Vox does not filter what you say. The agent program may log, store or send that text according to its own rules.
 - **Replies are not filtered for safety.** Vox removes terminal control characters from replies and caps their length. It does **not** check whether a reply contains harmful instructions. Do not let the agent's replies control anything you would not do yourself.
 - **Authentication is not supported by Vox.** Vox does not perform the agent's login step. Authenticate the agent outside Vox, using its own login or setup, before you enable the feature.
 

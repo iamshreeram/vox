@@ -365,11 +365,11 @@
       },
       "acpAgent": {
         "title": "Agent (ACP)",
-        "description": "Sends dictation that no built-in command matched to an agent program that speaks the Agent Client Protocol, then shows its reply. Nothing is sent unless you turn this on and set a program.",
-        "trustWarning": "Trust warning: the agent program you configure is fully trusted and NOT sandboxed. It inherits Vox's environment and can use its own tools without asking Vox. While this is on, every dictation that no built-in command matched is sent to it. Denying permission requests does not limit the agent's own tools. Vox only strips terminal control characters from replies. It does not stop harmful instructions.",
+        "description": "Connects Vox to an agent program that speaks the Agent Client Protocol. Conversations and typed chat can hand work to it. Dictation is sent to it only if you also turn on Send dictation to the agent. Nothing starts unless you turn this on and set a program.",
+        "trustWarning": "Trust warning: the agent program you configure is fully trusted and NOT sandboxed. It inherits Vox's environment and can use its own tools without asking Vox. While this is on, requests you hand over in conversations are sent to it, and so is dictation that no built-in command matched if you also turn on Send dictation to the agent. Denying permission requests does not limit the agent's own tools. Vox only strips terminal control characters from replies. It does not stop harmful instructions.",
         "enabled": {
           "label": "Use ACP agent",
-          "description": "When on, dictation that no built-in command matched goes to the agent program below."
+          "description": "When on, conversations and typed chat can hand work to the agent program below. Dictation still pastes unless Send dictation to the agent is also on."
         },
         "command": {
           "label": "Agent program path",
@@ -1081,7 +1081,7 @@
         "codingJobs": "Coding jobs"
       },
       "acpAgent": {
-        "groupDescription": "Sends dictation that no built-in command matched to an agent program you choose. The program is fully trusted and not sandboxed."
+        "groupDescription": "An agent program you choose that conversations and typed chat can hand work to. Dictation goes to it only if you turn on Send dictation to the agent. The program is fully trusted and not sandboxed."
       },
       "realtime": {
         "title": "Realtime conversation",

@@ -982,22 +982,25 @@ fn a_failed_toggle_is_logged_not_dropped() {
 #[test]
 fn chat_window_logging_never_prints_conversation_content() {
     let src = code_only(&read_crate_file("src/chat_window.rs"));
-    for line in src.lines() {
-        let l = line.trim();
-        if l.starts_with("log::")
-            || l.contains("info!(")
-            || l.contains("warn!(")
-            || l.contains("debug!(")
-            || l.contains("error!(")
-        {
-            for banned in ["text", "message", "transcript", "entry", "snapshot"] {
-                assert!(
-                    !l.to_lowercase().contains(banned),
-                    "chat_window.rs log line must not mention `{banned}`: {l}"
-                );
-            }
+    // Check every complete `log::` call (the whole macro up to its `;`), not just its first line.
+    let mut checked = 0;
+    let mut rest = src.as_str();
+    while let Some(i) = rest.find("log::") {
+        let call_end = rest[i..].find(';').map(|e| i + e).unwrap_or(rest.len());
+        let call = rest[i..call_end].to_lowercase();
+        for banned in ["text", "message", "transcript", "entry", "snapshot"] {
+            assert!(
+                !call.contains(banned),
+                "chat_window.rs log call must not mention `{banned}`: {call}"
+            );
         }
+        checked += 1;
+        rest = &rest[call_end..];
     }
+    assert!(
+        checked >= 5,
+        "expected the window logging to exist, found {checked} calls"
+    );
 }
 
 #[test]
