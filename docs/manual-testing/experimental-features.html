@@ -808,7 +808,7 @@ var SECTIONS = [
    "Set it to <b>Never allow (deny all requests)</b> and send a request that changes something. Then set it back to <b>Ask before changes</b>."],
    expect:"The four modes are listed: Ask before changes, Ask before every tool call, Never allow, and Allow everything. A fresh install starts on Allow everything (with its warning); an existing install keeps the mode it saved, or Ask before changes if none was saved. 'Never allow' denies without a dialog." }
 ]},
-{ id:"acp-agent", title:"ACP agent and approvals", note:"Agents tab, Agent (ACP) group. Dictation that no voice command matched goes to an agent program you choose. Use a test agent and a scratch folder. Approvals are a convenience policy, not a sandbox.", tests:[
+{ id:"acp-agent", title:"ACP agent and approvals", note:"Agents tab, Agent (ACP) group. Dictation that no voice command matched goes to an agent program you choose, but only when the Send dictation to the agent switch is on. Use a test agent and a scratch folder. Approvals are a convenience policy, not a sandbox.", tests:[
  { id:"acp-setup", title:"Connect an ACP agent", needs:"An ACP-capable agent program that is already installed and signed in, and its full path. Unix only (macOS or Linux).", steps:[
    "On the Agents tab open the <b>Agent (ACP)</b> group.",
    "Switch on <b>Use ACP agent</b>.",
@@ -821,18 +821,18 @@ var SECTIONS = [
    "In <b>Agent program path</b> enter a path that does not exist, then press <b>Test connection</b>.",
    "Enter a bare name such as <code>my-agent</code>, then test again."],
    expect:"Each attempt shows a short plain error (for example 'Command not found' or 'Enter an absolute path'). Nothing hangs and nothing crashes." },
- { id:"acp-no-double-paste", title:"A request the agent answers is not also typed", mic:true, needs:"Voice commands on, ACP agent on and working, and a text editor open.", steps:[
+ { id:"acp-no-double-paste", title:"A request the agent answers is not also typed", mic:true, needs:"Voice commands on, ACP agent on and working, Send dictation to the agent on, and a text editor open.", steps:[
    "Click into an empty text editor so it has focus.",
    "Dictate a request that matches no built-in command, for example &ldquo;what is the capital of Peru&rdquo;.",
    "Wait for the agent's reply."],
    expect:"The agent answers (shown and spoken). The request text is NOT typed into the editor, so the editor stays empty.",
    warn:"The docs describe the reply being shown and spoken; they do not say whether the request is also pasted. This test checks the requirement. If the words appear in the editor, mark Fail." },
- { id:"acp-read-auto", title:"A read-only question runs without a dialog", mic:true, needs:"ACP agent on, Approval mode left at 'Ask before changes'.", steps:[
+ { id:"acp-read-auto", title:"A read-only question runs without a dialog", mic:true, needs:"ACP agent on, Send dictation to the agent on, Approval mode left at 'Ask before changes'.", steps:[
    "Dictate a question that only reads or searches, for example &ldquo;search my notes folder for the word budget&rdquo;.",
    "Watch the screen for an approval dialog."],
    expect:"No dialog appears, and the answer arrives.",
    warn:"Whether a read runs without asking depends on the agent offering an allow-once option and on the request not looking like a change. If a plain read shows a dialog, mark Fail and name the agent you used." },
- { id:"acp-write-asks", title:"A change asks first", mic:true, needs:"ACP agent on. A scratch folder, for example a folder called vox-scratch on your Desktop.", steps:[
+ { id:"acp-write-asks", title:"A change asks first", mic:true, needs:"ACP agent on, Send dictation to the agent on. A scratch folder, for example a folder called vox-scratch on your Desktop.", steps:[
    "Dictate: &ldquo;create a file called hello.txt in my scratch folder that says hello&rdquo;.",
    "Read the dialog that appears."],
    expect:"A dialog titled 'The agent wants to perform an action' appears. It shows a kind badge (for example Edit or Run a command), the real command or path, a countdown ('Denied automatically in N s'), and Deny has the focus. The file is not created until you click Allow once.",
@@ -841,7 +841,7 @@ var SECTIONS = [
    "When the dialog from acp-write-asks appears, click <b>Allow once</b>.",
    "Check the file, then ask for another change of the same kind."],
    expect:"The first change happens. The second request shows a new dialog: Vox never remembers an answer and never offers 'always allow'." },
- { id:"acp-deny", title:"Deny, Escape and Enter all refuse", mic:true, needs:"ACP agent on, and a change request each time.", steps:[
+ { id:"acp-deny", title:"Deny, Escape and Enter all refuse", mic:true, needs:"ACP agent on, Send dictation to the agent on, and a change request each time.", steps:[
    "Ask for a file change and click <b>Deny</b>. Check that the file was not created.",
    "Ask again and press <kbd>Escape</kbd>. Check again.",
    "Ask again and press <kbd>Enter</kbd> (Deny has the focus). Check again."],
@@ -891,7 +891,7 @@ var SECTIONS = [
    "Read the dialog."],
    expect:"An amber 'Operation details unavailable' warning appears, saying the agent did not say what it will change. <b>Deny</b> has the focus, not Allow once.",
    warn:"Needs a special test agent. If you do not have one, mark Skip." },
- { id:"acp-keyboard", title:"Enter and Escape deny, Allow needs a click", mic:true, needs:"ACP agent on, and a change request each time.", steps:[
+ { id:"acp-keyboard", title:"Enter and Escape deny, Allow needs a click", mic:true, needs:"ACP agent on, Send dictation to the agent on, and a change request each time.", steps:[
    "Trigger an approval and press <kbd>Enter</kbd> without moving focus.",
    "Trigger another and press <kbd>Escape</kbd>.",
    "Trigger another, press <kbd>Tab</kbd> to move to <b>Allow once</b>, and press <kbd>Enter</kbd>."],

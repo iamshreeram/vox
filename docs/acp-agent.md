@@ -1,6 +1,6 @@
 # ACP agent (persistent agent for dictation)
 
-This page describes the persistent agent connection that Vox uses for dictation that no voice command matched. It replaces the old one-shot command-line bridge for that purpose. The old bridge still runs background coding jobs (see [Known limits](#known-limits-and-follow-ups)).
+This page describes the persistent agent connection that Vox uses for conversations and, when Send dictation to the agent is on, for dictation that no voice command matched. It replaces the old one-shot command-line bridge for that purpose. The old bridge still runs background coding jobs (see [Known limits](#known-limits-and-follow-ups)).
 
 > **Trust warning.** The agent program you configure is **fully trusted and is not sandboxed**. While this feature is on, requests you hand over in conversations are sent to that program. Dictation that no built-in or custom voice command matched is sent to it only if you also turn on [Send dictation to the agent](#send-dictation-to-the-agent). Read [Trust model and privacy](#trust-model-and-privacy) before you turn it on.
 

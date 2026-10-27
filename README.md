@@ -80,7 +80,7 @@ In short: you talk, Vox types what you said. With the optional features below it
 
 ### Assistant tools (off by default)
 
-- **Agent bridge.** The one-shot command-line bridge now serves background coding jobs only. Dictation that no voice command matched goes to a persistent agent instead (see the next line).
+- **Agent bridge.** The one-shot command-line bridge now serves background coding jobs only. With the dictation switch on, dictation that no voice command matched goes to a persistent agent instead (see the next line).
 - **Persistent ACP agent (off by default, Unix only).** Hand conversation requests (and, if you turn on its own switch, unmatched dictation) to one long-lived agent program that speaks the Agent Client Protocol, and speak or paste its reply. The agent is fully trusted and not sandboxed; read the trust model first. See [docs/acp-agent.md](docs/acp-agent.md).
 - **Project lookups.** In a conversation, Vox can look up your projects and answer from the results. It can only read:
   - list your project folders,
