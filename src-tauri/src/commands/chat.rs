@@ -83,3 +83,16 @@ pub fn change_converse_chat_open_on_start_setting(app: AppHandle, enabled: bool)
 pub async fn toggle_chat_window_command(app: AppHandle) -> Result<(), String> {
     crate::chat_window::toggle_chat_window(&app).map_err(|err| err.to_string())
 }
+
+/// Sends one typed message to the conversation (DESIGN-TYPE Rev 4). The chat window is the only
+/// caller (the allow-list refuses it elsewhere). An idle conversation starts a text session; a
+/// running one takes the message in its loop. The text is never logged or echoed: the error is
+/// the stable code of the reason only.
+#[tauri::command]
+#[specta::specta]
+pub fn send_chat_message(app: AppHandle, text: String) -> Result<(), String> {
+    let controller = app.state::<Arc<crate::managers::converse_runtime::ConverseController>>();
+    controller
+        .send_typed(&text)
+        .map_err(|err| err.code().to_string())
+}

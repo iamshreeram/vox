@@ -1321,6 +1321,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::converse_extras::change_converse_latency_panel_setting,
             commands::chat::get_chat_snapshot,
             commands::chat::clear_chat_log,
+            commands::chat::send_chat_message,
             commands::chat::change_converse_chat_log_setting,
             commands::chat::change_converse_chat_open_on_start_setting,
             commands::chat::toggle_chat_window_command,

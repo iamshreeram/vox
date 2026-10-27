@@ -12,12 +12,71 @@ use crate::managers::converse_capture::CaptureHandle;
 use crate::managers::converse_confirm::PolicySource;
 use crate::managers::converse_hooks;
 use crate::managers::converse_latency::{event_enabled, LatencyEvent, LatencyReport, LatencyStats};
+use crate::managers::converse_text::{
+    route_typed, sanitize_typed, TypedError, TypedInbox, TypedRoute, WithTyped,
+};
 use futures_util::FutureExt;
 use std::panic::AssertUnwindSafe;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 pub const ALREADY_RUNNING: &str = "A conversation is already running.";
 pub const START_FAILED: &str = "Could not start the conversation.";
+/// Returned by a voice `start` while a text chat runs: the text chat is ended, and the user
+/// triggers voice again.
+pub const TEXT_ENDING: &str = "Ending the text chat. Try again.";
+
+/// Which kind of session a start creates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SessionMode {
+    Voice,
+    Text,
+}
+
+/// Why a start did not produce a session. `send_typed` classifies these; `start` and
+/// `start_text` turn them back into the existing messages.
+enum StartFail {
+    Admit(String),
+    Preflight(String),
+    AlreadyRunning,
+    Failed,
+}
+
+impl StartFail {
+    fn into_message(self) -> String {
+        match self {
+            StartFail::Admit(message) | StartFail::Preflight(message) => message,
+            StartFail::AlreadyRunning => ALREADY_RUNNING.to_string(),
+            StartFail::Failed => START_FAILED.to_string(),
+        }
+    }
+}
+
+/// The mode of the running session, keyed by its id, so a finished session never clears a
+/// newer one's mode.
+type SessionModeSlot = Arc<Mutex<Option<(u64, SessionMode)>>>;
+
+fn clear_mode(slot: &SessionModeSlot, id: u64) {
+    let mut guard = slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if matches!(*guard, Some((owner, _)) if owner == id) {
+        *guard = None;
+    }
+}
+
+/// The session's typed-seen flag guards its persistence callback: a session that delivered any
+/// typed turn never runs the callback (its transcript is not saved).
+fn guard_on_complete(
+    on_complete: Option<Box<dyn FnOnce(SessionEnd) + Send>>,
+    typed_seen: Arc<AtomicBool>,
+) -> Option<Box<dyn FnOnce(SessionEnd) + Send>> {
+    on_complete.map(|callback| {
+        Box::new(move |end: SessionEnd| {
+            if !typed_seen.load(Ordering::SeqCst) {
+                callback(end);
+            }
+        }) as Box<dyn FnOnce(SessionEnd) + Send>
+    })
+}
 
 /// Everything one session needs, built fresh per session.
 pub struct SessionParts {
@@ -59,11 +118,25 @@ pub trait Platform: Send + Sync + 'static {
     fn parts(&self, capture: &CaptureHandle) -> SessionParts;
     /// Emit one `converse-state` event: `(state_label, end_label)`.
     fn on_state(&self, state: &'static str, end: Option<&'static str>);
+    /// Emits one text-chat state: like `on_state`, but never the floating recording overlay
+    /// (a text chat shows no recording pill over other apps). Default: the voice path.
+    fn on_state_text(&self, state: &'static str, end: Option<&'static str>) {
+        self.on_state(state, end)
+    }
     /// Chat window: one recorded line (DESIGN-CHAT 2.2). Default: not recorded.
     fn on_chat(&self, _role: crate::managers::chat_log::ChatRole, _text: &str) {}
     /// Chat window: a session was admitted and is about to run (before its first state).
     /// Default: nothing.
     fn on_session_start(&self) {}
+    /// Checks that a text session can start: the reply backend and the other preflight rules,
+    /// without the spoken-reply requirement. Default: the voice check.
+    fn preflight_text(&self) -> Result<(), String> {
+        self.preflight()
+    }
+    /// Builds a text session's collaborators (no microphone, no speaker). Default: the voice set.
+    fn parts_text(&self, capture: &CaptureHandle) -> SessionParts {
+        self.parts(capture)
+    }
     /// Claim whatever exclusive resource a session needs (the real platform
     /// takes the ownership lease). Called first by `start`; the returned guard
     /// is held for the whole session. Default: claims nothing.
@@ -113,6 +186,43 @@ struct ForwardReporter {
     transcript: Option<Arc<dyn TranscriptSink>>,
     /// T9b: receives each latency report (numbers only). Default None (no-op).
     latency_sink: Option<LatencySink>,
+}
+
+/// Wraps the forwarding reporter of a text session. Every state of a text session goes through
+/// `on_state_text` (no floating overlay), and its listening and speaking states are shown as
+/// idle, so no live microphone or voice is ever shown. The final idle is emitted only by the
+/// finalizer. Every other call goes to the wrapped reporter unchanged.
+struct TextModeReporter {
+    inner: ForwardReporter,
+    /// True for a text session; a voice session passes every state through unchanged.
+    text_mode: bool,
+}
+
+impl Reporter for TextModeReporter {
+    fn state(&self, state: SessionState) {
+        if !self.text_mode {
+            self.inner.state(state);
+            return;
+        }
+        let label = match state {
+            SessionState::Idle => return,
+            SessionState::Listening | SessionState::Speaking => "idle",
+            other => state_label(other),
+        };
+        self.inner.platform.on_state_text(label, None);
+    }
+
+    fn transcript(&self, ev: TranscriptEvent) {
+        self.inner.transcript(ev);
+    }
+
+    fn chat(&self, role: crate::managers::chat_log::ChatRole, text: &str) {
+        self.inner.chat(role, text);
+    }
+
+    fn latency(&self, report: &LatencyReport, stats: &LatencyStats) {
+        self.inner.latency(report, stats);
+    }
 }
 
 /// T9b: receives one latency report and the session's rolling stats per completed turn.
@@ -180,6 +290,9 @@ async fn run_prepare(prepare: Option<BoxFuture<'static, ()>>, cancel: &mut Cance
 pub struct ConverseController {
     platform: Arc<dyn Platform>,
     registry: Arc<SessionRegistry>,
+    /// Typed messages for the running session (closed while no session runs).
+    inbox: Arc<TypedInbox>,
+    session_mode: SessionModeSlot,
 }
 
 impl ConverseController {
@@ -187,6 +300,8 @@ impl ConverseController {
         ConverseController {
             platform,
             registry: Arc::new(SessionRegistry::new()),
+            inbox: TypedInbox::new(),
+            session_mode: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -211,21 +326,51 @@ impl ConverseController {
     /// While running, the session's `Reporter` forwards every state except
     /// `Idle` (the final idle is emitted only by the finalizer, exactly once).
     pub fn start(&self) -> Result<u64, String> {
-        let admission = self.platform.admit()?;
-        self.platform.preflight()?;
-        let (id, cancel) = self
-            .registry
-            .try_begin()
-            .ok_or_else(|| ALREADY_RUNNING.to_string())?;
-        converse_hooks::set_session_active(true);
+        // A voice start never shares the session with typed chat: it ends the text chat instead
+        // (the user triggers voice again). Known limitation, documented.
+        if self.text_session_running() {
+            self.stop();
+            return Err(TEXT_ENDING.to_string());
+        }
+        self.start_with(SessionMode::Voice)
+            .map(|(id, _)| id)
+            .map_err(StartFail::into_message)
+    }
+
+    /// Starts a text session: typed chat with no microphone, no speaker and no paste.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn start_text(&self) -> Result<u64, String> {
+        self.start_with(SessionMode::Text)
+            .map(|(id, _)| id)
+            .map_err(StartFail::into_message)
+    }
+
+    /// The shared start of both modes. Returns the session id and the inbox generation the
+    /// session opened.
+    fn start_with(&self, mode: SessionMode) -> Result<(u64, u64), StartFail> {
+        let admission = self.platform.admit().map_err(StartFail::Admit)?;
+        let preflight = match mode {
+            SessionMode::Voice => self.platform.preflight(),
+            SessionMode::Text => self.platform.preflight_text(),
+        };
+        preflight.map_err(StartFail::Preflight)?;
+        let (id, cancel) = self.registry.try_begin().ok_or(StartFail::AlreadyRunning)?;
+        // A text session never touches the wake-word hooks or the installed capture: the wake-word
+        // listener drops every frame while the session is marked active.
+        let voice = mode == SessionMode::Voice;
+        if voice {
+            converse_hooks::set_session_active(true);
+        }
         // Build the capture worker and collaborators. A panic here must undo
         // the whole start, so nothing is left claimed.
         let mut created: Option<CaptureHandle> = None;
         let built = std::panic::catch_unwind(AssertUnwindSafe(|| {
             let capture = self.platform.capture();
             created = Some(capture.clone());
-            converse_hooks::install_capture(Some(capture.clone()));
-            (capture.clone(), self.platform.parts(&capture))
+            if voice {
+                converse_hooks::install_capture(Some(capture.clone()));
+            }
+            (capture.clone(), self.build_parts(mode, &capture))
         }));
         let (capture, parts) = match built {
             Ok(pair) => pair,
@@ -233,15 +378,24 @@ impl ConverseController {
                 if let Some(capture) = created {
                     capture.shutdown();
                 }
-                converse_hooks::install_capture(None);
-                converse_hooks::set_session_active(false);
+                if voice {
+                    converse_hooks::install_capture(None);
+                    converse_hooks::set_session_active(false);
+                }
                 self.registry.finish(id);
-                return Err(START_FAILED.to_string());
+                return Err(StartFail::Failed);
             }
         };
 
         // Chat window: the session is admitted and built; its log starts here (DESIGN-CHAT 2.2).
         self.platform.on_session_start();
+        // Typed messages are accepted from here on: after the registry took the session and the
+        // parts exist, and before the task starts. The flag guards the persistence callback.
+        let (generation, typed_seen) = self.inbox.open_session();
+        let inbox = self.inbox.clone();
+        self.set_mode(id, mode);
+        let session_mode = self.session_mode.clone();
+        let text_mode = mode == SessionMode::Text;
         let platform = self.platform.clone();
         let registry = self.registry.clone();
         let latency_sink = self.platform.latency_sink();
@@ -259,12 +413,19 @@ impl ConverseController {
                 announcer,
             } = parts;
             let mut cancel = cancel;
+            // Typed text reaches the same loop as speech: the ears race the typed inbox.
+            let ears: Box<dyn Ears> = Box::new(WithTyped::new(ears, inbox.clone()));
+            let on_complete = guard_on_complete(on_complete, typed_seen);
             // prepare + run_session share ONE caught boundary; any panic is Cancelled.
             let end = {
-                let reporter = ForwardReporter {
+                let forward = ForwardReporter {
                     platform: platform.clone(),
                     transcript,
                     latency_sink,
+                };
+                let reporter = TextModeReporter {
+                    inner: forward,
+                    text_mode,
                 };
                 let deps = Deps {
                     policy: policy.as_deref(),
@@ -295,9 +456,14 @@ impl ConverseController {
             })
             .await;
             let _ = tauri::async_runtime::spawn_blocking(move || capture.shutdown()).await;
-            converse_hooks::install_capture(None);
-            converse_hooks::set_session_active(false);
+            if !text_mode {
+                converse_hooks::install_capture(None);
+                converse_hooks::set_session_active(false);
+            }
             platform.on_state("idle", Some(end_label(end)));
+            // Typed messages end with the session: nothing queued survives it.
+            inbox.close();
+            clear_mode(&session_mode, id);
             registry.finish(id);
             // on_complete runs after the final idle and registry finish, under its own
             // boundary: a panic is logged with a fixed kind and never skips the steps below.
@@ -310,7 +476,7 @@ impl ConverseController {
             // final overlay hide) was emitted and the registry entry finished.
             drop(admission);
         });
-        Ok(id)
+        Ok((id, generation))
     }
 
     /// Request the session to end. True if a Running session was asked to
@@ -322,6 +488,76 @@ impl ConverseController {
     /// True for Running and Stopping (draining).
     pub fn is_active(&self) -> bool {
         self.registry.is_active()
+    }
+
+    /// True only while a VOICE session runs (Running or draining). A text chat is not voice.
+    pub fn is_voice_active(&self) -> bool {
+        self.is_active()
+            && matches!(
+                *self
+                    .session_mode
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()),
+                Some((_, SessionMode::Voice))
+            )
+    }
+
+    /// The collaborators of one session of `mode`, built from the capture handle.
+    fn build_parts(&self, mode: SessionMode, capture: &CaptureHandle) -> SessionParts {
+        match mode {
+            SessionMode::Voice => self.platform.parts(capture),
+            SessionMode::Text => self.platform.parts_text(capture),
+        }
+    }
+
+    fn set_mode(&self, id: u64, mode: SessionMode) {
+        let mut guard = self
+            .session_mode
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *guard = Some((id, mode));
+    }
+
+    /// True while the running session is a text chat.
+    fn text_session_running(&self) -> bool {
+        let guard = self
+            .session_mode
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        matches!(*guard, Some((_, SessionMode::Text)))
+    }
+
+    /// The inbox that carries typed messages into the running session.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn typed_inbox(&self) -> Arc<TypedInbox> {
+        self.inbox.clone()
+    }
+
+    /// Sends one typed message. An idle controller starts a text session first; a running
+    /// session (voice or text) gets the message in its loop. The text is never echoed in any
+    /// error; the caller gets only the reason.
+    pub fn send_typed(&self, raw: &str) -> Result<(), TypedError> {
+        let text = sanitize_typed(raw)?;
+        // The generation is read BEFORE the status: a message bound to a session cannot land in
+        // a session that started after it.
+        let generation = self.inbox.generation();
+        match route_typed(self.status()) {
+            TypedRoute::Busy => Err(TypedError::Busy),
+            TypedRoute::Queue => match generation {
+                Some(session) => self.inbox.push_for(session, text),
+                None => Err(TypedError::Busy),
+            },
+            TypedRoute::StartText => match self.start_with(SessionMode::Text) {
+                Ok((_, session)) => self.inbox.push_for(session, text),
+                Err(StartFail::Admit(_)) => Err(TypedError::Busy),
+                Err(StartFail::Preflight(_)) => Err(TypedError::NotConfigured),
+                Err(StartFail::AlreadyRunning) => match self.inbox.generation() {
+                    Some(session) => self.inbox.push_for(session, text),
+                    None => Err(TypedError::Busy),
+                },
+                Err(StartFail::Failed) => Err(TypedError::Failed),
+            },
+        }
     }
 
     pub fn status(&self) -> ConverseStatus {
@@ -1087,3 +1323,7 @@ mod latency_wiring_tests;
 #[cfg(test)]
 #[path = "converse_runtime_sink_tests.rs"]
 mod runtime_sink_tests;
+
+#[cfg(test)]
+#[path = "converse_text_runtime_tests.rs"]
+mod converse_text_runtime_tests;

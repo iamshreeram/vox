@@ -1,7 +1,9 @@
 // Conversation window body. Protocol (DESIGN-CHAT A4): subscribe to `converse-chat` first,
 // buffer until the first snapshot is applied, then apply live events; a gap refetches once,
 // a stale snapshot is discarded and refetched at most once more, window focus refetches once.
-// The only commands used are get_chat_snapshot and clear_chat_log (A8).
+// The only commands used are get_chat_snapshot, clear_chat_log and send_chat_message (DESIGN-TYPE).
+// The typing box sends a message and clears itself only on success; the transcript line arrives
+// through the same converse-chat events as a spoken one (no local echo).
 import {
   useCallback,
   useEffect,
@@ -12,10 +14,22 @@ import {
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { commands } from "@/bindings";
-import type { CSSProperties } from "react";
+import type {
+  ChangeEvent,
+  CSSProperties,
+  FormEvent,
+  KeyboardEvent,
+} from "react";
 import VoxAvatar from "./VoxAvatar";
 import voxIcon from "./assets/vox-icon.png";
 import { accentStyle } from "./chatTheme";
+import {
+  MAX_CHARS,
+  counterVisible,
+  errorKey,
+  prepareSend,
+  shouldSubmitOnKey,
+} from "./composer";
 import {
   applyEvent,
   applySnapshot,
@@ -100,6 +114,14 @@ export default function ChatWindow() {
   const [unseen, setUnseen] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [clearFailed, setClearFailed] = useState(false);
+  // Typing box. draftRef mirrors draft so handlers always see the latest text; sendingRef is the
+  // synchronous in-flight guard (a same-tick second submit must not wait for a React render).
+  const [draft, setDraft] = useState("");
+  const draftRef = useRef("");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const sendingRef = useRef(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const commit = useCallback((next: ChatView) => {
     viewRef.current = next;
@@ -224,6 +246,76 @@ export default function ChatWindow() {
     }
   };
 
+  const setDraftValue = (value: string) => {
+    draftRef.current = value;
+    setDraft(value);
+  };
+
+  // Auto-grow up to the CSS max-height (four lines); beyond that the box scrolls.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight + (el.offsetHeight - el.clientHeight)}px`;
+  }, [draft]);
+
+  const onDraftChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
+    setDraftValue(e.target.value);
+    setSendError(null);
+  };
+
+  const submit = async () => {
+    if (sendingRef.current) return;
+    const submitted = draftRef.current;
+    const prepared = prepareSend(submitted);
+    if (!prepared.ok) {
+      if (prepared.reason === "too_long") setSendError("too_long");
+      return;
+    }
+    sendingRef.current = true;
+    setSending(true);
+    setSendError(null);
+    let failure: string | null = null;
+    try {
+      const result = await commands.sendChatMessage(prepared.text);
+      if (result.status === "error") failure = result.error;
+    } catch {
+      failure = "failed";
+    }
+    sendingRef.current = false;
+    setSending(false);
+    if (failure === null) {
+      // Clear only the draft that was sent; text typed while it was in flight stays.
+      if (draftRef.current === submitted) setDraftValue("");
+      inputRef.current?.focus();
+    } else {
+      setSendError(failure);
+    }
+  };
+
+  const onComposerSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    void submit();
+  };
+
+  const onDraftKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      !shouldSubmitOnKey({
+        key: e.key,
+        shiftKey: e.shiftKey,
+        altKey: e.altKey,
+        isComposing: e.nativeEvent.isComposing,
+        keyCode: e.nativeEvent.keyCode,
+      })
+    ) {
+      return;
+    }
+    e.preventDefault();
+    void submit();
+  };
+
+  const canSend = !sending && prepareSend(draft).ok;
+
   const face = avatarFace(view.state, view.end);
   const caption = captionFor(view.state, view.end);
 
@@ -311,6 +403,44 @@ export default function ChatWindow() {
           </button>
         ) : null}
       </div>
+      <form
+        className="chat-composer"
+        data-testid="chat-composer"
+        onSubmit={onComposerSubmit}
+      >
+        <div className="chat-composer-row">
+          <textarea
+            ref={inputRef}
+            data-testid="chat-input"
+            className="chat-input"
+            aria-label={t("chat.input.label")}
+            placeholder={t("chat.input.placeholder")}
+            maxLength={MAX_CHARS}
+            rows={1}
+            value={draft}
+            onChange={onDraftChange}
+            onKeyDown={onDraftKeyDown}
+          />
+          <button
+            type="submit"
+            className="chat-send"
+            data-testid="chat-send"
+            disabled={!canSend}
+          >
+            {t("chat.send")}
+          </button>
+        </div>
+        {sendError !== null ? (
+          <p className="chat-error chat-send-error" role="alert">
+            {t(errorKey(sendError))}
+          </p>
+        ) : null}
+        {counterVisible(draft.length) ? (
+          <span className="chat-count" data-testid="chat-count">
+            {`${draft.length} / ${MAX_CHARS}`}
+          </span>
+        ) : null}
+      </form>
       <footer className="chat-footer">{t("chat.footerHint")}</footer>
     </div>
   );

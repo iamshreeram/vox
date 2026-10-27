@@ -91,6 +91,7 @@ mod converse_rag_tests;
 pub mod converse_role;
 pub mod converse_runtime;
 pub mod converse_stream;
+pub mod converse_text;
 pub mod emotion;
 pub mod gguf_meta;
 pub mod history;

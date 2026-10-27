@@ -333,12 +333,11 @@ What it shows:
 What it does not show:
 
 - Raw agent output and intermediate plan results.
-- Anything that was never spoken, including the text of voices that were rejected.
+- Anything that was never spoken or typed, including the text of voices that were rejected.
 - Dictation outside conversation mode.
 - Background job announcements.
 
-The window is read-only in this version. You cannot type in it. The only action
-is Clear.
+You can also type in the window. See [Typing](#typing-in-the-window).
 
 Controls and settings:
 
@@ -366,8 +365,41 @@ Privacy:
 
 Safety:
 
-- The window page is bundled with the app. It has no network access. It can only
-  read the transcript and clear it.
+- The window page is bundled with the app. It has no network access. It can read
+  the transcript, clear it and send the message you typed. It cannot call
+  anything else.
+
+### Typing in the window
+
+The box at the bottom of the window lets you chat by typing, at any time.
+
+- Press **Enter** to send. **Shift+Enter** adds a new line. Messages can be up to
+  2000 characters.
+- A typed message is handled like something you said. Your shortcuts and
+  commands run first (for example "bye" ends the chat), then your reply model
+  answers, and work can be handed to your agent. Questions that need your
+  approval can be answered by typing "yes" or "no". The window waits up to a
+  minute for a typed answer.
+- **No conversation running:** typing starts a text chat. It uses neither the
+  microphone nor the speaker. Replies appear in the window only. Say "bye" or use
+  your stop shortcut to end it. A text chat does not end by itself.
+- **Voice conversation running:** your typed message joins it. The reply is
+  spoken as usual.
+- If you start a voice conversation while a text chat is open, Vox ends the text
+  chat first and asks you to try again. Say your wake phrase a second time.
+- Text chats cannot start background jobs and never paste text into another
+  window, because both would act or speak without you watching the window.
+- If no reply model is set up, the window tells you to do that in Settings.
+
+Typing and privacy:
+
+- Typed text stays in memory like the rest of the transcript. It is not written
+  to a log.
+- A conversation that included any typed message is never saved by **Save
+  conversation records**, even when that setting is on. A text chat is never
+  saved.
+- Work you hand to an agent is stored by the agent the same way as when you speak
+  the request.
 
 ## Context
 
