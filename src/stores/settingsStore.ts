@@ -335,6 +335,14 @@ const settingUpdaters: {
       throw new Error(result.error);
     }
   },
+  acp_dictation_enabled: async (value) => {
+    const result = await commands.changeAcpDictationEnabledSetting(
+      value as boolean,
+    );
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
   acp_agent_command: async (value) => {
     const result = await commands.changeAcpAgentCommandSetting(
       (value as string | null) ?? null,

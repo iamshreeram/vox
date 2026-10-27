@@ -714,6 +714,11 @@ pub struct AppSettings {
     /// Persistent ACP agent client (DESIGN rev 3.1 section 7). Opt-in.
     #[serde(default)]
     pub acp_agent_enabled: bool,
+    /// Send dictation to the agent (hand-off of unmatched dictation). Off by default: when off,
+    /// dictation always pastes, even while `acp_agent_enabled` is on. Use
+    /// `dictation_agent_enabled` to decide; it needs both switches on.
+    #[serde(default)]
+    pub acp_dictation_enabled: bool,
     /// Absolute path to the ACP agent program; `None` means unset.
     #[serde(default)]
     pub acp_agent_command: Option<String>,
@@ -1344,12 +1349,21 @@ pub fn apply_step_agent_setting(
     Ok(())
 }
 
+/// Whether unmatched dictation is handed to the agent: the agent must be on AND the
+/// "Send dictation to the agent" switch must be on. Turning the agent on alone never changes
+/// what dictation does.
+pub fn dictation_agent_enabled(s: &AppSettings) -> bool {
+    s.acp_agent_enabled && s.acp_dictation_enabled
+}
+
 /// Stage 4 (A8): the launch fields of `committed`, which only `write_settings_gated` may change:
-/// the hand-off and planner flags, the main agent's enablement, command, arguments, turn timeout
-/// and approval mode, and the specialist agents. Returns `incoming` with those fields replaced by
-/// the committed values, and every other field as incoming.
+/// the hand-off and planner flags, the main agent's enablement, the dictation hand-off switch,
+/// command, arguments, turn timeout and approval mode, and the specialist agents. Returns
+/// `incoming` with those fields replaced by the committed values, and every other field as
+/// incoming.
 pub fn preserve_launch_fields(mut incoming: AppSettings, committed: &AppSettings) -> AppSettings {
     incoming.acp_agent_enabled = committed.acp_agent_enabled;
+    incoming.acp_dictation_enabled = committed.acp_dictation_enabled;
     incoming.acp_agent_command = committed.acp_agent_command.clone();
     incoming.acp_agent_args = committed.acp_agent_args.clone();
     incoming.acp_agent_turn_timeout_secs = committed.acp_agent_turn_timeout_secs;
@@ -2134,6 +2148,7 @@ pub fn get_default_settings() -> AppSettings {
         agent_bridge_binary_path: None,
         agent_bridge_prompt_flag: default_agent_bridge_prompt_flag(),
         acp_agent_enabled: false,
+        acp_dictation_enabled: false,
         acp_agent_command: None,
         acp_agent_args: String::new(),
         acp_agent_turn_timeout_secs: default_acp_agent_turn_timeout_secs(),

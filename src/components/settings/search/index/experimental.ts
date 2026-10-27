@@ -574,6 +574,13 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
     ],
   ),
   row(
+    "acpDictationToAgent",
+    "acpAgent",
+    "settings.advanced.acpAgent.dictation.label",
+    "settings.advanced.acpAgent.dictation.description",
+    ["dictation", "agent", "paste", "voice command", "send to agent", "acp"],
+  ),
+  row(
     "acpConversationPlanner",
     "acpAgent",
     "settings.advanced.acpAgent.conversationPlanner.label",

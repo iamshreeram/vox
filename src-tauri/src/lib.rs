@@ -1285,6 +1285,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_custom_filler_words_setting,
             shortcut::change_agent_bridge_prompt_flag_setting,
             shortcut::change_acp_agent_enabled_setting,
+            shortcut::change_acp_dictation_enabled_setting,
             shortcut::change_acp_agent_command_setting,
             shortcut::change_acp_agent_args_setting,
             shortcut::change_acp_agent_turn_timeout_setting,
@@ -1802,6 +1803,8 @@ pub fn run(cli_args: CliArgs) {
 
 #[cfg(test)]
 mod acp_agent_settings_tests;
+#[cfg(test)]
+mod acp_dictation_switch_tests;
 #[cfg(test)]
 mod agent_bridge_settings_tests;
 #[cfg(test)]
