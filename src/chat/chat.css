@@ -1,383 +1,404 @@
-/* Conversation window styles. Colours follow the app theme (theme.css tokens and data-theme),
-   state colours are defined per scheme below and checked for >= 3:1 against the stage.
-   Motion is CSS keyframes on transform/opacity only; prefers-reduced-motion stops all of it. */
-@import "../styles/theme.css";
+/* Conversation window: fixed dark theme (independent of the OS and app theme).
+   Accent: --chat-accent is set inline on .chat-root from src/chat/chatTheme.ts. This file only
+   reads it. Text-bearing surfaces are solid (opaque background-color, no background-image). */
 
-/* The page fills the window so the transcript (the scroll container) gets a bounded height. */
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
-}
-
-/* ---- state colours: light stage ---- */
 .chat-root {
-  --stage-bg: #eef1f5;
-  --face-idle: #475569;
-  --face-listening: #0f766e;
-  --face-thinking: #6d28d9;
-  --face-acting: #b45309;
-  --face-speaking: #1d4ed8;
-  --face-sleep: #64748b;
-  --face-concerned: #b91c1c;
-  --eye-ink: #1f2937;
-  height: 100%;
+  --chat-bg: #0b0d12;
+  --chat-surface: #151922;
+  --chat-text: #e7e9ee;
+  --chat-muted: #98a1b2;
+  --chat-brand: #f5b921;
+  --chat-border: rgba(255, 255, 255, 0.08);
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
-  background: var(--color-background);
-  color: var(--color-text);
-  font:
-    14px/1.45 system-ui,
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background-color: var(--chat-bg);
+  background-image: none;
+  color: var(--chat-text);
+  color-scheme: dark;
+  font-family:
+    ui-sans-serif,
     -apple-system,
+    BlinkMacSystemFont,
     "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
     sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-/* ---- state colours: dark stage (system dark, dark, aurora, custom) ---- */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .chat-root {
-    --stage-bg: #2c2b29;
-    --face-idle: #cbd5e1;
-    --face-listening: #5eead4;
-    --face-thinking: #c4b5fd;
-    --face-acting: #fbbf24;
-    --face-speaking: #93c5fd;
-    --face-sleep: #94a3b8;
-    --face-concerned: #fca5a5;
-  }
+/* Decorative glow behind everything: a pseudo-element, never a background of text. */
+.chat-root::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(
+    ellipse 70% 38% at 50% 14%,
+    color-mix(in srgb, var(--chat-accent) 16%, transparent),
+    transparent 72%
+  );
 }
 
-:root[data-theme="dark"] .chat-root,
-:root[data-theme="aurora"] .chat-root,
-:root[data-theme="custom"] .chat-root {
-  --stage-bg: #2c2b29;
-  --face-idle: #cbd5e1;
-  --face-listening: #5eead4;
-  --face-thinking: #c4b5fd;
-  --face-acting: #fbbf24;
-  --face-speaking: #93c5fd;
-  --face-sleep: #94a3b8;
-  --face-concerned: #fca5a5;
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background-color: #0b0d12;
 }
 
-:root[data-theme="aurora"] .chat-root,
-:root[data-theme="custom"] .chat-root {
-  --stage-bg: #161a23;
+.chat-root *,
+.chat-root *::before,
+.chat-root *::after {
+  box-sizing: border-box;
 }
+
+/* Header ---------------------------------------------------------------- */
+
+.chat-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 14px;
+  background-color: var(--chat-surface);
+  border-bottom: 1px solid var(--chat-border);
+}
+
+.chat-brand {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.chat-brand-icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.chat-brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.chat-brand-name {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--chat-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-brand-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--chat-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-header-end {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-rec-off {
+  min-width: 0;
+  max-width: 120px;
+  padding: 2px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--chat-muted);
+  background-color: #1c2230;
+  border-radius: 999px;
+}
+
+.chat-clear {
+  flex: none;
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--chat-text);
+  background-color: transparent;
+  border: 1px solid var(--chat-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.chat-clear:hover:not(:disabled) {
+  border-color: var(--chat-accent);
+}
+
+.chat-clear:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.chat-clear:focus-visible,
+.chat-jump:focus-visible {
+  outline: 2px solid var(--chat-accent);
+  outline-offset: 2px;
+}
+
+/* Stage: orb, equaliser, status pill ------------------------------------ */
 
 .chat-stage {
-  --face: var(--face-idle);
-  position: relative;
   flex: none;
-  height: 38%;
-  min-height: 220px;
-  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px 12px;
-  background:
-    radial-gradient(
-      ellipse at 50% 42%,
-      color-mix(in srgb, var(--face) 24%, transparent),
-      transparent 62%
-    ),
-    var(--stage-bg);
-  overflow: hidden;
+  gap: 10px;
+  padding: 16px 16px 14px;
+  min-width: 0;
 }
 
-.chat-stage[data-face="listening"] {
-  --face: var(--face-listening);
-}
-.chat-stage[data-face="thinking"] {
-  --face: var(--face-thinking);
-}
-.chat-stage[data-face="acting"] {
-  --face: var(--face-acting);
-}
-.chat-stage[data-face="speaking"] {
-  --face: var(--face-speaking);
-}
-.chat-stage[data-face="sleep"] {
-  --face: var(--face-sleep);
-}
-.chat-stage[data-face="concerned"] {
-  --face: var(--face-concerned);
-}
-
-.chat-caption {
-  margin: 0;
-  font-weight: 600;
-  text-align: center;
-  color: var(--color-text);
-}
-
-.chat-reason {
-  margin-left: 6px;
-  font-weight: 400;
-  opacity: 0.8;
-}
-
-/* ---- avatar ---- */
 .vox-avatar {
-  flex: 1 1 auto;
-  min-height: 0;
-  height: calc(100% - 28px);
-  aspect-ratio: 1 / 1;
-  max-width: 100%;
+  display: block;
+  flex: none;
+  width: 148px;
+  height: 148px;
   overflow: visible;
+  color: var(--chat-accent);
 }
 
 .vox-glow {
-  fill: var(--face);
-  opacity: 0.2;
+  fill: url(#vox-glow-fill);
+  opacity: 0.9;
 }
+
 .vox-ring {
   fill: none;
-  stroke: var(--face);
-  stroke-width: 3;
-  opacity: 0.55;
-  transform-box: view-box;
-  transform-origin: 80px 80px;
+  stroke: var(--chat-accent);
+  stroke-width: 1.2;
+  opacity: 0.45;
+  transform-box: fill-box;
+  transform-origin: center;
 }
+
+.vox-ring-1 {
+  opacity: 0.6;
+}
+
 .vox-arc {
   fill: none;
-  stroke: var(--face);
-  stroke-width: 5;
+  stroke: var(--chat-accent);
+  stroke-width: 2.4;
   stroke-linecap: round;
-  stroke-dasharray: 110 305;
+  stroke-dasharray: 64 350;
   opacity: 0;
   transform-box: view-box;
   transform-origin: 80px 80px;
 }
-.vox-stop-hi {
-  stop-color: color-mix(in srgb, var(--face) 30%, #ffffff);
-}
-.vox-stop-lo {
-  stop-color: color-mix(in srgb, var(--face) 60%, #ffffff);
-}
-.vox-float,
-.vox-pulse {
-  transform-box: view-box;
-  transform-origin: 80px 80px;
-}
-.vox-eye {
-  fill: var(--eye-ink);
-  transform-box: fill-box;
-  transform-origin: center;
-}
-.vox-closed {
-  opacity: 0;
-}
-.vox-closed path,
-.vox-mouth {
-  fill: none;
-  stroke: var(--eye-ink);
-  stroke-width: 4;
-  stroke-linecap: round;
-}
-.vox-closed path {
-  stroke-width: 3.5;
-}
-.vox-mouth {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-.vox-brows {
-  opacity: 0;
-}
-.vox-brow {
-  stroke: var(--eye-ink);
-  stroke-width: 3.5;
-  stroke-linecap: round;
-  fill: none;
-}
+
 .vox-dots {
   opacity: 0;
   transform-box: view-box;
   transform-origin: 80px 80px;
 }
+
 .vox-dots circle {
-  fill: var(--face);
-}
-.vox-z {
-  opacity: 0;
-  fill: none;
-  stroke: var(--face);
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transform-box: fill-box;
-  transform-origin: center;
+  fill: var(--chat-accent);
 }
 
-.vox-avatar[data-face="idle"] .vox-float {
-  animation: vox-float 3.6s ease-in-out infinite;
+.vox-body-group {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: vox-breathe 5.2s ease-in-out infinite;
 }
-.vox-avatar[data-face="idle"] .vox-eye {
-  animation: vox-blink 4.8s ease-in-out infinite;
+
+.vox-body {
+  filter: drop-shadow(
+    0 0 10px color-mix(in srgb, var(--chat-accent) 35%, transparent)
+  );
+}
+
+.vox-shine {
+  fill: #fff8dc;
+  opacity: 0.55;
+}
+
+.chat-eq {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 16px;
+}
+
+.chat-eq span {
+  display: block;
+  width: 4px;
+  height: 16px;
+  border-radius: 2px;
+  background-color: var(--chat-accent);
+  opacity: 0.25;
+  transform: scaleY(0.25);
+}
+
+.chat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--chat-text);
+  background-color: var(--chat-surface);
+  border: 1px solid var(--chat-accent);
+  border-radius: 999px;
+}
+
+.chat-pill-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--chat-accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--chat-accent) 70%, transparent);
+}
+
+.chat-pill-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-reason {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--chat-muted);
+}
+
+.chat-reason::before {
+  content: "\00b7\00a0";
+}
+
+/* Per-face motion (transform/opacity only; reduced motion disables all of it) */
+
+.vox-avatar[data-face="idle"] .vox-ring {
+  opacity: 0.4;
+}
+
+.vox-avatar[data-face="idle"] .vox-body-group {
+  animation-duration: 6s;
 }
 
 .vox-avatar[data-face="listening"] .vox-ring {
-  animation: vox-ring-pulse 1.6s ease-out infinite;
-}
-.vox-avatar[data-face="listening"] .vox-eye {
-  transform: scaleY(1.2);
-}
-.vox-avatar[data-face="listening"] .vox-glow {
-  opacity: 0.3;
+  animation: vox-ripple 2.4s ease-out infinite;
 }
 
-.vox-avatar[data-face="thinking"] .vox-eyes {
-  animation: vox-drift 3s ease-in-out infinite;
+.vox-avatar[data-face="listening"] .vox-ring-2 {
+  animation-delay: 0.8s;
 }
+
+.vox-avatar[data-face="listening"] .vox-ring-3 {
+  animation-delay: 1.6s;
+}
+
 .vox-avatar[data-face="thinking"] .vox-dots {
   opacity: 1;
-  animation: vox-orbit 2.4s linear infinite;
+  animation: vox-orbit 3.2s linear infinite;
 }
 
 .vox-avatar[data-face="acting"] .vox-arc {
   opacity: 1;
-  animation: vox-spin 1.2s linear infinite;
-}
-.vox-avatar[data-face="acting"] .vox-eye {
-  transform: scaleY(0.6);
+  animation: vox-orbit 2.2s linear infinite;
 }
 
-.vox-avatar[data-face="speaking"] .vox-pulse {
-  animation: vox-breathe 0.84s ease-in-out infinite;
-}
-.vox-avatar[data-face="speaking"] .vox-mouth {
-  animation: vox-talk 0.42s ease-in-out infinite alternate;
+.vox-avatar[data-face="speaking"] .vox-body-group {
+  animation: vox-speak 0.9s ease-in-out infinite;
 }
 
-.vox-avatar[data-face="sleep"] .vox-float {
-  animation: vox-float 6s ease-in-out infinite;
-}
-.vox-avatar[data-face="sleep"] .vox-eye {
-  opacity: 0;
-}
-.vox-avatar[data-face="sleep"] .vox-closed {
-  opacity: 1;
-}
-.vox-avatar[data-face="sleep"] .vox-z {
-  opacity: 1;
-  animation: vox-z-drift 3.2s ease-in-out infinite;
-}
-.vox-avatar[data-face="sleep"] .vox-glow {
-  opacity: 0.12;
+.vox-avatar[data-face="speaking"] .vox-ring {
+  animation: vox-ring-pulse 0.9s ease-in-out infinite;
 }
 
-.vox-avatar[data-face="concerned"] .vox-brows {
-  opacity: 1;
+.vox-avatar[data-face="speaking"] .vox-ring-2 {
+  animation-delay: 0.15s;
 }
-.vox-avatar[data-face="concerned"] .vox-eye {
-  transform: scaleY(0.85);
+
+.vox-avatar[data-face="speaking"] .vox-ring-3 {
+  animation-delay: 0.3s;
 }
+
+.vox-avatar[data-face="sleep"] {
+  opacity: 0.55;
+}
+
+.vox-avatar[data-face="sleep"] .vox-body-group {
+  animation: vox-breathe 8s ease-in-out infinite;
+}
+
+.vox-avatar[data-face="sleep"] .vox-ring {
+  opacity: 0.2;
+}
+
+.vox-avatar[data-face="concerned"] {
+  animation: vox-tremble 0.5s steps(2, end) infinite;
+}
+
 .vox-avatar[data-face="concerned"] .vox-glow {
-  opacity: 0.08;
+  opacity: 0.4;
 }
 
-@keyframes vox-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-4px);
-  }
-}
-@keyframes vox-blink {
-  0%,
-  92%,
-  100% {
-    transform: scaleY(1);
-  }
-  95% {
-    transform: scaleY(0.1);
-  }
-}
-@keyframes vox-ring-pulse {
-  0% {
-    transform: scale(1);
-    opacity: 0.6;
-  }
-  100% {
-    transform: scale(1.22);
-    opacity: 0;
-  }
-}
-@keyframes vox-drift {
-  0%,
-  100% {
-    transform: translate(0, 0);
-  }
-  50% {
-    transform: translate(-3px, -3px);
-  }
-}
-@keyframes vox-orbit {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-@keyframes vox-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-@keyframes vox-breathe {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.025);
-  }
-}
-@keyframes vox-talk {
-  from {
-    transform: scaleY(0.3);
-  }
-  to {
-    transform: scaleY(1.6);
-  }
-}
-@keyframes vox-z-drift {
-  0% {
-    transform: translate(0, 6px);
-  }
-  100% {
-    transform: translate(-6px, -8px);
-  }
+.vox-avatar[data-face="concerned"] .vox-body-group {
+  filter: saturate(0.6) brightness(0.9);
 }
 
-/* ---- header, transcript, footer ---- */
-.chat-header {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--color-text) 14%, transparent);
+.chat-root[data-face="listening"] .chat-eq span,
+.chat-root[data-face="speaking"] .chat-eq span {
+  opacity: 1;
+  animation: chat-eq 1s ease-in-out infinite;
 }
 
-.chat-rec-off {
-  font-size: 12px;
-  color: color-mix(in srgb, var(--color-text) 65%, var(--color-background));
+.chat-root[data-face="listening"] .chat-eq span:nth-child(2),
+.chat-root[data-face="speaking"] .chat-eq span:nth-child(2) {
+  animation-delay: -0.15s;
 }
+
+.chat-root[data-face="listening"] .chat-eq span:nth-child(3),
+.chat-root[data-face="speaking"] .chat-eq span:nth-child(3) {
+  animation-delay: -0.3s;
+}
+
+.chat-root[data-face="listening"] .chat-eq span:nth-child(4),
+.chat-root[data-face="speaking"] .chat-eq span:nth-child(4) {
+  animation-delay: -0.45s;
+}
+
+.chat-root[data-face="listening"] .chat-eq span:nth-child(5),
+.chat-root[data-face="speaking"] .chat-eq span:nth-child(5) {
+  animation-delay: -0.6s;
+}
+
+/* Transcript ------------------------------------------------------------ */
 
 .chat-body {
   position: relative;
@@ -390,111 +411,241 @@ body,
 .chat-log {
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
   margin: 0;
-  padding: 12px;
-  list-style: none;
+  padding: 6px 14px 16px;
+  overflow-x: hidden;
   overflow-y: auto;
+  list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: #2a3140 transparent;
+}
+
+.chat-log::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chat-log::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-log::-webkit-scrollbar-thumb {
+  background-color: #2a3140;
+  border-radius: 4px;
 }
 
 .chat-bubble {
-  max-width: 82%;
-  padding: 8px 12px;
-  border-radius: 14px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.chat-text {
-  white-space: pre-wrap;
+  max-width: 85%;
+  min-width: 0;
+  padding: 9px 12px 10px;
   overflow-wrap: anywhere;
 }
 
 .chat-user {
   align-self: flex-end;
-  border-bottom-right-radius: 4px;
-  background: color-mix(
-    in srgb,
-    var(--color-logo-primary) 22%,
-    var(--color-background)
-  );
+  color: #eef1ff;
+  background-color: #26325a;
+  border-radius: 16px 16px 4px 16px;
 }
 
 .chat-assistant {
   align-self: flex-start;
-  border-bottom-left-radius: 4px;
-  background: color-mix(in srgb, var(--color-text) 8%, var(--color-background));
+  color: var(--chat-text);
+  background-color: var(--chat-surface);
+  border-left: 3px solid var(--chat-brand);
+  border-radius: 16px 16px 16px 4px;
 }
 
 .chat-system {
   align-self: center;
-  max-width: 92%;
-  padding: 2px 8px;
-  font-size: 12px;
+  max-width: 90%;
+  padding: 4px 12px;
+  color: var(--chat-muted);
+  background-color: #11151d;
+  border: 1px solid var(--chat-border);
+  border-radius: 999px;
   text-align: center;
-  color: color-mix(in srgb, var(--color-text) 62%, var(--color-background));
+}
+
+.chat-system .chat-text {
+  font-size: 12px;
+}
+
+.chat-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 3px;
+}
+
+.chat-sender {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--chat-brand);
+}
+
+.chat-user .chat-sender {
+  color: #c9d3f5;
+}
+
+.chat-time {
+  flex: none;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--chat-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .chat-empty {
   align-self: center;
-  margin-top: 24px;
-  color: color-mix(in srgb, var(--color-text) 62%, var(--color-background));
+  margin-top: 28px;
+  color: var(--chat-muted);
+  text-align: center;
 }
 
 .chat-jump {
   position: absolute;
-  bottom: 12px;
   left: 50%;
+  bottom: 12px;
   transform: translateX(-50%);
-}
-
-.chat-clear,
-.chat-jump {
+  padding: 6px 14px;
   font: inherit;
-  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0b0d12;
+  background-color: var(--chat-brand);
+  border: 0;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--color-text) 35%, transparent);
-  background: var(--color-background);
-  color: var(--color-text);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
   cursor: pointer;
-}
-
-.chat-clear:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
-.chat-clear:focus-visible,
-.chat-jump:focus-visible {
-  outline: 2px solid var(--color-logo-primary);
-  outline-offset: 2px;
 }
 
 .chat-error {
   flex: none;
   margin: 0;
-  padding: 6px 12px;
+  padding: 8px 14px;
   font-size: 13px;
-  color: var(--color-error, #b91c1c);
+  color: #ff9e94;
+  background-color: #1f1417;
+  border-bottom: 1px solid var(--chat-border);
 }
 
 .chat-footer {
   flex: none;
-  padding: 8px 12px;
+  padding: 8px 14px;
   font-size: 12px;
   text-align: center;
-  border-top: 1px solid color-mix(in srgb, var(--color-text) 14%, transparent);
-  color: color-mix(in srgb, var(--color-text) 65%, var(--color-background));
+  color: var(--chat-muted);
+  background-color: var(--chat-bg);
+  border-top: 1px solid var(--chat-border);
 }
 
-/* ---- reduced motion: static faces, no animation at all ---- */
+/* Small windows: shrink the orb so the transcript keeps room. */
+@media (max-height: 560px) {
+  .vox-avatar {
+    width: 104px;
+    height: 104px;
+  }
+
+  .chat-stage {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+}
+
+/* Reduced motion: no animation, no transition, no smooth scrolling, for every element. */
 @media (prefers-reduced-motion: reduce) {
-  .chat-root *,
-  .chat-root *::before,
-  .chat-root *::after {
+  *,
+  *::before,
+  *::after {
     animation: none !important;
     transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@keyframes vox-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.025);
+  }
+}
+
+@keyframes vox-ripple {
+  0% {
+    transform: scale(0.86);
+    opacity: 0.75;
+  }
+  100% {
+    transform: scale(1.14);
+    opacity: 0;
+  }
+}
+
+@keyframes vox-ring-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.8;
+  }
+}
+
+@keyframes vox-speak {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+@keyframes vox-orbit {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes vox-tremble {
+  0% {
+    transform: translateX(-1.5px);
+  }
+  100% {
+    transform: translateX(1.5px);
+  }
+}
+
+@keyframes chat-eq {
+  0%,
+  100% {
+    transform: scaleY(0.25);
+  }
+  50% {
+    transform: scaleY(1);
   }
 }

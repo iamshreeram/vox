@@ -1334,6 +1334,10 @@
         "title": "Keep conversation transcript",
         "description": "Keep a live transcript of the conversation in memory for the conversation window. It is never saved to disk."
       },
+      "chatOpenOnStart": {
+        "label": "Open the conversation window when a conversation starts",
+        "description": "Say \"Hey Jarvis\" and the conversation window appears by itself, without taking keyboard focus. Needs the transcript to be kept."
+      },
       "openChatWindow": "Open conversation window"
     }
   },
@@ -1671,6 +1675,9 @@
     "clear": "Clear",
     "clearFailed": "Could not clear the conversation. Try again.",
     "jumpToLatest": "Jump to latest",
+    "you": "You",
+    "vox": "Vox",
+    "subtitle": "Conversation",
     "recordingOff": "Recording is off",
     "system": {
       "started": "Conversation started",

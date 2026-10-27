@@ -12,7 +12,10 @@ import {
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { commands } from "@/bindings";
+import type { CSSProperties } from "react";
 import VoxAvatar from "./VoxAvatar";
+import voxIcon from "./assets/vox-icon.png";
+import { accentStyle } from "./chatTheme";
 import {
   applyEvent,
   applySnapshot,
@@ -51,7 +54,6 @@ function captionFor(
 }
 
 function Bubble({ entry, t }: { entry: ChatEntry; t: TFn }) {
-  const when = new Date(entry.tsMs).toLocaleTimeString();
   if (entry.role === "system") {
     const note = describeSystem(entry.text);
     const label =
@@ -59,18 +61,30 @@ function Bubble({ entry, t }: { entry: ChatEntry; t: TFn }) {
         ? t(note.key)
         : t(note.key, { count: note.count });
     return (
-      <li className="chat-bubble chat-system" data-role="system" title={when}>
-        {label}
+      <li className="chat-bubble chat-system" data-role="system">
+        <div className="chat-text" data-testid="chat-text">
+          {label}
+        </div>
       </li>
     );
   }
+  const date = new Date(entry.tsMs);
+  const valid = !Number.isNaN(date.getTime());
+  const sender = entry.role === "user" ? t("chat.you") : t("chat.vox");
   return (
-    <li
-      className={`chat-bubble chat-${entry.role}`}
-      data-role={entry.role}
-      title={when}
-    >
-      <div className="chat-text">{entry.text}</div>
+    <li className={`chat-bubble chat-${entry.role}`} data-role={entry.role}>
+      <div className="chat-meta">
+        <span className="chat-sender">{sender}</span>
+        <time
+          className="chat-time"
+          dateTime={valid ? date.toISOString() : undefined}
+        >
+          {valid ? date.toLocaleTimeString() : ""}
+        </time>
+      </div>
+      <div className="chat-text" data-testid="chat-text">
+        {entry.text}
+      </div>
     </li>
   );
 }
@@ -214,29 +228,62 @@ export default function ChatWindow() {
   const caption = captionFor(view.state, view.end);
 
   return (
-    <div className="chat-root">
-      <section className="chat-stage" data-face={face}>
+    <div
+      className="chat-root"
+      data-face={face}
+      style={accentStyle(face) as CSSProperties}
+    >
+      <header className="chat-header">
+        <div className="chat-brand">
+          <img
+            data-testid="chat-brand-icon"
+            src={voxIcon}
+            alt=""
+            width={32}
+            height={32}
+            className="chat-brand-icon"
+          />
+          <div className="chat-brand-text">
+            {/* eslint-disable-next-line i18next/no-literal-string -- product name, never translated */}
+            <span data-testid="chat-brand-name" className="chat-brand-name">
+              Vox
+            </span>
+            <span data-testid="chat-brand-sub" className="chat-brand-sub">
+              {t("chat.subtitle")}
+            </span>
+          </div>
+        </div>
+        <div className="chat-header-end">
+          {view.recording ? null : (
+            <span className="chat-rec-off">{t("chat.recordingOff")}</span>
+          )}
+          <button
+            type="button"
+            className="chat-clear"
+            onClick={onClear}
+            disabled={clearing}
+          >
+            {t("chat.clear")}
+          </button>
+        </div>
+      </header>
+      <section className="chat-stage">
         <VoxAvatar face={face} />
-        <p className="chat-caption">
-          <span>{t(caption.key)}</span>
+        <div className="chat-eq" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+          <span />
+          <span />
+        </div>
+        <p className="chat-pill">
+          <span className="chat-pill-dot" aria-hidden="true" />
+          <span className="chat-pill-text">{t(caption.key)}</span>
           {caption.reasonKey ? (
             <span className="chat-reason">{t(caption.reasonKey)}</span>
           ) : null}
         </p>
       </section>
-      <header className="chat-header">
-        {view.recording ? null : (
-          <span className="chat-rec-off">{t("chat.recordingOff")}</span>
-        )}
-        <button
-          type="button"
-          className="chat-clear"
-          onClick={onClear}
-          disabled={clearing}
-        >
-          {t("chat.clear")}
-        </button>
-      </header>
       {clearFailed ? (
         <p className="chat-error" role="alert">
           {t("chat.clearFailed")}

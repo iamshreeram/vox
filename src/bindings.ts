@@ -1999,6 +1999,12 @@ async changeConverseChatLogSetting(enabled: boolean) : Promise<void> {
     await TAURI_INVOKE("change_converse_chat_log_setting", { enabled });
 },
 /**
+ * Turns the open-on-start behaviour of the conversation window on or off and persists the choice.
+ */
+async changeConverseChatOpenOnStartSetting(enabled: boolean) : Promise<void> {
+    await TAURI_INVOKE("change_converse_chat_open_on_start_setting", { enabled });
+},
+/**
  * Shows the conversation window, or hides it when it is visible and focused. The settings
  * button calls this; the hotkey and the tray item use the same path.
  */
@@ -2299,6 +2305,11 @@ converse_barge_in?: ConverseBargeIn;
  * On by default; stores without the key get on. Nothing is written to disk.
  */
 converse_chat_log?: boolean; 
+/**
+ * Open the conversation window automatically when a conversation starts (wake phrase).
+ * The window is shown without taking keyboard focus. On by default; needs the transcript.
+ */
+converse_chat_open_on_start?: boolean; 
 /**
  * Ignore utterances that do not sound like the enrolled voice (convenience
  * filter, NOT authentication; needs the model and an enrolled voice).

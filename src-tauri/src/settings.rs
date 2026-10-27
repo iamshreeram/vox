@@ -922,6 +922,10 @@ pub struct AppSettings {
     /// On by default; stores without the key get on. Nothing is written to disk.
     #[serde(default = "default_converse_chat_log")]
     pub converse_chat_log: bool,
+    /// Open the conversation window when a conversation starts (DESIGN-UI). Only takes effect
+    /// together with `converse_chat_log`. On by default; stores without the key get on.
+    #[serde(default = "default_converse_chat_open_on_start")]
+    pub converse_chat_open_on_start: bool,
     /// Ignore utterances that do not sound like the enrolled voice (convenience
     /// filter, NOT authentication; needs the model and an enrolled voice).
     #[serde(default)]
@@ -1369,6 +1373,17 @@ fn default_conversation_planner() -> bool {
 /// Serde default for `converse_chat_log`: on for stores that lack the key (DESIGN-CHAT A5).
 fn default_converse_chat_log() -> bool {
     true
+}
+
+/// Serde default for `converse_chat_open_on_start`: on for stores that lack the key (DESIGN-UI).
+fn default_converse_chat_open_on_start() -> bool {
+    true
+}
+
+/// Whether a conversation start should open the chat window: both recording and the
+/// open-on-start setting must be on (DESIGN-UI).
+pub fn should_open_chat_on_start(s: &AppSettings) -> bool {
+    s.converse_chat_log && s.converse_chat_open_on_start
 }
 
 /// Serde default for a stored object that lacks `acp_permission_mode`. Existing
@@ -2193,6 +2208,7 @@ pub fn get_default_settings() -> AppSettings {
         converse_latency_panel: false,
         converse_barge_in: ConverseBargeIn::Off,
         converse_chat_log: default_converse_chat_log(),
+        converse_chat_open_on_start: default_converse_chat_open_on_start(),
         speaker_filter_enabled: false,
         speaker_filter_sensitivity: SpeakerSensitivity::default(),
         personas: Vec::new(),

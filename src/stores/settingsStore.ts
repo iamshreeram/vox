@@ -456,6 +456,8 @@ const settingUpdaters: {
     commands.changeConverseLatencyPanelSetting(value as boolean),
   converse_chat_log: (value) =>
     commands.changeConverseChatLogSetting(value as boolean),
+  converse_chat_open_on_start: (value) =>
+    commands.changeConverseChatOpenOnStartSetting(value as boolean),
   speaker_filter_enabled: (value) =>
     commands.changeSpeakerFilterEnabledSetting(value as boolean),
   speaker_filter_sensitivity: (value) =>

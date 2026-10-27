@@ -354,8 +354,10 @@ fn action_map_registers_chat_window() {
     );
 }
 
+// UI-REFRESH SPEC (DESIGN-UI Rev 2): the v1 decision "no open-on-start" is reversed on the
+// user's request; the default is now ON. This test replaces the v1 assertion that the key was absent.
 #[test]
-fn default_settings_json_has_chat_log_on_and_no_open_on_start_key() {
+fn default_settings_json_has_chat_log_on_and_open_on_start_on() {
     let value = serde_json::to_value(crate::settings::get_default_settings())
         .expect("default settings serialize");
     assert_eq!(
@@ -363,9 +365,10 @@ fn default_settings_json_has_chat_log_on_and_no_open_on_start_key() {
         Value::Bool(true),
         "converse_chat_log defaults to true (A5)"
     );
-    assert!(
-        value.get("converse_chat_open_on_start").is_none(),
-        "converse_chat_open_on_start is removed from v1 (A5)"
+    assert_eq!(
+        value["converse_chat_open_on_start"],
+        Value::Bool(true),
+        "converse_chat_open_on_start defaults to true (DESIGN-UI)"
     );
 }
 
@@ -375,6 +378,7 @@ fn stored_settings_without_new_keys_deserialize_with_defaults() {
         .expect("default settings serialize");
     let obj = stored.as_object_mut().expect("settings is an object");
     obj.remove("converse_chat_log");
+    obj.remove("converse_chat_open_on_start");
     obj.get_mut("bindings")
         .and_then(Value::as_object_mut)
         .expect("bindings is an object")
@@ -384,6 +388,11 @@ fn stored_settings_without_new_keys_deserialize_with_defaults() {
         .expect("a store written before this feature must still deserialize");
     let back = serde_json::to_value(&loaded).expect("loaded settings serialize");
     assert_eq!(back["converse_chat_log"], Value::Bool(true));
+    assert_eq!(
+        back["converse_chat_open_on_start"],
+        Value::Bool(true),
+        "a store without the key gets open-on-start on"
+    );
     if let Some(binding) = loaded.bindings.get("chat_window") {
         assert_eq!(binding.current_binding, binding.default_binding);
     }
@@ -565,5 +574,169 @@ fn chat_window_module_is_wired_in_lib_rs() {
     assert!(
         lib.contains("mod chat_window;"),
         "lib.rs must declare mod chat_window"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// UI-REFRESH SPEC (DESIGN-UI Rev 2, written by ram-ai; workers must not edit): open on start
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn open_plan_truth_table() {
+    // (exists, visible, minimized) -> plan
+    let cases = [
+        (false, false, false, OpenPlan::Build),
+        (false, true, false, OpenPlan::Build),
+        (false, true, true, OpenPlan::Build),
+        (true, false, false, OpenPlan::Show),
+        (true, false, true, OpenPlan::Show),
+        // a minimized window can still report visible: it must be shown (unminimized)
+        (true, true, true, OpenPlan::Show),
+        (true, true, false, OpenPlan::Nothing),
+    ];
+    for (exists, visible, minimized, expected) in cases {
+        assert_eq!(
+            open_plan(exists, visible, minimized),
+            expected,
+            "exists={exists} visible={visible} minimized={minimized}"
+        );
+    }
+}
+
+#[test]
+fn should_open_on_start_needs_both_settings() {
+    let mut s = crate::settings::get_default_settings();
+    for (log, open, expected) in [
+        (true, true, true),
+        (true, false, false),
+        (false, true, false),
+        (false, false, false),
+    ] {
+        s.converse_chat_log = log;
+        s.converse_chat_open_on_start = open;
+        assert_eq!(
+            crate::settings::should_open_chat_on_start(&s),
+            expected,
+            "log={log} open={open}"
+        );
+    }
+}
+
+#[test]
+fn queue_open_on_start_returns_before_anything_runs() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+    let eligible_calls = Arc::new(AtomicUsize::new(0));
+    let open_calls = Arc::new(AtomicUsize::new(0));
+    let queued: Arc<Mutex<Vec<Box<dyn FnOnce() + Send>>>> = Arc::new(Mutex::new(Vec::new()));
+
+    let (e, o, q) = (eligible_calls.clone(), open_calls.clone(), queued.clone());
+    queue_open_on_start(
+        move |job| q.lock().unwrap().push(job),
+        move || {
+            e.fetch_add(1, Ordering::SeqCst);
+            true
+        },
+        move || {
+            o.fetch_add(1, Ordering::SeqCst);
+        },
+    );
+    // The hook returned; the dispatcher withheld the job: no settings read, no window work yet.
+    assert_eq!(
+        eligible_calls.load(Ordering::SeqCst),
+        0,
+        "no settings read in the hook"
+    );
+    assert_eq!(
+        open_calls.load(Ordering::SeqCst),
+        0,
+        "no window work in the hook"
+    );
+    let job = queued.lock().unwrap().pop().expect("one job was queued");
+    job();
+    assert_eq!(eligible_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(open_calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn queue_open_on_start_does_not_open_when_not_eligible() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+    let open_calls = Arc::new(AtomicUsize::new(0));
+    let queued: Arc<Mutex<Vec<Box<dyn FnOnce() + Send>>>> = Arc::new(Mutex::new(Vec::new()));
+    let (o, q) = (open_calls.clone(), queued.clone());
+    queue_open_on_start(
+        move |job| q.lock().unwrap().push(job),
+        || false,
+        move || {
+            o.fetch_add(1, Ordering::SeqCst);
+        },
+    );
+    queued.lock().unwrap().pop().expect("job queued")();
+    assert_eq!(open_calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn open_on_start_command_is_main_only_and_registered() {
+    let cmd = "change_converse_chat_open_on_start_setting";
+    assert!(
+        !chat_command_allowed("chat", cmd),
+        "chat webview must not call it"
+    );
+    assert!(chat_command_allowed("main", cmd));
+    let lib = code_only(&read_crate_file("src/lib.rs"));
+    assert!(
+        lib.contains(&format!("commands::chat::{cmd}")),
+        "{cmd} must be registered in lib.rs"
+    );
+    let chat_cmds = code_only(&read_crate_file("src/commands/chat.rs"));
+    assert!(chat_cmds.contains(&format!("fn {cmd}")), "{cmd} defined");
+}
+
+#[test]
+fn session_start_hook_only_enqueues_and_never_reads_settings_itself() {
+    let src = code_only(&read_crate_file("src/managers/converse_platform.rs"));
+    let start = src
+        .find("fn on_session_start(&self)")
+        .expect("on_session_start exists");
+    let body: String = src[start..].chars().take(900).collect();
+    let end = body.find("\n    }\n").unwrap_or(body.len());
+    let body = &body[..end];
+    assert!(
+        body.contains("open_chat_window_on_session_start"),
+        "hook must call chat_window::open_chat_window_on_session_start"
+    );
+    assert!(
+        !body.contains("get_settings"),
+        "the hook must not read the settings store (C1); the queued closure does"
+    );
+}
+
+#[test]
+fn auto_open_never_focuses_and_window_is_dark_and_sized() {
+    let src = code_only(&read_crate_file("src/chat_window.rs"));
+    // Every function on the auto-open path: none may call set_focus (steals the foreground).
+    for name in [
+        "open_chat_window_on_session_start",
+        "open_on_main_thread",
+        "show_without_focus",
+    ] {
+        let start = src
+            .find(&format!("fn {name}"))
+            .unwrap_or_else(|| panic!("fn {name} must exist"));
+        let tail = &src[start + 3..];
+        let end = tail
+            .find("\nfn ")
+            .or_else(|| tail.find("\npub fn "))
+            .unwrap_or(tail.len());
+        assert!(
+            !tail[..end].contains("set_focus"),
+            "{name} must never call set_focus"
+        );
+    }
+    assert!(src.contains("Theme::Dark"), "window uses the dark theme");
+    assert!(
+        src.contains("inner_size(480.0, 720.0)") && src.contains("min_inner_size(360.0, 420.0)"),
+        "window size 480x720, min 360x420"
     );
 }

@@ -65,6 +65,8 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
     const converseBinding = getSetting("bindings")?.converse;
     const bargeIn = normalizeConverseBargeIn(getSetting("converse_barge_in"));
     const chatLogEnabled = getSetting("converse_chat_log") ?? true;
+    const chatOpenOnStartEnabled =
+      getSetting("converse_chat_open_on_start") ?? true;
 
     useEffect(() => {
       let cancelled = false;
@@ -321,6 +323,21 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
           isUpdating={isUpdating("converse_chat_log")}
           label={t("settings.conversation.chatLog.title")}
           description={t("settings.conversation.chatLog.description")}
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+        />
+
+        <ToggleSwitch
+          checked={chatOpenOnStartEnabled}
+          onChange={(next) =>
+            void updateSetting("converse_chat_open_on_start", next)
+          }
+          disabled={
+            !chatLogEnabled || isUpdating("converse_chat_open_on_start")
+          }
+          isUpdating={isUpdating("converse_chat_open_on_start")}
+          label={t("settings.conversation.chatOpenOnStart.label")}
+          description={t("settings.conversation.chatOpenOnStart.description")}
           descriptionMode={descriptionMode}
           grouped={grouped}
         />

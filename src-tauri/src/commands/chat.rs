@@ -66,6 +66,16 @@ pub fn change_converse_chat_log_setting(app: AppHandle, enabled: bool) {
     }
 }
 
+/// Turns auto-opening of the conversation window at conversation start on or off and persists
+/// the choice. Main window only (not on the chat allow-list).
+#[tauri::command]
+#[specta::specta]
+pub fn change_converse_chat_open_on_start_setting(app: AppHandle, enabled: bool) {
+    let mut current = settings::get_settings(&app);
+    current.converse_chat_open_on_start = enabled;
+    settings::write_settings(&app, current);
+}
+
 /// Shows the conversation window, or hides it when it is visible and focused. The settings
 /// button calls this; the hotkey and the tray item use the same path.
 #[tauri::command]

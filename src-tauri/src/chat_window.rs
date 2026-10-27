@@ -105,8 +105,9 @@ fn build_chat_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         WebviewUrl::App(CHAT_ENTRY_URL.into()),
     )
     .title("Vox Conversation")
-    .inner_size(440.0, 680.0)
-    .min_inner_size(320.0, 360.0)
+    .inner_size(480.0, 720.0)
+    .min_inner_size(360.0, 420.0)
+    .theme(Some(tauri::Theme::Dark))
     .resizable(true)
     .decorations(true)
     .visible(false)
@@ -125,6 +126,100 @@ fn build_chat_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         }
     });
     Ok(window)
+}
+
+/// What opening the chat window on conversation start must do for the current window state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenPlan {
+    Build,
+    Show,
+    Nothing,
+}
+
+/// Pure open-on-start decision (DESIGN-UI). A minimized window is shown (unminimized) even if
+/// it still reports visible.
+pub fn open_plan(exists: bool, visible: bool, minimized: bool) -> OpenPlan {
+    if !exists {
+        OpenPlan::Build
+    } else if !visible || minimized {
+        OpenPlan::Show
+    } else {
+        OpenPlan::Nothing
+    }
+}
+
+/// Queues the open-on-start job and returns at once. Only the boxed closure is built here;
+/// `eligible` (which reads the settings store) and `open` run later, inside the job.
+pub fn queue_open_on_start<D, E, A>(dispatch: D, eligible: E, open: A)
+where
+    D: FnOnce(Box<dyn FnOnce() + Send + 'static>),
+    E: FnOnce() -> bool + Send + 'static,
+    A: FnOnce() + Send + 'static,
+{
+    let job: Box<dyn FnOnce() + Send + 'static> = Box::new(move || {
+        if eligible() {
+            open();
+        }
+    });
+    dispatch(job);
+}
+
+/// Called from the conversation session-start hook. Queues the auto-open; the settings check
+/// and the window work happen on the main thread (DESIGN-UI).
+pub fn open_chat_window_on_session_start(app: &AppHandle) {
+    let dispatch_app = app.clone();
+    let eligible_app = app.clone();
+    let open_app = app.clone();
+    queue_open_on_start(
+        move |job| {
+            let _ = dispatch_app.run_on_main_thread(job);
+        },
+        move || settings::should_open_chat_on_start(&settings::get_settings(&eligible_app)),
+        move || open_on_main_thread(&open_app),
+    );
+}
+
+/// Main-thread body of the auto-open. Builds the window if needed, or shows it without
+/// taking focus. Errors are ignored: auto-open must never disturb the conversation.
+fn open_on_main_thread(app: &AppHandle) {
+    let existing = app.get_webview_window(CHAT_WINDOW_LABEL);
+    let exists = existing.is_some();
+    let visible = existing
+        .as_ref()
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+    let minimized = existing
+        .as_ref()
+        .and_then(|w| w.is_minimized().ok())
+        .unwrap_or(false);
+    match open_plan(exists, visible, minimized) {
+        OpenPlan::Build => {
+            if let Ok(window) = build_chat_window(app) {
+                show_without_focus(app, &window);
+            }
+        }
+        OpenPlan::Show => {
+            if let Some(window) = existing {
+                show_without_focus(app, &window);
+            }
+        }
+        OpenPlan::Nothing => {}
+    }
+}
+
+/// Shows the window without activating the app: the foreground app keeps focus, so the user's
+/// dictation or typing target is not disturbed.
+fn show_without_focus(app: &AppHandle, window: &WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+    }
+    let _ = window.unminimize();
+    let _ = window.show();
 }
 
 /// Shows and focuses the window and promotes the macOS activation policy so the window can

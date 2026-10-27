@@ -307,6 +307,18 @@ shortcut settings. You can also use the "Conversation window" item in the tray
 menu, or the "Open conversation window" button in Settings > General, in the
 Voice conversation group (shown when Experimental features are on).
 
+When a conversation starts (for example after you say "Hey Jarvis"), the window
+also opens by itself, without taking keyboard focus, so whatever you were typing
+in keeps working. Turn this off with "Open the conversation window when a
+conversation starts" in the same settings group. It does nothing while "Keep
+conversation transcript" is off. If you closed the window, the next conversation
+opens it again. If the window is minimised, it is brought back.
+
+The window has a fixed dark look with the Vox icon. The orb and the status pill
+change colour with the state: cyan while listening, gold while Vox speaks, violet
+while thinking, blue while working, coral after an error and slate when the
+session has ended. Motion stops when the system asks for reduced motion.
+
 What it shows:
 
 - What you said, as recognised.
