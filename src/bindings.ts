@@ -1993,6 +1993,18 @@ async clearChatLog() : Promise<Result<null, string>> {
 }
 },
 /**
+ * Sends a typed message to the conversation. Starts a text-only session when no voice
+ * conversation is running. Errors: "not_configured", "busy", "too_long", "failed".
+ */
+async sendChatMessage(text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("send_chat_message", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Turns recording of the chat transcript on or off and persists the choice.
  */
 async changeConverseChatLogSetting(enabled: boolean) : Promise<void> {

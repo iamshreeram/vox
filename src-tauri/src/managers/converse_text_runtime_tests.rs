@@ -10,9 +10,7 @@
 
 use super::*;
 use crate::managers::chat_log::ChatRole;
-use crate::managers::converse::{
-    BoxFuture, Ears, Hands, ListenOutcome, Mouth, PhraseOutcome, QuietOutcome, SayOutcome,
-};
+use crate::managers::converse::{BoxFuture, Hands, Mouth, PhraseOutcome, QuietOutcome, SayOutcome};
 use crate::managers::converse_capture::{
     CaptureTimings, CaptureWorker, RecorderPort, StartError, TranscribeFailure, Transcriber,
 };
@@ -256,8 +254,7 @@ fn typing_bye_ends_the_text_session_as_user_ended_and_drops_leftovers() {
         p.events
             .lock()
             .unwrap()
-            .iter()
-            .any(|e| *e == ("idle", Some("user_ended")))
+            .contains(&("idle", Some("user_ended")))
     });
     assert_eq!(c.typed_inbox().len(), 0);
     reset_hooks();
@@ -277,8 +274,7 @@ fn stop_unblocks_a_text_session_that_is_waiting_for_typing() {
         .events
         .lock()
         .unwrap()
-        .iter()
-        .any(|e| *e == ("idle", Some("cancelled"))));
+        .contains(&("idle", Some("cancelled"))));
     reset_hooks();
 }
 

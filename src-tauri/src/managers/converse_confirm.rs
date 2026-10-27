@@ -7,7 +7,7 @@ use std::time::Duration;
 use crate::managers::chat_log::ChatRole;
 use crate::managers::command_router::CommandAction;
 use crate::managers::converse::{
-    Ears, Hands, ListenOutcome, Mouth, QuietOutcome, Reporter, SayOutcome,
+    Ears, Hands, ListenOutcome, Mouth, QuietOutcome, Reporter, SayOutcome, SessionConfig,
 };
 use crate::managers::converse_agent::plan_confirmation_prompt;
 #[cfg(test)]
@@ -163,6 +163,17 @@ impl Default for ConfirmConfig {
             listen_timeout: Duration::from_secs(8),
             post_speech_guard: Duration::from_millis(350),
         }
+    }
+}
+
+/// The confirmation timing of one session: the listen window and the post-speech guard come
+/// from the session config (a text session waits longer for a typed answer); the quiet wait is
+/// the default.
+pub fn confirm_config_for(cfg: &SessionConfig) -> ConfirmConfig {
+    ConfirmConfig {
+        quiet_wait: ConfirmConfig::default().quiet_wait,
+        listen_timeout: cfg.confirm_listen_timeout,
+        post_speech_guard: cfg.post_speech_guard,
     }
 }
 
@@ -878,3 +889,7 @@ mod converse_confirm_adapter_tests;
 #[cfg(test)]
 #[path = "converse_confirm_m4_tests.rs"]
 mod converse_confirm_m4_tests;
+
+#[cfg(test)]
+#[path = "converse_confirm_text_tests.rs"]
+mod converse_confirm_text_tests;

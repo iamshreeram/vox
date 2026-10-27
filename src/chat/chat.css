@@ -555,6 +555,98 @@ body {
   border-top: 1px solid var(--chat-border);
 }
 
+/* Typing box ------------------------------------------------------------ */
+
+/* Pinned below the transcript, above the footer. Solid surfaces only (no translucent backgrounds
+   behind text). Height is set from the content in ChatWindow; max-height caps it at four lines. */
+.chat-composer {
+  flex: none;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px 8px;
+  background-color: var(--chat-bg);
+  border-top: 1px solid var(--chat-border);
+}
+
+.chat-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chat-input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-height: calc(4 * 20px + 16px + 2px);
+  margin: 0;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--chat-text);
+  background-color: var(--chat-surface);
+  border: 1px solid #2a3140;
+  border-radius: 10px;
+  overflow-y: auto;
+  resize: none;
+  overflow-wrap: anywhere;
+}
+
+.chat-input::placeholder {
+  color: var(--chat-muted);
+  opacity: 1;
+}
+
+.chat-input:focus-visible,
+.chat-send:focus-visible {
+  outline: 2px solid var(--chat-text);
+  outline-offset: 2px;
+}
+
+.chat-send {
+  flex: none;
+  min-height: 38px;
+  padding: 0 16px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0b0d12;
+  background-color: var(--chat-brand);
+  border: 1px solid var(--chat-brand);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.chat-send:disabled {
+  color: var(--chat-muted);
+  background-color: #2a3140;
+  border-color: #2a3140;
+  cursor: default;
+}
+
+.chat-send-error {
+  border: 1px solid #5a2a2a;
+  border-radius: 8px;
+}
+
+.chat-count {
+  align-self: flex-end;
+  font-size: 12px;
+  color: var(--chat-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-composer *,
+.chat-composer *::before,
+.chat-composer *::after {
+  transition: none;
+  animation: none;
+}
+
 /* Small windows: shrink the orb so the transcript keeps room. */
 @media (max-height: 560px) {
   .vox-avatar {

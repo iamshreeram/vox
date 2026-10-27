@@ -9,9 +9,9 @@ use crate::managers::converse_agent::{
 };
 use crate::managers::converse_barge::{BargeCapture, BargeIn, BargeWatch, ReplyGate};
 use crate::managers::converse_confirm::{
-    confirm_action_recorded, confirm_forced, confirmation_question, decline_message,
-    fingerprint_for, forced_prompt, prepare_action, ConfirmConfig, Decision, DeclineReason, DirFd,
-    JobLaunch, JobStartOutcome, PinError, PolicySource, PrepareError, PreparedAction,
+    confirm_action_recorded, confirm_config_for, confirm_forced, confirmation_question,
+    decline_message, fingerprint_for, forced_prompt, prepare_action, Decision, DeclineReason,
+    DirFd, JobLaunch, JobStartOutcome, PinError, PolicySource, PrepareError, PreparedAction,
     ValidatedCommand,
 };
 use crate::managers::converse_context::{
@@ -761,6 +761,9 @@ pub struct SessionConfig {
     /// Stage 4 planner: a plan may run, that is the hand-off and the planner setting are both on
     /// (`from_settings`). Default false.
     pub agent_planner: bool,
+    /// How long a confirmation waits for the answer. 8 s for voice (the existing window); a text
+    /// session waits longer for a typed answer. Default 8 s.
+    pub confirm_listen_timeout: Duration,
 }
 
 impl Default for SessionConfig {
@@ -779,6 +782,7 @@ impl Default for SessionConfig {
             answer_only: false,
             agent_handoff: false,
             agent_planner: false,
+            confirm_listen_timeout: Duration::from_secs(8),
         }
     }
 }
@@ -810,6 +814,7 @@ impl SessionConfig {
             answer_only: crate::managers::conversation_save::answer_only_for(s),
             agent_handoff,
             agent_planner: agent_handoff && s.conversation_planner,
+            confirm_listen_timeout: Duration::from_secs(8),
         }
     }
 }
@@ -2115,7 +2120,7 @@ async fn gate_and_run(
         .map(|sel| fingerprint_for(policy, Some(sel)));
     if state.gate_active {
         let question = confirmation_question(&prepared);
-        let decision = ask_confirmation(deps, announcer, cancel, carry, &question).await;
+        let decision = ask_confirmation(deps, cfg, announcer, cancel, carry, &question).await;
         if let Decision::Declined(reason) = &decision {
             carry
                 .journal
@@ -2188,7 +2193,7 @@ async fn run_final_plan(
     let Some(question) = forced_prompt(&confirmed) else {
         return gate_and_run(deps, cfg, cancel, confirmed, carry).await;
     };
-    match ask_forced(deps, cancel, carry, &question).await {
+    match ask_forced(deps, cfg, cancel, carry, &question).await {
         Decision::Approved => gate_and_run(deps, cfg, cancel, confirmed, carry).await,
         Decision::Declined(_) => decline_forced(deps, cfg, cancel, carry).await,
     }
@@ -2224,7 +2229,7 @@ async fn forced_agent(
     let Some(question) = forced_prompt(&plan) else {
         return Ok(Some(failed_summary()));
     };
-    if let Decision::Declined(_) = ask_forced(deps, cancel, carry, &question).await {
+    if let Decision::Declined(_) = ask_forced(deps, cfg, cancel, carry, &question).await {
         return decline_forced(deps, cfg, cancel, carry).await;
     }
     if !deps.hands.agent_launch_still_valid(&launch) {
@@ -2250,6 +2255,7 @@ async fn forced_agent(
 /// is rolled back out of the transcript journal, as for `ask_confirmation`.
 async fn ask_forced(
     deps: &Deps<'_>,
+    cfg: &SessionConfig,
     cancel: &mut CancelToken,
     carry: &Carry,
     question: &str,
@@ -2257,7 +2263,7 @@ async fn ask_forced(
     let before = carry.journal.submitted_len();
     let fallback = Announcer::new(Arc::new(NoAnnounce));
     let announcer = deps.announcer.unwrap_or(&fallback);
-    let config = ConfirmConfig::default();
+    let config = confirm_config_for(cfg);
     let asked = confirm_forced(
         deps.ears,
         deps.mouth,
@@ -2307,19 +2313,20 @@ impl LowPriorityMouth for NoAnnounce {
 /// question text and the answer are never stored (DESIGN D2).
 async fn ask_confirmation(
     deps: &Deps<'_>,
+    cfg: &SessionConfig,
     announcer: &Announcer,
     cancel: &mut CancelToken,
     carry: &Carry,
     question: &str,
 ) -> Decision {
     let before = carry.journal.submitted_len();
-    let cfg = ConfirmConfig::default();
+    let config = confirm_config_for(cfg);
     let asked = confirm_action_recorded(
         deps.ears,
         deps.mouth,
         announcer,
         question,
-        &cfg,
+        &config,
         Some(deps.reporter),
     );
     let decision = match race(cancel, asked).await {

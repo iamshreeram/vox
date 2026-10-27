@@ -53,6 +53,7 @@ use crate::managers::converse_queue::TtsQueueSession;
 use crate::managers::converse_runtime::{
     make_latency_sink, AdmissionGuard, LatencySink, Platform, SessionParts, ALREADY_RUNNING,
 };
+use crate::managers::converse_text::{PendingEars, SilentMouth, TextHands};
 use crate::managers::emotion::Emotion;
 use crate::managers::llm_stream::{resolve_proxy, Protocol, ProxyMode, StreamCall, StreamOpts};
 use crate::managers::llm_tools::{
@@ -129,7 +130,17 @@ pub struct ConverseStateEvent {
 /// Why a session cannot start, checked in this order. Messages are shown to
 /// the user as-is.
 pub fn preflight_check(settings: &AppSettings) -> Result<(), String> {
-    if !settings.tts_enabled {
+    preflight_check_with(settings, true)
+}
+
+/// The preflight of a text chat: the same checks, without the spoken-reply requirement (a text
+/// session never speaks).
+pub fn preflight_text_check(settings: &AppSettings) -> Result<(), String> {
+    preflight_check_with(settings, false)
+}
+
+fn preflight_check_with(settings: &AppSettings, needs_spoken_replies: bool) -> Result<(), String> {
+    if needs_spoken_replies && !settings.tts_enabled {
         return Err("Turn on spoken replies in the speech settings first.".to_string());
     }
     if settings.exp_rt_enabled {
@@ -465,6 +476,24 @@ impl Mouth for RealMouth {
     fn stop(&self) {
         let _ = self.tts.stop();
     }
+}
+
+/// The vault-context load of a session: only with vault context enabled on the model route. The
+/// loaded block lands in `slot` when the prepare step finishes.
+fn vault_prepare(
+    settings: &AppSettings,
+    slot: Arc<std::sync::Mutex<Option<String>>>,
+) -> Option<BoxFuture<'static, ()>> {
+    if !(vault_context_active(settings) && is_http_model_route(settings)) {
+        return None;
+    }
+    let path = settings.vault_path.clone();
+    Some(Box::pin(async move {
+        let block = load_vault_block(&path, Duration::from_secs(2)).await;
+        if let Ok(mut guard) = slot.lock() {
+            *guard = block;
+        }
+    }))
 }
 
 /// Builds the per-job observer for one project (the announcer-backed `JobSpeaker` in production).
@@ -1182,6 +1211,10 @@ impl Platform for RealPlatform {
         preflight_check(&get_settings(&self.app))
     }
 
+    fn preflight_text(&self) -> Result<(), String> {
+        preflight_text_check(&get_settings(&self.app))
+    }
+
     fn capture(&self) -> CaptureHandle {
         // The worker lives for one session: `ConverseController::start` calls this once per
         // session and shuts the worker down in the finalizer. The optional voice features are
@@ -1212,7 +1245,6 @@ impl Platform for RealPlatform {
         // Settings are read once at session start (DESIGN Rev 3, 3.5 (1)-(5)).
         let save = SaveSettings::from_settings(&settings);
         let records_on = save.records_enabled;
-        let vault_on = vault_context_active(&settings);
         let vault_route = is_http_model_route(&settings);
         // The RAG session is pinned here, from atomics only, and only when RAG may be used
         // (DESIGN 3.1, 3.2). Off or ineligible sessions carry no session at all.
@@ -1235,18 +1267,7 @@ impl Platform for RealPlatform {
             collector.clone().map(|c| c as Arc<dyn TranscriptSink>);
 
         // Only the vault path is handed to the prepare step, and only the model route uses it.
-        let prepare: Option<BoxFuture<'static, ()>> = if vault_on && vault_route {
-            let path = settings.vault_path.clone();
-            let slot = vault_block.clone();
-            Some(Box::pin(async move {
-                let block = load_vault_block(&path, Duration::from_secs(2)).await;
-                if let Ok(mut guard) = slot.lock() {
-                    *guard = block;
-                }
-            }))
-        } else {
-            None
-        };
+        let prepare = vault_prepare(&settings, vault_block.clone());
 
         let on_complete: Option<Box<dyn FnOnce(SessionEnd) + Send>> = match collector {
             Some(collector) => {
@@ -1325,6 +1346,68 @@ impl Platform for RealPlatform {
             on_complete,
             policy,
             announcer,
+        }
+    }
+
+    /// The collaborators of one text chat session. Same brain (vault context, retrieval) and
+    /// the same policy as a voice session, but no microphone, speaker or barge-in monitor, and
+    /// nothing is persisted or announced by voice (DESIGN-TYPE Rev 4).
+    fn parts_text(&self, _capture: &CaptureHandle) -> SessionParts {
+        let settings = get_settings(&self.app);
+        crate::managers::realtime_complete::spawn_prewarm(&settings);
+        let vault_block: Arc<std::sync::Mutex<Option<String>>> =
+            Arc::new(std::sync::Mutex::new(None));
+        let vault_route = is_http_model_route(&settings);
+        let rag = if rag_possible(&settings) {
+            crate::commands::vault_rag::runtime_of(&self.app)
+                .map(|runtime| runtime.session(&settings))
+        } else {
+            None
+        };
+        let prepare = vault_prepare(&settings, vault_block.clone());
+        // Only the policy is kept: the announcer would speak job progress aloud.
+        let app_for_settings = self.app.clone();
+        let (policy, _announcer) = job_parts(
+            self.job_runtime.as_ref(),
+            Arc::new(move || get_settings(&app_for_settings)),
+        );
+        let hands = match &self.job_runtime {
+            Some(rt) => RealHands {
+                app: self.app.clone(),
+                jobs: Some(rt.manager.clone()),
+                job_observer: Some(rt.observer_factory.clone()),
+            },
+            None => RealHands::without_jobs(self.app.clone()),
+        };
+        SessionParts {
+            ears: Box::new(PendingEars),
+            mouth: Box::new(SilentMouth),
+            hands: Box::new(TextHands::new(Box::new(hands))),
+            brain: Box::new(RealBrain {
+                app: self.app.clone(),
+                core: BrainCore {
+                    vault_block,
+                    vault_route,
+                    taint: TaintState::new(),
+                    rag,
+                    retrieval_deadline: RETRIEVAL_DEADLINE,
+                    #[cfg(test)]
+                    after_retrieve: None,
+                },
+            }),
+            cfg: SessionConfig {
+                // A typed answer needs more time than a spoken one; no speech guard (nothing is
+                // spoken); a long chat is not cut off by the default turn budget.
+                confirm_listen_timeout: Duration::from_secs(60),
+                post_speech_guard: Duration::ZERO,
+                max_turns: 10_000,
+                ..SessionConfig::from_settings(&settings)
+            },
+            transcript: None,
+            prepare,
+            on_complete: None,
+            policy,
+            announcer: None,
         }
     }
 

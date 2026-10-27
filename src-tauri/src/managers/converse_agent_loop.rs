@@ -706,7 +706,7 @@ pub(super) async fn plan_turn(
     };
     if forced {
         let question = plan_confirmation_prompt(&agent_plan.steps);
-        if let Decision::Declined(_) = ask_forced(deps, cancel, carry, &question).await {
+        if let Decision::Declined(_) = ask_forced(deps, cfg, cancel, carry, &question).await {
             return Ok(decline_forced(deps, cfg, cancel, carry)
                 .await?
                 .unwrap_or_default());
