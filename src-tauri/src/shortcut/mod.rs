@@ -1096,6 +1096,17 @@ pub fn change_acp_agent_enabled_setting(app: AppHandle, enabled: bool) -> Result
     Ok(())
 }
 
+/// Turns "Send dictation to the agent" on or off. This is a plain setting write: it never
+/// starts or retires the agent process (only the agent switch does that). Main window only.
+#[tauri::command]
+#[specta::specta]
+pub fn change_acp_dictation_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    settings::write_settings_gated(&app, |settings| {
+        settings.acp_dictation_enabled = enabled;
+    });
+    Ok(())
+}
+
 /// Validates and stores the ACP agent command. Blank or missing means unset. A rejected
 /// command leaves the stored setting untouched.
 #[tauri::command]

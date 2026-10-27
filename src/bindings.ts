@@ -1672,6 +1672,18 @@ async changeAcpAgentEnabledSetting(enabled: boolean) : Promise<Result<null, stri
 }
 },
 /**
+ * Stores whether dictation that matches no voice command is sent to the ACP agent
+ * instead of being pasted. Independent of the agent switch; off by default.
+ */
+async changeAcpDictationEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_acp_dictation_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Validates and stores the ACP agent command. Blank or missing means unset. A rejected
  * command leaves the stored setting untouched.
  */
@@ -2172,6 +2184,11 @@ voice_media_controls_enabled?: boolean; agent_bridge_enabled?: boolean; agent_br
  * Persistent ACP agent client (DESIGN rev 3.1 section 7). Opt-in.
  */
 acp_agent_enabled?: boolean; 
+/**
+ * Dictation that matches no voice command is sent to the ACP agent instead of being
+ * pasted. Independent of `acp_agent_enabled`; a missing key means off.
+ */
+acp_dictation_enabled?: boolean; 
 /**
  * Absolute path to the ACP agent program; `None` means unset.
  */

@@ -52,6 +52,8 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
       getSetting("acp_permission_timeout_secs") ?? 60;
     const conversationHandoff =
       getSetting("conversation_agent_handoff") ?? true;
+    // Missing value means off: dictation keeps pasting until the user opts in.
+    const dictationToAgent = getSetting("acp_dictation_enabled") ?? false;
     // The backend default is on; the stored value decides once settings load.
     const conversationPlanner = getSetting("conversation_planner") ?? true;
 
@@ -389,6 +391,17 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
           description={t(
             "settings.advanced.acpAgent.conversationHandoff.description",
           )}
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+          tooltipPosition="bottom"
+        />
+        <ToggleSwitch
+          checked={dictationToAgent}
+          onChange={(value) => updateSetting("acp_dictation_enabled", value)}
+          isUpdating={isUpdating("acp_dictation_enabled")}
+          disabled={!enabled}
+          label={t("settings.advanced.acpAgent.dictation.label")}
+          description={t("settings.advanced.acpAgent.dictation.description")}
           descriptionMode={descriptionMode}
           grouped={grouped}
           tooltipPosition="bottom"

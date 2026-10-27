@@ -1508,7 +1508,8 @@ impl ShortcutAction for TranscribeAction {
                             if !hook_consumed {
                                 let router = ah.state::<Arc<CommandRouter>>();
                                 let voice_enabled = hook_settings.voice_commands_enabled;
-                                let acp_enabled = hook_settings.acp_agent_enabled;
+                                let acp_enabled =
+                                    crate::settings::dictation_agent_enabled(&hook_settings);
                                 let effect = apply_route_decision(
                                     voice_enabled,
                                     acp_enabled,

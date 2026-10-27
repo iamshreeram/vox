@@ -385,6 +385,10 @@
           "label": "Turn timeout (seconds)",
           "description": "How long to wait for the agent to finish one reply. Between {{min}} and {{max}} seconds."
         },
+        "dictation": {
+          "label": "Send dictation to the agent",
+          "description": "When off, dictation always pastes into the active window, even if the agent is on. When on, dictation that matches no voice command is sent to the agent instead of being pasted. Conversations and typed chat do not need this switch."
+        },
         "conversationHandoff": {
           "label": "Hand open-ended requests to the agent in conversations",
           "description": "In Hey Jarvis conversations, requests that need the web, files or running programs are sent to your ACP agent. Local commands such as opening apps stay local."

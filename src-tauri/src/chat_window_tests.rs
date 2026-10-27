@@ -554,16 +554,18 @@ fn window_show_path_calls_show_and_set_focus() {
 }
 
 #[test]
-fn window_code_has_no_filesystem_or_logging() {
-    let re = Regex::new(
-        r"\bstd::fs\b|\bfs::|\bFile::|\b(?:log|tracing)::|\b(?:trace|debug|info|warn|error)!\s*\(|\b(?:e)?println!|\bdbg!",
-    )
-    .expect("valid regex");
+fn window_code_has_no_filesystem_or_console_output() {
+    // DESIGN-A Rev 3: the window module may now log window operations and failures through the
+    // `log` crate (a failed show was previously invisible). It still never touches the file
+    // system or prints to the console, and `chat_window_logging_never_prints_conversation_content`
+    // keeps conversation content out of every log line.
+    let re =
+        Regex::new(r"\bstd::fs\b|\bfs::|\bFile::|\b(?:e)?println!|\bdbg!").expect("valid regex");
     let code = window_code();
     let hits: Vec<&str> = code.lines().filter(|l| re.is_match(l)).collect();
     assert!(
         hits.is_empty(),
-        "chat_window.rs must not touch fs or log: {hits:?}"
+        "chat_window.rs must not touch fs or print to the console: {hits:?}"
     );
 }
 

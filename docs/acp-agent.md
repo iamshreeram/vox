@@ -37,10 +37,19 @@ The agent runs with a working folder of its own: `acp_workspace` inside Vox's ap
 
 Vox starts the agent in the background at launch when the feature is enabled and the command is valid. This is called prewarming. It makes the first dictation faster.
 
+## Send dictation to the agent
+
+Dictation has its own switch, **Send dictation to the agent**. It is **off by default**.
+
+- Dictation goes to the agent only when **both** the ACP agent and this switch are on.
+- When this switch is off, dictation **always pastes**, even while the ACP agent is on. Turning the agent on for conversations does not change what dictation does.
+- Conversation hand-off and typed chat do not need this switch. They work with the agent alone.
+- **Upgrading:** if you relied on the old behaviour, where turning on the agent also sent unmatched dictation to it, turn on **Send dictation to the agent** again after the update.
+
 ## How a request flows
 
 1. You dictate. Vox first tries its built-in and custom voice commands.
-2. If none matched, and the ACP agent is enabled, Vox sends the **raw dictation text, unchanged**, to the agent as a prompt.
+2. If none matched, and the ACP agent is enabled and **Send dictation to the agent** is on, Vox sends the **raw dictation text, unchanged**, to the agent as a prompt. Otherwise the text is pasted.
 3. The agent streams text back. Vox collects it, removes terminal control characters, and caps its length.
 4. Vox emits the reply through the existing agent-reply path, which shows it and speaks it.
 

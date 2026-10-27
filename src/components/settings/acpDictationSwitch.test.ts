@@ -3,10 +3,11 @@
 // default off, independent of the agent switch; it is wired through the store, bindings, the
 // settings search index and every locale. Run: bun src/components/settings/acpDictationSwitch.test.ts
 import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 
-const root = join(import.meta.dir, "..", "..", "..");
+const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (rel: string) => readFileSync(join(root, rel), "utf8");
 
 const page = read("src/components/settings/AcpAgentSettings.tsx");
@@ -43,7 +44,7 @@ assert.match(
 );
 
 const index = read("src/components/settings/search/index/experimental.ts");
-assert.match(index, /acp_dictation_enabled/, "search index entry exists");
+assert.match(index, /acpDictationToAgent/, "search index entry exists");
 
 const locales = join(root, "src/i18n/locales");
 const want = [

@@ -79,29 +79,57 @@ fn is_app_navigation(url: &tauri::Url) -> bool {
 pub fn toggle_chat_window(app: &AppHandle) -> tauri::Result<()> {
     let handle = app.clone();
     app.run_on_main_thread(move || {
-        let _ = toggle_on_main_thread(&handle);
+        if let Err(e) = toggle_on_main_thread(&handle) {
+            log::warn!("chat window toggle failed: {e}");
+        }
     })
 }
 
-/// Main-thread body of `toggle_chat_window`.
+/// Logs a window operation that failed. Logs the operation name and the error only, never
+/// window content.
+fn log_window_result(op: &str, result: tauri::Result<()>) {
+    if let Err(e) = result {
+        log::warn!("chat window {op} failed: {e}");
+    }
+}
+
+/// Main-thread body of `toggle_chat_window`. Logs one line with the window state and the
+/// chosen action.
 fn toggle_on_main_thread(app: &AppHandle) -> tauri::Result<()> {
-    let Some(window) = app.get_webview_window(CHAT_WINDOW_LABEL) else {
-        let window = build_chat_window(app)?;
-        show_existing(app, &window);
-        return Ok(());
-    };
-    let visible = window.is_visible().unwrap_or(false);
-    let focused = window.is_focused().unwrap_or(false);
-    match toggle_decision(visible, focused) {
-        ToggleAction::Show => show_existing(app, &window),
-        ToggleAction::Hide => hide_existing(app, &window),
+    let existing = app.get_webview_window(CHAT_WINDOW_LABEL);
+    let exists = existing.is_some();
+    let visible = existing
+        .as_ref()
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+    let focused = existing
+        .as_ref()
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false);
+    let minimized = existing
+        .as_ref()
+        .and_then(|w| w.is_minimized().ok())
+        .unwrap_or(false);
+    let action = toggle_decision(visible, focused);
+    log::info!(
+        "chat window toggle: exists={exists} visible={visible} focused={focused} minimized={minimized} action={action:?}"
+    );
+    match existing {
+        Some(window) => match action {
+            ToggleAction::Show => show_existing(app, &window),
+            ToggleAction::Hide => hide_existing(app, &window),
+        },
+        None => {
+            let window = build_chat_window(app)?;
+            show_existing(app, &window);
+        }
     }
     Ok(())
 }
 
-/// Builds the hidden chat window from the bundled entry page.
+/// Builds the hidden chat window from the bundled entry page. Logs the build result.
 fn build_chat_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
-    let window = WebviewWindowBuilder::new(
+    let built = WebviewWindowBuilder::new(
         app,
         CHAT_WINDOW_LABEL,
         WebviewUrl::App(CHAT_ENTRY_URL.into()),
@@ -116,14 +144,24 @@ fn build_chat_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     .focused(false)
     .on_navigation(is_app_navigation)
     .on_new_window(|_url, _features| NewWindowResponse::Deny)
-    .build()?;
+    .build();
+    let window = match built {
+        Ok(window) => {
+            log::info!("chat window built");
+            window
+        }
+        Err(e) => {
+            log::warn!("chat window build failed: {e}");
+            return Err(e);
+        }
+    };
 
     let close_app = app.clone();
     window.on_window_event(move |event| {
         if let WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
             if let Some(chat) = close_app.get_webview_window(CHAT_WINDOW_LABEL) {
-                let _ = chat.hide();
+                hide_existing(&close_app, &chat);
             }
         }
     });
@@ -195,11 +233,10 @@ fn open_on_main_thread(app: &AppHandle) {
         .and_then(|w| w.is_minimized().ok())
         .unwrap_or(false);
     match open_plan(exists, visible, minimized) {
-        OpenPlan::Build => {
-            if let Ok(window) = build_chat_window(app) {
-                show_without_focus(app, &window);
-            }
-        }
+        OpenPlan::Build => match build_chat_window(app) {
+            Ok(window) => show_without_focus(app, &window),
+            Err(e) => log::warn!("chat window auto-open skipped, build failed: {e}"),
+        },
         OpenPlan::Show => {
             if let Some(window) = existing {
                 show_without_focus(app, &window);
@@ -220,30 +257,38 @@ fn show_without_focus(app: &AppHandle, window: &WebviewWindow) {
     {
         let _ = app;
     }
-    let _ = window.unminimize();
-    let _ = window.show();
+    log_window_result("unminimize", window.unminimize());
+    log_window_result("show", window.show());
 }
 
 /// Shows and focuses the window and promotes the macOS activation policy so the window can
-/// appear while the app is a tray-only accessory app (mirrors `show_main_window`).
+/// appear while the app is a tray-only accessory app (mirrors `show_main_window`). The policy
+/// is set first, so the window is not shown while the app is still accessory.
 fn show_existing(app: &AppHandle, window: &WebviewWindow) {
-    let _ = window.unminimize();
-    let _ = window.show();
-    let _ = window.set_focus();
     #[cfg(target_os = "macos")]
     {
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+        log_window_result(
+            "activation policy",
+            app.set_activation_policy(tauri::ActivationPolicy::Regular),
+        );
     }
     #[cfg(not(target_os = "macos"))]
     {
         let _ = app;
     }
+    log_window_result("unminimize", window.unminimize());
+    log_window_result("show", window.show());
+    log_window_result("focus", window.set_focus());
 }
 
-/// Hides the window. On macOS, when the main window is hidden and the tray is available,
-/// the app returns to accessory mode (no Dock icon), as the main window's close does.
+/// Hides the window. Only after a successful hide, on macOS, when the main window is hidden
+/// and the tray is available, the app returns to accessory mode (no Dock icon), as the main
+/// window's close does.
 fn hide_existing(app: &AppHandle, window: &WebviewWindow) {
-    let _ = window.hide();
+    if let Err(e) = window.hide() {
+        log::warn!("chat window hide failed: {e}");
+        return;
+    }
     #[cfg(target_os = "macos")]
     {
         let main_visible = app
@@ -253,7 +298,10 @@ fn hide_existing(app: &AppHandle, window: &WebviewWindow) {
         let tray_visible =
             settings::get_settings(app).show_tray_icon && !app.state::<CliArgs>().no_tray;
         if !main_visible && tray_visible {
-            let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            log_window_result(
+                "activation policy",
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory),
+            );
         }
     }
     #[cfg(not(target_os = "macos"))]
