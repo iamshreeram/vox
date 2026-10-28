@@ -13,6 +13,11 @@ const WAKE_OR_AMBIENT: &str =
 /// Settings in which every preflight check passes (the same base as the voice tests).
 fn passing_settings() -> AppSettings {
     let mut s = crate::settings::get_default_settings();
+    // Legacy fixture: each feature keeps its own provider settings.
+    s.brain_source_composer = crate::settings::BrainSource::Own;
+    s.brain_source_realtime = crate::settings::BrainSource::Own;
+    s.brain_source_postprocess = crate::settings::BrainSource::Own;
+    s.tts_composer_model = "legacy-model".into();
     s.tts_enabled = true;
     s.tts_composer_mode = TtsComposerMode::Model;
     s.wake_word_enabled = false;

@@ -5,6 +5,7 @@ use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error
 use crate::managers::acp_agent::{AcpAgentConfig, AcpAgentManager};
 use crate::managers::acp_escalation::{run_escalation, EscalationEnv, EscalationSink};
 use crate::managers::audio::AudioRecordingManager;
+use crate::managers::brain::{self, BrainFeature};
 use crate::managers::command_router::{CommandAction, CommandRouter, RouteDecision};
 use crate::managers::conversation::ConversationLog;
 #[cfg(test)]
@@ -814,19 +815,15 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
         return None;
     }
 
-    let provider = match settings.active_post_process_provider().cloned() {
-        Some(provider) => provider,
-        None => {
-            debug!("Post-processing enabled but no provider is selected");
+    let effective = match brain::effective_provider(settings, BrainFeature::PostProcess) {
+        Ok(effective) => effective,
+        Err(missing) => {
+            debug!("Post-processing skipped: the endpoint is not configured ({missing:?})");
             return None;
         }
     };
-
-    let model = settings
-        .post_process_models
-        .get(&provider.id)
-        .cloned()
-        .unwrap_or_default();
+    let provider = effective.provider;
+    let model = effective.model;
 
     if model.trim().is_empty() {
         debug!(
@@ -869,11 +866,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
         provider.id, model
     );
 
-    let api_key = settings
-        .post_process_api_keys
-        .get(&provider.id)
-        .cloned()
-        .unwrap_or_default();
+    let api_key = effective.api_key;
 
     // Ask these providers to skip reasoning/thinking — post-processing rarely
     // benefits from it and it adds seconds of latency. llm_client picks the

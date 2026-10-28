@@ -1672,8 +1672,8 @@ async changeAcpAgentEnabledSetting(enabled: boolean) : Promise<Result<null, stri
 }
 },
 /**
- * Stores whether dictation that matches no voice command is sent to the ACP agent
- * instead of being pasted. Only effective together with the agent switch; off by default.
+ * Turns "Send dictation to the agent" on or off. This is a plain setting write: it never
+ * starts or retires the agent process (only the agent switch does that). Main window only.
  */
 async changeAcpDictationEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
@@ -1794,6 +1794,77 @@ async changeConversationAgentHandoffSetting(enabled: boolean) : Promise<Result<n
 async changeConversationPlannerSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_conversation_planner_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Saves the Brain provider, endpoint address and model. A new destination clears the test
+ * acknowledgement and the transcript consent.
+ */
+async changeBrainConnectionSetting(providerId: string, baseUrl: string, model: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_brain_connection_setting", { providerId, baseUrl, model }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stores the Brain access token the user typed. An empty value clears it. The value is trimmed.
+ */
+async setBrainToken(token: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_brain_token", { token }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Records that the user has read what a connection test sends to the current destination.
+ * Requires a complete connection (provider, endpoint and model).
+ */
+async brainAcknowledgeTest() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("brain_acknowledge_test") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Makes `feature` inherit the Brain (`use_brain`) or use its own settings again. Inheriting
+ * requires a complete connection; the only piece it may still lack is transcript consent,
+ * which this call records for the current destination.
+ */
+async brainUseForFeature(feature: BrainFeature, useBrain: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("brain_use_for_feature", { feature, useBrain }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Sends the fixed 1-token test request to the acknowledged endpoint. The token is read from the
+ * store here, not received from the webview.
+ */
+async brainTestConnection() : Promise<Result<BrainTestResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("brain_test_connection") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Lists the models of the acknowledged endpoint. The token is read from the store here.
+ */
+async brainFetchModels() : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("brain_fetch_models") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2005,8 +2076,10 @@ async clearChatLog() : Promise<Result<null, string>> {
 }
 },
 /**
- * Sends a typed message to the conversation. Starts a text-only session when no voice
- * conversation is running. Errors: "not_configured", "busy", "too_long", "failed".
+ * Sends one typed message to the conversation (DESIGN-TYPE Rev 4). The chat window is the only
+ * caller (the allow-list refuses it elsewhere). An idle conversation starts a text session; a
+ * running one takes the message in its loop. The text is never logged or echoed: the error is
+ * the stable code of the reason only.
  */
 async sendChatMessage(text: string) : Promise<Result<null, string>> {
     try {
@@ -2023,7 +2096,8 @@ async changeConverseChatLogSetting(enabled: boolean) : Promise<void> {
     await TAURI_INVOKE("change_converse_chat_log_setting", { enabled });
 },
 /**
- * Turns the open-on-start behaviour of the conversation window on or off and persists the choice.
+ * Turns auto-opening of the conversation window at conversation start on or off and persists
+ * the choice. Main window only (not on the chat allow-list).
  */
 async changeConverseChatOpenOnStartSetting(enabled: boolean) : Promise<void> {
     await TAURI_INVOKE("change_converse_chat_open_on_start_setting", { enabled });
@@ -2185,8 +2259,9 @@ voice_media_controls_enabled?: boolean; agent_bridge_enabled?: boolean; agent_br
  */
 acp_agent_enabled?: boolean; 
 /**
- * Dictation that matches no voice command is sent to the ACP agent instead of being
- * pasted. Only effective together with `acp_agent_enabled`; a missing key means off.
+ * Send dictation to the agent (hand-off of unmatched dictation). Off by default: when off,
+ * dictation always pastes, even while `acp_agent_enabled` is on. Use
+ * `dictation_agent_enabled` to decide; it needs both switches on.
  */
 acp_dictation_enabled?: boolean; 
 /**
@@ -2335,8 +2410,8 @@ converse_barge_in?: ConverseBargeIn;
  */
 converse_chat_log?: boolean; 
 /**
- * Open the conversation window automatically when a conversation starts (wake phrase).
- * The window is shown without taking keyboard focus. On by default; needs the transcript.
+ * Open the conversation window when a conversation starts (DESIGN-UI). Only takes effect
+ * together with `converse_chat_log`. On by default; stores without the key get on.
  */
 converse_chat_open_on_start?: boolean; 
 /**
@@ -2348,6 +2423,50 @@ speaker_filter_enabled?: boolean; speaker_filter_sensitivity?: SpeakerSensitivit
  * User-defined personas (the built-ins live in code).
  */
 personas?: Persona[]; 
+/**
+ * Brain preset id (openai, openrouter, groq, cerebras, zai, custom). Empty = not set.
+ */
+brain_provider_id?: string; 
+/**
+ * Brain endpoint base URL: https, or http for a loopback host only.
+ */
+brain_base_url?: string; 
+/**
+ * Brain model name.
+ */
+brain_model?: string; 
+/**
+ * Brain access token. Kept in the store; never sent to the webview (see `redacted_for_ipc`).
+ */
+brain_token?: SecretString; 
+/**
+ * Whether a token is stored. The webview reads this instead of the token.
+ */
+brain_token_set?: boolean; 
+/**
+ * Brain migration marker. Absent => every feature resolves to Own.
+ */
+brain_schema_v1?: boolean; 
+/**
+ * Composer reply style source.
+ */
+brain_source_composer?: BrainSource; 
+/**
+ * Real-time conversation stream source.
+ */
+brain_source_realtime?: BrainSource; 
+/**
+ * Post-processing source.
+ */
+brain_source_postprocess?: BrainSource; 
+/**
+ * Destination the connection test was acknowledged for (never grants transcript use).
+ */
+brain_test_ack_host?: string; 
+/**
+ * Normalised Brain destination the user consented to send transcript text to.
+ */
+brain_transcript_consent_dest?: string; 
 /**
  * MASTER switch. Off => the conversation behaves exactly as before.
  */
@@ -2442,6 +2561,91 @@ export type AuxState = "not_installed" | "downloading" | "verifying" | "ready" |
 export type AuxStatus = { kind: AuxKind; state: AuxState; size_bytes: number }
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
+/**
+ * The features that can inherit the Brain.
+ */
+export type BrainFeature = 
+/**
+ * The speech composer (reply style).
+ */
+"composer" | 
+/**
+ * The real-time conversation stream.
+ */
+"realtime_stream" | 
+/**
+ * LLM post-processing of dictation.
+ */
+"post_process"
+/**
+ * Where a feature gets its LLM connection from (P3, DESIGN Rev 3-5). `Inherit` uses the
+ * Brain connection; `Own` keeps the feature's legacy settings. A missing stored value is `Own`.
+ */
+export type BrainSource = 
+/**
+ * Use the Brain connection.
+ */
+"inherit" | 
+/**
+ * Use the feature's own legacy provider settings.
+ */
+"own"
+/**
+ * Outcome of a Brain connection test. Carries no server text and no secrets.
+ */
+export type BrainTestKind = 
+/**
+ * The endpoint answered and the reply was usable.
+ */
+"Ok" | 
+/**
+ * The endpoint rejected the token (401 or 403).
+ */
+"Unauthorized" | 
+/**
+ * The endpoint path was not found (404).
+ */
+"NotFound" | 
+/**
+ * The endpoint could not be reached.
+ */
+"Unreachable" | 
+/**
+ * The endpoint redirected. Redirects are never followed.
+ */
+"Redirect" | 
+/**
+ * The reply was not in the expected shape.
+ */
+"BadResponse" | 
+/**
+ * The endpoint did not answer in time.
+ */
+"Timeout" | 
+/**
+ * The endpoint address is not allowed.
+ */
+"InvalidUrl"
+/**
+ * Result of a Brain connection test.
+ */
+export type BrainTestResult = { 
+/**
+ * True only when `kind` is `Ok`.
+ */
+ok: boolean; 
+/**
+ * What happened.
+ */
+kind: BrainTestKind; 
+/**
+ * Round-trip time in milliseconds.
+ */
+latency_ms: number; 
+/**
+ * Number of models the endpoint listed. `None` for a chat test.
+ */
+model_count: number | null }
 /**
  * One transcript line.
  */

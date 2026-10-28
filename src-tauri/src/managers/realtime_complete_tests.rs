@@ -17,6 +17,9 @@ use std::time::Instant;
 fn base_settings() -> AppSettings {
     let mut s = get_default_settings();
     s.tts_enabled = true;
+    // Legacy fixture: the features keep their own settings (P3 Brain is opt-in per feature).
+    s.brain_source_composer = crate::settings::BrainSource::Own;
+    s.brain_source_realtime = crate::settings::BrainSource::Own;
     s
 }
 

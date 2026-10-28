@@ -1,5 +1,6 @@
 use crate::managers::acp_agent::PermissionSettings;
 use crate::managers::acp_permission::PermissionMode;
+use crate::managers::brain::{self, MigrationOutcome};
 use crate::utils;
 use log::{debug, warn};
 use serde::de::{self, Visitor};
@@ -606,6 +607,18 @@ impl From<&str> for SecretString {
     }
 }
 
+/// Where a feature gets its LLM connection from (P3, DESIGN Rev 3-5). `Inherit` uses the
+/// Brain connection; `Own` keeps the feature's legacy settings. A missing stored value is `Own`.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum BrainSource {
+    /// Use the Brain connection.
+    Inherit,
+    /// Use the feature's own legacy provider settings.
+    #[default]
+    Own,
+}
+
 /* still handy for composing the initial JSON in the store ------------- */
 /// The container-level `serde(default)` (backed by the `Default` impl below)
 /// guarantees every field — including ones added in the future — falls back to
@@ -940,6 +953,41 @@ pub struct AppSettings {
     /// User-defined personas (the built-ins live in code).
     #[serde(default)]
     pub personas: Vec<crate::managers::persona::Persona>,
+    // ---- Brain connection (P3, DESIGN Rev 3-5). One OpenAI-compatible endpoint that features
+    // can inherit. Absent keys in an old store resolve to the legacy (Own) behaviour.
+    /// Brain preset id (openai, openrouter, groq, cerebras, zai, custom). Empty = not set.
+    #[serde(default)]
+    pub brain_provider_id: String,
+    /// Brain endpoint base URL: https, or http for a loopback host only.
+    #[serde(default)]
+    pub brain_base_url: String,
+    /// Brain model name.
+    #[serde(default)]
+    pub brain_model: String,
+    /// Brain access token. Kept in the store; never sent to the webview (see `redacted_for_ipc`).
+    #[serde(default)]
+    pub brain_token: SecretString,
+    /// Whether a token is stored. The webview reads this instead of the token.
+    #[serde(default)]
+    pub brain_token_set: bool,
+    /// Brain migration marker. Absent => every feature resolves to Own.
+    #[serde(default)]
+    pub brain_schema_v1: bool,
+    /// Composer reply style source.
+    #[serde(default)]
+    pub brain_source_composer: BrainSource,
+    /// Real-time conversation stream source.
+    #[serde(default)]
+    pub brain_source_realtime: BrainSource,
+    /// Post-processing source.
+    #[serde(default)]
+    pub brain_source_postprocess: BrainSource,
+    /// Destination the connection test was acknowledged for (never grants transcript use).
+    #[serde(default)]
+    pub brain_test_ack_host: String,
+    /// Normalised Brain destination the user consented to send transcript text to.
+    #[serde(default)]
+    pub brain_transcript_consent_dest: String,
     // ---- Experimental: realtime conversation (design R9). All toggles; the master
     // switch gates every sub-toggle. Absent in old stores => these defaults.
     /// MASTER switch. Off => the conversation behaves exactly as before.
@@ -1371,7 +1419,23 @@ pub fn preserve_launch_fields(mut incoming: AppSettings, committed: &AppSettings
     incoming.acp_step_agents = committed.acp_step_agents.clone();
     incoming.conversation_agent_handoff = committed.conversation_agent_handoff;
     incoming.conversation_planner = committed.conversation_planner;
+    copy_brain_fields(&mut incoming, committed);
     incoming
+}
+
+/// Copies every Brain field from `source` into `target`.
+fn copy_brain_fields(target: &mut AppSettings, source: &AppSettings) {
+    target.brain_provider_id = source.brain_provider_id.clone();
+    target.brain_base_url = source.brain_base_url.clone();
+    target.brain_model = source.brain_model.clone();
+    target.brain_token = source.brain_token.clone();
+    target.brain_token_set = source.brain_token_set;
+    target.brain_schema_v1 = source.brain_schema_v1;
+    target.brain_source_composer = source.brain_source_composer;
+    target.brain_source_realtime = source.brain_source_realtime;
+    target.brain_source_postprocess = source.brain_source_postprocess;
+    target.brain_test_ack_host = source.brain_test_ack_host.clone();
+    target.brain_transcript_consent_dest = source.brain_transcript_consent_dest.clone();
 }
 
 /// Serde default for `conversation_agent_handoff`: on for stores that lack the key.
@@ -2227,6 +2291,17 @@ pub fn get_default_settings() -> AppSettings {
         speaker_filter_enabled: false,
         speaker_filter_sensitivity: SpeakerSensitivity::default(),
         personas: Vec::new(),
+        brain_provider_id: String::new(),
+        brain_base_url: String::new(),
+        brain_model: String::new(),
+        brain_token: SecretString::default(),
+        brain_token_set: false,
+        brain_schema_v1: true,
+        brain_source_composer: BrainSource::Inherit,
+        brain_source_realtime: BrainSource::Inherit,
+        brain_source_postprocess: BrainSource::Inherit,
+        brain_test_ack_host: String::new(),
+        brain_transcript_consent_dest: String::new(),
         exp_rt_enabled: false,
         exp_rt_direct_endpoint: false,
         exp_rt_endpoint_url: String::new(),
@@ -2290,6 +2365,14 @@ impl AppSettings {
         }
     }
 
+    /// A copy safe to send to the webview: the Brain token is emptied, and `brain_token_set`
+    /// keeps telling the UI whether a token is stored.
+    pub fn redacted_for_ipc(&self) -> AppSettings {
+        let mut copy = self.clone();
+        copy.brain_token = SecretString::default();
+        copy
+    }
+
     pub fn active_post_process_provider(&self) -> Option<&PostProcessProvider> {
         self.post_process_providers
             .iter()
@@ -2322,9 +2405,13 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
 }
 
 pub fn get_settings(app: &AppHandle) -> AppSettings {
+    let store_path = crate::portable::store_path(SETTINGS_STORE_PATH);
     let store = app
-        .store(crate::portable::store_path(SETTINGS_STORE_PATH))
+        .store(store_path.clone())
         .expect("Failed to initialize store");
+
+    // Decided before any default is materialised: no "settings" object means a fresh install.
+    let store_existed = store.get("settings").is_some();
 
     // Settings reads also persist one-time migrations. Migration helpers are
     // idempotent, so this converges after the first read of an older store.
@@ -2358,11 +2445,46 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         default_settings
     };
 
+    // Brain migration (P3). Persist only a Fresh or Migrated outcome, through `write_settings`,
+    // which takes the Brain fields as given while the stored store has no Brain marker yet.
+    if matches!(
+        run_brain_migration(&store_path, store_existed, &mut settings),
+        MigrationOutcome::Fresh | MigrationOutcome::Migrated
+    ) {
+        write_settings(app, settings.clone());
+    }
+
     if ensure_post_process_defaults(&mut settings) {
         write_settings(app, settings.clone());
     }
 
     settings
+}
+
+/// Runs the Brain migration for a loaded store. An existing store's raw file bytes are the
+/// backup source. If they cannot be read, the migration is skipped, which keeps legacy
+/// (Own) resolution exactly as before.
+fn run_brain_migration(
+    store_path: &std::path::Path,
+    store_existed: bool,
+    settings: &mut AppSettings,
+) -> MigrationOutcome {
+    let raw = if store_existed && !settings.brain_schema_v1 {
+        match std::fs::read(store_path) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                warn!("Brain settings migration skipped: the settings file could not be read");
+                return MigrationOutcome::BackupFailed;
+            }
+        }
+    } else {
+        Vec::new()
+    };
+    let outcome = brain::migrate_with_backup(settings, store_existed, store_path, &raw);
+    if outcome == MigrationOutcome::BackupFailed {
+        warn!("Brain settings migration skipped: the pre-migration backup could not be written");
+    }
+    outcome
 }
 
 /// Rebuilds settings from a store value that failed to deserialize as a whole.
@@ -2560,7 +2682,16 @@ pub fn write_settings(app: &AppHandle, incoming: AppSettings) {
         Some(stored) => {
             let committed = serde_json::from_value::<AppSettings>(stored.clone())
                 .unwrap_or_else(|_| salvage_settings(&stored));
-            preserve_launch_fields(incoming, &committed)
+            if committed.brain_schema_v1 {
+                preserve_launch_fields(incoming, &committed)
+            } else {
+                // Before the Brain marker, the stored Brain fields are only defaults. This write
+                // may be the one-time Brain migration, so the incoming Brain fields are kept.
+                let brain = incoming.clone();
+                let mut merged = preserve_launch_fields(incoming, &committed);
+                copy_brain_fields(&mut merged, &brain);
+                merged
+            }
         }
         None => incoming,
     };
