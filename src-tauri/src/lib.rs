@@ -38,6 +38,8 @@ mod orb_runtime;
 mod orb_runtime_tests;
 #[cfg(test)]
 mod orb_settings_tests;
+#[cfg(test)]
+mod orb_support_tests;
 mod orb_window;
 mod window_commands;
 #[cfg(test)]
