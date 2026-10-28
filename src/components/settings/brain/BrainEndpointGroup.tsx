@@ -20,6 +20,8 @@ import {
 interface BrainEndpointGroupProps {
   /** The saved destination has been acknowledged for the connection test. */
   acked: boolean;
+  /** Reports whether the provider, address and model drafts match the saved connection. */
+  onDraftMatchChange: (matches: boolean) => void;
 }
 
 const URL_ERROR_KEY: Record<UrlProblem, string> = {
@@ -40,6 +42,7 @@ function isPresetId(value: string): value is BrainProviderId {
  */
 export const BrainEndpointGroup: React.FC<BrainEndpointGroupProps> = ({
   acked,
+  onDraftMatchChange,
 }) => {
   const { t } = useTranslation();
   const { settings } = useSettings();
@@ -49,12 +52,20 @@ export const BrainEndpointGroup: React.FC<BrainEndpointGroupProps> = ({
   const savedUrl = settings?.brain_base_url ?? "";
   const savedModel = settings?.brain_model ?? "";
   const tokenSet = settings?.brain_token_set === true;
-  const canFetch =
-    acked && settings !== null && canFetchModels(brainViewOf(settings));
 
   const [providerDraft, setProviderDraft] = useState(savedProvider);
   const [urlDraft, setUrlDraft] = useState(savedUrl);
   const [modelDraft, setModelDraft] = useState(savedModel);
+  // Test and Fetch models only ever target the address shown in the form.
+  const draftMatches =
+    providerDraft === savedProvider &&
+    urlDraft.trim() === savedUrl &&
+    modelDraft.trim() === savedModel;
+  const canFetch =
+    acked &&
+    draftMatches &&
+    settings !== null &&
+    canFetchModels(brainViewOf(settings));
   const [urlError, setUrlError] = useState<UrlProblem | null>(null);
   // The token lives in state only while it is being typed; it is cleared on blur.
   const [tokenDraft, setTokenDraft] = useState("");
@@ -70,6 +81,9 @@ export const BrainEndpointGroup: React.FC<BrainEndpointGroupProps> = ({
   useEffect(() => {
     setModelDraft(savedModel);
   }, [savedModel]);
+  useEffect(() => {
+    onDraftMatchChange(draftMatches);
+  }, [draftMatches, onDraftMatchChange]);
 
   const providerOptions = BRAIN_PRESETS.map((preset) => ({
     value: preset.id,

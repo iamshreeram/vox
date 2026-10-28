@@ -23,6 +23,12 @@ const navItem = (page: Page, text: string): Locator =>
   page.locator("p", { hasText: new RegExp(`^${text}$`) });
 const tid = (page: Page, id: string): Locator => page.getByTestId(id);
 
+const FEATURE_LABEL = {
+  composer: "Reply style",
+  realtime_stream: "Real-time conversation",
+  post_process: "Post Process",
+};
+
 const FRESH = {
   brain_schema_v1: true,
   brain_provider_id: "",
@@ -321,6 +327,7 @@ test.describe("Brain page", () => {
     const notice = tid(page, "brain-notice-composer");
     await expect(notice).toBeVisible();
     await expect(notice).toContainText(/brain/i);
+    await expect(notice).toContainText(FEATURE_LABEL.composer);
     await notice.getByRole("button", { name: /open brain/i }).click();
     await expect(section(page, "brain")).toBeVisible();
   });
@@ -348,8 +355,14 @@ test.describe("Brain page", () => {
     });
     await page.goto("/");
     await expect(tid(page, "brain-notice-realtime_stream")).toBeVisible();
+    await expect(tid(page, "brain-notice-realtime_stream")).toContainText(
+      FEATURE_LABEL.realtime_stream,
+    );
     await navItem(page, "Post Process").click();
     await expect(tid(page, "brain-notice-post_process")).toBeVisible();
+    await expect(tid(page, "brain-notice-post_process")).toContainText(
+      FEATURE_LABEL.post_process,
+    );
   });
 
   test("19. a notice offers 'Use own setup' which calls the command", async ({

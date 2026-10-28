@@ -16,6 +16,8 @@ import {
 interface BrainTestGroupProps {
   /** The saved destination has been acknowledged for the connection test. */
   acked: boolean;
+  /** The endpoint drafts match the saved connection, so the test targets the address shown. */
+  draftMatches: boolean;
   /** Called with the destination key after the acknowledgement was recorded. */
   onAcknowledged: (destination: string) => void;
 }
@@ -26,6 +28,7 @@ interface BrainTestGroupProps {
  */
 export const BrainTestGroup: React.FC<BrainTestGroupProps> = ({
   acked,
+  draftMatches,
   onAcknowledged,
 }) => {
   const { t } = useTranslation();
@@ -44,7 +47,7 @@ export const BrainTestGroup: React.FC<BrainTestGroupProps> = ({
   const destination = destinationKey(provider, baseUrl);
   const label = destinationLabel(baseUrl);
   const state = configState(brainViewOf(settings));
-  const canTest = acked && state === "ready" && !testing;
+  const canTest = acked && draftMatches && state === "ready" && !testing;
   // A result belongs to the destination it was measured against.
   const shown =
     outcome !== null && outcome.destination === destination

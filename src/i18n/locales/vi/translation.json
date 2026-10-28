@@ -1403,7 +1403,7 @@
       "test": {
         "title": "Test connection",
         "description": "Checks the endpoint with one fixed message. Nothing you have said is sent.",
-        "ack": "I understand that Test sends the fixed message \"{{prompt}}\" to {{destination}}. Nothing you have said is sent.",
+        "ack": "I understand that Test sends the fixed message \"{{prompt}}\" to {{destination}}, with the saved access token if one is set. Nothing you have said is sent.",
         "run": "Test connection",
         "ok": "Connected in {{ms}} ms.",
         "unauthorized": "The endpoint rejected the token.",
@@ -1430,18 +1430,20 @@
         "needs_consent": "Needs your permission to use the Brain"
       },
       "consent": {
-        "title": "Let this feature use the Brain?",
+        "title": "Let {{feature}} send what you say to the Brain?",
         "body": "What you say, as text, is sent to the Brain endpoint by this feature. You can switch back to its own setup at any time.",
         "destination": "Destination: {{destination}}",
         "confirm": "Use the Brain",
         "cancel": "Cancel"
       },
       "notice": {
-        "text": "This uses the Brain connection.",
+        "text": "{{feature}} uses the Brain connection.",
         "open": "Open Brain",
         "useOwn": "Use own setup",
-        "needsSetup": "The Brain is not set up yet, so this feature cannot work until you set it up.",
-        "needsConsent": "This feature needs your permission to send what you say to the Brain."
+        "needsSetup": "{{feature}} needs the Brain, which is not set up yet.",
+        "needsConsent": "{{feature}} needs your permission to send what you say to the Brain.",
+        "openAria": "Open Brain for {{feature}}",
+        "useOwnAria": "Use own setup for {{feature}}"
       },
       "errors": {
         "save": "Could not save the Brain settings.",

@@ -27,6 +27,8 @@ export const BrainSettings: React.FC = () => {
     setPendingAck(null);
   }, [savedAck]);
   const acked = savedAck === destination || pendingAck === destination;
+  // Whether the endpoint form currently shows the saved connection (Test is gated on it).
+  const [draftMatches, setDraftMatches] = useState(true);
 
   return (
     <div
@@ -37,10 +39,17 @@ export const BrainSettings: React.FC = () => {
         title={t("settings.brain.endpoint.title")}
         description={t("settings.brain.description")}
       >
-        <BrainEndpointGroup acked={acked} />
+        <BrainEndpointGroup
+          acked={acked}
+          onDraftMatchChange={setDraftMatches}
+        />
       </SettingsGroup>
       <SettingsGroup title={t("settings.brain.test.title")}>
-        <BrainTestGroup acked={acked} onAcknowledged={setPendingAck} />
+        <BrainTestGroup
+          acked={acked}
+          draftMatches={draftMatches}
+          onAcknowledged={setPendingAck}
+        />
       </SettingsGroup>
       <SettingsGroup
         title={t("settings.brain.feature.title")}

@@ -6,6 +6,7 @@ import { Dialog } from "../../ui/Dialog";
 import { useSettings } from "../../../hooks/useSettings";
 import { useBrainActions } from "./useBrainActions";
 import { brainViewOf, destinationLabel, featureView } from "./brainModel";
+import { useFeatureLabel } from "./useFeatureLabel";
 
 const FEATURES: readonly BrainFeature[] = [
   "composer",
@@ -21,6 +22,7 @@ export const BrainFeatureGroup: React.FC = () => {
   const { t } = useTranslation();
   const { settings } = useSettings();
   const actions = useBrainActions();
+  const featureLabel = useFeatureLabel();
   const [consentFor, setConsentFor] = useState<BrainFeature | null>(null);
 
   if (settings === null) return null;
@@ -82,7 +84,13 @@ export const BrainFeatureGroup: React.FC = () => {
       })}
       <Dialog
         open={consentFor !== null}
-        title={t("settings.brain.consent.title")}
+        title={
+          consentFor === null
+            ? ""
+            : t("settings.brain.consent.title", {
+                feature: featureLabel(consentFor),
+              })
+        }
         onOpenChange={(open) => {
           if (!open) setConsentFor(null);
         }}
