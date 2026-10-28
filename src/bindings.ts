@@ -2157,6 +2157,17 @@ async orbSetReducedMotion(reduced: boolean) : Promise<void> {
     await TAURI_INVOKE("orb_set_reduced_motion", { reduced });
 },
 /**
+ * Readiness handshake of the bubble page. Sends the current snapshot to that page only.
+ */
+async bubblesReady(instance: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("bubbles_ready", { instance }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Whether the floating orb can be used on this system. Reads the platform the same way the orb
  * does: on Linux the GDK display is read on the main thread, where GTK is initialised. If that
  * read cannot be made, Linux is reported with an unidentified backend.

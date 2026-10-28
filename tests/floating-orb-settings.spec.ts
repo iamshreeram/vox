@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { getMockCalls, installTauriMock } from "./fixtures/tauriMock";
+import {
+  getMockCalls,
+  installTauriMock,
+  setMockSetting,
+} from "./fixtures/tauriMock";
 
 /*
  * G3c SPEC: Settings > General > Conversation > "Floating orb" (DESIGN.md 'Frontend' ->
@@ -299,5 +303,169 @@ test.describe("Floating orb settings", () => {
     await expect(section(page, "general")).toBeVisible();
     await expect(tid(page, "floating-orb-show")).toBeVisible();
     await expect(tid(page, "floating-orb-group")).toBeVisible();
+  });
+});
+
+/*
+ * G4b SPEC (appended; DESIGN.md R6-4 'Settings'): the "When I talk to Vox" select and its hints,
+ * inside the same floating-orb-group. Selectors (data-testid), in addition to the G3c ones:
+ *   floating-orb-surface              native <select>, options auto | bubbles | window
+ *                                     (labels: settings.floatingOrb.surface.auto/bubbles/window)
+ *   floating-orb-surface-hint-chatlog hint shown when converse_chat_log is off
+ *   floating-orb-surface-hint-wake    hint shown when Hey Jarvis starts dictation
+ *   floating-orb-wake-conversation    button inside the wake hint: sets wake_word_action to
+ *                                     'conversation' via change_wake_word_action_setting
+ * The select writes only through change_chat_presentation_setting {value: null | 'floating' |
+ * 'window'}. Hints are hidden when the surface is Conversation window or the support answer
+ * says unsupported.
+ */
+test.describe("Floating orb surface choice (G4b)", () => {
+  const surface = (page: Page): Locator => tid(page, "floating-orb-surface");
+  const presentationCalls = (page: Page) =>
+    getMockCalls(page, "change_chat_presentation_setting");
+
+  test("S1. the select reflects null as Automatic, 'floating' as bubbles and 'window' as window", async ({
+    page,
+  }) => {
+    await openConversation(page, { chat_presentation: null });
+    await expect(surface(page)).toHaveValue("auto");
+    await expect(surface(page)).toBeEnabled();
+    const options = await surface(page)
+      .locator("option")
+      .evaluateAll((els) =>
+        els.map((el) => ({
+          value: (el as HTMLOptionElement).value,
+          label: el.textContent ?? "",
+        })),
+      );
+    expect(options).toEqual([
+      { value: "auto", label: text("settings.floatingOrb.surface.auto") },
+      { value: "bubbles", label: text("settings.floatingOrb.surface.bubbles") },
+      { value: "window", label: text("settings.floatingOrb.surface.window") },
+    ]);
+
+    await setMockSetting(page, "chat_presentation", "floating");
+    await expect(surface(page)).toHaveValue("bubbles");
+    await setMockSetting(page, "chat_presentation", "window");
+    await expect(surface(page)).toHaveValue("window");
+  });
+
+  test("S2. each choice records the exact change_chat_presentation_setting argument", async ({
+    page,
+  }) => {
+    await openConversation(page, { chat_presentation: "window" });
+    await surface(page).selectOption("auto");
+    await expect.poll(() => presentationCalls(page)).toEqual([{ value: null }]);
+    await setMockSetting(page, "chat_presentation", null);
+
+    await surface(page).selectOption("bubbles");
+    await expect
+      .poll(() => presentationCalls(page))
+      .toEqual([{ value: null }, { value: "floating" }]);
+    await setMockSetting(page, "chat_presentation", "floating");
+
+    await surface(page).selectOption("window");
+    await expect
+      .poll(() => presentationCalls(page))
+      .toEqual([{ value: null }, { value: "floating" }, { value: "window" }]);
+  });
+
+  test("S3. the chat-log hint appears when converse_chat_log is off and goes away when it is on", async ({
+    page,
+  }) => {
+    await openConversation(page, {
+      chat_presentation: null,
+      converse_chat_log: false,
+    });
+    const hint = tid(page, "floating-orb-surface-hint-chatlog");
+    await expect(hint).toBeVisible();
+    await expect(hint).toContainText(
+      text("settings.floatingOrb.hints.chatLogOff"),
+    );
+
+    await setMockSetting(page, "converse_chat_log", true);
+    await expect(hint).toHaveCount(0);
+  });
+
+  test("S3b. the chat-log hint is hidden when the surface is Conversation window", async ({
+    page,
+  }) => {
+    await openConversation(page, {
+      chat_presentation: "window",
+      converse_chat_log: false,
+    });
+    await expect(tid(page, "floating-orb-surface-hint-chatlog")).toHaveCount(0);
+  });
+
+  test("S4. the wake hint shows when Hey Jarvis starts dictation, and its button records the action change", async ({
+    page,
+  }) => {
+    await openConversation(page, {
+      chat_presentation: null,
+      wake_word_enabled: true,
+      wake_word_action: "voice_request",
+    });
+    const hint = tid(page, "floating-orb-surface-hint-wake");
+    await expect(hint).toBeVisible();
+    await expect(hint).toContainText(
+      text("settings.floatingOrb.hints.wakeDictation"),
+    );
+    const button = tid(page, "floating-orb-wake-conversation");
+    await expect(button).toBeVisible();
+    await expect(button).toContainText(
+      text("settings.floatingOrb.hints.wakeButton"),
+    );
+
+    await button.click();
+    await expect
+      .poll(() => getMockCalls(page, "change_wake_word_action_setting"))
+      .toEqual([{ action: "conversation" }]);
+  });
+
+  test("S4b. the wake hint is hidden when Hey Jarvis already opens a conversation, or wake is off", async ({
+    page,
+  }) => {
+    await openConversation(page, {
+      chat_presentation: null,
+      wake_word_enabled: true,
+      wake_word_action: "conversation",
+    });
+    await expect(tid(page, "floating-orb-surface-hint-wake")).toHaveCount(0);
+    await setMockSetting(page, "wake_word_enabled", false);
+    await setMockSetting(page, "wake_word_action", "voice_request");
+    await expect(tid(page, "floating-orb-surface-hint-wake")).toHaveCount(0);
+  });
+
+  test("S5. an unsupported platform disables the select, shows the reason and hides the hints", async ({
+    page,
+  }) => {
+    await openConversation(
+      page,
+      {
+        chat_presentation: null,
+        converse_chat_log: false,
+        wake_word_enabled: true,
+        wake_word_action: "voice_request",
+      },
+      { get_orb_support: WAYLAND },
+    );
+    await expect(surface(page)).toBeDisabled();
+    await expect(tid(page, "floating-orb-reason")).toContainText(
+      text("settings.floatingOrb.reason.wayland"),
+    );
+    await expect(tid(page, "floating-orb-surface-hint-chatlog")).toHaveCount(0);
+    await expect(tid(page, "floating-orb-surface-hint-wake")).toHaveCount(0);
+  });
+
+  test("S6. mounting the group sends no change_* command", async ({ page }) => {
+    await openConversation(page, {
+      chat_presentation: "floating",
+      converse_chat_log: false,
+      wake_word_enabled: true,
+      wake_word_action: "voice_request",
+    });
+    await expect.poll(() => orbCommands(page)).toContain("get_orb_support");
+    const invoked = await invokedCommands(page);
+    expect(invoked.filter((name) => name.startsWith("change_"))).toEqual([]);
   });
 });

@@ -259,6 +259,7 @@ fn show_without_focus(app: &AppHandle, window: &WebviewWindow) {
     }
     log_window_result("unminimize", window.unminimize());
     log_window_result("show", window.show());
+    crate::bubble_native::classic_visibility_changed(app, true);
 }
 
 /// Shows and focuses the window and promotes the macOS activation policy so the window can
@@ -279,6 +280,7 @@ fn show_existing(app: &AppHandle, window: &WebviewWindow) {
     log_window_result("unminimize", window.unminimize());
     log_window_result("show", window.show());
     log_window_result("focus", window.set_focus());
+    crate::bubble_native::classic_visibility_changed(app, true);
 }
 
 /// Hides the window. Only after a successful hide, on macOS, when the main window is hidden
@@ -289,6 +291,7 @@ fn hide_existing(app: &AppHandle, window: &WebviewWindow) {
         log::warn!("chat window hide failed: {e}");
         return;
     }
+    crate::bubble_native::classic_visibility_changed(app, false);
     #[cfg(target_os = "macos")]
     {
         let main_visible = app

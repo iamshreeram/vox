@@ -6,10 +6,20 @@ mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
 #[cfg(test)]
+mod bubble_admission_e2e_tests;
+#[cfg(test)]
+mod bubble_g4b_fix_tests;
+#[cfg(test)]
 mod bubble_geometry_tests;
 mod bubble_hub;
 #[cfg(test)]
 mod bubble_hub_tests;
+mod bubble_native;
+mod bubble_shell_core;
+#[cfg(test)]
+mod bubble_shell_core_tests;
+#[cfg(test)]
+mod bubble_wiring_contracts_tests;
 mod catalog;
 mod chat_presentation;
 #[cfg(test)]
@@ -647,6 +657,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let (job_wiring, job_runtime) = job_runtime::build(app_handle, tts_manager.clone());
     app_handle.manage(job_wiring);
 
+    // Bubble shell state (G4b): one core, created before anything can report a session or a line.
+    bubble_native::init(app_handle);
     // Chat window transcript (DESIGN-CHAT 2.1): one in-memory log, fed by the conversation
     // platform and emitted through the app. Recording follows the saved setting.
     let chat_log = managers::chat_log::ChatLog::start(
@@ -1384,6 +1396,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::orb::orb_menu,
             commands::orb::orb_get_state,
             commands::orb::orb_set_reduced_motion,
+            commands::bubbles::bubbles_ready,
             commands::orb::get_orb_support,
             commands::orb::change_orb_visible_setting,
             commands::orb::change_orb_size_setting,
@@ -1833,6 +1846,7 @@ pub fn run(cli_args: CliArgs) {
             log::debug!("native exit request decision: {:?}", decision);
         }
         tauri::RunEvent::Exit => {
+            bubble_native::destroy_bubbles(app);
             if let Some(acp) = app.try_state::<Arc<managers::acp_agent::AcpAgentManager>>() {
                 acp.close();
             }

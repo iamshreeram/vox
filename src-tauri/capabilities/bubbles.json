@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "bubbles",
+  "description": "Bubble window: event listening only. Its single app command is bubbles_ready, allowed by the window command matrix in window_commands.rs.",
+  "windows": ["orb-bubbles"],
+  "permissions": ["core:event:allow-listen"]
+}

@@ -77,12 +77,19 @@ impl SessionMachine {
     /// A session starts: Active, transient visibility wanted, any pending expiry cancelled.
     /// A new session also lifts a tray hide from the previous one.
     pub fn started(&mut self, sid: u64, now: u64) {
+        self.started_as(sid, now, true);
+    }
+
+    /// Like `started`, but the session owns a transient show only when `transient` is true. A
+    /// session that starts with a persisted-visible orb passes false (A9-2), so the session
+    /// never hides an orb the user keeps on.
+    pub fn started_as(&mut self, sid: u64, now: u64, transient: bool) {
         self.phase = Phase::Active;
         self.sid = sid;
         self.last_activity = now;
         self.ended_at = now;
         self.deadline = now;
-        self.transient_shown = true;
+        self.transient_shown = transient;
         self.pinned = false;
         self.user_hidden = false;
         self.bump();
@@ -208,6 +215,16 @@ impl SessionMachine {
         let transient = self.phase != Phase::Idle && self.transient_shown && !self.pinned;
         persisted_visible || transient
     }
+}
+
+/// The session's own share of the orb: the transient show it owns right now. Idle, pinned, a
+/// tray hide and an expired session own nothing. The saved setting is never part of the share;
+/// the executor stores this value in `ORB_TRANSIENT` (MAJOR 1 of G4b.fix).
+pub fn transient_share(machine: &SessionMachine) -> bool {
+    machine.phase != Phase::Idle
+        && machine.transient_shown
+        && !machine.pinned
+        && !machine.user_hidden
 }
 
 /// Decides what the executor does for one reconcile step (A8-1 level-triggered effects). An

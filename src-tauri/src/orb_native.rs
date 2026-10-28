@@ -6,7 +6,7 @@
 //! Nothing here writes files or console output; logs name operations and errors only.
 
 use crate::chat_presentation::{
-    current_os, floating_supported, orb_should_show, LinuxBackend, PlatformEnv, ORB_VISIBLE_DEFAULT,
+    current_os, floating_supported, LinuxBackend, PlatformEnv, ORB_VISIBLE_DEFAULT,
 };
 use crate::chat_surface;
 use crate::chat_window::{is_app_navigation, CHAT_WINDOW_LABEL};
@@ -280,7 +280,7 @@ fn ensure_runtime(app: &AppHandle) {
 }
 
 /// The orb rectangle of `window` in physical pixels.
-fn window_rect(window: &WebviewWindow) -> Option<Rect> {
+pub(crate) fn window_rect(window: &WebviewWindow) -> Option<Rect> {
     let position = window.outer_position().ok()?;
     let size = window.outer_size().ok()?;
     Some(Rect {
@@ -310,7 +310,7 @@ fn gesture_active(app: &AppHandle) -> bool {
 }
 
 /// The monitors as the orb sees them: work areas, scales and the primary monitor.
-fn monitors_for(app: &AppHandle) -> Vec<MonitorInfo> {
+pub(crate) fn monitors_for(app: &AppHandle) -> Vec<MonitorInfo> {
     let listed = app.available_monitors().unwrap_or_default();
     let primary = app.primary_monitor().ok().flatten();
     let raw: Vec<RawMonitor> = listed
@@ -416,13 +416,37 @@ pub fn apply_visibility(app: &AppHandle) {
     }
 }
 
-/// Main-thread body of `apply_visibility`.
-fn apply_on_main(app: &AppHandle) {
+/// Builds the orb window hidden when it does not exist yet. Main thread. Returns whether the
+/// window exists afterwards.
+pub(crate) fn ensure_orb_window(app: &AppHandle) -> bool {
+    if app.get_webview_window(ORB_WINDOW_LABEL).is_some() {
+        return true;
+    }
+    let settings = settings::get_settings(app);
+    match build_orb(app, effective_logical(&settings)) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!("orb build failed: {e}");
+            false
+        }
+    }
+}
+
+/// Sets whether the wake-appear session wants the orb (A9-2). Read by `apply_on_main`.
+pub(crate) fn set_orb_transient(on: bool) {
+    ORB_TRANSIENT.store(on, Ordering::SeqCst);
+}
+
+/// Main-thread body of `apply_visibility`. The orb is shown when the saved setting asks for it,
+/// or while a wake-appear session wants it on a platform that supports floating.
+pub(crate) fn apply_on_main(app: &AppHandle) {
     ensure_runtime(app);
     let settings = settings::get_settings(app);
     let env = current_env();
     record_platform_offer(app, &env);
-    if !orb_should_show(settings.orb_visible, &env) {
+    let persisted = settings.orb_visible.unwrap_or(ORB_VISIBLE_DEFAULT);
+    let share = ORB_TRANSIENT.load(Ordering::SeqCst);
+    if !orb_wanted(persisted, share, floating_supported(&env).is_ok()) {
         hide_orb(app);
         return;
     }
@@ -449,6 +473,59 @@ fn apply_on_main(app: &AppHandle) {
         rt.gaze.set_visible(true);
         rt.gaze.set_reduced_motion(reduced);
     }
+    crate::bubble_native::orb_visibility_changed(app, true);
+    start_ticker(app);
+}
+
+/// Main thread. The bubble executor's entry point: shows or hides the orb, and places its window
+/// only when `executor_needs_geometry` says so. A shown orb, or one under a gesture, is never
+/// re-targeted here, so a drag is never fought (MAJOR 2 of G4b.fix).
+pub(crate) fn show_hide_only(app: &AppHandle, want: bool) {
+    if !want {
+        hide_orb(app);
+        return;
+    }
+    ensure_runtime(app);
+    let exists = app.get_webview_window(ORB_WINDOW_LABEL).is_some();
+    let shown = app
+        .try_state::<OrbRuntimeCell>()
+        .is_some_and(|cell| cell.shown());
+    if executor_needs_geometry(exists, shown, gesture_active(app)) {
+        let settings = settings::get_settings(app);
+        let monitors = monitors_for(app);
+        let Some(rect) = target_rect(&settings, &monitors) else {
+            log::warn!("orb not shown: no monitor found");
+            return;
+        };
+        if !exists {
+            if let Err(e) = build_orb(app, effective_logical(&settings)) {
+                log::warn!("orb build failed: {e}");
+                return;
+            }
+        }
+        let Some(window) = app.get_webview_window(ORB_WINDOW_LABEL) else {
+            return;
+        };
+        apply_geometry(&window, rect);
+    }
+    let Some(window) = app.get_webview_window(ORB_WINDOW_LABEL) else {
+        return;
+    };
+    present(app, &window);
+}
+
+/// Shows the orb window, marks it shown for the ticker and the gaze, tells the bubbles and starts
+/// the ticker. Main thread. Places nothing; the caller decides the geometry.
+fn present(app: &AppHandle, window: &WebviewWindow) {
+    show_orb(app, window);
+    if let Some(cell) = app.try_state::<OrbRuntimeCell>() {
+        cell.set_shown(true);
+        let mut rt = cell.lock();
+        let reduced = rt.reduced_motion;
+        rt.gaze.set_visible(true);
+        rt.gaze.set_reduced_motion(reduced);
+    }
+    crate::bubble_native::orb_visibility_changed(app, true);
     start_ticker(app);
 }
 
@@ -457,10 +534,32 @@ fn apply_on_main(app: &AppHandle) {
 fn record_platform_offer(app: &AppHandle, env: &PlatformEnv) {
     let blocked = floating_supported(env).is_err();
     let previous = FLOATING_BLOCKED.swap(blocked, Ordering::SeqCst);
+    let mut last = LAST_ENV
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *last = Some(*env);
+    drop(last);
     if previous != blocked {
         crate::tray::sync_tray(app);
     }
 }
+
+/// The platform facts as the last main-thread apply read them. Off the main thread (the converse
+/// session hook) the GDK display must not be read, so the session decision uses this copy. Before
+/// any apply it assumes an unidentified Linux backend, which blocks floating.
+pub(crate) fn cached_env() -> PlatformEnv {
+    let last = *LAST_ENV
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    last.unwrap_or(PlatformEnv {
+        os: current_os(),
+        linux_backend: LinuxBackend::Unknown,
+        composited: false,
+    })
+}
+
+/// The platform facts as last recorded on the main thread. Written by `record_platform_offer`.
+static LAST_ENV: Mutex<Option<PlatformEnv>> = Mutex::new(None);
 
 /// Whether the tray should offer the orb item: false where floating is unsupported, as found by
 /// the last main-thread apply. Reads only an atomic, so the tray may call it from any thread.
@@ -470,6 +569,27 @@ pub fn floating_offered() -> bool {
 
 /// Floating is blocked on this system, as recorded by the last main-thread apply.
 static FLOATING_BLOCKED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the wake-appear session currently owns a transient show of the orb (set by the bubble
+/// executor to the session's own share only; the saved setting is never stored here).
+static ORB_TRANSIENT: AtomicBool = AtomicBool::new(false);
+
+/// Whether the orb must be shown: the saved setting or the session's share, on a platform that
+/// supports floating. Pure, so the apply condition is tested without a window.
+pub(crate) fn orb_wanted(persisted: bool, share: bool, supported: bool) -> bool {
+    supported && (persisted || share)
+}
+
+/// Whether the bubble executor must place the orb window: when the window does not exist, or it
+/// is hidden and no gesture is in progress. A shown orb, or one under a gesture, keeps its place
+/// so a drag is never fought (MAJOR 2 of G4b.fix).
+pub(crate) fn executor_needs_geometry(
+    orb_window_exists: bool,
+    orb_shown: bool,
+    gesture_active: bool,
+) -> bool {
+    !orb_window_exists || (!orb_shown && !gesture_active)
+}
 
 /// Hides the orb: cancels any gesture, stops the ticker and hides the window.
 fn hide_orb(app: &AppHandle) {
@@ -491,6 +611,7 @@ fn stop_orb(app: &AppHandle) {
         rt.gaze.set_visible(false);
     }
     execute(app, calls.calls);
+    crate::bubble_native::orb_visibility_changed(app, false);
 }
 
 /// The orb window was destroyed: a gesture in progress is cancelled, never completed.
@@ -555,6 +676,8 @@ fn fit_orb(app: &AppHandle) {
 /// Handler for the window's move and scale events. Skips the work while a gesture is in progress,
 /// so a drag is never fought, and while the runtime is busy.
 fn on_geometry_event(app: &AppHandle) {
+    // The bubble stack follows the orb even during a drag; only the orb's own refit is skipped.
+    crate::bubble_native::orb_geometry_changed(app);
     if let Some(cell) = app.try_state::<OrbRuntimeCell>() {
         match cell.0.try_lock() {
             Ok(rt) => {
@@ -891,6 +1014,11 @@ pub fn toggle_visibility(app: &AppHandle) {
         .orb_visible
         .unwrap_or(ORB_VISIBLE_DEFAULT);
     write_settings_gated(app, |settings| settings.orb_visible = Some(!enabled));
+    if enabled {
+        crate::bubble_native::user_hid_orb(app);
+    } else {
+        crate::bubble_native::user_showed_orb(app);
+    }
     apply_visibility(app);
 }
 
@@ -980,6 +1108,7 @@ fn handle_menu(app: &AppHandle, id: &str) {
         "orb_size_medium" => set_orb_size(app, Some(96)),
         "orb_size_large" => set_orb_size(app, Some(128)),
         "orb_hide" => {
+            crate::bubble_native::user_hid_orb(app);
             write_settings_gated(app, |settings| settings.orb_visible = Some(false));
             apply_visibility(app);
         }
