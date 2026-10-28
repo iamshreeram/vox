@@ -95,15 +95,17 @@ body,
   animation-duration: 1.2s;
 }
 
-/* Gaze (A5): the body follows the cursor by up to GAZE_MAX_UNITS, the highlight by 1.5x.
+/* Gaze (A5): the shine is a child of the body group, so its total shift is the body shift plus
+   its own extra shift. Body 2.5 + shine 1.5 = 4 units (GAZE_MAX_UNITS) per axis at the corners:
+   the highlight leads the body and neither moves further than the cap. SVG user units = px here.
    The individual `translate` property keeps the breathing animation's transform intact. */
 .orb-root .vox-body-group {
-  translate: calc(var(--gaze-x, 0) * 4px) calc(var(--gaze-y, 0) * 4px);
+  translate: calc(var(--gaze-x, 0) * 2.5px) calc(var(--gaze-y, 0) * 2.5px);
   transition: translate 0.12s ease-out;
 }
 
 .orb-root .vox-shine {
-  translate: calc(var(--gaze-x, 0) * 6px) calc(var(--gaze-y, 0) * 6px);
+  translate: calc(var(--gaze-x, 0) * 1.5px) calc(var(--gaze-y, 0) * 1.5px);
   transition: translate 0.12s ease-out;
 }
 

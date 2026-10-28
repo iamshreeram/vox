@@ -23,6 +23,7 @@ import {
   gazeOffset,
   initialFaceView,
   initialOrbState,
+  isPrimaryPress,
   keyCommand,
   nextGlintDelay,
   orbClasses,
@@ -92,6 +93,8 @@ export default function OrbApp() {
     const applyReduced = (on: boolean): void => {
       reducedRef.current = on;
       dispatch({ type: "reducedMotion", on });
+      // Reduced motion holds the orb centred: a gaze already applied must not stay off-centre.
+      if (on) setGaze({ x: "0", y: "0" });
       send("orb_set_reduced_motion", { reduced: on });
     };
     applyReduced(query.matches);
@@ -186,11 +189,15 @@ export default function OrbApp() {
   }, [reducedMotion]);
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
-    if (event.button !== 0) return;
+    if (!isPrimaryPress(event)) return;
     pressCounterRef.current += 1;
     const id = pressCounterRef.current;
-    send("orb_pointer_down", { id });
     dispatch({ type: "down", id });
+    // If the native side does not take the press (for example in a browser preview), cancel it
+    // locally so the orb does not stay in the grabbing state.
+    invoke("orb_pointer_down", { id }).catch(() =>
+      dispatch({ type: "gesture", id, result: "cancel" }),
+    );
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 

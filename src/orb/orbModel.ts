@@ -113,11 +113,27 @@ export function orbClasses(state: OrbState): string[] {
   return classes;
 }
 
-/** Keyboard map: Enter and Space activate; ContextMenu and Shift+F10 open the menu. */
+/**
+ * A press starts a gesture only with the primary button and without Ctrl: Ctrl+click is the macOS
+ * context click, which the native menu handles through the context menu event.
+ */
+export function isPrimaryPress(event: {
+  button: number;
+  ctrlKey: boolean;
+}): boolean {
+  return event.button === 0 && !event.ctrlKey;
+}
+
+/**
+ * Keyboard map: Enter and Space activate; ContextMenu and Shift+F10 open the menu.
+ * Auto-repeat keydowns (holding a key) map to nothing, so one press is one command.
+ */
 export function keyCommand(event: {
   key: string;
   shiftKey: boolean;
+  repeat?: boolean;
 }): "activate" | "menu" | null {
+  if (event.repeat === true) return null;
   if (event.key === "Enter" || event.key === " ") return "activate";
   if (event.key === "ContextMenu") return "menu";
   if (event.key === "F10" && event.shiftKey) return "menu";
