@@ -123,7 +123,7 @@ fn earlier_preflight_refusals_still_win_with_conversation_action() {
     s.tts_enabled = false;
     assert_eq!(
         preflight_check(&s),
-        Err("Turn on spoken replies in the speech settings first.".to_string())
+        Err("Turn on spoken replies in Settings > Models > Text-to-speech first.".to_string())
     );
 }
 

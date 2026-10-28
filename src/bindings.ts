@@ -1871,6 +1871,18 @@ async brainFetchModels() : Promise<Result<string[], string>> {
 }
 },
 /**
+ * Records how a first-run step was resolved (`Done` or `Skipped`). Finishing the Brain step as
+ * `Done` requires the Brain to be in use for spoken replies, with transcript consent.
+ */
+async firstRunFinishStep(step: FirstRunStep, outcome: FirstRunOutcome) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("first_run_finish_step", { step, outcome }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Validates and persists the full list of voice shortcuts.
  * 
  * The whole list is validated before anything is written: if any entry is
@@ -2468,6 +2480,19 @@ brain_test_ack_host?: string;
  */
 brain_transcript_consent_dest?: string; 
 /**
+ * True while the first-run wizard has steps left. A fresh install starts true; a store that
+ * existed before first run never does (missing key => false).
+ */
+first_run_setup_pending?: boolean; 
+/**
+ * How the first-run spoken-replies step was resolved.
+ */
+first_run_tts?: FirstRunOutcome; 
+/**
+ * How the first-run Brain step was resolved.
+ */
+first_run_brain?: FirstRunOutcome; 
+/**
  * MASTER switch. Off => the conversation behaves exactly as before.
  */
 exp_rt_enabled?: boolean; 
@@ -2782,6 +2807,34 @@ export type Fact = { id: number; text: string; source_transcript: string; create
  * Median and p90 for one field over the window (None when no Some values).
  */
 export type FieldStats = { median: number | null; p90: number | null }
+/**
+ * How a first-run step was resolved. `Unset` means the user has not decided yet.
+ */
+export type FirstRunOutcome = 
+/**
+ * Not decided yet.
+ */
+"unset" | 
+/**
+ * The user skipped the step.
+ */
+"skipped" | 
+/**
+ * The user completed the step.
+ */
+"done"
+/**
+ * The first-run steps, in the order the user sees them.
+ */
+export type FirstRunStep = 
+/**
+ * Spoken replies (text-to-speech).
+ */
+"voice" | 
+/**
+ * The Brain connection used for spoken replies.
+ */
+"brain"
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }

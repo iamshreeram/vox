@@ -7,9 +7,10 @@ import { nextFirstRunStep } from "./firstRunFlow";
 // Contract: `nextFirstRunStep(settings)` mirrors Rust `first_run::next_step`.
 const read = (relative: string): string =>
   readFileSync(new URL(relative, import.meta.url), "utf8");
-const en = JSON.parse(
-  read("../../i18n/locales/en/translation.json"),
-) as Record<string, unknown>;
+const en = JSON.parse(read("../../i18n/locales/en/translation.json")) as Record<
+  string,
+  unknown
+>;
 const lookup = (key: string): unknown =>
   key
     .split(".")
@@ -60,17 +61,32 @@ const scenarios: Record<string, () => void> = {
     const base = { first_run_setup_pending: true } as const;
     assert.equal(nextFirstRunStep(base), "voice");
     assert.equal(
-      nextFirstRunStep({ ...base, first_run_tts: "unset", first_run_brain: "unset" }),
+      nextFirstRunStep({
+        ...base,
+        first_run_tts: "unset",
+        first_run_brain: "unset",
+      }),
       "voice",
     );
     assert.equal(nextFirstRunStep({ ...base, first_run_tts: "done" }), "brain");
-    assert.equal(nextFirstRunStep({ ...base, first_run_tts: "skipped" }), "brain");
     assert.equal(
-      nextFirstRunStep({ ...base, first_run_tts: "done", first_run_brain: "done" }),
+      nextFirstRunStep({ ...base, first_run_tts: "skipped" }),
+      "brain",
+    );
+    assert.equal(
+      nextFirstRunStep({
+        ...base,
+        first_run_tts: "done",
+        first_run_brain: "done",
+      }),
       null,
     );
     assert.equal(
-      nextFirstRunStep({ ...base, first_run_tts: "skipped", first_run_brain: "skipped" }),
+      nextFirstRunStep({
+        ...base,
+        first_run_tts: "skipped",
+        first_run_brain: "skipped",
+      }),
       null,
     );
   },
@@ -107,7 +123,11 @@ const scenarios: Record<string, () => void> = {
       assert.ok(existsSync(new URL(file, import.meta.url)), `${file} exists`);
     }
     const voice = read("./FirstRunVoiceStep.tsx");
-    assert.match(voice, /TtsEngineCard|ModelRow/, "voice choices use the shared model row");
+    assert.match(
+      voice,
+      /TtsEngineCard|ModelRow/,
+      "voice choices use the shared model row",
+    );
     assert.match(voice, /firstRunFinishStep/);
     const brain = read("./FirstRunBrainStep.tsx");
     assert.match(brain, /useBrainActions|BrainEndpointGroup|BrainTestGroup/);
@@ -119,7 +139,9 @@ const scenarios: Record<string, () => void> = {
       const source = read(file);
       for (const body of effectBodies(source)) {
         assert.ok(
-          !/brainTestConnection|brainFetchModels|testConnection|fetchModels|brainAcknowledgeTest/.test(body),
+          !/brainTestConnection|brainFetchModels|testConnection|fetchModels|brainAcknowledgeTest/.test(
+            body,
+          ),
           `${file}: an effect must not call the Brain network commands`,
         );
       }
@@ -131,12 +153,17 @@ const scenarios: Record<string, () => void> = {
     assert.match(read("./FirstRunVoiceStep.tsx"), /"skipped"/);
   },
 
-  "the 'Use this for spoken replies' button is the only thing that finishes Brain as done": () => {
-    const brain = read("./FirstRunBrainStep.tsx");
-    const uses = brain.split('"done"').length - 1;
-    assert.equal(uses, 1, "exactly one place resolves the Brain step as done");
-    assert.match(brain, /brainUseForFeature/);
-  },
+  "the 'Use this for spoken replies' button is the only thing that finishes Brain as done":
+    () => {
+      const brain = read("./FirstRunBrainStep.tsx");
+      const uses = brain.split('"done"').length - 1;
+      assert.equal(
+        uses,
+        1,
+        "exactly one place resolves the Brain step as done",
+      );
+      assert.match(brain, /brainUseForFeature/);
+    },
 
   "strings are translated": () => {
     for (const key of [
@@ -156,20 +183,28 @@ const scenarios: Record<string, () => void> = {
     }
   },
 
-  "returning users get a dismissible Finish voice setup callout on Models": () => {
-    const models = read("../settings/models/ModelsSettings.tsx");
-    assert.match(models, /FinishSetupCallout/);
-    const callout = "../settings/models/FinishSetupCallout.tsx";
-    assert.ok(existsSync(new URL(callout, import.meta.url)));
-    const source = read(callout);
-    assert.match(source, /localStorage/);
-    assert.match(source, /brain_provider_id|brain_model/);
-    assert.ok(!/brainTestConnection|brainFetchModels/.test(source), "the callout never makes requests");
-  },
+  "returning users get a dismissible Finish voice setup callout on Models":
+    () => {
+      const models = read("../settings/models/ModelsSettings.tsx");
+      assert.match(models, /FinishSetupCallout/);
+      const callout = "../settings/models/FinishSetupCallout.tsx";
+      assert.ok(existsSync(new URL(callout, import.meta.url)));
+      const source = read(callout);
+      assert.match(source, /localStorage/);
+      assert.match(source, /brain_provider_id|brain_model/);
+      assert.ok(
+        !/brainTestConnection|brainFetchModels/.test(source),
+        "the callout never makes requests",
+      );
+    },
 
   "the converse preflight tells the user which piece is missing": () => {
     const rust = read("../../../src-tauri/src/managers/converse_platform.rs");
-    assert.match(rust, /Models/, "spoken-reply message points at the Models page");
+    assert.match(
+      rust,
+      /Models/,
+      "spoken-reply message points at the Models page",
+    );
     assert.match(rust, /Brain/, "reply-model message points at the Brain page");
   },
 };

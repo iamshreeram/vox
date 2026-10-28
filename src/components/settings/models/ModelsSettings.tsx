@@ -22,6 +22,7 @@ import { PlacedGroups } from "../PlacedGroups";
 import { CollapsibleSettingsGroup } from "../../ui/CollapsibleSettingsGroup";
 import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
 import { ModelSettingsCard } from "./ModelSettingsCard";
+import { FinishSetupCallout } from "./FinishSetupCallout";
 
 // check if model supports a language based on its supported_languages list
 const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
@@ -241,6 +242,8 @@ export const ModelsSettings: React.FC = () => {
           {t("settings.models.description")}
         </p>
       </div>
+
+      <FinishSetupCallout />
 
       <CollapsibleSettingsGroup
         id="sttModels"

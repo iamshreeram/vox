@@ -142,7 +142,9 @@ pub fn preflight_text_check(settings: &AppSettings) -> Result<(), String> {
 
 fn preflight_check_with(settings: &AppSettings, needs_spoken_replies: bool) -> Result<(), String> {
     if needs_spoken_replies && !settings.tts_enabled {
-        return Err("Turn on spoken replies in the speech settings first.".to_string());
+        return Err(
+            "Turn on spoken replies in Settings > Models > Text-to-speech first.".to_string(),
+        );
     }
     if settings.exp_rt_enabled {
         crate::managers::realtime_config::preflight_realtime(settings).map_err(str::to_string)?;
@@ -166,7 +168,12 @@ fn preflight_check_with(settings: &AppSettings, needs_spoken_replies: bool) -> R
     // Checked after the wake word and ambient refusals, so those keep their messages.
     if !direct && settings_from_app(settings).mode == TtsComposerMode::Model {
         match resolve(settings, BrainFeature::Composer) {
-            Resolved::NotConfigured(missing) => return Err(missing_message(&missing).to_string()),
+            Resolved::NotConfigured(missing) => {
+                return Err(format!(
+                    "Set up the Brain in Settings > Brain first. {}",
+                    missing_message(&missing)
+                ));
+            }
             Resolved::Own if settings.tts_composer_model.trim().is_empty() => {
                 return Err("Choose a model in the reply style settings first.".to_string());
             }
@@ -1557,7 +1564,7 @@ mod tests {
         s.tts_enabled = false;
         assert_eq!(
             preflight_check(&s),
-            Err("Turn on spoken replies in the speech settings first.".to_string())
+            Err("Turn on spoken replies in Settings > Models > Text-to-speech first.".to_string())
         );
     }
 
@@ -1605,7 +1612,7 @@ mod tests {
         s.wake_word_enabled = true;
         assert_eq!(
             preflight_check(&s),
-            Err("Turn on spoken replies in the speech settings first.".to_string())
+            Err("Turn on spoken replies in Settings > Models > Text-to-speech first.".to_string())
         );
     }
 

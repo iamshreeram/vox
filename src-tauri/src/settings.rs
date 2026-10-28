@@ -1,6 +1,7 @@
 use crate::managers::acp_agent::PermissionSettings;
 use crate::managers::acp_permission::PermissionMode;
 use crate::managers::brain::{self, MigrationOutcome};
+use crate::managers::first_run::FirstRunOutcome;
 use crate::utils;
 use log::{debug, warn};
 use serde::de::{self, Visitor};
@@ -988,6 +989,16 @@ pub struct AppSettings {
     /// Normalised Brain destination the user consented to send transcript text to.
     #[serde(default)]
     pub brain_transcript_consent_dest: String,
+    /// True while the first-run wizard has steps left. A fresh install starts true; a store that
+    /// existed before first run never does (missing key => false).
+    #[serde(default)]
+    pub first_run_setup_pending: bool,
+    /// How the first-run spoken-replies step was resolved.
+    #[serde(default)]
+    pub first_run_tts: FirstRunOutcome,
+    /// How the first-run Brain step was resolved.
+    #[serde(default)]
+    pub first_run_brain: FirstRunOutcome,
     // ---- Experimental: realtime conversation (design R9). All toggles; the master
     // switch gates every sub-toggle. Absent in old stores => these defaults.
     /// MASTER switch. Off => the conversation behaves exactly as before.
@@ -1420,7 +1431,16 @@ pub fn preserve_launch_fields(mut incoming: AppSettings, committed: &AppSettings
     incoming.conversation_agent_handoff = committed.conversation_agent_handoff;
     incoming.conversation_planner = committed.conversation_planner;
     copy_brain_fields(&mut incoming, committed);
+    copy_first_run_fields(&mut incoming, committed);
     incoming
+}
+
+/// Copies the first-run fields from `source`, so a stale whole-object write cannot undo a
+/// finished step or make the wizard pending again.
+fn copy_first_run_fields(target: &mut AppSettings, source: &AppSettings) {
+    target.first_run_setup_pending = source.first_run_setup_pending;
+    target.first_run_tts = source.first_run_tts;
+    target.first_run_brain = source.first_run_brain;
 }
 
 /// Merges an incoming whole-object write with the committed store for `write_settings`.
@@ -2325,6 +2345,9 @@ pub fn get_default_settings() -> AppSettings {
         brain_source_postprocess: BrainSource::Inherit,
         brain_test_ack_host: String::new(),
         brain_transcript_consent_dest: String::new(),
+        first_run_setup_pending: true,
+        first_run_tts: FirstRunOutcome::Unset,
+        first_run_brain: FirstRunOutcome::Unset,
         exp_rt_enabled: false,
         exp_rt_direct_endpoint: false,
         exp_rt_endpoint_url: String::new(),
@@ -2554,6 +2577,8 @@ pub(crate) fn existing_store_defaults() -> AppSettings {
     settings.brain_source_composer = BrainSource::Own;
     settings.brain_source_realtime = BrainSource::Own;
     settings.brain_source_postprocess = BrainSource::Own;
+    // An existing store is never a fresh install, so the first-run wizard never starts.
+    settings.first_run_setup_pending = false;
     settings
 }
 
@@ -3082,6 +3107,8 @@ mod tests {
             // Likewise an existing store is never a fresh Brain install: it stays unmarked and
             // keeps its own reply setups until the one-time migration runs.
             expected["brain_schema_v1"] = serde_json::json!(false);
+            // An existing store is never a fresh install, so first run never starts for it.
+            expected["first_run_setup_pending"] = serde_json::json!(false);
             for key in [
                 "brain_source_composer",
                 "brain_source_realtime",

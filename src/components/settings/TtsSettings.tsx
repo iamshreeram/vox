@@ -48,7 +48,7 @@ interface NaturalVoiceBodyProps {
  * Natural voice controls inside the Natural card: voice picker with preview, and the model
  * download row. Hidden until status loads and on unsupported platforms.
  */
-const NaturalVoiceBody: React.FC<NaturalVoiceBodyProps> = ({
+export const NaturalVoiceBody: React.FC<NaturalVoiceBodyProps> = ({
   descriptionMode,
   grouped,
   engine,

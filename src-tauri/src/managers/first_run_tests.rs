@@ -20,20 +20,19 @@ fn fresh() -> AppSettings {
 fn legacy_store() -> AppSettings {
     let mut json = serde_json::to_value(get_default_settings()).expect("serialise defaults");
     let map = json.as_object_mut().expect("settings object");
-    for key in ["first_run_setup_pending", "first_run_tts", "first_run_brain"] {
+    for key in [
+        "first_run_setup_pending",
+        "first_run_tts",
+        "first_run_brain",
+    ] {
         map.remove(key);
     }
     serde_json::from_value(json).expect("a store without the new keys must load")
 }
 
 fn brain_ready(settings: &mut AppSettings) {
-    brain::apply_connection(
-        settings,
-        "custom",
-        "http://localhost:11434/v1",
-        "llama3.2",
-    )
-    .expect("loopback connection is valid");
+    brain::apply_connection(settings, "custom", "http://localhost:11434/v1", "llama3.2")
+        .expect("loopback connection is valid");
     settings.brain_token = SecretString::from("");
     settings.brain_test_ack_host = brain::destination("custom", "http://localhost:11434/v1");
     brain::use_brain_checked(settings, BrainFeature::Composer).expect("complete connection");
@@ -51,7 +50,10 @@ fn a_fresh_install_starts_first_run_setup_with_both_steps_unset() {
 #[test]
 fn an_upgraded_store_never_sees_the_new_steps() {
     let s = legacy_store();
-    assert!(!s.first_run_setup_pending, "a missing key means no first run");
+    assert!(
+        !s.first_run_setup_pending,
+        "a missing key means no first run"
+    );
     assert_eq!(next_step(&s), None);
 }
 
@@ -66,7 +68,8 @@ fn an_upgraded_store_with_nothing_configured_still_sees_no_steps() {
 
 #[test]
 fn salvaged_or_unreadable_stores_are_not_fresh() {
-    let broken = serde_json::json!({ "settings": { "selected_model": 42, "onboarding_completed": true } });
+    let broken =
+        serde_json::json!({ "settings": { "selected_model": 42, "onboarding_completed": true } });
     let salvaged = crate::settings::salvage_settings(&broken["settings"]);
     assert!(!salvaged.first_run_setup_pending);
     assert_eq!(next_step(&salvaged), None);
@@ -114,7 +117,11 @@ fn skipping_the_brain_leaves_conversation_off_and_changes_nothing_else() {
     }
     assert_eq!(after, expected);
     assert_eq!(s.first_run_brain, FirstRunOutcome::Skipped);
-    assert_eq!(s.brain_source_composer, BrainSource::Inherit, "fresh default, untouched");
+    assert_eq!(
+        s.brain_source_composer,
+        BrainSource::Inherit,
+        "fresh default, untouched"
+    );
     assert!(s.brain_provider_id.is_empty());
 }
 
@@ -124,7 +131,11 @@ fn done_for_the_brain_needs_a_complete_connection_and_transcript_consent() {
     finish_step(&mut s, FirstRunStep::Voice, FirstRunOutcome::Done).unwrap();
     // Nothing configured.
     assert!(finish_step(&mut s, FirstRunStep::Brain, FirstRunOutcome::Done).is_err());
-    assert_eq!(s.first_run_brain, FirstRunOutcome::Unset, "a refused step leaves no trace");
+    assert_eq!(
+        s.first_run_brain,
+        FirstRunOutcome::Unset,
+        "a refused step leaves no trace"
+    );
 
     // Connection saved but no consent for spoken replies yet.
     brain::apply_connection(&mut s, "custom", "http://localhost:11434/v1", "llama3.2").unwrap();
@@ -137,7 +148,10 @@ fn done_for_the_brain_needs_a_complete_connection_and_transcript_consent() {
     finish_step(&mut ok, FirstRunStep::Brain, FirstRunOutcome::Done).unwrap();
     assert_eq!(ok.first_run_brain, FirstRunOutcome::Done);
     assert_eq!(next_step(&ok), None);
-    assert!(!ok.first_run_setup_pending, "completion clears the pending flag");
+    assert!(
+        !ok.first_run_setup_pending,
+        "completion clears the pending flag"
+    );
 }
 
 #[test]
@@ -168,7 +182,11 @@ fn steps_are_a_no_op_once_first_run_is_over_and_for_upgraded_stores() {
     let mut s = legacy_store();
     let before = serde_json::to_value(&s).unwrap();
     assert!(finish_step(&mut s, FirstRunStep::Voice, FirstRunOutcome::Done).is_ok());
-    assert_eq!(serde_json::to_value(&s).unwrap(), before, "no settings change for an upgraded store");
+    assert_eq!(
+        serde_json::to_value(&s).unwrap(),
+        before,
+        "no settings change for an upgraded store"
+    );
     assert!(!s.tts_enabled);
 }
 
@@ -192,8 +210,11 @@ fn the_new_keys_survive_the_launch_field_merge_and_ipc_redaction() {
     let mut stale = fresh(); // an old snapshot that still says Unset / pending
     stale.first_run_tts = FirstRunOutcome::Unset;
     let merged = crate::settings::preserve_launch_fields(stale, &committed);
-    assert_eq!(merged.first_run_tts, FirstRunOutcome::Done, "stale writes cannot undo a step");
-    assert!(merged.tts_enabled || !committed.tts_enabled);
+    assert_eq!(
+        merged.first_run_tts,
+        FirstRunOutcome::Done,
+        "stale writes cannot undo a step"
+    );
     let redacted = committed.redacted_for_ipc();
     assert_eq!(redacted.first_run_tts, FirstRunOutcome::Done);
 }
