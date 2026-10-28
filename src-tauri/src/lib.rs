@@ -9,6 +9,9 @@ mod catalog;
 mod chat_presentation;
 #[cfg(test)]
 mod chat_presentation_tests;
+mod chat_surface;
+#[cfg(test)]
+mod chat_surface_tests;
 mod chat_window;
 mod chinese_script;
 pub mod cli;
@@ -23,8 +26,6 @@ mod orb_geometry;
 mod orb_geometry_tests;
 #[cfg(test)]
 mod orb_settings_tests;
-#[cfg(test)]
-mod chat_surface_tests;
 mod window_commands;
 #[cfg(test)]
 mod window_policy_tests;
@@ -765,7 +766,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 commands::converse::toggle_conversation(app);
             }
             "chat" => {
-                let _ = chat_window::toggle_chat_window(app);
+                let _ = chat_surface::toggle(app);
             }
             "listening_mode:hotkey" => {
                 let _ = commands::wakeword::wakeword_set_enabled(app.clone(), false);

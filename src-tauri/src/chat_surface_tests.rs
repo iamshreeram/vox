@@ -17,7 +17,7 @@
 //! HideTimer(g) with the same g; Open while Hiding invalidates the timer (new gen, CancelTimers).
 //! Close with exit_ms == 0 hides at once (classic), otherwise Hiding + StartHide.
 use crate::activation_policy::{desired, OpenKind, Policy};
-use crate::chat_presentation::{Os, LinuxBackend, PlatformEnv, Presentation};
+use crate::chat_presentation::{LinuxBackend, Os, PlatformEnv, Presentation};
 use crate::chat_surface::*;
 
 fn open_user() -> Event {
@@ -41,7 +41,10 @@ fn a_user_open_from_hidden_shows_with_focus_and_a_new_generation() {
 fn auto_and_peek_opens_never_focus() {
     for kind in [OpenKind::Auto, OpenKind::Peek] {
         let mut m = SurfaceMachine::new(140);
-        assert_eq!(m.apply(Event::Open(kind)), vec![Effect::Show { focus: false }]);
+        assert_eq!(
+            m.apply(Event::Open(kind)),
+            vec![Effect::Show { focus: false }]
+        );
     }
 }
 
@@ -74,7 +77,13 @@ fn close_with_an_exit_animation_hides_only_when_its_own_timer_fires() {
     m.apply(Event::ShownAck(m.gen()));
     let fx = m.apply(Event::Close);
     let hide_gen = m.gen();
-    assert_eq!(fx, vec![Effect::StartHide { gen: hide_gen, after_ms: 140 }]);
+    assert_eq!(
+        fx,
+        vec![Effect::StartHide {
+            gen: hide_gen,
+            after_ms: 140
+        }]
+    );
     assert_eq!(m.visibility(), Visibility::Hiding(hide_gen));
     assert_eq!(m.apply(Event::HideTimer(hide_gen)), vec![Effect::HideNow]);
     assert_eq!(m.visibility(), Visibility::Hidden);
@@ -122,15 +131,24 @@ fn toggle_hides_only_a_visible_focused_surface() {
     let mut m = SurfaceMachine::new(0);
     m.apply(open_user());
     m.apply(Event::ShownAck(m.gen()));
-    assert_eq!(m.apply(Event::Toggle { focused: true }), vec![Effect::HideNow]);
+    assert_eq!(
+        m.apply(Event::Toggle { focused: true }),
+        vec![Effect::HideNow]
+    );
     // Visible but not focused: bring it forward with focus.
     let mut m = SurfaceMachine::new(0);
     m.apply(open_user());
     m.apply(Event::ShownAck(m.gen()));
-    assert_eq!(m.apply(Event::Toggle { focused: false }), vec![Effect::Show { focus: true }]);
+    assert_eq!(
+        m.apply(Event::Toggle { focused: false }),
+        vec![Effect::Show { focus: true }]
+    );
     // Hidden: open.
     let mut m = SurfaceMachine::new(0);
-    assert_eq!(m.apply(Event::Toggle { focused: false }), vec![Effect::Show { focus: true }]);
+    assert_eq!(
+        m.apply(Event::Toggle { focused: false }),
+        vec![Effect::Show { focus: true }]
+    );
     // Hiding: a toggle reopens.
     let mut m = SurfaceMachine::new(140);
     m.apply(open_user());
@@ -150,7 +168,11 @@ fn destruction_cancels_timers_and_resets_to_hidden() {
     assert_eq!(m.apply(Event::Destroyed), vec![Effect::CancelTimers]);
     assert_eq!(m.visibility(), Visibility::Hidden);
     assert!(m.gen() > before);
-    assert_eq!(m.apply(Event::HideTimer(before)), vec![], "a timer from the destroyed page is stale");
+    assert_eq!(
+        m.apply(Event::HideTimer(before)),
+        vec![],
+        "a timer from the destroyed page is stale"
+    );
 }
 
 #[test]
@@ -159,12 +181,16 @@ fn generations_only_grow_over_a_long_random_sequence() {
     let mut last = m.gen();
     let mut seed = 12345u64;
     for _ in 0..2000 {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let ev = match (seed >> 33) % 7 {
             0 => Event::Open(OpenKind::User),
             1 => Event::Open(OpenKind::Auto),
             2 => Event::Close,
-            3 => Event::Toggle { focused: seed & 1 == 0 },
+            3 => Event::Toggle {
+                focused: seed & 1 == 0,
+            },
             4 => Event::ShownAck(m.gen()),
             5 => Event::HideTimer(m.gen()),
             _ => Event::Destroyed,
@@ -178,13 +204,24 @@ fn generations_only_grow_over_a_long_random_sequence() {
 // ---- Target selection: G2 keeps every entry point on the classic window ----
 
 fn mac() -> PlatformEnv {
-    PlatformEnv { os: Os::MacOs, linux_backend: LinuxBackend::Unknown, composited: false }
+    PlatformEnv {
+        os: Os::MacOs,
+        linux_backend: LinuxBackend::Unknown,
+        composited: false,
+    }
 }
 
 #[test]
 fn until_the_panel_exists_every_setting_and_platform_resolves_to_classic() {
-    assert!(!PANEL_AVAILABLE, "G4 flips this together with the default and its tests");
-    for setting in [None, Some(Presentation::Floating), Some(Presentation::Window)] {
+    assert!(
+        !PANEL_AVAILABLE,
+        "G4 flips this together with the default and its tests"
+    );
+    for setting in [
+        None,
+        Some(Presentation::Floating),
+        Some(Presentation::Window),
+    ] {
         assert_eq!(target_for(setting, &mac()), Target::Classic);
     }
 }
@@ -200,11 +237,17 @@ fn src(path: &str) -> String {
 fn the_four_entry_points_go_through_the_dispatcher() {
     for file in ["src/actions.rs", "src/commands/chat.rs"] {
         let text = src(file);
-        assert!(!text.contains("chat_window::toggle_chat_window"), "{file} must call chat_surface::toggle");
+        assert!(
+            !text.contains("chat_window::toggle_chat_window"),
+            "{file} must call chat_surface::toggle"
+        );
         assert!(text.contains("chat_surface::toggle"), "{file}");
     }
     let lib = src("src/lib.rs");
-    assert!(!lib.contains("chat_window::toggle_chat_window("), "tray handler must call the dispatcher");
+    assert!(
+        !lib.contains("chat_window::toggle_chat_window("),
+        "tray handler must call the dispatcher"
+    );
     assert!(lib.contains("chat_surface::toggle"));
     let converse = src("src/managers/converse_platform.rs");
     assert!(!converse.contains("chat_window::open_chat_window_on_session_start"));
@@ -215,14 +258,20 @@ fn the_four_entry_points_go_through_the_dispatcher() {
 fn the_dispatcher_does_not_log_content_or_touch_the_filesystem() {
     let text = src("src/chat_surface.rs");
     for banned in ["println!", "eprintln!", "dbg!", "std::fs", "File::"] {
-        assert!(!text.contains(banned), "chat_surface.rs must not use {banned}");
+        assert!(
+            !text.contains(banned),
+            "chat_surface.rs must not use {banned}"
+        );
     }
 }
 
 #[test]
 fn chat_window_uses_the_policy_owner_and_no_other_policy_rule() {
     let text = src("src/chat_window.rs");
-    assert!(text.contains("activation_policy::desired"), "hide path must ask desired()");
+    assert!(
+        text.contains("activation_policy::desired"),
+        "hide path must ask desired()"
+    );
     // The old inline rule `!main_visible && tray_visible` is gone.
     assert!(!text.contains("!main_visible && tray_visible"));
 }
@@ -247,7 +296,11 @@ fn the_policy_owner_matches_the_old_hide_rule_for_the_classic_window() {
                 panel_needs_focus: false,
                 tray_present: tray,
             };
-            assert_eq!(desired(&inputs), old_rule(main, tray), "main={main} tray={tray}");
+            assert_eq!(
+                desired(&inputs),
+                old_rule(main, tray),
+                "main={main} tray={tray}"
+            );
         }
     }
 }

@@ -450,8 +450,8 @@ fn menu_event_chat_arm_calls_the_chat_window() {
         .expect("lib.rs on_menu_event must have a \"chat\" arm");
     let window = &lib[arm..(arm + 300).min(lib.len())];
     assert!(
-        window.contains("chat_window::"),
-        "the \"chat\" arm must call into chat_window (toggle)"
+        window.contains("chat_surface::toggle"),
+        "the \"chat\" arm must call into the dispatcher (toggle)"
     );
 }
 
@@ -708,8 +708,8 @@ fn session_start_hook_only_enqueues_and_never_reads_settings_itself() {
     let end = body.find("\n    }\n").unwrap_or(body.len());
     let body = &body[..end];
     assert!(
-        body.contains("open_chat_window_on_session_start"),
-        "hook must call chat_window::open_chat_window_on_session_start"
+        body.contains("chat_surface::open_on_session_start"),
+        "hook must call chat_surface::open_on_session_start"
     );
     assert!(
         !body.contains("get_settings"),
