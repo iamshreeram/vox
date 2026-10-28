@@ -412,3 +412,20 @@ fn bubble_window_is_forced_topmost_on_windows_when_shown() {
         "show_bubble_window must call force_overlay_topmost on Windows"
     );
 }
+
+/// Validator round 2: `Window::close()` emits CloseRequested, which the app-wide handler turns
+/// into hide + an activation-policy demotion (the Dock icon vanishes while the classic window is
+/// open) and which leaves the bubble window alive. destroy_bubbles must use `destroy()`.
+#[test]
+fn destroy_bubbles_destroys_the_window_and_never_goes_through_close_requested() {
+    let text = src("src/bubble_native.rs");
+    let body = fn_body(&text, "pub fn destroy_bubbles(");
+    assert!(
+        body.contains(".destroy()"),
+        "destroy_bubbles uses destroy()"
+    );
+    assert!(
+        !body.contains(".close()"),
+        "close() would trigger the app-wide CloseRequested handler"
+    );
+}

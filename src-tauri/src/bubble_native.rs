@@ -722,8 +722,10 @@ pub fn destroy_bubbles(app: &AppHandle) {
     let job_app = app.clone();
     let queued = app.run_on_main_thread(move || {
         if let Some(window) = job_app.get_webview_window(BUBBLES_WINDOW_LABEL) {
-            if let Err(e) = window.close() {
-                log::warn!("bubble window close failed: {e}");
+            // destroy(), not close(): close() raises CloseRequested, which the app-wide handler
+            // turns into hide + an activation-policy demotion and leaves the window alive.
+            if let Err(e) = window.destroy() {
+                log::warn!("bubble window destroy failed: {e}");
             }
         }
     });
