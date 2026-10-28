@@ -211,8 +211,8 @@ fn lib_command_list_registers_all_chat_commands() {
 fn lib_installs_the_single_command_guard_wrapper() {
     let src = code_only(include_str!("lib.rs"));
     assert!(
-        src.contains("chat_command_allowed("),
-        "lib.rs must call chat_command_allowed in the invoke handler wrapper"
+        src.contains("window_command_allowed("),
+        "lib.rs must call window_command_allowed in the invoke handler wrapper"
     );
     assert!(
         src.contains("command not allowed from this window"),

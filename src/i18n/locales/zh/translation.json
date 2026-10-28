@@ -14,7 +14,12 @@
     "listeningMode": "Listening Mode",
     "listeningModeHotkeyOnly": "Hotkey Only",
     "listeningModeWakeWord": "Wake Word",
-    "listeningModeAmbient": "Ambient Mode"
+    "listeningModeAmbient": "Ambient Mode",
+    "orbToggle": "Show/Hide orb",
+    "orbSizeSmall": "Small orb",
+    "orbSizeMedium": "Medium orb",
+    "orbSizeLarge": "Large orb",
+    "orbHide": "Hide orb"
   },
   "sidebar": {
     "general": "通用",

@@ -1,7 +1,8 @@
 //! Command matrix for the orb and chat windows (DESIGN.md Rev 4, 'Rust modules and commands').
 //! Each window may call only its own commands. Every other window may call anything except the
-//! orb and chat-panel commands. In G1 the live gate is still `chat_window::chat_command_allowed`;
-//! this table is not wired yet.
+//! orb and chat-panel commands. The invoke handler in `lib.rs` uses
+//! `window_command_allowed` as the single gate; `chat_window::chat_command_allowed` remains for
+//! the classic chat tests.
 #![cfg_attr(not(test), allow(dead_code))]
 
 /// Label of the floating orb window.

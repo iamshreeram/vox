@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "orb",
+  "description": "Floating orb window: event listening only. Its app commands are limited by the window command matrix in window_commands.rs.",
+  "windows": ["orb"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}

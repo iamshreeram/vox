@@ -16,6 +16,7 @@ pub mod history;
 pub mod memory;
 pub mod models;
 pub mod natural_voice;
+pub mod orb;
 pub mod persona;
 pub mod phonon_voice;
 #[cfg(test)]
