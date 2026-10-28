@@ -1088,9 +1088,12 @@ pub struct AppSettings {
     /// Whether the orb is shown. `None` uses the release default (`ORB_VISIBLE_DEFAULT`).
     #[serde(default)]
     pub orb_visible: Option<bool>,
-    /// Orb size preset.
+    /// Orb size preset. Kept in step with `orb_size_px` (the nearest preset) so downgrades work.
     #[serde(default)]
     pub orb_size: OrbSize,
+    /// Free orb size in logical pixels (48 to 192). `None` uses the `orb_size` preset.
+    #[serde(default)]
+    pub orb_size_px: Option<u16>,
     /// Last saved orb position. `None` until the orb has been placed.
     #[serde(default)]
     pub orb_position: Option<OrbPosition>,
@@ -1433,7 +1436,7 @@ pub fn dictation_agent_enabled(s: &AppSettings) -> bool {
 /// the hand-off and planner flags, the main agent's enablement, the dictation hand-off switch,
 /// command, arguments, turn timeout and approval mode, the specialist agents, the Brain fields,
 /// the first-run fields, and the orb and chat presentation fields (`chat_presentation`,
-/// `orb_visible`, `orb_size`, `orb_position`). Returns `incoming` with those fields replaced by the
+/// `orb_visible`, `orb_size`, `orb_size_px`, `orb_position`). Returns `incoming` with those fields replaced by the
 /// committed values, and every other field as incoming.
 pub fn preserve_launch_fields(mut incoming: AppSettings, committed: &AppSettings) -> AppSettings {
     incoming.acp_agent_enabled = committed.acp_agent_enabled;
@@ -1457,6 +1460,7 @@ fn copy_orb_fields(target: &mut AppSettings, source: &AppSettings) {
     target.chat_presentation = source.chat_presentation;
     target.orb_visible = source.orb_visible;
     target.orb_size = source.orb_size;
+    target.orb_size_px = source.orb_size_px;
     target.orb_position = source.orb_position.clone();
 }
 
@@ -2405,6 +2409,7 @@ pub fn get_default_settings() -> AppSettings {
         chat_presentation: None,
         orb_visible: None,
         orb_size: OrbSize::default(),
+        orb_size_px: None,
         orb_position: None,
     }
 }

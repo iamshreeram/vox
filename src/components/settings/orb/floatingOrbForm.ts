@@ -4,6 +4,47 @@
 export const ORB_SIZES = ["small", "medium", "large"] as const;
 export type OrbSizeValue = (typeof ORB_SIZES)[number];
 
+/** Smallest and largest free orb size, in logical pixels (Revision 6). */
+export const ORB_PX_MIN = 48;
+export const ORB_PX_MAX = 192;
+/** Slider step, in logical pixels. */
+export const ORB_PX_STEP = 4;
+/** Edge length of each preset, in logical pixels. */
+export const ORB_PRESETS = { small: 72, medium: 96, large: 128 } as const;
+
+/** The size used when nothing else is known (a missing or unknown size reads as medium). */
+const DEFAULT_PX = ORB_PRESETS.medium;
+
+/**
+ * A free size clamped to the range and rounded to the slider step. A non-finite value reads as the
+ * medium preset.
+ */
+export function clampOrbPx(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_PX;
+  const stepped = Math.round(value / ORB_PX_STEP) * ORB_PX_STEP;
+  return Math.min(ORB_PX_MAX, Math.max(ORB_PX_MIN, stepped));
+}
+
+/**
+ * The effective size in logical pixels: a finite free size (clamped) wins, otherwise the preset of
+ * `size` (a missing or unknown size reads as medium).
+ */
+export function effectiveOrbPx(
+  size: string | null | undefined,
+  px: number | null | undefined,
+): number {
+  if (typeof px === "number" && Number.isFinite(px)) return clampOrbPx(px);
+  return ORB_PRESETS[sizeValue(size)];
+}
+
+/** The preset whose edge equals `px` exactly, or `null` when no preset matches. */
+export function presetFor(px: number): OrbSizeValue | null {
+  for (const size of ORB_SIZES) {
+    if (ORB_PRESETS[size] === px) return size;
+  }
+  return null;
+}
+
 /** Shape of the `get_orb_support` answer (see `OrbSupport` in bindings). */
 export interface OrbSupportState {
   supported: boolean;

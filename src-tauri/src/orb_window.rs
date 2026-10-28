@@ -35,9 +35,14 @@ pub struct OrbWindowSpec {
 
 /// The orb window spec for a size preset.
 pub fn orb_window_spec(size: OrbSize) -> OrbWindowSpec {
+    orb_window_spec_px(orb_logical_px(size))
+}
+
+/// The orb window spec for an edge length in logical pixels (a free size or a preset).
+pub fn orb_window_spec_px(logical_px: f64) -> OrbWindowSpec {
     OrbWindowSpec {
         label: ORB_WINDOW_LABEL,
-        logical_px: orb_logical_px(size),
+        logical_px,
         transparent: true,
         decorations: false,
         always_on_top: true,

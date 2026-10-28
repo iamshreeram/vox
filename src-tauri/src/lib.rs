@@ -39,6 +39,8 @@ mod orb_runtime_tests;
 #[cfg(test)]
 mod orb_settings_tests;
 #[cfg(test)]
+mod orb_size_tests;
+#[cfg(test)]
 mod orb_support_tests;
 mod orb_window;
 mod window_commands;
@@ -1375,6 +1377,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::orb::get_orb_support,
             commands::orb::change_orb_visible_setting,
             commands::orb::change_orb_size_setting,
+            commands::orb::change_orb_size_px_setting,
             commands::orb::change_chat_presentation_setting,
             commands::orb::reset_orb_position,
             commands::converse_extras::change_speaker_filter_enabled_setting,

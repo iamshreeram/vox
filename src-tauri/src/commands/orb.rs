@@ -7,7 +7,7 @@ use crate::chat_presentation::{
     current_os, orb_support_for, LinuxBackend, OrbSupport, PlatformEnv, Presentation,
 };
 use crate::managers::chat_log::ChatLog;
-use crate::orb_geometry::OrbSize;
+use crate::orb_geometry::{preset_px, OrbSize};
 use crate::orb_native;
 use crate::settings::write_settings_gated;
 use serde::{Deserialize, Serialize};
@@ -126,12 +126,20 @@ pub async fn change_orb_visible_setting(app: AppHandle, enabled: bool) {
     orb_native::apply_visibility(&app);
 }
 
-/// Stores the orb size preset and resizes the orb at once.
+/// Stores the free orb size in logical pixels (clamped to 48..=192; `None` returns to the
+/// preset) and resizes the orb at once. Main window only.
+#[tauri::command]
+#[specta::specta]
+pub async fn change_orb_size_px_setting(app: AppHandle, px: Option<u16>) {
+    orb_native::set_orb_size(&app, px);
+}
+
+/// Stores the orb size preset and resizes the orb at once. Kept for older callers; the preset is
+/// written through the same setter as the free size.
 #[tauri::command]
 #[specta::specta]
 pub async fn change_orb_size_setting(app: AppHandle, size: OrbSize) {
-    write_settings_gated(&app, |settings| settings.orb_size = size);
-    orb_native::apply_visibility(&app);
+    orb_native::set_orb_size(&app, Some(preset_px(size)));
 }
 
 /// Stores the chat presentation choice. `None` returns to the platform default.

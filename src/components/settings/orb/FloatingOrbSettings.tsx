@@ -1,14 +1,18 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { commands, type OrbSize } from "@/bindings";
+import { commands } from "@/bindings";
 import { Button } from "../../ui/Button";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { useSettings } from "../../../hooks/useSettings";
 import {
+  ORB_PRESETS,
+  ORB_PX_MAX,
+  ORB_PX_MIN,
+  ORB_PX_STEP,
   ORB_SIZES,
-  sizeValue,
+  effectiveOrbPx,
+  presetFor,
   toggleState,
-  type OrbSizeValue,
   type OrbSupportState,
 } from "./floatingOrbForm";
 
@@ -31,10 +35,40 @@ function shownValue<T>(stored: T, pending: Pending<T> | null): T {
   return pending !== null && pending.from === stored ? pending.value : stored;
 }
 
+/** A free size to store in logical pixels, or `null` to return to the preset. */
+interface SizeChoice {
+  px: number | null;
+}
+
+/** Quiet time after the last slider change before the size is stored. */
+const SIZE_DEBOUNCE_MS = 150;
+
 /**
- * The Floating orb rows in Settings > General > Conversation: the Show orb toggle, the orb size,
- * and Reset position. Support is asked once on mount; orb settings go only through their own
- * commands.
+ * The size commits waiting to be stored. Only one `changeOrbSizePxSetting` call is in flight at a
+ * time; the latest choice always wins.
+ */
+interface SizeQueue {
+  wanted: SizeChoice | null;
+  timer: ReturnType<typeof setTimeout> | null;
+  sending: boolean;
+}
+
+/** Sends the newest queued size now, unless a call is already in flight (it picks it up). */
+function flushSizeQueue(queue: SizeQueue): void {
+  if (queue.timer !== null) {
+    clearTimeout(queue.timer);
+    queue.timer = null;
+  }
+  if (queue.wanted === null || queue.sending) return;
+  const next = queue.wanted;
+  queue.wanted = null;
+  commands.changeOrbSizePxSetting(next.px).catch(() => undefined);
+}
+
+/**
+ * The Floating orb rows in Settings > General > Conversation: the Show orb toggle, the orb size
+ * (slider, presets and reset), and Reset position. Support is asked once on mount; orb settings go
+ * only through their own commands.
  */
 export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
   React.memo(({ descriptionMode = "tooltip", grouped = false }) => {
@@ -46,15 +80,25 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
     const [pendingVisible, setPendingVisible] = useState<Pending<
       boolean | null
     > | null>(null);
-    const [pendingSize, setPendingSize] =
-      useState<Pending<OrbSizeValue> | null>(null);
+    const [sizePreview, setSizePreview] = useState<SizeChoice | null>(null);
+    const sizeQueue = useRef<SizeQueue>({
+      wanted: null,
+      timer: null,
+      sending: false,
+    });
 
     const storedVisible = getSetting("orb_visible") ?? null;
-    const storedSize = sizeValue(getSetting("orb_size"));
+    const storedPx = getSetting("orb_size_px") ?? null;
     const orbPosition = getSetting("orb_position");
 
     const visible = shownValue(storedVisible, pendingVisible);
-    const size = shownValue(storedSize, pendingSize);
+    const shownPx = effectiveOrbPx(
+      getSetting("orb_size"),
+      sizePreview !== null ? sizePreview.px : storedPx,
+    );
+    const sizeLabel = t("settings.floatingOrb.size.valueLabel", {
+      px: shownPx,
+    });
     const toggle = toggleState(support, visible);
 
     useEffect(() => {
@@ -70,6 +114,12 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
       return () => {
         cancelled = true;
       };
+    }, []);
+
+    // A size still queued when the page unmounts is sent rather than dropped.
+    useEffect(() => {
+      const queue = sizeQueue.current;
+      return () => flushSizeQueue(queue);
     }, []);
 
     // Runs one orb command, drops the pending choice if it failed, then refreshes settings.
@@ -96,12 +146,52 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
       );
     };
 
-    const setSize = (next: OrbSizeValue): Promise<void> => {
-      setPendingSize({ from: storedSize, value: next });
-      return runOrbCommand(
-        () => commands.changeOrbSizeSetting(next as OrbSize),
-        () => setPendingSize(null),
-      );
+    const clearSizeTimer = (queue: SizeQueue): void => {
+      if (queue.timer !== null) {
+        clearTimeout(queue.timer);
+        queue.timer = null;
+      }
+    };
+
+    // Sends queued sizes one at a time, then refreshes the stored settings once.
+    const sendSizes = async (): Promise<void> => {
+      const queue = sizeQueue.current;
+      clearSizeTimer(queue);
+      if (queue.sending) return;
+      queue.sending = true;
+      try {
+        while (queue.wanted !== null) {
+          const next = queue.wanted;
+          queue.wanted = null;
+          try {
+            await commands.changeOrbSizePxSetting(next.px);
+          } catch {
+            // The refreshed settings below show what was actually stored.
+          }
+        }
+      } finally {
+        queue.sending = false;
+      }
+      await refreshSettings();
+      if (!queue.sending && queue.wanted === null && queue.timer === null) {
+        setSizePreview(null);
+      }
+    };
+
+    // Shows a size at once and queues it: after a quiet period, or at once when `immediate`.
+    const chooseSize = (choice: SizeChoice, immediate: boolean): void => {
+      setSizePreview(choice);
+      const queue = sizeQueue.current;
+      queue.wanted = choice;
+      clearSizeTimer(queue);
+      if (immediate) {
+        void sendSizes();
+        return;
+      }
+      queue.timer = setTimeout(() => {
+        queue.timer = null;
+        void sendSizes();
+      }, SIZE_DEBOUNCE_MS);
     };
 
     const resetPosition = (): Promise<void> =>
@@ -111,6 +201,7 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
       );
 
     const controlsDisabled = toggle.disabled || busy;
+    const sizeDisabled = toggle.disabled;
 
     return (
       <div data-testid="floating-orb-group" className="flex flex-col">
@@ -154,22 +245,65 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
           description={t("settings.floatingOrb.size.description")}
           descriptionMode={descriptionMode}
           grouped={grouped}
-          disabled={controlsDisabled}
+          disabled={sizeDisabled}
         >
-          <select
-            data-testid="floating-orb-size"
-            aria-label={t("settings.floatingOrb.size.title")}
-            className="px-2 py-1 text-sm rounded-md border border-mid-gray/80 bg-mid-gray/10"
-            value={size}
-            disabled={controlsDisabled}
-            onChange={(event) => void setSize(sizeValue(event.target.value))}
-          >
-            {ORB_SIZES.map((option) => (
-              <option key={option} value={option}>
-                {t(`settings.floatingOrb.size.${option}`)}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                data-testid="floating-orb-size-slider"
+                aria-label={t("settings.floatingOrb.size.title")}
+                aria-valuetext={sizeLabel}
+                className="w-40 cursor-pointer disabled:cursor-not-allowed"
+                min={ORB_PX_MIN}
+                max={ORB_PX_MAX}
+                step={ORB_PX_STEP}
+                value={shownPx}
+                disabled={sizeDisabled}
+                onChange={(event) =>
+                  chooseSize({ px: Number(event.target.value) }, false)
+                }
+                onPointerUp={() => {
+                  // Releasing the pointer sends a pending change at once.
+                  if (sizeQueue.current.wanted !== null) void sendSizes();
+                }}
+              />
+              <span
+                data-testid="floating-orb-size-value"
+                className="w-16 text-end text-sm tabular-nums"
+              >
+                {sizeLabel}
+              </span>
+            </div>
+            <div
+              role="group"
+              aria-label={t("settings.floatingOrb.size.presets")}
+              className="flex items-center gap-2"
+            >
+              {ORB_SIZES.map((preset) => (
+                <Button
+                  key={preset}
+                  variant="secondary"
+                  size="sm"
+                  data-testid={`floating-orb-size-${preset}`}
+                  aria-pressed={presetFor(shownPx) === preset}
+                  disabled={sizeDisabled}
+                  onClick={() => chooseSize({ px: ORB_PRESETS[preset] }, true)}
+                >
+                  {t(`settings.floatingOrb.size.${preset}`)}
+                </Button>
+              ))}
+              <Button
+                variant="secondary"
+                size="sm"
+                data-testid="floating-orb-size-reset"
+                disabled={sizeDisabled || storedPx === null}
+                onClick={() => chooseSize({ px: null }, true)}
+              >
+                {t("settings.floatingOrb.size.reset")}
+              </Button>
+            </div>
+          </div>
         </SettingContainer>
 
         <SettingContainer

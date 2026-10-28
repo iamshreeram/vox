@@ -15,7 +15,14 @@ import { fileURLToPath } from "node:url";
 import { PLACED_GROUPS } from "../settingsPlacement";
 import { SEARCH_ENTRIES } from "../search/settingsSearchIndex";
 import {
+  clampOrbPx,
+  effectiveOrbPx,
+  ORB_PRESETS,
+  ORB_PX_MAX,
+  ORB_PX_MIN,
+  ORB_PX_STEP,
   ORB_SIZES,
+  presetFor,
   sizeValue,
   supportReasonKey,
   toggleState,
@@ -38,6 +45,55 @@ assert.equal(sizeValue(undefined), "medium", "missing size means medium");
 assert.equal(sizeValue(null), "medium", "null size means medium");
 assert.equal(sizeValue(""), "medium", "empty size means medium");
 assert.equal(sizeValue("huge"), "medium", "unknown size means medium");
+
+// ---------- free size (Revision 6): px range, presets, clamp, effective px ----------
+assert.equal(ORB_PX_MIN, 48);
+assert.equal(ORB_PX_MAX, 192);
+assert.equal(ORB_PX_STEP, 4);
+assert.deepEqual({ ...ORB_PRESETS }, { small: 72, medium: 96, large: 128 });
+
+assert.equal(clampOrbPx(0), 48, "below the range clamps to 48");
+assert.equal(clampOrbPx(-5), 48, "negative clamps to 48");
+assert.equal(clampOrbPx(10), 48, "10 clamps to 48");
+assert.equal(clampOrbPx(1000), 192, "above the range clamps to 192");
+assert.equal(clampOrbPx(192), 192);
+assert.equal(clampOrbPx(137), 136, "rounds to the 4 px step");
+assert.equal(clampOrbPx(139), 140, "rounds to the 4 px step");
+assert.equal(clampOrbPx(96), 96);
+assert.equal(clampOrbPx(140), 140);
+
+assert.equal(
+  effectiveOrbPx("small", 140),
+  140,
+  "a finite px wins over the preset",
+);
+assert.equal(effectiveOrbPx("small", null), 72, "no px: small preset");
+assert.equal(effectiveOrbPx("small", undefined), 72, "no px: small preset");
+assert.equal(effectiveOrbPx("large", undefined), 128, "no px: large preset");
+assert.equal(effectiveOrbPx("medium", null), 96, "no px: medium preset");
+assert.equal(effectiveOrbPx("large", NaN), 128, "a non-finite px is ignored");
+assert.equal(effectiveOrbPx("huge", null), 96, "unknown size reads as medium");
+assert.equal(
+  effectiveOrbPx(null, undefined),
+  96,
+  "missing size reads as medium",
+);
+assert.equal(
+  effectiveOrbPx(undefined, null),
+  96,
+  "missing size reads as medium",
+);
+
+assert.equal(presetFor(72), "small");
+assert.equal(presetFor(96), "medium");
+assert.equal(presetFor(128), "large");
+for (const px of [48, 76, 100, 140, 192]) {
+  assert.equal(
+    presetFor(px),
+    null,
+    `${px} px is not a preset (exact match only)`,
+  );
+}
 
 // ---------- reason keys ----------
 assert.equal(supportReasonKey(null), null);
@@ -119,7 +175,7 @@ const component = readFileSync(COMPONENT, "utf8");
 
 for (const call of [
   /commands\.changeOrbVisibleSetting\(/,
-  /commands\.changeOrbSizeSetting\(/,
+  /commands\.changeOrbSizePxSetting\(/,
   /commands\.resetOrbPosition\(/,
   /commands\.getOrbSupport\(/,
 ]) {
@@ -132,6 +188,29 @@ assert.doesNotMatch(
   component,
   /updateSetting\(\s*["'`]orb_/,
   "orb_* keys must never be written through updateSetting",
+);
+
+// ---------- free size: slider, live label, presets, reset (Revision 6) ----------
+assert.match(
+  component,
+  /commands\.changeOrbSizePxSetting\(/,
+  "the size control commits through the px setter",
+);
+assert.doesNotMatch(
+  component,
+  /commands\.changeOrbSizeSetting\(/,
+  "the legacy preset-only setter is not used by the UI",
+);
+assert.match(component, /type="range"/, "the size control is a range input");
+assert.match(
+  component,
+  /data-testid="floating-orb-size-slider"/,
+  "the slider carries data-testid floating-orb-size-slider",
+);
+assert.doesNotMatch(
+  component,
+  /data-testid="floating-orb-size"/,
+  "the old size select is gone from the UI",
 );
 
 // Returns the text of every useEffect(...) call (paren matched; strings and comments are not

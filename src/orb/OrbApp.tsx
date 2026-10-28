@@ -27,6 +27,7 @@ import {
   keyCommand,
   nextGlintDelay,
   orbClasses,
+  orbFace,
   orbReducer,
   type FaceView,
 } from "./orbModel";
@@ -51,6 +52,11 @@ function send(command: string, args?: Record<string, unknown>): void {
 function toFace(value: unknown): AvatarFace {
   const face = FACES.find((candidate) => candidate === value);
   return face ?? "idle";
+}
+
+/** The face name carried by a value, or the empty string when it carries none. */
+function faceName(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }
 
 function fieldOf(payload: unknown, name: string): unknown {
@@ -110,7 +116,10 @@ export default function OrbApp() {
         .then((payload: unknown) => {
           // Only before any conversation event: a live event always wins over the snapshot.
           if (faceRef.current.seq === 0) {
-            dispatch({ type: "face", face: toFace(fieldOf(payload, "face")) });
+            dispatch({
+              type: "face",
+              face: toFace(orbFace(faceName(fieldOf(payload, "face")))),
+            });
           }
         })
         .catch(() => undefined);
@@ -130,7 +139,10 @@ export default function OrbApp() {
         const next = faceFromEvent(faceRef.current, event.payload);
         if (next === faceRef.current) return;
         faceRef.current = next;
-        dispatch({ type: "face", face: avatarFace(next.state, next.end) });
+        dispatch({
+          type: "face",
+          face: toFace(orbFace(avatarFace(next.state, next.end))),
+        });
       }),
     );
 

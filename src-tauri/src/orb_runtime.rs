@@ -6,7 +6,7 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
 use crate::orb_gaze::{Gaze, GazeScheduler};
-use crate::orb_geometry::{monitor_key, MonitorInfo, OrbSize, Rect};
+use crate::orb_geometry::{monitor_key, orb_logical_px, MonitorInfo, OrbSize, Rect};
 use crate::orb_gesture::{GestureAction, GestureEngine, GestureEvent, GestureResult};
 
 /// Gaze reach in logical pixels: a cursor this far from the orb centre looks fully to one side.
@@ -285,6 +285,13 @@ pub enum MenuEntry {
 /// The orb context menu, in display order. The size items are checked for the current size; the
 /// conversation item is checked while the conversation surface is open.
 pub fn orb_menu_items(size: OrbSize, chat_open: bool) -> Vec<MenuEntry> {
+    orb_menu_items_for_px(orb_logical_px(size), chat_open)
+}
+
+/// [`orb_menu_items`] for an effective logical size. A preset item is checked only when the
+/// effective size equals that preset exactly, so a custom size checks no item.
+pub fn orb_menu_items_for_px(logical_px: f64, chat_open: bool) -> Vec<MenuEntry> {
+    let is_preset = |size: OrbSize| logical_px == orb_logical_px(size);
     vec![
         MenuEntry::Item {
             id: "orb_toggle_chat",
@@ -293,15 +300,15 @@ pub fn orb_menu_items(size: OrbSize, chat_open: bool) -> Vec<MenuEntry> {
         MenuEntry::Separator,
         MenuEntry::Item {
             id: "orb_size_small",
-            checked: Some(size == OrbSize::Small),
+            checked: Some(is_preset(OrbSize::Small)),
         },
         MenuEntry::Item {
             id: "orb_size_medium",
-            checked: Some(size == OrbSize::Medium),
+            checked: Some(is_preset(OrbSize::Medium)),
         },
         MenuEntry::Item {
             id: "orb_size_large",
-            checked: Some(size == OrbSize::Large),
+            checked: Some(is_preset(OrbSize::Large)),
         },
         MenuEntry::Separator,
         MenuEntry::Item {
@@ -313,4 +320,58 @@ pub fn orb_menu_items(size: OrbSize, chat_open: bool) -> Vec<MenuEntry> {
             checked: None,
         },
     ]
+}
+
+/// Geometry revision guard. Every resize and every finished drag bumps the revision; a saved
+/// position is accepted only when it was computed against the latest revision, so a save that
+/// was captured before a newer change can never overwrite it.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct GeometryGuard {
+    rev: u64,
+}
+
+impl GeometryGuard {
+    /// A guard at revision 0.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Starts a new revision and returns it.
+    pub fn bump(&mut self) -> u64 {
+        self.rev = self.rev.wrapping_add(1);
+        self.rev
+    }
+
+    /// Whether a position computed against revision `rev` is still current.
+    pub fn accept(&self, rev: u64) -> bool {
+        rev == self.rev
+    }
+}
+
+/// A free-size change that arrived during a gesture. The latest deferred value wins and is
+/// returned once, after the gesture has ended.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct PendingResize {
+    pending: Option<Option<u16>>,
+}
+
+impl PendingResize {
+    /// Nothing pending.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Records `px` (`None` for the preset) as the value to apply, replacing any earlier one.
+    pub fn defer(&mut self, px: Option<u16>) {
+        self.pending = Some(px);
+    }
+
+    /// The deferred value once no gesture is active, clearing it. While a gesture is active
+    /// nothing is returned and the value stays pending.
+    pub fn take(&mut self, gesture_active: bool) -> Option<Option<u16>> {
+        if gesture_active {
+            return None;
+        }
+        self.pending.take()
+    }
 }

@@ -12,15 +12,15 @@ use crate::chat_surface;
 use crate::chat_window::{is_app_navigation, CHAT_WINDOW_LABEL};
 use crate::orb_gaze::Gaze;
 use crate::orb_geometry::{
-    clamp_orb, monitor_for, orb_px, position_from_rect, restore_position, MonitorInfo, OrbSize,
-    Rect,
+    clamp_orb, clamp_orb_px, effective_orb_logical_px, monitor_for, nearest_preset, orb_px_logical,
+    position_from_rect, resize_keep_center, restore_position_px, MonitorInfo, Rect,
 };
 use crate::orb_gesture::GestureResult;
 use crate::orb_runtime::{
-    monitors_from_raw, orb_menu_items, tick_interval_ms, ButtonProbe, CursorSource, GazeDriver,
-    GestureDriver, MenuEntry, OrbHost, RawMonitor,
+    monitors_from_raw, orb_menu_items_for_px, tick_interval_ms, ButtonProbe, CursorSource,
+    GazeDriver, GeometryGuard, GestureDriver, MenuEntry, OrbHost, PendingResize, RawMonitor,
 };
-use crate::orb_window::{orb_window_spec, ORB_WINDOW_LABEL};
+use crate::orb_window::{orb_window_spec_px, ORB_WINDOW_LABEL};
 use crate::settings::{self, write_settings_gated, AppSettings};
 use crate::show_main_window;
 use crate::tray_i18n::{get_tray_translations, TrayStrings};
@@ -82,6 +82,8 @@ pub struct OrbRuntime {
     gaze: GazeDriver,
     reduced_motion: bool,
     ticker: Option<Arc<TickerSignal>>,
+    geometry: GeometryGuard,
+    pending_resize: PendingResize,
 }
 
 /// The orb runtime as managed by Tauri. The lock is held only for pure driver calls. The atomic
@@ -180,7 +182,7 @@ enum Call {
     Move(f64, f64),
     Gesture(u64, GestureResult),
     Click,
-    Save(Rect),
+    Save(Rect, u64),
     Gaze(Gaze),
 }
 
@@ -224,7 +226,8 @@ impl OrbHost for Recorder {
         self.calls.push(Call::Click);
     }
     fn save_position(&mut self, final_orb: Rect) {
-        self.calls.push(Call::Save(final_orb));
+        // The revision is stamped under the runtime lock by `stamp_saves`.
+        self.calls.push(Call::Save(final_orb, 0));
     }
     fn emit_gaze(&mut self, gaze: Gaze) {
         self.calls.push(Call::Gaze(gaze));
@@ -333,12 +336,12 @@ fn monitors_for(app: &AppHandle) -> Vec<MonitorInfo> {
 }
 
 /// Default orb rectangle: the bottom-right corner of the primary work area, inset, then clamped.
-fn default_rect(size: OrbSize, monitors: &[MonitorInfo]) -> Option<Rect> {
+fn default_rect(logical_px: f64, monitors: &[MonitorInfo]) -> Option<Rect> {
     let primary = monitors
         .iter()
         .find(|m| m.primary)
         .or_else(|| monitors.first())?;
-    let side = orb_px(size, primary.scale);
+    let side = orb_px_logical(logical_px, primary.scale);
     let scale = if primary.scale.is_finite() && primary.scale > 0.0 {
         primary.scale
     } else {
@@ -357,11 +360,17 @@ fn default_rect(size: OrbSize, monitors: &[MonitorInfo]) -> Option<Rect> {
 
 /// The rectangle the orb should occupy: the saved position when it restores, else the default.
 fn target_rect(settings: &AppSettings, monitors: &[MonitorInfo]) -> Option<Rect> {
+    let logical = effective_logical(settings);
     settings
         .orb_position
         .as_ref()
-        .and_then(|saved| restore_position(saved, settings.orb_size, monitors))
-        .or_else(|| default_rect(settings.orb_size, monitors))
+        .and_then(|saved| restore_position_px(saved, logical, monitors))
+        .or_else(|| default_rect(logical, monitors))
+}
+
+/// The effective orb edge in logical pixels: the free size when set, else the legacy preset.
+fn effective_logical(settings: &AppSettings) -> f64 {
+    effective_orb_logical_px(settings.orb_size, settings.orb_size_px)
 }
 
 /// The platform facts the orb decision needs. On Linux the display type and compositing come
@@ -423,7 +432,7 @@ fn apply_on_main(app: &AppHandle) {
         return;
     };
     if app.get_webview_window(ORB_WINDOW_LABEL).is_none() {
-        if let Err(e) = build_orb(app, settings.orb_size) {
+        if let Err(e) = build_orb(app, effective_logical(&settings)) {
             log::warn!("orb build failed: {e}");
             return;
         }
@@ -530,7 +539,7 @@ fn fit_orb(app: &AppHandle) {
     let Some(monitor) = monitor_for((cx, cy), &monitors) else {
         return;
     };
-    let side = orb_px(settings.orb_size, monitor.scale);
+    let side = orb_px_logical(effective_logical(&settings), monitor.scale);
     let wanted = Rect {
         x: cx - side / 2.0,
         y: cy - side / 2.0,
@@ -561,8 +570,8 @@ fn on_geometry_event(app: &AppHandle) {
 
 /// Creates the orb window hidden. Its geometry is set by the caller before it is shown.
 #[cfg(target_os = "macos")]
-fn build_orb(app: &AppHandle, size: OrbSize) -> tauri::Result<()> {
-    let spec = orb_window_spec(size);
+fn build_orb(app: &AppHandle, logical_px: f64) -> tauri::Result<()> {
+    let spec = orb_window_spec_px(logical_px);
     let side = spec.logical_px;
     let transparent = spec.transparent;
     let decorations = spec.decorations;
@@ -601,8 +610,8 @@ fn build_orb(app: &AppHandle, size: OrbSize) -> tauri::Result<()> {
 /// Creates the orb window hidden. Windows and Linux X11 use the same builder with the native
 /// topmost and all-workspaces flags from the spec.
 #[cfg(not(target_os = "macos"))]
-fn build_orb(app: &AppHandle, size: OrbSize) -> tauri::Result<()> {
-    let spec = orb_window_spec(size);
+fn build_orb(app: &AppHandle, logical_px: f64) -> tauri::Result<()> {
+    let spec = orb_window_spec_px(logical_px);
     let builder =
         WebviewWindowBuilder::new(app, ORB_WINDOW_LABEL, WebviewUrl::App(ORB_ENTRY_URL.into()))
             .title("Vox orb")
@@ -723,13 +732,14 @@ fn run_ticker(app: AppHandle, signal: Arc<TickerSignal>) {
             let now = now_ms();
             let down = active && left_button_down(&app);
             let mut calls = Recorder::new(frame.orb, frame.scale);
-            {
+            let stamped = {
                 let mut rt = cell.lock();
                 rt.gesture
                     .step(now, &Down(down), &Snapshot(frame.cursor), &mut calls);
                 rt.gaze.step(now, &Snapshot(frame.cursor), &mut calls);
-            }
-            execute(&app, calls.calls);
+                stamp_saves(&mut rt, calls.calls)
+            };
+            execute(&app, stamped);
             if now.saturating_sub(last_check_ms) >= MONITOR_CHECK_MS {
                 last_check_ms = now;
                 let monitors = monitors_for(&app);
@@ -743,6 +753,7 @@ fn run_ticker(app: AppHandle, signal: Arc<TickerSignal>) {
                 }
             }
         }
+        resume_deferred_resize(&app, &cell);
         signal.wait(Duration::from_millis(next_wait_ms(&cell)));
     }
 }
@@ -775,7 +786,7 @@ fn execute(app: &AppHandle, calls: Vec<Call>) {
                 );
             }
             Call::Click => toggle_chat(app),
-            Call::Save(rect) => save_position(app, rect),
+            Call::Save(rect, rev) => save_position(app, rect, rev),
             Call::Gaze(gaze) => {
                 let _ = app.emit_to(
                     ORB_WINDOW_LABEL,
@@ -817,8 +828,13 @@ fn toggle_chat(app: &AppHandle) {
     }
 }
 
-/// Saves the orb position after a finished drag: the monitor and its work-area fraction.
-fn save_position(app: &AppHandle, final_orb: Rect) {
+/// Saves the orb position computed against geometry revision `rev`: the monitor and its
+/// work-area fraction. A save superseded by a newer resize or drag is dropped.
+fn save_position(app: &AppHandle, final_orb: Rect, rev: u64) {
+    if !geometry_accepts(app, rev) {
+        log::debug!("orb position save dropped: superseded by a newer change");
+        return;
+    }
     let monitors = monitors_for(app);
     match position_from_rect(final_orb, &monitors) {
         Some(position) => {
@@ -836,13 +852,13 @@ pub fn pointer_down(app: &AppHandle, id: u64) {
         return;
     };
     let mut calls = Recorder::new(frame.orb, frame.scale);
-    let ticker = {
+    let (ticker, stamped) = {
         let mut rt = cell.lock();
         rt.gesture
             .pointer_down(id, now_ms(), &Snapshot(frame.cursor), &mut calls);
-        rt.ticker.clone()
+        (rt.ticker.clone(), stamp_saves(&mut rt, calls.calls))
     };
-    execute(app, calls.calls);
+    execute(app, stamped);
     if let Some(signal) = ticker {
         signal.wake();
     }
@@ -897,7 +913,7 @@ fn popup_menu(app: &AppHandle) {
         .and_then(|chat| chat.is_visible().ok())
         .unwrap_or(false);
     let strings = get_tray_translations(Some(settings.app_language.clone()));
-    let menu = match build_menu(app, &strings, settings.orb_size, chat_open) {
+    let menu = match build_menu(app, &strings, effective_logical(&settings), chat_open) {
         Ok(menu) => menu,
         Err(e) => {
             log::warn!("orb menu build failed: {e}");
@@ -913,11 +929,11 @@ fn popup_menu(app: &AppHandle) {
 fn build_menu(
     app: &AppHandle,
     strings: &TrayStrings,
-    size: OrbSize,
+    logical_px: f64,
     chat_open: bool,
 ) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::new(app)?;
-    for entry in orb_menu_items(size, chat_open) {
+    for entry in orb_menu_items_for_px(logical_px, chat_open) {
         match entry {
             MenuEntry::Separator => menu.append(&PredefinedMenuItem::separator(app)?)?,
             MenuEntry::Item { id, checked: None } => menu.append(&MenuItem::with_id(
@@ -960,9 +976,9 @@ fn menu_label(strings: &TrayStrings, id: &str) -> String {
 fn handle_menu(app: &AppHandle, id: &str) {
     match id {
         "orb_toggle_chat" => toggle_chat(app),
-        "orb_size_small" => set_size(app, OrbSize::Small),
-        "orb_size_medium" => set_size(app, OrbSize::Medium),
-        "orb_size_large" => set_size(app, OrbSize::Large),
+        "orb_size_small" => set_orb_size(app, Some(72)),
+        "orb_size_medium" => set_orb_size(app, Some(96)),
+        "orb_size_large" => set_orb_size(app, Some(128)),
         "orb_hide" => {
             write_settings_gated(app, |settings| settings.orb_visible = Some(false));
             apply_visibility(app);
@@ -972,10 +988,110 @@ fn handle_menu(app: &AppHandle, id: &str) {
     }
 }
 
-/// Stores the orb size and applies it.
-fn set_size(app: &AppHandle, size: OrbSize) {
-    write_settings_gated(app, |settings| settings.orb_size = size);
-    apply_visibility(app);
+/// The one writer of the orb size. Clamps a free size to 48..=192 (`None` returns to the preset),
+/// stores it with the nearest preset as the legacy `orb_size`, then resizes the orb on the main
+/// thread. A resize that arrives during a gesture is deferred until the gesture ends.
+pub fn set_orb_size(app: &AppHandle, px: Option<u16>) {
+    let clamped = px.map(|value| clamp_orb_px(value));
+    write_settings_gated(app, |settings| {
+        settings.orb_size_px = clamped;
+        if let Some(value) = clamped {
+            settings.orb_size = nearest_preset(value);
+        }
+    });
+    let job_app = app.clone();
+    if let Err(e) = app.run_on_main_thread(move || resize_on_main(&job_app, clamped)) {
+        log::warn!("orb resize could not be scheduled: {e}");
+    }
+}
+
+/// Main-thread entry of a size change: applies it now, or keeps it pending while a gesture is
+/// active. The latest value wins.
+fn resize_on_main(app: &AppHandle, px: Option<u16>) {
+    ensure_runtime(app);
+    let next = match app.try_state::<OrbRuntimeCell>() {
+        Some(cell) => {
+            let mut rt = cell.lock();
+            rt.pending_resize.defer(px);
+            let active = rt.gesture.is_active();
+            rt.pending_resize.take(active)
+        }
+        None => Some(px),
+    };
+    if let Some(value) = next {
+        apply_resize(app, value);
+    }
+}
+
+/// Resizes the orb about its centre to the effective size and moves it into its work area, then
+/// saves its position once for the new geometry revision. Runs on the main thread.
+fn apply_resize(app: &AppHandle, px: Option<u16>) {
+    let Some(window) = app.get_webview_window(ORB_WINDOW_LABEL) else {
+        return;
+    };
+    let Some(current) = window_rect(&window) else {
+        return;
+    };
+    let settings = settings::get_settings(app);
+    let logical = effective_orb_logical_px(settings.orb_size, px);
+    let monitors = monitors_for(app);
+    let Some(monitor) = monitor_for(current.center(), &monitors) else {
+        return;
+    };
+    let side = orb_px_logical(logical, monitor.scale);
+    let target = resize_keep_center(current, side, monitor.work);
+    let rev = bump_geometry(app);
+    apply_geometry(&window, target);
+    save_position(app, target, rev);
+}
+
+/// Applies a deferred size change once no gesture is active. Called by the ticker.
+fn resume_deferred_resize(app: &AppHandle, cell: &OrbRuntimeCell) {
+    let next = {
+        let mut rt = cell.lock();
+        let active = rt.gesture.is_active();
+        rt.pending_resize.take(active)
+    };
+    if let Some(px) = next {
+        let job_app = app.clone();
+        if let Err(e) = app.run_on_main_thread(move || apply_resize(&job_app, px)) {
+            log::warn!("orb resize could not be scheduled: {e}");
+        }
+    }
+}
+
+/// Gives each drag-end save a new geometry revision. Runs under the runtime lock, in the same
+/// critical section as the driver call that produced the save.
+fn stamp_saves(rt: &mut OrbRuntime, calls: Vec<Call>) -> Vec<Call> {
+    calls
+        .into_iter()
+        .map(|call| match call {
+            Call::Save(rect, _) => Call::Save(rect, rt.geometry.bump()),
+            other => other,
+        })
+        .collect()
+}
+
+/// Starts a new geometry revision and returns it.
+fn bump_geometry(app: &AppHandle) -> u64 {
+    match app.try_state::<OrbRuntimeCell>() {
+        Some(cell) => {
+            let mut rt = cell.lock();
+            rt.geometry.bump()
+        }
+        None => 0,
+    }
+}
+
+/// Whether a position computed against revision `rev` is still current.
+fn geometry_accepts(app: &AppHandle, rev: u64) -> bool {
+    match app.try_state::<OrbRuntimeCell>() {
+        Some(cell) => {
+            let rt = cell.lock();
+            rt.geometry.accept(rev)
+        }
+        None => true,
+    }
 }
 
 /// Left mouse button state on macOS: bit 0 of `NSEvent.pressedMouseButtons`. Readable off the
