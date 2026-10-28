@@ -13,6 +13,7 @@ use crate::managers::acp_run::RunHandle;
 use crate::managers::agent_settings_gate::{process_gate, read_stable};
 use crate::managers::agent_tools::tauri_backends::build_tauri_executor;
 use crate::managers::audio::AudioRecordingManager;
+use crate::managers::brain::{missing_message, resolve, BrainFeature, Resolved};
 use crate::managers::chat_log::ChatRole;
 use crate::managers::chat_tap::ChatTap;
 use crate::managers::composer_config::{settings_from_app, TtsComposerMode};
@@ -160,6 +161,23 @@ fn preflight_check_with(settings: &AppSettings, needs_spoken_replies: bool) -> R
         return Err(
             "Turn off wake word and ambient listening before starting a conversation.".to_string(),
         );
+    }
+    // Model mode needs a usable connection: the Brain (when inherited) or a named model (own).
+    // Checked after the wake word and ambient refusals, so those keep their messages.
+    if !direct && settings_from_app(settings).mode == TtsComposerMode::Model {
+        match resolve(settings, BrainFeature::Composer) {
+            Resolved::NotConfigured(missing) => return Err(missing_message(&missing).to_string()),
+            Resolved::Own if settings.tts_composer_model.trim().is_empty() => {
+                return Err("Choose a model in the reply style settings first.".to_string());
+            }
+            Resolved::Own | Resolved::Brain(_) => {}
+        }
+    }
+    // Realtime inherits the Brain when its source is Inherit, so that source must resolve too.
+    if !direct && settings.exp_rt_enabled {
+        if let Resolved::NotConfigured(missing) = resolve(settings, BrainFeature::RealtimeStream) {
+            return Err(missing_message(&missing).to_string());
+        }
     }
     Ok(())
 }
@@ -1521,6 +1539,11 @@ mod tests {
 
     fn base_settings() -> AppSettings {
         let mut s = crate::settings::get_default_settings();
+        // Legacy fixture: each feature keeps its own provider settings.
+        s.brain_source_composer = crate::settings::BrainSource::Own;
+        s.brain_source_realtime = crate::settings::BrainSource::Own;
+        s.brain_source_postprocess = crate::settings::BrainSource::Own;
+        s.tts_composer_model = "legacy-model".into();
         s.tts_enabled = true;
         s.tts_composer_mode = TtsComposerMode::Model;
         s.wake_word_enabled = false;

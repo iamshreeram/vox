@@ -42,6 +42,11 @@ use crate::settings::{get_default_settings, AppSettings, ConverseBargeIn};
 
 fn settings(barge: ConverseBargeIn, spoken: bool, mode: TtsComposerMode) -> AppSettings {
     let mut s = get_default_settings();
+    // Legacy fixture: each feature keeps its own provider settings.
+    s.brain_source_composer = crate::settings::BrainSource::Own;
+    s.brain_source_realtime = crate::settings::BrainSource::Own;
+    s.brain_source_postprocess = crate::settings::BrainSource::Own;
+    s.tts_composer_model = "legacy-model".into();
     s.converse_barge_in = barge;
     s.tts_enabled = spoken;
     s.tts_composer_mode = mode;

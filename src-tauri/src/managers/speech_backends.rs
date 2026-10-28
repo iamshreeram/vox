@@ -7,6 +7,7 @@
 
 #![allow(dead_code)]
 
+use crate::managers::brain::{self, BrainFeature};
 use crate::managers::composer_config::{
     command_ack_matches, composer_provider_supported, settings_from_app, TtsComposerMode,
     TtsComposerSettings,
@@ -361,39 +362,30 @@ async fn compose_inner(
     };
     match s.mode {
         TtsComposerMode::Off => Err(ComposeError::NotConfigured),
-        TtsComposerMode::Model => compose_model(settings, &s, &req, deadline).await,
+        TtsComposerMode::Model => compose_model(settings, &req, deadline).await,
         TtsComposerMode::Command => compose_command(&s, &req, deadline).await,
     }
 }
 
 async fn compose_model(
     settings: &AppSettings,
-    s: &TtsComposerSettings,
     req: &ComposeRequest,
     deadline: Duration,
 ) -> Result<Composed, ComposeError> {
-    let provider = settings
-        .post_process_providers
-        .iter()
-        .find(|p| p.id == s.provider_id)
-        .ok_or(ComposeError::NotConfigured)?;
-    if !composer_provider_supported(provider) || s.model.trim().is_empty() {
+    let effective = brain::effective_provider(settings, BrainFeature::Composer)
+        .map_err(|_| ComposeError::NotConfigured)?;
+    if !composer_provider_supported(&effective.provider) || effective.model.trim().is_empty() {
         return Err(ComposeError::NotConfigured);
     }
-    let api_key = settings
-        .post_process_api_keys
-        .get(&provider.id)
-        .cloned()
-        .unwrap_or_default();
     let (system, user) = build_prompts(req);
     let call = ModelCall {
-        provider,
-        api_key: &api_key,
-        model: &s.model,
+        provider: &effective.provider,
+        api_key: &effective.api_key,
+        model: &effective.model,
         system: &system,
         user: &user,
         max_tokens: 220,
-        json_mode: provider.supports_structured_output,
+        json_mode: effective.provider.supports_structured_output,
     };
     let raw = call_model(&call, deadline).await?;
     parse_composer_output(&raw, &format!("{system}\n\n{user}"))
@@ -497,39 +489,30 @@ async fn complete_inner(
     let s = settings_from_app(settings);
     match s.mode {
         TtsComposerMode::Off => Err(ComposeError::NotConfigured),
-        TtsComposerMode::Model => complete_model(settings, &s, system, combined, deadline).await,
+        TtsComposerMode::Model => complete_model(settings, system, combined, deadline).await,
         TtsComposerMode::Command => complete_command(&s, system, combined, deadline).await,
     }
 }
 
 async fn complete_model(
     settings: &AppSettings,
-    s: &TtsComposerSettings,
     system: &str,
     combined: &str,
     deadline: Duration,
 ) -> Result<String, ComposeError> {
-    let provider = settings
-        .post_process_providers
-        .iter()
-        .find(|p| p.id == s.provider_id)
-        .ok_or(ComposeError::NotConfigured)?;
-    if !composer_provider_supported(provider) || s.model.trim().is_empty() {
+    let effective = brain::effective_provider(settings, BrainFeature::Composer)
+        .map_err(|_| ComposeError::NotConfigured)?;
+    if !composer_provider_supported(&effective.provider) || effective.model.trim().is_empty() {
         return Err(ComposeError::NotConfigured);
     }
-    let api_key = settings
-        .post_process_api_keys
-        .get(&provider.id)
-        .cloned()
-        .unwrap_or_default();
     let call = ModelCall {
-        provider,
-        api_key: &api_key,
-        model: &s.model,
+        provider: &effective.provider,
+        api_key: &effective.api_key,
+        model: &effective.model,
         system,
         user: user_part(system, combined),
         max_tokens: 220,
-        json_mode: provider.supports_structured_output,
+        json_mode: effective.provider.supports_structured_output,
     };
     call_model(&call, deadline).await
 }
@@ -894,6 +877,10 @@ mod tests {
 
     fn model_settings(addr: Option<SocketAddr>, model: &str, key: &str) -> AppSettings {
         let mut s = get_default_settings();
+        // Legacy fixture: each feature keeps its own provider settings.
+        s.brain_source_composer = crate::settings::BrainSource::Own;
+        s.brain_source_realtime = crate::settings::BrainSource::Own;
+        s.brain_source_postprocess = crate::settings::BrainSource::Own;
         if let Some(a) = addr {
             if let Some(p) = s
                 .post_process_providers

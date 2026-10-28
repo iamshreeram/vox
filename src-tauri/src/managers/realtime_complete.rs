@@ -15,6 +15,7 @@ use std::fmt;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+use crate::managers::brain::{self, BrainFeature, Resolved};
 use crate::managers::composer_config::{
     composer_provider_supported, settings_from_app, TtsComposerMode,
 };
@@ -90,35 +91,36 @@ pub fn prepare(settings: &AppSettings) -> Result<Option<Prepared>, ComposeError>
     if !cfg.stream_reply {
         return Ok(None);
     }
-    let composer = settings_from_app(settings);
-    if composer.mode != TtsComposerMode::Model {
+    // Legacy routing: an Own stream needs the speech composer in model mode. A Brain-sourced
+    // stream does not depend on the composer mode.
+    let inherits = matches!(
+        brain::resolve(settings, BrainFeature::RealtimeStream),
+        Resolved::Brain(_)
+    );
+    if !inherits && settings_from_app(settings).mode != TtsComposerMode::Model {
         return Ok(None);
     }
-    let model = composer.model.trim();
+    let Ok(effective) = brain::effective_provider(settings, BrainFeature::RealtimeStream) else {
+        return Ok(None);
+    };
+    let model = effective.model.trim();
     if model.is_empty() {
         return Ok(None);
     }
-    let Some(provider) = settings
-        .post_process_providers
-        .iter()
-        .find(|p| p.id == composer.provider_id)
-    else {
-        return Ok(None);
-    };
-    if !composer_provider_supported(provider) {
+    if !composer_provider_supported(&effective.provider) {
         return Ok(None);
     }
-    let api_key = settings
-        .post_process_api_keys
-        .get(&provider.id)
-        .cloned()
-        .unwrap_or_default();
     Ok(Some(Prepared {
         protocol: Protocol::OpenAiChat,
-        base_url: provider.base_url.trim().trim_end_matches('/').to_string(),
-        api_key,
+        base_url: effective
+            .provider
+            .base_url
+            .trim()
+            .trim_end_matches('/')
+            .to_string(),
+        api_key: effective.api_key,
         model: model.to_string(),
-        json_mode: provider.supports_structured_output,
+        json_mode: effective.provider.supports_structured_output,
         completion_tokens_field: false,
         max_tokens: PLANNER_MAX_TOKENS,
     }))
