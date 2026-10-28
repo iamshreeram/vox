@@ -130,7 +130,9 @@ struct Facts {
 
 fn facts(app: &AppHandle, shell: &BubbleShell) -> Facts {
     let settings = settings::get_settings(app);
-    let env = orb_native::current_env();
+    // The copy the last main-thread apply recorded: the GDK display is never read off the main
+    // thread, and the converse hooks run off it.
+    let env = orb_native::cached_env();
     Facts {
         persisted: settings.orb_visible.unwrap_or(ORB_VISIBLE_DEFAULT),
         supported: floating_supported(&env).is_ok(),
@@ -191,6 +193,8 @@ fn apply_effects(app: &AppHandle, shell: &BubbleShell, effects: Effects) {
     if effects.open_classic {
         log::info!("bubble window unavailable: the classic conversation window opens");
         chat_window::open_chat_window_on_session_start(app);
+        // The fallback destroys the bubble window and clears the session state (M1 of G4b.fix).
+        destroy_bubbles(app);
     }
     if changed {
         schedule(app, shell);
@@ -269,15 +273,17 @@ fn execute_on_main(app: &AppHandle) {
     let Some(shell) = app.try_state::<BubbleShell>() else {
         return;
     };
-    // 1. The orb: total desired visibility (A9-2), then reconcile the real window.
-    let desired = {
+    // 1. The orb: the total desired visibility decides show or hide (A9-2). Only the session's
+    //    own share is stored as transient, never the saved setting (MAJOR 1). The window is shown
+    //    or hidden without re-targeting it, so a drag is never fought (MAJOR 2).
+    let (desired, share) = {
         let facts = facts(app, &shell);
         let core = lock_core(&shell);
         let inp = inputs(app, facts);
-        core.desired_orb(&inp)
+        (core.desired_orb(&inp), core.orb_share())
     };
-    orb_native::set_orb_transient(desired);
-    orb_native::apply_on_main(app);
+    orb_native::set_orb_transient(share);
+    orb_native::show_hide_only(app, desired);
 
     // 2. The placement beside the orb. A change re-evaluates the projection.
     let placement = placement_for_orb(app);
@@ -457,6 +463,8 @@ fn show_bubble_window(app: &AppHandle) {
         if let Err(e) = window.show() {
             log::warn!("bubble show failed: {e}");
         }
+        #[cfg(target_os = "windows")]
+        crate::overlay::force_overlay_topmost(&window);
     }
 }
 
@@ -551,12 +559,55 @@ pub fn init(app: &AppHandle) {
     let _ = app.manage(BubbleShell::new(recording));
 }
 
-/// A conversation session started on the orb surface. Builds the orb and bubble windows first
-/// (main thread). When either cannot be built, the core opens the classic window once for this
-/// session instead.
-pub fn session_started(app: &AppHandle, sid: u64) {
+/// A conversation session started. Runs on the converse thread: the core's synchronous part (the
+/// session machine, the hub arming and the orb effects) happens here under the shell lock, so an
+/// end or a line that follows is never lost (MAJOR 3). The windows are built on the main thread
+/// afterwards and reported to the core. The classic surface opens its window on the main thread.
+pub fn session_begin(app: &AppHandle, sid: u64, surface: SessionSurface) {
     let Some(shell) = app.try_state::<BubbleShell>() else {
-        chat_window::open_chat_window_on_session_start(app);
+        open_classic_on_main(app);
+        return;
+    };
+    let facts = facts(app, &shell);
+    let effects = {
+        let mut core = lock_core(&shell);
+        let inp = inputs(app, facts);
+        core.session_begin(sid, surface, &inp)
+    };
+    apply_effects(app, &shell, effects);
+    if surface == SessionSurface::OrbBubbles {
+        schedule_windows(app, sid);
+    } else {
+        open_classic_on_main(app);
+    }
+    ensure_timer(app, &shell);
+}
+
+/// Opens the classic conversation window on the main thread.
+fn open_classic_on_main(app: &AppHandle) {
+    let job_app = app.clone();
+    if app
+        .run_on_main_thread(move || chat_window::open_chat_window_on_session_start(&job_app))
+        .is_err()
+    {
+        log::warn!("classic conversation window could not be scheduled");
+    }
+}
+
+/// Queues the main-thread build of the orb and bubble windows for session `sid`. When the job
+/// cannot be queued, the core is told the windows failed, so the session falls back at once.
+fn schedule_windows(app: &AppHandle, sid: u64) {
+    let job_app = app.clone();
+    let queued = app.run_on_main_thread(move || build_session_windows(&job_app, sid));
+    if let Err(e) = queued {
+        log::warn!("bubble windows could not be scheduled: {e}");
+        update(app, move |core, inp| core.windows_ready(sid, false, inp));
+    }
+}
+
+/// Main thread. Builds the orb and the bubble window for session `sid` and reports the result.
+fn build_session_windows(app: &AppHandle, sid: u64) {
+    let Some(shell) = app.try_state::<BubbleShell>() else {
         return;
     };
     let orb_ok = orb_native::ensure_orb_window(app);
@@ -565,10 +616,9 @@ pub fn session_started(app: &AppHandle, sid: u64) {
     let effects = {
         let mut core = lock_core(&shell);
         let inp = inputs(app, facts);
-        core.session_started(sid, SessionSurface::OrbBubbles, windows_ok, &inp)
+        core.windows_ready(sid, windows_ok, &inp)
     };
     apply_effects(app, &shell, effects);
-    ensure_timer(app, &shell);
 }
 
 /// The conversation session ended (terminal state with a reason). The session is identified by

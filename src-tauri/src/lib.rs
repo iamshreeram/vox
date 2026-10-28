@@ -8,6 +8,8 @@ mod autostart;
 #[cfg(test)]
 mod bubble_admission_e2e_tests;
 #[cfg(test)]
+mod bubble_g4b_fix_tests;
+#[cfg(test)]
 mod bubble_geometry_tests;
 mod bubble_hub;
 #[cfg(test)]

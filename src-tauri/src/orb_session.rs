@@ -217,6 +217,16 @@ impl SessionMachine {
     }
 }
 
+/// The session's own share of the orb: the transient show it owns right now. Idle, pinned, a
+/// tray hide and an expired session own nothing. The saved setting is never part of the share;
+/// the executor stores this value in `ORB_TRANSIENT` (MAJOR 1 of G4b.fix).
+pub fn transient_share(machine: &SessionMachine) -> bool {
+    machine.phase != Phase::Idle
+        && machine.transient_shown
+        && !machine.pinned
+        && !machine.user_hidden
+}
+
 /// Decides what the executor does for one reconcile step (A8-1 level-triggered effects). An
 /// effect queued under `queued_generation` is dropped when the machine has moved on. Otherwise
 /// the action is the difference between `desired` and `actual`, or nothing when they agree.

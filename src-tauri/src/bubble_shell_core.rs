@@ -12,7 +12,7 @@ use crate::chat_presentation::{
     floating_supported, resolve_presentation, PlatformEnv, Presentation,
 };
 use crate::managers::chat_log::GateState;
-use crate::orb_session::{reconcile, OrbAction, Phase, SessionMachine};
+use crate::orb_session::{reconcile, transient_share, OrbAction, Phase, SessionMachine};
 
 /// How long a page may take to report ready after its window was created, in milliseconds.
 pub const READY_TIMEOUT_MS: u64 = 2_000;
@@ -68,6 +68,11 @@ pub struct BubbleShellCore {
     waiting_for_ready: bool,
     fallback_done: bool,
     fallback_sid: Option<u64>,
+    /// A session started on the orb surface whose windows are not yet reported by the main thread.
+    /// The readiness timeout does not run while it is set.
+    windows_pending: bool,
+    /// The highest session id that has ended. A start for an id at or below it lingers at once.
+    last_ended_sid: Option<u64>,
 }
 
 /// The platform decision for a session start (DESIGN Rev 6 R6-2, A7-4). Floating surfaces as
@@ -92,6 +97,8 @@ impl BubbleShellCore {
             waiting_for_ready: false,
             fallback_done: false,
             fallback_sid: None,
+            windows_pending: false,
+            last_ended_sid: None,
         }
     }
 
@@ -103,7 +110,8 @@ impl BubbleShellCore {
 
     /// A conversation session started on `surface`. `windows_ok` says whether the orb and the
     /// bubble window exist. With the orb surface and no windows, the classic window opens once
-    /// for this session and the hub stays disarmed.
+    /// for this session and the hub stays disarmed. Equal to `session_begin` followed by
+    /// `windows_ready`, which is how the native shell runs it.
     pub fn session_started(
         &mut self,
         sid: u64,
@@ -112,46 +120,97 @@ impl BubbleShellCore {
         inp: &ShellInputs,
     ) -> Effects {
         match surface {
-            SessionSurface::Window => {
-                self.machine.reset();
-                self.waiting_for_ready = false;
-                self.hub.set_armed(false);
-                let eff = Effects {
-                    orb: self.orb_action(inp),
-                    ..Effects::default()
-                };
-                self.finish(inp, eff)
-            }
             SessionSurface::OrbBubbles if !windows_ok => {
-                self.hub.set_armed(false);
-                self.waiting_for_ready = false;
-                self.fallback_done = true;
                 let mut eff = Effects::default();
-                if self.fallback_sid != Some(sid) {
-                    self.fallback_sid = Some(sid);
-                    eff.open_classic = true;
-                }
+                self.fallback(sid, &mut eff);
                 self.finish(inp, eff)
             }
-            SessionSurface::OrbBubbles => {
-                self.fallback_done = false;
-                self.waiting_for_ready = false;
-                self.hub.on_reset();
-                self.hub.set_recording(inp.gate.recording);
-                self.hub.set_armed(true);
-                self.machine
-                    .started_as(sid, inp.now, !inp.orb_persisted_visible);
-                let eff = Effects {
-                    orb: self.orb_action(inp),
-                    ..Effects::default()
-                };
+            _ => {
+                let eff = self.begin(sid, surface, inp);
+                self.windows_pending = false;
                 self.finish(inp, eff)
             }
         }
     }
 
+    /// The synchronous part of a session start (MAJOR 3 of G4b.fix): the session machine, the hub
+    /// arming and the orb effects. The converse thread runs it under the lock; the windows are
+    /// built on the main thread afterwards and reported through `windows_ready`.
+    pub fn session_begin(
+        &mut self,
+        sid: u64,
+        surface: SessionSurface,
+        inp: &ShellInputs,
+    ) -> Effects {
+        let eff = self.begin(sid, surface, inp);
+        self.finish(inp, eff)
+    }
+
+    /// The main thread built (or failed to build) the windows of session `sid`. A failure makes
+    /// the session classic: the orb goes, the hub disarms and the classic window opens once.
+    /// A report for a session that is no longer the current one changes nothing.
+    pub fn windows_ready(&mut self, sid: u64, ok: bool, inp: &ShellInputs) -> Effects {
+        let mut eff = Effects::default();
+        if sid == self.machine.session_id() {
+            self.windows_pending = false;
+            if !ok {
+                self.machine.reset();
+                self.fallback(sid, &mut eff);
+                eff.orb = self.orb_action(inp);
+            }
+        }
+        self.finish(inp, eff)
+    }
+
+    /// The state change of a session start, without publishing.
+    fn begin(&mut self, sid: u64, surface: SessionSurface, inp: &ShellInputs) -> Effects {
+        match surface {
+            SessionSurface::Window => {
+                self.machine.reset();
+                self.waiting_for_ready = false;
+                self.windows_pending = false;
+                self.hub.set_armed(false);
+                Effects {
+                    orb: self.orb_action(inp),
+                    ..Effects::default()
+                }
+            }
+            SessionSurface::OrbBubbles => {
+                self.fallback_done = false;
+                self.waiting_for_ready = false;
+                self.windows_pending = true;
+                self.hub.on_reset();
+                self.hub.set_recording(inp.gate.recording);
+                self.hub.set_armed(true);
+                self.machine
+                    .started_as(sid, inp.now, !inp.orb_persisted_visible);
+                if self.last_ended_sid.is_some_and(|ended| ended >= sid) {
+                    self.machine.ended(sid, inp.now);
+                }
+                Effects {
+                    orb: self.orb_action(inp),
+                    ..Effects::default()
+                }
+            }
+        }
+    }
+
+    /// Records a failed or timed-out window set for session `sid`: the hub disarms, the readiness
+    /// wait ends, and the classic window opens once for the session.
+    fn fallback(&mut self, sid: u64, eff: &mut Effects) {
+        self.hub.set_armed(false);
+        self.waiting_for_ready = false;
+        self.windows_pending = false;
+        self.fallback_done = true;
+        if self.fallback_sid != Some(sid) {
+            self.fallback_sid = Some(sid);
+            eff.open_classic = true;
+        }
+    }
+
     /// The session `sid` ended (voice or typed terminal state).
     pub fn session_ended(&mut self, sid: u64, inp: &ShellInputs) -> Effects {
+        self.last_ended_sid = Some(self.last_ended_sid.map_or(sid, |last| last.max(sid)));
         self.machine.ended(sid, inp.now);
         let eff = Effects {
             orb: self.orb_action(inp),
@@ -240,10 +299,14 @@ impl BubbleShellCore {
         self.finish(inp, eff)
     }
 
-    /// The orb window was destroyed, the presentation changed, or the app is exiting.
+    /// The bubble window was destroyed, the presentation changed, or the app is exiting. The
+    /// per-session fallback state is cleared too, so the next session builds a new window instance
+    /// and its page is accepted (M1 of G4b.fix).
     pub fn reset(&mut self, inp: &ShellInputs) -> Effects {
         self.machine.reset();
         self.waiting_for_ready = false;
+        self.windows_pending = false;
+        self.fallback_sid = None;
         let eff = Effects {
             orb: self.orb_action(inp),
             ..Effects::default()
@@ -256,15 +319,14 @@ impl BubbleShellCore {
         self.machine.tick(inp.now);
         let mut eff = Effects::default();
         let due = inp.now >= self.window_created_at.saturating_add(READY_TIMEOUT_MS);
-        if self.waiting_for_ready && !self.fallback_done && !self.hub.is_ready() && due {
-            self.waiting_for_ready = false;
-            self.fallback_done = true;
-            self.hub.set_armed(false);
+        if self.waiting_for_ready
+            && !self.fallback_done
+            && !self.windows_pending
+            && !self.hub.is_ready()
+            && due
+        {
             let sid = self.machine.session_id();
-            if self.fallback_sid != Some(sid) {
-                self.fallback_sid = Some(sid);
-                eff.open_classic = true;
-            }
+            self.fallback(sid, &mut eff);
         }
         eff.orb = self.orb_action(inp);
         self.finish(inp, eff)
@@ -282,6 +344,17 @@ impl BubbleShellCore {
     /// Whether no session is running (the timer may stop).
     pub fn is_idle(&self) -> bool {
         self.machine.phase() == Phase::Idle
+    }
+
+    /// The current session phase.
+    pub fn phase(&self) -> Phase {
+        self.machine.phase()
+    }
+
+    /// The session's own share of the orb (MAJOR 1 of G4b.fix): what the executor stores in
+    /// `ORB_TRANSIENT`. Never the saved setting.
+    pub fn orb_share(&self) -> bool {
+        transient_share(&self.machine)
     }
 
     /// Total desired orb visibility (A9-2).
