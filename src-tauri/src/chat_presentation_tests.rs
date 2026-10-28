@@ -12,7 +12,7 @@
 //!   fn resolve_presentation(Option<Presentation>, &PlatformEnv) -> Effective
 //!   fn linux_backend_from_display_type(Option<&str>) -> LinuxBackend
 //!   const ORB_VISIBLE_DEFAULT: bool = false     // flipped to true in G4 (a deliberate, tested change)
-//!   fn orb_should_show(orb_visible: Option<bool>, effective: Presentation) -> bool
+//!   fn orb_should_show(orb_visible: Option<bool>, env: &PlatformEnv) -> bool   // G3: orb_visible.unwrap_or(ORB_VISIBLE_DEFAULT) && floating_supported(env).is_ok(); the orb is a launcher for the classic window too
 use crate::chat_presentation::*;
 
 fn env(os: Os, backend: LinuxBackend, composited: bool) -> PlatformEnv {
@@ -174,16 +174,31 @@ fn the_linux_backend_comes_from_the_display_type_name_only() {
 }
 
 #[test]
-fn the_orb_shows_only_when_floating_and_enabled() {
+fn the_orb_shows_only_when_enabled_and_the_platform_can_float_it() {
     assert!(
         !ORB_VISIBLE_DEFAULT,
         "G1-G3 ship with the orb hidden until the user enables it"
     );
-    assert!(!orb_should_show(None, Presentation::Floating));
-    assert!(orb_should_show(Some(true), Presentation::Floating));
-    assert!(!orb_should_show(Some(false), Presentation::Floating));
-    assert!(!orb_should_show(Some(true), Presentation::Window));
-    assert!(!orb_should_show(None, Presentation::Window));
+    assert!(!orb_should_show(None, &mac()));
+    assert!(orb_should_show(Some(true), &mac()));
+    assert!(!orb_should_show(Some(false), &mac()));
+    // G3 deliberate change: the orb is a launcher, so it does not depend on the presentation.
+    assert!(orb_should_show(Some(true), &windows()));
+    assert!(orb_should_show(Some(true), &x11(true)));
+    // Platforms that cannot float a window never show it.
+    assert!(!orb_should_show(Some(true), &x11(false)));
+    assert!(!orb_should_show(
+        Some(true),
+        &env(Os::Linux, LinuxBackend::Wayland, true)
+    ));
+    assert!(!orb_should_show(
+        Some(true),
+        &env(Os::Linux, LinuxBackend::Unknown, true)
+    ));
+    assert!(!orb_should_show(
+        Some(true),
+        &env(Os::Other, LinuxBackend::Unknown, true)
+    ));
 }
 
 #[test]
