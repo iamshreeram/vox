@@ -7,6 +7,9 @@ export { HistorySettings } from "./history/HistorySettings";
 export { AboutSettings } from "./about/AboutSettings";
 export { PostProcessingSettings } from "./post-processing/PostProcessingSettings";
 export { ModelsSettings } from "./models/ModelsSettings";
+export { BrainSettings } from "./brain/BrainSettings";
+export { BrainNotice } from "./brain/BrainNotice";
+export { OpenBrainPageProvider } from "./brain/brainNavigation";
 export { AgentsSettings } from "./agents/AgentsSettings";
 
 // Individual setting components

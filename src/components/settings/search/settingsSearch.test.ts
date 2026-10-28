@@ -50,6 +50,7 @@ const TEXT: Record<string, TextPair> = {
   "sidebar.general": pair("General"),
   "sidebar.history": pair("History"),
   "sidebar.models": pair("Models"),
+  "sidebar.brain": pair("Brain"),
   "sidebar.advanced": pair("Advanced"),
   "sidebar.postProcessing": pair("Post Process"),
   "sidebar.debug": pair("Debug"),
@@ -226,6 +227,7 @@ const DEFAULT_ON: SearchSection[] = [
   "general",
   "history",
   "models",
+  "brain",
   "advanced",
   "about",
 ];

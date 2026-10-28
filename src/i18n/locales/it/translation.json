@@ -19,6 +19,7 @@
   "sidebar": {
     "general": "Generale",
     "models": "Modelli",
+    "brain": "Brain",
     "advanced": "Avanzate",
     "postProcessing": "Post-Elaborazione",
     "history": "Cronologia",
@@ -1349,6 +1350,110 @@
         "description": "Say \"Hey Jarvis\" and the conversation window appears by itself, without taking keyboard focus. Needs the transcript to be kept."
       },
       "openChatWindow": "Open conversation window"
+    },
+    "brain": {
+      "description": "One language-model connection that Reply style, Real-time conversation and Post Process can share. Vox sends nothing to it unless you allow a feature to use it.",
+      "providers": {
+        "openai": "OpenAI",
+        "openrouter": "OpenRouter",
+        "groq": "Groq",
+        "cerebras": "Cerebras",
+        "zai": "Z.ai",
+        "custom": "Custom (Ollama, LM Studio or another server)"
+      },
+      "endpoint": {
+        "title": "Endpoint",
+        "provider": {
+          "title": "Provider",
+          "description": "Pick a service, or Custom for Ollama, LM Studio or any OpenAI-compatible server."
+        },
+        "baseUrl": {
+          "title": "Endpoint address",
+          "description": "https:// for any host, or http:// only for this computer (localhost).",
+          "placeholder": "https://api.example.com/v1"
+        },
+        "quickFill": {
+          "title": "Quick setup",
+          "description": "Fill in the address of a server running on this computer.",
+          "ollama": "Ollama",
+          "lmstudio": "LM Studio"
+        },
+        "urlError": {
+          "empty": "Enter the endpoint address.",
+          "invalid": "The endpoint address is not a valid URL.",
+          "scheme": "The endpoint must start with https://, or http:// for this computer.",
+          "userinfo": "Remove the user name and password from the endpoint address.",
+          "plainHttp": "Plain http is only allowed for this computer (localhost). Use https for other hosts."
+        }
+      },
+      "token": {
+        "title": "Access token",
+        "description": "Needed for a remote endpoint. Stored on this computer and never shown again.",
+        "placeholder": "Enter a new token",
+        "saved": "A token is saved.",
+        "none": "No token saved.",
+        "clear": "Clear token"
+      },
+      "model": {
+        "title": "Model",
+        "description": "The model the endpoint should use. Fetch models lists what the endpoint offers.",
+        "placeholder": "Choose or type a model",
+        "fetch": "Fetch models"
+      },
+      "test": {
+        "title": "Test connection",
+        "description": "Checks the endpoint with one fixed message. Nothing you have said is sent.",
+        "ack": "I understand that Test sends the fixed message \"{{prompt}}\" to {{destination}}, with the saved access token if one is set. Nothing you have said is sent.",
+        "run": "Test connection",
+        "ok": "Connected in {{ms}} ms.",
+        "unauthorized": "The endpoint rejected the token.",
+        "not_found": "The endpoint address or path was not found.",
+        "unreachable": "Could not reach the endpoint.",
+        "redirect": "The endpoint redirected the request, which Vox does not follow.",
+        "bad_response": "The endpoint answered with something unexpected.",
+        "timeout": "The request timed out.",
+        "invalid_url": "The endpoint address is not allowed (use https, or http for this computer only)."
+      },
+      "feature": {
+        "title": "Features",
+        "description": "For each feature, choose whether it uses the Brain or its own setup.",
+        "composer": "Reply style",
+        "realtime_stream": "Real-time conversation",
+        "post_process": "Post Process",
+        "useBrain": "Use Brain",
+        "useOwn": "Use own setup"
+      },
+      "state": {
+        "needs_setup": "Set up the Brain first.",
+        "inheriting": "Using the Brain",
+        "own": "Using its own setup",
+        "needs_consent": "Needs your permission to use the Brain"
+      },
+      "consent": {
+        "title": "Let {{feature}} send what you say to the Brain?",
+        "body": "What you say, as text, is sent to the Brain endpoint by this feature. You can switch back to its own setup at any time.",
+        "destination": "Destination: {{destination}}",
+        "confirm": "Use the Brain",
+        "cancel": "Cancel"
+      },
+      "notice": {
+        "text": "{{feature}} uses the Brain connection.",
+        "open": "Open Brain",
+        "useOwn": "Use own setup",
+        "needsSetup": "{{feature}} needs the Brain, which is not set up yet.",
+        "needsConsent": "{{feature}} needs your permission to send what you say to the Brain.",
+        "openAria": "Open Brain for {{feature}}",
+        "useOwnAria": "Use own setup for {{feature}}"
+      },
+      "errors": {
+        "save": "Could not save the Brain settings.",
+        "token": "Could not save the access token.",
+        "clear": "Could not clear the access token.",
+        "test": "The connection test could not run.",
+        "models": "Could not fetch the models from the endpoint.",
+        "feature": "Could not change this feature's setup.",
+        "ack": "Could not record the confirmation."
+      }
     }
   },
   "footer": {

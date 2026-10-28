@@ -48,6 +48,7 @@ const CORE_SECTIONS: SearchSection[] = [
   "general",
   "history",
   "models",
+  "brain",
   "advanced",
   "postprocessing",
   "debug",
@@ -59,6 +60,7 @@ const ENABLED_BY_DEFAULT: SearchSection[] = [
   "general",
   "history",
   "models",
+  "brain",
   "advanced",
   "about",
 ];
@@ -140,9 +142,14 @@ for (const e of own) {
   }
   for (const p of e.platforms ?? [])
     if (!PLATFORMS.has(p)) fail(`${who}: unknown platform ${p}`);
-  if (e.pageOnly && e.section !== "history" && e.section !== "models")
+  if (
+    e.pageOnly &&
+    e.section !== "history" &&
+    e.section !== "models" &&
+    e.section !== "brain"
+  )
     fail(
-      `${who}: pageOnly is only for the history and models pages (they have no setting rows)`,
+      `${who}: pageOnly is only for the history, models and brain pages (they have no setting rows)`,
     );
   const english =
     typeof en(e.labelKey) === "string"

@@ -55,6 +55,17 @@ export const DEFAULT_MOCK_SETTINGS: Readonly<MockSettings> = {
   update_checks_enabled: false,
   show_whats_new_on_update: false,
   whats_new_last_seen_version: null,
+  // Fresh install: the Brain is inherited by every feature, and nothing is configured yet.
+  brain_schema_v1: true,
+  brain_provider_id: "",
+  brain_base_url: "",
+  brain_model: "",
+  brain_token_set: false,
+  brain_source_composer: "inherit",
+  brain_source_realtime: "inherit",
+  brain_source_postprocess: "inherit",
+  brain_test_ack_host: "",
+  brain_transcript_consent_dest: "",
 };
 
 /**
@@ -69,6 +80,10 @@ function installTauriMockInPage(arg: MockInitArg): void {
     eventName: string;
     handlerId: number;
   }
+  interface RecordedCall {
+    command: string;
+    args: Record<string, unknown>;
+  }
   interface VoxMockWindow {
     __TAURI_INTERNALS__: unknown;
     __TAURI_OS_PLUGIN_INTERNALS__: unknown;
@@ -76,6 +91,7 @@ function installTauriMockInPage(arg: MockInitArg): void {
       setSetting: (key: string, value: unknown) => void;
       setCommand: (command: string, value: unknown) => void;
       emit: (eventName: string, payload: unknown) => void;
+      calls: RecordedCall[];
     };
   }
 
@@ -85,6 +101,8 @@ function installTauriMockInPage(arg: MockInitArg): void {
   const overrides: Record<string, unknown> = { ...arg.commands };
   const callbacks = new Map<number, (message: unknown) => void>();
   const listeners: Listener[] = [];
+  // Every invoke, in order. Read by getMockCalls.
+  const calls: RecordedCall[] = [];
   let nextId = 1;
 
   if (arg.storageThrows) {
@@ -101,6 +119,14 @@ function installTauriMockInPage(arg: MockInitArg): void {
     get_app_settings: () => clone(settings),
     get_default_settings: () => clone(defaults),
     get_app_dir_path: () => "/tmp/vox-test",
+    // Brain connection test and model listing: a healthy endpoint by default.
+    brain_test_connection: () => ({
+      ok: true,
+      kind: "Ok",
+      latency_ms: 1,
+      model_count: null,
+    }),
+    brain_fetch_models: () => [],
     get_available_models: () => [],
     list_personas: () => [],
     list_tts_voices: () => [],
@@ -209,6 +235,7 @@ function installTauriMockInPage(arg: MockInitArg): void {
     command: string,
     args: Record<string, unknown> = {},
   ): Promise<unknown> => {
+    calls.push({ command, args: clone(args) });
     if (command.startsWith("change_") && command.endsWith("_setting")) {
       return Promise.resolve(null);
     }
@@ -285,6 +312,7 @@ function installTauriMockInPage(arg: MockInitArg): void {
         callbacks.get(id)?.({ event: eventName, id: 0, payload });
       }
     },
+    calls,
   };
 }
 
@@ -367,4 +395,26 @@ export async function setMockSetting(
     },
     { k: key, v: value },
   );
+}
+
+/**
+ * The argument objects of every invoke of `command`, in call order. Each call is recorded
+ * even when the command resolves to null (change_* commands included).
+ */
+export async function getMockCalls(
+  page: Page,
+  command: string,
+): Promise<Record<string, unknown>[]> {
+  return page.evaluate((name) => {
+    const mock = (
+      window as unknown as {
+        __voxMock: {
+          calls: Array<{ command: string; args: Record<string, unknown> }>;
+        };
+      }
+    ).__voxMock;
+    return mock.calls
+      .filter((call) => call.command === name)
+      .map((call) => call.args);
+  }, command);
 }
