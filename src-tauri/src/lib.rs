@@ -6,6 +6,14 @@ pub mod audio_toolkit;
 mod autostart;
 mod catalog;
 mod chat_window;
+#[cfg(test)]
+mod orb_geometry_tests;
+#[cfg(test)]
+mod chat_presentation_tests;
+#[cfg(test)]
+mod window_policy_tests;
+#[cfg(test)]
+mod orb_settings_tests;
 mod chinese_script;
 pub mod cli;
 mod clipboard;
