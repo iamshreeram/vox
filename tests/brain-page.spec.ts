@@ -223,4 +223,41 @@ test.describe("Brain page", () => {
     await open(page, { ...FRESH, app_language: "de" });
     await expect(tid(page, "brain-page")).not.toContainText("settings.brain.");
   });
+
+  // The existing per-feature pages must not silently show fields that no longer apply.
+  test("16. Reply style on General says it uses the Brain (and links to it); hidden when it uses its own setup", async ({ page }) => {
+    await installTauriMock(page, { settings: LOCAL_CONSENTED });
+    await page.goto("/");
+    await expect(navItem(page, "General")).toBeVisible();
+    const notice = tid(page, "brain-notice-composer");
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText(/brain/i);
+    await notice.getByRole("button", { name: /open brain/i }).click();
+    await expect(section(page, "brain")).toBeVisible();
+  });
+
+  test("17. Reply style shows no Brain notice when the feature uses its own setup", async ({ page }) => {
+    await installTauriMock(page, { settings: { ...LOCAL_CONSENTED, brain_source_composer: "own" } });
+    await page.goto("/");
+    await expect(navItem(page, "General")).toBeVisible();
+    await expect(tid(page, "brain-notice-composer")).toHaveCount(0);
+  });
+
+  test("18. Post Process page and the real-time controls show their Brain notice", async ({ page }) => {
+    await installTauriMock(page, {
+      settings: { ...LOCAL_CONSENTED, post_process_enabled: true, experimental_enabled: true },
+    });
+    await page.goto("/");
+    await expect(tid(page, "brain-notice-realtime_stream")).toBeVisible();
+    await navItem(page, "Post Process").click();
+    await expect(tid(page, "brain-notice-post_process")).toBeVisible();
+  });
+
+  test("19. a notice offers 'Use own setup' which calls the command", async ({ page }) => {
+    await installTauriMock(page, { settings: LOCAL_CONSENTED });
+    await page.goto("/");
+    await tid(page, "brain-notice-composer").getByRole("button", { name: /own setup/i }).click();
+    const calls = await getMockCalls(page, "brain_use_for_feature");
+    expect(calls.at(-1)).toMatchObject({ feature: "composer", useBrain: false });
+  });
 });
