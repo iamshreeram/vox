@@ -23,6 +23,8 @@ mod job_runtime;
 mod llm_client;
 #[cfg(test)]
 mod orb_engine_tests;
+#[cfg(test)]
+mod orb_runtime_tests;
 mod orb_gaze;
 mod orb_geometry;
 #[cfg(test)]
