@@ -23,6 +23,8 @@ mod orb_geometry;
 mod orb_geometry_tests;
 #[cfg(test)]
 mod orb_settings_tests;
+#[cfg(test)]
+mod chat_surface_tests;
 mod window_commands;
 #[cfg(test)]
 mod window_policy_tests;
