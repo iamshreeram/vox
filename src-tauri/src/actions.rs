@@ -1691,7 +1691,7 @@ struct ChatWindowAction;
 
 impl ShortcutAction for ChatWindowAction {
     fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
-        let _ = crate::chat_window::toggle_chat_window(app);
+        let _ = crate::chat_surface::toggle(app);
     }
 
     fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}

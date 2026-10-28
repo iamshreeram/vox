@@ -81,7 +81,7 @@ pub fn change_converse_chat_open_on_start_setting(app: AppHandle, enabled: bool)
 #[tauri::command]
 #[specta::specta]
 pub async fn toggle_chat_window_command(app: AppHandle) -> Result<(), String> {
-    crate::chat_window::toggle_chat_window(&app).map_err(|err| err.to_string())
+    crate::chat_surface::toggle(&app).map_err(|err| err.to_string())
 }
 
 /// Sends one typed message to the conversation (DESIGN-TYPE Rev 4). The chat window is the only

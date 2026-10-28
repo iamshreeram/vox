@@ -1471,7 +1471,7 @@ impl Platform for RealPlatform {
         if let Some(tap) = self.chat_tap.as_ref() {
             tap.on_session_start();
         }
-        crate::chat_window::open_chat_window_on_session_start(&self.app);
+        crate::chat_surface::open_on_session_start(&self.app);
     }
 }
 

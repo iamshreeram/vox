@@ -297,7 +297,14 @@ fn hide_existing(app: &AppHandle, window: &WebviewWindow) {
             .unwrap_or(false);
         let tray_visible =
             settings::get_settings(app).show_tray_icon && !app.state::<CliArgs>().no_tray;
-        if !main_visible && tray_visible {
+        // The policy owner decides. This window has just been hidden, so it is not visible.
+        let policy = crate::activation_policy::desired(&crate::activation_policy::Inputs {
+            main_visible,
+            classic_chat_visible: false,
+            panel_needs_focus: false,
+            tray_present: tray_visible,
+        });
+        if policy == crate::activation_policy::Policy::Accessory {
             log_window_result(
                 "activation policy",
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory),
