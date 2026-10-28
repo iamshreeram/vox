@@ -31,6 +31,8 @@ mod orb_geometry_followup_tests;
 mod orb_geometry_tests;
 mod orb_gesture;
 mod orb_native;
+#[cfg(test)]
+mod orb_native_contracts_tests;
 mod orb_runtime;
 #[cfg(test)]
 mod orb_runtime_tests;

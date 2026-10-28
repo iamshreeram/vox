@@ -20,8 +20,9 @@ const ACTIVE_STATES: [&str; 4] = ["listening", "thinking", "speaking", "acting"]
 const ERROR_ENDS: [&str; 3] = ["not_configured", "audio_unavailable", "speech_stuck"];
 
 /// The face the orb shows for a conversation state and end reason. Mirrors `avatarFace` in
-/// `chatModel.ts`: an active state shows itself, any other state but idle shows idle, and idle
-/// shows sleep, or concerned after an error end.
+/// `chatModel.ts`: an active state shows itself, any other state but idle shows idle, and
+/// idle with no end shows idle, idle after a normal end shows sleep, and idle after an error end
+/// shows concerned.
 pub fn avatar_face(state: &str, end: Option<&str>) -> &'static str {
     if let Some(active) = ACTIVE_STATES.iter().copied().find(|s| *s == state) {
         return active;

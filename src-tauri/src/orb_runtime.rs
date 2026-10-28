@@ -12,6 +12,38 @@ use crate::orb_gesture::{GestureAction, GestureEngine, GestureEvent, GestureResu
 /// Gaze reach in logical pixels: a cursor this far from the orb centre looks fully to one side.
 pub const GAZE_REACH_LOGICAL: f64 = 500.0;
 
+/// Ticker interval while a gesture is active, in milliseconds.
+pub const GESTURE_TICK_MS: u64 = 16;
+
+/// Ticker interval while no gesture is active and no gaze is due, in milliseconds. Also the
+/// floor under reduced motion, where only a wake ends the wait.
+pub const IDLE_TICK_MS: u64 = 250;
+
+/// Ticker wait while the orb is hidden, in milliseconds. A wake still ends it early.
+pub const HIDDEN_WAIT_MS: u64 = 1_000;
+
+/// How long the ticker may sleep before its next pass, in milliseconds. An active gesture always
+/// ticks at `GESTURE_TICK_MS`, whatever the gaze or reduced-motion state. Otherwise a hidden orb
+/// waits `HIDDEN_WAIT_MS`, reduced motion waits at least `IDLE_TICK_MS`, and the gaze interval is
+/// honoured (or `IDLE_TICK_MS` when no gaze is due).
+pub fn tick_interval_ms(
+    gesture_active: bool,
+    gaze_interval: Option<u64>,
+    reduced_motion: bool,
+    visible: bool,
+) -> u64 {
+    if gesture_active {
+        return GESTURE_TICK_MS;
+    }
+    if !visible {
+        return HIDDEN_WAIT_MS;
+    }
+    if reduced_motion {
+        return IDLE_TICK_MS;
+    }
+    gaze_interval.unwrap_or(IDLE_TICK_MS)
+}
+
 /// Reports whether the primary mouse button is currently held.
 pub trait ButtonProbe {
     /// Whether the left button is down right now.

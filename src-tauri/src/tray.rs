@@ -68,6 +68,9 @@ struct MenuInputs {
     wake_word_enabled: bool,
     ambient_mode_enabled: bool,
     experimental_enabled: bool,
+    /// Floating orb is supported here (see `orb_native::floating_offered`). Unsupported systems
+    /// get no orb item.
+    orb_offered: bool,
 }
 
 /// Complete description of what the tray should look like.
@@ -398,6 +401,7 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             wake_word_enabled: settings.wake_word_enabled,
             ambient_mode_enabled: settings.ambient_mode_enabled,
             experimental_enabled: settings.experimental_enabled,
+            orb_offered: crate::orb_native::floating_offered(),
         },
     }
 }
@@ -733,6 +737,12 @@ fn build_menu(
         menu.insert(&separator()?, insert_at + 1)?;
     }
 
+    // The orb item is dropped where floating is unsupported. It is removed after the listening-mode
+    // group is inserted, so the insert indices above still match the full layout.
+    if !inputs.orb_offered {
+        menu.remove(&orb_i)?;
+    }
+
     // When update checks are forced off (e.g. HANDY_DISABLE_UPDATER, set by
     // the Nix package), the item is dropped from the menu rather than shown
     // disabled — it can never do anything in that case, and a disabled item
@@ -943,6 +953,7 @@ mod tests {
             wake_word_enabled: false,
             ambient_mode_enabled: false,
             experimental_enabled: true,
+            orb_offered: true,
         }
     }
 
@@ -1078,6 +1089,7 @@ mod update_available_item_tests {
             wake_word_enabled: false,
             ambient_mode_enabled: false,
             experimental_enabled: false,
+            orb_offered: true,
         }
     }
 

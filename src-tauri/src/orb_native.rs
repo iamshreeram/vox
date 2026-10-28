@@ -6,7 +6,7 @@
 //! Nothing here writes files or console output; logs name operations and errors only.
 
 use crate::chat_presentation::{
-    current_os, orb_should_show, LinuxBackend, PlatformEnv, ORB_VISIBLE_DEFAULT,
+    current_os, floating_supported, orb_should_show, LinuxBackend, PlatformEnv, ORB_VISIBLE_DEFAULT,
 };
 use crate::chat_surface;
 use crate::chat_window::{is_app_navigation, CHAT_WINDOW_LABEL};
@@ -17,8 +17,8 @@ use crate::orb_geometry::{
 };
 use crate::orb_gesture::GestureResult;
 use crate::orb_runtime::{
-    monitors_from_raw, orb_menu_items, ButtonProbe, CursorSource, GazeDriver, GestureDriver,
-    MenuEntry, OrbHost, RawMonitor,
+    monitors_from_raw, orb_menu_items, tick_interval_ms, ButtonProbe, CursorSource, GazeDriver,
+    GestureDriver, MenuEntry, OrbHost, RawMonitor,
 };
 use crate::orb_window::{orb_window_spec, ORB_WINDOW_LABEL};
 use crate::settings::{self, write_settings_gated, AppSettings};
@@ -26,7 +26,7 @@ use crate::show_main_window;
 use crate::tray_i18n::{get_tray_translations, TrayStrings};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
@@ -56,12 +56,6 @@ const ORB_ENTRY_URL: &str = "src/orb/index.html";
 /// Gap between the orb and the screen corner of the default position, in logical pixels.
 const DEFAULT_INSET_LOGICAL_PX: f64 = 20.0;
 
-/// Poll interval while a gesture is active, in milliseconds.
-const GESTURE_TICK_MS: u64 = 16;
-
-/// Poll interval while no gesture is active and no gaze is due, in milliseconds.
-const IDLE_TICK_MS: u64 = 250;
-
 /// How often the ticker compares the monitor list, in milliseconds.
 const MONITOR_CHECK_MS: u64 = 2_000;
 
@@ -81,25 +75,96 @@ tauri_panel! {
     })
 }
 
-/// Runtime state of the orb: the drivers, the reduced-motion flag and the ticker stop flag.
+/// Runtime state of the orb: the drivers, the reduced-motion flag and the running ticker.
 #[derive(Default)]
 pub struct OrbRuntime {
     gesture: GestureDriver,
     gaze: GazeDriver,
     reduced_motion: bool,
-    ticker_stop: Option<Arc<AtomicBool>>,
+    ticker: Option<Arc<TickerSignal>>,
 }
 
-/// The orb runtime as managed by Tauri. The lock is held only for pure driver calls.
-pub struct OrbRuntimeCell(Mutex<OrbRuntime>);
+/// The orb runtime as managed by Tauri. The lock is held only for pure driver calls. The atomic
+/// records whether the orb window is shown: it is set on the main thread and read by the ticker,
+/// which therefore never calls a window or panel method to find out.
+pub struct OrbRuntimeCell(Mutex<OrbRuntime>, AtomicBool);
 
 impl OrbRuntimeCell {
+    /// A runtime with nothing running and the orb hidden.
+    fn new() -> Self {
+        Self(Mutex::new(OrbRuntime::default()), AtomicBool::new(false))
+    }
+
     /// Locks the runtime. A poisoned lock is recovered, since the state is plain data.
     fn lock(&self) -> MutexGuard<'_, OrbRuntime> {
         self.0
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+
+    /// Whether the orb window is shown.
+    fn shown(&self) -> bool {
+        self.1.load(Ordering::SeqCst)
+    }
+
+    /// Records whether the orb window is shown.
+    fn set_shown(&self, shown: bool) {
+        self.1.store(shown, Ordering::SeqCst);
+    }
+}
+
+/// Stop and wake signal of one ticker thread. The ticker sleeps on it between passes, so a press
+/// or a stop ends the sleep at once instead of after a fixed interval.
+struct TickerSignal {
+    stop: AtomicBool,
+    pending: Mutex<bool>,
+    cvar: Condvar,
+}
+
+impl TickerSignal {
+    fn new() -> Self {
+        Self {
+            stop: AtomicBool::new(false),
+            pending: Mutex::new(false),
+            cvar: Condvar::new(),
+        }
+    }
+
+    /// Whether this ticker has been told to stop.
+    fn is_stopped(&self) -> bool {
+        self.stop.load(Ordering::SeqCst)
+    }
+
+    /// Tells the ticker to stop and wakes it so it can exit.
+    fn request_stop(&self) {
+        self.stop.store(true, Ordering::SeqCst);
+        self.wake();
+    }
+
+    /// Ends the ticker's current or next wait early.
+    fn wake(&self) {
+        *lock_pending(&self.pending) = true;
+        self.cvar.notify_all();
+    }
+
+    /// Waits until woken or until `timeout` passes, then clears the wake.
+    fn wait(&self, timeout: Duration) {
+        let mut pending = lock_pending(&self.pending);
+        if !*pending {
+            pending = match self.cvar.wait_timeout(pending, timeout) {
+                Ok((guard, _)) => guard,
+                Err(poisoned) => poisoned.into_inner().0,
+            };
+        }
+        *pending = false;
+    }
+}
+
+/// Locks the wake flag of a ticker. A poisoned lock is recovered, since the flag is plain data.
+fn lock_pending(pending: &Mutex<bool>) -> MutexGuard<'_, bool> {
+    pending
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Current pointer and orb geometry, read before the runtime lock is taken.
@@ -207,7 +272,7 @@ fn now_ms() -> u64 {
 /// Makes sure the runtime state is managed before it is used.
 fn ensure_runtime(app: &AppHandle) {
     if app.try_state::<OrbRuntimeCell>().is_none() {
-        app.manage(OrbRuntimeCell(Mutex::new(OrbRuntime::default())));
+        app.manage(OrbRuntimeCell::new());
     }
 }
 
@@ -346,7 +411,9 @@ pub fn apply_visibility(app: &AppHandle) {
 fn apply_on_main(app: &AppHandle) {
     ensure_runtime(app);
     let settings = settings::get_settings(app);
-    if !orb_should_show(settings.orb_visible, &current_env()) {
+    let env = current_env();
+    record_platform_offer(app, &env);
+    if !orb_should_show(settings.orb_visible, &env) {
         hide_orb(app);
         return;
     }
@@ -367,6 +434,7 @@ fn apply_on_main(app: &AppHandle) {
     apply_geometry(&window, rect);
     show_orb(app, &window);
     if let Some(cell) = app.try_state::<OrbRuntimeCell>() {
+        cell.set_shown(true);
         let mut rt = cell.lock();
         let reduced = rt.reduced_motion;
         rt.gaze.set_visible(true);
@@ -375,19 +443,60 @@ fn apply_on_main(app: &AppHandle) {
     start_ticker(app);
 }
 
+/// Remembers whether floating is blocked on this system. When that changes the tray is resynced,
+/// so its orb item follows. Runs on the main thread.
+fn record_platform_offer(app: &AppHandle, env: &PlatformEnv) {
+    let blocked = floating_supported(env).is_err();
+    let previous = FLOATING_BLOCKED.swap(blocked, Ordering::SeqCst);
+    if previous != blocked {
+        crate::tray::sync_tray(app);
+    }
+}
+
+/// Whether the tray should offer the orb item: false where floating is unsupported, as found by
+/// the last main-thread apply. Reads only an atomic, so the tray may call it from any thread.
+pub fn floating_offered() -> bool {
+    !FLOATING_BLOCKED.load(Ordering::SeqCst)
+}
+
+/// Floating is blocked on this system, as recorded by the last main-thread apply.
+static FLOATING_BLOCKED: AtomicBool = AtomicBool::new(false);
+
 /// Hides the orb: cancels any gesture, stops the ticker and hides the window.
 fn hide_orb(app: &AppHandle) {
+    stop_orb(app);
+    hide_window(app);
+}
+
+/// Cancels any gesture (emitting Cancel, never a toggle), stops the ticker and marks the orb as
+/// not shown. Does not touch the window.
+fn stop_orb(app: &AppHandle) {
     let mut calls = Recorder::new(None, 1.0);
     if let Some(cell) = app.try_state::<OrbRuntimeCell>() {
+        cell.set_shown(false);
         let mut rt = cell.lock();
-        if let Some(stop) = rt.ticker_stop.take() {
-            stop.store(true, Ordering::SeqCst);
+        if let Some(ticker) = rt.ticker.take() {
+            ticker.request_stop();
         }
         rt.gesture.cancel(&mut calls);
         rt.gaze.set_visible(false);
     }
     execute(app, calls.calls);
-    hide_window(app);
+}
+
+/// The orb window was destroyed: a gesture in progress is cancelled, never completed.
+fn on_destroyed(app: &AppHandle) {
+    cancel_gesture(app);
+    stop_orb(app);
+}
+
+/// Cancels the gesture in progress, if any. Emits Cancel and never toggles the chat.
+fn cancel_gesture(app: &AppHandle) {
+    let mut calls = Recorder::new(None, 1.0);
+    if let Some(cell) = app.try_state::<OrbRuntimeCell>() {
+        cell.lock().gesture.cancel(&mut calls);
+    }
+    execute(app, calls.calls);
 }
 
 /// Places the orb window at `rect` in physical pixels: size first, then position.
@@ -522,13 +631,12 @@ fn attach(app: &AppHandle) {
         return;
     };
     let geometry_app = app.clone();
-    window.on_window_event(move |event| {
-        if matches!(
-            event,
-            WindowEvent::Moved(_) | WindowEvent::ScaleFactorChanged { .. }
-        ) {
+    window.on_window_event(move |event| match event {
+        WindowEvent::Moved(_) | WindowEvent::ScaleFactorChanged { .. } => {
             on_geometry_event(&geometry_app);
         }
+        WindowEvent::Destroyed => on_destroyed(&geometry_app),
+        _ => {}
     });
     let menu_app = app.clone();
     window.on_menu_event(move |_window, event| handle_menu(&menu_app, event.id.as_ref()));
@@ -573,85 +681,82 @@ fn hide_window(app: &AppHandle) {
     }
 }
 
-/// Whether the orb window is visible right now.
-#[cfg(target_os = "macos")]
-fn orb_is_visible(app: &AppHandle) -> bool {
-    app.get_webview_panel(ORB_WINDOW_LABEL)
-        .map(|panel| panel.is_visible())
-        .unwrap_or(false)
-}
-
-/// Whether the orb window is visible right now.
-#[cfg(not(target_os = "macos"))]
-fn orb_is_visible(app: &AppHandle) -> bool {
-    app.get_webview_window(ORB_WINDOW_LABEL)
-        .and_then(|window| window.is_visible().ok())
-        .unwrap_or(false)
-}
-
 /// Starts the ticker thread. A ticker already running is told to stop first.
 fn start_ticker(app: &AppHandle) {
-    let stop = Arc::new(AtomicBool::new(false));
+    let signal = Arc::new(TickerSignal::new());
     if let Some(cell) = app.try_state::<OrbRuntimeCell>() {
         let mut rt = cell.lock();
-        if let Some(old) = rt.ticker_stop.replace(stop.clone()) {
-            old.store(true, Ordering::SeqCst);
+        if let Some(old) = rt.ticker.replace(signal.clone()) {
+            old.request_stop();
         }
     }
     let ticker_app = app.clone();
     if let Err(e) = thread::Builder::new()
         .name("orb-ticker".into())
-        .spawn(move || run_ticker(ticker_app, stop))
+        .spawn(move || run_ticker(ticker_app, signal))
     {
         log::warn!("orb ticker not started: {e}");
     }
 }
 
 /// The ticker loop: reads the pointer, steps the drivers, carries out their calls, and re-fits
-/// the orb when the monitor list changes. Exits when stopped, when the orb is hidden or when the
-/// runtime is gone.
-fn run_ticker(app: AppHandle, stop: Arc<AtomicBool>) {
-    let mut last_monitors = monitors_for(&app);
+/// the orb when the monitor list changes. It reads only the shown flag, never a window or panel
+/// call to learn whether the orb is visible. Under reduced motion with no gesture it reads no
+/// pointer or window state and only waits for a wake. Exits when stopped, when the orb is hidden
+/// or when the runtime is gone.
+fn run_ticker(app: AppHandle, signal: Arc<TickerSignal>) {
+    let Some(cell) = app.try_state::<OrbRuntimeCell>() else {
+        return;
+    };
+    let mut last_monitors: Option<Vec<MonitorInfo>> = None;
     let mut last_check_ms = now_ms();
     loop {
-        if stop.load(Ordering::SeqCst) || !orb_is_visible(&app) {
+        if signal.is_stopped() || !cell.shown() {
             break;
         }
-        let frame = read_frame(&app);
-        let now = now_ms();
-        let active = gesture_active(&app);
-        let down = active && left_button_down(&app);
-        let mut calls = Recorder::new(frame.orb, frame.scale);
-        let interval = match app.try_state::<OrbRuntimeCell>() {
-            Some(cell) => {
-                let mut rt = cell.lock();
-                if active {
-                    rt.gesture
-                        .step(now, &Down(down), &Snapshot(frame.cursor), &mut calls);
-                }
-                rt.gaze.step(now, &Snapshot(frame.cursor), &mut calls);
-                rt.gaze.next_interval_ms(now)
-            }
-            None => break,
+        let (active, reduced) = {
+            let rt = cell.lock();
+            (rt.gesture.is_active(), rt.reduced_motion)
         };
-        execute(&app, calls.calls);
-        if now.saturating_sub(last_check_ms) >= MONITOR_CHECK_MS {
-            last_check_ms = now;
-            let monitors = monitors_for(&app);
-            if monitors != last_monitors {
-                last_monitors = monitors;
-                if !gesture_active(&app) {
+        if active || !reduced {
+            let frame = read_frame(&app);
+            let now = now_ms();
+            let down = active && left_button_down(&app);
+            let mut calls = Recorder::new(frame.orb, frame.scale);
+            {
+                let mut rt = cell.lock();
+                rt.gesture
+                    .step(now, &Down(down), &Snapshot(frame.cursor), &mut calls);
+                rt.gaze.step(now, &Snapshot(frame.cursor), &mut calls);
+            }
+            execute(&app, calls.calls);
+            if now.saturating_sub(last_check_ms) >= MONITOR_CHECK_MS {
+                last_check_ms = now;
+                let monitors = monitors_for(&app);
+                let changed = last_monitors.as_ref().is_some_and(|prev| *prev != monitors);
+                last_monitors = Some(monitors);
+                if changed {
+                    if gesture_active(&app) {
+                        cancel_gesture(&app);
+                    }
                     fit_orb(&app);
                 }
             }
         }
-        let pause = if active {
-            GESTURE_TICK_MS
-        } else {
-            interval.unwrap_or(IDLE_TICK_MS)
-        };
-        thread::sleep(Duration::from_millis(pause));
+        signal.wait(Duration::from_millis(next_wait_ms(&cell)));
     }
+}
+
+/// How long the ticker may sleep before its next pass, from the runtime state.
+fn next_wait_ms(cell: &OrbRuntimeCell) -> u64 {
+    let now = now_ms();
+    let rt = cell.lock();
+    tick_interval_ms(
+        rt.gesture.is_active(),
+        rt.gaze.next_interval_ms(now),
+        rt.reduced_motion,
+        true,
+    )
 }
 
 /// Carries out the calls the drivers recorded, in order.
@@ -723,17 +828,24 @@ fn save_position(app: &AppHandle, final_orb: Rect) {
     }
 }
 
-/// Starts a gesture for a press with id `id`, from the page.
+/// Starts a gesture for a press with id `id`, from the page. Wakes the ticker so the first
+/// gesture tick does not wait out its idle sleep.
 pub fn pointer_down(app: &AppHandle, id: u64) {
     let frame = read_frame(app);
     let Some(cell) = app.try_state::<OrbRuntimeCell>() else {
         return;
     };
     let mut calls = Recorder::new(frame.orb, frame.scale);
-    cell.lock()
-        .gesture
-        .pointer_down(id, now_ms(), &Snapshot(frame.cursor), &mut calls);
+    let ticker = {
+        let mut rt = cell.lock();
+        rt.gesture
+            .pointer_down(id, now_ms(), &Snapshot(frame.cursor), &mut calls);
+        rt.ticker.clone()
+    };
     execute(app, calls.calls);
+    if let Some(signal) = ticker {
+        signal.wake();
+    }
 }
 
 /// Keyboard activation: toggles the conversation surface.
@@ -741,12 +853,18 @@ pub fn activate(app: &AppHandle) {
     toggle_chat(app);
 }
 
-/// Records the page's reduced-motion preference.
+/// Records the page's reduced-motion preference. Wakes the ticker so a change takes effect at once.
 pub fn set_reduced_motion(app: &AppHandle, reduced: bool) {
     if let Some(cell) = app.try_state::<OrbRuntimeCell>() {
-        let mut rt = cell.lock();
-        rt.reduced_motion = reduced;
-        rt.gaze.set_reduced_motion(reduced);
+        let ticker = {
+            let mut rt = cell.lock();
+            rt.reduced_motion = reduced;
+            rt.gaze.set_reduced_motion(reduced);
+            rt.ticker.clone()
+        };
+        if let Some(signal) = ticker {
+            signal.wake();
+        }
     }
 }
 
@@ -905,6 +1023,6 @@ fn linux_button_down_on_main() -> bool {
     let Some(root) = gtk::gdk::Screen::default().and_then(|screen| screen.root_window()) else {
         return false;
     };
-    let (_, _, mask) = root.device_position(&pointer);
+    let (_, _, _, mask) = root.device_position(&pointer);
     mask.contains(gtk::gdk::ModifierType::BUTTON1_MASK)
 }
