@@ -37,6 +37,8 @@ pub mod brain;
 mod brain_store_tests;
 #[cfg(test)]
 mod brain_tests;
+#[cfg(test)]
+mod first_run_tests;
 pub mod chat_log;
 #[cfg(test)]
 mod chat_log_tests;

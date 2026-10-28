@@ -34,6 +34,7 @@
     "test:settings-placement-search": "bun src/components/settings/settingsPlacementSearch.test.ts",
     "test:models-page": "bun src/components/settings/modelsPagePlacement.test.ts",
     "test:model-row": "bun src/components/settings/models/modelRow.test.tsx",
+    "test:first-run": "bun src/components/onboarding/firstRunFlow.test.ts",
     "test:models-ia": "bun src/components/settings/modelsPageIa.test.ts",
     "test:composer-form": "bun src/components/settings/composerForm.test.ts",
     "test:converse-form": "bun src/components/settings/converseForm.test.ts",
