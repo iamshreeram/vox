@@ -442,3 +442,22 @@ fn reconcile_asks_for_the_difference_on_the_current_generation() {
     assert_eq!(reconcile(true, false, 4, 4), Some(OrbAction::Show));
     assert_eq!(reconcile(false, true, 4, 4), Some(OrbAction::Hide));
 }
+
+/// Validator round 1 (A9-2 precedence): an explicit show by the user (Pin) beats the session's
+/// own hide, so tray Hide followed by tray Show must never be undone by the executor.
+#[test]
+fn pin_after_user_hid_makes_the_orb_wanted_again_and_reconcile_keeps_it() {
+    let mut m = started_at(SID, 0);
+    m.user_hid();
+    assert!(!m.desired_orb_visible(true, true), "hidden while user_hid");
+    m.pin();
+    assert!(
+        m.desired_orb_visible(true, true),
+        "pin clears the session hide"
+    );
+    let g = m.generation();
+    assert_eq!(
+        reconcile(m.desired_orb_visible(true, true), true, g, g),
+        None
+    );
+}

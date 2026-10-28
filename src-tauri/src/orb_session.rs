@@ -124,6 +124,8 @@ impl SessionMachine {
     pub fn pin(&mut self) {
         self.transient_shown = false;
         self.pinned = true;
+        // An explicit show beats the session's own hide (tray Hide, then tray Show).
+        self.user_hidden = false;
         self.bump();
     }
 
