@@ -64,9 +64,10 @@ test.describe("Orb page", () => {
     await expect(orb(page)).toHaveAttribute("tabindex", "0");
     const label = await orb(page).getAttribute("aria-label");
     expect((label ?? "").length).toBeGreaterThan(0);
+    // G3d deliberate change: the orb never shows the dim sleep face, so the boot face is idle.
     await expect(orb(page).locator(".vox-avatar")).toHaveAttribute(
       "data-face",
-      "sleep",
+      "idle",
     );
     expect(await getMockCalls(page, "orb_get_state")).toHaveLength(1);
     await expect
@@ -109,7 +110,8 @@ test.describe("Orb page", () => {
       seq: 4,
       kind: { type: "state", state: "idle", end: "user_ended" },
     });
-    await expect(face).toHaveAttribute("data-face", "sleep");
+    // G3d deliberate change: a normal end shows idle on the orb page (never the dim sleep face).
+    await expect(face).toHaveAttribute("data-face", "idle");
   });
 
   test("hovering lifts the orb", async ({ page }) => {

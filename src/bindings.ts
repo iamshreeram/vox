@@ -2171,10 +2171,18 @@ async changeOrbVisibleSetting(enabled: boolean) : Promise<void> {
     await TAURI_INVOKE("change_orb_visible_setting", { enabled });
 },
 /**
- * Stores the orb size preset and resizes the orb at once.
+ * Stores the orb size preset and resizes the orb at once. Kept for older callers; the preset is
+ * written through the same setter as the free size.
  */
 async changeOrbSizeSetting(size: OrbSize) : Promise<void> {
     await TAURI_INVOKE("change_orb_size_setting", { size });
+},
+/**
+ * Stores the free orb size in logical pixels (clamped to 48..=192; `None` returns to the
+ * preset) and resizes the orb at once. Main window only.
+ */
+async changeOrbSizePxSetting(px: number | null) : Promise<void> {
+    await TAURI_INVOKE("change_orb_size_px_setting", { px });
 },
 /**
  * Stores the chat presentation choice. `None` returns to the platform default.
@@ -2635,9 +2643,13 @@ chat_presentation?: Presentation | null;
  */
 orb_visible?: boolean | null; 
 /**
- * Orb size preset.
+ * Orb size preset. Kept in step with `orb_size_px` (the nearest preset) so downgrades work.
  */
 orb_size?: OrbSize; 
+/**
+ * Free orb size in logical pixels (48 to 192). `None` uses the `orb_size` preset.
+ */
+orb_size_px?: number | null; 
 /**
  * Last saved orb position. `None` until the orb has been placed.
  */

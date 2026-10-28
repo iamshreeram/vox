@@ -185,18 +185,79 @@ pub fn monitor_for(point: (f64, f64), monitors: &[MonitorInfo]) -> Option<&Monit
     best.map(|(m, _)| m)
 }
 
+/// Smallest free orb size, in logical pixels.
+pub const ORB_PX_MIN: u16 = 48;
+/// Largest free orb size, in logical pixels.
+pub const ORB_PX_MAX: u16 = 192;
+
+/// Orb edge length of a size preset, in whole logical pixels.
+pub fn preset_px(size: OrbSize) -> u16 {
+    match size {
+        OrbSize::Small => 72,
+        OrbSize::Medium => 96,
+        OrbSize::Large => 128,
+    }
+}
+
 /// Orb edge length in logical pixels for a size preset.
 pub fn orb_logical_px(size: OrbSize) -> f64 {
-    match size {
-        OrbSize::Small => 72.0,
-        OrbSize::Medium => 96.0,
-        OrbSize::Large => 128.0,
+    f64::from(preset_px(size))
+}
+
+/// A free orb size clamped to `[ORB_PX_MIN, ORB_PX_MAX]`.
+pub fn clamp_orb_px(px: u16) -> u16 {
+    px.clamp(ORB_PX_MIN, ORB_PX_MAX)
+}
+
+/// The orb edge in logical pixels: the clamped free size when set, else the preset.
+pub fn effective_orb_logical_px(size: OrbSize, px: Option<u16>) -> f64 {
+    match px {
+        Some(value) => f64::from(clamp_orb_px(value)),
+        None => orb_logical_px(size),
     }
+}
+
+/// The preset nearest to a free size: Small up to 84, Medium up to 112, Large above.
+pub fn nearest_preset(px: u16) -> OrbSize {
+    if px <= 84 {
+        OrbSize::Small
+    } else if px <= 112 {
+        OrbSize::Medium
+    } else {
+        OrbSize::Large
+    }
+}
+
+/// Orb edge length in physical pixels for a logical length at `scale`, rounded to a whole pixel.
+pub fn orb_px_logical(logical_px: f64, scale: f64) -> f64 {
+    (logical_px * sane_scale(scale)).round()
 }
 
 /// Orb edge length in physical pixels at `scale`, rounded to a whole pixel.
 pub fn orb_px(size: OrbSize, scale: f64) -> f64 {
-    (orb_logical_px(size) * sane_scale(scale)).round()
+    orb_px_logical(orb_logical_px(size), scale)
+}
+
+/// Resizes a square orb to `new_side` (physical pixels) about its centre, then moves it into
+/// `work`. The side is first limited to the work area (each axis separately). A non-finite or
+/// non-positive `new_side` keeps the current width.
+pub fn resize_keep_center(rect: Rect, new_side: f64, work: Rect) -> Rect {
+    let rect = sanitize_rect(rect);
+    let work = sanitize_rect(work);
+    let side = if new_side.is_finite() && new_side > 0.0 {
+        new_side
+    } else {
+        rect.w
+    };
+    let w = side.min(work.w);
+    let h = side.min(work.h);
+    let (cx, cy) = rect.center();
+    Rect {
+        x: clamp_axis(cx - w / 2.0, work.x, work.right() - w),
+        y: clamp_axis(cy - h / 2.0, work.y, work.bottom() - h),
+        w,
+        h,
+    }
 }
 
 /// Classifies a press by how far the pointer moved (physical pixels) at `scale`.
@@ -292,6 +353,15 @@ pub fn restore_position(
     size: OrbSize,
     monitors: &[MonitorInfo],
 ) -> Option<Rect> {
+    restore_position_px(saved, orb_logical_px(size), monitors)
+}
+
+/// [`restore_position`] for an orb whose logical edge is `logical_px` (a free size or a preset).
+pub fn restore_position_px(
+    saved: &OrbPosition,
+    logical_px: f64,
+    monitors: &[MonitorInfo],
+) -> Option<Rect> {
     let usable: Vec<MonitorInfo> = monitors.iter().filter(|m| is_usable(m)).cloned().collect();
     let monitor = usable
         .iter()
@@ -299,7 +369,7 @@ pub fn restore_position(
         .or_else(|| usable.iter().find(|m| m.name == saved.monitor_name))
         .or_else(|| usable.iter().find(|m| m.primary))
         .or_else(|| usable.first())?;
-    let side = orb_px(size, monitor.scale);
+    let side = orb_px_logical(logical_px, monitor.scale);
     let work = sanitize_rect(monitor.work);
     let cx = work.x + unit_fraction(saved.fx) * work.w;
     let cy = work.y + unit_fraction(saved.fy) * work.h;

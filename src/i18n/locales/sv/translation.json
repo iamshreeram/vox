@@ -1498,7 +1498,10 @@
         "description": "How big the orb is.",
         "small": "Small",
         "medium": "Medium",
-        "large": "Large"
+        "large": "Large",
+        "valueLabel": "{{px}} px",
+        "presets": "Size presets",
+        "reset": "Reset size"
       },
       "resetPosition": {
         "title": "Reset orb position",

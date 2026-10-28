@@ -140,6 +140,25 @@ export function keyCommand(event: {
   return null;
 }
 
+/**
+ * The face the orb page shows for a conversation face. The dim `sleep` face (a normal end of a
+ * conversation) is shown as `idle`: a resting orb must stay visible on dark backgrounds. The
+ * chat window keeps its own mapping (`avatarFace`). Any unknown face is `idle`.
+ */
+export function orbFace(face: string): string {
+  switch (face) {
+    case "idle":
+    case "concerned":
+    case "listening":
+    case "thinking":
+    case "speaking":
+    case "acting":
+      return face;
+    default:
+      return "idle";
+  }
+}
+
 /** The face view: the latest accepted `state` event of converse-chat. */
 export interface FaceView {
   seq: number;
