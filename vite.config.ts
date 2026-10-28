@@ -24,6 +24,7 @@ export default defineConfig(async () => ({
         main: resolve(__dirname, "index.html"),
         overlay: resolve(__dirname, "src/overlay/index.html"),
         chat: resolve(__dirname, "src/chat/index.html"),
+        orb: resolve(__dirname, "src/orb/index.html"),
       },
     },
   },

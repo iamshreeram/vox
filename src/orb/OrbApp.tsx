@@ -1,0 +1,240 @@
+// Vox orb page: the small always-on-top orb window (DESIGN.md Rev 5, 'Frontend').
+// It only reads the conversation face and sends gestures to the native side, which decides
+// drag, click, menu and activation. The commands used here are fixed names, invoked directly
+// (they are not in bindings.ts yet). Rejections are swallowed: the page logs nothing.
+import { useEffect, useReducer, useRef, useState } from "react";
+import type {
+  CSSProperties,
+  KeyboardEvent,
+  MouseEvent,
+  PointerEvent,
+} from "react";
+import { useTranslation } from "react-i18next";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import VoxAvatar from "../chat/VoxAvatar";
+import { accentStyle } from "../chat/chatTheme";
+import { avatarFace, type AvatarFace } from "../chat/chatModel";
+import {
+  GAZE_MAX_UNITS,
+  GLINT_MS,
+  POUNCE_MS,
+  faceFromEvent,
+  gazeOffset,
+  initialFaceView,
+  initialOrbState,
+  isPrimaryPress,
+  keyCommand,
+  nextGlintDelay,
+  orbClasses,
+  orbReducer,
+  type FaceView,
+} from "./orbModel";
+
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+const FACES: readonly AvatarFace[] = [
+  "idle",
+  "listening",
+  "thinking",
+  "acting",
+  "speaking",
+  "sleep",
+  "concerned",
+];
+
+/** Fire-and-forget native command: a rejection is ignored on purpose. */
+function send(command: string, args?: Record<string, unknown>): void {
+  invoke(command, args).catch(() => undefined);
+}
+
+/** Unknown or missing faces fall back to idle. */
+function toFace(value: unknown): AvatarFace {
+  const face = FACES.find((candidate) => candidate === value);
+  return face ?? "idle";
+}
+
+function fieldOf(payload: unknown, name: string): unknown {
+  if (typeof payload !== "object" || payload === null) return undefined;
+  return (payload as Record<string, unknown>)[name];
+}
+
+function toPoint(payload: unknown): { x: number; y: number } | null {
+  const x = fieldOf(payload, "x");
+  const y = fieldOf(payload, "y");
+  return typeof x === "number" && typeof y === "number" ? { x, y } : null;
+}
+
+function toGesture(payload: unknown): { id: number; result: string } | null {
+  const id = fieldOf(payload, "id");
+  const result = fieldOf(payload, "result");
+  return typeof id === "number" && typeof result === "string"
+    ? { id, result }
+    : null;
+}
+
+export default function OrbApp() {
+  const { t } = useTranslation();
+  const [state, dispatch] = useReducer(orbReducer, initialOrbState);
+  const [gaze, setGaze] = useState({ x: "0", y: "0" });
+  // Refs survive the StrictMode double mount, so ids and the initial fetch are counted once.
+  const faceRef = useRef<FaceView>(initialFaceView());
+  const pressCounterRef = useRef(0);
+  const reducedRef = useRef(false);
+  const fetchedRef = useRef(false);
+
+  const reducedMotion = state.reducedMotion;
+  const pouncing = state.pouncing;
+
+  useEffect(() => {
+    let disposed = false;
+    const cleanups: Array<() => void> = [];
+
+    const query = window.matchMedia(REDUCED_MOTION_QUERY);
+    const applyReduced = (on: boolean): void => {
+      reducedRef.current = on;
+      dispatch({ type: "reducedMotion", on });
+      // Reduced motion holds the orb centred: a gaze already applied must not stay off-centre.
+      if (on) setGaze({ x: "0", y: "0" });
+      send("orb_set_reduced_motion", { reduced: on });
+    };
+    applyReduced(query.matches);
+    const onQueryChange = (event: MediaQueryListEvent): void => {
+      applyReduced(event.matches);
+    };
+    query.addEventListener("change", onQueryChange);
+    cleanups.push(() => query.removeEventListener("change", onQueryChange));
+
+    if (!fetchedRef.current) {
+      fetchedRef.current = true;
+      invoke("orb_get_state")
+        .then((payload: unknown) => {
+          // Only before any conversation event: a live event always wins over the snapshot.
+          if (faceRef.current.seq === 0) {
+            dispatch({ type: "face", face: toFace(fieldOf(payload, "face")) });
+          }
+        })
+        .catch(() => undefined);
+    }
+
+    const subscribe = (pending: Promise<UnlistenFn>): void => {
+      pending
+        .then((unlisten) => {
+          if (disposed) unlisten();
+          else cleanups.push(unlisten);
+        })
+        .catch(() => undefined);
+    };
+
+    subscribe(
+      listen<unknown>("converse-chat", (event) => {
+        const next = faceFromEvent(faceRef.current, event.payload);
+        if (next === faceRef.current) return;
+        faceRef.current = next;
+        dispatch({ type: "face", face: avatarFace(next.state, next.end) });
+      }),
+    );
+
+    subscribe(
+      listen<unknown>("orb-gaze", (event) => {
+        if (reducedRef.current) return;
+        const point = toPoint(event.payload);
+        if (point === null) return;
+        // gazeOffset clamps each axis; dividing back gives the normalised value for CSS.
+        const { dx, dy } = gazeOffset(point);
+        setGaze({
+          x: String(dx / GAZE_MAX_UNITS),
+          y: String(dy / GAZE_MAX_UNITS),
+        });
+      }),
+    );
+
+    subscribe(
+      listen<unknown>("orb-gesture", (event) => {
+        const gesture = toGesture(event.payload);
+        if (gesture === null) return;
+        dispatch({ type: "gesture", id: gesture.id, result: gesture.result });
+      }),
+    );
+
+    return () => {
+      disposed = true;
+      for (const cleanup of cleanups) cleanup();
+    };
+  }, []);
+
+  // A click pounce lasts POUNCE_MS.
+  useEffect(() => {
+    if (!pouncing) return undefined;
+    const timer = setTimeout(() => dispatch({ type: "pounceEnd" }), POUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [pouncing]);
+
+  // Random glints (A6) for as long as reduced motion is off.
+  useEffect(() => {
+    if (reducedMotion) return undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleGlint = (): void => {
+      timer = setTimeout(() => {
+        dispatch({ type: "glint", on: true });
+        timer = setTimeout(() => {
+          dispatch({ type: "glint", on: false });
+          scheduleGlint();
+        }, GLINT_MS);
+      }, nextGlintDelay(Math.random));
+    };
+    scheduleGlint();
+    return () => {
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [reducedMotion]);
+
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
+    if (!isPrimaryPress(event)) return;
+    pressCounterRef.current += 1;
+    const id = pressCounterRef.current;
+    dispatch({ type: "down", id });
+    // If the native side does not take the press (for example in a browser preview), cancel it
+    // locally so the orb does not stay in the grabbing state.
+    invoke("orb_pointer_down", { id }).catch(() =>
+      dispatch({ type: "gesture", id, result: "cancel" }),
+    );
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const onContextMenu = (event: MouseEvent<HTMLDivElement>): void => {
+    event.preventDefault();
+    send("orb_menu");
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    const command = keyCommand(event);
+    if (command === null) return;
+    event.preventDefault();
+    send(command === "activate" ? "orb_activate" : "orb_menu");
+  };
+
+  const classes = ["orb-root", ...orbClasses(state)].join(" ");
+  const style = {
+    ...accentStyle(state.face),
+    "--gaze-x": gaze.x,
+    "--gaze-y": gaze.y,
+  } as CSSProperties;
+
+  return (
+    <div
+      data-testid="orb"
+      role="button"
+      tabIndex={0}
+      aria-label={t("orb.label")}
+      className={classes}
+      style={style}
+      onPointerDown={onPointerDown}
+      onPointerEnter={() => dispatch({ type: "hover", on: true })}
+      onPointerLeave={() => dispatch({ type: "hover", on: false })}
+      onContextMenu={onContextMenu}
+      onKeyDown={onKeyDown}
+    >
+      <VoxAvatar face={state.face} />
+    </div>
+  );
+}

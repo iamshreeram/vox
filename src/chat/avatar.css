@@ -1,0 +1,200 @@
+/* Vox orb avatar: shared by the conversation window (chat.css imports this file) and the orb page (src/orb).
+   Transform and opacity only. Reduced motion is switched off by the global block in chat.css and by orb.css. */
+
+.vox-avatar {
+  display: block;
+  flex: none;
+  width: 148px;
+  height: 148px;
+  overflow: visible;
+  color: var(--chat-accent);
+}
+
+.vox-glow {
+  fill: url(#vox-glow-fill);
+  opacity: 0.9;
+}
+
+.vox-ring {
+  fill: none;
+  stroke: var(--chat-accent);
+  stroke-width: 1.2;
+  opacity: 0.45;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.vox-ring-1 {
+  opacity: 0.6;
+}
+
+.vox-arc {
+  fill: none;
+  stroke: var(--chat-accent);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-dasharray: 64 350;
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: 80px 80px;
+}
+
+.vox-dots {
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: 80px 80px;
+}
+
+.vox-dots circle {
+  fill: var(--chat-accent);
+}
+
+.vox-body-group {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: vox-breathe 5.2s ease-in-out infinite;
+}
+
+.vox-body {
+  filter: drop-shadow(
+    0 0 10px color-mix(in srgb, var(--chat-accent) 35%, transparent)
+  );
+}
+
+.vox-shine {
+  fill: #fff8dc;
+  opacity: 0.55;
+}
+
+/* Per-face motion (transform/opacity only; reduced motion disables all of it) */
+
+.vox-avatar[data-face="idle"] .vox-ring {
+  opacity: 0.4;
+}
+
+.vox-avatar[data-face="idle"] .vox-body-group {
+  animation-duration: 6s;
+}
+
+.vox-avatar[data-face="listening"] .vox-ring {
+  animation: vox-ripple 2.4s ease-out infinite;
+}
+
+.vox-avatar[data-face="listening"] .vox-ring-2 {
+  animation-delay: 0.8s;
+}
+
+.vox-avatar[data-face="listening"] .vox-ring-3 {
+  animation-delay: 1.6s;
+}
+
+.vox-avatar[data-face="thinking"] .vox-dots {
+  opacity: 1;
+  animation: vox-orbit 3.2s linear infinite;
+}
+
+.vox-avatar[data-face="acting"] .vox-arc {
+  opacity: 1;
+  animation: vox-orbit 2.2s linear infinite;
+}
+
+.vox-avatar[data-face="speaking"] .vox-body-group {
+  animation: vox-speak 0.9s ease-in-out infinite;
+}
+
+.vox-avatar[data-face="speaking"] .vox-ring {
+  animation: vox-ring-pulse 0.9s ease-in-out infinite;
+}
+
+.vox-avatar[data-face="speaking"] .vox-ring-2 {
+  animation-delay: 0.15s;
+}
+
+.vox-avatar[data-face="speaking"] .vox-ring-3 {
+  animation-delay: 0.3s;
+}
+
+.vox-avatar[data-face="sleep"] {
+  opacity: 0.55;
+}
+
+.vox-avatar[data-face="sleep"] .vox-body-group {
+  animation: vox-breathe 8s ease-in-out infinite;
+}
+
+.vox-avatar[data-face="sleep"] .vox-ring {
+  opacity: 0.2;
+}
+
+.vox-avatar[data-face="concerned"] {
+  animation: vox-tremble 0.5s steps(2, end) infinite;
+}
+
+.vox-avatar[data-face="concerned"] .vox-glow {
+  opacity: 0.4;
+}
+
+.vox-avatar[data-face="concerned"] .vox-body-group {
+  filter: saturate(0.6) brightness(0.9);
+}
+
+@keyframes vox-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.025);
+  }
+}
+
+@keyframes vox-ripple {
+  0% {
+    transform: scale(0.86);
+    opacity: 0.75;
+  }
+  100% {
+    transform: scale(1.14);
+    opacity: 0;
+  }
+}
+
+@keyframes vox-ring-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.8;
+  }
+}
+
+@keyframes vox-speak {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+@keyframes vox-orbit {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes vox-tremble {
+  0% {
+    transform: translateX(-1.5px);
+  }
+  100% {
+    transform: translateX(1.5px);
+  }
+}
