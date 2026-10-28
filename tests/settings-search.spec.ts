@@ -94,7 +94,7 @@ test.describe("Settings search: navigation and reveal", () => {
     page,
   }) => {
     // Outgoing page (Post Process) has a row titled "Model"; the destination
-    // (Models > Reply style) has another row titled "Model".
+    // (General > Conversation, where Reply style lives) has another row titled "Model".
     await installTauriMock(page, {
       settings: {
         post_process_enabled: true,
@@ -110,18 +110,18 @@ test.describe("Settings search: navigation and reveal", () => {
     await searchBox(page).fill("model");
     await options(page)
       .filter({ hasText: "Model" })
-      .filter({ hasText: "Reply style" })
+      .filter({ hasText: "Conversation" })
       .first()
       .click();
 
-    await expect(section(page, "models")).toBeVisible();
+    await expect(section(page, "general")).toBeVisible();
     await expect(highlighted(page)).toHaveCount(1);
     await expect(highlighted(page)).toHaveAttribute(
       "data-setting-title",
       "Model",
     );
     await expect(
-      section(page, "models").locator(`.${HIGHLIGHT_CLASS}`),
+      section(page, "general").locator(`.${HIGHLIGHT_CLASS}`),
     ).toHaveCount(1);
     await expect(highlighted(page)).toBeInViewport();
   });
@@ -568,7 +568,7 @@ test.describe("Settings search: controls moved into Models and General", () => {
   const en = translation("en");
   const label = (key: string): string => textAt(en, key);
 
-  test("(13) a smart turn result opens the Smart turn model group and highlights its row", async ({
+  test("(13) a smart turn result opens the Voice detection group and highlights its row", async ({
     page,
   }) => {
     await installTauriMock(page, { settings: { experimental_enabled: true } });
@@ -581,13 +581,13 @@ test.describe("Settings search: controls moved into Models and General", () => {
       .click();
 
     await expect(section(page, "models")).toBeVisible();
-    const group = page.locator('[data-group-id="smartTurn"]');
+    const group = page.locator('[data-group-id="vadEngine"]');
     await expect(group).toHaveCount(1);
     await expect(group.locator(`.${HIGHLIGHT_CLASS}`)).toHaveCount(1);
     await expect(highlighted(page)).toHaveCount(1);
   });
 
-  test("(14) a speaker filter result opens the Speaker filter model group", async ({
+  test("(14) a speaker filter result opens the Voice detection group", async ({
     page,
   }) => {
     await installTauriMock(page, { settings: { experimental_enabled: true } });
@@ -600,7 +600,7 @@ test.describe("Settings search: controls moved into Models and General", () => {
       .click();
 
     await expect(section(page, "models")).toBeVisible();
-    const group = page.locator('[data-group-id="speakerFilter"]');
+    const group = page.locator('[data-group-id="vadEngine"]');
     await expect(group).toHaveCount(1);
     await expect(group.locator(`.${HIGHLIGHT_CLASS}`)).toHaveCount(1);
   });
@@ -631,7 +631,7 @@ test.describe("Settings search: controls moved into Models and General", () => {
     }
   });
 
-  test("(16) with Experimental off, language, translation and unload timeout are found on Models and no gated group exists", async ({
+  test("(16) with Experimental off, language, translation and unload timeout are found on Models and only the always-visible groups exist", async ({
     page,
   }) => {
     await installTauriMock(page);
@@ -664,15 +664,19 @@ test.describe("Settings search: controls moved into Models and General", () => {
     }
     await navItem(page, "Models").click();
 
-    // The gated groups are absent from the DOM while the switch is off.
-    await expect(
-      section(page, "models").locator("[data-group-id]"),
-    ).toHaveCount(0);
+    // Only the always-visible groups render while the switch is off.
+    const models = section(page, "models");
+    await expect(models.locator("[data-group-id]")).toHaveCount(3);
+    for (const id of ["sttModels", "spokenReplies", "vadEngine"]) {
+      await expect(models.locator(`[data-group-id="${id}"]`)).toHaveCount(1);
+    }
     await navItem(page, "General").click();
     await expect(section(page, "general")).toBeVisible();
-    await expect(
-      section(page, "general").locator("[data-group-id]"),
-    ).toHaveCount(0);
+    const general = section(page, "general");
+    await expect(general.locator("[data-group-id]")).toHaveCount(1);
+    await expect(general.locator('[data-group-id="conversation"]')).toHaveCount(
+      1,
+    );
   });
 
   test("(17) a stalled model catalog does not hide the unload timeout or break its reveal", async ({
@@ -704,6 +708,41 @@ test.describe("Settings search: controls moved into Models and General", () => {
     await expect(highlighted(page)).toHaveAttribute(
       "data-setting-title",
       label("settings.advanced.modelUnload.title"),
+    );
+  });
+});
+
+test.describe("Settings search: collapsed Speech-to-text group", () => {
+  const en = translation("en");
+  const label = (key: string): string => textAt(en, key);
+
+  test("(18) searching for unload opens a collapsed Speech-to-text group and highlights its row", async ({
+    page,
+  }) => {
+    await installTauriMock(page);
+    await page.goto("/");
+    await navItem(page, "Models").click();
+    await expect(section(page, "models")).toBeVisible();
+
+    const group = page.locator('[data-group-id="sttModels"]');
+    const header = group.locator("button[aria-expanded]").first();
+    await expect(header).toHaveAttribute("aria-expanded", "true");
+    await header.click();
+    await expect(header).toHaveAttribute("aria-expanded", "false");
+
+    const unloadKey = "settings.advanced.modelUnload.title";
+    await searchBox(page).fill("unload");
+    await options(page)
+      .filter({ hasText: label(unloadKey) })
+      .first()
+      .click();
+
+    await expect(section(page, "models")).toBeVisible();
+    await expect(header).toHaveAttribute("aria-expanded", "true");
+    await expect(group.locator(`.${HIGHLIGHT_CLASS}`)).toHaveCount(1);
+    await expect(highlighted(page)).toHaveAttribute(
+      "data-setting-title",
+      label(unloadKey),
     );
   });
 });

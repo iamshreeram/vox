@@ -236,11 +236,10 @@
       "title": "Transskriptionsmodeller",
       "transcriptionHeading": "Transcription models",
       "groups": {
-        "loading": "Model loading",
-        "smartTurn": "Smart turn model",
-        "speakerFilter": "Speaker filter model",
         "replyStyle": "Reply style",
-        "vadEngine": "Voice activity detection engine"
+        "speechToText": "Speech-to-text",
+        "textToSpeech": "Text-to-speech",
+        "voiceDetection": "Voice detection"
       },
       "description": "Vælg en transskriptionsmodel, eller download flere modeller. Forskellige modeller tilbyder varierende niveauer af nøjagtighed og hastighed.",
       "searchPlaceholder": "Søg efter modeller ved navn…",
@@ -518,7 +517,6 @@
         "clearFailedToast": "Could not clear the conversation history."
       },
       "tts": {
-        "groupTitle": "Spoken replies",
         "label": "Spoken Replies",
         "description": "Speaks agent replies and short confirmation or failure phrases aloud. Spoken output is audible to anyone nearby. Speech is paused while you are recording and never plays into your microphone on purpose.",
         "voiceLabel": "Voice",

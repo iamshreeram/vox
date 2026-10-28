@@ -25,7 +25,7 @@ const scenarios: Record<string, () => void> = {
       /import \{ ModelSettingsCard \} from "\.\/ModelSettingsCard"/,
     );
     assert.match(models, /ModelUnloadTimeoutSetting/);
-    assert.ok(models.includes('"settings.models.groups.loading"'));
+    assert.ok(models.includes('"settings.models.groups.speechToText"'));
     assert.ok(modelsJsx.includes("<ModelSettingsCard"));
     assert.ok(modelsJsx.includes("<ModelUnloadTimeoutSetting"));
     assert.ok(modelsJsx.includes('<PlacedGroups section="models"'));

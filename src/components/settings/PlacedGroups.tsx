@@ -4,8 +4,8 @@ import { CollapsibleSettingsGroup } from "../ui/CollapsibleSettingsGroup";
 import { useSettings } from "../../hooks/useSettings";
 import { PLACED_RENDERERS } from "./placedRenderers";
 import {
-  groupsForSection,
   visibleControls,
+  visibleGroups,
   type ControlFlag,
   type ControlId,
   type PlacedSection,
@@ -20,8 +20,8 @@ interface PlacedGroupsViewProps {
   t: (key: string) => string;
 }
 
-// Presentational: renders the placed groups of one section. Renders nothing while
-// the Experimental gate is off, so the moved controls stay hidden as before.
+// Presentational: renders the placed groups of one section. Experimental groups
+// render only while the Experimental switch is on; the rest always render.
 export const PlacedGroupsView: React.FC<PlacedGroupsViewProps> = ({
   section,
   experimentalEnabled,
@@ -29,8 +29,7 @@ export const PlacedGroupsView: React.FC<PlacedGroupsViewProps> = ({
   render,
   t,
 }) => {
-  if (experimentalEnabled !== true) return null;
-  const groups = groupsForSection(section);
+  const groups = visibleGroups(section, experimentalEnabled);
   if (groups.length === 0) return null;
 
   return (
@@ -45,9 +44,21 @@ export const PlacedGroupsView: React.FC<PlacedGroupsViewProps> = ({
           }
           defaultOpen={group.defaultOpen}
         >
-          {visibleControls(group, flags).map((id) => (
-            <React.Fragment key={id}>{render[id]()}</React.Fragment>
-          ))}
+          {visibleControls(group, flags, experimentalEnabled).map((id) => {
+            const subTitleKey = group.controls.find(
+              (entry) => entry.id === id,
+            )?.subTitleKey;
+            return (
+              <React.Fragment key={id}>
+                {subTitleKey ? (
+                  <div className="px-4 pt-3 pb-1 text-xs font-medium uppercase tracking-wide text-mid-gray">
+                    {t(subTitleKey)}
+                  </div>
+                ) : null}
+                {render[id]()}
+              </React.Fragment>
+            );
+          })}
         </CollapsibleSettingsGroup>
       ))}
     </>

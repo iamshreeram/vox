@@ -102,6 +102,8 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
   {
     id: "models.language",
     section: "models",
+    groupId: "sttModels",
+    groupKey: "settings.models.groups.speechToText",
     labelKey: "settings.general.language.title",
     descriptionKey: "settings.general.language.description",
     keywords: [
@@ -115,6 +117,8 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
   {
     id: "models.translateToEnglish",
     section: "models",
+    groupId: "sttModels",
+    groupKey: "settings.models.groups.speechToText",
     labelKey: "settings.advanced.translateToEnglish.label",
     descriptionKey: "settings.advanced.translateToEnglish.description",
     keywords: ["translation", "english", "translate", "foreign language"],
@@ -250,7 +254,8 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
   {
     id: "models.modelUnload",
     section: "models",
-    groupKey: "settings.models.groups.loading",
+    groupId: "sttModels",
+    groupKey: "settings.models.groups.speechToText",
     labelKey: "settings.advanced.modelUnload.title",
     descriptionKey: "settings.advanced.modelUnload.description",
     keywords: ["memory", "gpu memory", "ram", "idle", "free memory", "timeout"],

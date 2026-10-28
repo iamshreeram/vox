@@ -13,10 +13,11 @@ import { PlacedGroupsView } from "./PlacedGroups";
 import { SETTINGS_SECTION_IDS, resolveSectionAlias } from "./agentToolsForm";
 import { shouldFallBackToGeneral } from "../sectionGate";
 
-// The 27 gated controls: the 21 that the old Experimental page rendered (18 from its layout
+// The 27 placed controls: the 21 that the old Experimental page rendered (18 from its layout
 // list plus conversationMemory, agentTools, codingJobs) and six that used to be buried
 // inside the one big "Spoken replies" control (reply style, conversation, persona, latency
-// panel, smart turn, speaker filter) and are now placed on their own.
+// panel, smart turn, speaker filter) and are now placed on their own. Nine of the 27 sit in
+// always-visible groups (P1); the other 18 stay behind the Experimental switch.
 const ALL_CONTROLS: ControlId[] = [
   "postProcessing",
   "keyboardImplementation",
@@ -49,13 +50,7 @@ const ALL_CONTROLS: ControlId[] = [
 
 // Group ids that existed before the split. They are persisted verbatim in
 // localStorage open-state keys, so every one of them must survive unchanged.
-const NEW_GROUP_IDS = [
-  "vadEngine",
-  "smartTurn",
-  "speakerFilter",
-  "replyStyle",
-  "conversation",
-];
+const NEW_GROUP_IDS = ["vadEngine", "conversation"];
 const LEGACY_GROUP_IDS = [
   "engine",
   "voiceCommands",
@@ -64,7 +59,6 @@ const LEGACY_GROUP_IDS = [
   "agentBridge",
   "acpAgent",
   "spokenReplies",
-  "realtime",
   "conversationMemory",
   "agentTools",
   "codingJobs",
@@ -119,14 +113,7 @@ const scenarios: Record<string, () => void> = {
       "listening",
       "conversation",
     ]);
-    assert.deepEqual(ids("models"), [
-      "vadEngine",
-      "spokenReplies",
-      "smartTurn",
-      "speakerFilter",
-      "replyStyle",
-      "realtime",
-    ]);
+    assert.deepEqual(ids("models"), ["spokenReplies", "vadEngine"]);
     assert.deepEqual(ids("advanced"), ["engine"]);
     assert.deepEqual(ids("agents"), [
       "acpAgent",
@@ -144,14 +131,14 @@ const scenarios: Record<string, () => void> = {
       "tts",
       "smartTurn",
       "speakerFilter",
-      "replyStyle",
-      "realtime",
     ] as ControlId[]) {
       assert.equal(sec(id), "models", id);
     }
     for (const id of [
       "conversation",
       "persona",
+      "replyStyle",
+      "realtime",
       "latencyPanel",
     ] as ControlId[]) {
       assert.equal(placementOf(id).section, "general", id);
@@ -189,12 +176,12 @@ const scenarios: Record<string, () => void> = {
     }
     assert.equal(placementOf("vadBackend").groupId, "vadEngine");
     assert.equal(placementOf("tts").groupId, "spokenReplies");
-    assert.equal(placementOf("realtime").groupId, "realtime");
-    assert.equal(placementOf("smartTurn").groupId, "smartTurn");
-    assert.equal(placementOf("speakerFilter").groupId, "speakerFilter");
-    assert.equal(placementOf("replyStyle").groupId, "replyStyle");
+    assert.equal(placementOf("realtime").groupId, "conversation");
+    assert.equal(placementOf("smartTurn").groupId, "vadEngine");
+    assert.equal(placementOf("speakerFilter").groupId, "vadEngine");
+    assert.equal(placementOf("replyStyle").groupId, "conversation");
   },
-  "every legacy group id is retained, only the five listed ids are new": () => {
+  "every legacy group id is retained, only the listed ids are new": () => {
     const ids = PLACED_GROUPS.map((g) => g.id);
     assert.equal(new Set(ids).size, ids.length, "group ids are unique");
     assert.deepEqual(
@@ -203,10 +190,10 @@ const scenarios: Record<string, () => void> = {
     );
     for (const id of NEW_GROUP_IDS) assert.ok(ids.includes(id), id);
   },
-  "only the engine group is open by default": () => {
+  "only the Text-to-speech and engine groups are open by default": () => {
     assert.deepEqual(
       PLACED_GROUPS.filter((g) => g.defaultOpen).map((g) => g.id),
-      ["engine"],
+      ["spokenReplies", "engine"],
     );
   },
   "every group has a non-empty translation title key": () => {
@@ -262,11 +249,22 @@ const scenarios: Record<string, () => void> = {
       "agentContext",
     ]);
   },
-  "gate off: no moved group renders in any destination section": () => {
-    for (const s of SECTIONS) {
-      assert.equal(markup(s, false), "", s);
-    }
-  },
+  "gate off: only the always-visible groups render, in their own section":
+    () => {
+      for (const s of SECTIONS) {
+        const html = markup(s, false);
+        for (const g of PLACED_GROUPS) {
+          const expected = g.section === s && !g.experimental ? 1 : 0;
+          assert.equal(
+            count(html, `data-group-id="${g.id}"`),
+            expected,
+            `${s}/${g.id}`,
+          );
+        }
+      }
+      assert.equal(markup("advanced", false), "");
+      assert.equal(markup("agents", false), "");
+    },
   "gate on: each expected group renders exactly once, and no other section's":
     () => {
       for (const s of SECTIONS) {
@@ -298,17 +296,31 @@ const scenarios: Record<string, () => void> = {
       assert.equal(count(html, `data-ctl="${id}"`), 1, id);
     }
   },
+  "experimental controls inside an ungated group follow the switch": () => {
+    const off = markup("general", false);
+    const on = markup("general", true);
+    for (const id of ["realtime", "latencyPanel"]) {
+      assert.equal(count(off, `data-ctl="${id}"`), 0, `${id} off`);
+      assert.equal(count(on, `data-ctl="${id}"`), 1, `${id} on`);
+    }
+    for (const id of ["replyStyle", "conversation", "persona"]) {
+      assert.equal(count(off, `data-ctl="${id}"`), 1, `${id} off`);
+    }
+    assert.equal(
+      count(off, 'data-group-id="conversation"'),
+      1,
+      "the Conversation group itself stays ungated",
+    );
+  },
   "titles go through the injected translator": () => {
     const html = markup("models", true);
-    assert.ok(html.includes("T:settings.advanced.tts.groupTitle"));
-    assert.ok(html.includes("T:settings.experimental.realtime.title"));
-    for (const key of [
-      "settings.models.groups.smartTurn",
-      "settings.models.groups.speakerFilter",
-      "settings.models.groups.replyStyle",
-    ]) {
-      assert.ok(html.includes(`T:${key}`), key);
-    }
+    assert.ok(html.includes("T:settings.models.groups.textToSpeech"));
+    assert.ok(html.includes("T:settings.models.groups.voiceDetection"));
+    assert.ok(
+      markup("general", false).includes(
+        "T:settings.general.groups.conversation",
+      ),
+    );
     assert.ok(
       markup("general", true).includes(
         "T:settings.general.groups.conversation",

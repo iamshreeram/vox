@@ -37,6 +37,10 @@ export type ControlFlag = "memoryEnabled" | "agentBridgeEnabled";
 export interface ControlEntry {
   id: ControlId;
   when?: ControlFlag;
+  /** Sub-heading shown above the control when its group holds several controls. */
+  subTitleKey?: string;
+  /** True when this control alone renders only while the Experimental switch is on (default false). */
+  experimental?: boolean;
 }
 
 export interface PlacedGroup {
@@ -45,17 +49,21 @@ export interface PlacedGroup {
   titleKey: string;
   descriptionKey?: string;
   defaultOpen: boolean;
+  /** True when the group only renders while the Experimental switch is on. */
+  experimental: boolean;
   controls: readonly ControlEntry[];
 }
 
-// Group ids are persisted verbatim in localStorage open-state keys, so every
-// legacy id is kept unchanged. Only "vadEngine" is new.
+// Group ids are persisted verbatim in localStorage open-state keys, so the ids
+// that survive keep their old names. "smartTurn", "speakerFilter", "replyStyle"
+// and "realtime" are no longer groups; their controls moved into the groups below.
 export const PLACED_GROUPS: readonly PlacedGroup[] = [
   {
     id: "voiceCommands",
     section: "general",
     titleKey: "settings.experimental.groups.voiceCommands",
     defaultOpen: false,
+    experimental: true,
     controls: [
       { id: "voiceCommands" },
       { id: "voiceShortcuts" },
@@ -68,6 +76,7 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
     titleKey: "settings.advanced.listeningMode.title",
     descriptionKey: "settings.advanced.listeningMode.description",
     defaultOpen: false,
+    experimental: true,
     controls: [{ id: "wakeWord" }, { id: "ambientMode" }],
   },
   {
@@ -75,59 +84,45 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
     section: "general",
     titleKey: "settings.general.groups.conversation",
     defaultOpen: false,
+    experimental: false,
     controls: [
       { id: "conversation" },
       { id: "persona" },
-      { id: "latencyPanel" },
+      { id: "replyStyle", subTitleKey: "settings.models.groups.replyStyle" },
+      {
+        id: "realtime",
+        subTitleKey: "settings.experimental.realtime.title",
+        experimental: true,
+      },
+      { id: "latencyPanel", experimental: true },
     ],
-  },
-  {
-    id: "vadEngine",
-    section: "models",
-    titleKey: "settings.models.groups.vadEngine",
-    defaultOpen: false,
-    controls: [{ id: "vadBackend" }],
   },
   {
     id: "spokenReplies",
     section: "models",
-    titleKey: "settings.advanced.tts.groupTitle",
-    defaultOpen: false,
+    titleKey: "settings.models.groups.textToSpeech",
+    defaultOpen: true,
+    experimental: false,
     controls: [{ id: "tts" }],
   },
   {
-    id: "smartTurn",
+    id: "vadEngine",
     section: "models",
-    titleKey: "settings.models.groups.smartTurn",
+    titleKey: "settings.models.groups.voiceDetection",
     defaultOpen: false,
-    controls: [{ id: "smartTurn" }],
-  },
-  {
-    id: "speakerFilter",
-    section: "models",
-    titleKey: "settings.models.groups.speakerFilter",
-    defaultOpen: false,
-    controls: [{ id: "speakerFilter" }],
-  },
-  {
-    id: "replyStyle",
-    section: "models",
-    titleKey: "settings.models.groups.replyStyle",
-    defaultOpen: false,
-    controls: [{ id: "replyStyle" }],
-  },
-  {
-    id: "realtime",
-    section: "models",
-    titleKey: "settings.experimental.realtime.title",
-    defaultOpen: false,
-    controls: [{ id: "realtime" }],
+    experimental: false,
+    controls: [
+      { id: "vadBackend" },
+      { id: "smartTurn" },
+      { id: "speakerFilter" },
+    ],
   },
   {
     id: "engine",
     section: "advanced",
     titleKey: "settings.experimental.groups.engine",
     defaultOpen: true,
+    experimental: true,
     controls: [
       { id: "postProcessing" },
       { id: "keyboardImplementation" },
@@ -140,6 +135,7 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
     section: "agents",
     titleKey: "settings.experimental.groups.acpAgent",
     defaultOpen: false,
+    experimental: true,
     controls: [{ id: "acpAgent" }],
   },
   {
@@ -147,6 +143,7 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
     section: "agents",
     titleKey: "settings.experimental.groups.agentBridge",
     defaultOpen: false,
+    experimental: true,
     controls: [
       { id: "agentBridge" },
       { id: "agentContext" },
@@ -159,6 +156,7 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
     titleKey: "settings.experimental.groups.agentTools",
     descriptionKey: "settings.experimental.agentTools.groupDescription",
     defaultOpen: false,
+    experimental: true,
     controls: [{ id: "agentTools" }],
   },
   {
@@ -167,6 +165,7 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
     titleKey: "settings.experimental.groups.codingJobs",
     descriptionKey: "settings.experimental.jobs.groupDescription",
     defaultOpen: false,
+    experimental: true,
     controls: [{ id: "codingJobs" }],
   },
   {
@@ -174,6 +173,7 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
     section: "agents",
     titleKey: "settings.experimental.groups.memory",
     defaultOpen: false,
+    experimental: true,
     controls: [
       { id: "memoryToggle" },
       { id: "memoryFacts", when: "memoryEnabled" },
@@ -185,6 +185,7 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
     titleKey: "settings.experimental.groups.conversationMemory",
     descriptionKey: "settings.experimental.conversationMemory.groupDescription",
     defaultOpen: false,
+    experimental: true,
     controls: [{ id: "conversationMemory" }],
   },
 ];
@@ -192,6 +193,16 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
 /** Groups rendered on one page, in declaration order. */
 export function groupsForSection(section: PlacedSection): PlacedGroup[] {
   return PLACED_GROUPS.filter((group) => group.section === section);
+}
+
+/** Groups of one page that render now: experimental groups only while the switch is on. */
+export function visibleGroups(
+  section: PlacedSection,
+  experimentalEnabled: boolean,
+): PlacedGroup[] {
+  return groupsForSection(section).filter(
+    (group) => !group.experimental || experimentalEnabled,
+  );
 }
 
 /** The section and group that hold a control. */
@@ -207,12 +218,26 @@ export function placementOf(id: ControlId): {
   throw new Error(`control ${id} is not placed in any group`);
 }
 
-/** Control ids of a group that should render for the given feature flags, in order. */
+/**
+ * Control ids of a group that should render for the given feature flags, in order.
+ * Controls marked `experimental` render only while `experimentalEnabled` is true.
+ */
 export function visibleControls(
   group: PlacedGroup,
   flags: { memoryEnabled: boolean; agentBridgeEnabled: boolean },
+  experimentalEnabled = true,
 ): ControlId[] {
   return group.controls
     .filter((entry) => entry.when === undefined || flags[entry.when])
+    .filter((entry) => experimentalEnabled || entry.experimental !== true)
     .map((entry) => entry.id);
+}
+
+/** The placed control entry for an id, or undefined when it is not placed. */
+export function controlEntryOf(id: ControlId): ControlEntry | undefined {
+  for (const group of PLACED_GROUPS) {
+    const entry = group.controls.find((candidate) => candidate.id === id);
+    if (entry !== undefined) return entry;
+  }
+  return undefined;
 }
