@@ -197,6 +197,25 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
     pageOnly: true,
   },
 
+  // ---------- Brain (page only: its rows are reached through the page) ----------
+  {
+    id: "brain.page",
+    section: "brain",
+    labelKey: "sidebar.brain",
+    keywords: [
+      "llm",
+      "ollama",
+      "lm studio",
+      "openai",
+      "api key",
+      "token",
+      "endpoint",
+      "model",
+      "brain",
+    ],
+    pageOnly: true,
+  },
+
   // ---------- Advanced ----------
   {
     id: "advanced.startHidden",
@@ -671,6 +690,26 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
  * Each reason names the control kind so a reviewer can verify it.
  */
 export const CORE_EXCLUDED: Readonly<Record<string, string>> = {
+  // Brain page rows: the page itself is the search target (brain.page), so its rows are not
+  // indexed one by one.
+  "settings.brain.endpoint.title":
+    "group title of the Brain page; the page entry brain.page leads there",
+  "settings.brain.test.title":
+    "group title of the Brain connection test; the page entry brain.page leads there",
+  "settings.brain.feature.title":
+    "group title of the Brain feature list; the page entry brain.page leads there",
+  "settings.brain.endpoint.provider.title":
+    "row on the Brain page; the page entry brain.page leads there",
+  "settings.brain.endpoint.quickFill.title":
+    "row on the Brain page; the page entry brain.page leads there",
+  "settings.brain.endpoint.baseUrl.title":
+    "row on the Brain page; the page entry brain.page leads there",
+  "settings.brain.token.title":
+    "row on the Brain page; the page entry brain.page leads there",
+  "settings.brain.model.title":
+    "row on the Brain page; the page entry brain.page leads there",
+  "settings.brain.consent.title":
+    "title of the consent dialog that opens from the Brain page; not a setting",
   "settings.modelSettings.title":
     'card title is templated with the active model name ("{{model}} Settings"), so it has no stable text to search or show; its rows are indexed directly under the General page',
   "settings.general.shortcut.title":
@@ -700,6 +739,42 @@ export const CORE_EXCLUDED: Readonly<Record<string, string>> = {
  * produce; `ids: []` requires a note explaining why nothing there is a row.
  */
 export const CORE_DYNAMIC: readonly DynamicFamily[] = [
+  {
+    source: "src/components/settings/brain/BrainTestGroup.tsx",
+    prefix: "settings.brain.test.",
+    ids: [],
+    note: "outcome message of one connection test, chosen by the result kind; a result, not a setting",
+  },
+  {
+    source: "src/components/settings/brain/BrainEndpointGroup.tsx",
+    prefix: "settings.brain.providers.",
+    ids: [],
+    note: "service names in the Brain provider list; a choice in an existing row, not a searchable setting",
+  },
+  {
+    source: "src/components/settings/brain/BrainEndpointGroup.tsx",
+    prefix: "settings.brain.endpoint.quickFill.",
+    ids: [],
+    note: "quick-fill button captions for local servers; actions, not searchable setting rows",
+  },
+  {
+    source: "src/components/settings/brain/BrainEndpointGroup.tsx",
+    prefix: "settings.brain.endpoint.urlError.",
+    ids: [],
+    note: "inline address error messages, shown only after an invalid address; not searchable settings",
+  },
+  {
+    source: "src/components/settings/brain/BrainFeatureGroup.tsx",
+    prefix: "settings.brain.feature.",
+    ids: [],
+    note: "feature names on the Brain page cards; the page entry brain.page leads there",
+  },
+  {
+    source: "src/components/settings/brain/BrainFeatureGroup.tsx",
+    prefix: "settings.brain.state.",
+    ids: [],
+    note: "status text of a feature card, which changes with the setup; not a setting",
+  },
   {
     source: "src/components/settings/GlobalShortcutInput.tsx",
     prefix: `${SHORTCUT_BINDING_PREFIX}.`,

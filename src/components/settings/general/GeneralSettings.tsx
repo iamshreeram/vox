@@ -13,13 +13,17 @@ import { VolumeSlider } from "../VolumeSlider";
 import { MuteWhileRecording } from "../MuteWhileRecording";
 import { ThemeSelector } from "../ThemeSelector";
 import { PlacedGroups } from "../PlacedGroups";
+import { BrainNotice } from "../brain/BrainNotice";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
-  const { audioFeedbackEnabled } = useSettings();
+  const { audioFeedbackEnabled, getSetting } = useSettings();
+  const experimentalEnabled = getSetting("experimental_enabled") === true;
   const isLinux = type() === "linux";
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
+      <BrainNotice feature="composer" />
+      {experimentalEnabled && <BrainNotice feature="realtime_stream" />}
       <SettingsGroup title={t("settings.general.title")}>
         <ShortcutInput shortcutId="transcribe" grouped={true} />
         <ShortcutActivationSetting descriptionMode="tooltip" grouped={true} />

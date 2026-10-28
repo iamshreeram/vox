@@ -6,6 +6,7 @@ export type SearchSection =
   | "general"
   | "history"
   | "models"
+  | "brain"
   | "advanced"
   | "postprocessing"
   | "agents"

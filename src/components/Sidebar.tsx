@@ -2,6 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import {
   Bot,
+  Brain,
   Cog,
   FlaskConical,
   History,
@@ -22,6 +23,7 @@ import {
   PostProcessingSettings,
   ModelsSettings,
   AgentsSettings,
+  BrainSettings,
 } from "./settings";
 import { SettingsSearchBox } from "./settings/search/SettingsSearchBox";
 import { cancelReveal } from "./settings/search/settingsReveal";
@@ -66,6 +68,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.models",
     icon: Cpu,
     component: ModelsSettings,
+    enabled: () => true,
+  },
+  brain: {
+    labelKey: "sidebar.brain",
+    icon: Brain,
+    component: BrainSettings,
     enabled: () => true,
   },
   advanced: {

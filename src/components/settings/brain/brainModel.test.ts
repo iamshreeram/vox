@@ -85,7 +85,10 @@ assert.equal(isLoopbackUrl("garbage"), false);
 // destination label never carries credentials or query
 assert.equal(destinationLabel("https://api.openai.com/v1"), "api.openai.com");
 assert.equal(destinationLabel("http://127.0.0.1:11434/v1"), "127.0.0.1:11434");
-assert.equal(destinationLabel("https://u:p@h.com:8443/v1?key=abc"), "h.com:8443");
+assert.equal(
+  destinationLabel("https://u:p@h.com:8443/v1?key=abc"),
+  "h.com:8443",
+);
 assert.equal(destinationLabel("garbage"), "");
 
 // destination key mirrors Rust `destination()`
@@ -101,17 +104,27 @@ assert.equal(
   destinationKey("custom", "http://localhost:11434/v1"),
   "custom|http://localhost:11434/v1",
 );
-assert.ok(!destinationKey("custom", "https://u:p@h.com/v1?key=abc").includes("abc"));
+assert.ok(
+  !destinationKey("custom", "https://u:p@h.com/v1?key=abc").includes("abc"),
+);
 
 // configState
 assert.equal(configState(s({ brain_provider_id: "" })), "unconfigured");
-assert.equal(configState(s({ brain_provider_id: "anthropic" })), "unconfigured");
+assert.equal(
+  configState(s({ brain_provider_id: "anthropic" })),
+  "unconfigured",
+);
 assert.equal(configState(s({ brain_base_url: "" })), "unconfigured");
 assert.equal(configState(s({ brain_base_url: "ftp://x" })), "unconfigured");
 assert.equal(configState(s({ brain_model: "  " })), "unconfigured");
 assert.equal(configState(s({})), "ready", "loopback needs no token");
 assert.equal(
-  configState(s({ brain_base_url: "https://api.example.com/v1", brain_provider_id: "openai" })),
+  configState(
+    s({
+      brain_base_url: "https://api.example.com/v1",
+      brain_provider_id: "openai",
+    }),
+  ),
   "needs_token",
 );
 assert.equal(
@@ -135,27 +148,59 @@ assert.deepEqual(featureView(consented, "composer"), {
 });
 assert.equal(featureView(s({}), "composer").state, "needs_consent");
 assert.equal(
-  featureView(s({ brain_source_composer: "own", brain_source_postprocess: "own" }), "post_process").state,
+  featureView(
+    s({ brain_source_composer: "own", brain_source_postprocess: "own" }),
+    "post_process",
+  ).state,
   "own",
 );
-assert.equal(featureView(s({ brain_model: "" }), "realtime_stream").state, "needs_setup");
-assert.equal(featureView(s({ brain_model: "" }), "realtime_stream").canUseBrain, false);
+assert.equal(
+  featureView(s({ brain_model: "" }), "realtime_stream").state,
+  "needs_setup",
+);
+assert.equal(
+  featureView(s({ brain_model: "" }), "realtime_stream").canUseBrain,
+  false,
+);
 // Without the migration marker the backend resolves everything to Own; the page must say so.
-const legacy = featureView(s({ brain_schema_v1: false, ...{ brain_transcript_consent_dest: dest } }), "composer");
+const legacy = featureView(
+  s({ brain_schema_v1: false, ...{ brain_transcript_consent_dest: dest } }),
+  "composer",
+);
 assert.equal(legacy.state, "own");
 assert.equal(legacy.source, "own");
 // A different destination invalidates consent.
 assert.equal(
-  featureView(s({ brain_transcript_consent_dest: destinationKey("custom", "http://127.0.0.1:9/v1") }), "composer").state,
+  featureView(
+    s({
+      brain_transcript_consent_dest: destinationKey(
+        "custom",
+        "http://127.0.0.1:9/v1",
+      ),
+    }),
+    "composer",
+  ).state,
   "needs_consent",
 );
 // Features are independent.
-const mixed = s({ brain_transcript_consent_dest: dest, brain_source_composer: "own" });
+const mixed = s({
+  brain_transcript_consent_dest: dest,
+  brain_source_composer: "own",
+});
 assert.equal(featureView(mixed, "composer").state, "own");
 assert.equal(featureView(mixed, "realtime_stream").state, "inheriting");
 
 // test result keys
-for (const kind of ["Ok", "Unauthorized", "NotFound", "Unreachable", "Redirect", "BadResponse", "Timeout", "InvalidUrl"] as const) {
+for (const kind of [
+  "Ok",
+  "Unauthorized",
+  "NotFound",
+  "Unreachable",
+  "Redirect",
+  "BadResponse",
+  "Timeout",
+  "InvalidUrl",
+] as const) {
   assert.ok(testKindKey(kind).startsWith("settings.brain.test."), kind);
 }
 assert.equal(testKindKey("NotFound"), "settings.brain.test.not_found");
@@ -165,13 +210,28 @@ assert.equal(testKindKey("InvalidUrl"), "settings.brain.test.invalid_url");
 const en = JSON.parse(read("../../../i18n/locales/en/translation.json")) as {
   settings: { brain: { test: Record<string, string> } };
 };
-for (const kind of ["ok", "unauthorized", "not_found", "unreachable", "redirect", "bad_response", "timeout", "invalid_url"]) {
+for (const kind of [
+  "ok",
+  "unauthorized",
+  "not_found",
+  "unreachable",
+  "redirect",
+  "bad_response",
+  "timeout",
+  "invalid_url",
+]) {
   assert.ok(en.settings.brain.test[kind]?.length > 0, `en copy for ${kind}`);
-  assert.ok(!/sk-|bearer|token value/i.test(en.settings.brain.test[kind]), "copy never echoes secrets");
+  assert.ok(
+    !/sk-|bearer|token value/i.test(en.settings.brain.test[kind]),
+    "copy never echoes secrets",
+  );
 }
 
 // the model module stays pure
 const model = read("./brainModel.ts");
-assert.ok(!/from "react"|useTranslation|commands\./.test(model), "brainModel is pure");
+assert.ok(
+  !/from "react"|useTranslation|commands\./.test(model),
+  "brainModel is pure",
+);
 
 console.log("brain model: ok");

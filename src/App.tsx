@@ -25,6 +25,7 @@ import {
 } from "./components/settings";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
+import { OpenBrainPageProvider } from "./components/settings";
 import { shouldFallBackToGeneral } from "./components/sectionGate";
 import {
   isSettingsSectionId,
@@ -521,24 +522,26 @@ function App() {
         </ErrorBoundary>
         {/* Main content area that takes remaining space */}
         <div className="flex-1 flex overflow-hidden">
-          <Sidebar
-            activeSection={currentSection}
-            onSectionChange={setCurrentSection}
-          />
-          {/* Scrollable content area */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div
-              ref={settingsScrollRef}
-              data-settings-section={currentSection}
-              className="flex-1 overflow-y-auto"
-            >
-              <div className="flex flex-col items-center p-4 gap-4">
-                <AccessibilityPermissions />
-                <SecureInputWarning />
-                {renderSettingsContent(currentSection, setOnboardingPreview)}
+          <OpenBrainPageProvider value={() => setCurrentSection("brain")}>
+            <Sidebar
+              activeSection={currentSection}
+              onSectionChange={setCurrentSection}
+            />
+            {/* Scrollable content area */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div
+                ref={settingsScrollRef}
+                data-settings-section={currentSection}
+                className="flex-1 overflow-y-auto"
+              >
+                <div className="flex flex-col items-center p-4 gap-4">
+                  <AccessibilityPermissions />
+                  <SecureInputWarning />
+                  {renderSettingsContent(currentSection, setOnboardingPreview)}
+                </div>
               </div>
             </div>
-          </div>
+          </OpenBrainPageProvider>
         </div>
         {/* Fixed footer at bottom */}
         <Footer />
