@@ -99,9 +99,14 @@ fn a_still_press_and_release_is_a_click_and_never_moves_the_orb() {
 fn jitter_inside_the_slop_stays_a_click() {
     let mut e = GestureEngine::new();
     e.on_event(down(1, (130.0, 230.0), 1.0, 0));
-    for (i, c) in [(131.0, 230.0), (133.0, 231.0), (134.0, 230.0), (130.0, 230.0)]
-        .into_iter()
-        .enumerate()
+    for (i, c) in [
+        (131.0, 230.0),
+        (133.0, 231.0),
+        (134.0, 230.0),
+        (130.0, 230.0),
+    ]
+    .into_iter()
+    .enumerate()
     {
         assert!(moves_of(&e.on_event(tick(c, true, 16 * (i as u64 + 1)))).is_empty());
     }
@@ -113,14 +118,20 @@ fn jitter_inside_the_slop_stays_a_click() {
 fn slop_scales_with_the_monitor() {
     let mut e = GestureEngine::new();
     e.on_event(down(1, (130.0, 230.0), 2.0, 0));
-    assert!(moves_of(&e.on_event(tick((138.0, 230.0), true, 16))).is_empty(), "8 px at scale 2 is inside");
+    assert!(
+        moves_of(&e.on_event(tick((138.0, 230.0), true, 16))).is_empty(),
+        "8 px at scale 2 is inside"
+    );
     let a = e.on_event(tick((139.0, 230.0), true, 32));
     assert_eq!(moves_of(&a).len(), 1, "9 px at scale 2 starts the drag");
 
     let mut e = GestureEngine::new();
     e.on_event(down(1, (130.0, 230.0), 1.0, 0));
     assert!(moves_of(&e.on_event(tick((134.0, 230.0), true, 16))).is_empty());
-    assert_eq!(moves_of(&e.on_event(tick((135.0, 230.0), true, 32))).len(), 1);
+    assert_eq!(
+        moves_of(&e.on_event(tick((135.0, 230.0), true, 32))).len(),
+        1
+    );
 }
 
 #[test]
@@ -136,7 +147,10 @@ fn a_drag_keeps_the_grab_offset_and_ends_as_a_drag_at_the_last_position() {
     let a = e.on_event(tick((510.0, 90.0), false, 48));
     let (id, result, final_orb) = finish_of(&a).expect("finished");
     assert_eq!((id, result), (7, GestureResult::Drag));
-    assert_eq!((final_orb.x, final_orb.y, final_orb.w, final_orb.h), (470.0, 70.0, 96.0, 96.0));
+    assert_eq!(
+        (final_orb.x, final_orb.y, final_orb.w, final_orb.h),
+        (470.0, 70.0, 96.0, 96.0)
+    );
 }
 
 #[test]
@@ -158,7 +172,10 @@ fn a_lost_release_ends_the_gesture_on_the_first_tick_that_sees_it() {
     let a = e.on_event(tick((900.0, 700.0), false, 32));
     assert_eq!(finish_of(&a).map(|f| f.1), Some(GestureResult::Drag));
     assert!(!e.is_active());
-    assert!(e.on_event(tick((901.0, 700.0), true, 48)).is_empty(), "later ticks do nothing");
+    assert!(
+        e.on_event(tick((901.0, 700.0), true, 48)).is_empty(),
+        "later ticks do nothing"
+    );
 }
 
 #[test]
@@ -166,7 +183,10 @@ fn cancel_finishes_as_cancel_and_never_as_a_click() {
     let mut e = GestureEngine::new();
     e.on_event(down(1, (130.0, 230.0), 1.0, 0));
     let a = e.on_event(GestureEvent::Cancel);
-    assert_eq!(finish_of(&a).map(|f| (f.0, f.1)), Some((1, GestureResult::Cancel)));
+    assert_eq!(
+        finish_of(&a).map(|f| (f.0, f.1)),
+        Some((1, GestureResult::Cancel))
+    );
     // A cancel while dragging keeps the last position.
     let mut g = GestureEngine::new();
     g.on_event(down(2, (130.0, 230.0), 1.0, 0));
@@ -175,7 +195,10 @@ fn cancel_finishes_as_cancel_and_never_as_a_click() {
     let (_, result, final_orb) = finish_of(&a).expect("finished");
     assert_eq!(result, GestureResult::Cancel);
     assert_eq!((final_orb.x, final_orb.y), (300.0, 400.0));
-    assert!(g.on_event(GestureEvent::Cancel).is_empty(), "cancel while idle does nothing");
+    assert!(
+        g.on_event(GestureEvent::Cancel).is_empty(),
+        "cancel while idle does nothing"
+    );
 }
 
 #[test]
@@ -188,7 +211,10 @@ fn a_new_press_cancels_the_old_gesture_first_and_ids_stay_independent() {
     assert_eq!((id, result), (1, GestureResult::Cancel));
     assert_eq!(e.active_id(), Some(2));
     let a = e.on_event(tick((310.0, 310.0), false, 36));
-    assert_eq!(finish_of(&a).map(|f| (f.0, f.1)), Some((2, GestureResult::Click)));
+    assert_eq!(
+        finish_of(&a).map(|f| (f.0, f.1)),
+        Some((2, GestureResult::Click))
+    );
 }
 
 #[test]
@@ -205,7 +231,11 @@ fn a_duplicate_press_with_the_same_id_is_ignored() {
 fn the_watchdog_ends_a_stuck_gesture_as_a_cancel() {
     let mut e = GestureEngine::new();
     e.on_event(down(1, (130.0, 230.0), 1.0, 1_000));
-    assert!(e.on_event(tick((130.0, 230.0), true, 1_000 + WATCHDOG_MS)).is_empty(), "exactly at the limit is still alive");
+    assert!(
+        e.on_event(tick((130.0, 230.0), true, 1_000 + WATCHDOG_MS))
+            .is_empty(),
+        "exactly at the limit is still alive"
+    );
     let a = e.on_event(tick((130.0, 230.0), true, 1_000 + WATCHDOG_MS + 1));
     assert_eq!(finish_of(&a).map(|f| f.1), Some(GestureResult::Cancel));
     assert!(!e.is_active());
@@ -259,11 +289,15 @@ fn the_cursor_vector_is_clamped_and_quantised() {
     let v = g.observe(10, (5000.0, -5000.0), C, 400.0);
     assert_eq!(v, Some(Gaze { x: 1.0, y: -1.0 }), "y changed, x clamped");
     let mut g = gaze();
-    let v = g.observe(0, (500.0 + 100.0, 500.0), C, 400.0).expect("value"); // 0.25
+    let v = g
+        .observe(0, (500.0 + 100.0, 500.0), C, 400.0)
+        .expect("value"); // 0.25
     assert_eq!(v.x, 0.25);
     let mut g = gaze();
     // 0.51 quantises to 8/16 = 0.5
-    let v = g.observe(0, (500.0 + 204.0, 500.0), C, 400.0).expect("value");
+    let v = g
+        .observe(0, (500.0 + 204.0, 500.0), C, 400.0)
+        .expect("value");
     assert_eq!(v.x, 0.5);
     let mut g = gaze();
     assert_eq!(g.observe(0, C, C, 400.0), Some(Gaze { x: 0.0, y: 0.0 }));
@@ -274,7 +308,11 @@ fn only_a_changed_quantised_value_is_emitted() {
     let mut g = gaze();
     assert!(g.observe(0, (700.0, 500.0), C, 400.0).is_some());
     assert_eq!(g.observe(33, (700.0, 500.0), C, 400.0), None, "unchanged");
-    assert_eq!(g.observe(66, (700.5, 500.0), C, 400.0), None, "inside the same quantum");
+    assert_eq!(
+        g.observe(66, (700.5, 500.0), C, 400.0),
+        None,
+        "inside the same quantum"
+    );
     assert!(g.observe(99, (760.0, 500.0), C, 400.0).is_some());
 }
 
@@ -283,7 +321,11 @@ fn polling_is_fast_after_movement_and_slow_when_idle() {
     let mut g = gaze();
     g.observe(1_000, (700.0, 500.0), C, 400.0);
     assert_eq!(g.poll_interval_ms(1_100), Some(33));
-    assert_eq!(g.poll_interval_ms(1_500), Some(33), "500 ms after the move is still active");
+    assert_eq!(
+        g.poll_interval_ms(1_500),
+        Some(33),
+        "500 ms after the move is still active"
+    );
     assert_eq!(g.poll_interval_ms(1_501), Some(500));
     assert_eq!(g.poll_interval_ms(60_000), Some(500));
     // Movement promotes again.
@@ -318,7 +360,11 @@ fn a_zero_or_non_finite_reach_never_produces_nan() {
 
 #[test]
 fn the_orb_window_spec_is_a_transparent_frameless_always_on_top_square() {
-    for (size, px) in [(OrbSize::Small, 72.0), (OrbSize::Medium, 96.0), (OrbSize::Large, 128.0)] {
+    for (size, px) in [
+        (OrbSize::Small, 72.0),
+        (OrbSize::Medium, 96.0),
+        (OrbSize::Large, 128.0),
+    ] {
         let s = orb_window_spec(size);
         assert_eq!(s.label, "orb");
         assert_eq!(s.logical_px, px);
