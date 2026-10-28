@@ -257,6 +257,14 @@
       "rescan": {
         "label": "Сканиране отново",
         "tooltip": "Сканиране отново за модели, добавени в папката с модели или кеша на Hugging Face извън Vox"
+      },
+      "row": {
+        "select": "Select",
+        "download": "Download",
+        "retry": "Retry",
+        "edit": "Edit",
+        "userAdded": "Added by you",
+        "progress": "Download progress"
       }
     },
     "appearance": {

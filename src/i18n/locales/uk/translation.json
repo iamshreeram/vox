@@ -257,6 +257,14 @@
       "rescan": {
         "label": "Пересканувати",
         "tooltip": "Пересканувати моделі, додані до папки моделей або кешу Hugging Face поза межами Vox"
+      },
+      "row": {
+        "select": "Select",
+        "download": "Download",
+        "retry": "Retry",
+        "edit": "Edit",
+        "userAdded": "Added by you",
+        "progress": "Download progress"
       }
     },
     "appearance": {

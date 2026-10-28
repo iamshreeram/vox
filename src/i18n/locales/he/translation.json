@@ -257,6 +257,14 @@
       "rescan": {
         "label": "סריקה מחדש",
         "tooltip": "סריקה מחדש לאיתור מודלים שנוספו לתיקיית המודלים או למטמון של Hugging Face מחוץ ל-Vox"
+      },
+      "row": {
+        "select": "Select",
+        "download": "Download",
+        "retry": "Retry",
+        "edit": "Edit",
+        "userAdded": "Added by you",
+        "progress": "Download progress"
       }
     },
     "appearance": {

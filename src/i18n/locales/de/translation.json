@@ -192,6 +192,14 @@
       "rescan": {
         "label": "Neu scannen",
         "tooltip": "Erneut nach Modellen scannen, die außerhalb von Vox zum Modellordner oder Hugging-Face-Cache hinzugefügt wurden"
+      },
+      "row": {
+        "select": "Select",
+        "download": "Download",
+        "retry": "Retry",
+        "edit": "Edit",
+        "userAdded": "Added by you",
+        "progress": "Download progress"
       }
     },
     "appearance": {

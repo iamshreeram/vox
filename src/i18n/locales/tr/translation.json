@@ -192,6 +192,14 @@
       "rescan": {
         "label": "Yeniden Tara",
         "tooltip": "Vox dışında modeller klasörüne veya Hugging Face önbelleğine eklenen modelleri yeniden tara"
+      },
+      "row": {
+        "select": "Select",
+        "download": "Download",
+        "retry": "Retry",
+        "edit": "Edit",
+        "userAdded": "Added by you",
+        "progress": "Download progress"
       }
     },
     "appearance": {

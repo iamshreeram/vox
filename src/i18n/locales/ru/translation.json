@@ -192,6 +192,14 @@
       "rescan": {
         "label": "Пересканировать",
         "tooltip": "Пересканировать модели, добавленные в папку моделей или кэш Hugging Face вне Vox"
+      },
+      "row": {
+        "select": "Select",
+        "download": "Download",
+        "retry": "Retry",
+        "edit": "Edit",
+        "userAdded": "Added by you",
+        "progress": "Download progress"
       }
     },
     "appearance": {

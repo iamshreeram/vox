@@ -257,6 +257,14 @@
       "rescan": {
         "label": "重新掃描",
         "tooltip": "重新掃描在 Vox 之外新增到模型資料夾或 Hugging Face 快取中的模型"
+      },
+      "row": {
+        "select": "Select",
+        "download": "Download",
+        "retry": "Retry",
+        "edit": "Edit",
+        "userAdded": "Added by you",
+        "progress": "Download progress"
       }
     },
     "appearance": {

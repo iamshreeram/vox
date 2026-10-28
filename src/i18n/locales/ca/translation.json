@@ -257,7 +257,15 @@
         "label": "Torna a cercar",
         "tooltip": "Torna a cercar models afegits a la carpeta de models o a la memòria cau de Hugging Face des de fora del Vox"
       },
-      "noModelsMatch": "Cap model no coincideix amb aquest filtre."
+      "noModelsMatch": "Cap model no coincideix amb aquest filtre.",
+      "row": {
+        "select": "Select",
+        "download": "Download",
+        "retry": "Retry",
+        "edit": "Edit",
+        "userAdded": "Added by you",
+        "progress": "Download progress"
+      }
     },
     "appearance": {
       "title": "Appearance"
