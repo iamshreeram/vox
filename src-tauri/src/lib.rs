@@ -21,11 +21,18 @@ mod helpers;
 mod input;
 mod job_runtime;
 mod llm_client;
+#[cfg(test)]
+mod orb_engine_tests;
+mod orb_gaze;
 mod orb_geometry;
 #[cfg(test)]
+mod orb_geometry_followup_tests;
+#[cfg(test)]
 mod orb_geometry_tests;
+mod orb_gesture;
 #[cfg(test)]
 mod orb_settings_tests;
+mod orb_window;
 mod window_commands;
 #[cfg(test)]
 mod window_policy_tests;

@@ -143,10 +143,11 @@ pub fn linux_backend_from_display_type(display_type: Option<&str>) -> LinuxBacke
 /// on the release platform.
 pub const ORB_VISIBLE_DEFAULT: bool = false;
 
-/// Whether the orb should be shown: only in floating presentation, and only when enabled
-/// (`None` means [`ORB_VISIBLE_DEFAULT`]).
-pub fn orb_should_show(orb_visible: Option<bool>, effective: Presentation) -> bool {
-    effective == Presentation::Floating && orb_visible.unwrap_or(ORB_VISIBLE_DEFAULT)
+/// Whether the orb is shown: when the setting is enabled (`None` means [`ORB_VISIBLE_DEFAULT`])
+/// and this platform can float a window. The orb is a launcher for the classic window as well, so
+/// it does not depend on the chosen presentation.
+pub fn orb_should_show(orb_visible: Option<bool>, env: &PlatformEnv) -> bool {
+    orb_visible.unwrap_or(ORB_VISIBLE_DEFAULT) && floating_supported(env).is_ok()
 }
 
 /// The operating system this build runs on. Unused until the orb window is wired (G2+).

@@ -1431,9 +1431,10 @@ pub fn dictation_agent_enabled(s: &AppSettings) -> bool {
 
 /// Stage 4 (A8): the launch fields of `committed`, which only `write_settings_gated` may change:
 /// the hand-off and planner flags, the main agent's enablement, the dictation hand-off switch,
-/// command, arguments, turn timeout and approval mode, and the specialist agents. Returns
-/// `incoming` with those fields replaced by the committed values, and every other field as
-/// incoming.
+/// command, arguments, turn timeout and approval mode, the specialist agents, the Brain fields,
+/// the first-run fields, and the orb and chat presentation fields (`chat_presentation`,
+/// `orb_visible`, `orb_size`, `orb_position`). Returns `incoming` with those fields replaced by the
+/// committed values, and every other field as incoming.
 pub fn preserve_launch_fields(mut incoming: AppSettings, committed: &AppSettings) -> AppSettings {
     incoming.acp_agent_enabled = committed.acp_agent_enabled;
     incoming.acp_dictation_enabled = committed.acp_dictation_enabled;

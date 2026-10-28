@@ -154,18 +154,27 @@ pub fn monitor_key(name: &str, rect: &Rect) -> String {
     )
 }
 
+/// Whether a monitor can be used: its rectangle and work area are finite with a positive size.
+/// Monitors that fail this are ignored by every lookup in this module.
+fn is_usable(m: &MonitorInfo) -> bool {
+    [m.rect, m.work]
+        .iter()
+        .all(|r| [r.x, r.y, r.w, r.h].iter().all(|v| v.is_finite()) && r.w > 0.0 && r.h > 0.0)
+}
+
 /// The monitor containing `point`, otherwise the nearest one by distance to its rectangle.
-/// Returns `None` only when `monitors` is empty.
+/// Monitors with a non-finite or empty rectangle or work area are ignored. Returns `None` when
+/// no usable monitor exists.
 pub fn monitor_for(point: (f64, f64), monitors: &[MonitorInfo]) -> Option<&MonitorInfo> {
     let (px, py) = point;
-    let inside = monitors
-        .iter()
+    let usable = || monitors.iter().filter(|m| is_usable(m));
+    let inside = usable()
         .find(|m| px >= m.rect.x && px < m.rect.right() && py >= m.rect.y && py < m.rect.bottom());
     if inside.is_some() {
         return inside;
     }
     let mut best: Option<(&MonitorInfo, f64)> = None;
-    for m in monitors {
+    for m in usable() {
         let dx = (m.rect.x - px).max(0.0).max(px - m.rect.right());
         let dy = (m.rect.y - py).max(0.0).max(py - m.rect.bottom());
         let distance = dx.hypot(dy);
@@ -200,17 +209,15 @@ pub fn classify_drag(moved_physical_px: f64, scale: f64) -> DragClass {
 }
 
 /// Keeps the orb usable after a monitor change. If at least half of the orb lies inside some
-/// work area it is returned unchanged. Otherwise it moves to the work-area corner nearest its
-/// centre (inset 20 logical px) of the monitor nearest that centre. With no monitors the orb is
-/// returned unchanged.
+/// usable work area it is returned unchanged. Otherwise it moves to the work-area corner nearest
+/// its centre (inset 20 logical px) of the monitor nearest that centre. With no usable monitors
+/// the orb is returned unchanged.
 pub fn clamp_orb(orb: Rect, monitors: &[MonitorInfo]) -> Rect {
     let orb = sanitize_rect(orb);
-    if monitors.is_empty() {
-        return orb;
-    }
     let half_area = orb.w * orb.h / 2.0;
     if monitors
         .iter()
+        .filter(|m| is_usable(m))
         .any(|m| intersection_area(&orb, &m.work) >= half_area)
     {
         return orb;
@@ -276,19 +283,22 @@ pub fn position_from_rect(orb: Rect, monitors: &[MonitorInfo]) -> Option<OrbPosi
 }
 
 /// The orb rectangle for a saved position. The monitor is found by key, then by name, then the
-/// primary monitor, then the first monitor. The orb is sized for that monitor's scale and then
-/// clamped with [`clamp_orb`]. `None` when there are no monitors.
+/// primary monitor, then the first monitor, considering usable monitors only. The orb is sized
+/// for that monitor's scale, clamped against that monitor alone with [`clamp_orb`], and then
+/// moved fully inside its work area so it never lands on a neighbouring monitor. `None` when
+/// there is no usable monitor.
 pub fn restore_position(
     saved: &OrbPosition,
     size: OrbSize,
     monitors: &[MonitorInfo],
 ) -> Option<Rect> {
-    let monitor = monitors
+    let usable: Vec<MonitorInfo> = monitors.iter().filter(|m| is_usable(m)).cloned().collect();
+    let monitor = usable
         .iter()
         .find(|m| m.key == saved.monitor_key)
-        .or_else(|| monitors.iter().find(|m| m.name == saved.monitor_name))
-        .or_else(|| monitors.iter().find(|m| m.primary))
-        .or_else(|| monitors.first())?;
+        .or_else(|| usable.iter().find(|m| m.name == saved.monitor_name))
+        .or_else(|| usable.iter().find(|m| m.primary))
+        .or_else(|| usable.first())?;
     let side = orb_px(size, monitor.scale);
     let work = sanitize_rect(monitor.work);
     let cx = work.x + unit_fraction(saved.fx) * work.w;
@@ -299,7 +309,13 @@ pub fn restore_position(
         w: side,
         h: side,
     };
-    Some(clamp_orb(orb, monitors))
+    let clamped = clamp_orb(orb, std::slice::from_ref(monitor));
+    Some(Rect {
+        x: clamp_axis(clamped.x, work.x, work.right() - side),
+        y: clamp_axis(clamped.y, work.y, work.bottom() - side),
+        w: side,
+        h: side,
+    })
 }
 
 /// Effective panel size in physical pixels for a requested logical height at `scale`.
@@ -342,7 +358,9 @@ pub fn panel_size(work: Rect, requested_h_logical: f64, scale: f64) -> Size {
 /// goes to Right). Otherwise Above if it fits. With a `current` side that still fits, the panel
 /// stays on it unless Below has at least 24 logical px to spare, or a horizontal side has at
 /// least 24 logical px more room. When nothing fits, the side with the most room is used. The
-/// rectangle is then clamped into `work`, and the tail is clamped to the panel corners.
+/// rectangle is then clamped into `work`, and the tail is clamped to the panel corners. Leaving
+/// an Above panel for a horizontal side needs that side to fit with 24 logical px of spare space
+/// (room minus gap minus panel width).
 pub fn place_panel(
     orb: Rect,
     size: Size,
@@ -392,7 +410,31 @@ pub fn place_panel(
         fallback
     };
 
+    // A horizontal side is worth leaving Above for only when it fits with the slack to spare.
+    let horizontal_ok = |side: Side| {
+        let l = placed(side);
+        matches!(side, Side::Left | Side::Right) && l.fits && l.room - gap - w >= slack
+    };
+
     let chosen = match current {
+        Some(Side::Above) if above.fits && best != Side::Below => {
+            if horizontal_ok(best) {
+                best
+            } else {
+                match (horizontal_ok(Side::Left), horizontal_ok(Side::Right)) {
+                    (true, true) => {
+                        if left.room > right.room {
+                            Side::Left
+                        } else {
+                            Side::Right
+                        }
+                    }
+                    (true, false) => Side::Left,
+                    (false, true) => Side::Right,
+                    (false, false) => Side::Above,
+                }
+            }
+        }
         Some(current) if current != best && placed(current).fits => {
             let switch = if best == Side::Below {
                 work.bottom() - below.rect.bottom() >= slack
