@@ -11,6 +11,7 @@ pub mod chat;
 pub mod conversation_records;
 pub mod converse;
 pub mod converse_extras;
+pub mod first_run;
 pub mod history;
 pub mod memory;
 pub mod models;

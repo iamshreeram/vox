@@ -98,6 +98,9 @@ pub mod converse_runtime;
 pub mod converse_stream;
 pub mod converse_text;
 pub mod emotion;
+pub mod first_run;
+#[cfg(test)]
+mod first_run_tests;
 pub mod gguf_meta;
 pub mod history;
 pub mod job_announcer;

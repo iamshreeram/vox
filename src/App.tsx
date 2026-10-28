@@ -18,7 +18,12 @@ import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import SecureInputWarning from "./components/SecureInputWarning";
 import Footer from "./components/footer";
-import Onboarding, { AccessibilityOnboarding } from "./components/onboarding";
+import Onboarding, {
+  AccessibilityOnboarding,
+  FirstRunBrainStep,
+  FirstRunVoiceStep,
+  nextFirstRunStep,
+} from "./components/onboarding";
 import {
   DebugSettings,
   type OnboardingPreviewStep,
@@ -36,16 +41,26 @@ import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
 import {
   commands,
+  type AppSettings,
+  type Result,
   type WakeWordDetection,
   type AmbientAddressedPayload,
 } from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 import PermissionPrompt from "./components/agent/PermissionPrompt";
 
-type OnboardingStep = "accessibility" | "model" | "done";
+type OnboardingStep = "accessibility" | "model" | "voice" | "brain" | "done";
 
 // Stable identity so preview effects do not re-run due to callback changes.
 const NOOP = () => {};
+
+// The step that follows from a settings read: an open first-run step, else the main app.
+const stepFromSettings = (
+  result: Result<AppSettings, string>,
+): OnboardingStep => {
+  if (result.status !== "ok") return "done";
+  return nextFirstRunStep(result.data) ?? "done";
+};
 
 const renderSettingsContent = (
   section: SidebarSection,
@@ -72,7 +87,7 @@ function App() {
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [currentSection, setCurrentSection] =
     useState<SidebarSection>("general");
-  const { settings, updateSetting } = useSettings();
+  const { settings, updateSetting, refreshSettings } = useSettings();
   const direction = getLanguageDirection(i18n.language);
   const refreshAudioDevices = useSettingsStore(
     (state) => state.refreshAudioDevices,
@@ -85,7 +100,9 @@ function App() {
   const isShowingOnboarding =
     onboardingPreview !== null ||
     onboardingStep === "accessibility" ||
-    onboardingStep === "model";
+    onboardingStep === "model" ||
+    onboardingStep === "voice" ||
+    onboardingStep === "brain";
 
   // Classic scrollbars consume layout space. Reserve a matching gutter on the
   // opposite edge while onboarding is visible so its content stays centered in
@@ -431,7 +448,8 @@ function App() {
           }
         }
 
-        setOnboardingStep("done");
+        // A first run still waiting for its Voice or Brain step resumes there.
+        setOnboardingStep(stepFromSettings(settingsResult));
       } else {
         // New user - start full onboarding
         setIsReturningUser(false);
@@ -443,15 +461,30 @@ function App() {
     }
   };
 
+  // Reads the settings again (never the state captured earlier) and picks the step that
+  // follows: the first-run Voice or Brain step while one is open, else the main app.
+  const resolveNextStep = async (): Promise<OnboardingStep> => {
+    void refreshSettings();
+    return stepFromSettings(await commands.getAppSettings());
+  };
+
   const handleAccessibilityComplete = () => {
-    // Returning users already have models, skip to main app
-    // New users need to select a model
-    setOnboardingStep(isReturningUser ? "done" : "model");
+    // New users need to select a model. Returning users already have models and
+    // go to the main app, unless a first run is still waiting for Voice or Brain.
+    if (!isReturningUser) {
+      setOnboardingStep("model");
+      return;
+    }
+    void resolveNextStep().then(setOnboardingStep);
   };
 
   const handleModelSelected = () => {
-    // Transition to main app - user has started a download
-    setOnboardingStep("done");
+    // The model is chosen: continue with the first-run steps, else the main app.
+    void resolveNextStep().then(setOnboardingStep);
+  };
+
+  const handleFirstRunStepFinished = () => {
+    void resolveNextStep().then(setOnboardingStep);
   };
 
   // Rendered once around every step below (including onboarding) so
@@ -511,6 +544,10 @@ function App() {
     );
   } else if (onboardingStep === "model") {
     content = <Onboarding onModelSelected={handleModelSelected} />;
+  } else if (onboardingStep === "voice") {
+    content = <FirstRunVoiceStep onFinished={handleFirstRunStepFinished} />;
+  } else if (onboardingStep === "brain") {
+    content = <FirstRunBrainStep onFinished={handleFirstRunStepFinished} />;
   } else {
     content = (
       <div

@@ -5,7 +5,7 @@ use super::*;
 use crate::managers::composer_config::TtsComposerMode;
 use crate::settings::AppSettings;
 
-const SPOKEN: &str = "Turn on spoken replies in the speech settings first.";
+const SPOKEN: &str = "Turn on spoken replies in Settings > Models > Text-to-speech first.";
 const BACKEND: &str = "Set up a reply backend in the speech settings first.";
 const WAKE_OR_AMBIENT: &str =
     "Turn off wake word and ambient listening before starting a conversation.";

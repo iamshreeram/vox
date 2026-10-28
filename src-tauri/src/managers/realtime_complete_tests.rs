@@ -167,7 +167,7 @@ fn legacy_preflight_is_unchanged() {
     s.tts_enabled = false;
     assert_eq!(
         preflight_check(&s),
-        Err("Turn on spoken replies in the speech settings first.".to_string())
+        Err("Turn on spoken replies in Settings > Models > Text-to-speech first.".to_string())
     );
     // direct fields set but the master is off => still the legacy answer
     let mut s = direct("https://gw.example.com");
@@ -207,7 +207,7 @@ fn other_preflight_checks_still_apply_in_realtime() {
     s.tts_enabled = false;
     assert_eq!(
         preflight_check(&s),
-        Err("Turn on spoken replies in the speech settings first.".to_string()),
+        Err("Turn on spoken replies in Settings > Models > Text-to-speech first.".to_string()),
         "spoken replies are still required, and are checked first"
     );
     let mut s = direct("https://gw.example.com");

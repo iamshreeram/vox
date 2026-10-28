@@ -1302,6 +1302,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::brain::brain_use_for_feature,
             commands::brain::brain_test_connection,
             commands::brain::brain_fetch_models,
+            commands::first_run::first_run_finish_step,
             commands::voice_shortcuts::set_voice_shortcuts,
             commands::converse::change_converse_silence_ms_setting,
             commands::converse::change_converse_max_idle_turns_setting,

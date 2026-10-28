@@ -128,6 +128,25 @@
         "checkFailed": "No s'han pogut comprovar els permisos. Torneu-ho a provar.",
         "requestFailed": "No s'ha pogut sol·licitar el permís. Torneu-ho a provar."
       }
+    },
+    "firstRun": {
+      "voice": {
+        "title": "Choose a voice for spoken replies",
+        "description": "Vox can read its replies aloud. The system voice works right away. The Natural and Phonon voices download once, to this computer. You can change this later on the Models page.",
+        "continue": "Continue",
+        "skip": "Skip"
+      },
+      "brain": {
+        "title": "Connect a language model (optional)",
+        "description": "Spoken replies can come from a language model. Ollama or LM Studio on this computer need no account. Nothing is sent until you run a test and choose to use it.",
+        "useForReplies": "Use this for spoken replies",
+        "skip": "Skip",
+        "consentLine": "What you say, as text, is sent to {{destination}}.",
+        "localDestination": "this computer"
+      },
+      "errors": {
+        "finish": "Could not save this setup step. Try again."
+      }
     }
   },
   "modelSelector": {
@@ -266,6 +285,12 @@
         "edit": "Edit",
         "userAdded": "Added by you",
         "progress": "Download progress"
+      },
+      "finishSetup": {
+        "title": "Finish voice setup",
+        "description": "Spoken replies and the Brain are not set up yet. Choose a voice and connect a language model to finish.",
+        "action": "Open Brain",
+        "dismiss": "Dismiss"
       }
     },
     "appearance": {

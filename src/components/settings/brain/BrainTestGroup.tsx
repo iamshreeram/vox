@@ -20,6 +20,8 @@ interface BrainTestGroupProps {
   draftMatches: boolean;
   /** Called with the destination key after the acknowledgement was recorded. */
   onAcknowledged: (destination: string) => void;
+  /** Called with the destination key and the answer of every completed test. */
+  onResult?: (destination: string, result: BrainTestResult) => void;
 }
 
 /**
@@ -30,6 +32,7 @@ export const BrainTestGroup: React.FC<BrainTestGroupProps> = ({
   acked,
   draftMatches,
   onAcknowledged,
+  onResult,
 }) => {
   const { t } = useTranslation();
   const { settings } = useSettings();
@@ -63,7 +66,10 @@ export const BrainTestGroup: React.FC<BrainTestGroupProps> = ({
     setTesting(true);
     const result = await actions.test();
     setTesting(false);
-    if (result !== null) setOutcome({ destination, result });
+    if (result !== null) {
+      setOutcome({ destination, result });
+      onResult?.(destination, result);
+    }
   };
 
   const resultText =
