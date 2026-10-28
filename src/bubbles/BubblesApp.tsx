@@ -148,6 +148,7 @@ export default function BubblesApp(): React.ReactElement {
       aria-live="polite"
       aria-atomic="false"
       className="bubble-stack"
+      data-anchor={state.anchor}
     >
       {shown.map((bubble) => (
         <div

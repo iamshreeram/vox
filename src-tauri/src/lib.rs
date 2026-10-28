@@ -8,6 +8,8 @@ mod autostart;
 #[cfg(test)]
 mod bubble_admission_e2e_tests;
 #[cfg(test)]
+mod bubble_anchor_tests;
+#[cfg(test)]
 mod bubble_g4b_fix_tests;
 #[cfg(test)]
 mod bubble_geometry_tests;
@@ -1846,6 +1848,7 @@ pub fn run(cli_args: CliArgs) {
             log::debug!("native exit request decision: {:?}", decision);
         }
         tauri::RunEvent::Exit => {
+            bubble_native::mark_exiting(app);
             bubble_native::destroy_bubbles(app);
             if let Some(acp) = app.try_state::<Arc<managers::acp_agent::AcpAgentManager>>() {
                 acp.close();

@@ -29,6 +29,14 @@ body {
   background: transparent;
 }
 
+/* Below the orb (anchor "top") the stack hugs the top of its window and shows the newest bubble
+   first, nearest the orb. Only the visual order flips; the DOM (and screen reader) order stays
+   oldest first. In a reversed column, flex-end is the top edge. */
+.bubble-stack[data-anchor="top"] {
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+}
+
 .bubble {
   box-sizing: border-box;
   display: -webkit-box;

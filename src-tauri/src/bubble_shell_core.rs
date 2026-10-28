@@ -368,6 +368,12 @@ impl BubbleShellCore {
         !self.hub.projection(now).is_empty()
     }
 
+    /// The current snapshot, unpublished, for a re-send that must keep the revision (a changed
+    /// anchor). `None` before any window instance exists.
+    pub fn current_snapshot(&self, now: u64) -> Option<Snapshot> {
+        self.hub.current(now)
+    }
+
     /// The current bubble window instance.
     pub fn instance(&self) -> u64 {
         self.hub.instance()

@@ -19,10 +19,14 @@ export type BubbleItemWire = {
   ttl_ms: number;
 };
 
-/** A snapshot revision as Rust sends it. */
+/** Where the stack hugs its window: the top when it sits below the orb, else the bottom. */
+export type BubbleAnchor = "top" | "bottom";
+
+/** A snapshot revision as Rust sends it. `anchor` is missing in older payloads. */
 export type Snapshot = {
   instance: number;
   rev: number;
+  anchor?: BubbleAnchor;
   items: BubbleItemWire[];
 };
 
@@ -37,6 +41,7 @@ type StoredBubble = {
 export type PageState = {
   instance: number;
   rev: number;
+  anchor: BubbleAnchor;
   items: StoredBubble[];
 };
 
@@ -52,27 +57,41 @@ export type EnterMotion = {
   translatePx: number;
 };
 
+/**
+ * The anchor of a snapshot. Missing or unknown values mean "bottom", so older payloads still
+ * render as before.
+ */
+export function anchorOf(value: unknown): BubbleAnchor {
+  return value === "top" ? "top" : "bottom";
+}
+
 /** A fresh page state for one window instance. Rust revisions start at 1, so 0 accepts any. */
 export function createState(instance: number): PageState {
-  return { instance, rev: 0, items: [] };
+  return { instance, rev: 0, anchor: "bottom", items: [] };
 }
 
 /**
- * Applies a snapshot. Ignored when it is for another instance or is not newer than the last
- * revision applied. Otherwise it replaces the whole list. Each bubble is born at
- * `nowMs - age_ms`, so a replay keeps the original lifetime.
+ * Applies a snapshot. Ignored when it is for another instance or is older than the last revision
+ * applied. A newer revision replaces the whole list; each bubble is born at `nowMs - age_ms`, so a
+ * replay keeps the original lifetime. A snapshot with the same revision only changes the anchor:
+ * the bubbles and their lifetimes are kept.
  */
 export function applySnapshot(
   state: PageState,
   snapshot: Snapshot,
   nowMs: number,
 ): PageState {
-  if (snapshot.instance !== state.instance || snapshot.rev <= state.rev) {
+  if (snapshot.instance !== state.instance || snapshot.rev < state.rev) {
     return state;
+  }
+  const anchor = anchorOf(snapshot.anchor);
+  if (snapshot.rev === state.rev) {
+    return anchor === state.anchor ? state : { ...state, anchor };
   }
   return {
     instance: state.instance,
     rev: snapshot.rev,
+    anchor,
     items: snapshot.items.map((item) => ({
       id: item.id,
       role: item.role,

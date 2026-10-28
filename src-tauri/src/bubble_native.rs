@@ -16,8 +16,8 @@ use crate::chat_presentation::{floating_supported, ORB_VISIBLE_DEFAULT};
 use crate::chat_window::{self, is_app_navigation};
 use crate::managers::chat_log::{ChatLog, GateState};
 use crate::orb_geometry::{
-    monitor_for, place_bubbles, BubblePlacement, Rect, Size, BUBBLE_H_LOGICAL, BUBBLE_W_LOGICAL,
-    MIN_BUBBLE_H_LOGICAL, MIN_BUBBLE_W_LOGICAL,
+    anchor_for_side, monitor_for, place_bubbles, BubblePlacement, Rect, Size, BUBBLE_H_LOGICAL,
+    BUBBLE_W_LOGICAL, MIN_BUBBLE_H_LOGICAL, MIN_BUBBLE_W_LOGICAL,
 };
 use crate::orb_native;
 use crate::orb_window::ORB_WINDOW_LABEL;
@@ -82,6 +82,11 @@ pub struct BubbleShell {
     classic_visible: AtomicBool,
     /// Whether the bubble window is shown (set on the main thread).
     bubbles_shown: AtomicBool,
+    /// Whether the bubble stack hugs the top of its window (the stack sits below the orb). Set on
+    /// the main thread before the window shows, and read by every emit.
+    anchor_top: AtomicBool,
+    /// Set by the exit event. The bubble window is then destroyed without touching the core.
+    exiting: AtomicBool,
 }
 
 impl BubbleShell {
@@ -97,7 +102,23 @@ impl BubbleShell {
             placement_ok: AtomicBool::new(true),
             classic_visible: AtomicBool::new(false),
             bubbles_shown: AtomicBool::new(false),
+            anchor_top: AtomicBool::new(false),
+            exiting: AtomicBool::new(false),
         }
+    }
+}
+
+/// Whether the anchor must change for a new one. Anchors are `"top"` or `"bottom"`.
+pub fn anchor_changed(prev: &str, next: &str) -> bool {
+    prev != next
+}
+
+/// The anchor name for the stored flag.
+fn anchor_name(top: bool) -> &'static str {
+    if top {
+        "top"
+    } else {
+        "bottom"
     }
 }
 
@@ -216,11 +237,16 @@ struct BubbleItemPayload {
 struct BubblesPayload {
     instance: u64,
     rev: u64,
+    /// Where the stack hugs its window: `"top"` or `"bottom"`. Content-free.
+    anchor: &'static str,
     items: Vec<BubbleItemPayload>,
 }
 
-/// Sends a snapshot to the bubble window only.
+/// Sends a snapshot to the bubble window only. Carries the anchor stored by the last show.
 fn emit_snapshot(app: &AppHandle, snapshot: &Snapshot) {
+    let top = app
+        .try_state::<BubbleShell>()
+        .is_some_and(|shell| shell.anchor_top.load(Ordering::SeqCst));
     let items = snapshot
         .items
         .iter()
@@ -238,6 +264,7 @@ fn emit_snapshot(app: &AppHandle, snapshot: &Snapshot) {
     let payload = BubblesPayload {
         instance: snapshot.instance,
         rev: snapshot.rev,
+        anchor: anchor_name(top),
         items,
     };
     if app
@@ -332,9 +359,24 @@ fn show_bubbles(app: &AppHandle, shell: &BubbleShell, placement: BubblePlacement
     let Some(window) = app.get_webview_window(BUBBLES_WINDOW_LABEL) else {
         return;
     };
+    let anchor = anchor_for_side(placement.side);
+    // The anchor is stored before the window shows, so the first frame already hugs the right edge.
+    let previous = anchor_name(shell.anchor_top.swap(anchor == "top", Ordering::SeqCst));
     apply_rect(&window, placement.rect);
+    if anchor_changed(previous, anchor) {
+        resend_snapshot(app, shell);
+    }
     show_bubble_window(app);
     shell.bubbles_shown.store(true, Ordering::SeqCst);
+}
+
+/// Sends the current projection again so the page picks up a changed anchor. The revision is
+/// unchanged, so the page keeps every bubble and its lifetime. Never called with the lock held.
+fn resend_snapshot(app: &AppHandle, shell: &BubbleShell) {
+    let snapshot = lock_core(shell).current_snapshot(now_ms());
+    if let Some(snapshot) = snapshot.as_ref() {
+        emit_snapshot(app, snapshot);
+    }
 }
 
 /// Hides the bubble window; the window itself is kept. Main thread.
@@ -711,8 +753,17 @@ pub fn page_ready(app: &AppHandle, instance: u64) {
     schedule(app, &shell);
 }
 
-/// Destroys the bubble window, resets the session state and stops the timer. Called on app exit
-/// and when the presentation switches to the classic window.
+/// Marks the app as exiting. Called once from the exit event, before [`destroy_bubbles`].
+pub fn mark_exiting(app: &AppHandle) {
+    if let Some(shell) = app.try_state::<BubbleShell>() {
+        shell.exiting.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Destroys the bubble window, resets the session state and stops the timer. Called on the
+/// readiness fallback and when the presentation switches to the classic window. On app exit (after
+/// [`mark_exiting`]) it only destroys the window and stops the timer: it never resets the core,
+/// never schedules the executor and so never builds or shows the orb.
 pub fn destroy_bubbles(app: &AppHandle) {
     let Some(shell) = app.try_state::<BubbleShell>() else {
         return;
@@ -731,6 +782,9 @@ pub fn destroy_bubbles(app: &AppHandle) {
     });
     if let Err(e) = queued {
         log::warn!("bubble window close could not be scheduled: {e}");
+    }
+    if shell.exiting.load(Ordering::SeqCst) {
+        return;
     }
     update(app, |core, inp| core.reset(inp));
 }

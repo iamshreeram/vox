@@ -131,6 +131,15 @@ pub enum Side {
     Right,
 }
 
+/// How the bubble stack hugs its window: `"top"` when the stack sits below the orb, so its
+/// newest bubble is nearest the orb and the stack is top-aligned; `"bottom"` otherwise.
+pub fn anchor_for_side(side: Side) -> &'static str {
+    match side {
+        Side::Below => "top",
+        Side::Above | Side::Left | Side::Right => "bottom",
+    }
+}
+
 /// Result of [`place_panel`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Placement {
