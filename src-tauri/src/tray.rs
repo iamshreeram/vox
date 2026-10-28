@@ -625,6 +625,9 @@ fn build_menu(
     // Conversation window toggle (DESIGN-CHAT A5). Same English-fallback rule as converse.
     let chat_label = localized_or_english(&strings.chat, &english_chat());
     let chat_i = MenuItem::with_id(app, "chat", &chat_label, true, None::<&str>)?;
+    // Floating orb show/hide (G3b). Same English-fallback rule as the other labels.
+    let orb_label = localized_or_english(&strings.orb_toggle, &english_orb_toggle());
+    let orb_i = MenuItem::with_id(app, "orb", &orb_label, true, None::<&str>)?;
     // "Cancel coding job" (M3 S3c-2, DESIGN D6): English-only label, enabled only while a job
     // runs and a cancel handler is registered (see `cancel_job_item_enabled`).
     let cancel_job_i = MenuItem::with_id(
@@ -667,6 +670,7 @@ fn build_menu(
                 &copy_last_transcript_i,
                 &converse_i,
                 &chat_i,
+                &orb_i,
                 &separator()?,
                 &settings_i,
                 &check_updates_i,
@@ -707,6 +711,7 @@ fn build_menu(
                 &copy_last_transcript_i,
                 &converse_i,
                 &chat_i,
+                &orb_i,
                 &cancel_job_i,
                 &separator()?,
                 &model_submenu,
@@ -802,6 +807,14 @@ fn english_chat() -> String {
     crate::tray_i18n::TRANSLATIONS
         .get("en")
         .map(|strings| strings.chat.clone())
+        .unwrap_or_default()
+}
+
+/// English floating-orb toggle label from the generated translations.
+fn english_orb_toggle() -> String {
+    crate::tray_i18n::TRANSLATIONS
+        .get("en")
+        .map(|strings| strings.orb_toggle.clone())
         .unwrap_or_default()
 }
 

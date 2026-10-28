@@ -239,7 +239,12 @@ fn the_gaze_driver_emits_from_the_orb_centre_with_a_scaled_reach() {
     let mut g = GazeDriver::new();
     let mut h = Host::new();
     h.scale = 2.0;
-    h.rect = Some(Rect { x: 0.0, y: 0.0, w: 192.0, h: 192.0 }); // centre (96, 96)
+    h.rect = Some(Rect {
+        x: 0.0,
+        y: 0.0,
+        w: 192.0,
+        h: 192.0,
+    }); // centre (96, 96)
     assert_eq!(g.next_interval_ms(0), None, "hidden until shown");
     g.set_visible(true);
     assert!(g.next_interval_ms(0).is_some());
@@ -363,7 +368,10 @@ fn the_new_commands_are_registered_and_gated_by_the_window_matrix() {
         "change_chat_presentation_setting",
         "reset_orb_position",
     ] {
-        assert!(lib.contains(command), "{command} must be registered in lib.rs");
+        assert!(
+            lib.contains(command),
+            "{command} must be registered in lib.rs"
+        );
     }
     assert!(
         lib.contains("window_command_allowed("),
@@ -373,7 +381,10 @@ fn the_new_commands_are_registered_and_gated_by_the_window_matrix() {
         !lib.contains("chat_window::chat_command_allowed("),
         "the old chat-only gate is replaced"
     );
-    assert!(lib.contains("orb_native::apply_visibility"), "startup shows the orb when enabled");
+    assert!(
+        lib.contains("orb_native::apply_visibility"),
+        "startup shows the orb when enabled"
+    );
 }
 
 #[test]
@@ -381,7 +392,10 @@ fn the_orb_window_has_events_only_and_the_main_capability_does_not_include_it() 
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities/orb.json");
     assert!(path.exists(), "capabilities/orb.json must exist");
     let default = src("capabilities/default.json");
-    assert!(!default.contains("\"orb\""), "default.json must not list the orb window");
+    assert!(
+        !default.contains("\"orb\""),
+        "default.json must not list the orb window"
+    );
     let chat = src("capabilities/chat.json");
     assert!(!chat.contains("\"orb\""));
 }
@@ -400,8 +414,18 @@ fn the_native_orb_follows_the_proven_panel_pattern_and_never_touches_the_activat
     ] {
         assert!(text.contains(needed), "orb_native.rs must contain {needed}");
     }
-    for banned in ["set_activation_policy", "println!", "eprintln!", "dbg!", "std::fs", "File::"] {
-        assert!(!text.contains(banned), "orb_native.rs must not use {banned}");
+    for banned in [
+        "set_activation_policy",
+        "println!",
+        "eprintln!",
+        "dbg!",
+        "std::fs",
+        "File::",
+    ] {
+        assert!(
+            !text.contains(banned),
+            "orb_native.rs must not use {banned}"
+        );
     }
     let rt = src("src/orb_runtime.rs");
     for banned in ["tauri::", "println!", "eprintln!", "std::fs"] {
@@ -412,11 +436,20 @@ fn the_native_orb_follows_the_proven_panel_pattern_and_never_touches_the_activat
 #[test]
 fn the_tray_offers_a_show_hide_orb_item_and_the_click_goes_through_the_dispatcher() {
     let tray = src("src/tray.rs");
-    assert!(tray.contains("\"orb\""), "tray menu needs an item with id orb");
+    assert!(
+        tray.contains("\"orb\""),
+        "tray menu needs an item with id orb"
+    );
     let lib = src("src/lib.rs");
-    assert!(lib.contains("\"orb\" =>") || lib.contains("\"orb\"=>"), "lib.rs menu handler needs an orb arm");
+    assert!(
+        lib.contains("\"orb\" =>") || lib.contains("\"orb\"=>"),
+        "lib.rs menu handler needs an orb arm"
+    );
     let native = src("src/orb_native.rs");
-    assert!(native.contains("chat_surface::toggle"), "orb click and menu open the chat through the dispatcher");
+    assert!(
+        native.contains("chat_surface::toggle"),
+        "orb click and menu open the chat through the dispatcher"
+    );
 }
 
 #[test]

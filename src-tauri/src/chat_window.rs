@@ -59,7 +59,7 @@ const DEV_SERVER_PORT: u16 = 1420;
 /// Accepts only the app's own pages: the `tauri` scheme (production macOS and Linux), the
 /// production `tauri.localhost` host (Windows and Android), and in debug builds the dev
 /// server on `localhost:1420`. Any other URL is refused.
-fn is_app_navigation(url: &tauri::Url) -> bool {
+pub(crate) fn is_app_navigation(url: &tauri::Url) -> bool {
     match url.scheme() {
         "tauri" => true,
         "http" | "https" => {

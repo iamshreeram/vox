@@ -23,8 +23,6 @@ mod job_runtime;
 mod llm_client;
 #[cfg(test)]
 mod orb_engine_tests;
-#[cfg(test)]
-mod orb_runtime_tests;
 mod orb_gaze;
 mod orb_geometry;
 #[cfg(test)]
@@ -32,6 +30,10 @@ mod orb_geometry_followup_tests;
 #[cfg(test)]
 mod orb_geometry_tests;
 mod orb_gesture;
+mod orb_native;
+mod orb_runtime;
+#[cfg(test)]
+mod orb_runtime_tests;
 #[cfg(test)]
 mod orb_settings_tests;
 mod orb_window;
@@ -777,6 +779,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "chat" => {
                 let _ = chat_surface::toggle(app);
             }
+            "orb" => orb_native::toggle_visibility(app),
             "listening_mode:hotkey" => {
                 let _ = commands::wakeword::wakeword_set_enabled(app.clone(), false);
                 let _ = commands::ambient::ambient_set_enabled(app.clone(), false);
@@ -860,6 +863,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
+
+    // Show the floating orb when the setting allows it. Nothing is built while it is hidden.
+    orb_native::apply_visibility(app_handle);
 }
 
 #[tauri::command]
@@ -1357,6 +1363,15 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::chat::change_converse_chat_log_setting,
             commands::chat::change_converse_chat_open_on_start_setting,
             commands::chat::toggle_chat_window_command,
+            commands::orb::orb_pointer_down,
+            commands::orb::orb_activate,
+            commands::orb::orb_menu,
+            commands::orb::orb_get_state,
+            commands::orb::orb_set_reduced_motion,
+            commands::orb::change_orb_visible_setting,
+            commands::orb::change_orb_size_setting,
+            commands::orb::change_chat_presentation_setting,
+            commands::orb::reset_orb_position,
             commands::converse_extras::change_speaker_filter_enabled_setting,
             commands::converse_extras::change_speaker_filter_sensitivity_setting,
             commands::realtime::change_exp_rt_bool_setting,
@@ -1435,7 +1450,7 @@ pub fn run(cli_args: CliArgs) {
     // Single choke point for the per-window command allow-list (DESIGN-CHAT A8). The chat
     // webview may call only its two commands; plugin commands never reach this handler.
     let invoke_handler = move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
-        if !chat_window::chat_command_allowed(
+        if !window_commands::window_command_allowed(
             invoke.message.webview().label(),
             invoke.message.command(),
         ) {

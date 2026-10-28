@@ -2126,6 +2126,60 @@ async toggleChatWindowCommand() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * The orb pressed: starts the gesture with id `id` (the page counts its presses).
+ */
+async orbPointerDown(id: number) : Promise<void> {
+    await TAURI_INVOKE("orb_pointer_down", { id });
+},
+/**
+ * Keyboard activation of the orb: toggles the conversation surface.
+ */
+async orbActivate() : Promise<void> {
+    await TAURI_INVOKE("orb_activate");
+},
+/**
+ * Opens the orb's native context menu.
+ */
+async orbMenu() : Promise<void> {
+    await TAURI_INVOKE("orb_menu");
+},
+/**
+ * The face for the live conversation snapshot.
+ */
+async orbGetState() : Promise<OrbState> {
+    return await TAURI_INVOKE("orb_get_state");
+},
+/**
+ * Reports the page's reduced-motion preference. While on, the orb stops gaze and polling.
+ */
+async orbSetReducedMotion(reduced: boolean) : Promise<void> {
+    await TAURI_INVOKE("orb_set_reduced_motion", { reduced });
+},
+/**
+ * Shows or hides the orb and stores the choice.
+ */
+async changeOrbVisibleSetting(enabled: boolean) : Promise<void> {
+    await TAURI_INVOKE("change_orb_visible_setting", { enabled });
+},
+/**
+ * Stores the orb size preset and resizes the orb at once.
+ */
+async changeOrbSizeSetting(size: OrbSize) : Promise<void> {
+    await TAURI_INVOKE("change_orb_size_setting", { size });
+},
+/**
+ * Stores the chat presentation choice. `None` returns to the platform default.
+ */
+async changeChatPresentationSetting(value: Presentation | null) : Promise<void> {
+    await TAURI_INVOKE("change_chat_presentation_setting", { value });
+},
+/**
+ * Forgets the saved orb position and moves the orb to the default corner.
+ */
+async resetOrbPosition() : Promise<void> {
+    await TAURI_INVOKE("reset_orb_position");
+},
 async changeSpeakerFilterEnabledSetting(enabled: boolean) : Promise<void> {
     await TAURI_INVOKE("change_speaker_filter_enabled_setting", { enabled });
 },
@@ -2989,6 +3043,14 @@ export type OrbSize =
  * 128 logical pixels.
  */
 "large"
+/**
+ * The orb's current face, as the orb page shows it.
+ */
+export type OrbState = { 
+/**
+ * Face name: `idle`, `sleep`, `concerned`, `listening`, `thinking`, `speaking` or `acting`.
+ */
+face: string }
 export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm"
 export type OverlayPosition = "top" | "bottom"
 /**
