@@ -67,7 +67,11 @@ fn below_is_used_when_it_fits_and_is_centred_on_the_orb() {
     let p = place_panel(orb_at(600.0, 100.0), PANEL, work(), 1.0, None);
     assert_eq!(p.side, Side::Below);
     assert_rect(p.rect, (478.0, 204.0, 340.0, 480.0));
-    assert!((p.tail_offset - 170.0).abs() < 1e-6, "tail {}", p.tail_offset);
+    assert!(
+        (p.tail_offset - 170.0).abs() < 1e-6,
+        "tail {}",
+        p.tail_offset
+    );
 }
 
 #[test]
@@ -75,7 +79,11 @@ fn near_the_bottom_a_horizontal_side_that_fits_wins_over_above() {
     let p = place_panel(orb_at(600.0, 700.0), PANEL, work(), 1.0, None);
     assert_eq!(p.side, Side::Right, "right has more room (744 vs 600)");
     assert_rect(p.rect, (704.0, 420.0, 340.0, 480.0));
-    assert!((p.tail_offset - 328.0).abs() < 1e-6, "tail {}", p.tail_offset);
+    assert!(
+        (p.tail_offset - 328.0).abs() < 1e-6,
+        "tail {}",
+        p.tail_offset
+    );
 }
 
 #[test]
@@ -91,11 +99,11 @@ fn only_above_is_used_when_no_other_side_fits() {
 fn left_edge_goes_right_and_right_edge_goes_left() {
     let p = place_panel(orb_at(20.0, 500.0), PANEL, work(), 1.0, None);
     assert_eq!(p.side, Side::Right);
-    assert_rect(p.rect, (124.0, 420.0, 340.0, 480.0));
+    assert_rect(p.rect, (124.0, 308.0, 340.0, 480.0));
 
     let p = place_panel(orb_at(1330.0, 500.0), PANEL, work(), 1.0, None);
     assert_eq!(p.side, Side::Left);
-    assert_rect(p.rect, (982.0, 420.0, 340.0, 480.0));
+    assert_rect(p.rect, (982.0, 308.0, 340.0, 480.0));
 }
 
 #[test]
@@ -118,7 +126,10 @@ fn hysteresis_keeps_the_current_side_until_the_better_one_fits_with_slack() {
     let kept = place_panel(tight, PANEL, work(), 1.0, Some(Side::Right));
     assert_eq!(kept.side, Side::Right);
     // Without a current side the priority order applies.
-    assert_eq!(place_panel(tight, PANEL, work(), 1.0, None).side, Side::Below);
+    assert_eq!(
+        place_panel(tight, PANEL, work(), 1.0, None).side,
+        Side::Below
+    );
     // With 66 px to spare Below wins again.
     let roomy = orb_at(600.0, 250.0);
     assert_eq!(
@@ -132,9 +143,17 @@ fn hysteresis_keeps_the_current_side_until_the_better_one_fits_with_slack() {
 
 #[test]
 fn the_panel_is_always_inside_the_work_area_for_every_orb_position() {
-    let sizes = [PANEL, Size { w: 340.0, h: 160.0 }, Size { w: 276.0, h: 76.0 }];
+    let sizes = [
+        PANEL,
+        Size { w: 340.0, h: 160.0 },
+        Size { w: 276.0, h: 76.0 },
+    ];
     for size in sizes {
-        let area = if size.w < 300.0 { r(0.0, 0.0, 300.0, 100.0) } else { work() };
+        let area = if size.w < 300.0 {
+            r(0.0, 0.0, 300.0, 100.0)
+        } else {
+            work()
+        };
         let mut y = area.y - 40.0;
         while y <= area.bottom() + 40.0 {
             let mut x = area.x - 40.0;
@@ -177,7 +196,11 @@ fn placement_scales_with_the_monitor() {
 fn panel_size_follows_the_request_within_bounds() {
     let s = panel_size(work(), 480.0, 1.0);
     assert_eq!((s.w, s.h), (340.0, 480.0));
-    assert_eq!(panel_size(work(), 2000.0, 1.0).h, 876.0, "work height minus 2 margins");
+    assert_eq!(
+        panel_size(work(), 2000.0, 1.0).h,
+        876.0,
+        "work height minus 2 margins"
+    );
     assert_eq!(panel_size(work(), 50.0, 1.0).h, 160.0, "minimum height");
 }
 
@@ -188,7 +211,11 @@ fn panel_size_in_tiny_work_areas_is_finite_non_negative_and_contained() {
     assert_eq!((s.w, s.h), (276.0, 76.0));
     let smaller = r(0.0, 0.0, 20.0, 20.0);
     let s = panel_size(smaller, 480.0, 1.0);
-    assert_eq!((s.w, s.h), (20.0, 20.0), "smaller than the margins: the work size itself");
+    assert_eq!(
+        (s.w, s.h),
+        (20.0, 20.0),
+        "smaller than the margins: the work size itself"
+    );
     for area in [tiny, smaller, r(0.0, 0.0, 0.0, 0.0), work()] {
         for req in [0.0, 1.0, 480.0, 1e9] {
             let s = panel_size(area, req, 1.0);
@@ -209,23 +236,53 @@ fn panel_size_uses_physical_pixels_on_a_scaled_monitor() {
 
 fn dual() -> Vec<MonitorInfo> {
     vec![
-        mon("Built-in", r(0.0, 0.0, 1920.0, 1080.0), r(0.0, 25.0, 1920.0, 1055.0), 1.0, true),
-        mon("DELL", r(1920.0, 0.0, 2560.0, 1440.0), r(1920.0, 0.0, 2560.0, 1440.0), 2.0, false),
-        mon("Left", r(-1280.0, 0.0, 1280.0, 1024.0), r(-1280.0, 0.0, 1280.0, 1024.0), 1.0, false),
+        mon(
+            "Built-in",
+            r(0.0, 0.0, 1920.0, 1080.0),
+            r(0.0, 25.0, 1920.0, 1055.0),
+            1.0,
+            true,
+        ),
+        mon(
+            "DELL",
+            r(1920.0, 0.0, 2560.0, 1440.0),
+            r(1920.0, 0.0, 2560.0, 1440.0),
+            2.0,
+            false,
+        ),
+        mon(
+            "Left",
+            r(-1280.0, 0.0, 1280.0, 1024.0),
+            r(-1280.0, 0.0, 1280.0, 1024.0),
+            1.0,
+            false,
+        ),
     ]
 }
 
 #[test]
 fn monitor_key_is_stable_and_rounded() {
-    assert_eq!(monitor_key("DELL", &r(1920.0, 0.0, 2560.0, 1440.0)), "DELL|1920|0|2560|1440");
+    assert_eq!(
+        monitor_key("DELL", &r(1920.0, 0.0, 2560.0, 1440.0)),
+        "DELL|1920|0|2560|1440"
+    );
 }
 
 #[test]
 fn monitor_for_picks_the_containing_monitor_else_the_nearest() {
     let m = dual();
-    assert_eq!(monitor_for((2000.0, 100.0), &m).map(|x| x.name.as_str()), Some("DELL"));
-    assert_eq!(monitor_for((-5.0, 5.0), &m).map(|x| x.name.as_str()), Some("Left"));
-    assert_eq!(monitor_for((6000.0, 100.0), &m).map(|x| x.name.as_str()), Some("DELL"));
+    assert_eq!(
+        monitor_for((2000.0, 100.0), &m).map(|x| x.name.as_str()),
+        Some("DELL")
+    );
+    assert_eq!(
+        monitor_for((-5.0, 5.0), &m).map(|x| x.name.as_str()),
+        Some("Left")
+    );
+    assert_eq!(
+        monitor_for((6000.0, 100.0), &m).map(|x| x.name.as_str()),
+        Some("DELL")
+    );
     assert!(monitor_for((0.0, 0.0), &[]).is_none());
 }
 
@@ -254,17 +311,29 @@ fn clamp_keeps_a_half_visible_orb_and_moves_a_stray_one_to_the_nearest_corner() 
     let half = orb_at(1872.0, 500.0);
     assert_rect(clamp_orb(half, &m), (1872.0, 500.0, 96.0, 96.0));
     // Slightly less than half visible: nearest work corner (top-right here) inset by 20.
-    assert_rect(clamp_orb(orb_at(1873.0, 500.0), &m), (1804.0, 45.0, 96.0, 96.0));
+    assert_rect(
+        clamp_orb(orb_at(1873.0, 500.0), &m),
+        (1804.0, 45.0, 96.0, 96.0),
+    );
     // Far away: bottom-right corner inset 20.
-    assert_rect(clamp_orb(orb_at(5000.0, 5000.0), &m), (1804.0, 964.0, 96.0, 96.0));
+    assert_rect(
+        clamp_orb(orb_at(5000.0, 5000.0), &m),
+        (1804.0, 964.0, 96.0, 96.0),
+    );
     // No monitors: unchanged.
-    assert_rect(clamp_orb(orb_at(5000.0, 5000.0), &[]), (5000.0, 5000.0, 96.0, 96.0));
+    assert_rect(
+        clamp_orb(orb_at(5000.0, 5000.0), &[]),
+        (5000.0, 5000.0, 96.0, 96.0),
+    );
 }
 
 #[test]
 fn an_orb_on_a_negative_origin_monitor_is_left_alone() {
     let m = dual();
-    assert_rect(clamp_orb(orb_at(-1200.0, 100.0), &m), (-1200.0, 100.0, 96.0, 96.0));
+    assert_rect(
+        clamp_orb(orb_at(-1200.0, 100.0), &m),
+        (-1200.0, 100.0, 96.0, 96.0),
+    );
 }
 
 #[test]
@@ -274,7 +343,10 @@ fn position_round_trips_on_a_scaled_secondary_monitor() {
     let pos = position_from_rect(orb, &m).expect("monitor found");
     assert_eq!(pos.monitor_name, "DELL");
     assert_eq!(pos.monitor_key, "DELL|1920|0|2560|1440");
-    assert!((pos.fx - 0.5).abs() < 1e-9 && (pos.fy - 0.5).abs() < 1e-9, "{pos:?}");
+    assert!(
+        (pos.fx - 0.5).abs() < 1e-9 && (pos.fy - 0.5).abs() < 1e-9,
+        "{pos:?}"
+    );
     let back = restore_position(&pos, OrbSize::Medium, &m).expect("restored");
     assert_rect(back, (3104.0, 624.0, 192.0, 192.0));
 }
@@ -288,8 +360,20 @@ fn restore_uses_the_name_when_the_key_changed() {
         fy: 0.5,
     };
     let after_resolution_change = vec![
-        mon("Built-in", r(0.0, 0.0, 1920.0, 1080.0), r(0.0, 0.0, 1920.0, 1080.0), 1.0, true),
-        mon("DELL", r(1920.0, 0.0, 1920.0, 1080.0), r(1920.0, 0.0, 1920.0, 1080.0), 1.0, false),
+        mon(
+            "Built-in",
+            r(0.0, 0.0, 1920.0, 1080.0),
+            r(0.0, 0.0, 1920.0, 1080.0),
+            1.0,
+            true,
+        ),
+        mon(
+            "DELL",
+            r(1920.0, 0.0, 1920.0, 1080.0),
+            r(1920.0, 0.0, 1920.0, 1080.0),
+            1.0,
+            false,
+        ),
     ];
     let back = restore_position(&pos, OrbSize::Medium, &after_resolution_change).expect("restored");
     assert_rect(back, (2832.0, 492.0, 96.0, 96.0));
@@ -325,7 +409,13 @@ fn restore_always_clamps() {
         fx: 1.0,
         fy: 1.0,
     };
-    let m = vec![mon("Built-in", r(0.0, 0.0, 1920.0, 1080.0), r(0.0, 0.0, 1920.0, 1080.0), 1.0, true)];
+    let m = vec![mon(
+        "Built-in",
+        r(0.0, 0.0, 1920.0, 1080.0),
+        r(0.0, 0.0, 1920.0, 1080.0),
+        1.0,
+        true,
+    )];
     assert_rect(
         restore_position(&pos, OrbSize::Medium, &m).expect("restored"),
         (1804.0, 964.0, 96.0, 96.0),

@@ -2563,7 +2563,23 @@ agent_jobs_agent_flag?: string;
 /**
  * Turns ask mode on: a question to a coding agent whose summary is spoken (M4). Off by default.
  */
-agent_jobs_ask_enabled?: boolean }
+agent_jobs_ask_enabled?: boolean; 
+/**
+ * Chat presentation choice. `None` uses the platform default (floating on macOS).
+ */
+chat_presentation?: Presentation | null; 
+/**
+ * Whether the orb is shown. `None` uses the release default (`ORB_VISIBLE_DEFAULT`).
+ */
+orb_visible?: boolean | null; 
+/**
+ * Orb size preset.
+ */
+orb_size?: OrbSize; 
+/**
+ * Last saved orb position. `None` until the orb has been placed.
+ */
+orb_position?: OrbPosition | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AuxError = "busy" | "cancelled" | "not_installed" | "corrupt" | "url_not_allowed" | "download" | "io"
@@ -2935,6 +2951,44 @@ health: string;
  * When `health == "failed"`: `load` | `synth` | `sink` | `worker_exit`.
  */
 failure: string | null }
+/**
+ * The saved orb position: the monitor it was on plus its centre as a fraction of that monitor's
+ * work area. Fractions survive resolution and scale changes; the name and key identify the
+ * monitor when it returns.
+ */
+export type OrbPosition = { 
+/**
+ * Monitor name at save time.
+ */
+monitor_name: string; 
+/**
+ * Monitor key at save time (see [`monitor_key`]).
+ */
+monitor_key: string; 
+/**
+ * Horizontal centre as a fraction of the work-area width, in `[0, 1]`.
+ */
+fx: number; 
+/**
+ * Vertical centre as a fraction of the work-area height, in `[0, 1]`.
+ */
+fy: number }
+/**
+ * Orb size preset. Stored in settings as `small`, `medium` or `large`.
+ */
+export type OrbSize = 
+/**
+ * 72 logical pixels.
+ */
+"small" | 
+/**
+ * 96 logical pixels (default).
+ */
+"medium" | 
+/**
+ * 128 logical pixels.
+ */
+"large"
 export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm"
 export type OverlayPosition = "top" | "bottom"
 /**
@@ -2993,6 +3047,18 @@ builtin: boolean;
  */
 active: boolean }
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
+/**
+ * Whether the conversation uses the floating panel or the classic window.
+ */
+export type Presentation = 
+/**
+ * Floating orb with an anchored chat panel.
+ */
+"floating" | 
+/**
+ * The classic decorated chat window.
+ */
+"window"
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type SecretMap = Partial<{ [key in string]: string }>
 /**

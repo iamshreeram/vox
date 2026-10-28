@@ -1,19 +1,15 @@
 mod actions;
+mod activation_policy;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
 mod catalog;
-mod chat_window;
-#[cfg(test)]
-mod orb_geometry_tests;
+mod chat_presentation;
 #[cfg(test)]
 mod chat_presentation_tests;
-#[cfg(test)]
-mod window_policy_tests;
-#[cfg(test)]
-mod orb_settings_tests;
+mod chat_window;
 mod chinese_script;
 pub mod cli;
 mod clipboard;
@@ -22,6 +18,14 @@ mod helpers;
 mod input;
 mod job_runtime;
 mod llm_client;
+mod orb_geometry;
+#[cfg(test)]
+mod orb_geometry_tests;
+#[cfg(test)]
+mod orb_settings_tests;
+mod window_commands;
+#[cfg(test)]
+mod window_policy_tests;
 use crate::managers::agent_jobs::ShutdownConfig;
 mod managers;
 mod memory;

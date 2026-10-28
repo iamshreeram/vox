@@ -14,7 +14,12 @@ use crate::settings::{get_default_settings, preserve_launch_fields, AppSettings}
 fn legacy_store() -> AppSettings {
     let mut json = serde_json::to_value(get_default_settings()).expect("serialise defaults");
     let map = json.as_object_mut().expect("settings object");
-    for key in ["chat_presentation", "orb_visible", "orb_size", "orb_position"] {
+    for key in [
+        "chat_presentation",
+        "orb_visible",
+        "orb_size",
+        "orb_position",
+    ] {
         map.remove(key);
     }
     serde_json::from_value(json).expect("a store without the orb keys must load")

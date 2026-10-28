@@ -94,7 +94,13 @@ fn the_orb_window_may_call_only_the_orb_commands() {
     for c in OLD_CHAT.iter().chain(NEW_CHAT.iter()) {
         assert!(!window_command_allowed("orb", c), "{c}");
     }
-    for c in ["get_app_settings", "change_ptt_setting", "toggle_chat_window_command", "brain_test_connection", ""] {
+    for c in [
+        "get_app_settings",
+        "change_ptt_setting",
+        "toggle_chat_window_command",
+        "brain_test_connection",
+        "",
+    ] {
         assert!(!window_command_allowed("orb", c), "{c}");
     }
 }
@@ -107,7 +113,12 @@ fn the_chat_window_may_call_only_its_ten_commands() {
     for c in ORB {
         assert!(!window_command_allowed("chat", c), "{c}");
     }
-    for c in ["get_app_settings", "toggle_chat_window_command", "first_run_finish_step", ""] {
+    for c in [
+        "get_app_settings",
+        "toggle_chat_window_command",
+        "first_run_finish_step",
+        "",
+    ] {
         assert!(!window_command_allowed("chat", c), "{c}");
     }
 }
@@ -118,7 +129,10 @@ fn every_other_window_is_refused_the_orb_and_chat_commands() {
         for c in ORB.iter().chain(OLD_CHAT.iter()).chain(NEW_CHAT.iter()) {
             assert!(!window_command_allowed(label, c), "{label}: {c}");
         }
-        assert!(window_command_allowed(label, "get_app_settings"), "{label} keeps normal commands");
+        assert!(
+            window_command_allowed(label, "get_app_settings"),
+            "{label} keeps normal commands"
+        );
     }
 }
 
@@ -131,7 +145,10 @@ fn the_new_gate_is_a_superset_of_the_old_chat_gate() {
         );
     }
     // The old gate is untouched in G1: it does not know the new commands yet.
-    assert!(!crate::chat_window::chat_command_allowed("chat", "chat_panel_ready"));
+    assert!(!crate::chat_window::chat_command_allowed(
+        "chat",
+        "chat_panel_ready"
+    ));
 }
 
 #[test]
@@ -149,5 +166,8 @@ fn the_orb_capability_file_grants_events_only_once_it_exists() {
         .iter()
         .map(|p| p.as_str().unwrap_or_default().to_string())
         .collect();
-    assert_eq!(perms, ["core:event:allow-listen", "core:event:allow-unlisten"]);
+    assert_eq!(
+        perms,
+        ["core:event:allow-listen", "core:event:allow-unlisten"]
+    );
 }
