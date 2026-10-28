@@ -208,7 +208,7 @@ export const RealtimeSection: React.FC<RealtimeSectionProps> = React.memo(
 
     return (
       <div className="space-y-4">
-        <p className="text-xs text-mid-gray px-1">{t(`${K}.intro`)}</p>
+        <p className="text-xs text-mid-gray px-3">{t(`${K}.intro`)}</p>
 
         {boolToggle(
           "enabled",
@@ -277,7 +277,7 @@ export const RealtimeSection: React.FC<RealtimeSectionProps> = React.memo(
         <p
           role="status"
           aria-live="polite"
-          className="text-xs text-mid-gray px-4"
+          className="text-xs text-mid-gray px-3"
         >
           {t(`${K}.status.${status}`)}
         </p>

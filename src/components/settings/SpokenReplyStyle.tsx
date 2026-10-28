@@ -326,7 +326,7 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
 
     return (
       <>
-        <div className="px-4 pt-3 pb-1">
+        <div className="px-3 pt-3 pb-1">
           <p className="text-xs text-mid-gray">
             {t("settings.advanced.tts.composer.description")}
           </p>
@@ -401,14 +401,14 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
             </SettingContainer>
 
             {providerInfo && (
-              <p className="text-xs text-mid-gray px-4">
+              <p className="text-xs text-mid-gray px-3">
                 {t("settings.advanced.tts.composer.dataFlowModel", {
                   provider: providerInfo.label,
                   baseUrl: providerInfo.base_url,
                 })}
               </p>
             )}
-            <p className="text-xs text-mid-gray px-4">
+            <p className="text-xs text-mid-gray px-3">
               {t("settings.advanced.tts.composer.latencyModel")}
             </p>
           </>
@@ -482,7 +482,7 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
               />
             </SettingContainer>
 
-            <div className="px-4 p-2 flex flex-col gap-2">
+            <div className="py-2 flex flex-col gap-2">
               <ToggleSwitch
                 checked={commandDraft.acknowledge}
                 onChange={(checked) =>
@@ -494,12 +494,12 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
                 descriptionMode={descriptionMode}
                 grouped={grouped}
               />
-              <p role="note" className="text-xs text-warning">
+              <p role="note" className="px-3 text-xs text-warning">
                 {t("settings.advanced.tts.composer.ackWarning")}
               </p>
             </div>
 
-            <div className="px-4 p-2 flex flex-col gap-2">
+            <div className="px-3 p-2 flex flex-col gap-2">
               <div className="flex items-center gap-3">
                 <Button
                   variant="secondary"
@@ -518,20 +518,20 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
             </div>
 
             {saved.command_path !== "" && (
-              <p className="text-xs text-mid-gray px-4">
+              <p className="text-xs text-mid-gray px-3">
                 {t("settings.advanced.tts.composer.dataFlowCommand", {
                   path: saved.command_path,
                 })}
               </p>
             )}
-            <p className="text-xs text-mid-gray px-4">
+            <p className="text-xs text-mid-gray px-3">
               {t("settings.advanced.tts.composer.latencyCommand")}
             </p>
           </>
         )}
 
         {saved.mode !== "off" && saved.send_user_utterance && (
-          <p className="text-xs text-mid-gray px-4">
+          <p className="text-xs text-mid-gray px-3">
             {t("settings.advanced.tts.composer.dataFlowUtterance")}
           </p>
         )}
@@ -660,7 +660,7 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
           </div>
         </SettingContainer>
 
-        <p aria-live="polite" className="text-sm px-4">
+        <p aria-live="polite" className="text-sm px-3">
           <span className="text-mid-gray">
             {t("settings.advanced.tts.composer.statusLabel")}
           </span>{" "}

@@ -1,6 +1,5 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { SettingsGroup } from "../../ui/SettingsGroup";
 import { LanguageSelector } from "../LanguageSelector";
 import { TranslateToEnglish } from "../TranslateToEnglish";
 import { useModelStore } from "../../../stores/modelStore";
@@ -23,11 +22,12 @@ export const ModelSettingsCard: React.FC = () => {
   }
 
   return (
-    <SettingsGroup
-      title={t("settings.modelSettings.title", {
-        model: currentModelInfo.name,
-      })}
-    >
+    <>
+      <h2 className="px-3 pt-3 pb-1 text-xs font-medium text-mid-gray uppercase tracking-wide">
+        {t("settings.modelSettings.title", {
+          model: currentModelInfo.name,
+        })}
+      </h2>
       {showLanguageSelector && (
         <LanguageSelector
           descriptionMode="tooltip"
@@ -41,6 +41,6 @@ export const ModelSettingsCard: React.FC = () => {
       {supportsTranslation && (
         <TranslateToEnglish descriptionMode="tooltip" grouped={true} />
       )}
-    </SettingsGroup>
+    </>
   );
 };

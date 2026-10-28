@@ -56,7 +56,7 @@ export const SmartTurnSettings: React.FC<SmartTurnSettingsProps> = ({
         grouped={grouped}
       />
       {smartTurnFallbackNote(enabled, ready) && (
-        <p className="px-4 text-xs text-mid-gray">
+        <p className="px-3 text-xs text-mid-gray">
           {t("converse.voice.smartTurn.fallbackNote")}
         </p>
       )}

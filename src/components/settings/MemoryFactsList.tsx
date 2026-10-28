@@ -52,7 +52,7 @@ export const MemoryFactsList: React.FC = () => {
   };
 
   return (
-    <div className="px-4 py-3 space-y-3">
+    <div className="px-3 py-3 space-y-3">
       <div className="flex gap-2">
         <input
           type="text"

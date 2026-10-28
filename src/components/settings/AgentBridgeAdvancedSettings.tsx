@@ -38,7 +38,7 @@ export const AgentBridgeAdvancedSettings: React.FC<AgentBridgeAdvancedSettingsPr
 
     return (
       <>
-        <p className="px-4 pt-2 text-xs font-medium text-mid-gray">
+        <p className="px-3 pt-2 text-xs font-medium text-mid-gray">
           {t("settings.advanced.agentBridge.advancedLabel")}
         </p>
         <SettingContainer

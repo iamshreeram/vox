@@ -342,10 +342,10 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
           grouped={grouped}
         />
 
-        <p className="text-xs text-mid-gray px-4">
+        <p className="text-xs text-mid-gray px-3">
           {t("converse.section.privacyNote")}
         </p>
-        <p className="text-xs text-mid-gray px-4">
+        <p className="text-xs text-mid-gray px-3">
           {t("converse.section.wakeWordNote")}
         </p>
       </>

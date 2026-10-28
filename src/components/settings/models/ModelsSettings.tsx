@@ -254,12 +254,12 @@ export const ModelsSettings: React.FC = () => {
 
         <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />
 
-        <h2 className="px-1 text-xs font-medium text-mid-gray uppercase tracking-wide">
+        <h2 className="px-3 pt-3 pb-1 text-xs font-medium text-mid-gray uppercase tracking-wide">
           {t("settings.models.transcriptionHeading")}
         </h2>
 
         {/* Search bar — filter the catalog by name or description */}
-        <div className="relative">
+        <div className="relative mx-3 my-2">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text/40 pointer-events-none" />
           <input
             type="text"
@@ -270,7 +270,7 @@ export const ModelsSettings: React.FC = () => {
           />
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-6 px-3 pb-3 pt-1">
           {/* Downloaded Models Section — header always visible so filter stays accessible */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">

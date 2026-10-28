@@ -26,7 +26,7 @@ export const VaultRagPreview: React.FC<VaultRagPreviewProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-2 px-4 py-3">
+    <div className="flex flex-col gap-2 px-3 py-3">
       <div className="flex gap-2">
         <Input
           type="text"

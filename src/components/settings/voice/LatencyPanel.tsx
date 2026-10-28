@@ -73,7 +73,7 @@ const LatencyBody: React.FC<{ view: LatencyView }> = ({ view }) => {
 
   if (view.kind === "placeholder") {
     return (
-      <p className="px-4 text-xs text-mid-gray">
+      <p className="px-3 text-xs text-mid-gray">
         {t("converse.voice.latency.placeholder")}
       </p>
     );
@@ -100,7 +100,7 @@ const LatencyBody: React.FC<{ view: LatencyView }> = ({ view }) => {
       : t("converse.voice.latency.ms", { ms: value });
 
   return (
-    <div className="mx-4 flex flex-col gap-2 rounded-lg border border-mid-gray/30 p-3">
+    <div className="mx-3 flex flex-col gap-2 rounded-lg border border-mid-gray/30 p-3">
       <p className="text-xs text-mid-gray">
         {t("converse.voice.latency.turn", { turn: view.turn })}
       </p>

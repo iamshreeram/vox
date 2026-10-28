@@ -149,7 +149,7 @@ export const VaultRagSettings: React.FC<VaultRagSettingsProps> = ({
         grouped={grouped}
       />
       {!canEnable && (
-        <p className="px-4 text-xs text-mid-gray">
+        <p className="px-3 text-xs text-mid-gray">
           {t("settings.experimental.vaultRag.needsVaultPath")}
         </p>
       )}
@@ -225,7 +225,7 @@ export const VaultRagSettings: React.FC<VaultRagSettingsProps> = ({
         </div>
       </SettingContainer>
       <VaultRagPreview enabled={enabled} onError={setActionError} />
-      <ul className="flex flex-col gap-2 px-4 pb-3 text-xs text-mid-gray">
+      <ul className="flex flex-col gap-2 px-3 pb-3 text-xs text-mid-gray">
         <li>{t("settings.experimental.vaultRag.disclosure.folders")}</li>
         <li>{t("settings.experimental.vaultRag.disclosure.sentToProvider")}</li>
         <li>
