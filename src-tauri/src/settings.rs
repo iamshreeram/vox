@@ -1,7 +1,9 @@
+use crate::chat_presentation::Presentation;
 use crate::managers::acp_agent::PermissionSettings;
 use crate::managers::acp_permission::PermissionMode;
 use crate::managers::brain::{self, MigrationOutcome};
 use crate::managers::first_run::FirstRunOutcome;
+use crate::orb_geometry::{OrbPosition, OrbSize};
 use crate::utils;
 use log::{debug, warn};
 use serde::de::{self, Visitor};
@@ -1080,6 +1082,18 @@ pub struct AppSettings {
     /// Turns ask mode on: a question to a coding agent whose summary is spoken (M4). Off by default.
     #[serde(default)]
     pub agent_jobs_ask_enabled: bool,
+    /// Chat presentation choice. `None` uses the platform default (floating on macOS).
+    #[serde(default)]
+    pub chat_presentation: Option<Presentation>,
+    /// Whether the orb is shown. `None` uses the release default (`ORB_VISIBLE_DEFAULT`).
+    #[serde(default)]
+    pub orb_visible: Option<bool>,
+    /// Orb size preset.
+    #[serde(default)]
+    pub orb_size: OrbSize,
+    /// Last saved orb position. `None` until the orb has been placed.
+    #[serde(default)]
+    pub orb_position: Option<OrbPosition>,
 }
 
 /// Default vault folders for the RAG index (DESIGN Rev 5, 3.1).
@@ -1432,7 +1446,17 @@ pub fn preserve_launch_fields(mut incoming: AppSettings, committed: &AppSettings
     incoming.conversation_planner = committed.conversation_planner;
     copy_brain_fields(&mut incoming, committed);
     copy_first_run_fields(&mut incoming, committed);
+    copy_orb_fields(&mut incoming, committed);
     incoming
+}
+
+/// Copies the orb and chat presentation fields from `source`, so a stale whole-object write
+/// cannot move, hide or switch the orb. Dedicated commands set them.
+fn copy_orb_fields(target: &mut AppSettings, source: &AppSettings) {
+    target.chat_presentation = source.chat_presentation;
+    target.orb_visible = source.orb_visible;
+    target.orb_size = source.orb_size;
+    target.orb_position = source.orb_position.clone();
 }
 
 /// Copies the first-run fields from `source`, so a stale whole-object write cannot undo a
@@ -2377,6 +2401,10 @@ pub fn get_default_settings() -> AppSettings {
         agent_jobs_agents: Vec::new(),
         agent_jobs_agent_flag: default_agent_jobs_agent_flag(),
         agent_jobs_ask_enabled: false,
+        chat_presentation: None,
+        orb_visible: None,
+        orb_size: OrbSize::default(),
+        orb_position: None,
     }
 }
 
