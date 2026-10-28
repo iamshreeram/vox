@@ -192,3 +192,21 @@ export function faceFromEvent(prev: FaceView, event: unknown): FaceView {
     end: typeof end === "string" ? end : null,
   };
 }
+
+/**
+ * Ring accent per face for the floating orb. The orb body is gold, so every ring colour stays in
+ * the warm gold-to-coral family instead of the chat window's cyan, violet and blue accents.
+ */
+export const ORB_ACCENT: Record<string, string> = {
+  idle: "#F5B921",
+  listening: "#FFD23F",
+  thinking: "#FF9F1C",
+  acting: "#FF7A18",
+  speaking: "#FFC53D",
+  concerned: "#FF6B6B",
+};
+
+/** Inline custom property for the orb root: the warm accent of the current face. */
+export function orbAccentStyle(face: string): { "--chat-accent": string } {
+  return { "--chat-accent": ORB_ACCENT[face] ?? ORB_ACCENT.idle };
+}

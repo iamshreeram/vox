@@ -13,7 +13,6 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import VoxAvatar from "../chat/VoxAvatar";
-import { accentStyle } from "../chat/chatTheme";
 import { avatarFace, type AvatarFace } from "../chat/chatModel";
 import {
   GAZE_MAX_UNITS,
@@ -27,6 +26,7 @@ import {
   keyCommand,
   nextGlintDelay,
   orbClasses,
+  orbAccentStyle,
   orbFace,
   orbReducer,
   type FaceView,
@@ -227,7 +227,7 @@ export default function OrbApp() {
 
   const classes = ["orb-root", ...orbClasses(state)].join(" ");
   const style = {
-    ...accentStyle(state.face),
+    ...orbAccentStyle(state.face),
     "--gaze-x": gaze.x,
     "--gaze-y": gaze.y,
   } as CSSProperties;

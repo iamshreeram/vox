@@ -45,6 +45,7 @@ body {
     "Segoe UI",
     sans-serif;
   color: #ffffff;
+  text-shadow: none;
   pointer-events: none;
   user-select: none;
   transition: none;
@@ -53,12 +54,13 @@ body {
 
 .bubble-user {
   align-self: flex-end;
-  background: rgba(29, 78, 216, 0.82);
+  background: rgba(255, 138, 0, 0.9);
+  color: #2a1500;
 }
 
 .bubble-assistant {
   align-self: flex-start;
-  background: rgba(38, 38, 44, 0.82);
+  background: rgba(124, 58, 237, 0.88);
 }
 
 @keyframes bubble-enter {
