@@ -36,6 +36,33 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
     keywords: ["hold", "toggle", "push to talk", "tap", "activation", "mode"],
   },
   {
+    id: "general.floatingOrb.show",
+    section: "general",
+    groupId: "conversation",
+    groupKey: "settings.general.groups.conversation",
+    labelKey: "settings.floatingOrb.show.title",
+    descriptionKey: "settings.floatingOrb.show.description",
+    keywords: ["orb", "floating", "bubble", "always on top", "overlay", "show"],
+  },
+  {
+    id: "general.floatingOrb.size",
+    section: "general",
+    groupId: "conversation",
+    groupKey: "settings.general.groups.conversation",
+    labelKey: "settings.floatingOrb.size.title",
+    descriptionKey: "settings.floatingOrb.size.description",
+    keywords: ["orb", "floating", "size", "small", "medium", "large"],
+  },
+  {
+    id: "general.floatingOrb.resetPosition",
+    section: "general",
+    groupId: "conversation",
+    groupKey: "settings.general.groups.conversation",
+    labelKey: "settings.floatingOrb.resetPosition.title",
+    descriptionKey: "settings.floatingOrb.resetPosition.description",
+    keywords: ["orb", "floating", "position", "reset", "corner", "move"],
+  },
+  {
     id: "general.theme",
     section: "general",
     groupKey: "settings.appearance.title",
@@ -739,6 +766,18 @@ export const CORE_EXCLUDED: Readonly<Record<string, string>> = {
  * produce; `ids: []` requires a note explaining why nothing there is a row.
  */
 export const CORE_DYNAMIC: readonly DynamicFamily[] = [
+  {
+    source: "src/components/settings/orb/FloatingOrbSettings.tsx",
+    prefix: "settings.floatingOrb.size.",
+    ids: [],
+    note: "size option names in the orb size select; choices in an existing row, not searchable rows",
+  },
+  {
+    source: "src/components/settings/orb/FloatingOrbSettings.tsx",
+    prefix: "settings.floatingOrb.reason.",
+    ids: [],
+    note: "reason text shown under the Show orb toggle when the orb is unsupported; a result, not a setting",
+  },
   {
     source: "src/components/settings/brain/BrainTestGroup.tsx",
     prefix: "settings.brain.test.",

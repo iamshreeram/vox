@@ -58,6 +58,7 @@ const scenarios: Record<string, () => void> = {
       "conversation",
       "persona",
       "replyStyle",
+      "floatingOrb",
       "realtime",
       "latencyPanel",
     ]);
@@ -192,11 +193,13 @@ const scenarios: Record<string, () => void> = {
         "conversation",
         "persona",
         "replyStyle",
+        "floatingOrb",
       ]);
       assert.deepEqual(visibleControls(group, flags, true), [
         "conversation",
         "persona",
         "replyStyle",
+        "floatingOrb",
         "realtime",
         "latencyPanel",
       ]);

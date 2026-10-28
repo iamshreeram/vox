@@ -366,7 +366,7 @@ fn target_rect(settings: &AppSettings, monitors: &[MonitorInfo]) -> Option<Rect>
 
 /// The platform facts the orb decision needs. On Linux the display type and compositing come
 /// from GDK; elsewhere the backend is unknown and compositing is assumed.
-fn current_env() -> PlatformEnv {
+pub(crate) fn current_env() -> PlatformEnv {
     let (linux_backend, composited) = display_facts();
     PlatformEnv {
         os: current_os(),

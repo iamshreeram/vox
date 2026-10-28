@@ -163,3 +163,37 @@ pub fn current_os() -> Os {
         Os::Other
     }
 }
+
+/// The wire name of a floating block, as the settings UI reads it (`reason.<key>` text).
+pub fn block_key(block: FloatingBlock) -> &'static str {
+    match block {
+        FloatingBlock::Wayland => "wayland",
+        FloatingBlock::UnknownBackend => "unknown_backend",
+        FloatingBlock::NoCompositor => "no_compositor",
+        FloatingBlock::UnsupportedOs => "unsupported_os",
+    }
+}
+
+/// Whether the floating orb can be used on this system, and the block key when it cannot.
+/// `block` is `None` exactly when `supported` is true.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct OrbSupport {
+    /// The floating orb can be shown on this system.
+    pub supported: bool,
+    /// Why it cannot (see [`block_key`]); `None` when supported.
+    pub block: Option<String>,
+}
+
+/// The orb support for a platform description, derived from [`floating_supported`].
+pub fn orb_support_for(env: &PlatformEnv) -> OrbSupport {
+    match floating_supported(env) {
+        Ok(()) => OrbSupport {
+            supported: true,
+            block: None,
+        },
+        Err(why) => OrbSupport {
+            supported: false,
+            block: Some(block_key(why).to_string()),
+        },
+    }
+}

@@ -42,6 +42,7 @@ const ALL_CONTROLS: ControlId[] = [
   "realtime",
   "replyStyle",
   "conversation",
+  "floatingOrb",
   "persona",
   "latencyPanel",
   "smartTurn",
@@ -98,7 +99,7 @@ const scenarios: Record<string, () => void> = {
     const ids = PLACED_GROUPS.flatMap((g) => g.controls.map((c) => c.id));
     assert.deepEqual([...ids].sort(), [...ALL_CONTROLS].sort());
     assert.equal(new Set(ids).size, ids.length);
-    assert.equal(ALL_CONTROLS.length, 27);
+    assert.equal(ALL_CONTROLS.length, 28);
   },
   "only the four destination sections are used, never experimental": () => {
     assert.deepEqual(
