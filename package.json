@@ -28,6 +28,8 @@
     "test:settings-search:e2e": "playwright test tests/settings-search.spec.ts --reporter=line",
     "test:chat:e2e": "playwright test tests/chat-window.spec.ts --reporter=line",
     "test:models-page:e2e": "playwright test tests/models-page.spec.ts --reporter=line",
+    "test:orb": "bun src/orb/orbModel.test.ts",
+    "test:orb:e2e": "playwright test tests/orb-page.spec.ts --reporter=line",
     "test:first-run:e2e": "playwright test tests/first-run.spec.ts --reporter=line",
     "test:permission-prompt:e2e": "playwright test tests/permission-prompt.spec.ts --reporter=line",
     "test:collapsible": "bun src/components/ui/collapsibleState.test.ts && bun src/components/ui/collapsibleGroup.test.tsx",
