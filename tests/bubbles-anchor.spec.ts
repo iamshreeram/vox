@@ -12,8 +12,8 @@ import {
  *
  * Contract under test:
  *   - Snapshot payload may carry `anchor: "top" | "bottom"`. Missing or unknown means "bottom".
- *   - anchor "top": the first bubble's top edge is within 16 px of the window top (the stack
- *     hugs the top, newest last).
+ *   - anchor "top": the newest bubble's top edge is within 16 px of the window top (the stack
+ *     hugs the top, newest bubble first/nearest the orb; DOM order stays oldest first).
  *   - anchor "bottom" or missing: the last bubble's bottom edge is within 16 px of the window
  *     bottom.
  *   - A change of anchor with the same revision keeps the same DOM nodes and does not restart
@@ -80,16 +80,20 @@ test.describe("Bubble stack anchor", () => {
     await expect(bubbles(page)).toHaveCount(2);
     await expect(log(page)).toHaveAttribute("data-anchor", "top");
 
-    const first = await bubbles(page).first().boundingBox();
-    expect(first, "first bubble has a box").toBeTruthy();
-    const top = (first as { y: number }).y;
+    // Below the orb the NEWEST bubble is nearest the orb: it is drawn first, at the very top.
+    const newest = await bubbles(page).last().boundingBox();
+    const oldest = await bubbles(page).first().boundingBox();
+    expect(newest, "newest bubble has a box").toBeTruthy();
+    expect(oldest, "oldest bubble has a box").toBeTruthy();
+    const top = (newest as { y: number }).y;
     expect(
       top,
-      "top edge is within 16 px of the window top",
+      "newest top edge is within 16 px of the window top",
     ).toBeLessThanOrEqual(EDGE_PX);
     expect(top).toBeGreaterThanOrEqual(0);
+    expect((oldest as { y: number }).y).toBeGreaterThan(top);
 
-    // Newest is still the last item, nearest the orb in the stack order.
+    // The DOM (reading) order stays oldest first.
     await expect(bubbles(page).last()).toContainText("newest answer");
   });
 

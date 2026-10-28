@@ -47,7 +47,6 @@ function isSnapshot(value: unknown): value is Snapshot {
   return (
     typeof candidate.instance === "number" &&
     typeof candidate.rev === "number" &&
-    (candidate.anchor === undefined || typeof candidate.anchor === "string") &&
     Array.isArray(candidate.items)
   );
 }
