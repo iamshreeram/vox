@@ -1,0 +1,141 @@
+/* Vox orb page: a transparent window holding only the orb. Animations are plain CSS.
+   The avatar keyframes and face rules come from ../chat/avatar.css (imported by main.tsx), so
+   the states that the face sets (listening, thinking, speaking, ...) keep their own animations.
+   The idle extras below only target data-face="idle", so they never override a face. */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: transparent !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.orb-root {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  /* Round box: hit testing follows the border radius, so the pointer is only inside the orb. */
+  border-radius: 50%;
+  overflow: hidden;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  transition: transform 0.2s ease-out;
+}
+
+.orb-root .vox-avatar {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.orb-root:focus-visible {
+  outline: 2px solid var(--chat-accent);
+  outline-offset: -4px;
+}
+
+/* Hover lift (A2): the root moves, the avatar keeps its own animations. */
+.orb-root.is-hover {
+  transform: translateY(-2%);
+}
+
+/* Grab (A4 and A3 feedback): the grabbing cursor and a slight press. */
+.orb-root.is-grabbing {
+  cursor: grabbing;
+  transform: scale(0.96);
+}
+
+/* Click pounce (A3): 0.45 s squash and stretch on the whole orb. */
+.orb-root.is-pouncing {
+  animation: orb-pounce 0.45s ease-out 1 both;
+}
+
+@keyframes orb-pounce {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  35% {
+    transform: translateY(-12%) scale(1.05, 0.95);
+  }
+  70% {
+    transform: translateY(2%) scale(0.95, 1.05);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Idle extras: the ring pulse is only for the idle face and speeds up while the pointer is
+   near or pressing. Face animations (listening, speaking, ...) are not touched here. */
+.orb-root .vox-avatar[data-face="idle"] .vox-ring {
+  animation: vox-ring-pulse 3s ease-in-out infinite;
+  opacity: 0.4;
+}
+
+.orb-root .vox-avatar[data-face="idle"] .vox-ring-2 {
+  animation-delay: 0.5s;
+}
+
+.orb-root .vox-avatar[data-face="idle"] .vox-ring-3 {
+  animation-delay: 1s;
+}
+
+.orb-root.is-hover .vox-avatar[data-face="idle"] .vox-ring,
+.orb-root.is-grabbing .vox-avatar[data-face="idle"] .vox-ring,
+.orb-root.is-pouncing .vox-avatar[data-face="idle"] .vox-ring {
+  animation-duration: 1.2s;
+}
+
+/* Gaze (A5): the body follows the cursor by up to GAZE_MAX_UNITS, the highlight by 1.5x.
+   The individual `translate` property keeps the breathing animation's transform intact. */
+.orb-root .vox-body-group {
+  translate: calc(var(--gaze-x, 0) * 4px) calc(var(--gaze-y, 0) * 4px);
+  transition: translate 0.12s ease-out;
+}
+
+.orb-root .vox-shine {
+  translate: calc(var(--gaze-x, 0) * 6px) calc(var(--gaze-y, 0) * 6px);
+  transition: translate 0.12s ease-out;
+}
+
+/* Glint (A6): a short pulse of the highlight, 130 ms. */
+.orb-root.is-glint .vox-shine {
+  animation: orb-glint 130ms ease-in-out 1 both;
+}
+
+@keyframes orb-glint {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Reduced motion (A10): no animation and no transition, here and in the shared styles. */
+.orb-root.is-reduced,
+.orb-root.is-reduced *,
+.orb-root.is-reduced *::before,
+.orb-root.is-reduced *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

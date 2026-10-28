@@ -69,7 +69,11 @@ test.describe("Orb page", () => {
       "sleep",
     );
     expect(await getMockCalls(page, "orb_get_state")).toHaveLength(1);
-    await expect.poll(async () => (await getMockCalls(page, "orb_set_reduced_motion")).at(-1)).toEqual({ reduced: false });
+    await expect
+      .poll(async () =>
+        (await getMockCalls(page, "orb_set_reduced_motion")).at(-1),
+      )
+      .toEqual({ reduced: false });
   });
 
   test("the face follows converse-chat state events and never shows entry text", async ({
@@ -201,7 +205,9 @@ test.describe("Orb page", () => {
     await open(page);
     await expect(orb(page)).toHaveClass(/is-reduced/);
     await expect
-      .poll(async () => (await getMockCalls(page, "orb_set_reduced_motion")).at(-1))
+      .poll(async () =>
+        (await getMockCalls(page, "orb_set_reduced_motion")).at(-1),
+      )
       .toEqual({ reduced: true });
     await orb(page).hover();
     await page.mouse.down();
@@ -210,10 +216,10 @@ test.describe("Orb page", () => {
     await page.mouse.up();
     await emitMockEvent(page, "orb-gaze", { x: 1, y: 1 });
     expect(await cssVar(page, "--gaze-x")).toBe("0");
-    const animations = await page.evaluate(() =>
-      document
-        .getAnimations()
-        .filter((a) => a.playState === "running").length,
+    const animations = await page.evaluate(
+      () =>
+        document.getAnimations().filter((a) => a.playState === "running")
+          .length,
     );
     expect(animations).toBe(0);
   });

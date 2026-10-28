@@ -1844,5 +1844,8 @@
         "turn_limit": "Stopped at the turn limit."
       }
     }
+  },
+  "orb": {
+    "label": "Vox orb. Press Enter to open the conversation."
   }
 }
