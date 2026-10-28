@@ -175,7 +175,10 @@
         "smartTurn": "Smart turn model",
         "speakerFilter": "Speaker filter model",
         "replyStyle": "Reply style",
-        "vadEngine": "Voice activity detection engine"
+        "vadEngine": "Voice activity detection engine",
+        "speechToText": "Speech-to-text",
+        "textToSpeech": "Text-to-speech",
+        "voiceDetection": "Voice detection"
       },
       "description": "Seleziona un modello di trascrizione o scarica modelli aggiuntivi. Diversi modelli offrono diversi livelli di accuratezza e velocità.",
       "deleteConfirm": "Sei sicuro di voler eliminare {{modelName}}? Dovrai scaricarlo di nuovo per usarlo.",

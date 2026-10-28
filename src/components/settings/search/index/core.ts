@@ -250,7 +250,7 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
   {
     id: "models.modelUnload",
     section: "models",
-    groupKey: "settings.models.groups.loading",
+    groupKey: "settings.models.groups.speechToText",
     labelKey: "settings.advanced.modelUnload.title",
     descriptionKey: "settings.advanced.modelUnload.description",
     keywords: ["memory", "gpu memory", "ram", "idle", "free memory", "timeout"],

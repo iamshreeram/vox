@@ -175,7 +175,10 @@
         "smartTurn": "Smart turn model",
         "speakerFilter": "Speaker filter model",
         "replyStyle": "Reply style",
-        "vadEngine": "Voice activity detection engine"
+        "vadEngine": "Voice activity detection engine",
+        "speechToText": "Speech-to-text",
+        "textToSpeech": "Text-to-speech",
+        "voiceDetection": "Voice detection"
       },
       "description": "Chọn mô hình chuyển đổi hoặc tải thêm mô hình. Các mô hình khác nhau có mức độ chính xác và tốc độ khác nhau.",
       "deleteConfirm": "Bạn có chắc chắn muốn xóa {{modelName}}? Bạn sẽ cần tải lại để sử dụng.",

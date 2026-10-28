@@ -240,7 +240,10 @@
         "smartTurn": "Smart turn model",
         "speakerFilter": "Speaker filter model",
         "replyStyle": "Reply style",
-        "vadEngine": "Voice activity detection engine"
+        "vadEngine": "Voice activity detection engine",
+        "speechToText": "Speech-to-text",
+        "textToSpeech": "Text-to-speech",
+        "voiceDetection": "Voice detection"
       },
       "description": "Pilih model transkripsi atau unduh model tambahan. Setiap model menawarkan tingkat akurasi dan kecepatan yang berbeda.",
       "searchPlaceholder": "Cari model berdasarkan nama…",

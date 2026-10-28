@@ -59,9 +59,11 @@ const ctxLegacy: SearchContext = {
   platform: "macos",
 };
 
-const moved = SEARCH_ENTRIES.filter((e) => e.id.startsWith("experimental."));
 const requiresExperimental = (e: SearchEntry): boolean =>
   (e as { requiresExperimental?: boolean }).requiresExperimental === true;
+// Every row of a placed control (gated or always visible) carries its group id.
+const moved = SEARCH_ENTRIES.filter((e) => e.groupId !== undefined);
+const gated = moved.filter(requiresExperimental);
 
 const scenarios: Record<string, () => void> = {
   "moved rows exist and none still claims the experimental section": () => {
@@ -76,13 +78,18 @@ const scenarios: Record<string, () => void> = {
       const group = PLACED_GROUPS.find((g) => g.id === e.groupId);
       assert.ok(group, `${e.id}: unknown group ${e.groupId}`);
       assert.equal(String(e.section), group.section, e.id);
-      assert.ok(requiresExperimental(e), `${e.id} must require experimental`);
-      assert.equal(e.unlockedBy, "advanced.experimentalToggle", e.id);
+      // Gating follows the group: experimental groups need the switch, the rest do not.
+      assert.equal(requiresExperimental(e), group.experimental, e.id);
+      assert.equal(
+        e.unlockedBy,
+        group.experimental ? "advanced.experimentalToggle" : undefined,
+        e.id,
+      );
     }
   },
-  "switch off: every moved row is locked and resolves to the toggle": () => {
+  "switch off: every gated row is locked and resolves to the toggle": () => {
     let checked = 0;
-    for (const e of moved) {
+    for (const e of gated) {
       const label = lookup(e.labelKey);
       if (label === undefined) continue; // dynamic labels are covered by the index tests
       const hits = search(SEARCH_ENTRIES, label, resolve, ctxOff, {
@@ -98,8 +105,24 @@ const scenarios: Record<string, () => void> = {
       );
       checked += 1;
     }
-    assert.ok(checked >= 60, `only ${checked} rows were checked`);
+    assert.ok(checked >= 50, `only ${checked} gated rows were checked`);
   },
+  "switch off: rows of always-visible groups stay unlocked and reachable":
+    () => {
+      for (const e of moved.filter((x) => !requiresExperimental(x))) {
+        const label = lookup(e.labelKey);
+        if (label === undefined) continue;
+        const hit = search(SEARCH_ENTRIES, label, resolve, ctxOff, {
+          limit: 1000,
+        }).find((h) => h.entry.id === e.id);
+        assert.ok(
+          hit,
+          `${e.id} ("${label}") is searchable with the switch off`,
+        );
+        assert.equal(hit.locked, false, `${e.id} must stay unlocked`);
+        assert.equal(resolveTarget(hit, SEARCH_ENTRIES, ctxOff).id, e.id, e.id);
+      }
+    },
   "switch off: ordinary rows in always-visible sections stay unlocked": () => {
     const hits = search(SEARCH_ENTRIES, "experimental", resolve, ctxOff, {
       limit: 1000,
@@ -141,12 +164,12 @@ const scenarios: Record<string, () => void> = {
   "rows follow their control into its new group": () => {
     // labelKey prefix -> the group that now holds the control that owns the row.
     const expected: Array<[string, string]> = [
-      ["settings.advanced.tts.composer.", "replyStyle"],
+      ["settings.advanced.tts.composer.", "conversation"],
       ["converse.section.", "conversation"],
       ["converse.voice.persona.", "conversation"],
       ["converse.voice.latency.", "conversation"],
-      ["converse.voice.smartTurn.", "smartTurn"],
-      ["converse.voice.speaker.", "speakerFilter"],
+      ["converse.voice.smartTurn.", "vadEngine"],
+      ["converse.voice.speaker.", "vadEngine"],
     ];
     for (const [prefix, groupId] of expected) {
       const rows = moved.filter((e) => e.labelKey.startsWith(prefix));
@@ -158,9 +181,8 @@ const scenarios: Record<string, () => void> = {
     const sectionOf = (groupId: string): string | undefined =>
       PLACED_GROUPS.find((g) => g.id === groupId)?.section;
     assert.equal(sectionOf("conversation"), "general");
-    for (const g of ["smartTurn", "speakerFilter", "replyStyle"]) {
-      assert.equal(sectionOf(g), "models", g);
-    }
+    assert.equal(sectionOf("vadEngine"), "models");
+    assert.equal(sectionOf("spokenReplies"), "models");
   },
   "language, translation and the unload timeout live in Models and stay ungated":
     () => {
@@ -192,7 +214,7 @@ const scenarios: Record<string, () => void> = {
         assert.equal(resolveTarget(hit, SEARCH_ENTRIES, ctxOff).id, id);
       }
       const unload = SEARCH_ENTRIES.find((x) => x.id === "models.modelUnload");
-      assert.equal(unload?.groupKey, "settings.models.groups.loading");
+      assert.equal(unload?.groupKey, "settings.models.groups.speechToText");
       for (const old of [
         "general.language",
         "general.translateToEnglish",
@@ -204,34 +226,40 @@ const scenarios: Record<string, () => void> = {
         );
       }
     },
-  "the wake word action and barge-in controls are indexed in their groups":
+  "the wake word action is gated; the barge-in control is always visible in its group":
     () => {
-      const wanted: Array<[string, string, string]> = [
-        ["settings.advanced.wakeWord.action.label", "listening", "general"],
-        ["converse.section.bargeIn.label", "conversation", "general"],
+      const wanted: Array<[string, string, string, boolean]> = [
+        [
+          "settings.advanced.wakeWord.action.label",
+          "listening",
+          "general",
+          true,
+        ],
+        ["converse.section.bargeIn.label", "conversation", "general", false],
       ];
-      for (const [labelKey, groupId, sectionId] of wanted) {
+      for (const [labelKey, groupId, sectionId, gate] of wanted) {
         const e = SEARCH_ENTRIES.find((x) => x.labelKey === labelKey);
         assert.ok(e, `${labelKey} has a search row`);
         assert.equal(e.groupId, groupId, labelKey);
         assert.equal(String(e.section), sectionId, labelKey);
-        assert.ok(
-          requiresExperimental(e),
-          `${labelKey} must require experimental`,
+        assert.equal(requiresExperimental(e), gate, labelKey);
+        assert.equal(
+          e.unlockedBy,
+          gate ? "advanced.experimentalToggle" : undefined,
+          labelKey,
         );
-        assert.equal(e.unlockedBy, "advanced.experimentalToggle", labelKey);
         assert.ok(e.descriptionKey, `${labelKey} has a description`);
         assert.ok(
           lookup(e.descriptionKey as string),
           `${labelKey} description text`,
         );
-        // searchable by its own English label and locked while the switch is off
+        // searchable by its own English label; locked only while the switch is off and gated
         const label = lookup(labelKey) as string;
         const hit = search(SEARCH_ENTRIES, label, resolve, ctxOff, {
           limit: 1000,
         }).find((h) => h.entry.id === e.id);
         assert.ok(hit, `${labelKey} is searchable`);
-        assert.equal(hit.locked, true, labelKey);
+        assert.equal(hit.locked, gate, labelKey);
       }
     },
   "acp permission rows sit in the ACP agent group behind the Experimental switch":

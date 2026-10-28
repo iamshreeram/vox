@@ -269,7 +269,10 @@
         "smartTurn": "Smart turn model",
         "speakerFilter": "Speaker filter model",
         "replyStyle": "Reply style",
-        "vadEngine": "Voice activity detection engine"
+        "vadEngine": "Voice activity detection engine",
+        "speechToText": "Speech-to-text",
+        "textToSpeech": "Text-to-speech",
+        "voiceDetection": "Voice detection"
       },
       "description": "음성 인식 모델을 선택하거나 추가 모델을 다운로드하세요. 모델마다 정확도와 속도가 다릅니다.",
       "yourModels": "다운로드된 모델",

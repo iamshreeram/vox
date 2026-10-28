@@ -71,14 +71,10 @@ const VALID_GROUP_IDS = new Set([
   "agentBridge",
   "acpAgent",
   "spokenReplies",
-  "realtime",
+  "conversation",
   "conversationMemory",
   "agentTools",
   "codingJobs",
-  "smartTurn",
-  "speakerFilter",
-  "replyStyle",
-  "conversation",
 ]);
 const PLATFORMS = new Set(["macos", "windows", "linux"]);
 
@@ -104,11 +100,11 @@ for (const e of own) {
   const who = `entry ${e.id}`;
   if (seen.has(e.id)) fail(`${who}: duplicate id`);
   seen.add(e.id);
-  // Moved rows keep their "experimental.<slug>" id although their page is a real section.
+  // Rows of a gated group keep the "experimental.<slug>" id; the others use their section.
   const idPrefix = e.requiresExperimental ? "experimental" : e.section;
   if (!e.id.startsWith(`${idPrefix}.`) || e.id.length <= idPrefix.length + 1)
     fail(
-      `${who}: id must be "<section>.<slug>" (moved rows: "experimental.<slug>")`,
+      `${who}: id must be "<section>.<slug>" (gated rows: "experimental.<slug>")`,
     );
   if (!ALL_SECTIONS.includes(e.section))
     fail(`${who}: unknown section ${e.section}`);
@@ -120,13 +116,13 @@ for (const e of own) {
     fail(`${who}: descriptionKey ${e.descriptionKey} missing in en`);
   if (e.groupKey !== undefined && !hasText(e.groupKey))
     fail(`${who}: groupKey ${e.groupKey} missing in en`);
-  if (e.requiresExperimental) {
+  // Rows placed in a group (gated or not) need a valid group and its title.
+  if (e.requiresExperimental || e.groupId !== undefined) {
     if (!e.groupId || !e.groupKey)
-      fail(`${who}: moved rows need groupId and groupKey`);
+      fail(`${who}: placed rows need groupId and groupKey`);
     else if (!VALID_GROUP_IDS.has(e.groupId))
       fail(`${who}: unknown groupId ${e.groupId}`);
-  } else if (e.groupId !== undefined)
-    fail(`${who}: groupId only applies to moved rows (requiresExperimental)`);
+  }
   if (GATED.includes(e.section) && !e.unlockedBy)
     fail(`${who}: section ${e.section} is gated, unlockedBy is required`);
   if (

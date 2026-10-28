@@ -240,7 +240,10 @@
         "smartTurn": "Smart turn model",
         "speakerFilter": "Speaker filter model",
         "replyStyle": "Reply style",
-        "vadEngine": "Voice activity detection engine"
+        "vadEngine": "Voice activity detection engine",
+        "speechToText": "Speech-to-text",
+        "textToSpeech": "Text-to-speech",
+        "voiceDetection": "Voice detection"
       },
       "description": "कोई ट्रांसक्रिप्शन मॉडल चुनें या दूसरे मॉडल डाउनलोड करें. अलग-अलग मॉडल की सटीकता और स्पीड अलग-अलग होती है.",
       "searchPlaceholder": "नाम से मॉडल खोजें…",

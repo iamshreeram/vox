@@ -6,26 +6,23 @@ const UNLOCK = "advanced.experimentalToggle";
 
 const GROUP = {
   engine: "settings.experimental.groups.engine",
-  vadEngine: "settings.models.groups.vadEngine",
+  vadEngine: "settings.models.groups.voiceDetection",
   voiceCommands: "settings.experimental.groups.voiceCommands",
   listening: "settings.advanced.listeningMode.title",
   memory: "settings.experimental.groups.memory",
   agentBridge: "settings.experimental.groups.agentBridge",
   acpAgent: "settings.experimental.groups.acpAgent",
-  spokenReplies: "settings.advanced.tts.groupTitle",
-  smartTurn: "settings.models.groups.smartTurn",
-  speakerFilter: "settings.models.groups.speakerFilter",
-  replyStyle: "settings.models.groups.replyStyle",
+  spokenReplies: "settings.models.groups.textToSpeech",
   conversation: "settings.general.groups.conversation",
-  realtime: "settings.experimental.realtime.title",
   conversationMemory: "settings.experimental.groups.conversationMemory",
   agentTools: "settings.experimental.groups.agentTools",
   codingJobs: "settings.experimental.groups.codingJobs",
 } as const;
 
 /**
- * One row of a moved control. The id is always "experimental.<slug>" (kept from the old page).
- * The page (section) comes from the placed group, never from a hand-written value.
+ * One row of a placed control. The page (section), the gating and the id prefix all come
+ * from the placed group: rows of an experimental group keep "experimental.<slug>" and need
+ * the Experimental switch; rows of an always-visible group use "<section>.<slug>".
  */
 function row(
   slug: string,
@@ -38,16 +35,17 @@ function row(
   if (group === undefined) {
     throw new Error(`search index: no placed group "${groupId}"`);
   }
+  const prefix = group.experimental ? "experimental" : group.section;
   return {
-    id: `experimental.${slug}`,
+    id: `${prefix}.${slug}`,
     section: group.section,
-    requiresExperimental: true,
+    requiresExperimental: group.experimental,
     groupId,
     groupKey: GROUP[groupId],
     labelKey,
     ...(descriptionKey === undefined ? {} : { descriptionKey }),
     keywords,
-    unlockedBy: UNLOCK,
+    ...(group.experimental ? { unlockedBy: UNLOCK } : {}),
   };
 }
 
@@ -771,7 +769,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   // ----- spoken reply style (SpokenReplyStyle) -----
   row(
     "spokenReplyMode",
-    "replyStyle",
+    "conversation",
     "settings.advanced.tts.composer.modeLabel",
     "settings.advanced.tts.composer.modeDescription",
     [
@@ -786,21 +784,21 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "spokenReplyProvider",
-    "replyStyle",
+    "conversation",
     "settings.advanced.tts.composer.providerLabel",
     "settings.advanced.tts.composer.providerDescription",
     ["provider", "model provider", "llm provider", "backend", "service"],
   ),
   row(
     "spokenReplyModel",
-    "replyStyle",
+    "conversation",
     "settings.advanced.tts.composer.modelLabel",
     "settings.advanced.tts.composer.modelDescription",
     ["model", "model name", "llm model", "spoken reply model"],
   ),
   row(
     "spokenReplyCommandPath",
-    "replyStyle",
+    "conversation",
     "settings.advanced.tts.composer.commandPathLabel",
     "settings.advanced.tts.composer.commandPathDescription",
     [
@@ -814,21 +812,21 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "spokenReplyCommandArgs",
-    "replyStyle",
+    "conversation",
     "settings.advanced.tts.composer.commandArgsLabel",
     "settings.advanced.tts.composer.commandArgsDescription",
     ["arguments", "args", "command arguments", "flags", "command line"],
   ),
   row(
     "spokenReplyPromptFlag",
-    "replyStyle",
+    "conversation",
     "settings.advanced.tts.composer.promptFlagLabel",
     "settings.advanced.tts.composer.promptFlagDescription",
     ["prompt flag", "flag", "prompt argument", "command flag"],
   ),
   row(
     "spokenReplyAcknowledge",
-    "replyStyle",
+    "conversation",
     "settings.advanced.tts.composer.ackLabel",
     "settings.advanced.tts.composer.ackDescription",
     [
@@ -842,7 +840,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "spokenReplyStyle",
-    "replyStyle",
+    "conversation",
     "settings.advanced.tts.composer.styleLabel",
     "settings.advanced.tts.composer.styleDescription",
     [
@@ -856,14 +854,14 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "spokenReplyTimeout",
-    "replyStyle",
+    "conversation",
     "settings.advanced.tts.composer.timeoutLabel",
     "settings.advanced.tts.composer.timeoutDescription",
     ["timeout", "seconds", "wait", "time limit", "deadline"],
   ),
   row(
     "spokenReplySendUtterance",
-    "replyStyle",
+    "conversation",
     "settings.advanced.tts.composer.sendUtteranceLabel",
     "settings.advanced.tts.composer.sendUtteranceDescription",
     [
@@ -877,7 +875,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "spokenReplyFallback",
-    "replyStyle",
+    "conversation",
     "settings.advanced.tts.composer.fallbackLabel",
     "settings.advanced.tts.composer.fallbackDescription",
     [
@@ -892,7 +890,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "spokenReplyPreview",
-    "replyStyle",
+    "conversation",
     "settings.advanced.tts.composer.previewLabel",
     "settings.advanced.tts.composer.previewDescription",
     ["preview", "sample", "try", "compose", "test"],
@@ -1014,7 +1012,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "conversationSmartTurn",
-    "smartTurn",
+    "vadEngine",
     "converse.voice.smartTurn.label",
     "converse.voice.smartTurn.description",
     [
@@ -1028,7 +1026,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "conversationSmartTurnModel",
-    "smartTurn",
+    "vadEngine",
     "converse.voice.smartTurn.modelLabel",
     undefined,
     ["smart turn model", "download", "delete", "install"],
@@ -1049,7 +1047,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "conversationSpeakerFilter",
-    "speakerFilter",
+    "vadEngine",
     "converse.voice.speaker.label",
     "converse.voice.speaker.description",
     [
@@ -1063,28 +1061,28 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "conversationSpeakerSensitivity",
-    "speakerFilter",
+    "vadEngine",
     "converse.voice.speaker.sensitivityLabel",
     "converse.voice.speaker.sensitivityDescription",
     ["sensitivity", "strict", "lenient", "balanced", "speaker"],
   ),
   row(
     "conversationSpeakerModel",
-    "speakerFilter",
+    "vadEngine",
     "converse.voice.speaker.modelLabel",
     undefined,
     ["speaker model", "download", "delete", "install"],
   ),
   row(
     "conversationSpeakerEnroll",
-    "speakerFilter",
+    "vadEngine",
     "converse.voice.speaker.enroll.label",
     "converse.voice.speaker.enroll.description",
     ["enroll", "enrollment", "voiceprint", "record voice", "train voice"],
   ),
   row(
     "conversationSpeakerDelete",
-    "speakerFilter",
+    "vadEngine",
     "converse.voice.speaker.deleteLabel",
     "converse.voice.speaker.deleteDescription",
     ["delete voiceprint", "forget voice", "voiceprint"],
@@ -1093,7 +1091,7 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   // ----- realtime (RealtimeSection) -----
   row(
     "realtimeEnabled",
-    "realtime",
+    "conversation",
     "settings.experimental.realtime.enabled.label",
     "settings.experimental.realtime.enabled.description",
     [
@@ -1107,14 +1105,14 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "realtimeSpeakReplies",
-    "realtime",
+    "conversation",
     "settings.experimental.realtime.speakReplies.label",
     "settings.experimental.realtime.speakReplies.description",
     ["speak replies", "tts", "spoken replies", "read aloud", "voice output"],
   ),
   row(
     "realtimeDirectEndpoint",
-    "realtime",
+    "conversation",
     "settings.experimental.realtime.directEndpoint.label",
     "settings.experimental.realtime.directEndpoint.description",
     [
@@ -1128,35 +1126,35 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "realtimeEndpointUrl",
-    "realtime",
+    "conversation",
     "settings.experimental.realtime.endpoint.label",
     "settings.experimental.realtime.endpoint.description",
     ["endpoint", "url", "endpoint url", "server url", "address", "api url"],
   ),
   row(
     "realtimeModel",
-    "realtime",
+    "conversation",
     "settings.experimental.realtime.model.label",
     "settings.experimental.realtime.model.description",
     ["model", "model name", "realtime model"],
   ),
   row(
     "realtimeToken",
-    "realtime",
+    "conversation",
     "settings.experimental.realtime.token.label",
     "settings.experimental.realtime.token.description",
     ["token", "api key", "key", "password", "secret", "authentication", "auth"],
   ),
   row(
     "realtimeStreamReply",
-    "realtime",
+    "conversation",
     "settings.experimental.realtime.streamReply.label",
     "settings.experimental.realtime.streamReply.description",
     ["stream", "streaming reply", "stream reply", "partial", "latency"],
   ),
   row(
     "realtimeEarlySpeech",
-    "realtime",
+    "conversation",
     "settings.experimental.realtime.earlySpeech.label",
     "settings.experimental.realtime.earlySpeech.description",
     [
@@ -1169,49 +1167,49 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
   ),
   row(
     "realtimeFastVoice",
-    "realtime",
+    "conversation",
     "settings.experimental.realtime.fastVoice.label",
     "settings.experimental.realtime.fastVoice.description",
     ["fast voice", "fast", "latency", "quick voice", "speed"],
   ),
   row(
     "realtimeAck",
-    "realtime",
+    "conversation",
     "settings.experimental.realtime.ack.label",
     "settings.experimental.realtime.ack.description",
     ["acknowledge", "acknowledgement", "ack", "filler", "backchannel"],
   ),
   row(
     "realtimePrewarm",
-    "realtime",
+    "conversation",
     "settings.experimental.realtime.prewarm.label",
     "settings.experimental.realtime.prewarm.description",
     ["prewarm", "warm up", "preconnect", "latency", "connection"],
   ),
   row(
     "realtimeAutoProxy",
-    "realtime",
+    "conversation",
     "settings.experimental.realtime.autoProxy.label",
     "settings.experimental.realtime.autoProxy.description",
     ["auto proxy", "proxy", "automatic proxy", "network", "proxy detection"],
   ),
   row(
     "realtimeProxy",
-    "realtime",
+    "conversation",
     "settings.experimental.realtime.proxy.label",
     "settings.experimental.realtime.proxy.description",
     ["proxy", "network proxy", "proxy server", "http proxy"],
   ),
   row(
     "realtimeProxyUrl",
-    "realtime",
+    "conversation",
     "settings.experimental.realtime.proxyUrl.label",
     "settings.experimental.realtime.proxyUrl.description",
     ["proxy url", "proxy address", "proxy", "url", "server address"],
   ),
   row(
     "realtimeTimingLog",
-    "realtime",
+    "conversation",
     "settings.experimental.realtime.timingLog.label",
     "settings.experimental.realtime.timingLog.description",
     ["timing", "timing log", "logs", "latency log", "debug log", "diagnostics"],
