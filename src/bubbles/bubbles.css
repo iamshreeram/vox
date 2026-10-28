@@ -29,6 +29,11 @@ body {
   background: transparent;
 }
 
+/* The stack hugs the top of its window when it sits below the orb (anchor "top"). */
+.bubble-stack[data-anchor="top"] {
+  justify-content: flex-start;
+}
+
 .bubble {
   box-sizing: border-box;
   display: -webkit-box;

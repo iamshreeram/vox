@@ -47,6 +47,7 @@ function isSnapshot(value: unknown): value is Snapshot {
   return (
     typeof candidate.instance === "number" &&
     typeof candidate.rev === "number" &&
+    (candidate.anchor === undefined || typeof candidate.anchor === "string") &&
     Array.isArray(candidate.items)
   );
 }
@@ -148,6 +149,7 @@ export default function BubblesApp(): React.ReactElement {
       aria-live="polite"
       aria-atomic="false"
       className="bubble-stack"
+      data-anchor={state.anchor}
     >
       {shown.map((bubble) => (
         <div

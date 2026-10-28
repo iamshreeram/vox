@@ -317,6 +317,12 @@ impl BubbleHub {
         Some(self.snapshot(now))
     }
 
+    /// The current revision and projection at `now`, without publishing. `None` before any
+    /// window instance exists.
+    pub fn current(&self, now: u64) -> Option<Snapshot> {
+        (self.instance != 0).then(|| self.snapshot(now))
+    }
+
     /// Current revision with the projection at `now`.
     fn snapshot(&self, now: u64) -> Snapshot {
         Snapshot {
