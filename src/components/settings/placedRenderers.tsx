@@ -29,6 +29,7 @@ import { WakeWordToggle } from "./WakeWordToggle";
 import { AmbientModeToggle } from "./AmbientModeToggle";
 import { SpokenReplyStyle } from "./SpokenReplyStyle";
 import { ConversationSection } from "./ConversationSection";
+import { FloatingOrbSettings } from "./orb/FloatingOrbSettings";
 import { PersonaSettings } from "./voice/PersonaSettings";
 import { LatencyPanel } from "./voice/LatencyPanel";
 import { SmartTurnSettings } from "./voice/SmartTurnSettings";
@@ -104,6 +105,9 @@ export const PLACED_RENDERERS: Record<ControlId, () => React.ReactNode> = {
   ),
   conversation: () => (
     <ConversationSection descriptionMode="tooltip" grouped={true} />
+  ),
+  floatingOrb: () => (
+    <FloatingOrbSettings descriptionMode="tooltip" grouped={true} />
   ),
   persona: () => <PersonaSettings descriptionMode="tooltip" grouped={true} />,
   latencyPanel: () => <LatencyPanel descriptionMode="tooltip" grouped={true} />,

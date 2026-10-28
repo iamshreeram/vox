@@ -2157,6 +2157,14 @@ async orbSetReducedMotion(reduced: boolean) : Promise<void> {
     await TAURI_INVOKE("orb_set_reduced_motion", { reduced });
 },
 /**
+ * Whether the floating orb can be used on this system. Reads the platform the same way the orb
+ * does: on Linux the GDK display is read on the main thread, where GTK is initialised. If that
+ * read cannot be made, Linux is reported with an unidentified backend.
+ */
+async getOrbSupport() : Promise<OrbSupport> {
+    return await TAURI_INVOKE("get_orb_support");
+},
+/**
  * Shows or hides the orb and stores the choice.
  */
 async changeOrbVisibleSetting(enabled: boolean) : Promise<void> {
@@ -3051,6 +3059,19 @@ export type OrbState = {
  * Face name: `idle`, `sleep`, `concerned`, `listening`, `thinking`, `speaking` or `acting`.
  */
 face: string }
+/**
+ * Whether the floating orb can be used on this system, and the block key when it cannot.
+ * `block` is `None` exactly when `supported` is true.
+ */
+export type OrbSupport = { 
+/**
+ * The floating orb can be shown on this system.
+ */
+supported: boolean; 
+/**
+ * Why it cannot (see [`block_key`]); `None` when supported.
+ */
+block: string | null }
 export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm"
 export type OverlayPosition = "top" | "bottom"
 /**

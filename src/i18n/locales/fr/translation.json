@@ -281,7 +281,8 @@
         "auto": "Automatique"
       },
       "groups": {
-        "conversation": "Voice conversation"
+        "conversation": "Voice conversation",
+        "floatingOrb": "Floating orb"
       },
       "shortcutActivation": {
         "title": "Comportement du raccourci",
@@ -1483,6 +1484,33 @@
         "models": "Could not fetch the models from the endpoint.",
         "feature": "Could not change this feature's setup.",
         "ack": "Could not record the confirmation."
+      }
+    },
+    "floatingOrb": {
+      "title": "Floating orb",
+      "description": "A small orb that stays on top of other apps. Click it to open the conversation.",
+      "show": {
+        "title": "Show orb",
+        "description": "Keep the orb on screen above other apps. You can also use the tray menu."
+      },
+      "size": {
+        "title": "Orb size",
+        "description": "How big the orb is.",
+        "small": "Small",
+        "medium": "Medium",
+        "large": "Large"
+      },
+      "resetPosition": {
+        "title": "Reset orb position",
+        "description": "Move the orb back to its default corner.",
+        "button": "Reset"
+      },
+      "reason": {
+        "wayland": "Floating windows are not available on Wayland. Vox uses the classic window.",
+        "unknown_backend": "This display system is not recognised, so the orb is unavailable.",
+        "no_compositor": "The orb needs a compositing desktop, which is not running.",
+        "unsupported_os": "The orb is not available on this operating system.",
+        "unknown": "The orb is not available on this system."
       }
     }
   },

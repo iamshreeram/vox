@@ -1372,6 +1372,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::orb::orb_menu,
             commands::orb::orb_get_state,
             commands::orb::orb_set_reduced_motion,
+            commands::orb::get_orb_support,
             commands::orb::change_orb_visible_setting,
             commands::orb::change_orb_size_setting,
             commands::orb::change_chat_presentation_setting,

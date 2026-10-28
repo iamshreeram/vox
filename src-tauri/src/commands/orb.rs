@@ -3,7 +3,9 @@
 //! settings commands write through `write_settings_gated` and then apply the change at once.
 //! Nothing here logs content or touches the filesystem.
 
-use crate::chat_presentation::Presentation;
+use crate::chat_presentation::{
+    current_os, orb_support_for, LinuxBackend, OrbSupport, PlatformEnv, Presentation,
+};
 use crate::managers::chat_log::ChatLog;
 use crate::orb_geometry::OrbSize;
 use crate::orb_native;
@@ -11,6 +13,7 @@ use crate::settings::write_settings_gated;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
 /// Conversation states that drive their own face. Mirrors `ACTIVE_STATES` in `chatModel.ts`.
@@ -86,6 +89,33 @@ pub async fn orb_get_state(app: AppHandle) -> OrbState {
 #[specta::specta]
 pub async fn orb_set_reduced_motion(app: AppHandle, reduced: bool) {
     orb_native::set_reduced_motion(&app, reduced);
+}
+
+/// Whether the floating orb can be used on this system. Reads the platform the same way the orb
+/// does: on Linux the GDK display is read on the main thread, where GTK is initialised. If that
+/// read cannot be made, Linux is reported with an unidentified backend.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_orb_support(app: AppHandle) -> OrbSupport {
+    let (tx, rx) = std::sync::mpsc::channel::<PlatformEnv>();
+    let scheduled = app.run_on_main_thread(move || {
+        let _ = tx.send(orb_native::current_env());
+    });
+    let read = match scheduled {
+        Ok(()) => tauri::async_runtime::spawn_blocking(move || {
+            rx.recv_timeout(Duration::from_secs(2)).ok()
+        })
+        .await
+        .ok()
+        .flatten(),
+        Err(_) => None,
+    };
+    let env = read.unwrap_or(PlatformEnv {
+        os: current_os(),
+        linux_backend: LinuxBackend::Unknown,
+        composited: false,
+    });
+    orb_support_for(&env)
 }
 
 /// Shows or hides the orb and stores the choice.
