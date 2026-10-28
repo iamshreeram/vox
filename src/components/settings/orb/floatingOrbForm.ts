@@ -106,3 +106,58 @@ export function toggleState(
   }
   return { checked: stored, disabled: false, reasonKey: null };
 }
+
+/** The choices of "When I talk to Vox": Automatic, Orb and bubbles, Conversation window. */
+export const SURFACE_OPTIONS = ["auto", "bubbles", "window"] as const;
+export type SurfaceOption = (typeof SURFACE_OPTIONS)[number];
+
+/**
+ * The choice shown for a stored chat presentation. `floating` is Orb and bubbles, `window` is
+ * Conversation window. A missing, null or unknown value is Automatic.
+ */
+export function surfaceValue(
+  presentation: string | null | undefined,
+): SurfaceOption {
+  if (presentation === "floating") return "bubbles";
+  if (presentation === "window") return "window";
+  return "auto";
+}
+
+/** The presentation to store for a choice. Automatic stores null (the platform default). */
+export function surfaceToPresentation(
+  option: SurfaceOption,
+): "floating" | "window" | null {
+  if (option === "bubbles") return "floating";
+  if (option === "window") return "window";
+  return null;
+}
+
+export interface SurfaceHintInput {
+  converseChatLog: boolean | null | undefined;
+  wakeWordEnabled: boolean | null | undefined;
+  wakeWordAction: string | null | undefined;
+  surface: SurfaceOption;
+  /** `null` while the support answer is still loading. */
+  supported: boolean | null | undefined;
+}
+
+export interface SurfaceHints {
+  chatLogOff: boolean;
+  wakeDictation: boolean;
+}
+
+/**
+ * Which hints under the surface choice are shown. Both hide when the surface is Conversation
+ * window or the platform is known to be unsupported (a loading answer does not hide them).
+ * The chat-log hint shows when the log is off. The wake hint shows when Hey Jarvis is on and
+ * starts dictation (a missing action reads as voice_request).
+ */
+export function surfaceHints(input: SurfaceHintInput): SurfaceHints {
+  const relevant = input.surface !== "window" && input.supported !== false;
+  const action = input.wakeWordAction ?? "voice_request";
+  return {
+    chatLogOff: relevant && input.converseChatLog === false,
+    wakeDictation:
+      relevant && input.wakeWordEnabled === true && action !== "conversation",
+  };
+}

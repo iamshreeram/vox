@@ -280,7 +280,7 @@ fn ensure_runtime(app: &AppHandle) {
 }
 
 /// The orb rectangle of `window` in physical pixels.
-fn window_rect(window: &WebviewWindow) -> Option<Rect> {
+pub(crate) fn window_rect(window: &WebviewWindow) -> Option<Rect> {
     let position = window.outer_position().ok()?;
     let size = window.outer_size().ok()?;
     Some(Rect {
@@ -310,7 +310,7 @@ fn gesture_active(app: &AppHandle) -> bool {
 }
 
 /// The monitors as the orb sees them: work areas, scales and the primary monitor.
-fn monitors_for(app: &AppHandle) -> Vec<MonitorInfo> {
+pub(crate) fn monitors_for(app: &AppHandle) -> Vec<MonitorInfo> {
     let listed = app.available_monitors().unwrap_or_default();
     let primary = app.primary_monitor().ok().flatten();
     let raw: Vec<RawMonitor> = listed
@@ -416,13 +416,36 @@ pub fn apply_visibility(app: &AppHandle) {
     }
 }
 
-/// Main-thread body of `apply_visibility`.
-fn apply_on_main(app: &AppHandle) {
+/// Builds the orb window hidden when it does not exist yet. Main thread. Returns whether the
+/// window exists afterwards.
+pub(crate) fn ensure_orb_window(app: &AppHandle) -> bool {
+    if app.get_webview_window(ORB_WINDOW_LABEL).is_some() {
+        return true;
+    }
+    let settings = settings::get_settings(app);
+    match build_orb(app, effective_logical(&settings)) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!("orb build failed: {e}");
+            false
+        }
+    }
+}
+
+/// Sets whether the wake-appear session wants the orb (A9-2). Read by `apply_on_main`.
+pub(crate) fn set_orb_transient(on: bool) {
+    ORB_TRANSIENT.store(on, Ordering::SeqCst);
+}
+
+/// Main-thread body of `apply_visibility`. The orb is shown when the saved setting asks for it,
+/// or while a wake-appear session wants it on a platform that supports floating.
+pub(crate) fn apply_on_main(app: &AppHandle) {
     ensure_runtime(app);
     let settings = settings::get_settings(app);
     let env = current_env();
     record_platform_offer(app, &env);
-    if !orb_should_show(settings.orb_visible, &env) {
+    let transient = ORB_TRANSIENT.load(Ordering::SeqCst) && floating_supported(&env).is_ok();
+    if !(orb_should_show(settings.orb_visible, &env) || transient) {
         hide_orb(app);
         return;
     }
@@ -449,6 +472,7 @@ fn apply_on_main(app: &AppHandle) {
         rt.gaze.set_visible(true);
         rt.gaze.set_reduced_motion(reduced);
     }
+    crate::bubble_native::orb_visibility_changed(app, true);
     start_ticker(app);
 }
 
@@ -471,6 +495,9 @@ pub fn floating_offered() -> bool {
 /// Floating is blocked on this system, as recorded by the last main-thread apply.
 static FLOATING_BLOCKED: AtomicBool = AtomicBool::new(false);
 
+/// Whether the wake-appear session currently wants the orb shown (set by the bubble executor).
+static ORB_TRANSIENT: AtomicBool = AtomicBool::new(false);
+
 /// Hides the orb: cancels any gesture, stops the ticker and hides the window.
 fn hide_orb(app: &AppHandle) {
     stop_orb(app);
@@ -491,6 +518,7 @@ fn stop_orb(app: &AppHandle) {
         rt.gaze.set_visible(false);
     }
     execute(app, calls.calls);
+    crate::bubble_native::orb_visibility_changed(app, false);
 }
 
 /// The orb window was destroyed: a gesture in progress is cancelled, never completed.
@@ -555,6 +583,8 @@ fn fit_orb(app: &AppHandle) {
 /// Handler for the window's move and scale events. Skips the work while a gesture is in progress,
 /// so a drag is never fought, and while the runtime is busy.
 fn on_geometry_event(app: &AppHandle) {
+    // The bubble stack follows the orb even during a drag; only the orb's own refit is skipped.
+    crate::bubble_native::orb_geometry_changed(app);
     if let Some(cell) = app.try_state::<OrbRuntimeCell>() {
         match cell.0.try_lock() {
             Ok(rt) => {
@@ -891,6 +921,11 @@ pub fn toggle_visibility(app: &AppHandle) {
         .orb_visible
         .unwrap_or(ORB_VISIBLE_DEFAULT);
     write_settings_gated(app, |settings| settings.orb_visible = Some(!enabled));
+    if enabled {
+        crate::bubble_native::user_hid_orb(app);
+    } else {
+        crate::bubble_native::user_showed_orb(app);
+    }
     apply_visibility(app);
 }
 
@@ -980,6 +1015,7 @@ fn handle_menu(app: &AppHandle, id: &str) {
         "orb_size_medium" => set_orb_size(app, Some(96)),
         "orb_size_large" => set_orb_size(app, Some(128)),
         "orb_hide" => {
+            crate::bubble_native::user_hid_orb(app);
             write_settings_gated(app, |settings| settings.orb_visible = Some(false));
             apply_visibility(app);
         }

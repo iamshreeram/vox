@@ -23,6 +23,7 @@
     "test:brain-model": "bun src/components/settings/brain/brainModel.test.ts",
     "test:floating-orb": "bun src/components/settings/orb/floatingOrbForm.test.ts",
     "test:floating-orb:e2e": "playwright test tests/floating-orb-settings.spec.ts --reporter=line",
+    "test:bubbles:e2e": "playwright test tests/bubbles-page.spec.ts --reporter=line",
     "test:theme": "bun src/styles/theme.test.ts",
     "test:theme-utils": "bun src/lib/utils/theme.test.ts",
     "test:sidebar-theme": "bun src/components/sidebarTheme.test.ts",

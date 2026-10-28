@@ -14,7 +14,7 @@ use crate::managers::agent_settings_gate::{process_gate, read_stable};
 use crate::managers::agent_tools::tauri_backends::build_tauri_executor;
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::brain::{missing_message, resolve, BrainFeature, Resolved};
-use crate::managers::chat_log::ChatRole;
+use crate::managers::chat_log::{ChatLog, ChatRole};
 use crate::managers::chat_tap::ChatTap;
 use crate::managers::composer_config::{settings_from_app, TtsComposerMode};
 use crate::managers::conversation_record::SessionRecord;
@@ -1454,11 +1454,17 @@ impl Platform for RealPlatform {
     fn on_state(&self, state: &'static str, end: Option<&'static str>) {
         self.publish_state(state, end);
         overlay_dispatcher(&self.app).apply_state(state);
+        if state == "idle" && end.is_some() {
+            crate::bubble_native::session_ended(&self.app);
+        }
     }
 
     /// A text chat's state: the same event and chat log, never the floating recording overlay.
     fn on_state_text(&self, state: &'static str, end: Option<&'static str>) {
         self.publish_state(state, end);
+        if state == "idle" && end.is_some() {
+            crate::bubble_native::session_ended(&self.app);
+        }
     }
 
     fn on_chat(&self, role: ChatRole, text: &str) {
@@ -1468,10 +1474,16 @@ impl Platform for RealPlatform {
     }
 
     fn on_session_start(&self) {
+        // The session token is bumped first, synchronously, so every line said from now on is
+        // stamped with this session, and before the transcript reset is queued (A8-1).
+        let sid = self
+            .app
+            .try_state::<std::sync::Arc<ChatLog>>()
+            .map_or(0, |chat| chat.gate().bump_session());
         if let Some(tap) = self.chat_tap.as_ref() {
             tap.on_session_start();
         }
-        crate::chat_surface::open_on_session_start(&self.app);
+        crate::chat_surface::open_on_session_start(&self.app, sid);
     }
 }
 

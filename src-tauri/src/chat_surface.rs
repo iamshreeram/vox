@@ -7,6 +7,8 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
 use crate::activation_policy::{open_may_focus, OpenKind};
+use crate::bubble_native;
+use crate::bubble_shell_core::{session_surface, SessionSurface};
 use crate::chat_presentation::{
     current_os, resolve_presentation, LinuxBackend, PlatformEnv, Presentation,
 };
@@ -253,13 +255,17 @@ pub fn toggle(app: &AppHandle) -> tauri::Result<()> {
     }
 }
 
-/// Single entry for the conversation start (auto-open, never focuses). The target is resolved
-/// on the main thread, so the session-start hook itself never reads the settings store.
-pub fn open_on_session_start(app: &AppHandle) {
+/// Single entry for the conversation start (auto-open, never focuses). The surface is decided
+/// on the main thread, so the session-start hook itself never reads the settings store. `sid` is
+/// the chat log's session token taken by the hook (A8-1). The orb surface starts the wake-appear
+/// orb with its bubbles; the classic surface opens the conversation window as before.
+pub fn open_on_session_start(app: &AppHandle, sid: u64) {
     let job_app = app.clone();
-    let _ = app.run_on_main_thread(move || match current_target(&job_app) {
-        Target::Classic => chat_window::open_chat_window_on_session_start(&job_app),
-        // Unreachable while PANEL_AVAILABLE is false. Falls back to the classic window, never panics.
-        Target::Panel => chat_window::open_chat_window_on_session_start(&job_app),
+    let _ = app.run_on_main_thread(move || {
+        let requested = settings::get_settings(&job_app).chat_presentation;
+        match session_surface(requested, &current_env()) {
+            SessionSurface::OrbBubbles => bubble_native::session_started(&job_app, sid),
+            SessionSurface::Window => chat_window::open_chat_window_on_session_start(&job_app),
+        }
     });
 }

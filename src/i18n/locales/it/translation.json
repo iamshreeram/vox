@@ -1514,6 +1514,18 @@
         "no_compositor": "The orb needs a compositing desktop, which is not running.",
         "unsupported_os": "The orb is not available on this operating system.",
         "unknown": "The orb is not available on this system."
+      },
+      "surface": {
+        "title": "When I talk to Vox",
+        "description": "Choose what appears when a conversation starts.",
+        "auto": "Automatic",
+        "bubbles": "Orb and bubbles",
+        "window": "Conversation window"
+      },
+      "hints": {
+        "chatLogOff": "Bubbles need the conversation log, which is turned off.",
+        "wakeDictation": "Hey Jarvis currently starts dictation, so no bubbles appear. Switch it to start a conversation.",
+        "wakeButton": "Make Hey Jarvis start a conversation"
       }
     }
   },

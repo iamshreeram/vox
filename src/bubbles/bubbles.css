@@ -1,0 +1,80 @@
+/* Bubble page styles (DESIGN.md R6-1, R6-4). Only transform and opacity animate. No blur, no
+   backdrop filter, no shadows in animations. The window is transparent and click-through. */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+.bubble-stack {
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+  background: transparent;
+}
+
+.bubble {
+  box-sizing: border-box;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 14px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font:
+    13px/1.35 system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  color: #ffffff;
+  pointer-events: none;
+  user-select: none;
+  transition: none;
+  animation: bubble-enter 180ms ease-out;
+}
+
+.bubble-user {
+  align-self: flex-end;
+  background: rgba(29, 78, 216, 0.82);
+}
+
+.bubble-assistant {
+  align-self: flex-start;
+  background: rgba(38, 38, 44, 0.82);
+}
+
+@keyframes bubble-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble {
+    animation: none;
+    transition: none;
+  }
+}

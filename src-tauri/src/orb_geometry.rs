@@ -743,6 +743,14 @@ pub fn place_bubbles(
     gap: f64,
     min: Size,
 ) -> Option<BubblePlacement> {
+    // A non-finite input has no meaningful placement: refuse it rather than sanitise it.
+    let inputs = [
+        orb.x, orb.y, orb.w, orb.h, work.x, work.y, work.w, work.h, size.w, size.h, gap, min.w,
+        min.h,
+    ];
+    if inputs.iter().any(|value| !value.is_finite()) {
+        return None;
+    }
     let orb = sanitize_rect(orb);
     let work = sanitize_rect(work);
     let full = Size {

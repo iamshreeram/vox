@@ -3,6 +3,7 @@
 //! settings commands write through `write_settings_gated` and then apply the change at once.
 //! Nothing here logs content or touches the filesystem.
 
+use crate::bubble_shell_core::{session_surface, SessionSurface};
 use crate::chat_presentation::{
     current_os, orb_support_for, LinuxBackend, OrbSupport, PlatformEnv, Presentation,
 };
@@ -147,6 +148,10 @@ pub async fn change_orb_size_setting(app: AppHandle, size: OrbSize) {
 #[specta::specta]
 pub async fn change_chat_presentation_setting(app: AppHandle, value: Option<Presentation>) {
     write_settings_gated(&app, |settings| settings.chat_presentation = value);
+    // Switching to the classic window destroys the bubble window (A7-2).
+    if session_surface(value, &orb_native::current_env()) == SessionSurface::Window {
+        crate::bubble_native::destroy_bubbles(&app);
+    }
     orb_native::apply_visibility(&app);
 }
 

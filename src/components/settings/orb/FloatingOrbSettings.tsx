@@ -10,10 +10,15 @@ import {
   ORB_PX_MIN,
   ORB_PX_STEP,
   ORB_SIZES,
+  SURFACE_OPTIONS,
   effectiveOrbPx,
   presetFor,
+  surfaceHints,
+  surfaceToPresentation,
+  surfaceValue,
   toggleState,
   type OrbSupportState,
+  type SurfaceOption,
 } from "./floatingOrbForm";
 
 interface FloatingOrbSettingsProps {
@@ -80,6 +85,8 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
     const [pendingVisible, setPendingVisible] = useState<Pending<
       boolean | null
     > | null>(null);
+    const [pendingSurface, setPendingSurface] =
+      useState<Pending<SurfaceOption> | null>(null);
     const [sizePreview, setSizePreview] = useState<SizeChoice | null>(null);
     const sizeQueue = useRef<SizeQueue>({
       wanted: null,
@@ -100,6 +107,16 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
       px: shownPx,
     });
     const toggle = toggleState(support, visible);
+
+    const storedSurface = surfaceValue(getSetting("chat_presentation"));
+    const surface = shownValue(storedSurface, pendingSurface);
+    const hints = surfaceHints({
+      converseChatLog: getSetting("converse_chat_log"),
+      wakeWordEnabled: getSetting("wake_word_enabled"),
+      wakeWordAction: getSetting("wake_word_action"),
+      surface,
+      supported: support === null ? null : support.supported,
+    });
 
     useEffect(() => {
       let cancelled = false;
@@ -145,6 +162,22 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
         () => setPendingVisible(null),
       );
     };
+
+    // The surface choice goes only through its gated presentation command.
+    const setSurface = (option: SurfaceOption): Promise<void> => {
+      setPendingSurface({ from: storedSurface, value: option });
+      return runOrbCommand(
+        () =>
+          commands.changeChatPresentationSetting(surfaceToPresentation(option)),
+        () => setPendingSurface(null),
+      );
+    };
+
+    const chooseWakeConversation = (): Promise<void> =>
+      runOrbCommand(
+        () => commands.changeWakeWordActionSetting("conversation"),
+        () => undefined,
+      );
 
     const clearSizeTimer = (queue: SizeQueue): void => {
       if (queue.timer !== null) {
@@ -239,6 +272,67 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
             {t(toggle.reasonKey)}
           </p>
         )}
+
+        <SettingContainer
+          title={t("settings.floatingOrb.surface.title")}
+          description={t("settings.floatingOrb.surface.description")}
+          descriptionMode={descriptionMode}
+          grouped={grouped}
+          disabled={controlsDisabled}
+        >
+          <div className="flex flex-col items-end gap-2">
+            <select
+              data-testid="floating-orb-surface"
+              aria-label={t("settings.floatingOrb.surface.title")}
+              className="rounded-md border border-mid-gray/30 bg-transparent px-2 py-1 text-sm cursor-pointer disabled:cursor-not-allowed"
+              value={surface}
+              disabled={controlsDisabled}
+              onChange={(event) => {
+                const option = SURFACE_OPTIONS.find(
+                  (candidate) => candidate === event.target.value,
+                );
+                if (option !== undefined) void setSurface(option);
+              }}
+            >
+              <option value="auto">
+                {t("settings.floatingOrb.surface.auto")}
+              </option>
+              <option value="bubbles">
+                {t("settings.floatingOrb.surface.bubbles")}
+              </option>
+              <option value="window">
+                {t("settings.floatingOrb.surface.window")}
+              </option>
+            </select>
+            {hints.chatLogOff && (
+              <p
+                data-testid="floating-orb-surface-hint-chatlog"
+                className="text-xs text-mid-gray text-end"
+              >
+                {t("settings.floatingOrb.hints.chatLogOff")}
+              </p>
+            )}
+            {hints.wakeDictation && (
+              <div
+                data-testid="floating-orb-surface-hint-wake"
+                className="flex flex-col items-end gap-2"
+              >
+                <p className="text-xs text-mid-gray text-end">
+                  {t("settings.floatingOrb.hints.wakeDictation")}
+                </p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  data-testid="floating-orb-wake-conversation"
+                  disabled={controlsDisabled}
+                  onClick={() => void chooseWakeConversation()}
+                >
+                  {t("settings.floatingOrb.hints.wakeButton")}
+                </Button>
+              </div>
+            )}
+          </div>
+        </SettingContainer>
 
         <SettingContainer
           title={t("settings.floatingOrb.size.title")}

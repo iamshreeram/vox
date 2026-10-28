@@ -7,6 +7,7 @@ pub mod ambient;
 pub mod audio;
 pub mod aux_model;
 pub mod brain;
+pub mod bubbles;
 pub mod chat;
 pub mod conversation_records;
 pub mod converse;

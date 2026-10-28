@@ -187,6 +187,16 @@ impl BubbleHub {
         }
     }
 
+    /// Whether the page of the current instance has reported ready.
+    pub fn is_ready(&self) -> bool {
+        self.ready
+    }
+
+    /// The current window instance (0 before the first window).
+    pub fn instance(&self) -> u64 {
+        self.instance
+    }
+
     /// A new window was created: a new instance, not ready, with no published state yet.
     /// Stored lines are kept and shown again once the new page is ready.
     pub fn new_instance(&mut self) -> u64 {

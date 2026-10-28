@@ -24,6 +24,10 @@ import {
   ORB_SIZES,
   presetFor,
   sizeValue,
+  SURFACE_OPTIONS,
+  surfaceHints,
+  surfaceToPresentation,
+  surfaceValue,
   supportReasonKey,
   toggleState,
 } from "./floatingOrbForm";
@@ -330,5 +334,196 @@ for (const name of localeNames) {
   }
 }
 assert.ok(existsSync(EN_FILE), "English translation file exists");
+
+// ---------- G4b: "When I talk to Vox" surface choice ----------
+// Contract: SURFACE_OPTIONS = ["auto", "bubbles", "window"]; surfaceValue maps the stored
+// presentation (null / missing / unknown = auto, "floating" = bubbles, "window" = window);
+// surfaceToPresentation is its inverse (auto = null); surfaceHints decides the two hints.
+assert.deepEqual([...SURFACE_OPTIONS], ["auto", "bubbles", "window"]);
+
+assert.equal(surfaceValue(null), "auto", "null presentation is Automatic");
+assert.equal(
+  surfaceValue(undefined),
+  "auto",
+  "missing presentation is Automatic",
+);
+assert.equal(surfaceValue("floating"), "bubbles", "floating shows as bubbles");
+assert.equal(surfaceValue("window"), "window", "window shows as window");
+for (const other of ["", "classic", "FLOATING", "bubbles", "auto"]) {
+  assert.equal(surfaceValue(other), "auto", `unknown "${other}" reads as auto`);
+}
+
+assert.equal(surfaceToPresentation("auto"), null, "auto stores null");
+assert.equal(
+  surfaceToPresentation("bubbles"),
+  "floating",
+  "bubbles stores floating",
+);
+assert.equal(surfaceToPresentation("window"), "window", "window stores window");
+for (const option of SURFACE_OPTIONS) {
+  assert.equal(
+    surfaceValue(surfaceToPresentation(option)),
+    option,
+    `round trip ${option}`,
+  );
+}
+
+{
+  const base = {
+    converseChatLog: true,
+    wakeWordEnabled: false,
+    wakeWordAction: "voice_request",
+    surface: "auto" as const,
+    supported: true,
+  };
+  const none = { chatLogOff: false, wakeDictation: false };
+
+  assert.deepEqual(surfaceHints(base), none, "healthy defaults show no hint");
+
+  // Chat log hint.
+  assert.equal(
+    surfaceHints({ ...base, converseChatLog: false }).chatLogOff,
+    true,
+  );
+  assert.equal(
+    surfaceHints({ ...base, converseChatLog: undefined }).chatLogOff,
+    false,
+  );
+  assert.equal(
+    surfaceHints({ ...base, converseChatLog: false, surface: "bubbles" })
+      .chatLogOff,
+    true,
+  );
+  assert.equal(
+    surfaceHints({ ...base, converseChatLog: false, surface: "window" })
+      .chatLogOff,
+    false,
+    "window hides it",
+  );
+  assert.equal(
+    surfaceHints({ ...base, converseChatLog: false, supported: false })
+      .chatLogOff,
+    false,
+    "unsupported hides it",
+  );
+  assert.equal(
+    surfaceHints({ ...base, converseChatLog: false, supported: null })
+      .chatLogOff,
+    true,
+    "loading does not hide it",
+  );
+
+  // Wake dictation hint.
+  const wake = { ...base, wakeWordEnabled: true };
+  assert.equal(
+    surfaceHints({ ...wake, wakeWordAction: "voice_request" }).wakeDictation,
+    true,
+  );
+  assert.equal(
+    surfaceHints({ ...wake, wakeWordAction: undefined }).wakeDictation,
+    true,
+    "missing action reads as voice_request",
+  );
+  assert.equal(
+    surfaceHints({ ...wake, wakeWordAction: "conversation" }).wakeDictation,
+    false,
+    "conversation needs no hint",
+  );
+  assert.equal(
+    surfaceHints({
+      ...base,
+      wakeWordEnabled: false,
+      wakeWordAction: "voice_request",
+    }).wakeDictation,
+    false,
+  );
+  assert.equal(
+    surfaceHints({
+      ...base,
+      wakeWordEnabled: undefined,
+      wakeWordAction: "voice_request",
+    }).wakeDictation,
+    false,
+  );
+  assert.equal(
+    surfaceHints({ ...wake, surface: "window" }).wakeDictation,
+    false,
+    "window hides it",
+  );
+  assert.equal(
+    surfaceHints({ ...wake, supported: false }).wakeDictation,
+    false,
+    "unsupported hides it",
+  );
+
+  // The two hints are independent.
+  assert.deepEqual(
+    surfaceHints({ ...wake, converseChatLog: false }),
+    { chatLogOff: true, wakeDictation: true },
+    "both hints can show together",
+  );
+}
+
+// ---------- G4b source contracts: the surface select and its hints ----------
+assert.match(
+  component,
+  /commands\.changeChatPresentationSetting\(/,
+  "the surface select commits through the gated presentation command",
+);
+assert.doesNotMatch(
+  component,
+  /updateSetting\(\s*["'`]chat_presentation["'`]/,
+  "chat_presentation must never be written through updateSetting",
+);
+assert.match(
+  component,
+  /<select\b[\s\S]*?data-testid="floating-orb-surface"/,
+  "the surface control is a native select with data-testid floating-orb-surface",
+);
+for (const testId of [
+  "floating-orb-surface-hint-chatlog",
+  "floating-orb-surface-hint-wake",
+  "floating-orb-wake-conversation",
+]) {
+  assert.match(
+    component,
+    new RegExp(`data-testid="${testId}"`),
+    `component carries ${testId}`,
+  );
+}
+assert.match(
+  component,
+  /commands\.changeWakeWordActionSetting\(/,
+  "the wake button uses the existing wake-word action setter",
+);
+assert.doesNotMatch(
+  component,
+  /updateSetting\(\s*["'`]wake_word_action["'`]/,
+  "the orb group sets wake_word_action only through its command",
+);
+
+// ---------- G4b i18n: surface and hint keys in every locale ----------
+const SURFACE_KEYS = [
+  "settings.floatingOrb.surface.title",
+  "settings.floatingOrb.surface.description",
+  "settings.floatingOrb.surface.auto",
+  "settings.floatingOrb.surface.bubbles",
+  "settings.floatingOrb.surface.window",
+  "settings.floatingOrb.hints.chatLogOff",
+  "settings.floatingOrb.hints.wakeDictation",
+  "settings.floatingOrb.hints.wakeButton",
+];
+for (const name of localeNames) {
+  const file = path.join(LOCALES_DIR, name, "translation.json");
+  const json: unknown = JSON.parse(readFileSync(file, "utf8"));
+  for (const key of SURFACE_KEYS) {
+    const value = lookup(json, key);
+    assert.equal(typeof value, "string", `${name}: ${key} must be a string`);
+    assert.ok(
+      (value as string).trim().length > 0,
+      `${name}: ${key} must not be empty`,
+    );
+  }
+}
 
 console.log("floatingOrbForm.test.ts: all assertions passed");

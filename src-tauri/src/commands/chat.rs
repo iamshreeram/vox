@@ -2,9 +2,11 @@
 //! The log itself lives in `managers::chat_log`; this file only adapts it to the app. Nothing
 //! here writes text to disk or to the log output.
 
+use crate::bubble_hub::{BubbleRole, HubEntry};
+use crate::bubble_native;
 use crate::chat_window::CHAT_WINDOW_LABEL;
 use crate::managers::chat_log::{
-    ChatEmitter, ChatEvent, ChatLog, ChatSnapshot, ClearError, CHAT_EVENT,
+    ChatEmitter, ChatEvent, ChatEventKind, ChatLog, ChatRole, ChatSnapshot, ClearError, CHAT_EVENT,
 };
 use crate::settings;
 use std::sync::Arc;
@@ -13,15 +15,44 @@ use tauri::{AppHandle, Emitter, Manager, State};
 /// Emits every chat event to the conversation window only (label `chat`), as the
 /// `converse-chat` Tauri event, so transcript text never reaches other webviews. Delivery
 /// errors are ignored so the conversation never notices them. The window hydrates from the
-/// snapshot when it opens, so events sent while it is closed can be dropped safely.
+/// snapshot when it opens, so events sent while it is closed can be dropped safely. The same
+/// events also feed the bubble shell in Rust, which never sends transcript text to a webview
+/// other than the bubble window.
 pub struct TauriChatEmitter {
     /// The app whose conversation window receives the events.
     pub app: AppHandle,
 }
 
+/// The bubble role of a transcript speaker. System notes never become bubbles.
+fn bubble_role(role: ChatRole) -> Option<BubbleRole> {
+    match role {
+        ChatRole::User => Some(BubbleRole::User),
+        ChatRole::Assistant => Some(BubbleRole::Assistant),
+        ChatRole::System => None,
+    }
+}
+
 impl ChatEmitter for TauriChatEmitter {
     fn emit(&self, event: &ChatEvent) {
         let _ = self.app.emit_to(CHAT_WINDOW_LABEL, CHAT_EVENT, event);
+        match &event.kind {
+            ChatEventKind::Entry { entry } => {
+                if let (Some(stamp), Some(role)) = (event.stamp, bubble_role(entry.role)) {
+                    bubble_native::chat_entry(
+                        &self.app,
+                        HubEntry {
+                            id: entry.id,
+                            role,
+                            text: entry.text.clone(),
+                            stamp,
+                        },
+                    );
+                }
+            }
+            ChatEventKind::Reset => bubble_native::chat_reset(&self.app),
+            ChatEventKind::Clear => bubble_native::chat_clear(&self.app),
+            ChatEventKind::State { .. } | ChatEventKind::Config { .. } => {}
+        }
     }
 }
 
@@ -64,6 +95,8 @@ pub fn change_converse_chat_log_setting(app: AppHandle, enabled: bool) {
     if let Some(chat) = app.try_state::<Arc<ChatLog>>() {
         chat.set_recording(enabled);
     }
+    // After the chat log's gate has changed, so the bubbles judge lines by the new tuple (A9-1).
+    bubble_native::recording_changed(&app, enabled);
 }
 
 /// Turns auto-opening of the conversation window at conversation start on or off and persists
