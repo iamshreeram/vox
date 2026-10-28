@@ -17,7 +17,6 @@
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender, TryRecvError};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
@@ -87,6 +86,89 @@ pub enum ChatEventKind {
     },
 }
 
+/// Admission tuple of one line, taken when the line is said. Internal: never serialized.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Stamp {
+    /// Session token current when the line was said.
+    pub(crate) session_token: u64,
+    /// Recording epoch current when the line was said.
+    pub(crate) rec_epoch: u64,
+}
+
+/// A consistent copy of the admission tuple (recording flag, epoch and session token).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GateState {
+    /// Current session token.
+    pub(crate) session_token: u64,
+    /// Current recording epoch.
+    pub(crate) rec_epoch: u64,
+    /// Whether lines are being recorded.
+    pub(crate) recording: bool,
+}
+
+/// Admission gate for the transcript. One lock covers the recording flag, the recording epoch
+/// and the session token, so a stamp and the state it is judged against are always read from
+/// the same moment.
+pub struct AdmissionGate {
+    state: Mutex<GateState>,
+}
+
+impl AdmissionGate {
+    /// A gate starting in the given recording state, with session token 0 and epoch 0.
+    pub fn new(recording: bool) -> AdmissionGate {
+        AdmissionGate {
+            state: Mutex::new(GateState {
+                session_token: 0,
+                rec_epoch: 0,
+                recording,
+            }),
+        }
+    }
+
+    /// The lock is never held across user code, so recover from poisoning.
+    fn lock(&self) -> MutexGuard<'_, GateState> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Stamp for a line said now. `None` while recording is off.
+    pub fn stamp(&self) -> Option<Stamp> {
+        let state = self.lock();
+        state.recording.then_some(Stamp {
+            session_token: state.session_token,
+            rec_epoch: state.rec_epoch,
+        })
+    }
+
+    /// A consistent copy of the whole tuple.
+    pub fn state(&self) -> GateState {
+        *self.lock()
+    }
+
+    /// Switch recording on or off. The epoch moves on every call, in both directions.
+    pub fn set_recording(&self, on: bool) {
+        let mut state = self.lock();
+        state.recording = on;
+        state.rec_epoch = state.rec_epoch.saturating_add(1);
+    }
+
+    /// Start a new session: bumps the session token and returns it. Recording is unchanged.
+    #[cfg_attr(not(test), allow(dead_code))] // Session start wiring is a later step.
+    pub fn bump_session(&self) -> u64 {
+        let mut state = self.lock();
+        state.session_token = state.session_token.saturating_add(1);
+        state.session_token
+    }
+
+    /// Whether a stamp still matches the current tuple while recording is on.
+    #[cfg_attr(not(test), allow(dead_code))] // Only tests judge stamps directly; the hub compares tuples.
+    pub fn is_current(&self, stamp: Stamp) -> bool {
+        let state = self.lock();
+        state.recording
+            && state.session_token == stamp.session_token
+            && state.rec_epoch == stamp.rec_epoch
+    }
+}
+
 /// One ordered event on the `converse-chat` stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -95,6 +177,10 @@ pub struct ChatEvent {
     pub seq: u64,
     /// The payload.
     pub kind: ChatEventKind,
+    /// Admission stamp of an Entry, taken when the line was said. Internal only: skipped by
+    /// serde, so the wire shape of `converse-chat` does not change.
+    #[serde(skip)]
+    pub(crate) stamp: Option<Stamp>,
 }
 
 /// Authoritative state at one `seq`.
@@ -159,6 +245,8 @@ enum WipeKind {
 struct PendingEntry {
     role: ChatRole,
     text: String,
+    /// Admission tuple taken when the line was said.
+    stamp: Stamp,
 }
 
 /// Private: everything hooks hand to the worker. Guarded by `Shared::inbox`.
@@ -244,8 +332,6 @@ struct Shared {
     inbox: Mutex<Inbox>,
     wake: Condvar,
     log: Mutex<LogState>,
-    /// Hook-visible recording flag, updated immediately by `set_recording`.
-    recording: AtomicBool,
     /// Set by the worker on exit (also from a drop guard).
     stopped: Mutex<bool>,
     stopped_cv: Condvar,
@@ -264,7 +350,6 @@ impl Shared {
                 end: None,
                 recording,
             }),
-            recording: AtomicBool::new(recording),
             stopped: Mutex::new(false),
             stopped_cv: Condvar::new(),
             clear_timeout,
@@ -381,7 +466,13 @@ fn next_batch(shared: &Shared) -> (Batch, bool) {
 }
 
 /// Private: append one entry to the log (under the log lock) and emit it (lock released).
-fn push_entry(shared: &Shared, emitter: &dyn ChatEmitter, role: ChatRole, text: String) {
+fn push_entry(
+    shared: &Shared,
+    emitter: &dyn ChatEmitter,
+    role: ChatRole,
+    text: String,
+    stamp: Option<Stamp>,
+) {
     let event = {
         let mut log = shared.lock_log();
         log.seq += 1;
@@ -398,6 +489,7 @@ fn push_entry(shared: &Shared, emitter: &dyn ChatEmitter, role: ChatRole, text: 
         ChatEvent {
             seq: log.seq,
             kind: ChatEventKind::Entry { entry },
+            stamp,
         }
     };
     emit_guarded(emitter, &event);
@@ -419,7 +511,11 @@ fn apply_wipe(shared: &Shared, emitter: &dyn ChatEmitter, kind: WipeKind) {
             WipeKind::Reset => ChatEventKind::Reset,
             WipeKind::Clear => ChatEventKind::Clear,
         };
-        ChatEvent { seq: log.seq, kind }
+        ChatEvent {
+            seq: log.seq,
+            kind,
+            stamp: None,
+        }
     };
     emit_guarded(emitter, &event);
 }
@@ -437,6 +533,7 @@ fn apply_state(shared: &Shared, emitter: &dyn ChatEmitter, state: String, end: O
         ChatEvent {
             seq: log.seq,
             kind: ChatEventKind::State { state, end },
+            stamp: None,
         }
     };
     emit_guarded(emitter, &event);
@@ -454,6 +551,7 @@ fn apply_recording(shared: &Shared, emitter: &dyn ChatEmitter, on: bool) {
         ChatEvent {
             seq: log.seq,
             kind: ChatEventKind::Config { recording: on },
+            stamp: None,
         }
     };
     emit_guarded(emitter, &event);
@@ -493,12 +591,18 @@ fn apply_batch(shared: &Shared, emitter: &dyn ChatEmitter, batch: Batch) {
         apply_recording(shared, emitter, on);
     }
     for pending in entries {
-        push_entry(shared, emitter, pending.role, pending.text);
+        push_entry(
+            shared,
+            emitter,
+            pending.role,
+            pending.text,
+            Some(pending.stamp),
+        );
         release_pending(shared);
     }
     if dropped > 0 {
         let text = format!("system:dropped:{dropped}");
-        push_entry(shared, emitter, ChatRole::System, text);
+        push_entry(shared, emitter, ChatRole::System, text, None);
     }
 }
 
@@ -519,6 +623,8 @@ fn run_worker(shared: Arc<Shared>, emitter: Arc<dyn ChatEmitter>) {
 /// The transcript log plus its worker. Share as `Arc<ChatLog>`.
 pub struct ChatLog {
     shared: Arc<Shared>,
+    /// Admission gate: recording flag, recording epoch and session token.
+    gate: AdmissionGate,
 }
 
 impl Drop for ChatLog {
@@ -550,16 +656,20 @@ impl ChatLog {
             shared.mark_shutdown();
             shared.mark_stopped();
         }
-        Arc::new(ChatLog { shared })
+        Arc::new(ChatLog {
+            shared,
+            gate: AdmissionGate::new(recording),
+        })
     }
 
     /// Record one line. Non-blocking. No-op when recording is off, after shutdown, or when the
     /// cleaned text is empty. Cleaning: strip control characters except `\n` (`\t` becomes a
     /// space), trim, cap to `TEXT_CAP` chars.
     pub fn say(&self, role: ChatRole, text: &str) {
-        if !self.shared.recording.load(Ordering::Acquire) {
+        // One stamp per line, taken here on the caller thread before any cleaning or queueing.
+        let Some(stamp) = self.gate.stamp() else {
             return;
-        }
+        };
         let cleaned = clean_text(text);
         if cleaned.is_empty() {
             return;
@@ -576,6 +686,7 @@ impl ChatLog {
             inbox.entries.push_back(PendingEntry {
                 role,
                 text: cleaned,
+                stamp,
             });
             inbox.pending += 1;
         }
@@ -613,22 +724,29 @@ impl ChatLog {
     /// Switch recording on or off (takes effect for later `say` calls immediately; the final
     /// value always lands as a `Config` event; existing entries are kept).
     pub fn set_recording(&self, on: bool) {
+        // The gate moves first and synchronously, so no later `say` is stamped under the old flag.
+        self.gate.set_recording(on);
         let Some(mut inbox) = self.shared.lock_inbox_hook() else {
             return;
         };
         if inbox.shutdown {
             return;
         }
-        self.shared.recording.store(on, Ordering::Release);
         inbox.recording = Some(on);
         drop(inbox);
         self.shared.notify();
     }
 
-    /// Current recording flag as seen by the hooks.
+    /// Current recording flag as seen by the admission gate.
     #[cfg_attr(not(test), allow(dead_code))] // Only tests read it; production reads the snapshot.
     pub fn recording(&self) -> bool {
-        self.shared.recording.load(Ordering::Acquire)
+        self.gate.state().recording
+    }
+
+    /// The admission gate. Hubs admit lines against its current tuple.
+    #[cfg_attr(not(test), allow(dead_code))] // Consumers arrive with the bubble wiring.
+    pub fn gate(&self) -> &AdmissionGate {
+        &self.gate
     }
 
     /// User-initiated Clear. Waits up to `clear_timeout` for the worker (never call from a

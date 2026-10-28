@@ -5,6 +5,11 @@ mod apple_intelligence;
 mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
+#[cfg(test)]
+mod bubble_geometry_tests;
+mod bubble_hub;
+#[cfg(test)]
+mod bubble_hub_tests;
 mod catalog;
 mod chat_presentation;
 #[cfg(test)]
@@ -36,6 +41,9 @@ mod orb_native_contracts_tests;
 mod orb_runtime;
 #[cfg(test)]
 mod orb_runtime_tests;
+mod orb_session;
+#[cfg(test)]
+mod orb_session_tests;
 #[cfg(test)]
 mod orb_settings_tests;
 #[cfg(test)]
@@ -44,6 +52,8 @@ mod orb_size_tests;
 mod orb_support_tests;
 mod orb_window;
 mod window_commands;
+#[cfg(test)]
+mod window_commands_bubbles_tests;
 #[cfg(test)]
 mod window_policy_tests;
 use crate::managers::agent_jobs::ShutdownConfig;
