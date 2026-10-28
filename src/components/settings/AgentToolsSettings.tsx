@@ -164,7 +164,7 @@ export const AgentToolsSettings: React.FC<AgentToolsSettingsProps> = React.memo(
             />
           </>
         )}
-        <div className="px-1 py-2">
+        <div className="px-3 py-2">
           <p className="text-xs text-mid-gray">
             {t("settings.experimental.agentTools.privacyText")}
           </p>

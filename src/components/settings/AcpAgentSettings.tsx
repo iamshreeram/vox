@@ -211,14 +211,14 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
 
     return (
       <>
-        <div className="px-4 pt-2">
+        <div className="px-3 pt-2">
           <p className="text-xs text-mid-gray">
             {t("settings.advanced.acpAgent.description")}
           </p>
         </div>
         <div
           role="note"
-          className="mx-4 my-2 rounded-md border border-warning/60 bg-warning/10 p-3 text-xs font-medium text-warning"
+          className="mx-3 my-2 rounded-md border border-warning/60 bg-warning/10 p-3 text-xs font-medium text-warning"
         >
           {t("settings.advanced.acpAgent.trustWarning")}
         </div>
@@ -351,7 +351,7 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
         {storedPermissionMode === "allow_all" && (
           <div
             role="note"
-            className="mx-4 my-2 rounded-md border border-warning/60 bg-warning/10 p-3 text-xs font-medium text-warning"
+            className="mx-3 my-2 rounded-md border border-warning/60 bg-warning/10 p-3 text-xs font-medium text-warning"
           >
             {t("settings.advanced.acpPermission.mode.allowAllWarning")}
           </div>
@@ -418,7 +418,7 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
           grouped={grouped}
           tooltipPosition="bottom"
         />
-        <div className="flex flex-col items-start gap-1 px-4 py-2">
+        <div className="flex flex-col items-start gap-1 px-3 py-2">
           <Button
             variant="secondary"
             size="sm"

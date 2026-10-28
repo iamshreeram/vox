@@ -70,7 +70,7 @@ const JobStatusCard: React.FC = () => {
   };
 
   return (
-    <div className="px-4 py-3 space-y-1">
+    <div className="px-3 py-3 space-y-1">
       <p className="text-sm font-medium">
         {t("settings.experimental.jobs.status.title")}
       </p>
@@ -203,7 +203,7 @@ export const JobsSettings: React.FC<JobsSettingsProps> = React.memo(
           tooltipPosition="bottom"
         />
         <JobStatusCard />
-        <div className="px-1 py-2">
+        <div className="px-3 py-2">
           <p className="text-xs text-mid-gray">
             {t("settings.experimental.jobs.warning")}
           </p>

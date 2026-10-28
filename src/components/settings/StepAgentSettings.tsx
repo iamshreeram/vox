@@ -232,7 +232,7 @@ export const StepAgentSettings: React.FC<{
   const { t } = useTranslation();
   return (
     <>
-      <div className="px-4 pt-3">
+      <div className="px-3 pt-3">
         <p className="text-sm font-medium">
           {t("settings.advanced.acpAgent.stepAgents.title")}
         </p>

@@ -86,7 +86,7 @@ export const AmbientModeToggle: React.FC<AmbientModeToggleProps> = React.memo(
           />
         </div>
         {ambientModeEnabled && (
-          <div className="px-4 pb-2">
+          <div className="px-3 pb-2">
             <Button
               variant="secondary"
               size="sm"

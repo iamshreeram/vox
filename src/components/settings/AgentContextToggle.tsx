@@ -60,7 +60,7 @@ export const AgentContextToggle: React.FC<AgentContextToggleProps> = React.memo(
           />
         </div>
         {agentContextEnabled && (
-          <div className="px-4 pb-2">
+          <div className="px-3 pb-2">
             <Button
               variant="secondary"
               size="sm"

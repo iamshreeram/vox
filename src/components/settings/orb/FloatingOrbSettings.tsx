@@ -238,7 +238,7 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
 
     return (
       <div data-testid="floating-orb-group" className="flex flex-col">
-        <p className="text-xs text-mid-gray px-4">
+        <p className="text-xs text-mid-gray px-3">
           {t("settings.floatingOrb.description")}
         </p>
 
@@ -267,7 +267,7 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
         {toggle.reasonKey !== null && (
           <p
             data-testid="floating-orb-reason"
-            className="text-xs text-mid-gray px-4"
+            className="text-xs text-mid-gray px-3"
           >
             {t(toggle.reasonKey)}
           </p>
