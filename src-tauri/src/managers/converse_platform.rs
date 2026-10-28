@@ -173,6 +173,12 @@ fn preflight_check_with(settings: &AppSettings, needs_spoken_replies: bool) -> R
             Resolved::Own | Resolved::Brain(_) => {}
         }
     }
+    // Realtime inherits the Brain when its source is Inherit, so that source must resolve too.
+    if !direct && settings.exp_rt_enabled {
+        if let Resolved::NotConfigured(missing) = resolve(settings, BrainFeature::RealtimeStream) {
+            return Err(missing_message(&missing).to_string());
+        }
+    }
     Ok(())
 }
 

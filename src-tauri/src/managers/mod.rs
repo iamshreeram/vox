@@ -34,6 +34,8 @@ pub mod audio;
 pub mod aux_model;
 pub mod brain;
 #[cfg(test)]
+mod brain_store_tests;
+#[cfg(test)]
 mod brain_tests;
 pub mod chat_log;
 #[cfg(test)]

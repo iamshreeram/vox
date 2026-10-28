@@ -1423,6 +1423,29 @@ pub fn preserve_launch_fields(mut incoming: AppSettings, committed: &AppSettings
     incoming
 }
 
+/// Merges an incoming whole-object write with the committed store for `write_settings`.
+/// A marked committed store keeps every Brain field. An unmarked one (before the Brain
+/// migration) takes only the marker and the three sources from `incoming`, and only when
+/// `incoming` is itself marked, which is the one-time migration write.
+pub(crate) fn merge_for_write(incoming: AppSettings, committed: &AppSettings) -> AppSettings {
+    let migrating = !committed.brain_schema_v1 && incoming.brain_schema_v1;
+    let marker = incoming.brain_schema_v1;
+    let sources = [
+        incoming.brain_source_composer.clone(),
+        incoming.brain_source_realtime.clone(),
+        incoming.brain_source_postprocess.clone(),
+    ];
+    let mut merged = preserve_launch_fields(incoming, committed);
+    if migrating {
+        let [composer, realtime, postprocess] = sources;
+        merged.brain_schema_v1 = marker;
+        merged.brain_source_composer = composer;
+        merged.brain_source_realtime = realtime;
+        merged.brain_source_postprocess = postprocess;
+    }
+    merged
+}
+
 /// Copies every Brain field from `source` into `target`.
 fn copy_brain_fields(target: &mut AppSettings, source: &AppSettings) {
     target.brain_provider_id = source.brain_provider_id.clone();
@@ -2404,11 +2427,34 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
     settings
 }
 
+/// Resolves a settings store path against the app data directory. The store plugin resolves a
+/// relative path the same way, so this names the same file. An absolute path is returned unchanged.
+pub(crate) fn absolute_store_path(
+    app_data_dir: &std::path::Path,
+    relative: &std::path::Path,
+) -> std::path::PathBuf {
+    if relative.is_absolute() {
+        relative.to_path_buf()
+    } else {
+        app_data_dir.join(relative)
+    }
+}
+
 pub fn get_settings(app: &AppHandle) -> AppSettings {
     let store_path = crate::portable::store_path(SETTINGS_STORE_PATH);
     let store = app
         .store(store_path.clone())
         .expect("Failed to initialize store");
+    // The absolute file the store plugin uses. Reads and backups use it, never the working directory.
+    let store_file = match crate::portable::app_data_dir(app) {
+        Ok(dir) => Some(absolute_store_path(&dir, &store_path)),
+        Err(_) => {
+            warn!(
+                "Could not resolve the app data directory; the Brain settings migration is skipped"
+            );
+            None
+        }
+    };
 
     // Decided before any default is materialised: no "settings" object means a fresh install.
     let store_existed = store.get("settings").is_some();
@@ -2448,7 +2494,7 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
     // Brain migration (P3). Persist only a Fresh or Migrated outcome, through `write_settings`,
     // which takes the Brain fields as given while the stored store has no Brain marker yet.
     if matches!(
-        run_brain_migration(&store_path, store_existed, &mut settings),
+        run_brain_migration(store_file.as_deref(), store_existed, &mut settings),
         MigrationOutcome::Fresh | MigrationOutcome::Migrated
     ) {
         write_settings(app, settings.clone());
@@ -2465,12 +2511,16 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
 /// backup source. If they cannot be read, the migration is skipped, which keeps legacy
 /// (Own) resolution exactly as before.
 fn run_brain_migration(
-    store_path: &std::path::Path,
+    store_file: Option<&std::path::Path>,
     store_existed: bool,
     settings: &mut AppSettings,
 ) -> MigrationOutcome {
+    // No resolvable absolute store file means no safe backup, so the migration is skipped.
+    let Some(store_file) = store_file else {
+        return MigrationOutcome::BackupFailed;
+    };
     let raw = if store_existed && !settings.brain_schema_v1 {
-        match std::fs::read(store_path) {
+        match std::fs::read(store_file) {
             Ok(bytes) => bytes,
             Err(_) => {
                 warn!("Brain settings migration skipped: the settings file could not be read");
@@ -2480,7 +2530,7 @@ fn run_brain_migration(
     } else {
         Vec::new()
     };
-    let outcome = brain::migrate_with_backup(settings, store_existed, store_path, &raw);
+    let outcome = brain::migrate_with_backup(settings, store_existed, store_file, &raw);
     if outcome == MigrationOutcome::BackupFailed {
         warn!("Brain settings migration skipped: the pre-migration backup could not be written");
     }
@@ -2494,14 +2544,25 @@ fn run_brain_migration(
 /// user's configuration (#1619).
 /// Defaults for an EXISTING store that could not be read as a whole. Identical to
 /// the fresh-install defaults except the approval mode, which stays `AskWrites`, so
-/// a missing or invalid stored mode never becomes `AllowAll` implicitly.
-fn existing_store_defaults() -> AppSettings {
+/// a missing or invalid stored mode never becomes `AllowAll` implicitly. The Brain
+/// marker stays unset and every Brain source is `Own`, so an old store still runs the
+/// Brain migration instead of being treated as already migrated.
+pub(crate) fn existing_store_defaults() -> AppSettings {
     let mut settings = get_default_settings();
     settings.acp_permission_mode = PermissionMode::AskWrites;
+    settings.brain_schema_v1 = false;
+    settings.brain_source_composer = BrainSource::Own;
+    settings.brain_source_realtime = BrainSource::Own;
+    settings.brain_source_postprocess = BrainSource::Own;
     settings
 }
 
-fn salvage_settings(stored: &serde_json::Value) -> AppSettings {
+/// Rebuilds settings from a store value that failed to deserialize as a whole.
+/// Every stored field that is individually valid is kept; only broken values
+/// (e.g. an enum variant written by a newer or older version) fall back to
+/// their default. This means one bad field can never reset the rest of the
+/// user's configuration (#1619).
+pub(crate) fn salvage_settings(stored: &serde_json::Value) -> AppSettings {
     let Some(stored_map) = stored.as_object() else {
         warn!("Stored settings are not a JSON object; falling back to defaults");
         return existing_store_defaults();
@@ -2682,16 +2743,7 @@ pub fn write_settings(app: &AppHandle, incoming: AppSettings) {
         Some(stored) => {
             let committed = serde_json::from_value::<AppSettings>(stored.clone())
                 .unwrap_or_else(|_| salvage_settings(&stored));
-            if committed.brain_schema_v1 {
-                preserve_launch_fields(incoming, &committed)
-            } else {
-                // Before the Brain marker, the stored Brain fields are only defaults. This write
-                // may be the one-time Brain migration, so the incoming Brain fields are kept.
-                let brain = incoming.clone();
-                let mut merged = preserve_launch_fields(incoming, &committed);
-                copy_brain_fields(&mut merged, &brain);
-                merged
-            }
+            merge_for_write(incoming, &committed)
         }
         None => incoming,
     };
@@ -3027,6 +3079,16 @@ mod tests {
             // AllowAll default (design Stage 2 rev 3, 2.7): it salvages to AskWrites.
             let mut expected = default_settings_json();
             expected["acp_permission_mode"] = serde_json::json!("ask_writes");
+            // Likewise an existing store is never a fresh Brain install: it stays unmarked and
+            // keeps its own reply setups until the one-time migration runs.
+            expected["brain_schema_v1"] = serde_json::json!(false);
+            for key in [
+                "brain_source_composer",
+                "brain_source_realtime",
+                "brain_source_postprocess",
+            ] {
+                expected[key] = serde_json::json!("own");
+            }
             assert_eq!(serde_json::to_value(&salvaged).unwrap(), expected);
         }
     }
