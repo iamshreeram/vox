@@ -31,6 +31,8 @@
     "test:chat:e2e": "playwright test tests/chat-window.spec.ts --reporter=line",
     "test:models-page:e2e": "playwright test tests/models-page.spec.ts --reporter=line",
     "test:orb": "bun src/orb/orbModel.test.ts",
+    "test:bubbles": "bun src/bubbles/bubbleModel.test.ts",
+    "test:no-gpu": "bun src/bubbles/noGpu.test.ts",
     "test:orb:e2e": "playwright test tests/orb-page.spec.ts --reporter=line",
     "test:orb:gaze": "playwright test tests/orb-gaze-limits.spec.ts tests/orb-input-limits.spec.ts --reporter=line",
     "test:orb:behavior": "bun src/orb/orbBehavior.test.ts",

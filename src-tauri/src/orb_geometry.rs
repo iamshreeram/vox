@@ -706,3 +706,143 @@ fn sanitize_rect(r: Rect) -> Rect {
         h: sane_len(r.h),
     }
 }
+
+/// Full size of the bubble stack window, logical pixels (DESIGN A7-3, A8-3).
+pub const BUBBLE_W_LOGICAL: f64 = 320.0;
+/// Full height of the bubble stack window, logical pixels.
+pub const BUBBLE_H_LOGICAL: f64 = 240.0;
+/// Smallest usable bubble height, logical pixels: one maximal 4-line bubble plus padding.
+pub const MIN_BUBBLE_H_LOGICAL: f64 = 120.0;
+/// Smallest usable bubble width, logical pixels.
+pub const MIN_BUBBLE_W_LOGICAL: f64 = 200.0;
+
+/// Tolerance when comparing a computed bubble length with its minimum.
+const FIT_EPS: f64 = 1e-9;
+
+/// Where a bubble stack sits beside the orb.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BubblePlacement {
+    /// The stack rectangle, inside the work area and never overlapping the orb.
+    pub rect: Rect,
+    /// The side of the orb the stack is on.
+    pub side: Side,
+    /// Orb centre along the stack edge as a 0..=1 fraction (the tail position).
+    pub tail: f64,
+}
+
+/// Places a bubble stack beside the orb (DESIGN A7-3, A8-3). Sides are tried in the order
+/// Above, Below, Right, Left. Above and Below keep the full width when the work area allows and
+/// shrink the height to the room beside the orb; Right and Left shrink the width. A side is
+/// usable only when both of its dimensions reach `min`; when no side is usable the result is
+/// `None`. All values are physical pixels, so the caller converts logical gap, size and minimum
+/// with the monitor scale and this function stays scale-free.
+pub fn place_bubbles(
+    orb: Rect,
+    work: Rect,
+    size: Size,
+    gap: f64,
+    min: Size,
+) -> Option<BubblePlacement> {
+    let orb = sanitize_rect(orb);
+    let work = sanitize_rect(work);
+    let full = Size {
+        w: sane_len(size.w),
+        h: sane_len(size.h),
+    };
+    let min = Size {
+        w: sane_len(min.w),
+        h: sane_len(min.h),
+    };
+    let gap = sane_len(gap);
+    [Side::Above, Side::Below, Side::Right, Side::Left]
+        .into_iter()
+        .find_map(|side| bubble_on(side, orb, work, full, gap, min))
+}
+
+/// Private: one side of [`place_bubbles`], or `None` when that side cannot reach `min`.
+fn bubble_on(
+    side: Side,
+    orb: Rect,
+    work: Rect,
+    full: Size,
+    gap: f64,
+    min: Size,
+) -> Option<BubblePlacement> {
+    let rect = match side {
+        Side::Above | Side::Below => vertical_bubble(side, orb, work, full, gap, min)?,
+        Side::Left | Side::Right => horizontal_bubble(side, orb, work, full, gap, min)?,
+    };
+    let tail = match side {
+        Side::Above | Side::Below => fraction(orb.center().0 - rect.x, rect.w),
+        Side::Left | Side::Right => fraction(orb.center().1 - rect.y, rect.h),
+    };
+    Some(BubblePlacement { rect, side, tail })
+}
+
+/// Private: a stack above or below the orb, or `None` when its height or width is below `min`.
+fn vertical_bubble(
+    side: Side,
+    orb: Rect,
+    work: Rect,
+    full: Size,
+    gap: f64,
+    min: Size,
+) -> Option<Rect> {
+    let (edge, room) = if side == Side::Above {
+        let edge = (orb.y - gap).min(work.bottom());
+        (edge, edge - work.y)
+    } else {
+        let edge = (orb.bottom() + gap).max(work.y);
+        (edge, work.bottom() - edge)
+    };
+    let h = full.h.min(room).min(work.h);
+    let w = full.w.min(work.w);
+    if !fits(h, min.h) || !fits(w, min.w) {
+        return None;
+    }
+    let x = clamp_axis(orb.center().0 - w / 2.0, work.x, work.right() - w);
+    let top = if side == Side::Above { edge - h } else { edge };
+    Some(Rect {
+        x,
+        y: clamp_axis(top, work.y, work.bottom() - h),
+        w,
+        h,
+    })
+}
+
+/// Private: a stack right of or left of the orb, or `None` when its width or height is below
+/// `min`.
+fn horizontal_bubble(
+    side: Side,
+    orb: Rect,
+    work: Rect,
+    full: Size,
+    gap: f64,
+    min: Size,
+) -> Option<Rect> {
+    let (edge, room) = if side == Side::Right {
+        let edge = (orb.right() + gap).max(work.x);
+        (edge, work.right() - edge)
+    } else {
+        let edge = (orb.x - gap).min(work.right());
+        (edge, edge - work.x)
+    };
+    let w = full.w.min(room).min(work.w);
+    let h = full.h.min(work.h);
+    if !fits(w, min.w) || !fits(h, min.h) {
+        return None;
+    }
+    let left = if side == Side::Right { edge } else { edge - w };
+    let y = clamp_axis(orb.center().1 - h / 2.0, work.y, work.bottom() - h);
+    Some(Rect {
+        x: clamp_axis(left, work.x, work.right() - w),
+        y,
+        w,
+        h,
+    })
+}
+
+/// Private: a positive length that reaches `min`.
+fn fits(len: f64, min: f64) -> bool {
+    len > 0.0 && len + FIT_EPS >= min
+}
