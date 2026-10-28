@@ -1,16 +1,37 @@
-import React, { useId } from "react";
+import React from "react";
 import { useTranslation } from "react-i18next";
 import Badge from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { SettingContainer } from "../ui/SettingContainer";
 import type { TtsEngine } from "@/bindings";
 import type { EngineBadge, EngineCard } from "./ttsEngineState";
+import ModelRow, {
+  type ModelRowBadge,
+  type ModelRowLabels,
+} from "./models/ModelRow";
+import type { RowStatus } from "./models/modelRowState";
 
 interface TtsEngineCardProps {
   card: EngineCard;
   onSelect: () => void;
   children?: React.ReactNode;
 }
+
+/**
+ * Shared-row status for an engine card. The engine body (PhononEngineBody) keeps
+ * drawing progress, errors and install/delete itself, so this only sets data-status.
+ */
+const rowStatusFor = (card: EngineCard): RowStatus => {
+  if (card.error !== null) return "error";
+  if (card.primaryAction === "cancel") return "downloading";
+  if (card.primaryAction === "delete") return "ready";
+  if (card.primaryAction === "install") return "notInstalled";
+  if (card.disabledReason !== null) return "notInstalled";
+  // A supported engine with no action and a model size is still verifying; one without a model is ready.
+  return card.badges.some((badge) => badge.kind === "size")
+    ? "verifying"
+    : "ready";
+};
 
 /**
  * One row of the engine picker. Name, badges and the selection control come from the
@@ -22,7 +43,6 @@ export const TtsEngineCard: React.FC<TtsEngineCardProps> = ({
   children,
 }) => {
   const { t } = useTranslation();
-  const titleId = useId();
 
   const name = (id: TtsEngine): string => {
     switch (id) {
@@ -66,58 +86,76 @@ export const TtsEngineCard: React.FC<TtsEngineCardProps> = ({
   };
 
   const selectable = card.selectable;
-  const frameClass = card.selected
-    ? "border-logo-primary bg-logo-primary/5"
-    : "border-mid-gray/20";
+  const badges: ModelRowBadge[] = card.badges.map((badge) => ({
+    label: badgeText(badge),
+    variant: badge.kind === "recommended" ? "primary" : "secondary",
+  }));
+
+  const details = (
+    <>
+      {card.disabledReason !== null && (
+        <p className="text-xs text-mid-gray">
+          {t("settings.advanced.tts.engines.unavailable")}
+        </p>
+      )}
+      {card.selected && card.disabledReason !== null && (
+        <p className="text-xs text-mid-gray">
+          {t("settings.advanced.tts.engines.unsupportedSelected")}
+        </p>
+      )}
+    </>
+  );
+
+  const selectButton = (
+    <Button
+      variant={card.selected ? "primary" : "secondary"}
+      size="md"
+      disabled={!selectable || card.selected}
+      onClick={onSelect}
+      aria-pressed={card.selected}
+    >
+      {card.selected
+        ? t("settings.advanced.tts.engines.selected")
+        : t("settings.advanced.tts.engines.select")}
+    </Button>
+  );
+
+  const labels: ModelRowLabels = {
+    select: t("settings.advanced.tts.engines.select"),
+    active: t("settings.advanced.tts.engines.selected"),
+    download: t("settings.models.row.download"),
+    cancel: t("settings.advanced.tts.natural.model.cancel"),
+    delete: t("settings.advanced.tts.natural.model.delete"),
+    retry: t("settings.models.row.retry"),
+    edit: t("settings.models.row.edit"),
+    verifying: t("modelSelector.verifyingGeneric"),
+    extracting: t("modelSelector.extractingGeneric"),
+    switching: t("modelSelector.switching"),
+    userAdded: t("settings.models.row.userAdded"),
+    progress: t("settings.models.row.progress"),
+  };
 
   return (
-    <section
-      data-testid="tts-engine-card"
-      data-engine={card.id}
-      data-selected={card.selected ? "true" : "false"}
-      aria-labelledby={titleId}
-      className={`flex flex-col gap-3 rounded-lg border p-3 ${frameClass} ${selectable ? "" : "opacity-70"}`}
+    <ModelRow
+      id={card.id}
+      name={name(card.id)}
+      badges={badges}
+      status={rowStatusFor(card)}
+      frame="engine"
+      testId="tts-engine-card"
+      containerTag="section"
+      dataAttributes={{ "data-engine": card.id }}
+      selected={card.selected}
+      showChildren="always"
+      statusBadges={false}
+      statusDetails={false}
+      details={details}
+      action={selectButton}
+      className={selectable ? undefined : "opacity-70"}
+      labels={labels}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 id={titleId} className="text-sm font-medium">
-              {name(card.id)}
-            </h3>
-            {card.badges.map((badge, index) => (
-              <Badge
-                key={`${badge.kind}-${index}`}
-                variant={badge.kind === "recommended" ? "primary" : "secondary"}
-              >
-                {badgeText(badge)}
-              </Badge>
-            ))}
-          </div>
-          {card.disabledReason !== null && (
-            <p className="text-xs text-mid-gray">
-              {t("settings.advanced.tts.engines.unavailable")}
-            </p>
-          )}
-          {card.selected && card.disabledReason !== null && (
-            <p className="text-xs text-mid-gray">
-              {t("settings.advanced.tts.engines.unsupportedSelected")}
-            </p>
-          )}
-        </div>
-        <Button
-          variant={card.selected ? "primary" : "secondary"}
-          size="md"
-          disabled={!selectable || card.selected}
-          onClick={onSelect}
-          aria-pressed={card.selected}
-        >
-          {card.selected
-            ? t("settings.advanced.tts.engines.selected")
-            : t("settings.advanced.tts.engines.select")}
-        </Button>
-      </div>
-      {selectable && children}
-    </section>
+      {selectable ? children : null}
+    </ModelRow>
   );
 };
 

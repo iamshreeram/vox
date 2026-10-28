@@ -192,6 +192,14 @@
       "rescan": {
         "label": "重新扫描",
         "tooltip": "重新扫描在 Vox 之外添加到模型文件夹或 Hugging Face 缓存中的模型"
+      },
+      "row": {
+        "select": "Select",
+        "download": "Download",
+        "retry": "Retry",
+        "edit": "Edit",
+        "userAdded": "Added by you",
+        "progress": "Download progress"
       }
     },
     "appearance": {

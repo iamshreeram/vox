@@ -257,7 +257,15 @@
         "label": "Opnieuw scannen",
         "tooltip": "Scannen naar modellen die buiten Vox om zijn toegevoegd aan de modellenmap of Hugging Face-cache"
       },
-      "noModelsMatch": "Geen modellen voldoen aan dit filter."
+      "noModelsMatch": "Geen modellen voldoen aan dit filter.",
+      "row": {
+        "select": "Select",
+        "download": "Download",
+        "retry": "Retry",
+        "edit": "Edit",
+        "userAdded": "Added by you",
+        "progress": "Download progress"
+      }
     },
     "appearance": {
       "title": "Appearance"
