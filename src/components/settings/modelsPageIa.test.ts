@@ -4,6 +4,7 @@ import {
   PLACED_GROUPS,
   groupsForSection,
   placementOf,
+  visibleControls,
   visibleGroups,
   type ControlId,
 } from "./settingsPlacement";
@@ -178,6 +179,72 @@ const scenarios: Record<string, () => void> = {
       "requiresExperimental must be derived from group.experimental",
     );
     assert.match(index, /group\.experimental/);
+  },
+
+  "latency panel and the real-time controls stay experimental inside the ungated Conversation group":
+    () => {
+      const group = PLACED_GROUPS.find(
+        (candidate) => candidate.id === "conversation",
+      );
+      assert.ok(group);
+      const flags = { memoryEnabled: false, agentBridgeEnabled: false };
+      assert.deepEqual(visibleControls(group, flags, false), [
+        "conversation",
+        "persona",
+        "replyStyle",
+      ]);
+      assert.deepEqual(visibleControls(group, flags, true), [
+        "conversation",
+        "persona",
+        "replyStyle",
+        "realtime",
+        "latencyPanel",
+      ]);
+      const index = read("./search/index/experimental.ts");
+      assert.match(index, /requiresExperimental/);
+    },
+
+  "Speech-to-text controls are reachable by search when their group is collapsed":
+    () => {
+      const core = read("./search/index/core.ts");
+      for (const id of [
+        "models.language",
+        "models.translateToEnglish",
+        "models.modelUnload",
+      ]) {
+        const at = core.indexOf(`id: "${id}"`);
+        assert.ok(at > 0, `${id} entry exists`);
+        const entry = core.slice(at, core.indexOf("},", at));
+        assert.match(entry, /groupId:\s*"sttModels"/, `${id} opens sttModels`);
+      }
+    },
+
+  "the Speech-to-text group is open by default and so is Text-to-speech (design amendment)":
+    () => {
+      const open = Object.fromEntries(
+        PLACED_GROUPS.filter((g) => g.section === "models").map((g) => [
+          g.id,
+          g.defaultOpen,
+        ]),
+      );
+      assert.deepEqual(open, { spokenReplies: true, vadEngine: false });
+    },
+
+  "dead group-title keys are gone from every locale": () => {
+    for (const key of [
+      "settings.models.groups.loading",
+      "settings.models.groups.smartTurn",
+      "settings.models.groups.speakerFilter",
+      "settings.models.groups.vadEngine",
+      "settings.advanced.tts.groupTitle",
+    ]) {
+      assert.equal(lookup(key), undefined, `${key} must be removed`);
+    }
+  },
+
+  "sub-headings are not headings that break the outline": () => {
+    const view = read("./PlacedGroups.tsx");
+    assert.ok(!view.includes("<h3"), "no orphan h3 under a span-titled group");
   },
 };
 

@@ -1,4 +1,8 @@
-import { PLACED_GROUPS } from "../../settingsPlacement";
+import {
+  PLACED_GROUPS,
+  controlEntryOf,
+  type ControlId,
+} from "../../settingsPlacement";
 import type { DynamicFamily, SearchEntry } from "../types";
 
 /** Entry id of the advanced-page toggle that unlocks the Experimental switch. */
@@ -20,9 +24,38 @@ const GROUP = {
 } as const;
 
 /**
- * One row of a placed control. The page (section), the gating and the id prefix all come
- * from the placed group: rows of an experimental group keep "experimental.<slug>" and need
- * the Experimental switch; rows of an always-visible group use "<section>.<slug>".
+ * Rows whose control is gated on its own inside an always-visible group, keyed by row slug.
+ * Realtime and the latency panel sit in the ungated Conversation group but stay behind the
+ * Experimental switch (`experimental: true` on their ControlEntry).
+ */
+const REALTIME_ROW_SLUGS = [
+  "realtimeEnabled",
+  "realtimeSpeakReplies",
+  "realtimeDirectEndpoint",
+  "realtimeEndpointUrl",
+  "realtimeModel",
+  "realtimeToken",
+  "realtimeStreamReply",
+  "realtimeEarlySpeech",
+  "realtimeFastVoice",
+  "realtimeAck",
+  "realtimePrewarm",
+  "realtimeAutoProxy",
+  "realtimeProxy",
+  "realtimeProxyUrl",
+  "realtimeTimingLog",
+] as const;
+
+const CONTROL_BY_ROW_SLUG: Readonly<Record<string, ControlId>> = {
+  ...Object.fromEntries(REALTIME_ROW_SLUGS.map((slug) => [slug, "realtime"])),
+  conversationLatency: "latencyPanel",
+};
+
+/**
+ * One row of a placed control. The page (section), the gating and the id prefix come from
+ * the control entry when it has its own `experimental` flag, otherwise from the placed group:
+ * gated rows keep "experimental.<slug>" and need the Experimental switch; the rest use
+ * "<section>.<slug>".
  */
 function row(
   slug: string,
@@ -35,17 +68,23 @@ function row(
   if (group === undefined) {
     throw new Error(`search index: no placed group "${groupId}"`);
   }
-  const prefix = group.experimental ? "experimental" : group.section;
+  const controlId = CONTROL_BY_ROW_SLUG[slug];
+  const ownFlag =
+    controlId === undefined
+      ? undefined
+      : controlEntryOf(controlId)?.experimental;
+  const experimental = ownFlag ?? group.experimental;
+  const prefix = experimental ? "experimental" : group.section;
   return {
     id: `${prefix}.${slug}`,
     section: group.section,
-    requiresExperimental: group.experimental,
+    requiresExperimental: experimental,
     groupId,
     groupKey: GROUP[groupId],
     labelKey,
     ...(descriptionKey === undefined ? {} : { descriptionKey }),
     keywords,
-    ...(group.experimental ? { unlockedBy: UNLOCK } : {}),
+    ...(experimental ? { unlockedBy: UNLOCK } : {}),
   };
 }
 

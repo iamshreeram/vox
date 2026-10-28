@@ -712,6 +712,41 @@ test.describe("Settings search: controls moved into Models and General", () => {
   });
 });
 
+test.describe("Settings search: collapsed Speech-to-text group", () => {
+  const en = translation("en");
+  const label = (key: string): string => textAt(en, key);
+
+  test("(18) searching for unload opens a collapsed Speech-to-text group and highlights its row", async ({
+    page,
+  }) => {
+    await installTauriMock(page);
+    await page.goto("/");
+    await navItem(page, "Models").click();
+    await expect(section(page, "models")).toBeVisible();
+
+    const group = page.locator('[data-group-id="sttModels"]');
+    const header = group.locator("button[aria-expanded]").first();
+    await expect(header).toHaveAttribute("aria-expanded", "true");
+    await header.click();
+    await expect(header).toHaveAttribute("aria-expanded", "false");
+
+    const unloadKey = "settings.advanced.modelUnload.title";
+    await searchBox(page).fill("unload");
+    await options(page)
+      .filter({ hasText: label(unloadKey) })
+      .first()
+      .click();
+
+    await expect(section(page, "models")).toBeVisible();
+    await expect(header).toHaveAttribute("aria-expanded", "true");
+    await expect(group.locator(`.${HIGHLIGHT_CLASS}`)).toHaveCount(1);
+    await expect(highlighted(page)).toHaveAttribute(
+      "data-setting-title",
+      label(unloadKey),
+    );
+  });
+});
+
 test.describe("Settings search: controls with conditions", () => {
   const en = translation("en");
   const label = (key: string): string => textAt(en, key);

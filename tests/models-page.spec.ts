@@ -285,7 +285,7 @@ for (const experimental of EXPERIMENTAL_FLAGS) {
       ).toHaveCount(0);
     });
 
-    test("5. General shows the Conversation group holding Reply style and Realtime conversation", async ({
+    test("5. General shows the Conversation group holding Reply style (and Realtime conversation only with Experimental on)", async ({
       page,
     }) => {
       await navItem(page, "General").click();
@@ -314,11 +314,13 @@ for (const experimental of EXPERIMENTAL_FLAGS) {
           exact: true,
         }),
       ).toBeVisible();
+      // Real-time conversation is an experimental control: hidden with Experimental off,
+      // shown (inside the same group) with it on.
       await expect(
         conversation.getByText(label("settings.experimental.realtime.title"), {
           exact: true,
         }),
-      ).toBeVisible();
+      ).toHaveCount(experimental ? 1 : 0);
     });
 
     test("6. Speech-to-text collapse state persists across a reload", async ({

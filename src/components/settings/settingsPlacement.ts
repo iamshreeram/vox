@@ -39,6 +39,8 @@ export interface ControlEntry {
   when?: ControlFlag;
   /** Sub-heading shown above the control when its group holds several controls. */
   subTitleKey?: string;
+  /** True when this control alone renders only while the Experimental switch is on (default false). */
+  experimental?: boolean;
 }
 
 export interface PlacedGroup {
@@ -87,8 +89,12 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
       { id: "conversation" },
       { id: "persona" },
       { id: "replyStyle", subTitleKey: "settings.models.groups.replyStyle" },
-      { id: "realtime", subTitleKey: "settings.experimental.realtime.title" },
-      { id: "latencyPanel" },
+      {
+        id: "realtime",
+        subTitleKey: "settings.experimental.realtime.title",
+        experimental: true,
+      },
+      { id: "latencyPanel", experimental: true },
     ],
   },
   {
@@ -212,12 +218,26 @@ export function placementOf(id: ControlId): {
   throw new Error(`control ${id} is not placed in any group`);
 }
 
-/** Control ids of a group that should render for the given feature flags, in order. */
+/**
+ * Control ids of a group that should render for the given feature flags, in order.
+ * Controls marked `experimental` render only while `experimentalEnabled` is true.
+ */
 export function visibleControls(
   group: PlacedGroup,
   flags: { memoryEnabled: boolean; agentBridgeEnabled: boolean },
+  experimentalEnabled = true,
 ): ControlId[] {
   return group.controls
     .filter((entry) => entry.when === undefined || flags[entry.when])
+    .filter((entry) => experimentalEnabled || entry.experimental !== true)
     .map((entry) => entry.id);
+}
+
+/** The placed control entry for an id, or undefined when it is not placed. */
+export function controlEntryOf(id: ControlId): ControlEntry | undefined {
+  for (const group of PLACED_GROUPS) {
+    const entry = group.controls.find((candidate) => candidate.id === id);
+    if (entry !== undefined) return entry;
+  }
+  return undefined;
 }

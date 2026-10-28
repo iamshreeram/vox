@@ -44,16 +44,16 @@ export const PlacedGroupsView: React.FC<PlacedGroupsViewProps> = ({
           }
           defaultOpen={group.defaultOpen}
         >
-          {visibleControls(group, flags).map((id) => {
+          {visibleControls(group, flags, experimentalEnabled).map((id) => {
             const subTitleKey = group.controls.find(
               (entry) => entry.id === id,
             )?.subTitleKey;
             return (
               <React.Fragment key={id}>
                 {subTitleKey ? (
-                  <h3 className="px-4 pt-3 pb-1 text-xs font-medium uppercase tracking-wide text-mid-gray">
+                  <div className="px-4 pt-3 pb-1 text-xs font-medium uppercase tracking-wide text-mid-gray">
                     {t(subTitleKey)}
-                  </h3>
+                  </div>
                 ) : null}
                 {render[id]()}
               </React.Fragment>

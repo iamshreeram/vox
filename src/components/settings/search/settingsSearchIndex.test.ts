@@ -62,7 +62,9 @@ const ENABLED_BY_DEFAULT: SearchSection[] = [
   "advanced",
   "about",
 ];
+// "sttModels" is the Models page's Speech-to-text card: a known group, not a placed group.
 const VALID_GROUP_IDS = new Set([
+  "sttModels",
   "engine",
   "vadEngine",
   "voiceCommands",

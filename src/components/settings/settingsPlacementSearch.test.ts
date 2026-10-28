@@ -62,7 +62,12 @@ const ctxLegacy: SearchContext = {
 const requiresExperimental = (e: SearchEntry): boolean =>
   (e as { requiresExperimental?: boolean }).requiresExperimental === true;
 // Every row of a placed control (gated or always visible) carries its group id.
-const moved = SEARCH_ENTRIES.filter((e) => e.groupId !== undefined);
+// "sttModels" is the Models page's Speech-to-text card: a known group that is not a placed
+// group, so its rows (language, translation, unload timeout) are checked by their own scenario.
+const STT_GROUP_ID = "sttModels";
+const moved = SEARCH_ENTRIES.filter(
+  (e) => e.groupId !== undefined && e.groupId !== STT_GROUP_ID,
+);
 const gated = moved.filter(requiresExperimental);
 
 const scenarios: Record<string, () => void> = {
@@ -79,10 +84,16 @@ const scenarios: Record<string, () => void> = {
       assert.ok(group, `${e.id}: unknown group ${e.groupId}`);
       assert.equal(String(e.section), group.section, e.id);
       // Gating follows the group: experimental groups need the switch, the rest do not.
-      assert.equal(requiresExperimental(e), group.experimental, e.id);
+      // The one exception is a control that is experimental on its own inside an ungated
+      // group (realtime and the latency panel in Conversation), covered by its own scenario.
+      const ownGate =
+        e.labelKey.startsWith("settings.experimental.realtime.") ||
+        e.labelKey === "converse.voice.latency.label";
+      const gated = group.experimental || ownGate;
+      assert.equal(requiresExperimental(e), gated, e.id);
       assert.equal(
         e.unlockedBy,
-        group.experimental ? "advanced.experimentalToggle" : undefined,
+        gated ? "advanced.experimentalToggle" : undefined,
         e.id,
       );
     }
@@ -161,6 +172,62 @@ const scenarios: Record<string, () => void> = {
     assert.ok(hit);
     assert.equal(hit.locked, false);
   },
+  "realtime and latency rows stay experimental inside the ungated Conversation group":
+    () => {
+      const rows = SEARCH_ENTRIES.filter(
+        (e) =>
+          e.groupId === "conversation" &&
+          (e.labelKey.startsWith("settings.experimental.realtime.") ||
+            e.labelKey === "converse.voice.latency.label"),
+      );
+      assert.equal(
+        rows.length,
+        16,
+        `found ${rows.length} realtime/latency rows`,
+      );
+      for (const e of rows) {
+        assert.ok(e.id.startsWith("experimental."), e.id);
+        assert.equal(String(e.section), "general", e.id);
+        assert.equal(requiresExperimental(e), true, e.id);
+        assert.equal(e.unlockedBy, "advanced.experimentalToggle", e.id);
+        const label = lookup(e.labelKey) as string;
+        const off = search(SEARCH_ENTRIES, label, resolve, ctxOff, {
+          limit: 1000,
+        }).find((h) => h.entry.id === e.id);
+        assert.ok(
+          off,
+          `${e.id} ("${label}") is searchable with the switch off`,
+        );
+        assert.equal(off.locked, true, e.id);
+        const on = search(SEARCH_ENTRIES, label, resolve, ctxOn, {
+          limit: 1000,
+        }).find((h) => h.entry.id === e.id);
+        assert.ok(on, e.id);
+        assert.equal(on.locked, false, e.id);
+      }
+    },
+  "switch off: reply style, smart turn, speaker filter, VAD and spoken reply rows are reachable":
+    () => {
+      const wanted = [
+        "general.spokenReplyMode",
+        "models.conversationSmartTurn",
+        "models.conversationSpeakerFilter",
+        "models.vadBackend",
+        "models.tts",
+      ];
+      for (const id of wanted) {
+        const e = SEARCH_ENTRIES.find((x) => x.id === id);
+        assert.ok(e, `${id} exists`);
+        assert.equal(requiresExperimental(e), false, `${id} is ungated`);
+        const label = lookup(e.labelKey) as string;
+        const hit = search(SEARCH_ENTRIES, label, resolve, ctxOff, {
+          limit: 1000,
+        }).find((h) => h.entry.id === id);
+        assert.ok(hit, `${id} ("${label}") is searchable with the switch off`);
+        assert.equal(hit.locked, false, `${id} must stay unlocked`);
+        assert.equal(resolveTarget(hit, SEARCH_ENTRIES, ctxOff).id, id, id);
+      }
+    },
   "rows follow their control into its new group": () => {
     // labelKey prefix -> the group that now holds the control that owns the row.
     const expected: Array<[string, string]> = [

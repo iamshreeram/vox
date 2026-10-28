@@ -296,6 +296,22 @@ const scenarios: Record<string, () => void> = {
       assert.equal(count(html, `data-ctl="${id}"`), 1, id);
     }
   },
+  "experimental controls inside an ungated group follow the switch": () => {
+    const off = markup("general", false);
+    const on = markup("general", true);
+    for (const id of ["realtime", "latencyPanel"]) {
+      assert.equal(count(off, `data-ctl="${id}"`), 0, `${id} off`);
+      assert.equal(count(on, `data-ctl="${id}"`), 1, `${id} on`);
+    }
+    for (const id of ["replyStyle", "conversation", "persona"]) {
+      assert.equal(count(off, `data-ctl="${id}"`), 1, `${id} off`);
+    }
+    assert.equal(
+      count(off, 'data-group-id="conversation"'),
+      1,
+      "the Conversation group itself stays ungated",
+    );
+  },
   "titles go through the injected translator": () => {
     const html = markup("models", true);
     assert.ok(html.includes("T:settings.models.groups.textToSpeech"));
