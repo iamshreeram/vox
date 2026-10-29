@@ -301,6 +301,14 @@ const scenarios: Record<string, () => void> = {
         ),
         "the wake word action row is gone",
       );
+      assert.ok(
+        !SEARCH_ENTRIES.some(
+          (x) =>
+            x.id === "wakeWordSilence" ||
+            x.labelKey === "settings.advanced.wakeWord.silenceTimeoutLabel",
+        ),
+        "the wake word silence slider has no search row (its silence watch was removed)",
+      );
       const wanted: Array<[string, string, string, boolean]> = [
         ["settings.advanced.wakeWord.label", "conversation", "general", false],
         ["converse.section.bargeIn.label", "conversation", "general", false],

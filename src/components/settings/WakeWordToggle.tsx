@@ -3,17 +3,17 @@ import { useTranslation } from "react-i18next";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { Slider } from "../ui/Slider";
 import { useSettings } from "../../hooks/useSettings";
+import { wakeToggleDisabledByAmbient } from "./wakeWordModel";
 interface WakeWordToggleProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
 }
 
 // Bounds mirror the authoritative Rust validators in settings.rs
-// (WAKE_WORD_CONFIDENCE_*, WAKE_WORD_COOLDOWN_MAX_MS, WAKE_WORD_SILENCE_TIMEOUT_MAX_MS).
+// (WAKE_WORD_CONFIDENCE_*, WAKE_WORD_COOLDOWN_MAX_MS).
 const CONFIDENCE_MIN = 0.1;
 const CONFIDENCE_MAX = 0.95;
 const COOLDOWN_MAX_MS = 10000;
-const SILENCE_TIMEOUT_MAX_MS = 30000;
 
 export const WakeWordToggle: React.FC<WakeWordToggleProps> = React.memo(
   ({ descriptionMode = "tooltip", grouped = false }) => {
@@ -21,20 +21,20 @@ export const WakeWordToggle: React.FC<WakeWordToggleProps> = React.memo(
     const { getSetting, updateSetting, isUpdating } = useSettings();
 
     const wakeWordEnabled = getSetting("wake_word_enabled") ?? false;
-    const ambientModeEnabled = getSetting("ambient_mode_enabled") ?? false;
-    // Ambient listening is effective only while Experimental is on (same rule as the backend).
-    const ambientEffective =
-      (getSetting("experimental_enabled") ?? false) && ambientModeEnabled;
+    // Ambient listening blocks the wake toggle while it is effective (see wakeWordModel.ts).
+    const disabledByAmbient = wakeToggleDisabledByAmbient({
+      experimental_enabled: getSetting("experimental_enabled"),
+      ambient_mode_enabled: getSetting("ambient_mode_enabled"),
+    });
     const confidenceThreshold =
       getSetting("wake_word_confidence_threshold") ?? 0.5;
     const cooldownMs = getSetting("wake_word_cooldown_ms") ?? 500;
-    const silenceTimeoutMs = getSetting("wake_word_silence_timeout_ms") ?? 1500;
 
     return (
       <>
         <div
           title={
-            ambientEffective
+            disabledByAmbient
               ? t("settings.advanced.wakeWord.disabledByAmbientMode")
               : undefined
           }
@@ -43,7 +43,7 @@ export const WakeWordToggle: React.FC<WakeWordToggleProps> = React.memo(
             checked={wakeWordEnabled}
             onChange={(enabled) => updateSetting("wake_word_enabled", enabled)}
             isUpdating={isUpdating("wake_word_enabled")}
-            disabled={ambientEffective}
+            disabled={disabledByAmbient}
             label={t("settings.advanced.wakeWord.label")}
             description={t("settings.advanced.wakeWord.description")}
             descriptionMode={descriptionMode}
@@ -88,29 +88,6 @@ export const WakeWordToggle: React.FC<WakeWordToggleProps> = React.memo(
           grouped={grouped}
           formatValue={(v) =>
             t("settings.advanced.wakeWord.msValue", { value: Math.round(v) })
-          }
-        />
-
-        <Slider
-          value={silenceTimeoutMs}
-          onChange={(next) =>
-            void updateSetting("wake_word_silence_timeout_ms", Math.round(next))
-          }
-          min={0}
-          max={SILENCE_TIMEOUT_MAX_MS}
-          step={100}
-          label={t("settings.advanced.wakeWord.silenceTimeoutLabel")}
-          description={t(
-            "settings.advanced.wakeWord.silenceTimeoutDescription",
-          )}
-          descriptionMode={descriptionMode}
-          grouped={grouped}
-          formatValue={(v) =>
-            Math.round(v) === 0
-              ? t("settings.advanced.wakeWord.offValue")
-              : t("settings.advanced.wakeWord.msValue", {
-                  value: Math.round(v),
-                })
           }
         />
       </>

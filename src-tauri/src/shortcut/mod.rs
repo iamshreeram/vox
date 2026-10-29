@@ -1001,7 +1001,8 @@ pub fn change_wake_word_cooldown_ms_setting(
     Ok(())
 }
 
-/// Validates and stores the wake-word silence timeout (0 turns auto-finish off).
+/// Validates and stores the stored-only wake-word silence timeout. No UI control and no
+/// code path reads it any more; kept so the field round-trips for downgrades.
 /// A rejected value leaves the stored setting untouched.
 #[tauri::command]
 #[specta::specta]
@@ -1632,20 +1633,48 @@ pub fn change_agent_bridge_binary_path_setting(
     Ok(())
 }
 
+/// What an Experimental switch change does to ambient listening.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AmbientTransition {
+    Stop,
+    Start,
+    None,
+}
+
+/// Pure: the ambient listener's action for an Experimental change. Turning Experimental off
+/// stops ambient listening (the stored flag is left as it is). Turning it on starts ambient
+/// only when the stored flag is on and the wake word is off. An unchanged value is a no-op.
+pub fn ambient_transition_on_experimental_change(
+    prev_experimental: bool,
+    next_experimental: bool,
+    ambient_flag: bool,
+    wake_enabled: bool,
+) -> AmbientTransition {
+    match (prev_experimental, next_experimental) {
+        (true, false) => AmbientTransition::Stop,
+        (false, true) if ambient_flag && !wake_enabled => AmbientTransition::Start,
+        _ => AmbientTransition::None,
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_experimental_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
+    let prev_experimental = settings.experimental_enabled;
     settings.experimental_enabled = enabled;
-    // Turning Experimental off stops ambient listening; the stored flag is left as it is.
-    // Turning it on restarts ambient only when the flag is on and the wake word is off.
-    let ambient_wanted = settings::ambient_effective(&settings) && !settings.wake_word_enabled;
+    let transition = ambient_transition_on_experimental_change(
+        prev_experimental,
+        enabled,
+        settings.ambient_mode_enabled,
+        settings.wake_word_enabled,
+    );
     settings::write_settings(&app, settings);
     let ambient = app.state::<Arc<crate::managers::ambient_listener::AmbientListener>>();
-    if !enabled {
-        ambient.stop();
-    } else if ambient_wanted {
-        ambient.start();
+    match transition {
+        AmbientTransition::Stop => ambient.stop(),
+        AmbientTransition::Start => ambient.start(),
+        AmbientTransition::None => {}
     }
     tray::update_tray_menu(&app);
     let _ = app.emit(
@@ -2333,5 +2362,66 @@ mod tts_command_tests {
             tts_error_message(&TtsError::Recording),
             "Cannot speak while recording"
         );
+    }
+}
+
+#[cfg(test)]
+mod ambient_experimental_transition_tests {
+    use super::{ambient_transition_on_experimental_change as transition, AmbientTransition};
+
+    #[test]
+    fn experimental_off_while_ambient_runs_stops_it_whatever_the_flag_and_wake_word() {
+        assert_eq!(
+            transition(true, false, true, false),
+            AmbientTransition::Stop
+        );
+        assert_eq!(transition(true, false, true, true), AmbientTransition::Stop);
+        assert_eq!(
+            transition(true, false, false, false),
+            AmbientTransition::Stop
+        );
+        assert_eq!(
+            transition(true, false, false, true),
+            AmbientTransition::Stop
+        );
+    }
+
+    #[test]
+    fn experimental_on_with_flag_and_wake_word_off_starts_ambient() {
+        assert_eq!(
+            transition(false, true, true, false),
+            AmbientTransition::Start
+        );
+    }
+
+    #[test]
+    fn experimental_on_with_flag_but_wake_word_enabled_does_not_start_ambient() {
+        assert_eq!(transition(false, true, true, true), AmbientTransition::None);
+    }
+
+    #[test]
+    fn experimental_on_without_flag_does_not_start_ambient() {
+        assert_eq!(
+            transition(false, true, false, false),
+            AmbientTransition::None
+        );
+        assert_eq!(
+            transition(false, true, false, true),
+            AmbientTransition::None
+        );
+    }
+
+    #[test]
+    fn unchanged_experimental_value_is_a_no_op() {
+        assert_eq!(
+            transition(false, false, true, false),
+            AmbientTransition::None
+        );
+        assert_eq!(
+            transition(false, false, false, false),
+            AmbientTransition::None
+        );
+        assert_eq!(transition(true, true, true, false), AmbientTransition::None);
+        assert_eq!(transition(true, true, false, true), AmbientTransition::None);
     }
 }
