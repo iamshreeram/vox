@@ -5,6 +5,7 @@
 //! window call is waiting for the main thread, so the two can never wait on each other.
 //! Nothing here writes files or console output; logs name operations and errors only.
 
+use crate::appearance;
 use crate::chat_presentation::{
     current_os, floating_supported, LinuxBackend, PlatformEnv, ORB_VISIBLE_DEFAULT,
 };
@@ -691,6 +692,11 @@ fn on_geometry_event(app: &AppHandle) {
     fit_orb(app);
 }
 
+/// The orb page URL: the entry page plus the appearance seed, so the first paint is right.
+fn orb_page_url(app: &AppHandle) -> String {
+    appearance::with_ap_param(ORB_ENTRY_URL, &appearance::current_snapshot(app))
+}
+
 /// Creates the orb window hidden. Its geometry is set by the caller before it is shown.
 #[cfg(target_os = "macos")]
 fn build_orb(app: &AppHandle, logical_px: f64) -> tauri::Result<()> {
@@ -700,7 +706,7 @@ fn build_orb(app: &AppHandle, logical_px: f64) -> tauri::Result<()> {
     let decorations = spec.decorations;
     let focusable = spec.focusable;
     let panel = PanelBuilder::<_, OrbPanel>::new(app, ORB_WINDOW_LABEL)
-        .url(WebviewUrl::App(ORB_ENTRY_URL.into()))
+        .url(WebviewUrl::App(orb_page_url(app).into()))
         .title("Vox orb")
         .level(PanelLevel::Status)
         .size(Size::Logical(LogicalSize {
@@ -735,21 +741,24 @@ fn build_orb(app: &AppHandle, logical_px: f64) -> tauri::Result<()> {
 #[cfg(not(target_os = "macos"))]
 fn build_orb(app: &AppHandle, logical_px: f64) -> tauri::Result<()> {
     let spec = orb_window_spec_px(logical_px);
-    let builder =
-        WebviewWindowBuilder::new(app, ORB_WINDOW_LABEL, WebviewUrl::App(ORB_ENTRY_URL.into()))
-            .title("Vox orb")
-            .inner_size(spec.logical_px, spec.logical_px)
-            .resizable(spec.resizable)
-            .decorations(spec.decorations)
-            .transparent(spec.transparent)
-            .always_on_top(spec.always_on_top)
-            .skip_taskbar(spec.skip_taskbar)
-            .shadow(spec.shadow)
-            .focusable(spec.focusable)
-            .visible(false)
-            .focused(false)
-            .on_navigation(is_app_navigation)
-            .on_new_window(|_url, _features| NewWindowResponse::Deny);
+    let builder = WebviewWindowBuilder::new(
+        app,
+        ORB_WINDOW_LABEL,
+        WebviewUrl::App(orb_page_url(app).into()),
+    )
+    .title("Vox orb")
+    .inner_size(spec.logical_px, spec.logical_px)
+    .resizable(spec.resizable)
+    .decorations(spec.decorations)
+    .transparent(spec.transparent)
+    .always_on_top(spec.always_on_top)
+    .skip_taskbar(spec.skip_taskbar)
+    .shadow(spec.shadow)
+    .focusable(spec.focusable)
+    .visible(false)
+    .focused(false)
+    .on_navigation(is_app_navigation)
+    .on_new_window(|_url, _features| NewWindowResponse::Deny);
     #[cfg(target_os = "linux")]
     let builder = builder.visible_on_all_workspaces(spec.visible_on_all_workspaces);
     builder.build()?;
@@ -759,6 +768,8 @@ fn build_orb(app: &AppHandle, logical_px: f64) -> tauri::Result<()> {
 
 /// Attaches the orb window's move, scale and menu handlers after it is built.
 fn attach(app: &AppHandle) {
+    // Every orb build ends here, so the shared replay worker starts for the orb too.
+    crate::chat_window::start_replay_worker(app);
     let Some(window) = app.get_webview_window(ORB_WINDOW_LABEL) else {
         return;
     };
@@ -776,6 +787,7 @@ fn attach(app: &AppHandle) {
 
 /// Shows the orb without taking focus: a non-key panel on macOS, a plain show elsewhere.
 fn show_orb(app: &AppHandle, window: &WebviewWindow) {
+    appearance::emit_current(app);
     #[cfg(target_os = "macos")]
     {
         let _ = window;

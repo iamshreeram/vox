@@ -1599,7 +1599,8 @@ async changeWakeWordCooldownMsSetting(cooldownMs: number) : Promise<Result<null,
 }
 },
 /**
- * Validates and stores the wake-word silence timeout (0 turns auto-finish off).
+ * Validates and stores the stored-only wake-word silence timeout. No UI control and no
+ * code path reads it any more; kept so the field round-trips for downgrades.
  * A rejected value leaves the stored setting untouched.
  */
 async changeWakeWordSilenceTimeoutMsSetting(timeoutMs: number) : Promise<Result<null, string>> {
@@ -2204,6 +2205,24 @@ async changeChatOpacitySetting(pct: number) : Promise<void> {
     await TAURI_INVOKE("change_chat_opacity_setting", { pct });
 },
 /**
+ * Saves the accent and publishes the committed snapshot to every consumer window.
+ */
+async changeAccentSetting(accent: Accent) : Promise<void> {
+    await TAURI_INVOKE("change_accent_setting", { accent });
+},
+/**
+ * Saves the conversation window theme and publishes the committed snapshot.
+ */
+async changeChatThemeSetting(chatTheme: ChatTheme) : Promise<void> {
+    await TAURI_INVOKE("change_chat_theme_setting", { chatTheme });
+},
+/**
+ * Saves the visual style and publishes the committed snapshot.
+ */
+async changeVisualStyleSetting(visualStyle: VisualStyle) : Promise<void> {
+    await TAURI_INVOKE("change_visual_style_setting", { visualStyle });
+},
+/**
  * Stores the chat presentation choice. `None` returns to the platform default.
  */
 async changeChatPresentationSetting(value: Presentation | null) : Promise<void> {
@@ -2279,6 +2298,11 @@ streamTextEvent: "stream-text-event"
 
 /** user-defined types **/
 
+/**
+ * Accent colour family of the Light and Dark themes (UI enterprise, DESIGN Revision 3, A3).
+ * Wire values are snake_case. Only the field-local deserializer below reads stored values.
+ */
+export type Accent = "amber" | "blue" | "violet" | "emerald" | "rose" | "slate"
 /**
  * Read-only status of the coding job, for the Settings status card and the tray.
  * 
@@ -2445,12 +2469,10 @@ wake_word_action?: WakeWordAction;
  */
 voice_shortcuts?: VoiceShortcut[]; 
 /**
- * How long (ms) of sustained mic silence after a wake-word-triggered
- * recording auto-finishes it (transcribe + route, same as pressing
- * the hotkey again) -- without this, a locked wake-word session waits
- * forever for a manual second press. 0 disables the behavior entirely
- * (falls back to manual-press-to-finish). Hotkey-triggered recordings
- * are completely unaffected by this setting.
+ * Stored for downgrade compatibility only. No code path reads it and no
+ * settings control writes it: the silence auto-finish belonged to the
+ * removed wake-word dictation path. The field, its default and its clamp
+ * stay so older builds and stored files keep loading.
  */
 wake_word_silence_timeout_ms?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; custom_theme_colors?: CustomThemeColors; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
 /**
@@ -2677,7 +2699,50 @@ orb_position?: OrbPosition | null;
  * Opacity of the conversation window in percent (20 to 100, default 70). Set through
  * `change_chat_opacity_setting`. The field-local deserializer clamps a stored value.
  */
-chat_opacity_pct?: number }
+chat_opacity_pct?: number; 
+/**
+ * Accent colour of the Light and Dark themes. Set through `change_accent_setting` (or the
+ * appearance commit). Garbage reads as the default.
+ */
+accent?: Accent; 
+/**
+ * Theme of the conversation window. Set through `change_chat_theme_setting`.
+ */
+chat_theme?: ChatTheme; 
+/**
+ * Visual style (vibrant or restrained). Set through `change_visual_style_setting`.
+ */
+visual_style?: VisualStyle }
+/**
+ * A committed appearance. `rev` grows on every commit and is independent of the opacity rev.
+ * `custom_colors` is present only while the theme is `Custom`, so no other window receives the
+ * palette.
+ */
+export type AppearanceSnapshot = { 
+/**
+ * Monotonic revision. A consumer applies only a strictly higher value.
+ */
+rev: number; 
+/**
+ * The theme as stored.
+ */
+theme: Theme; 
+/**
+ * The custom palette, `Some` only when `theme` is `Custom`.
+ */
+custom_colors: CustomThemeColors | null; 
+/**
+ * The accent.
+ */
+accent: Accent; 
+/**
+ * The conversation window theme.
+ */
+chat_theme: ChatTheme; 
+/**
+ * The visual style.
+ */
+visual_style: VisualStyle }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AuxError = "busy" | "cancelled" | "not_installed" | "corrupt" | "url_not_allowed" | "download" | "io"
@@ -2845,6 +2910,10 @@ end: string | null;
  * Whether new lines are currently recorded.
  */
 recording: boolean }
+/**
+ * Conversation window theme (UI enterprise, DESIGN Revision 3, A4). `Dark` is today's look.
+ */
+export type ChatTheme = "dark" | "follow_app" | "light"
 /**
  * Script applied to Mandarin and Cantonese output. Other languages are never
  * converted.
@@ -3473,6 +3542,10 @@ export type VaultIndexStatusDto = { notes: number; chunks: number; skipped: numb
  * untested | supported | unsupported | unknown, for the current route key.
  */
 tool_support: string }
+/**
+ * Visual style (UI enterprise, DESIGN Revision 3, A5). `Vibrant` is today's look.
+ */
+export type VisualStyle = "vibrant" | "restrained"
 export type VoiceShortcut = { phrase: string; action: VoiceShortcutAction }
 export type VoiceShortcutAction = { type: "open_url"; url: string } | { type: "open_path"; path: string } | { type: "open_app"; name: string }
 /**

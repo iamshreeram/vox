@@ -1,5 +1,8 @@
 mod actions;
 mod activation_policy;
+mod appearance;
+#[cfg(test)]
+mod appearance_tests;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_feedback;
@@ -64,6 +67,8 @@ mod orb_size_tests;
 #[cfg(test)]
 mod orb_support_tests;
 mod orb_window;
+#[cfg(test)]
+mod settings_appearance_tests;
 mod window_commands;
 #[cfg(test)]
 mod window_commands_bubbles_tests;
@@ -1405,6 +1410,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::orb::change_orb_size_setting,
             commands::orb::change_orb_size_px_setting,
             commands::chat_opacity::change_chat_opacity_setting,
+            commands::appearance::change_accent_setting,
+            commands::appearance::change_chat_theme_setting,
+            commands::appearance::change_visual_style_setting,
             commands::orb::change_chat_presentation_setting,
             commands::orb::reset_orb_position,
             commands::converse_extras::change_speaker_filter_enabled_setting,
@@ -1419,6 +1427,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             managers::transcription::StreamPhaseEvent,
         ])
         .typ::<settings::AppSettings>()
+        .typ::<appearance::AppearanceSnapshot>()
         .typ::<managers::wakeword::WakeWordDetection>()
         .typ::<commands::ambient::AmbientAddressedPayload>()
         .typ::<managers::converse_platform::ConverseStateEvent>()

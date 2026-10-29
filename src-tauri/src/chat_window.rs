@@ -5,9 +5,8 @@
 //! transcript survives and reopening is instant. Creation and show/hide run on the main thread.
 //! Nothing here touches the filesystem or writes text to any log.
 
-use crate::chat_opacity::{
-    page_snapshot, replay_lifecycle, run_replay, CHAT_OPACITY, CHAT_OPACITY_REPLAY,
-};
+use crate::appearance;
+use crate::chat_opacity::{page_snapshot, replay_lifecycle, CHAT_OPACITY, CHAT_OPACITY_REPLAY};
 use crate::cli::CliArgs;
 use crate::commands::chat_opacity as opacity_command;
 use crate::settings;
@@ -138,9 +137,12 @@ fn build_chat_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     // corrects itself from a replay of the same revision. This runs on the main thread.
     let committed = CHAT_OPACITY.seed(i64::from(settings::get_settings(app).chat_opacity_pct));
     let initial = page_snapshot(committed, &crate::orb_native::current_env());
-    let url = format!(
-        "{CHAT_ENTRY_URL}?opacity={}&rev={}",
-        initial.pct, initial.rev
+    let url = appearance::with_ap_param(
+        &format!(
+            "{CHAT_ENTRY_URL}?opacity={}&rev={}",
+            initial.pct, initial.rev
+        ),
+        &appearance::current_snapshot(app),
     );
     let builder = WebviewWindowBuilder::new(app, CHAT_WINDOW_LABEL, WebviewUrl::App(url.into()))
         .title("Vox Conversation")
@@ -180,7 +182,10 @@ fn build_chat_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
             }
         }
         // Gaining focus re-sends the opacity, so a page that missed an event converges (A-T4).
-        WindowEvent::Focused(true) => emit_current_opacity(&focus_app),
+        WindowEvent::Focused(true) => {
+            emit_current_opacity(&focus_app);
+            appearance::emit_current(&focus_app);
+        }
         _ => {}
     });
     start_replay_worker(app);
@@ -192,27 +197,28 @@ pub fn emit_current_opacity(app: &AppHandle) {
     opacity_command::emit_snapshot(app, CHAT_OPACITY.snapshot());
 }
 
-/// Starts the window's single replay worker (A-T4). While the window exists it re-emits the
-/// current snapshot every replay interval, so a listener that subscribes late still converges.
-/// The gate allows one worker at a time; the worker releases it when the window is gone.
-fn start_replay_worker(app: &AppHandle) {
+/// Starts the single shared replay worker (A-T4, UI enterprise A2). It serves every consumer
+/// window (chat, orb, bubbles): while any of them exists it re-emits the chat opacity and the
+/// current appearance snapshot every replay interval, so a listener that subscribes late still
+/// converges. The gate allows one worker at a time; the worker releases it when no consumer is
+/// left. Called by every consumer build.
+pub(crate) fn start_replay_worker(app: &AppHandle) {
     if !CHAT_OPACITY_REPLAY.try_start() {
         return;
     }
     let worker_app = app.clone();
     let spawned = std::thread::Builder::new()
-        .name("chat-opacity-replay".to_string())
+        .name("consumer-replay".to_string())
         .spawn(move || {
-            // Replays until the window is destroyed; a window rebuilt in the gap gets one worker.
+            // Replays until no consumer is left; a window built in the gap gets one worker.
             replay_lifecycle(
                 &CHAT_OPACITY_REPLAY,
-                || worker_app.get_webview_window(CHAT_WINDOW_LABEL).is_some(),
+                || appearance::any_consumer_exists(&worker_app),
                 || {
-                    run_replay(
-                        || CHAT_OPACITY.snapshot(),
-                        || worker_app.get_webview_window(CHAT_WINDOW_LABEL).is_some(),
+                    appearance::run_consumer_replay(
+                        || appearance::any_consumer_exists(&worker_app),
                         std::thread::sleep,
-                        |snapshot| opacity_command::emit_snapshot(&worker_app, snapshot),
+                        || appearance::replay_tick(&worker_app),
                     );
                 },
             );
@@ -316,6 +322,7 @@ fn show_without_focus(app: &AppHandle, window: &WebviewWindow) {
     log_window_result("show", window.show());
     crate::bubble_native::classic_visibility_changed(app, true);
     emit_current_opacity(app);
+    appearance::emit_current(app);
 }
 
 /// Shows and focuses the window and promotes the macOS activation policy so the window can
@@ -338,6 +345,7 @@ fn show_existing(app: &AppHandle, window: &WebviewWindow) {
     log_window_result("focus", window.set_focus());
     crate::bubble_native::classic_visibility_changed(app, true);
     emit_current_opacity(app);
+    appearance::emit_current(app);
 }
 
 /// Hides the window. Only after a successful hide, on macOS, when the main window is hidden

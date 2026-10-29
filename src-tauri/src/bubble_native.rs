@@ -8,6 +8,7 @@
 //! difference, so a stale request cannot act. Logs carry names, counts and ids only, never
 //! message text or positions.
 
+use crate::appearance;
 use crate::bubble_hub::{BubbleRole, HubEntry, Snapshot};
 use crate::bubble_shell_core::{
     BubbleShellCore, Effects, SessionSurface, ShellInputs, READY_TIMEOUT_MS,
@@ -394,7 +395,10 @@ fn ensure_bubble_window(app: &AppHandle, shell: &BubbleShell) -> bool {
     }
     let instance = lock_core(shell).window_created(now_ms());
     match build_bubbles(app, instance) {
-        Ok(()) => true,
+        Ok(()) => {
+            crate::chat_window::start_replay_worker(app);
+            true
+        }
         Err(e) => {
             log::warn!("bubble window build failed: {e}");
             false
@@ -406,7 +410,10 @@ fn ensure_bubble_window(app: &AppHandle, shell: &BubbleShell) -> bool {
 /// undecorated, never focusable and click-through.
 #[cfg(target_os = "macos")]
 fn build_bubbles(app: &AppHandle, instance: u64) -> tauri::Result<()> {
-    let url = format!("{BUBBLES_ENTRY_URL}?instance={instance}");
+    let url = appearance::with_ap_param(
+        &format!("{BUBBLES_ENTRY_URL}?instance={instance}"),
+        &appearance::current_snapshot(app),
+    );
     let panel = PanelBuilder::<_, BubblesPanel>::new(app, BUBBLES_WINDOW_LABEL)
         .url(WebviewUrl::App(url.into()))
         .title("Vox bubbles")
@@ -443,7 +450,10 @@ fn build_bubbles(app: &AppHandle, instance: u64) -> tauri::Result<()> {
 /// Creates the bubble window hidden on Windows and Linux, with the same flags.
 #[cfg(not(target_os = "macos"))]
 fn build_bubbles(app: &AppHandle, instance: u64) -> tauri::Result<()> {
-    let url = format!("{BUBBLES_ENTRY_URL}?instance={instance}");
+    let url = appearance::with_ap_param(
+        &format!("{BUBBLES_ENTRY_URL}?instance={instance}"),
+        &appearance::current_snapshot(app),
+    );
     let builder = WebviewWindowBuilder::new(app, BUBBLES_WINDOW_LABEL, WebviewUrl::App(url.into()))
         .title("Vox bubbles")
         .inner_size(BUBBLE_W_LOGICAL, BUBBLE_H_LOGICAL)
@@ -493,6 +503,7 @@ fn apply_rect(window: &WebviewWindow, rect: Rect) {
 /// Shows the bubble window without taking focus: a non-key panel on macOS, a plain show elsewhere.
 #[cfg(target_os = "macos")]
 fn show_bubble_window(app: &AppHandle) {
+    appearance::emit_current(app);
     match app.get_webview_panel(BUBBLES_WINDOW_LABEL) {
         Ok(panel) => panel.order_front_regardless(),
         Err(e) => log::warn!("bubble show failed: {e:?}"),
@@ -501,6 +512,7 @@ fn show_bubble_window(app: &AppHandle) {
 
 #[cfg(not(target_os = "macos"))]
 fn show_bubble_window(app: &AppHandle) {
+    appearance::emit_current(app);
     if let Some(window) = app.get_webview_window(BUBBLES_WINDOW_LABEL) {
         if let Err(e) = window.show() {
             log::warn!("bubble show failed: {e}");
