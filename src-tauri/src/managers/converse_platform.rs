@@ -332,8 +332,43 @@ pub(crate) fn transcribe_line(
     ))
 }
 
+/// Longest transcriber error text (in chars) kept in the log line.
+const TRANSCRIBE_ERROR_MAX_CHARS: usize = 200;
+
+/// One log line for a failed transcription. Carries the transcriber's error text only, never
+/// audio or a transcript: control characters become spaces, whitespace is collapsed, and the
+/// text is cut to 200 chars (marked with "…" when cut).
+pub(crate) fn transcribe_failure_line(err: &str) -> String {
+    let flat: String = err
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let text = flat.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() {
+        return "transcription failed (no error text)".to_string();
+    }
+    if text.chars().count() <= TRANSCRIBE_ERROR_MAX_CHARS {
+        return format!("transcription failed: {text}");
+    }
+    let kept: String = text.chars().take(TRANSCRIBE_ERROR_MAX_CHARS).collect();
+    format!("transcription failed: {kept}…")
+}
+
+/// Passes a transcription result through unchanged. On error it logs the transcriber's error
+/// text once (via `log_line`) and returns the unit `TranscribeFailure` for the capture layer.
+pub(crate) fn report_transcribe_result<T, E: std::fmt::Display>(
+    result: Result<T, E>,
+    log_line: impl FnOnce(&str),
+) -> Result<T, TranscribeFailure> {
+    result.map_err(|e| {
+        log_line(&transcribe_failure_line(&e.to_string()));
+        TranscribeFailure
+    })
+}
+
 /// Transcriber: the non-streaming path of `TranscribeAction::stop`. Writes no
-/// WAV, no history, and logs no text.
+/// WAV, no history, and logs no transcript. On failure it logs the transcriber's error text
+/// (a warning), which the barge-in monitor's clips also trigger while the model is failing.
 struct AppTranscriber {
     app: AppHandle,
 }
@@ -343,7 +378,7 @@ impl Transcriber for AppTranscriber {
         let sample_count = samples.len();
         let started = Instant::now();
         let tm = self.app.state::<Arc<TranscriptionManager>>();
-        let result = tm.transcribe(samples).map_err(|_| TranscribeFailure);
+        let result = report_transcribe_result(tm.transcribe(samples), |line| log::warn!("{line}"));
         let enabled = crate::managers::realtime_config::RealtimeConfig::from_settings(
             &get_settings(&self.app),
         )

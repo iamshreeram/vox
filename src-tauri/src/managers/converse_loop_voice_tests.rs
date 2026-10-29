@@ -437,6 +437,39 @@ async fn failed_listen_after_ignored_is_unchanged() {
     assert_eq!(brain_calls(&r), 0);
 }
 
+/// #119: an unavailable speech-recognition model is announced as the model, not the
+/// microphone; the session still ends as AudioUnavailable and nothing reaches the brain.
+#[tokio::test]
+async fn failed_listen_model_unavailable_names_the_model_not_the_microphone() {
+    let r = rig(
+        vec![step(ListenOutcome::Failed(ListenFailure::ModelUnavailable))],
+        vec![],
+        Duration::ZERO,
+    );
+    let end = run(&r, &cfg()).await;
+    assert_eq!(end, SessionEnd::AudioUnavailable);
+    assert_eq!(says(&r.log), vec![MSG_STT_MODEL.to_string()]);
+    assert!(!says(&r.log).contains(&MSG_MIC.to_string()));
+    assert_eq!(brain_calls(&r), 0);
+}
+
+/// #119: the same holds after an ignored listen (the path the Busy test pins).
+#[tokio::test]
+async fn failed_listen_model_unavailable_after_ignored_names_the_model() {
+    let r = rig(
+        vec![
+            ignored(),
+            step(ListenOutcome::Failed(ListenFailure::ModelUnavailable)),
+        ],
+        vec![],
+        Duration::ZERO,
+    );
+    let end = run(&r, &cfg()).await;
+    assert_eq!(end, SessionEnd::AudioUnavailable);
+    assert_eq!(says(&r.log), vec![MSG_STT_MODEL.to_string()]);
+    assert_eq!(brain_calls(&r), 0);
+}
+
 /// Flag-off identity: with ears that never return Ignored, the exact sequence of fake calls
 /// is the existing one (this must already be green).
 #[tokio::test]
