@@ -12,7 +12,7 @@ use tauri::{AppHandle, Emitter, Manager};
 /// the value is saved either way and the window reads it when it next shows.
 #[tauri::command]
 #[specta::specta]
-pub fn change_chat_opacity_setting(app: AppHandle, pct: i32) {
+pub async fn change_chat_opacity_setting(app: AppHandle, pct: i32) {
     let clamped = crate::chat_opacity::clamp_chat_opacity_pct(i64::from(pct));
     write_settings_gated(&app, |settings| settings.chat_opacity_pct = clamped);
     let snapshot = CHAT_OPACITY.commit(i64::from(clamped));

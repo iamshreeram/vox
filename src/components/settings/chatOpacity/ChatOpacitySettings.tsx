@@ -24,7 +24,7 @@ interface ChatOpacitySettingsProps {
 const LIVE_DEBOUNCE_MS = 120;
 
 /**
- * "Conversation window transparency": how see-through the conversation window is, in percent
+ * "Conversation window opacity": how see-through the conversation window is, in percent
  * opaque. Moving the slider updates the open window live (debounced); releasing it writes the
  * final value at once. Reset returns to the default.
  */

@@ -354,6 +354,122 @@ fn the_command_is_registered_and_refused_from_the_chat_window() {
     ));
 }
 
+// ---------------------------------------------------------------------------------------------
+// Review fixes (validator round 1)
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn the_page_is_built_with_the_effective_opacity_and_its_rev() {
+    // (env, committed pct, rev) -> (pct in the URL, rev in the URL)
+    let cases: [(PlatformEnv, u8, u64, u8); 4] = [
+        (env(Os::Linux, LinuxBackend::X11, true), 70, 7, 70),
+        (env(Os::Linux, LinuxBackend::X11, false), 70, 7, 100),
+        (env(Os::Linux, LinuxBackend::Wayland, true), 70, 7, 100),
+        (env(Os::MacOs, LinuxBackend::Unknown, false), 70, 7, 70),
+    ];
+    for (platform, pct, rev, expected_pct) in cases {
+        let page = page_snapshot(OpacitySnapshot { rev, pct }, &platform);
+        assert_eq!(
+            page,
+            OpacitySnapshot {
+                rev,
+                pct: expected_pct
+            },
+            "{platform:?}"
+        );
+    }
+}
+
+#[test]
+fn the_build_reads_the_effective_page_value_on_the_main_thread() {
+    let src = include_str!("chat_window.rs");
+    assert!(
+        src.contains("page_snapshot(") && src.contains("orb_native::current_env()"),
+        "the URL value comes from page_snapshot with the platform facts"
+    );
+}
+
+#[test]
+fn the_command_is_async_like_the_other_settings_commands() {
+    let src = include_str!("commands/chat_opacity.rs");
+    assert!(
+        src.contains("pub async fn change_chat_opacity_setting("),
+        "async, so the main thread never blocks on the settings gate"
+    );
+}
+
+#[test]
+fn a_stale_write_cannot_change_the_chat_opacity() {
+    let mut committed = get_default_settings();
+    committed.chat_opacity_pct = 35;
+    let stale = get_default_settings(); // an old snapshot at the default (70)
+    let merged = crate::settings::preserve_launch_fields(stale, &committed);
+    assert_eq!(merged.chat_opacity_pct, 35, "committed value kept");
+
+    let mut committed_default = get_default_settings();
+    committed_default.chat_opacity_pct = 70;
+    let mut stale_low = get_default_settings();
+    stale_low.chat_opacity_pct = 20;
+    let merged = crate::settings::preserve_launch_fields(stale_low, &committed_default);
+    assert_eq!(merged.chat_opacity_pct, 70, "a stale low value cannot win");
+}
+
+#[test]
+fn the_replay_worker_is_restarted_when_a_window_is_rebuilt_in_the_gap() {
+    // Worker running; the window is destroyed; the worker releases the gate; a rebuild claims the
+    // gate in the gap. The old loop must then stand down: exactly one worker, the rebuild's.
+    let gate = ReplayGate::new();
+    assert!(gate.try_start(), "first worker");
+    let mut destroyed_once = false;
+    let mut rebuild_claimed = false;
+    let runs = replay_lifecycle(
+        &gate,
+        || {
+            // the gap: the window is rebuilt and its start claims the released gate
+            rebuild_claimed = gate.try_start();
+            true
+        },
+        || destroyed_once = true,
+    );
+    assert!(destroyed_once);
+    assert_eq!(runs, 1, "the old loop stood down");
+    assert!(rebuild_claimed, "the rebuild got the gate in the gap");
+    assert!(
+        !gate.try_start(),
+        "exactly one worker is running afterwards"
+    );
+}
+
+#[test]
+fn the_replay_worker_goes_on_when_the_window_is_still_there_and_the_gate_is_free() {
+    let gate = ReplayGate::new();
+    assert!(gate.try_start());
+    // alive after the first run (the loop goes on), gone after the second
+    let checks = Cell::new(0usize);
+    let runs = replay_lifecycle(
+        &gate,
+        || {
+            let n = checks.get();
+            checks.set(n + 1);
+            n == 0
+        },
+        || {},
+    );
+    assert_eq!(runs, 2, "one more run while the window existed");
+    assert!(gate.try_start(), "the gate is free after the worker ends");
+    gate.finish();
+}
+
+#[test]
+fn a_worker_exits_and_frees_the_gate_when_no_window_is_rebuilt() {
+    let gate = ReplayGate::new();
+    assert!(gate.try_start());
+    let runs = replay_lifecycle(&gate, || false, || {});
+    assert_eq!(runs, 1);
+    assert!(gate.try_start(), "the gate is free for a later window");
+    gate.finish();
+}
+
 #[test]
 fn the_opacity_module_never_logs_or_prints() {
     let src = include_str!("chat_opacity.rs");

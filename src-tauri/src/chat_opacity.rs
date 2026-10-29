@@ -205,6 +205,37 @@ pub fn plan_emit(
     ))
 }
 
+/// The snapshot the conversation page is built with: the revision, and the opacity the window is
+/// really drawn with (forced to 100 where compositing is unavailable). The page applies only
+/// strictly higher revisions and never corrects itself from a replay of the same revision, so the
+/// URL value must already be the effective one.
+pub fn page_snapshot(snapshot: OpacitySnapshot, env: &PlatformEnv) -> OpacitySnapshot {
+    OpacitySnapshot {
+        rev: snapshot.rev,
+        pct: effective_chat_opacity_pct(snapshot.pct, env),
+    }
+}
+
+/// Runs one replay worker and decides whether it goes on. `run_until_gone` replays until the window
+/// is destroyed. The gate is then released, and it is taken again only if a window exists, so a
+/// window rebuilt in the gap gets exactly one worker (the rebuild's claim or this loop's, never
+/// both). Returns the number of replay runs.
+pub fn replay_lifecycle(
+    gate: &ReplayGate,
+    mut window_alive: impl FnMut() -> bool,
+    mut run_until_gone: impl FnMut(),
+) -> usize {
+    let mut runs = 0;
+    loop {
+        run_until_gone();
+        runs += 1;
+        gate.finish();
+        if !window_alive() || !gate.try_start() {
+            return runs;
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "chat_opacity_tests.rs"]
 mod chat_opacity_tests;

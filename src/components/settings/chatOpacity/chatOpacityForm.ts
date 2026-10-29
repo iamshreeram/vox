@@ -1,4 +1,4 @@
-// Pure rules for the "Conversation window transparency" slider (Track T, DESIGN Revision 3,
+// Pure rules for the "Conversation window opacity" slider (Track T, DESIGN Revision 3,
 // item 6). No React and no commands here: the component applies these results. The range and the
 // default are the page's own constants, so the slider and the window can never disagree.
 import {

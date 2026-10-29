@@ -1,4 +1,4 @@
-// Track T spec (DESIGN Revision 3, item 6): the "Conversation window transparency" slider in the
+// Track T spec (DESIGN Revision 3, item 6): the "Conversation window opacity" slider in the
 // conversation group. Pure model tests plus source contracts for the component, the placement,
 // the search index and the i18n keys in every locale. Run: bun src/components/settings/chatOpacity/chatOpacityForm.test.ts
 // Workers must not edit this file.
@@ -139,6 +139,17 @@ test("the component calls the generated command and keeps its test ids", () => {
     assert.ok(src.includes(id), `test id ${id}`);
   }
   assert.ok(src.includes("settings.chatOpacity.title"));
+});
+
+test('the English label is "Conversation window opacity" (the value is percent opaque)', () => {
+  const en = JSON.parse(
+    readFileSync(
+      path.join(repo, "src", "i18n", "locales", "en", "translation.json"),
+      "utf8",
+    ),
+  ) as { settings: { chatOpacity: { title: string; value: string } } };
+  assert.equal(en.settings.chatOpacity.title, "Conversation window opacity");
+  assert.equal(en.settings.chatOpacity.value, "{{value}}%");
 });
 
 test("every locale carries the slider keys", () => {
