@@ -10,6 +10,7 @@ import { VoiceCommandsToggle } from "./VoiceCommandsToggle";
 import { VoiceShortcutsEditor } from "./VoiceShortcutsEditor";
 import { VoiceMediaControlsToggle } from "./VoiceMediaControlsToggle";
 import { AgentBridgeToggle } from "./AgentBridgeToggle";
+import { ChatOpacitySettings } from "./chatOpacity/ChatOpacitySettings";
 import { AgentContextToggle } from "./AgentContextToggle";
 import { AgentBridgeBinaryPathField } from "./AgentBridgeBinaryPathField";
 import { AgentBridgeAdvancedSettings } from "./AgentBridgeAdvancedSettings";
@@ -108,6 +109,9 @@ export const PLACED_RENDERERS: Record<ControlId, () => React.ReactNode> = {
   ),
   floatingOrb: () => (
     <FloatingOrbSettings descriptionMode="tooltip" grouped={true} />
+  ),
+  chatOpacity: () => (
+    <ChatOpacitySettings descriptionMode="tooltip" grouped={true} />
   ),
   persona: () => <PersonaSettings descriptionMode="tooltip" grouped={true} />,
   latencyPanel: () => <LatencyPanel descriptionMode="tooltip" grouped={true} />,

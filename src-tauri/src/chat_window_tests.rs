@@ -1033,3 +1033,95 @@ fn the_dock_policy_is_demoted_only_after_a_successful_hide() {
         "the policy change must depend on the hide result"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// TRACK T SPEC (DESIGN Revision 3, A-T3): see-through window. Builder flags are pinned; every
+// other flag above (hidden, not always on top, 480x720, min 360x420, dark theme) is unchanged.
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn window_builder_is_transparent_and_keeps_the_other_flags() {
+    let code = window_code();
+    assert!(
+        code.contains(".transparent(true)"),
+        "the window is transparent (A-T3)"
+    );
+    assert!(code.contains(".decorations(true)"), "decorations stay on");
+    assert!(code.contains(".resizable(true)"), "still resizable");
+    assert!(code.contains(".visible(false)"), "still created hidden");
+    assert!(
+        code.contains(".focused(false)"),
+        "still not focused on build"
+    );
+    assert!(
+        code.contains(".theme(Some(tauri::Theme::Dark))"),
+        "still the dark theme"
+    );
+    assert!(!code.contains("always_on_top"), "never always on top");
+    assert!(code.contains("inner_size(480.0, 720.0)"));
+    assert!(code.contains("min_inner_size(360.0, 420.0)"));
+}
+
+#[test]
+fn macos_window_has_no_shadow_and_a_transparent_title_bar_behind_the_macos_cfg() {
+    let code = window_code();
+    let cfg = code
+        .find("#[cfg(target_os = \"macos\")]")
+        .expect("the macOS-only window settings are cfg gated");
+    let rest = &code[cfg..];
+    assert!(
+        rest.contains(".shadow(false)"),
+        "macOS builder sets shadow(false)"
+    );
+    assert!(
+        rest.contains("TitleBarStyle::Transparent"),
+        "macOS builder sets title_bar_style(TitleBarStyle::Transparent)"
+    );
+    assert_eq!(
+        code.matches("TitleBarStyle::").count(),
+        1,
+        "TitleBarStyle is referenced once, inside the macOS block"
+    );
+}
+
+#[test]
+fn the_initial_opacity_travels_in_the_page_url_and_the_worker_starts_with_the_window() {
+    let code = window_code();
+    assert!(
+        code.contains("WebviewUrl::App(") && code.contains("opacity=") && code.contains("rev="),
+        "the page URL carries ?opacity=<pct>&rev=<n> (A-T3)"
+    );
+    let build = fn_body(&code, "build_chat_window");
+    assert!(
+        build.contains("start_replay_worker("),
+        "the single replay worker starts at window creation (A-T4)"
+    );
+}
+
+#[test]
+fn the_snapshot_is_re_emitted_on_show_and_on_focus() {
+    let code = window_code();
+    for name in ["show_existing", "show_without_focus"] {
+        let body = fn_body(&code, name);
+        assert!(
+            body.contains("emit_current_opacity("),
+            "{name} re-emits the latest opacity snapshot"
+        );
+    }
+    let build = fn_body(&code, "build_chat_window");
+    assert!(
+        build.contains("WindowEvent::Focused(true)") && build.contains("emit_current_opacity("),
+        "gaining focus re-emits the snapshot"
+    );
+}
+
+#[test]
+fn the_capability_file_is_unchanged_listen_only() {
+    let chat = read_crate_json("capabilities/chat.json");
+    let actual: BTreeSet<String> = permission_ids(&chat).into_iter().collect();
+    let expected: BTreeSet<String> = ["core:event:allow-listen", "core:event:allow-unlisten"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    assert_eq!(actual, expected);
+}

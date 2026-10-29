@@ -11,7 +11,7 @@ export const FACE_ACCENT: Record<AvatarFace, string> = {
   thinking: "#A78BFA",
   acting: "#60A5FA",
   speaking: "#FFC53D",
-  sleep: "#64748B",
+  sleep: "#94A3B8",
   concerned: "#F87171",
 };
 
@@ -22,6 +22,21 @@ export const CHAT_COLORS = {
   text: "#E7E9EE",
   muted: "#98A1B2",
   brand: "#F5B921",
+};
+
+/** "r, g, b" triplet of a "#rrggbb" colour, for `rgba(var(--x), alpha)` in chat.css. */
+export function rgbTriplet(hex: string): string {
+  const channel = (i: number): number => parseInt(hex.slice(i, i + 2), 16);
+  return `${channel(1)}, ${channel(3)}, ${channel(5)}`;
+}
+
+/**
+ * The rgb triplets main.tsx sets as --chat-bg-rgb and --chat-surface-rgb. chat.css paints the one
+ * window layer and every chip from these, so the hex values exist only in CHAT_COLORS.
+ */
+export const CHAT_RGB = {
+  bg: rgbTriplet(CHAT_COLORS.bg),
+  surface: rgbTriplet(CHAT_COLORS.surface),
 };
 
 function channelLuminance(channel: number): number {

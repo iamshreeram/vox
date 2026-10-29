@@ -11,6 +11,9 @@ pub const ORB_LABEL: &str = "orb";
 /// Label of the classic chat window.
 pub const CHAT_LABEL: &str = "chat";
 
+/// Label of the main window.
+pub const MAIN_LABEL: &str = "main";
+
 /// Label of the bubble window that shows the transcript beside the orb (DESIGN A7-2).
 pub const BUBBLES_WINDOW_LABEL: &str = "orb-bubbles";
 
@@ -40,19 +43,30 @@ pub const CHAT_COMMANDS: [&str; 10] = [
     "chat_draft_flush_ack",
 ];
 
+/// Commands only the main window may invoke (Track T: the conversation opacity setting). Every
+/// other window, the overlay included, is refused.
+pub const MAIN_ONLY_COMMANDS: [&str; 1] = ["change_chat_opacity_setting"];
+
 /// Whether the window labelled `window_label` may invoke `command`.
 ///
-/// The orb window may call only [`ORB_COMMANDS`]; the chat window only [`CHAT_COMMANDS`]. Any
-/// other window may call anything that is not in either list.
+/// The orb window may call only [`ORB_COMMANDS`]; the chat window only [`CHAT_COMMANDS`]. The main
+/// window may call anything except the orb, chat and bubble lists. Any other window may call
+/// anything that is not in those lists or in [`MAIN_ONLY_COMMANDS`].
 pub fn window_command_allowed(window_label: &str, command: &str) -> bool {
     match window_label {
         ORB_LABEL => ORB_COMMANDS.contains(&command),
         CHAT_LABEL => CHAT_COMMANDS.contains(&command),
         BUBBLES_WINDOW_LABEL => BUBBLES_COMMANDS.contains(&command),
+        MAIN_LABEL => {
+            !ORB_COMMANDS.contains(&command)
+                && !CHAT_COMMANDS.contains(&command)
+                && !BUBBLES_COMMANDS.contains(&command)
+        }
         _ => {
             !ORB_COMMANDS.contains(&command)
                 && !CHAT_COMMANDS.contains(&command)
                 && !BUBBLES_COMMANDS.contains(&command)
+                && !MAIN_ONLY_COMMANDS.contains(&command)
         }
     }
 }

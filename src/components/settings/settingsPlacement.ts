@@ -28,6 +28,7 @@ export type ControlId =
   | "replyStyle"
   | "conversation"
   | "floatingOrb"
+  | "chatOpacity"
   | "persona"
   | "latencyPanel"
   | "smartTurn"
@@ -92,6 +93,7 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
       { id: "persona" },
       { id: "replyStyle", subTitleKey: "settings.models.groups.replyStyle" },
       { id: "floatingOrb", subTitleKey: "settings.general.groups.floatingOrb" },
+      { id: "chatOpacity" },
       {
         id: "realtime",
         subTitleKey: "settings.experimental.realtime.title",

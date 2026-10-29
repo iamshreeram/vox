@@ -2196,6 +2196,14 @@ async changeOrbSizePxSetting(px: number | null) : Promise<void> {
     await TAURI_INVOKE("change_orb_size_px_setting", { px });
 },
 /**
+ * Saves the conversation window opacity (clamped to 20..=100), bumps the revision and pushes
+ * the new value to the conversation window at once. An absent or hidden window is not an error:
+ * the value is saved either way and the window reads it when it next shows.
+ */
+async changeChatOpacitySetting(pct: number) : Promise<void> {
+    await TAURI_INVOKE("change_chat_opacity_setting", { pct });
+},
+/**
  * Stores the chat presentation choice. `None` returns to the platform default.
  */
 async changeChatPresentationSetting(value: Presentation | null) : Promise<void> {
@@ -2664,7 +2672,12 @@ orb_size_px?: number | null;
 /**
  * Last saved orb position. `None` until the orb has been placed.
  */
-orb_position?: OrbPosition | null }
+orb_position?: OrbPosition | null; 
+/**
+ * Opacity of the conversation window in percent (20 to 100, default 70). Set through
+ * `change_chat_opacity_setting`. The field-local deserializer clamps a stored value.
+ */
+chat_opacity_pct?: number }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AuxError = "busy" | "cancelled" | "not_installed" | "corrupt" | "url_not_allowed" | "download" | "io"

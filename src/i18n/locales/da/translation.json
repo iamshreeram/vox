@@ -1527,6 +1527,12 @@
         "wakeDictation": "Hey Jarvis currently starts dictation, so no bubbles appear. Switch it to start a conversation.",
         "wakeButton": "Make Hey Jarvis start a conversation"
       }
+    },
+    "chatOpacity": {
+      "title": "Conversation window transparency",
+      "description": "How see-through the conversation window is. 100% is solid; lower values let what is behind the window show through.",
+      "value": "{{value}}%",
+      "reset": "Reset"
     }
   },
   "footer": {
