@@ -10,9 +10,11 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   CHAT_COLORS,
+  CHAT_RGB,
   FACE_ACCENT,
   accentStyle,
   contrastRatio,
+  rgbTriplet,
 } from "./chatTheme";
 import type { AvatarFace } from "./chatModel";
 
@@ -122,5 +124,27 @@ describe("chat.css keeps a single source of truth for accents (C6)", () => {
   });
   it("honours reduced motion", () => {
     expect(css).toMatch(/prefers-reduced-motion:\s*reduce/);
+  });
+});
+
+// TRACK T SPEC (DESIGN Revision 3, A-T4/A-T6): the window background and chip surfaces are
+// painted from the rgb triplets of CHAT_COLORS through CSS variables, so the hex values live in
+// one place. chat.css never repeats the bg or surface hex and never blurs.
+describe("chat.css paints from the CHAT_COLORS triplets (single source, variable form)", () => {
+  const css = readFileSync(join(here, "chat.css"), "utf8");
+  it("exports the rgb triplets of the bg and surface colours", () => {
+    expect(rgbTriplet("#0b0d12")).toBe("11, 13, 18");
+    expect(CHAT_RGB.bg).toBe(rgbTriplet(CHAT_COLORS.bg));
+    expect(CHAT_RGB.surface).toBe(rgbTriplet(CHAT_COLORS.surface));
+  });
+  it("paints the one window layer from --chat-bg-rgb and --chat-alpha", () => {
+    expect(css).toContain("rgba(var(--chat-bg-rgb), var(--chat-alpha))");
+  });
+  it("does not repeat the background or surface hex", () => {
+    expect(css.toLowerCase()).not.toContain(CHAT_COLORS.bg.toLowerCase());
+    expect(css.toLowerCase()).not.toContain(CHAT_COLORS.surface.toLowerCase());
+  });
+  it("never uses blur or backdrop filters", () => {
+    expect(css).not.toMatch(/backdrop-filter|blur\(/);
   });
 });

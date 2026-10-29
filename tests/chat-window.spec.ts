@@ -617,7 +617,7 @@ test.describe("Conversation window: enterprise look and state colours", () => {
     );
   });
 
-  test("small text meets 4.5:1 on solid, gradient-free, opaque backgrounds in every state", async ({
+  test("small text meets 4.5:1 on gradient-free chips (alpha >= 0.9, blended over white) in every state", async ({
     context,
   }) => {
     for (const c of FACE_CASES) {
@@ -688,8 +688,14 @@ test.describe("Conversation window: enterprise look and state colours", () => {
                     break;
                   }
                   const b = parse(cs.backgroundColor);
-                  if (b && b[3] >= 0.99) {
-                    bg = b;
+                  if (b && b[3] >= 0.9) {
+                    // Track T chip floor: alpha >= 0.9, judged over the worst-case white backdrop.
+                    bg = [
+                      b[0] * b[3] + 255 * (1 - b[3]),
+                      b[1] * b[3] + 255 * (1 - b[3]),
+                      b[2] * b[3] + 255 * (1 - b[3]),
+                      1,
+                    ];
                     break;
                   }
                   if (b && b[3] > 0) {
@@ -1117,7 +1123,7 @@ test.describe("Conversation window: typing", () => {
     await expect(sendButton(page)).toBeVisible();
   });
 
-  test("input text, placeholder and Send meet 4.5:1 contrast on opaque backgrounds", async ({
+  test("input text, placeholder and Send meet 4.5:1 contrast on chips (alpha >= 0.9, blended over white)", async ({
     page,
   }) => {
     await openTyping(page);
@@ -1145,7 +1151,15 @@ test.describe("Conversation window: typing", () => {
           const cs = getComputedStyle(node);
           if (cs.backgroundImage !== "none") return "gradient";
           const b = parse(cs.backgroundColor);
-          if (b && b[3] >= 0.99) return b;
+          // Track T chip floor: alpha >= 0.9, judged over the worst-case white backdrop.
+          if (b && b[3] >= 0.9) {
+            return [
+              b[0] * b[3] + 255 * (1 - b[3]),
+              b[1] * b[3] + 255 * (1 - b[3]),
+              b[2] * b[3] + 255 * (1 - b[3]),
+              1,
+            ] as [number, number, number, number];
+          }
           if (b && b[3] > 0) return "translucent";
           node = node.parentElement;
         }

@@ -31,6 +31,8 @@
     "test:settings-search": "bun src/components/settings/search/settingsSearch.test.ts && bun src/components/settings/search/settingsSearchIndex.test.ts && bun src/components/settings/search/settingsReveal.test.ts && bun src/components/settings/search/SettingsSearchBox.test.tsx && bun src/components/ui/collapsibleOpen.test.ts && bun src/components/ui/settingContainerAnchor.test.tsx",
     "test:settings-search:e2e": "playwright test tests/settings-search.spec.ts --reporter=line",
     "test:chat:e2e": "playwright test tests/chat-window.spec.ts --reporter=line",
+    "test:chat:opacity:e2e": "playwright test tests/chat-opacity.spec.ts --reporter=line",
+    "test:chat-opacity-form": "bun src/components/settings/chatOpacity/chatOpacityForm.test.ts",
     "test:models-page:e2e": "playwright test tests/models-page.spec.ts --reporter=line",
     "test:orb": "bun src/orb/orbModel.test.ts",
     "test:bubbles": "bun src/bubbles/bubbleModel.test.ts && bun src/bubbles/bubbleAnchor.test.ts",

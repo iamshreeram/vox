@@ -2,11 +2,19 @@
 
 /* Conversation window: fixed dark theme (independent of the OS and app theme).
    Accent: --chat-accent is set inline on .chat-root from src/chat/chatTheme.ts. This file only
-   reads it. Text-bearing surfaces are solid (opaque background-color, no background-image). */
+   reads it.
+
+   See-through window (Track T, DESIGN Revision 3): the ONE full-window painted layer is .chat-root,
+   painted at --chat-alpha (the slider, set on the document from main.tsx). html and body are
+   transparent. Every element that carries text sits on a chip whose alpha is
+   max(--chat-alpha, 0.9), so text stays readable over any content behind the window. The
+   palette triplets --chat-bg-rgb and --chat-surface-rgb come from chatTheme.ts (CHAT_RGB). No blur
+   or backdrop effects. */
 
 .chat-root {
-  --chat-bg: #0b0d12;
-  --chat-surface: #151922;
+  --chat-chip-alpha: max(var(--chat-alpha), 0.9);
+  --chat-chip: rgba(var(--chat-surface-rgb), var(--chat-chip-alpha));
+  --chat-chip-bg: rgba(var(--chat-bg-rgb), var(--chat-chip-alpha));
   --chat-text: #e7e9ee;
   --chat-muted: #98a1b2;
   --chat-brand: #f5b921;
@@ -18,7 +26,7 @@
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
-  background-color: var(--chat-bg);
+  background-color: rgba(var(--chat-bg-rgb), var(--chat-alpha));
   background-image: none;
   color: var(--chat-text);
   color-scheme: dark;
@@ -35,25 +43,11 @@
   line-height: 1.5;
 }
 
-/* Decorative glow behind everything: a pseudo-element, never a background of text. */
-.chat-root::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image: radial-gradient(
-    ellipse 70% 38% at 50% 14%,
-    color-mix(in srgb, var(--chat-accent) 16%, transparent),
-    transparent 72%
-  );
-}
-
 html,
 body {
   margin: 0;
   height: 100%;
-  background-color: #0b0d12;
+  background-color: transparent;
 }
 
 .chat-root *,
@@ -71,7 +65,7 @@ body {
   gap: 12px;
   min-width: 0;
   padding: 10px 14px;
-  background-color: var(--chat-surface);
+  background-color: var(--chat-chip);
   border-bottom: 1px solid var(--chat-border);
 }
 
@@ -132,7 +126,7 @@ body {
   white-space: nowrap;
   font-size: 11px;
   color: var(--chat-muted);
-  background-color: #1c2230;
+  background-color: var(--chat-chip);
   border-radius: 999px;
 }
 
@@ -143,7 +137,7 @@ body {
   font-size: 13px;
   font-weight: 500;
   color: var(--chat-text);
-  background-color: transparent;
+  background-color: var(--chat-chip);
   border: 1px solid var(--chat-border);
   border-radius: 999px;
   cursor: pointer;
@@ -204,7 +198,7 @@ body {
   font-size: 13px;
   font-weight: 500;
   color: var(--chat-text);
-  background-color: var(--chat-surface);
+  background-color: var(--chat-chip);
   border: 1px solid var(--chat-accent);
   border-radius: 999px;
 }
@@ -312,14 +306,14 @@ body {
 .chat-user {
   align-self: flex-end;
   color: #eef1ff;
-  background-color: #26325a;
+  background-color: rgba(20, 29, 56, var(--chat-chip-alpha));
   border-radius: 16px 16px 4px 16px;
 }
 
 .chat-assistant {
   align-self: flex-start;
   color: var(--chat-text);
-  background-color: var(--chat-surface);
+  background-color: var(--chat-chip);
   border-left: 3px solid var(--chat-brand);
   border-radius: 16px 16px 16px 4px;
 }
@@ -329,7 +323,7 @@ body {
   max-width: 90%;
   padding: 4px 12px;
   color: var(--chat-muted);
-  background-color: #11151d;
+  background-color: rgba(17, 21, 29, var(--chat-chip-alpha));
   border: 1px solid var(--chat-border);
   border-radius: 999px;
   text-align: center;
@@ -379,7 +373,10 @@ body {
 .chat-empty {
   align-self: center;
   margin-top: 28px;
+  padding: 6px 14px;
   color: var(--chat-muted);
+  background-color: var(--chat-chip);
+  border-radius: 999px;
   text-align: center;
 }
 
@@ -392,7 +389,7 @@ body {
   font: inherit;
   font-size: 12px;
   font-weight: 600;
-  color: #0b0d12;
+  color: rgb(var(--chat-bg-rgb));
   background-color: var(--chat-brand);
   border: 0;
   border-radius: 999px;
@@ -406,7 +403,7 @@ body {
   padding: 8px 14px;
   font-size: 13px;
   color: #ff9e94;
-  background-color: #1f1417;
+  background-color: rgba(31, 20, 23, var(--chat-chip-alpha));
   border-bottom: 1px solid var(--chat-border);
 }
 
@@ -416,7 +413,7 @@ body {
   font-size: 12px;
   text-align: center;
   color: var(--chat-muted);
-  background-color: var(--chat-bg);
+  background-color: var(--chat-chip-bg);
   border-top: 1px solid var(--chat-border);
 }
 
@@ -431,7 +428,7 @@ body {
   flex-direction: column;
   gap: 6px;
   padding: 10px 14px 8px;
-  background-color: var(--chat-bg);
+  background-color: var(--chat-chip-bg);
   border-top: 1px solid var(--chat-border);
 }
 
@@ -453,7 +450,7 @@ body {
   font-size: 14px;
   line-height: 20px;
   color: var(--chat-text);
-  background-color: var(--chat-surface);
+  background-color: var(--chat-chip);
   border: 1px solid #2a3140;
   border-radius: 10px;
   overflow-y: auto;
@@ -479,7 +476,7 @@ body {
   font: inherit;
   font-size: 14px;
   font-weight: 600;
-  color: #0b0d12;
+  color: rgb(var(--chat-bg-rgb));
   background-color: var(--chat-brand);
   border: 1px solid var(--chat-brand);
   border-radius: 10px;

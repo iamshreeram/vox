@@ -5,7 +5,11 @@
 //! transcript survives and reopening is instant. Creation and show/hide run on the main thread.
 //! Nothing here touches the filesystem or writes text to any log.
 
+use crate::chat_opacity::{
+    page_snapshot, replay_lifecycle, run_replay, CHAT_OPACITY, CHAT_OPACITY_REPLAY,
+};
 use crate::cli::CliArgs;
+use crate::commands::chat_opacity as opacity_command;
 use crate::settings;
 use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
@@ -129,22 +133,32 @@ fn toggle_on_main_thread(app: &AppHandle) -> tauri::Result<()> {
 
 /// Builds the hidden chat window from the bundled entry page. Logs the build result.
 fn build_chat_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
-    let built = WebviewWindowBuilder::new(
-        app,
-        CHAT_WINDOW_LABEL,
-        WebviewUrl::App(CHAT_ENTRY_URL.into()),
-    )
-    .title("Vox Conversation")
-    .inner_size(480.0, 720.0)
-    .min_inner_size(360.0, 420.0)
-    .theme(Some(tauri::Theme::Dark))
-    .resizable(true)
-    .decorations(true)
-    .visible(false)
-    .focused(false)
-    .on_navigation(is_app_navigation)
-    .on_new_window(|_url, _features| NewWindowResponse::Deny)
-    .build();
+    // The first opacity travels in the page URL, so the first paint is already right (A-T3).
+    // The URL carries the effective value (100 where compositing is unavailable): the page never
+    // corrects itself from a replay of the same revision. This runs on the main thread.
+    let committed = CHAT_OPACITY.seed(i64::from(settings::get_settings(app).chat_opacity_pct));
+    let initial = page_snapshot(committed, &crate::orb_native::current_env());
+    let url = format!(
+        "{CHAT_ENTRY_URL}?opacity={}&rev={}",
+        initial.pct, initial.rev
+    );
+    let builder = WebviewWindowBuilder::new(app, CHAT_WINDOW_LABEL, WebviewUrl::App(url.into()))
+        .title("Vox Conversation")
+        .inner_size(480.0, 720.0)
+        .min_inner_size(360.0, 420.0)
+        .theme(Some(tauri::Theme::Dark))
+        .resizable(true)
+        .decorations(true)
+        .transparent(true)
+        .visible(false)
+        .focused(false)
+        .on_navigation(is_app_navigation)
+        .on_new_window(|_url, _features| NewWindowResponse::Deny);
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .shadow(false)
+        .title_bar_style(tauri::TitleBarStyle::Transparent);
+    let built = builder.build();
     let window = match built {
         Ok(window) => {
             log::info!("chat window built");
@@ -157,15 +171,56 @@ fn build_chat_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     };
 
     let close_app = app.clone();
-    window.on_window_event(move |event| {
-        if let WindowEvent::CloseRequested { api, .. } = event {
+    let focus_app = app.clone();
+    window.on_window_event(move |event| match event {
+        WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
             if let Some(chat) = close_app.get_webview_window(CHAT_WINDOW_LABEL) {
                 hide_existing(&close_app, &chat);
             }
         }
+        // Gaining focus re-sends the opacity, so a page that missed an event converges (A-T4).
+        WindowEvent::Focused(true) => emit_current_opacity(&focus_app),
+        _ => {}
     });
+    start_replay_worker(app);
     Ok(window)
+}
+
+/// Re-sends the latest opacity snapshot to the conversation window. Runs on show and on focus.
+pub fn emit_current_opacity(app: &AppHandle) {
+    opacity_command::emit_snapshot(app, CHAT_OPACITY.snapshot());
+}
+
+/// Starts the window's single replay worker (A-T4). While the window exists it re-emits the
+/// current snapshot every replay interval, so a listener that subscribes late still converges.
+/// The gate allows one worker at a time; the worker releases it when the window is gone.
+fn start_replay_worker(app: &AppHandle) {
+    if !CHAT_OPACITY_REPLAY.try_start() {
+        return;
+    }
+    let worker_app = app.clone();
+    let spawned = std::thread::Builder::new()
+        .name("chat-opacity-replay".to_string())
+        .spawn(move || {
+            // Replays until the window is destroyed; a window rebuilt in the gap gets one worker.
+            replay_lifecycle(
+                &CHAT_OPACITY_REPLAY,
+                || worker_app.get_webview_window(CHAT_WINDOW_LABEL).is_some(),
+                || {
+                    run_replay(
+                        || CHAT_OPACITY.snapshot(),
+                        || worker_app.get_webview_window(CHAT_WINDOW_LABEL).is_some(),
+                        std::thread::sleep,
+                        |snapshot| opacity_command::emit_snapshot(&worker_app, snapshot),
+                    );
+                },
+            );
+        });
+    if let Err(e) = spawned {
+        CHAT_OPACITY_REPLAY.finish();
+        log::warn!("chat opacity replay worker did not start: {e}");
+    }
 }
 
 /// What opening the chat window on conversation start must do for the current window state.
@@ -260,6 +315,7 @@ fn show_without_focus(app: &AppHandle, window: &WebviewWindow) {
     log_window_result("unminimize", window.unminimize());
     log_window_result("show", window.show());
     crate::bubble_native::classic_visibility_changed(app, true);
+    emit_current_opacity(app);
 }
 
 /// Shows and focuses the window and promotes the macOS activation policy so the window can
@@ -281,6 +337,7 @@ fn show_existing(app: &AppHandle, window: &WebviewWindow) {
     log_window_result("show", window.show());
     log_window_result("focus", window.set_focus());
     crate::bubble_native::classic_visibility_changed(app, true);
+    emit_current_opacity(app);
 }
 
 /// Hides the window. Only after a successful hide, on macOS, when the main window is hidden

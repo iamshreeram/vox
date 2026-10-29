@@ -23,6 +23,7 @@ mod bubble_shell_core_tests;
 #[cfg(test)]
 mod bubble_wiring_contracts_tests;
 mod catalog;
+mod chat_opacity;
 mod chat_presentation;
 #[cfg(test)]
 mod chat_presentation_tests;
@@ -1403,6 +1404,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::orb::change_orb_visible_setting,
             commands::orb::change_orb_size_setting,
             commands::orb::change_orb_size_px_setting,
+            commands::chat_opacity::change_chat_opacity_setting,
             commands::orb::change_chat_presentation_setting,
             commands::orb::reset_orb_position,
             commands::converse_extras::change_speaker_filter_enabled_setting,
