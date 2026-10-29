@@ -197,17 +197,42 @@ pub enum ChineseScript {
     Traditional,
 }
 
-/// What a wake-word detection does while no conversation session is running.
+/// What a wake-word detection does. A wake word always starts a conversation; the one-shot
+/// voice request was retired. Both variants stay so the generated bindings do not change,
+/// but every stored value (missing, "conversation", "voice_request", unknown, non-string)
+/// reads as `Conversation`, and `Conversation` is the only value ever written.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
-#[serde(rename_all = "snake_case")]
+#[serde(
+    rename_all = "snake_case",
+    from = "serde::de::IgnoredAny",
+    into = "String"
+)]
 pub enum WakeWordAction {
-    /// Start a turn-based conversation session.
-    Conversation,
-    /// One-shot voice request (today's behaviour, default). Also what any unrecognised stored
-    /// value means, so a bad settings file can never stop the app from loading.
+    /// Start a turn-based conversation session (the only behaviour).
     #[default]
-    #[serde(other)]
+    Conversation,
+    /// Retired one-shot voice request. Nothing produces it any more; loading maps it away.
+    #[allow(dead_code)]
     VoiceRequest,
+}
+
+impl From<serde::de::IgnoredAny> for WakeWordAction {
+    fn from(_: serde::de::IgnoredAny) -> Self {
+        Self::Conversation
+    }
+}
+
+impl From<WakeWordAction> for String {
+    fn from(_: WakeWordAction) -> Self {
+        "conversation".to_string()
+    }
+}
+
+/// Ambient listening runs only when Experimental is on AND its stored flag is on. Every gate
+/// (startup, start, the capture loop, both conversation preflights, and the frontend) uses
+/// this one predicate, so a stored flag with Experimental off is inert.
+pub fn ambient_effective(settings: &AppSettings) -> bool {
+    settings.experimental_enabled && settings.ambient_mode_enabled
 }
 
 /// Whether the user can interrupt a spoken reply by talking over it. Off by default.
@@ -816,7 +841,7 @@ pub struct AppSettings {
     pub wake_word_confidence_threshold: f32,
     #[serde(default = "default_wake_word_cooldown_ms")]
     pub wake_word_cooldown_ms: u32,
-    /// What a wake-word detection starts: a one-shot voice request (default) or a conversation.
+    /// What a wake-word detection starts. Always a conversation (see `WakeWordAction`).
     #[serde(default)]
     pub wake_word_action: WakeWordAction,
     /// User-defined spoken phrase -> open URL / folder / app. Validated when
@@ -1813,7 +1838,7 @@ pub fn effective_ambient_window_ms(settings: &AppSettings) -> u64 {
         .unwrap_or_else(|_| default_ambient_window_ms())
 }
 
-const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 2;
+const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 3;
 
 fn default_settings_schema_version() -> u32 {
     CURRENT_SETTINGS_SCHEMA_VERSION
@@ -2313,7 +2338,7 @@ pub fn get_default_settings() -> AppSettings {
         wake_word_model_name: default_wake_word_model_name(),
         wake_word_confidence_threshold: default_wake_word_confidence_threshold(),
         wake_word_cooldown_ms: default_wake_word_cooldown_ms(),
-        wake_word_action: WakeWordAction::VoiceRequest,
+        wake_word_action: WakeWordAction::Conversation,
         voice_shortcuts: Vec::new(),
         wake_word_silence_timeout_ms: default_wake_word_silence_timeout_ms(),
         recording_retention_period: default_recording_retention_period(),
@@ -2728,6 +2753,13 @@ fn apply_settings_migrations(
         // transcribe.cpp 0.2 replaced integer registry indices with opaque
         // process-local handles. Clear every old index once.
         settings.transcribe_gpu_device = default_transcribe_gpu_device();
+        settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
+        updated = true;
+    }
+    if stored_schema_version < 3 {
+        // One trigger: a wake word always starts a conversation. The retired one-shot choice
+        // is rewritten once here, and loading maps it away anyway, so it cannot come back.
+        settings.wake_word_action = WakeWordAction::Conversation;
         settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
         updated = true;
     }
@@ -3564,6 +3596,55 @@ mod tests {
             native_chrome_for_hex_background("not-hex"),
             tauri::Theme::Dark
         );
+    }
+
+    #[test]
+    fn wake_word_action_migration_moves_stored_voice_request_to_conversation_once() {
+        // A-W1: schema 2 -> 3 rewrites the retired one-shot choice to Conversation.
+        let raw = serde_json::json!({
+            "settings_schema_version": 2,
+            "onboarding_completed": false,
+            "whats_new_last_seen_version": default_whats_new_last_seen_version(),
+            "overlay_style": "live",
+            "chinese_script": "as_transcribed",
+            "wake_word_action": "voice_request"
+        });
+        let mut settings: AppSettings = serde_json::from_value(raw.clone()).unwrap();
+        assert_eq!(settings.wake_word_action, WakeWordAction::Conversation);
+        assert!(apply_settings_migrations(&mut settings, &raw));
+        assert_eq!(settings.wake_word_action, WakeWordAction::Conversation);
+        assert_eq!(settings.settings_schema_version, 3);
+        assert_eq!(CURRENT_SETTINGS_SCHEMA_VERSION, 3);
+
+        // Already at schema 3: the step does not run again.
+        let current = serde_json::json!({
+            "settings_schema_version": 3,
+            "onboarding_completed": false,
+            "whats_new_last_seen_version": default_whats_new_last_seen_version(),
+            "overlay_style": "live",
+            "chinese_script": "as_transcribed",
+            "wake_word_action": "conversation"
+        });
+        let mut again: AppSettings = serde_json::from_value(current.clone()).unwrap();
+        assert!(!apply_settings_migrations(&mut again, &current));
+        assert_eq!(again.wake_word_action, WakeWordAction::Conversation);
+    }
+
+    #[test]
+    fn ambient_effective_requires_experimental_and_the_stored_flag() {
+        let mut s = get_default_settings();
+        assert!(!ambient_effective(&s));
+        s.ambient_mode_enabled = true;
+        assert!(!ambient_effective(&s), "flag alone is inert");
+        s.experimental_enabled = true;
+        assert!(ambient_effective(&s));
+        s.ambient_mode_enabled = false;
+        assert!(!ambient_effective(&s));
+        // Turning Experimental off keeps the stored flag but stops ambient.
+        s.ambient_mode_enabled = true;
+        s.experimental_enabled = false;
+        assert!(!ambient_effective(&s));
+        assert!(s.ambient_mode_enabled);
     }
 
     #[test]

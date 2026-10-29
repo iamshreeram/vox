@@ -379,7 +379,7 @@
         "percentValue": "{{value}}%",
         "msValue": "{{value}} ms",
         "offValue": "Fra",
-        "label": "Wake Word",
+        "label": "Hey Jarvis",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
         "disabledByAmbientMode": "Turn off Ambient Mode to enable Wake Word.",
@@ -1681,7 +1681,7 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "Omgivelseslytning skal være slået fra, mens en samtale kører. Aktiveringsordet skal også være slået fra, medmindre dets handling er sat til at tale med assistenten.",
+      "wakeWordNote": "Ambient listening must be off while a conversation runs. Start one with the shortcut or by saying Hey Jarvis.",
       "bargeIn": {
         "label": "Afbryd ved at tale",
         "description": "Tal hen over assistenten for at afbryde den. Brug hovedtelefoner: på højtalere ville assistenten høre sig selv. Stemmerne Phonon og Natural sænker også lydstyrken, mens du taler; systemstemmen stoppes blot. Kræver, at talte svar er slået til.",

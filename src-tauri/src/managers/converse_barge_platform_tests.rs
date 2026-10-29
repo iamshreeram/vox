@@ -50,7 +50,7 @@ fn settings(barge: ConverseBargeIn, spoken: bool, mode: TtsComposerMode) -> AppS
     s.converse_barge_in = barge;
     s.tts_enabled = spoken;
     s.tts_composer_mode = mode;
-    // Keep the wake word and ambient listening out of the picture (preflight refuses them).
+    // Keep ambient listening out of the picture (preflight refuses it while effective).
     s.wake_word_enabled = false;
     s.ambient_mode_enabled = false;
     s

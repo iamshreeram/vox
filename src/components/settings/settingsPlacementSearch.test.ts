@@ -293,15 +293,16 @@ const scenarios: Record<string, () => void> = {
         );
       }
     },
-  "the wake word action is gated; the barge-in control is always visible in its group":
+  "the wake word row is ungated in Conversation; no action dropdown row exists; the barge-in control is always visible in its group":
     () => {
+      assert.ok(
+        !SEARCH_ENTRIES.some(
+          (x) => x.labelKey === "settings.advanced.wakeWord.action.label",
+        ),
+        "the wake word action row is gone",
+      );
       const wanted: Array<[string, string, string, boolean]> = [
-        [
-          "settings.advanced.wakeWord.action.label",
-          "listening",
-          "general",
-          true,
-        ],
+        ["settings.advanced.wakeWord.label", "conversation", "general", false],
         ["converse.section.bargeIn.label", "conversation", "general", false],
       ];
       for (const [labelKey, groupId, sectionId, gate] of wanted) {

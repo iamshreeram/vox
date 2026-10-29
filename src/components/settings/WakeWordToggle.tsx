@@ -2,16 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { Slider } from "../ui/Slider";
-import { Dropdown } from "../ui/Dropdown";
-import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
-import {
-  WAKE_WORD_ACTIONS,
-  normalizeWakeWordAction,
-  wakeWordActionLabelKey,
-  type WakeWordAction,
-} from "./wakeWordAction";
-
 interface WakeWordToggleProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
@@ -31,23 +22,19 @@ export const WakeWordToggle: React.FC<WakeWordToggleProps> = React.memo(
 
     const wakeWordEnabled = getSetting("wake_word_enabled") ?? false;
     const ambientModeEnabled = getSetting("ambient_mode_enabled") ?? false;
+    // Ambient listening is effective only while Experimental is on (same rule as the backend).
+    const ambientEffective =
+      (getSetting("experimental_enabled") ?? false) && ambientModeEnabled;
     const confidenceThreshold =
       getSetting("wake_word_confidence_threshold") ?? 0.5;
     const cooldownMs = getSetting("wake_word_cooldown_ms") ?? 500;
     const silenceTimeoutMs = getSetting("wake_word_silence_timeout_ms") ?? 1500;
-    const wakeWordAction = normalizeWakeWordAction(
-      getSetting("wake_word_action"),
-    );
-    const wakeWordActionOptions = WAKE_WORD_ACTIONS.map((action) => ({
-      value: action,
-      label: t(wakeWordActionLabelKey(action)),
-    }));
 
     return (
       <>
         <div
           title={
-            ambientModeEnabled
+            ambientEffective
               ? t("settings.advanced.wakeWord.disabledByAmbientMode")
               : undefined
           }
@@ -56,7 +43,7 @@ export const WakeWordToggle: React.FC<WakeWordToggleProps> = React.memo(
             checked={wakeWordEnabled}
             onChange={(enabled) => updateSetting("wake_word_enabled", enabled)}
             isUpdating={isUpdating("wake_word_enabled")}
-            disabled={ambientModeEnabled}
+            disabled={ambientEffective}
             label={t("settings.advanced.wakeWord.label")}
             description={t("settings.advanced.wakeWord.description")}
             descriptionMode={descriptionMode}
@@ -64,24 +51,6 @@ export const WakeWordToggle: React.FC<WakeWordToggleProps> = React.memo(
             tooltipPosition="bottom"
           />
         </div>
-
-        {wakeWordEnabled && (
-          <SettingContainer
-            title={t("settings.advanced.wakeWord.action.label")}
-            description={t("settings.advanced.wakeWord.action.description")}
-            descriptionMode={descriptionMode}
-            grouped={grouped}
-          >
-            <Dropdown
-              options={wakeWordActionOptions}
-              selectedValue={wakeWordAction}
-              onSelect={(value) =>
-                updateSetting("wake_word_action", value as WakeWordAction)
-              }
-              disabled={isUpdating("wake_word_action")}
-            />
-          </SettingContainer>
-        )}
 
         <Slider
           value={confidenceThreshold}

@@ -685,7 +685,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let startup_settings = get_settings(app_handle);
     if startup_settings.wake_word_enabled {
         wakeword_listener.start();
-    } else if startup_settings.ambient_mode_enabled {
+    } else if crate::settings::ambient_effective(&startup_settings) {
         ambient_listener.start();
     }
     // Background "new version available" checks. Only this normal startup path

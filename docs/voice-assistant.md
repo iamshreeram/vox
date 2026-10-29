@@ -1,20 +1,20 @@
-# Voice assistant: wake word actions
+# Voice assistant: the wake phrase
 
-Vox can start voice work when it hears its wake phrase. What happens next is
-set by the **wake word action**, found in Settings > General, in the Listening group,
-once the wake word is turned on.
+Vox has one way to start a voice conversation: say **"Hey Jarvis"** (the wake
+word), or use the conversation shortcut. The wake word is in Settings > General,
+in the Conversation group, and is always available. It is not an Experimental
+feature.
 
-## The two actions
+## What the wake word does
 
-**Run one voice request** (default). This is today's behaviour. Say the wake
-word, then speak one request. Vox runs it as a voice command, sends it to the
-agent bridge, or pastes it as text, the same as before.
+A wake word detection always starts a conversation. You speak, the assistant
+replies out loud, and you can keep going until the conversation ends. The
+earlier one-shot "run one voice request" choice has been removed. Older settings
+that stored it load as a conversation, and the stored value is rewritten once to
+"conversation" when the settings are upgraded. A downgraded build keeps
+"conversation"; the old one-shot preference is not restored.
 
-**Talk with the assistant**. The wake word starts a spoken back-and-forth
-conversation. You speak, the assistant replies out loud, and you can keep going
-until the conversation ends.
-
-## How conversation mode differs
+## How conversation mode works
 
 - It uses the **Conversation** feature. Spoken replies must be turned on in
   Settings > Models, and a reply backend must be set up there.
@@ -31,8 +31,11 @@ until the conversation ends.
   [Interrupting by speaking](conversation.md#interrupting-by-speaking-headphones-experimental).
 - The wake word detector is muted while a conversation session runs, and for
   1 second after it ends.
-- Ambient listening must be off while a conversation runs. The wake word must
-  be off as well, unless its action is set to talk with the assistant.
+- Ambient listening must be off while a conversation runs. The wake word does
+  not block a conversation.
+- Ambient listening is hidden under Experimental (Settings > General, Listening
+  Mode). With Experimental off, a stored ambient setting does nothing: it does
+  not block the wake word or the conversation shortcut.
 
 ### Known limits of interrupting by speaking
 
@@ -57,4 +60,5 @@ until the conversation ends.
       settings window is closed. Today the error only appears in the
       conversation settings, which is easy to miss when you are hands-free.
 - [ ] (g) A start chime when the wake word opens a conversation.
-- [ ] (h) List the wake word action in the settings search index.
+- [x] (h) The wake word action is gone: every wake word detection starts a
+      conversation, so there is nothing to list in the settings search index.

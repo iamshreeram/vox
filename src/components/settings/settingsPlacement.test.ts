@@ -182,6 +182,24 @@ const scenarios: Record<string, () => void> = {
     assert.equal(placementOf("speakerFilter").groupId, "vadEngine");
     assert.equal(placementOf("replyStyle").groupId, "conversation");
   },
+  "the wake word is ungated in Conversation; ambient listening stays experimental":
+    () => {
+      // A-W5: one trigger (Hey Jarvis) lives with the conversation controls and is always visible.
+      assert.equal(placementOf("wakeWord").groupId, "conversation");
+      assert.equal(placementOf("wakeWord").section, "general");
+      assert.equal(
+        PLACED_GROUPS.find((g) => g.id === "conversation")?.experimental,
+        false,
+      );
+      assert.equal(placementOf("ambientMode").groupId, "listening");
+      assert.equal(
+        PLACED_GROUPS.find((g) => g.id === "listening")?.experimental,
+        true,
+      );
+      const general = markup("general", false);
+      assert.equal(count(general, 'data-ctl="wakeWord"'), 1);
+      assert.equal(count(general, 'data-ctl="ambientMode"'), 0);
+    },
   "every legacy group id is retained, only the listed ids are new": () => {
     const ids = PLACED_GROUPS.map((g) => g.id);
     assert.equal(new Set(ids).size, ids.length, "group ids are unique");

@@ -112,8 +112,6 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
     const surface = shownValue(storedSurface, pendingSurface);
     const hints = surfaceHints({
       converseChatLog: getSetting("converse_chat_log"),
-      wakeWordEnabled: getSetting("wake_word_enabled"),
-      wakeWordAction: getSetting("wake_word_action"),
       surface,
       supported: support === null ? null : support.supported,
     });
@@ -172,12 +170,6 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
         () => setPendingSurface(null),
       );
     };
-
-    const chooseWakeConversation = (): Promise<void> =>
-      runOrbCommand(
-        () => commands.changeWakeWordActionSetting("conversation"),
-        () => undefined,
-      );
 
     const clearSizeTimer = (queue: SizeQueue): void => {
       if (queue.timer !== null) {
@@ -311,25 +303,6 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
               >
                 {t("settings.floatingOrb.hints.chatLogOff")}
               </p>
-            )}
-            {hints.wakeDictation && (
-              <div
-                data-testid="floating-orb-surface-hint-wake"
-                className="flex flex-col items-end gap-2"
-              >
-                <p className="text-xs text-mid-gray text-end">
-                  {t("settings.floatingOrb.hints.wakeDictation")}
-                </p>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  data-testid="floating-orb-wake-conversation"
-                  disabled={controlsDisabled}
-                  onClick={() => void chooseWakeConversation()}
-                >
-                  {t("settings.floatingOrb.hints.wakeButton")}
-                </Button>
-              </div>
             )}
           </div>
         </SettingContainer>

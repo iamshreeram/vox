@@ -312,9 +312,7 @@ test.describe("Floating orb settings", () => {
  *   floating-orb-surface              native <select>, options auto | bubbles | window
  *                                     (labels: settings.floatingOrb.surface.auto/bubbles/window)
  *   floating-orb-surface-hint-chatlog hint shown when converse_chat_log is off
- *   floating-orb-surface-hint-wake    hint shown when Hey Jarvis starts dictation
- *   floating-orb-wake-conversation    button inside the wake hint: sets wake_word_action to
- *                                     'conversation' via change_wake_word_action_setting
+ *   (the wake-word hint and its button were removed: a wake word always starts a conversation)
  * The select writes only through change_chat_presentation_setting {value: null | 'floating' |
  * 'window'}. Hints are hidden when the surface is Conversation window or the support answer
  * says unsupported.
@@ -397,7 +395,7 @@ test.describe("Floating orb surface choice (G4b)", () => {
     await expect(tid(page, "floating-orb-surface-hint-chatlog")).toHaveCount(0);
   });
 
-  test("S4. the wake hint shows when Hey Jarvis starts dictation, and its button records the action change", async ({
+  test("S4. with Hey Jarvis on and the retired one-shot action stored, no wake hint or button shows", async ({
     page,
   }) => {
     await openConversation(page, {
@@ -405,21 +403,11 @@ test.describe("Floating orb surface choice (G4b)", () => {
       wake_word_enabled: true,
       wake_word_action: "voice_request",
     });
-    const hint = tid(page, "floating-orb-surface-hint-wake");
-    await expect(hint).toBeVisible();
-    await expect(hint).toContainText(
-      text("settings.floatingOrb.hints.wakeDictation"),
+    await expect(tid(page, "floating-orb-surface-hint-wake")).toHaveCount(0);
+    await expect(tid(page, "floating-orb-wake-conversation")).toHaveCount(0);
+    expect(await getMockCalls(page, "change_wake_word_action_setting")).toEqual(
+      [],
     );
-    const button = tid(page, "floating-orb-wake-conversation");
-    await expect(button).toBeVisible();
-    await expect(button).toContainText(
-      text("settings.floatingOrb.hints.wakeButton"),
-    );
-
-    await button.click();
-    await expect
-      .poll(() => getMockCalls(page, "change_wake_word_action_setting"))
-      .toEqual([{ action: "conversation" }]);
   });
 
   test("S4b. the wake hint is hidden when Hey Jarvis already opens a conversation, or wake is off", async ({

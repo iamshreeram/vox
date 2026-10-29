@@ -20,9 +20,11 @@ pub(crate) fn update_ambient_mode_enabled(
 pub fn ambient_set_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = crate::settings::get_settings(&app);
     update_ambient_mode_enabled(&mut settings, enabled);
+    // Ambient listens only while Experimental is on as well (see `ambient_effective`).
+    let listen = crate::settings::ambient_effective(&settings);
     crate::settings::write_settings(&app, settings);
     let listener = app.state::<Arc<crate::managers::ambient_listener::AmbientListener>>();
-    if enabled {
+    if enabled && listen {
         app.state::<Arc<crate::managers::wakeword_listener::WakeWordListener>>()
             .stop();
         listener.start();

@@ -376,7 +376,7 @@ for (const option of SURFACE_OPTIONS) {
     surface: "auto" as const,
     supported: true,
   };
-  const none = { chatLogOff: false, wakeDictation: false };
+  const none = { chatLogOff: false };
 
   assert.deepEqual(surfaceHints(base), none, "healthy defaults show no hint");
 
@@ -413,54 +413,14 @@ for (const option of SURFACE_OPTIONS) {
     "loading does not hide it",
   );
 
-  // Wake dictation hint.
-  const wake = { ...base, wakeWordEnabled: true };
-  assert.equal(
-    surfaceHints({ ...wake, wakeWordAction: "voice_request" }).wakeDictation,
-    true,
-  );
-  assert.equal(
-    surfaceHints({ ...wake, wakeWordAction: undefined }).wakeDictation,
-    true,
-    "missing action reads as voice_request",
-  );
-  assert.equal(
-    surfaceHints({ ...wake, wakeWordAction: "conversation" }).wakeDictation,
-    false,
-    "conversation needs no hint",
-  );
-  assert.equal(
-    surfaceHints({
-      ...base,
-      wakeWordEnabled: false,
-      wakeWordAction: "voice_request",
-    }).wakeDictation,
-    false,
-  );
-  assert.equal(
-    surfaceHints({
-      ...base,
-      wakeWordEnabled: undefined,
-      wakeWordAction: "voice_request",
-    }).wakeDictation,
-    false,
-  );
-  assert.equal(
-    surfaceHints({ ...wake, surface: "window" }).wakeDictation,
-    false,
-    "window hides it",
-  );
-  assert.equal(
-    surfaceHints({ ...wake, supported: false }).wakeDictation,
-    false,
-    "unsupported hides it",
-  );
-
-  // The two hints are independent.
+  // The wake-word hint is gone: a wake word always starts a conversation, so no wake
+  // setting shows a hint any more.
+  const wakeOn = { ...base, wakeWordEnabled: true };
+  assert.equal("wakeDictation" in surfaceHints(wakeOn), false, "no wake hint");
   assert.deepEqual(
-    surfaceHints({ ...wake, converseChatLog: false }),
-    { chatLogOff: true, wakeDictation: true },
-    "both hints can show together",
+    surfaceHints({ ...wakeOn, converseChatLog: false }),
+    { chatLogOff: true },
+    "the chat-log hint shows alone",
   );
 }
 
@@ -480,21 +440,25 @@ assert.match(
   /<select\b[\s\S]*?data-testid="floating-orb-surface"/,
   "the surface control is a native select with data-testid floating-orb-surface",
 );
+assert.match(
+  component,
+  new RegExp('data-testid="floating-orb-surface-hint-chatlog"'),
+  "component carries the chat-log hint",
+);
 for (const testId of [
-  "floating-orb-surface-hint-chatlog",
   "floating-orb-surface-hint-wake",
   "floating-orb-wake-conversation",
 ]) {
-  assert.match(
+  assert.doesNotMatch(
     component,
     new RegExp(`data-testid="${testId}"`),
-    `component carries ${testId}`,
+    `component no longer carries ${testId}`,
   );
 }
-assert.match(
+assert.doesNotMatch(
   component,
   /commands\.changeWakeWordActionSetting\(/,
-  "the wake button uses the existing wake-word action setter",
+  "the orb group no longer sets the wake-word action",
 );
 assert.doesNotMatch(
   component,

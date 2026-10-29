@@ -56,17 +56,20 @@ const section = (page: Page, id: string): Locator =>
 const navItem = (page: Page, label: string): Locator =>
   page.locator("p", { hasText: new RegExp(`^${label}$`) });
 
-// The "listening" card starts collapsed (defaultOpen: false in settingsPlacement.ts).
-const listeningCard = (page: Page): Locator =>
-  page.locator('[data-group-id="listening"]');
-const listeningHeader = (page: Page): Locator =>
-  listeningCard(page).getByRole("button").first();
+// The wake word ("Hey Jarvis") row lives in the ungated "conversation" card, which starts
+// collapsed (defaultOpen: false in settingsPlacement.ts).
+const wakeCard = (page: Page): Locator =>
+  page.locator('[data-group-id="conversation"]');
+const wakeHeader = (page: Page): Locator =>
+  wakeCard(page).getByRole("button").first();
 const wakeWordRow = (page: Page): Locator =>
-  page.locator('[data-group-id="listening"] [data-setting-title="Wake Word"]');
+  page.locator(
+    '[data-group-id="conversation"] [data-setting-title="Hey Jarvis"]',
+  );
 
-/** Precondition: the listening card is rendered and collapsed, its row hidden. */
-async function expectListeningCollapsed(page: Page): Promise<void> {
-  await expect(listeningHeader(page)).toHaveAttribute("aria-expanded", "false");
+/** Precondition: the conversation card is rendered and collapsed, its wake row hidden. */
+async function expectWakeGroupCollapsed(page: Page): Promise<void> {
+  await expect(wakeHeader(page)).toHaveAttribute("aria-expanded", "false");
   await expect(wakeWordRow(page)).toHaveCount(1);
   await expect(wakeWordRow(page)).toBeHidden();
 }
@@ -138,19 +141,16 @@ test.describe("Settings search: navigation and reveal", () => {
 
     // Precondition: the listening card is collapsed on the General page.
     await expect(section(page, "general")).toBeVisible();
-    await expectListeningCollapsed(page);
+    await expectWakeGroupCollapsed(page);
 
     // Leave for another page, then reveal from search.
     await navItem(page, "Advanced").click();
     await expect(section(page, "advanced")).toBeVisible();
     await searchBox(page).fill("wake word");
-    await options(page).filter({ hasText: "Wake Word" }).first().click();
+    await options(page).filter({ hasText: "Hey Jarvis" }).first().click();
 
     await expect(section(page, "general")).toBeVisible();
-    await expect(listeningHeader(page)).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
+    await expect(wakeHeader(page)).toHaveAttribute("aria-expanded", "true");
     await expect(wakeWordRow(page)).toBeVisible();
     await expect(wakeWordRow(page)).toHaveClass(new RegExp(HIGHLIGHT_CLASS));
   });
@@ -163,20 +163,17 @@ test.describe("Settings search: navigation and reveal", () => {
 
     // Precondition: visit General, confirm the card is collapsed, leave.
     await expect(section(page, "general")).toBeVisible();
-    await expectListeningCollapsed(page);
+    await expectWakeGroupCollapsed(page);
     await navItem(page, "Advanced").click();
     await expect(section(page, "advanced")).toBeVisible();
     // The General page is unmounted now; search mounts it late.
     await expect(section(page, "general")).toHaveCount(0);
 
     await searchBox(page).fill("wake word");
-    await options(page).filter({ hasText: "Wake Word" }).first().click();
+    await options(page).filter({ hasText: "Hey Jarvis" }).first().click();
 
     await expect(section(page, "general")).toBeVisible();
-    await expect(listeningHeader(page)).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
+    await expect(wakeHeader(page)).toHaveAttribute("aria-expanded", "true");
     await expect(wakeWordRow(page)).toBeVisible();
     await expect(wakeWordRow(page)).toHaveClass(new RegExp(HIGHLIGHT_CLASS));
   });
@@ -203,7 +200,7 @@ test.describe("Settings search: navigation and reveal", () => {
 
     // Precondition: the listening card is collapsed on the General page.
     await expect(section(page, "general")).toBeVisible();
-    await expectListeningCollapsed(page);
+    await expectWakeGroupCollapsed(page);
     await navItem(page, "Advanced").click();
     await expect(section(page, "advanced")).toBeVisible();
 
@@ -216,7 +213,7 @@ test.describe("Settings search: navigation and reveal", () => {
         this: Element,
         ...args: [(boolean | ScrollIntoViewOptions)?]
       ): void {
-        if (this.getAttribute("data-setting-title") === "Wake Word") {
+        if (this.getAttribute("data-setting-title") === "Hey Jarvis") {
           spy.__wakeWordScrolls += 1;
         }
         original.apply(this, args);
@@ -225,9 +222,9 @@ test.describe("Settings search: navigation and reveal", () => {
 
     // Select the result: the reveal starts, its frame is queued, nothing has run.
     await searchBox(page).fill("wake word");
-    await options(page).filter({ hasText: "Wake Word" }).first().click();
+    await options(page).filter({ hasText: "Hey Jarvis" }).first().click();
     await expect(section(page, "general")).toBeVisible();
-    await expectListeningCollapsed(page);
+    await expectWakeGroupCollapsed(page);
     await expect(highlighted(page)).toHaveCount(0);
 
     // Leave during the reveal, then return to General.
@@ -239,7 +236,7 @@ test.describe("Settings search: navigation and reveal", () => {
     // Let time pass the reveal timeout: a surviving reveal would run now.
     await page.clock.runFor(REVEAL_WINDOW_MS);
     await expect(highlighted(page)).toHaveCount(0);
-    await expectListeningCollapsed(page);
+    await expectWakeGroupCollapsed(page);
     const scrolls = await page.evaluate(
       () =>
         (window as unknown as { __wakeWordScrolls: number }).__wakeWordScrolls,
@@ -544,7 +541,7 @@ test.describe("Settings search: new settings controls", () => {
   test("(11) a control added in this change is found by search and rendered on its settings page", async ({
     page,
   }) => {
-    // Wake word cooldown is a slider in the General page Listening group (WakeWordToggle).
+    // Wake word cooldown is a slider in the General page Conversation group (WakeWordToggle).
     const cooldownLabel = textAt(
       translation("en"),
       "settings.advanced.wakeWord.cooldownLabel",
@@ -807,15 +804,16 @@ test.describe("Settings search: controls with conditions", () => {
     }
   });
 
-  test("(19) the wake word action result opens the Listening group and highlights its row", async ({
+  test("(19) the wake word result opens the Conversation group and highlights its row", async ({
     page,
   }) => {
     await installTauriMock(page, {
-      settings: { experimental_enabled: true, wake_word_enabled: true },
+      settings: { experimental_enabled: false, wake_word_enabled: false },
     });
     await page.goto("/");
 
-    const key = "settings.advanced.wakeWord.action.label";
+    // A-W5: the wake word is ungated and has no action dropdown any more.
+    const key = "settings.advanced.wakeWord.label";
     await searchBox(page).fill(label(key));
     await options(page)
       .filter({ hasText: label(key) })
@@ -823,13 +821,16 @@ test.describe("Settings search: controls with conditions", () => {
       .click();
 
     await expect(section(page, "general")).toBeVisible();
-    const group = page.locator('[data-group-id="listening"]');
+    const group = page.locator('[data-group-id="conversation"]');
     await expect(group).toHaveCount(1);
     await expect(group.locator(`.${HIGHLIGHT_CLASS}`)).toHaveCount(1);
     await expect(highlighted(page)).toHaveAttribute(
       "data-setting-title",
       label(key),
     );
+    await expect(
+      page.locator('[data-setting-title="When I say the wake word"]'),
+    ).toHaveCount(0);
   });
 
   test("(20) the interrupt-by-speaking result opens the Voice conversation group", async ({

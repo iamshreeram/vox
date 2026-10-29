@@ -379,7 +379,7 @@
         "percentValue": "{{value}}%",
         "msValue": "{{value}} 毫秒",
         "offValue": "關閉",
-        "label": "Wake Word",
+        "label": "Hey Jarvis",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
         "disabledByAmbientMode": "Turn off Ambient Mode to enable Wake Word.",
@@ -1681,7 +1681,7 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "對話進行時必須關閉環境聆聽。除非喚醒詞的動作設為與助理對話，否則也必須關閉喚醒詞。",
+      "wakeWordNote": "Ambient listening must be off while a conversation runs. Start one with the shortcut or by saying Hey Jarvis.",
       "bargeIn": {
         "label": "說話打斷",
         "description": "在助理說話時插話即可打斷它。請使用耳機：若使用喇叭，助理會聽到自己的聲音。Phonon 和 Natural 語音在你說話時也會降低音量；系統語音則會直接停止。需要開啟語音回覆。",

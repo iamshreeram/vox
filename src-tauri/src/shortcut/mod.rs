@@ -1637,7 +1637,16 @@ pub fn change_agent_bridge_binary_path_setting(
 pub fn change_experimental_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.experimental_enabled = enabled;
+    // Turning Experimental off stops ambient listening; the stored flag is left as it is.
+    // Turning it on restarts ambient only when the flag is on and the wake word is off.
+    let ambient_wanted = settings::ambient_effective(&settings) && !settings.wake_word_enabled;
     settings::write_settings(&app, settings);
+    let ambient = app.state::<Arc<crate::managers::ambient_listener::AmbientListener>>();
+    if !enabled {
+        ambient.stop();
+    } else if ambient_wanted {
+        ambient.start();
+    }
     tray::update_tray_menu(&app);
     let _ = app.emit(
         "settings-changed",
@@ -2024,15 +2033,18 @@ pub fn change_chinese_script_setting(app: AppHandle, script: ChineseScript) -> R
     Ok(())
 }
 
-/// What a wake-word detection starts: a one-shot voice request or a conversation.
+/// What a wake-word detection starts. Always a conversation; kept registered for bindings stability.
 #[tauri::command]
 #[specta::specta]
 pub fn change_wake_word_action_setting(
     app: AppHandle,
     action: settings::WakeWordAction,
 ) -> Result<(), String> {
+    // A wake word always starts a conversation. The argument is accepted only so the command
+    // signature (and the generated bindings) stay put; the stored value is always Conversation.
+    let _ = action;
     let mut settings = settings::get_settings(&app);
-    settings.wake_word_action = action;
+    settings.wake_word_action = settings::WakeWordAction::Conversation;
     settings::write_settings(&app, settings);
     Ok(())
 }
