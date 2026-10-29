@@ -234,7 +234,7 @@ export const BrainEndpointGroup: React.FC<BrainEndpointGroupProps> = ({
               id="brain-url-error"
               data-testid="brain-url-error"
               role="alert"
-              className="text-xs text-red-500"
+              className="text-xs text-danger"
             >
               {t(URL_ERROR_KEY[urlError])}
             </p>

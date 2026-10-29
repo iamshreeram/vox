@@ -62,13 +62,14 @@ body {
 
 .bubble-user {
   align-self: flex-end;
-  background: rgba(255, 138, 0, 0.9);
-  color: #2a1500;
+  background: var(--color-accent-a);
+  color: var(--color-on-accent);
 }
 
 .bubble-assistant {
   align-self: flex-start;
-  background: rgba(124, 58, 237, 0.88);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
 }
 
 @keyframes bubble-enter {

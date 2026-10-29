@@ -158,14 +158,14 @@ export const FillerWordRemoval: React.FC<FillerWordRemovalProps> = React.memo(
                 })}
               </p>
               {tooManyWords && (
-                <p className="text-xs text-red-500">
+                <p className="text-xs text-danger">
                   {t("settings.advanced.fillerWordRemoval.customTooMany", {
                     max: MAX_WORDS,
                   })}
                 </p>
               )}
               {wordTooLong && (
-                <p className="text-xs text-red-500">
+                <p className="text-xs text-danger">
                   {t("settings.advanced.fillerWordRemoval.customTooLong", {
                     max: MAX_WORD_CHARS,
                   })}

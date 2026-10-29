@@ -138,13 +138,13 @@ const SourceUpdateChecker: React.FC<SourceUpdateCheckerProps> = ({
               {blocker !== null && (
                 <p
                   role="alert"
-                  className="rounded border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-300"
+                  className="rounded border border-warning bg-warning-soft px-3 py-2 text-xs text-warning dark:text-warning"
                 >
                   {blocker}
                 </p>
               )}
               {showInstallError && state.error && (
-                <p role="alert" className="text-xs text-red-500">
+                <p role="alert" className="text-xs text-danger">
                   {state.error}
                 </p>
               )}

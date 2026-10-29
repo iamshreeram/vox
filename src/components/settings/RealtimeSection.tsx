@@ -146,7 +146,7 @@ const RtTextField: React.FC<RtTextFieldProps> = ({
         </div>
         {footer}
         {error !== null && (
-          <p role="alert" className="text-xs text-red-400">
+          <p role="alert" className="text-xs text-danger">
             {error}
           </p>
         )}

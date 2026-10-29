@@ -125,7 +125,7 @@ export const AuxModelCard: React.FC<AuxModelCardProps> = ({
               </div>
             </div>
             {view.error !== null && (
-              <p role="alert" className="text-xs text-red-400">
+              <p role="alert" className="text-xs text-danger">
                 {errorText(view.error)}
               </p>
             )}

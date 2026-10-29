@@ -202,7 +202,7 @@ export const PersonaSettings: React.FC<PersonaSettingsProps> = ({
   };
 
   const issueList = issues.length > 0 && (
-    <ul role="alert" className="flex flex-col gap-1 text-xs text-red-400">
+    <ul role="alert" className="flex flex-col gap-1 text-xs text-danger">
       {issues.map((issue, index) => (
         <li key={`${issue}-${index}`}>{issueText(issue)}</li>
       ))}

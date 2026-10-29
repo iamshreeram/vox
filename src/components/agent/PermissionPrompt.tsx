@@ -128,7 +128,7 @@ export default function PermissionPrompt() {
         {view.showUnavailableWarning ? (
           <p
             role="note"
-            className="rounded-md border border-amber-500/70 bg-amber-500/10 p-2 text-sm font-medium text-text"
+            className="rounded-md border border-warning bg-warning-soft p-2 text-sm font-medium text-text"
           >
             {t(`${KEY_PREFIX}.detailsUnavailable`)}
           </p>

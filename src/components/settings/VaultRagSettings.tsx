@@ -172,7 +172,7 @@ export const VaultRagSettings: React.FC<VaultRagSettingsProps> = ({
             className="flex-1 min-w-[360px]"
           />
           {foldersError !== null && (
-            <p role="alert" className="text-xs text-red-400">
+            <p role="alert" className="text-xs text-danger">
               {foldersError}
             </p>
           )}
@@ -218,7 +218,7 @@ export const VaultRagSettings: React.FC<VaultRagSettingsProps> = ({
           </div>
           {probeLine !== null && <p className="text-xs">{probeLine}</p>}
           {actionError !== null && (
-            <p role="alert" className="text-xs text-red-400">
+            <p role="alert" className="text-xs text-danger">
               {actionError}
             </p>
           )}

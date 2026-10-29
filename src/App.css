@@ -16,6 +16,14 @@
   --color-accent-a: var(--color-accent-a);
   --color-accent-b: var(--color-accent-b);
   --color-on-accent: var(--color-on-accent);
+  --color-accent-text: var(--color-accent-text);
+  --color-accent-soft: var(--color-accent-soft);
+  --color-accent-ui: var(--color-accent-ui);
+  --color-danger: var(--color-danger);
+  --color-danger-soft: var(--color-danger-soft);
+  --color-success: var(--color-success);
+  --color-success-soft: var(--color-success-soft);
+  --color-warning-soft: var(--color-warning-soft);
 }
 
 :root {

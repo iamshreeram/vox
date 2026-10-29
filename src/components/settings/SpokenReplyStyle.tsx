@@ -314,7 +314,7 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
       const message = errors[field];
       if (!message) return null;
       return (
-        <p role="alert" className="text-xs text-red-400 mt-1">
+        <p role="alert" className="text-xs text-danger mt-1">
           {message}
         </p>
       );
@@ -370,7 +370,7 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
                   className="min-w-[220px]"
                 />
                 {providersFailed && (
-                  <p role="alert" className="text-xs text-red-400 mt-1">
+                  <p role="alert" className="text-xs text-danger mt-1">
                     {t("settings.advanced.tts.composer.providersLoadFailed")}
                   </p>
                 )}
@@ -657,7 +657,7 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
               </div>
             )}
             {previewError && (
-              <p role="alert" className="text-xs text-red-400">
+              <p role="alert" className="text-xs text-danger">
                 {previewError}
               </p>
             )}

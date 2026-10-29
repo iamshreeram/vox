@@ -94,7 +94,7 @@ export const AgentNamesField: React.FC<AgentSettingProps> = ({
           </Button>
         </div>
         {showInvalid && (
-          <p className="text-xs text-red-500">
+          <p className="text-xs text-danger">
             {t("settings.experimental.jobs.agents.invalid")}
           </p>
         )}
@@ -167,7 +167,7 @@ export const AgentFlagField: React.FC<AgentSettingProps> = ({
           }}
         />
         {invalid && (
-          <p className="max-w-xs text-end text-xs text-red-500">
+          <p className="max-w-xs text-end text-xs text-danger">
             {t("settings.experimental.jobs.flag.invalid")}
           </p>
         )}

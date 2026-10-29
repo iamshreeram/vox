@@ -4,9 +4,23 @@
 // chip is white or black, the worst cases. Every text/chip pair must reach WCAG AA 4.5:1 for normal
 // text. Each chip colour below is the value chat.css uses (see the CSS checks at the end).
 // Workers must not edit this file.
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { CHAT_COLORS, FACE_ACCENT, contrastRatio } from "./chatTheme";
+import {
+  CHAT_COLORS,
+  CHAT_PALETTES,
+  FACE_ACCENT,
+  FACE_TEXT,
+  chatPaletteFor,
+  contrastRatio,
+  type ChatPaletteName,
+} from "./chatTheme";
 import type { AvatarFace } from "./chatModel";
+import { ACCENT_IDS, type AccentId } from "../styles/accents";
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 /** The chip floor: translucent text chips are never more transparent than this. */
 const CHIP_ALPHA_FLOOR = 0.9;
@@ -165,19 +179,157 @@ describe("every text/chip pair reaches 4.5:1 (translucent chips at the 0.9 floor
   }
 });
 
-describe("the chat stylesheet uses the colours the table tests", () => {
-  it("names the error, user, system and disabled-send colours in chat.css", async () => {
-    const { readFileSync } = await import("node:fs");
-    const { dirname, join } = await import("node:path");
-    const { fileURLToPath } = await import("node:url");
-    const here = dirname(fileURLToPath(import.meta.url));
-    const css = readFileSync(join(here, "chat.css"), "utf8").toLowerCase();
-    expect(css).toContain(ERROR_TEXT);
-    expect(css).toContain("rgba(31, 20, 23, var(--chat-chip-alpha))");
-    expect(css).toContain("rgba(20, 29, 56, var(--chat-chip-alpha))");
-    expect(css).toContain("rgba(17, 21, 29, var(--chat-chip-alpha))");
-    expect(css).toContain(DISABLED_SEND);
-    expect(css).toContain(USER_TEXT);
-    expect(css).toContain(USER_SENDER);
+// UI enterprise S2 (A4): the same table runs for BOTH palettes, every accent and every face and
+// chip, over white AND black, using the production tokens. The dark-palette literals above are
+// pinned to the production values below, so the table can never drift from the code.
+describe("the dark literals above are the production dark palette", () => {
+  it("pins each chip and text literal to CHAT_PALETTES.dark", () => {
+    const dark = CHAT_PALETTES.dark;
+    expect(ERROR_TEXT.toLowerCase()).toBe(dark.errorText.toLowerCase());
+    expect(ERROR_CHIP.toLowerCase()).toBe(dark.errorChip.toLowerCase());
+    expect(USER_BUBBLE_BG.toLowerCase()).toBe(dark.userBubble.toLowerCase());
+    expect(USER_TEXT.toLowerCase()).toBe(dark.userText.toLowerCase());
+    expect(USER_SENDER.toLowerCase()).toBe(dark.userSender.toLowerCase());
+    expect(SYSTEM_CHIP.toLowerCase()).toBe(dark.systemChip.toLowerCase());
+    expect(DISABLED_SEND.toLowerCase()).toBe(dark.sendDisabled.toLowerCase());
+  });
+
+  it("chat.css reads the chip, text and disabled colours from variables", () => {
+    const source = readFileSync(join(here, "chat.css"), "utf8");
+    expect(source).toContain(
+      "rgba(var(--chat-error-rgb), var(--chat-chip-alpha))",
+    );
+    expect(source).toContain(
+      "rgba(var(--chat-user-rgb), var(--chat-chip-alpha))",
+    );
+    expect(source).toContain(
+      "rgba(var(--chat-system-rgb), var(--chat-chip-alpha))",
+    );
+    expect(source).toContain("var(--chat-error-text)");
+    expect(source).toContain("var(--chat-user-text)");
+    expect(source).toContain("var(--chat-user-sender)");
+    expect(source).toContain("var(--chat-disabled-bg)");
+  });
+});
+
+/** Every text/chip pair of one palette and accent, with its label, text, chip and chip alpha. */
+function palettePairs(palette: ChatPaletteName, accent: AccentId) {
+  const p = chatPaletteFor(palette, accent);
+  const translucent = [
+    ["surface", p.surface],
+    ["background", p.bg],
+    ["user bubble", p.userBubble],
+    ["system", p.systemChip],
+    ["error", p.errorChip],
+  ] as const;
+  const pairs: Array<{
+    name: string;
+    text: string;
+    chip: string;
+    alpha: number;
+  }> = [];
+  for (const [chipName, chip] of translucent) {
+    pairs.push({
+      name: `body text on ${chipName}`,
+      text: p.text,
+      chip,
+      alpha: CHIP_ALPHA_FLOOR,
+    });
+    pairs.push({
+      name: `muted text on ${chipName}`,
+      text: p.muted,
+      chip,
+      alpha: CHIP_ALPHA_FLOOR,
+    });
+    for (const face of FACES) {
+      pairs.push({
+        name: `${face} face text on ${chipName}`,
+        text: FACE_TEXT[palette][face],
+        chip,
+        alpha: CHIP_ALPHA_FLOOR,
+      });
+    }
+  }
+  pairs.push({
+    name: "accent text on surface",
+    text: p.brandText,
+    chip: p.surface,
+    alpha: CHIP_ALPHA_FLOOR,
+  });
+  pairs.push({
+    name: "accent text on background",
+    text: p.brandText,
+    chip: p.bg,
+    alpha: CHIP_ALPHA_FLOOR,
+  });
+  pairs.push({
+    name: "accent text on system",
+    text: p.brandText,
+    chip: p.systemChip,
+    alpha: CHIP_ALPHA_FLOOR,
+  });
+  pairs.push({
+    name: "user text on user bubble",
+    text: p.userText,
+    chip: p.userBubble,
+    alpha: CHIP_ALPHA_FLOOR,
+  });
+  pairs.push({
+    name: "user sender on user bubble",
+    text: p.userSender,
+    chip: p.userBubble,
+    alpha: CHIP_ALPHA_FLOOR,
+  });
+  pairs.push({
+    name: "error text on error chip",
+    text: p.errorText,
+    chip: p.errorChip,
+    alpha: CHIP_ALPHA_FLOOR,
+  });
+  pairs.push({
+    name: "label on brand (opaque)",
+    text: p.onBrand,
+    chip: p.brand,
+    alpha: 1,
+  });
+  pairs.push({
+    name: "muted on disabled send (opaque)",
+    text: p.muted,
+    chip: p.sendDisabled,
+    alpha: 1,
+  });
+  return pairs;
+}
+
+describe("every palette x accent x face x chip reaches 4.5:1 over white and black (UI S2)", () => {
+  for (const palette of ["dark", "light"] as const) {
+    for (const accent of ACCENT_IDS) {
+      it(`${palette} palette, ${accent} accent`, () => {
+        const failures: string[] = [];
+        for (const pair of palettePairs(palette, accent)) {
+          for (const [label, backdrop] of Object.entries(BACKDROPS)) {
+            const effective = blend(pair.chip, pair.alpha, backdrop);
+            const ratio = contrastRatio(pair.text, effective);
+            if (ratio < 4.5) {
+              failures.push(
+                `${pair.name} over ${label}: ${ratio.toFixed(2)}:1`,
+              );
+            }
+          }
+        }
+        expect(failures).toEqual([]);
+      });
+    }
+  }
+});
+
+describe("the chat stylesheet reads the production palette (no literal chip colours)", () => {
+  it("names the error, user, system and disabled-send colours as variables", () => {
+    const source = readFileSync(join(here, "chat.css"), "utf8").toLowerCase();
+    expect(source).not.toContain(ERROR_TEXT);
+    expect(source).not.toContain(DISABLED_SEND);
+    expect(source).not.toContain(USER_TEXT);
+    expect(source).not.toContain(USER_SENDER);
+    expect(source).toContain("var(--chat-error-text)");
   });
 });

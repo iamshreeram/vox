@@ -370,7 +370,7 @@ const ModelRow: React.FC<ModelRowProps> = ({
     statusDetails && status === "error" ? (
       <div className="flex flex-col gap-2 mt-2">
         {errorMessage && (
-          <p role="alert" className="text-xs text-red-400">
+          <p role="alert" className="text-xs text-danger">
             {errorMessage}
           </p>
         )}

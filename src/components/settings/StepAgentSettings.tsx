@@ -212,7 +212,7 @@ const StepAgentRow: React.FC<StepAgentRowProps> = ({
           className="w-72 font-mono"
         />
         {errorMessage !== null && (
-          <p role="alert" className="max-w-xs text-end text-xs text-red-500">
+          <p role="alert" className="max-w-xs text-end text-xs text-danger">
             {errorMessage}
           </p>
         )}

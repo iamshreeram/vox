@@ -15,10 +15,6 @@
   --chat-chip-alpha: max(var(--chat-alpha), 0.9);
   --chat-chip: rgba(var(--chat-surface-rgb), var(--chat-chip-alpha));
   --chat-chip-bg: rgba(var(--chat-bg-rgb), var(--chat-chip-alpha));
-  --chat-text: #e7e9ee;
-  --chat-muted: #98a1b2;
-  --chat-brand: #f5b921;
-  --chat-border: rgba(255, 255, 255, 0.08);
   position: relative;
   isolation: isolate;
   display: flex;
@@ -29,7 +25,7 @@
   background-color: rgba(var(--chat-bg-rgb), var(--chat-alpha));
   background-image: none;
   color: var(--chat-text);
-  color-scheme: dark;
+  color-scheme: var(--chat-color-scheme);
   font-family:
     ui-sans-serif,
     -apple-system,
@@ -280,7 +276,7 @@ body {
   flex-direction: column;
   gap: 10px;
   scrollbar-width: thin;
-  scrollbar-color: #2a3140 transparent;
+  scrollbar-color: var(--chat-scroll) transparent;
 }
 
 .chat-log::-webkit-scrollbar {
@@ -292,7 +288,7 @@ body {
 }
 
 .chat-log::-webkit-scrollbar-thumb {
-  background-color: #2a3140;
+  background-color: var(--chat-scroll);
   border-radius: 4px;
 }
 
@@ -305,8 +301,8 @@ body {
 
 .chat-user {
   align-self: flex-end;
-  color: #eef1ff;
-  background-color: rgba(20, 29, 56, var(--chat-chip-alpha));
+  color: var(--chat-user-text);
+  background-color: rgba(var(--chat-user-rgb), var(--chat-chip-alpha));
   border-radius: 16px 16px 4px 16px;
 }
 
@@ -323,7 +319,7 @@ body {
   max-width: 90%;
   padding: 4px 12px;
   color: var(--chat-muted);
-  background-color: rgba(17, 21, 29, var(--chat-chip-alpha));
+  background-color: rgba(var(--chat-system-rgb), var(--chat-chip-alpha));
   border: 1px solid var(--chat-border);
   border-radius: 999px;
   text-align: center;
@@ -350,11 +346,11 @@ body {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--chat-brand);
+  color: var(--chat-brand-text);
 }
 
 .chat-user .chat-sender {
-  color: #c9d3f5;
+  color: var(--chat-user-sender);
 }
 
 .chat-time {
@@ -389,11 +385,11 @@ body {
   font: inherit;
   font-size: 12px;
   font-weight: 600;
-  color: rgb(var(--chat-bg-rgb));
+  color: var(--chat-on-brand);
   background-color: var(--chat-brand);
   border: 0;
   border-radius: 999px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--chat-shadow);
   cursor: pointer;
 }
 
@@ -402,8 +398,8 @@ body {
   margin: 0;
   padding: 8px 14px;
   font-size: 13px;
-  color: #ff9e94;
-  background-color: rgba(31, 20, 23, var(--chat-chip-alpha));
+  color: var(--chat-error-text);
+  background-color: rgba(var(--chat-error-rgb), var(--chat-chip-alpha));
   border-bottom: 1px solid var(--chat-border);
 }
 
@@ -451,7 +447,7 @@ body {
   line-height: 20px;
   color: var(--chat-text);
   background-color: var(--chat-chip);
-  border: 1px solid #2a3140;
+  border: 1px solid var(--chat-scroll);
   border-radius: 10px;
   overflow-y: auto;
   resize: none;
@@ -476,7 +472,7 @@ body {
   font: inherit;
   font-size: 14px;
   font-weight: 600;
-  color: rgb(var(--chat-bg-rgb));
+  color: var(--chat-on-brand);
   background-color: var(--chat-brand);
   border: 1px solid var(--chat-brand);
   border-radius: 10px;
@@ -485,13 +481,13 @@ body {
 
 .chat-send:disabled {
   color: var(--chat-muted);
-  background-color: #2a3140;
-  border-color: #2a3140;
+  background-color: var(--chat-disabled-bg);
+  border-color: var(--chat-disabled-bg);
   cursor: default;
 }
 
 .chat-send-error {
-  border: 1px solid #5a2a2a;
+  border: 1px solid var(--chat-error-border);
   border-radius: 8px;
 }
 

@@ -258,7 +258,7 @@ export const HistorySettings: React.FC = () => {
     );
   } else if (state.error && !hasEntries) {
     content = (
-      <div role="alert" className="px-4 py-3 text-center text-red-500">
+      <div role="alert" className="px-4 py-3 text-center text-danger">
         {t("settings.history.searchError")}
       </div>
     );
@@ -276,7 +276,7 @@ export const HistorySettings: React.FC = () => {
         {state.error && (
           <div
             role="alert"
-            className="px-4 py-3 text-center text-red-500 border-b border-mid-gray/20"
+            className="px-4 py-3 text-center text-danger border-b border-mid-gray/20"
           >
             {t("settings.history.searchError")}
           </div>

@@ -22,7 +22,7 @@ import type {
 } from "react";
 import VoxAvatar from "./VoxAvatar";
 import voxIcon from "./assets/vox-icon.png";
-import { accentStyle } from "./chatTheme";
+import { accentStyle, accentTextStyle } from "./chatTheme";
 import {
   MAX_CHARS,
   counterVisible,
@@ -323,7 +323,9 @@ export default function ChatWindow() {
     <div
       className="chat-root"
       data-face={face}
-      style={accentStyle(face) as CSSProperties}
+      style={
+        { ...accentStyle(face), ...accentTextStyle(face) } as CSSProperties
+      }
     >
       <header className="chat-header">
         <div className="chat-brand">

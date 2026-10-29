@@ -312,7 +312,7 @@ export const SpeakerEnrollWizard: React.FC<SpeakerEnrollWizardProps> = ({
       )}
 
       {message !== null && (
-        <p role="alert" className="text-xs text-red-400">
+        <p role="alert" className="text-xs text-danger">
           {messageText(message)}
         </p>
       )}

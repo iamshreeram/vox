@@ -1,35 +1,43 @@
-import { commands, type CustomThemeColors, type Theme } from "@/bindings";
+import {
+  commands,
+  type CustomThemeColors,
+  type Theme,
+  type VisualStyle,
+} from "@/bindings";
+import {
+  applyResolvedAppearance,
+  resolveAppearance,
+} from "@/lib/appearance/palette";
+import { ACCENT_IDS, DEFAULT_ACCENT, type AccentId } from "@/styles/accents";
 
 /**
- * Appearance theme handling.
+ * Appearance theme handling (main windows: settings and overlay).
  *
  * Vox ships three fixed palettes (System/Light/Dark) plus a fixed "Aurora"
  * accent palette, and a 5th "custom" theme whose colors the user edits
- * directly (see `CustomThemeEditor.tsx`). This module is the single place
- * that turns an appearance (theme + the current custom palette) into actual
- * CSS, for both the main Settings window and the separate recording-overlay
- * window (a distinct webview with its own `document`).
+ * directly (see `CustomThemeEditor.tsx`). The accent (UI S2) applies only under
+ * System/Light/Dark; Aurora and Custom own their palette. The pure rules live in
+ * src/lib/appearance/palette.ts (shared with the listen-only pages); this module
+ * adds the main-window cache and the settings sync.
  *
- * `system` removes the `data-theme` override so the `prefers-color-scheme`
- * media query governs. `light`/`dark`/`aurora` set `data-theme` and rely on
- * the fixed blocks in theme.css/RecordingOverlay.css. `custom` ALSO sets
- * `data-theme="custom"` (whose block in theme.css holds placeholder/default
- * values, used only before the real colors below are applied) AND sets each
- * `--color-*` custom property directly as an inline style on `<html>` --
- * inline style has higher specificity than any attribute-selector CSS rule,
- * so it always wins once applied.
+ * localStorage is a FIRST-PAINT CACHE for the main window only. Other windows
+ * never read it: they take the committed snapshot from the `appearance` event.
  *
- * Cross-window sync: `update_custom_theme_colors`/`change_theme_setting`
- * emit the EXISTING `theme-changed` event. Rather than trusting that event's
- * payload directly (which would require solving cross-window event-ordering
- * for two genuinely concurrent writers -- see the project history for why
- * that was rejected as disproportionate for a cosmetic settings feature),
- * every listener treats the event as a plain "something changed, go
- * re-fetch" signal and calls `syncAppearanceFromSettings()`, which pulls the
- * one current source of truth. A small request-generation guard inside that
- * function ensures a slow, now-superseded fetch can never clobber a newer
- * one that already resolved.
+ * Cross-window sync: writers emit the legacy `theme-changed` event, a plain
+ * "something changed, go re-fetch" signal, and `syncAppearanceFromSettings()`
+ * pulls the persisted settings (the source of truth). A request-generation guard
+ * makes sure a slow, superseded fetch can never clobber a newer one.
  */
+
+export {
+  applyResolvedAppearance,
+  derivedAccentProperties,
+  neutralBucketFor,
+  onAccentFor,
+  relativeLuminance,
+  resolveAppearance,
+} from "@/lib/appearance/palette";
+export type { ResolvedAppearance } from "@/lib/appearance/palette";
 
 export const THEME_STORAGE_KEY = "handy.theme";
 
@@ -48,6 +56,13 @@ const isTheme = (value: unknown): value is Theme =>
   value === "aurora" ||
   value === "custom";
 
+const isAccent = (value: unknown): value is AccentId =>
+  typeof value === "string" &&
+  (ACCENT_IDS as readonly string[]).includes(value);
+
+const isVisualStyle = (value: unknown): value is VisualStyle =>
+  value === "vibrant" || value === "restrained";
+
 /**
  * Must stay in sync with the Rust defaults in `settings.rs`
  * (`default_custom_text`, etc.) -- both are the "Aurora" palette's values,
@@ -63,157 +78,56 @@ export const DEFAULT_CUSTOM_THEME_COLORS: CustomThemeColors = {
   error: "#f87171",
 };
 
-/** Maps each `CustomThemeColors` field to the CSS custom property it drives. */
-const CUSTOM_PROPERTY_MAP: Record<keyof CustomThemeColors, string> = {
-  text: "--color-text",
-  background: "--color-background",
-  accent: "--color-logo-primary",
-  accent_secondary: "--color-logo-stroke",
-  warning: "--color-warning",
-  error: "--color-error",
-};
-
-/** The recording-overlay's own neutral tokens that don't map 1:1 to a single
- * custom color -- for `custom`, these borrow whichever existing light/dark
- * pair (already defined in RecordingOverlay.css) is the closer visual match
- * for the chosen background, rather than requiring 5 more color pickers. */
-const OVERLAY_NEUTRAL_PROPERTIES = [
-  "--s-accent-soft",
-  "--s-muted",
-  "--s-faint",
-  "--s-border",
-  "--s-hair",
-] as const;
-
-/**
- * WCAG-style relative luminance of a `#rrggbb` hex color, in [0, 1]. This is
- * a practical brightness-matching heuristic (used to pick a light/dark
- * neutral bucket), NOT a contrast-ratio/accessibility claim. MUST stay in
- * sync with `relative_luminance` in `src-tauri/src/settings.rs` -- same
- * formula, duplicated here only because this one cosmetic CSS decision isn't
- * worth a backend round-trip. Returns `null` for an unparseable string.
- */
-export const relativeLuminance = (hex: string): number | null => {
-  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return null;
-  const channel = (start: number) => parseInt(hex.slice(start, start + 2), 16);
-  const linearize = (byte: number) => {
-    const s = byte / 255;
-    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-  };
-  const r = linearize(channel(1));
-  const g = linearize(channel(3));
-  const b = linearize(channel(5));
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-};
-
-/** Mirrors `native_chrome_for_hex_background` in settings.rs: Light above the
- * 0.5 midpoint, Dark otherwise (including for an unparseable hex). */
-export const neutralBucketFor = (backgroundHex: string): "light" | "dark" => {
-  const luminance = relativeLuminance(backgroundHex);
-  return luminance !== null && luminance > 0.5 ? "light" : "dark";
-};
-
-const ON_ACCENT_LIGHT = "#ffffff";
-const ON_ACCENT_DARK = "#111111";
-
-const contrastRatio = (a: string, b: string): number | null => {
-  const la = relativeLuminance(a);
-  const lb = relativeLuminance(b);
-  if (la === null || lb === null) return null;
-  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
-};
-
-/**
- * Text color for content drawn on the accent gradient (active sidebar item,
- * primary button): whichever of white or near-black has the better WORST-case
- * contrast across both gradient ends. Falls back to dark text when either
- * color is unparseable.
- */
-export const onAccentFor = (accentA: string, accentB: string): string => {
-  const worst = (fg: string): number | null => {
-    const ra = contrastRatio(fg, accentA);
-    const rb = contrastRatio(fg, accentB);
-    return ra === null || rb === null ? null : Math.min(ra, rb);
-  };
-  const light = worst(ON_ACCENT_LIGHT);
-  const dark = worst(ON_ACCENT_DARK);
-  if (light === null || dark === null) return ON_ACCENT_DARK;
-  return light > dark ? ON_ACCENT_LIGHT : ON_ACCENT_DARK;
-};
-
-/** The accent-gradient CSS properties derived from a custom palette. */
-export const derivedAccentProperties = (
-  colors: CustomThemeColors,
-): Record<string, string> => ({
-  "--color-accent-a": colors.accent,
-  "--color-accent-b": colors.accent_secondary,
-  "--color-on-accent": onAccentFor(colors.accent, colors.accent_secondary),
-  "--color-background-ui": colors.accent,
-});
-
-const DERIVED_ACCENT_PROPERTIES = Object.keys(
-  derivedAccentProperties(DEFAULT_CUSTOM_THEME_COLORS),
-);
-
 export interface Appearance {
   theme: Theme;
   customThemeColors: CustomThemeColors;
+  accent: AccentId;
+  visualStyle: VisualStyle;
 }
 
-/** Apply an appearance to the document root and remember it for next launch. */
+const DEFAULT_APPEARANCE: Appearance = {
+  theme: "system",
+  customThemeColors: DEFAULT_CUSTOM_THEME_COLORS,
+  accent: DEFAULT_ACCENT,
+  visualStyle: "vibrant",
+};
+
+/**
+ * Apply an appearance to the document root and remember it for next launch.
+ * `accent` and `visualStyle` default to the cached values, so a caller that only
+ * changes the theme (the theme picker) does not reset the accent in this window.
+ */
 export const applyTheme = (
   theme: Theme,
   customThemeColors: CustomThemeColors = DEFAULT_CUSTOM_THEME_COLORS,
+  accent?: AccentId,
+  visualStyle?: VisualStyle,
 ): void => {
-  const root = document.documentElement;
-
-  // Always clear every custom-theme inline override first. Leaving a stale
-  // inline property set would defeat the CSS of whatever preset is applied
-  // next (inline style outranks the `data-theme="light"`/etc. selectors).
-  for (const property of Object.values(CUSTOM_PROPERTY_MAP)) {
-    root.style.removeProperty(property);
-  }
-  for (const property of DERIVED_ACCENT_PROPERTIES) {
-    root.style.removeProperty(property);
-  }
-  for (const property of OVERLAY_NEUTRAL_PROPERTIES) {
-    root.style.removeProperty(property);
-  }
-
-  if (theme === "system") {
-    delete root.dataset.theme;
-  } else {
-    root.dataset.theme = theme;
-  }
-
-  if (theme === "custom") {
-    for (const [field, property] of Object.entries(CUSTOM_PROPERTY_MAP) as [
-      keyof CustomThemeColors,
-      string,
-    ][]) {
-      root.style.setProperty(property, customThemeColors[field]);
-    }
-    for (const [property, value] of Object.entries(
-      derivedAccentProperties(customThemeColors),
-    )) {
-      root.style.setProperty(property, value);
-    }
-    const bucket = neutralBucketFor(customThemeColors.background);
-    for (const property of OVERLAY_NEUTRAL_PROPERTIES) {
-      // Reuse the existing --light-s-*/--dark-s-* values already defined in
-      // RecordingOverlay.css by referencing them, rather than duplicating
-      // their actual color values here.
-      root.style.setProperty(
-        property,
-        `var(--${bucket}-s${property.slice(2)})`,
-      );
-    }
-  }
+  const cached = getStoredAppearance();
+  const nextAccent = accent ?? cached.accent;
+  const nextStyle = visualStyle ?? cached.visualStyle;
+  const resolved = resolveAppearance(
+    {
+      rev: 0,
+      theme,
+      custom_colors: theme === "custom" ? customThemeColors : null,
+      accent: nextAccent,
+      chat_theme: "dark",
+      visual_style: nextStyle,
+    },
+    false,
+  );
+  applyResolvedAppearance(document.documentElement, resolved);
 
   try {
     localStorage.setItem(
       THEME_STORAGE_KEY,
-      JSON.stringify({ theme, customThemeColors }),
+      JSON.stringify({
+        theme,
+        customThemeColors,
+        accent: nextAccent,
+        visualStyle: nextStyle,
+      }),
     );
   } catch {
     // localStorage may be unavailable (e.g. private mode); the setting still
@@ -234,13 +148,17 @@ export const getStoredAppearance = (): Appearance => {
             ...DEFAULT_CUSTOM_THEME_COLORS,
             ...(parsed.customThemeColors ?? {}),
           },
+          accent: isAccent(parsed.accent) ? parsed.accent : DEFAULT_ACCENT,
+          visualStyle: isVisualStyle(parsed.visualStyle)
+            ? parsed.visualStyle
+            : "vibrant",
         };
       }
     }
   } catch {
     // ignore -- malformed/legacy cache, fall through to the default below
   }
-  return { theme: "system", customThemeColors: DEFAULT_CUSTOM_THEME_COLORS };
+  return DEFAULT_APPEARANCE;
 };
 
 /** Back-compat: callers that only need the synchronous boot-time theme. */
@@ -267,6 +185,8 @@ export const syncAppearanceFromSettings = async (): Promise<void> => {
       applyTheme(
         result.data.theme ?? "system",
         result.data.custom_theme_colors ?? DEFAULT_CUSTOM_THEME_COLORS,
+        result.data.accent,
+        result.data.visual_style,
       );
     }
   } catch (e) {

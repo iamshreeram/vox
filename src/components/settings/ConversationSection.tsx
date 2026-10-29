@@ -225,7 +225,7 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
               </p>
             )}
             {error !== null && (
-              <p role="alert" className="text-xs text-red-400">
+              <p role="alert" className="text-xs text-danger">
                 {error}
               </p>
             )}
@@ -309,7 +309,7 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
               {t("settings.conversation.openChatWindow")}
             </Button>
             {chatWindowError !== null && (
-              <p role="alert" className="text-xs text-red-400">
+              <p role="alert" className="text-xs text-danger">
                 {chatWindowError}
               </p>
             )}

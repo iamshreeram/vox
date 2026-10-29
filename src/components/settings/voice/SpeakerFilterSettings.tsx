@@ -248,7 +248,7 @@ export const SpeakerFilterSettings: React.FC<SpeakerFilterSettingsProps> = ({
             </div>
           )}
           {deleteFailed && (
-            <p role="alert" className="text-xs text-red-400">
+            <p role="alert" className="text-xs text-danger">
               {t("converse.voice.speaker.deleteError")}
             </p>
           )}

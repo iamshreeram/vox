@@ -252,7 +252,7 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
               disabled={controlsDisabled}
               onChange={(event) => void setVisible(event.target.checked)}
             />
-            <div className="relative pointer-events-none h-6 w-11 rounded-full bg-mid-gray/20 peer-focus:ring-4 peer-focus:ring-logo-primary peer-checked:bg-logo-primary after:absolute after:start-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full" />
+            <div className="relative pointer-events-none h-6 w-11 rounded-full bg-mid-gray/20 peer-focus:ring-4 peer-focus:ring-logo-primary peer-checked:bg-logo-primary after:absolute after:start-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-mid-gray/40 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full" />
           </label>
         </SettingContainer>
 

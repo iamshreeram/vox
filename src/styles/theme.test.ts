@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const css = readFileSync(
@@ -175,6 +175,91 @@ const scenarios: Record<string, () => void> = {
       }
     },
 };
+
+// ---- UI enterprise S2 (additive): semantic status tokens and raw palette classes ----
+const appCss = readFileSync(
+  fileURLToPath(new URL("../App.css", import.meta.url)),
+  "utf8",
+);
+
+function componentFiles(dir: URL): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const child = new URL(
+      `${entry.name}${entry.isDirectory() ? "/" : ""}`,
+      dir,
+    );
+    if (entry.isDirectory()) out.push(...componentFiles(child));
+    else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+      out.push(fileURLToPath(child));
+    }
+  }
+  return out;
+}
+
+Object.assign(scenarios, {
+  "semantic status tokens are defined for light, dark, aurora and custom":
+    () => {
+      for (const token of [
+        "--color-danger",
+        "--color-success",
+        "--color-warning-soft",
+        "--color-danger-soft",
+        "--color-success-soft",
+      ]) {
+        assert.ok(
+          new RegExp(`${token}:\\s*[^;]+;`).test(css),
+          `${token} is not defined in theme.css`,
+        );
+      }
+      for (const name of ["light", "dark", "aurora", "custom"]) {
+        for (const token of ["--color-danger", "--color-success"]) {
+          assert.ok(
+            declared(themeBlock(name), token) !== null ||
+              name === "light" ||
+              name === "dark",
+            `${name} must define ${token}`,
+          );
+        }
+      }
+    },
+  "danger and warning follow the custom palette through their existing tokens":
+    () => {
+      assert.equal(
+        declared(css, "--color-danger"),
+        "var(--color-error)",
+        "--color-danger must alias --color-error (custom error colour)",
+      );
+      assert.equal(declared(css, "--color-danger-soft") !== null, true);
+    },
+  "App.css registers the status tokens as Tailwind colours": () => {
+    for (const t of [
+      "danger",
+      "success",
+      "warning",
+      "danger-soft",
+      "success-soft",
+      "warning-soft",
+    ]) {
+      assert.ok(
+        new RegExp(`--color-${t}:\\s*var\\(--color-${t}\\)`).test(appCss),
+        `@theme inline must register --color-${t}`,
+      );
+    }
+  },
+  "no raw Tailwind status palette classes in src/components (sidebar icon table excepted)":
+    () => {
+      const pattern =
+        /\b(?:text|bg|border|ring)-(?:red|emerald|green|yellow|amber)-\d{3}(?:\/\d+)?\b/;
+      const offenders = componentFiles(
+        new URL("../components/", import.meta.url),
+      )
+        .filter((file) => !file.endsWith("sidebarTheme.ts"))
+        .filter((file) => pattern.test(readFileSync(file, "utf8")))
+        .map((file) => file.slice(file.indexOf("src/")));
+      assert.deepEqual(offenders, []);
+    },
+});
 
 let failed = 0;
 for (const [name, run] of Object.entries(scenarios)) {

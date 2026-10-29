@@ -237,7 +237,7 @@ export const NaturalVoiceBody: React.FC<NaturalVoiceBodyProps> = ({
             </p>
           )}
           {error !== null && (
-            <p className="text-xs text-red-400">
+            <p className="text-xs text-danger">
               {status.model === "not_installed"
                 ? t("settings.advanced.tts.natural.model.downloadFailed", {
                     message: error,
