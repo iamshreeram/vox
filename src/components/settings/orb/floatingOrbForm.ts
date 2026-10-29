@@ -134,8 +134,6 @@ export function surfaceToPresentation(
 
 export interface SurfaceHintInput {
   converseChatLog: boolean | null | undefined;
-  wakeWordEnabled: boolean | null | undefined;
-  wakeWordAction: string | null | undefined;
   surface: SurfaceOption;
   /** `null` while the support answer is still loading. */
   supported: boolean | null | undefined;
@@ -143,21 +141,17 @@ export interface SurfaceHintInput {
 
 export interface SurfaceHints {
   chatLogOff: boolean;
-  wakeDictation: boolean;
 }
 
 /**
- * Which hints under the surface choice are shown. Both hide when the surface is Conversation
- * window or the platform is known to be unsupported (a loading answer does not hide them).
- * The chat-log hint shows when the log is off. The wake hint shows when Hey Jarvis is on and
- * starts dictation (a missing action reads as voice_request).
+ * Which hints under the surface choice are shown. The hint hides when the surface is Conversation
+ * window or the platform is known to be unsupported (a loading answer does not hide it).
+ * The chat-log hint shows when the log is off. (The wake-word hint was removed: a wake word
+ * always starts a conversation now.)
  */
 export function surfaceHints(input: SurfaceHintInput): SurfaceHints {
   const relevant = input.surface !== "window" && input.supported !== false;
-  const action = input.wakeWordAction ?? "voice_request";
   return {
     chatLogOff: relevant && input.converseChatLog === false,
-    wakeDictation:
-      relevant && input.wakeWordEnabled === true && action !== "conversation",
   };
 }

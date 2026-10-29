@@ -379,7 +379,7 @@
         "percentValue": "{{value}}%",
         "msValue": "{{value}} ms",
         "offValue": "Aus",
-        "label": "Wake Word",
+        "label": "Hey Jarvis",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
         "disabledByAmbientMode": "Turn off Ambient Mode to enable Wake Word.",
@@ -1681,7 +1681,7 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "Die Umgebungserkennung muss während eines Gesprächs ausgeschaltet sein. Auch das Aktivierungswort muss ausgeschaltet sein, es sei denn, seine Aktion ist auf „Mit dem Assistenten sprechen“ gestellt.",
+      "wakeWordNote": "Ambient listening must be off while a conversation runs. Start one with the shortcut or by saying Hey Jarvis.",
       "bargeIn": {
         "label": "Durch Sprechen unterbrechen",
         "description": "Sprich über den Assistenten, um ihn zu unterbrechen. Nutze Kopfhörer: über Lautsprecher würde der Assistent sich selbst hören. Die Stimmen Phonon und Natural werden beim Sprechen ebenfalls leiser; die Systemstimme wird einfach gestoppt. Gesprochene Antworten müssen aktiviert sein.",

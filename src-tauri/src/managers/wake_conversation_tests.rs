@@ -1,14 +1,15 @@
 //! Authoritative tests for Stage W (wake word opens a conversation), design
-//! DESIGN.md Rev 4 (.ram-status/duplex-jarvis-20261022-1316). Do not edit to make
-//! code pass.
+//! DESIGN.md Rev 4 (.ram-status/duplex-jarvis-20261022-1316), amended by
+//! .ram-status/vox-simplify-20261029-0900/DESIGN.md Rev 3 (Track W: one trigger).
+//! Do not edit to make code pass.
 //!
 //! Contract under test:
-//! * `settings::WakeWordAction` { VoiceRequest (default, "voice_request"),
-//!   Conversation ("conversation") }; unknown stored strings fall back to VoiceRequest.
-//! * `preflight_check` refuses an enabled wake word ONLY when the action is not
-//!   Conversation; ambient listening is always refused.
-//! * `wakeword_listener::route_detection` (pure) decides Ignore / VoiceRequest /
-//!   StartConversation.
+//! * `settings::WakeWordAction` has two variants for bindings stability, but every stored
+//!   value (missing, "conversation", "voice_request", unknown, non-string) reads as
+//!   Conversation, and it always serializes as "conversation".
+//! * `preflight_check` never refuses for the wake word; it refuses only while ambient
+//!   listening is effective (`settings::ambient_effective`).
+//! * `wakeword_listener::route_detection` (pure) decides Ignore / StartConversation.
 //! * `wakeword_listener::wake_frames_suppressed` (pure) drops detector input during a
 //!   session and for WAKE_SESSION_TAIL_MS after it ended.
 //! * `wakeword_listener::start_conversation_from_wake` calls a start-only seam exactly
@@ -24,10 +25,9 @@ use crate::managers::wakeword_listener::{
 use crate::settings::{get_default_settings, AppSettings, WakeWordAction};
 use std::cell::{Cell, RefCell};
 
-const WAKE_OR_AMBIENT_MSG: &str =
-    "Turn off wake word and ambient listening before starting a conversation.";
+const AMBIENT_MSG: &str = "Turn off ambient listening before starting a conversation.";
 
-/// Settings that pass every preflight rule except possibly the wake/ambient one
+/// Settings that pass every preflight rule except possibly the ambient one
 /// (same builder shape as realtime_complete_tests::direct, which passes preflight).
 fn valid() -> AppSettings {
     let mut s = get_default_settings();
@@ -43,20 +43,21 @@ fn valid() -> AppSettings {
 // ---- settings ---------------------------------------------------------------------
 
 #[test]
-fn default_action_is_voice_request_for_new_and_legacy_settings() {
+fn default_action_is_conversation_for_new_and_legacy_settings() {
     assert_eq!(
         get_default_settings().wake_word_action,
-        WakeWordAction::VoiceRequest
+        WakeWordAction::Conversation
     );
     let legacy: AppSettings = serde_json::from_value(serde_json::json!({})).unwrap();
-    assert_eq!(legacy.wake_word_action, WakeWordAction::VoiceRequest);
+    assert_eq!(legacy.wake_word_action, WakeWordAction::Conversation);
 }
 
 #[test]
-fn action_serializes_as_snake_case_strings() {
+fn action_serializes_as_conversation_whatever_the_variant() {
+    // Every variant is written as the one value that is still meaningful.
     assert_eq!(
         serde_json::to_value(WakeWordAction::VoiceRequest).unwrap(),
-        serde_json::json!("voice_request")
+        serde_json::json!("conversation")
     );
     assert_eq!(
         serde_json::to_value(WakeWordAction::Conversation).unwrap(),
@@ -76,10 +77,25 @@ fn stored_conversation_value_survives_in_app_settings() {
 }
 
 #[test]
-fn unknown_stored_value_falls_back_instead_of_breaking_settings_load() {
+fn stored_voice_request_loads_as_conversation() {
+    // A-W1: the retired one-shot choice can never be restored by loading settings.
     let s: AppSettings =
-        serde_json::from_value(serde_json::json!({ "wake_word_action": "banana" })).unwrap();
-    assert_eq!(s.wake_word_action, WakeWordAction::VoiceRequest);
+        serde_json::from_value(serde_json::json!({ "wake_word_action": "voice_request" })).unwrap();
+    assert_eq!(s.wake_word_action, WakeWordAction::Conversation);
+}
+
+#[test]
+fn unknown_or_non_string_stored_value_loads_as_conversation() {
+    for raw in [
+        serde_json::json!("banana"),
+        serde_json::json!(3),
+        serde_json::json!(null),
+        serde_json::json!({ "nested": true }),
+    ] {
+        let s: AppSettings =
+            serde_json::from_value(serde_json::json!({ "wake_word_action": raw })).unwrap();
+        assert_eq!(s.wake_word_action, WakeWordAction::Conversation, "{raw}");
+    }
 }
 
 // ---- preflight --------------------------------------------------------------------
@@ -90,36 +106,40 @@ fn sanity_valid_builder_passes_preflight() {
 }
 
 #[test]
-fn wake_word_enabled_with_voice_request_is_still_refused() {
-    let mut s = valid();
-    s.wake_word_enabled = true;
-    s.wake_word_action = WakeWordAction::VoiceRequest;
-    assert_eq!(preflight_check(&s), Err(WAKE_OR_AMBIENT_MSG.to_string()));
-}
-
-#[test]
-fn wake_word_enabled_with_conversation_action_is_allowed() {
+fn wake_word_enabled_never_blocks_a_conversation() {
+    // Wake word on is no longer a refusal, whatever the stored action.
     let mut s = valid();
     s.wake_word_enabled = true;
     s.wake_word_action = WakeWordAction::Conversation;
     assert_eq!(preflight_check(&s), Ok(()));
+    s.wake_word_action = WakeWordAction::VoiceRequest;
+    assert_eq!(preflight_check(&s), Ok(()));
 }
 
 #[test]
-fn ambient_listening_is_refused_even_with_conversation_action() {
+fn effective_ambient_listening_is_refused() {
     let mut s = valid();
+    s.experimental_enabled = true;
     s.ambient_mode_enabled = true;
-    s.wake_word_action = WakeWordAction::Conversation;
-    assert_eq!(preflight_check(&s), Err(WAKE_OR_AMBIENT_MSG.to_string()));
+    assert_eq!(preflight_check(&s), Err(AMBIENT_MSG.to_string()));
     s.wake_word_enabled = true;
-    assert_eq!(preflight_check(&s), Err(WAKE_OR_AMBIENT_MSG.to_string()));
+    assert_eq!(preflight_check(&s), Err(AMBIENT_MSG.to_string()));
 }
 
 #[test]
-fn earlier_preflight_refusals_still_win_with_conversation_action() {
+fn stored_ambient_flag_without_experimental_does_not_block() {
+    // C1: Experimental off makes the stored flag inert for every gate.
+    let mut s = valid();
+    s.experimental_enabled = false;
+    s.ambient_mode_enabled = true;
+    s.wake_word_enabled = false;
+    assert_eq!(preflight_check(&s), Ok(()));
+}
+
+#[test]
+fn earlier_preflight_refusals_still_win_with_wake_word_on() {
     let mut s = valid();
     s.wake_word_enabled = true;
-    s.wake_word_action = WakeWordAction::Conversation;
     s.tts_enabled = false;
     assert_eq!(
         preflight_check(&s),
@@ -130,17 +150,27 @@ fn earlier_preflight_refusals_still_win_with_conversation_action() {
 // ---- routing ----------------------------------------------------------------------
 
 #[test]
-fn route_detection_matrix() {
+fn route_detection_always_starts_a_conversation_unless_one_is_running() {
     use WakeDetectionRoute as R;
-    use WakeWordAction as A;
-    assert_eq!(route_detection(A::VoiceRequest, false), R::VoiceRequest);
-    assert_eq!(
-        route_detection(A::Conversation, false),
-        R::StartConversation
+    assert_eq!(route_detection(false), R::StartConversation);
+    // A live session always wins: a detection never starts anything.
+    assert_eq!(route_detection(true), R::Ignore);
+}
+
+#[test]
+fn wake_detection_handler_never_requests_a_transcription() {
+    // A-W6: the detection handler is the only place a wake detection could reach the
+    // dictation path, so pin that its production body never calls it.
+    let src = include_str!("wakeword_listener.rs");
+    let body = src
+        .split("fn handle_detection(")
+        .nth(1)
+        .and_then(|rest| rest.split("#[cfg(test)]").next())
+        .expect("handle_detection is present");
+    assert!(
+        !body.contains("send_transcription_input"),
+        "a wake detection must never request a transcription"
     );
-    // A live session always wins: neither action may start anything.
-    assert_eq!(route_detection(A::VoiceRequest, true), R::Ignore);
-    assert_eq!(route_detection(A::Conversation, true), R::Ignore);
 }
 
 // ---- detector suppression ---------------------------------------------------------

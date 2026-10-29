@@ -512,10 +512,10 @@ Report anything that fails together with the headset model.
   settings first. The start button shows the reason if it cannot start.
 - **"No reply backend" or "not set up":** choose and save a reply backend
   (a local command-line agent or a model API) in the spoken reply settings.
-- **Vox does not react to me:** turn off ambient listening, and turn off the
-  wake word unless its action is set to "Talk with the assistant" (see
-  [voice-assistant.md](voice-assistant.md)).
-  They must be off while a conversation runs.
+- **Vox does not react to me:** turn off ambient listening (an Experimental
+  feature; with Experimental off it has no effect). The wake word does not block
+  a conversation: "Hey Jarvis" starts one (see [voice-assistant.md](voice-assistant.md)).
+  Ambient listening must be off while a conversation runs.
 - **Vox never hears me:** check that Vox has microphone permission in your
   system privacy settings, and that the right input device is selected.
 - **Conversation stops by itself:** it reached the silent-turn or turn limit.

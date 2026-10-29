@@ -155,17 +155,12 @@ fn preflight_check_with(settings: &AppSettings, needs_spoken_replies: bool) -> R
     if !direct && settings_from_app(settings).mode == TtsComposerMode::Off {
         return Err("Set up a reply backend in the speech settings first.".to_string());
     }
-    // A wake word that starts a conversation is allowed; the one-shot voice request is not.
-    if (settings.wake_word_enabled
-        && settings.wake_word_action != crate::settings::WakeWordAction::Conversation)
-        || settings.ambient_mode_enabled
-    {
-        return Err(
-            "Turn off wake word and ambient listening before starting a conversation.".to_string(),
-        );
+    // Ambient listening must be off to converse. A wake word never blocks a conversation: it starts one.
+    if crate::settings::ambient_effective(settings) {
+        return Err("Turn off ambient listening before starting a conversation.".to_string());
     }
     // Model mode needs a usable connection: the Brain (when inherited) or a named model (own).
-    // Checked after the wake word and ambient refusals, so those keep their messages.
+    // Checked after the ambient refusal, so it keeps its message.
     if !direct && settings_from_app(settings).mode == TtsComposerMode::Model {
         match resolve(settings, BrainFeature::Composer) {
             Resolved::NotConfigured(missing) => {
@@ -1591,29 +1586,29 @@ mod tests {
     }
 
     #[test]
-    fn preflight_refuses_wake_word() {
+    fn preflight_allows_wake_word() {
         let mut s = base_settings();
         s.wake_word_enabled = true;
-        assert_eq!(
-            preflight_check(&s),
-            Err(
-                "Turn off wake word and ambient listening before starting a conversation."
-                    .to_string()
-            )
-        );
+        assert_eq!(preflight_check(&s), Ok(()));
     }
 
     #[test]
     fn preflight_refuses_ambient() {
         let mut s = base_settings();
+        s.experimental_enabled = true;
         s.ambient_mode_enabled = true;
         assert_eq!(
             preflight_check(&s),
-            Err(
-                "Turn off wake word and ambient listening before starting a conversation."
-                    .to_string()
-            )
+            Err("Turn off ambient listening before starting a conversation.".to_string())
         );
+    }
+
+    #[test]
+    fn preflight_ignores_stored_ambient_flag_when_experimental_is_off() {
+        let mut s = base_settings();
+        s.experimental_enabled = false;
+        s.ambient_mode_enabled = true;
+        assert_eq!(preflight_check(&s), Ok(()));
     }
 
     #[test]

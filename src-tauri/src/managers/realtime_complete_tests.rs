@@ -211,10 +211,11 @@ fn other_preflight_checks_still_apply_in_realtime() {
         "spoken replies are still required, and are checked first"
     );
     let mut s = direct("https://gw.example.com");
-    s.wake_word_enabled = true;
+    s.experimental_enabled = true;
+    s.ambient_mode_enabled = true;
     assert_eq!(
         preflight_check(&s),
-        Err("Turn off wake word and ambient listening before starting a conversation.".to_string())
+        Err("Turn off ambient listening before starting a conversation.".to_string())
     );
 }
 

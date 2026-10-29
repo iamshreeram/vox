@@ -12,7 +12,7 @@ use crate::managers::wakeword::{
     HttpModelDownloader, ModelDownloader, ModelReadiness, OpenWakeWordClassifier,
     WakeWordDetection, WakeWordEngine,
 };
-use crate::settings::{get_settings, AppSettings, WakeWordAction};
+use crate::settings::{get_settings, AppSettings};
 use log::warn;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -520,23 +520,19 @@ fn should_ignore_detection() -> bool {
 /// assistant's own last words cannot re-trigger the wake word.
 pub const WAKE_SESSION_TAIL_MS: u64 = 1000;
 
-/// What one wake-word detection should do.
+/// What one wake-word detection should do. A detection always starts a conversation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WakeDetectionRoute {
     Ignore,
-    VoiceRequest,
     StartConversation,
 }
 
-/// Pure: a live session always wins, for either action.
-pub fn route_detection(action: WakeWordAction, session_active: bool) -> WakeDetectionRoute {
+/// Pure: a live session always wins; otherwise every detection starts a conversation.
+pub fn route_detection(session_active: bool) -> WakeDetectionRoute {
     if session_active {
         return WakeDetectionRoute::Ignore;
     }
-    match action {
-        WakeWordAction::VoiceRequest => WakeDetectionRoute::VoiceRequest,
-        WakeWordAction::Conversation => WakeDetectionRoute::StartConversation,
-    }
+    WakeDetectionRoute::StartConversation
 }
 
 /// Pure: true while detector input must be dropped -- during a session and for
@@ -605,17 +601,9 @@ fn start_conversation_in_background(app: &AppHandle) {
 }
 
 fn handle_detection(app: &AppHandle, detection: WakeWordDetection) {
-    let action = get_settings(app).wake_word_action;
-    match route_detection(action, converse_hooks::session_active()) {
+    match route_detection(converse_hooks::session_active()) {
         WakeDetectionRoute::Ignore => {
             log::debug!("wake-word detection ignored: conversation session active");
-        }
-        WakeDetectionRoute::VoiceRequest => {
-            if let Err(error) = crate::commands::wakeword::emit_wakeword_detection(app, &detection)
-            {
-                warn!("Failed to emit wake-word detection event: {error}");
-            }
-            crate::signal_handle::send_transcription_input(app, "transcribe", "wake_word");
         }
         WakeDetectionRoute::StartConversation => {
             if let Err(error) = crate::commands::wakeword::emit_wakeword_detection(app, &detection)

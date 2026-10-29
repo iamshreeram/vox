@@ -7,8 +7,7 @@ use crate::settings::AppSettings;
 
 const SPOKEN: &str = "Turn on spoken replies in Settings > Models > Text-to-speech first.";
 const BACKEND: &str = "Set up a reply backend in the speech settings first.";
-const WAKE_OR_AMBIENT: &str =
-    "Turn off wake word and ambient listening before starting a conversation.";
+const AMBIENT: &str = "Turn off ambient listening before starting a conversation.";
 
 /// Settings in which every preflight check passes (the same base as the voice tests).
 fn passing_settings() -> AppSettings {
@@ -22,6 +21,7 @@ fn passing_settings() -> AppSettings {
     s.tts_composer_mode = TtsComposerMode::Model;
     s.wake_word_enabled = false;
     s.ambient_mode_enabled = false;
+    s.experimental_enabled = false;
     s
 }
 
@@ -64,25 +64,34 @@ fn cases() -> Vec<Case> {
             text: Err(BACKEND),
         },
         Case {
-            name: "wake word still refuses a text chat",
+            name: "wake word no longer refuses a text chat",
             edit: |s| s.wake_word_enabled = true,
-            voice: Err(WAKE_OR_AMBIENT),
-            text: Err(WAKE_OR_AMBIENT),
+            voice: Ok(()),
+            text: Ok(()),
         },
         Case {
-            name: "ambient listening still refuses a text chat",
+            name: "effective ambient listening still refuses a text chat",
+            edit: |s| {
+                s.experimental_enabled = true;
+                s.ambient_mode_enabled = true;
+            },
+            voice: Err(AMBIENT),
+            text: Err(AMBIENT),
+        },
+        Case {
+            name: "stored ambient flag with Experimental off does not refuse",
             edit: |s| s.ambient_mode_enabled = true,
-            voice: Err(WAKE_OR_AMBIENT),
-            text: Err(WAKE_OR_AMBIENT),
+            voice: Ok(()),
+            text: Ok(()),
         },
         Case {
-            name: "wake word with spoken replies off still refuses a text chat",
+            name: "wake word with spoken replies off reports only the spoken-reply refusal",
             edit: |s| {
                 s.tts_enabled = false;
                 s.wake_word_enabled = true;
             },
             voice: Err(SPOKEN),
-            text: Err(WAKE_OR_AMBIENT),
+            text: Ok(()),
         },
     ]
 }

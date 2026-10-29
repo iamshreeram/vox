@@ -379,7 +379,7 @@
         "percentValue": "{{value}}%",
         "msValue": "{{value}} ミリ秒",
         "offValue": "オフ",
-        "label": "Wake Word",
+        "label": "Hey Jarvis",
         "description": "Opt-in, continuous background listening for a wake phrase (currently \"hey jarvis\" as a placeholder -- a dedicated \"Hey Vox\" model is a future improvement). When enabled, saying the wake phrase auto-starts a normal dictation recording, same as pressing the hotkey. Mutually exclusive with actively using the hotkey at any given instant (whichever is active wins); both can be enabled as features at the same time.",
         "detectedToast": "Wake word detected — listening...",
         "disabledByAmbientMode": "Turn off Ambient Mode to enable Wake Word.",
@@ -1681,7 +1681,7 @@
       "shortcutDescription": "Change this in the shortcut settings. Shown here for reference.",
       "shortcutNone": "Not set",
       "privacyNote": "What you say and Vox's replies are sent to your configured reply backend.",
-      "wakeWordNote": "会話の実行中は周囲の音声待機をオフにしてください。ウェイクワードの動作を「アシスタントと会話する」に設定しない限り、ウェイクワードもオフにしてください。",
+      "wakeWordNote": "Ambient listening must be off while a conversation runs. Start one with the shortcut or by saying Hey Jarvis.",
       "bargeIn": {
         "label": "話して割り込む",
         "description": "アシスタントが話している最中に話しかけると、発話を中断できます。ヘッドホンを使用してください。スピーカーではアシスタントが自分の声を拾ってしまいます。Phonon と Natural の音声は、あなたが話している間音量も下がります。システム音声は単に停止されます。音声による返答を有効にする必要があります。",

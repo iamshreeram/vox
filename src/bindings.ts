@@ -847,7 +847,7 @@ async changeChineseScriptSetting(script: ChineseScript) : Promise<Result<null, s
 }
 },
 /**
- * What a wake-word detection starts: a one-shot voice request or a conversation.
+ * What a wake-word detection starts. Always a conversation; kept registered for bindings stability.
  */
 async changeWakeWordActionSetting(action: WakeWordAction) : Promise<Result<null, string>> {
     try {
@@ -2428,7 +2428,7 @@ tts_composer_command_ack?: string; tts_composer_timeout_secs?: number; tts_compo
  */
 wake_word_model_name?: string; wake_word_confidence_threshold?: number; wake_word_cooldown_ms?: number; 
 /**
- * What a wake-word detection starts: a one-shot voice request (default) or a conversation.
+ * What a wake-word detection starts. Always a conversation (see `WakeWordAction`).
  */
 wake_word_action?: WakeWordAction; 
 /**
@@ -3463,16 +3463,18 @@ tool_support: string }
 export type VoiceShortcut = { phrase: string; action: VoiceShortcutAction }
 export type VoiceShortcutAction = { type: "open_url"; url: string } | { type: "open_path"; path: string } | { type: "open_app"; name: string }
 /**
- * What a wake-word detection does while no conversation session is running.
+ * What a wake-word detection does. A wake word always starts a conversation; the one-shot
+ * voice request was retired. Both variants stay so the generated bindings do not change,
+ * but every stored value (missing, "conversation", "voice_request", unknown, non-string)
+ * reads as `Conversation`, and `Conversation` is the only value ever written.
  */
 export type WakeWordAction = 
 /**
- * Start a turn-based conversation session.
+ * Start a turn-based conversation session (the only behaviour).
  */
 "conversation" | 
 /**
- * One-shot voice request (today's behaviour, default). Also what any unrecognised stored
- * value means, so a bad settings file can never stop the app from loading.
+ * Retired one-shot voice request. Nothing produces it any more; loading maps it away.
  */
 "voice_request"
 /**

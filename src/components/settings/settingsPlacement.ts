@@ -78,7 +78,7 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
     descriptionKey: "settings.advanced.listeningMode.description",
     defaultOpen: false,
     experimental: true,
-    controls: [{ id: "wakeWord" }, { id: "ambientMode" }],
+    controls: [{ id: "ambientMode" }],
   },
   {
     id: "conversation",
@@ -88,6 +88,7 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
     experimental: false,
     controls: [
       { id: "conversation" },
+      { id: "wakeWord" },
       { id: "persona" },
       { id: "replyStyle", subTitleKey: "settings.models.groups.replyStyle" },
       { id: "floatingOrb", subTitleKey: "settings.general.groups.floatingOrb" },
