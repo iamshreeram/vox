@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   Bot,
   Brain,
+  Palette,
   Cog,
   FlaskConical,
   History,
@@ -15,6 +16,7 @@ import VoxTextLogo from "./icons/VoxTextLogo";
 import { useSettings } from "../hooks/useSettings";
 import { SECTION_ICON_CLASS, sidebarItemClass } from "./sidebarTheme";
 import {
+  AppearanceSettings,
   GeneralSettings,
   AdvancedSettings,
   HistorySettings,
@@ -56,6 +58,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.general",
     icon: Mic,
     component: GeneralSettings,
+    enabled: () => true,
+  },
+  appearance: {
+    labelKey: "sidebar.appearance",
+    icon: Palette,
+    component: AppearanceSettings,
     enabled: () => true,
   },
   history: {

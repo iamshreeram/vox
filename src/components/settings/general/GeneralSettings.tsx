@@ -11,7 +11,6 @@ import { AudioFeedback } from "../AudioFeedback";
 import { useSettings } from "../../../hooks/useSettings";
 import { VolumeSlider } from "../VolumeSlider";
 import { MuteWhileRecording } from "../MuteWhileRecording";
-import { ThemeSelector } from "../ThemeSelector";
 import { PlacedGroups } from "../PlacedGroups";
 import { BrainNotice } from "../brain/BrainNotice";
 
@@ -29,9 +28,6 @@ export const GeneralSettings: React.FC = () => {
         <ShortcutActivationSetting descriptionMode="tooltip" grouped={true} />
         {/* Cancel shortcut remains hidden on Linux because of dynamic shortcut instability. */}
         {!isLinux && <ShortcutInput shortcutId="cancel" grouped={true} />}
-      </SettingsGroup>
-      <SettingsGroup title={t("settings.appearance.title")}>
-        <ThemeSelector descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
       <SettingsGroup title={t("settings.sound.title")}>
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />

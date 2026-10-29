@@ -2,8 +2,10 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { listen } from "@tauri-apps/api/event";
 import type {
+  Accent,
   AppSettings as Settings,
   AudioDevice,
+  ChatTheme,
   ChineseScript,
   ConverseBargeIn,
   CustomThemeColors,
@@ -15,6 +17,7 @@ import type {
   SpeakerSensitivity,
   TtsEngine,
   VadBackend,
+  VisualStyle,
   WakeWordAction,
 } from "@/bindings";
 import { commands } from "@/bindings";
@@ -246,6 +249,10 @@ const settingUpdaters: {
   theme: (value) => commands.changeThemeSetting(value as string),
   custom_theme_colors: (value) =>
     commands.updateCustomThemeColors(value as CustomThemeColors),
+  accent: (value) => commands.changeAccentSetting(value as Accent),
+  chat_theme: (value) => commands.changeChatThemeSetting(value as ChatTheme),
+  visual_style: (value) =>
+    commands.changeVisualStyleSetting(value as VisualStyle),
   experimental_enabled: (value) =>
     commands.changeExperimentalEnabledSetting(value as boolean),
   voice_commands_enabled: (value) =>

@@ -111,20 +111,21 @@ test("reset writes 70 at once and cancels any pending change", () => {
   assert.equal(writer.current(), 70);
 });
 
-test("the slider is a placed control in the conversation group, not experimental", () => {
-  const group = PLACED_GROUPS.find((g) => g.id === "conversation");
-  assert.ok(group, "conversation group exists");
+test("the slider is a placed control in the appearance page's chat window group, not experimental", () => {
+  const group = PLACED_GROUPS.find((g) => g.id === "chatWindow");
+  assert.ok(group, "chatWindow group exists");
+  assert.equal(group.section, "appearance");
   assert.equal(group.experimental, false);
   const entry = group.controls.find((c) => c.id === "chatOpacity");
-  assert.ok(entry, "chatOpacity is placed in the conversation group");
+  assert.ok(entry, "chatOpacity is placed in the chatWindow group");
   assert.equal(entry.experimental ?? false, false);
 });
 
-test("the search index has a row for the slider in the general section", () => {
-  const row = SEARCH_ENTRIES.find((e) => e.id === "general.chatOpacity");
-  assert.ok(row, "general.chatOpacity row");
-  assert.equal(row.section, "general");
-  assert.equal(row.groupId, "conversation");
+test("the search index has a row for the slider in the appearance section", () => {
+  const row = SEARCH_ENTRIES.find((e) => e.id === "appearance.chatOpacity");
+  assert.ok(row, "appearance.chatOpacity row");
+  assert.equal(row.section, "appearance");
+  assert.equal(row.groupId, "chatWindow");
   assert.equal(row.labelKey, "settings.chatOpacity.title");
 });
 

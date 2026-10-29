@@ -4,6 +4,7 @@
  */
 export type SearchSection =
   | "general"
+  | "appearance"
   | "history"
   | "models"
   | "brain"

@@ -1,7 +1,12 @@
 // Single source of truth for where each formerly-Experimental control lives.
 // Pure data and helpers only: no React, no hooks.
 
-export type PlacedSection = "general" | "models" | "advanced" | "agents";
+export type PlacedSection =
+  | "general"
+  | "appearance"
+  | "models"
+  | "advanced"
+  | "agents";
 
 export type ControlId =
   | "postProcessing"
@@ -93,7 +98,6 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
       { id: "persona" },
       { id: "replyStyle", subTitleKey: "settings.models.groups.replyStyle" },
       { id: "floatingOrb", subTitleKey: "settings.general.groups.floatingOrb" },
-      { id: "chatOpacity" },
       {
         id: "realtime",
         subTitleKey: "settings.experimental.realtime.title",
@@ -101,6 +105,15 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
       },
       { id: "latencyPanel", experimental: true },
     ],
+  },
+  {
+    // Moved from Conversation: the Appearance page holds the conversation window's transparency.
+    id: "chatWindow",
+    section: "appearance",
+    titleKey: "settings.appearance.chatWindow.title",
+    defaultOpen: false,
+    experimental: false,
+    controls: [{ id: "chatOpacity" }],
   },
   {
     id: "spokenReplies",

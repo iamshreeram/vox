@@ -9,6 +9,7 @@ import {
 /** Same order as the sidebar. Used for stable ordering of equal-score results. */
 export const SECTION_ORDER: readonly SearchSection[] = [
   "general",
+  "appearance",
   "history",
   "models",
   "brain",
@@ -22,6 +23,7 @@ export const SECTION_ORDER: readonly SearchSection[] = [
 /** Translation key of each page's sidebar label (shown in result paths, also searchable). */
 export const SECTION_LABEL_KEY: Readonly<Record<SearchSection, string>> = {
   general: "sidebar.general",
+  appearance: "sidebar.appearance",
   history: "sidebar.history",
   models: "sidebar.models",
   brain: "sidebar.brain",

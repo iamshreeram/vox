@@ -4,6 +4,7 @@
 
 export const SECTION_IDS = [
   "general",
+  "appearance",
   "history",
   "models",
   "brain",
@@ -19,6 +20,7 @@ export type SidebarSectionId = (typeof SECTION_IDS)[number];
 // One distinct hue per section so the inactive icons are easy to tell apart.
 export const SECTION_ICON_CLASS: Record<SidebarSectionId, string> = {
   general: "text-sky-500",
+  appearance: "text-indigo-500",
   history: "text-violet-500",
   models: "text-emerald-500",
   brain: "text-rose-500",

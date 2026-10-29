@@ -37,6 +37,7 @@ const resolve: Resolve = (key) => {
 // postprocessing and debug are gated by their own switches and not under test.
 const ALWAYS: readonly string[] = [
   "general",
+  "appearance",
   "history",
   "models",
   "advanced",

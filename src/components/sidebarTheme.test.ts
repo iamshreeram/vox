@@ -13,6 +13,7 @@ const scenarios: Record<string, () => void> = {
         "about",
         "advanced",
         "agents",
+        "appearance",
         "brain",
         "debug",
         "general",
