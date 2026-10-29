@@ -6,6 +6,7 @@ import {
   commandReadiness,
   composerFromApp,
   draftFromSettings,
+  editCommandDraft,
   emptyPatch,
   isAcknowledged,
   isCommandDraftDirty,
@@ -211,6 +212,116 @@ const scenarios: Record<string, () => void> = {
       fallback: "silent",
     });
   },
+
+  // --- #118: editing the command must drop the acknowledgement ---------------
+  "editCommandDraft clears the acknowledgement when path, args or flag change":
+    () => {
+      const acked = {
+        path: "/bin/a",
+        args: "-m fast",
+        flag: "-p",
+        acknowledge: true,
+      };
+      const afterPath = editCommandDraft(acked, "path", "/bin/b");
+      assert.equal(afterPath.acknowledge, false);
+      assert.equal(afterPath.path, "/bin/b");
+      assert.equal(afterPath.args, "-m fast");
+      assert.equal(afterPath.flag, "-p");
+
+      const afterArgs = editCommandDraft(acked, "args", "-m slow");
+      assert.equal(afterArgs.acknowledge, false);
+      assert.equal(afterArgs.args, "-m slow");
+      assert.equal(afterArgs.path, "/bin/a");
+
+      const afterFlag = editCommandDraft(acked, "flag", "--prompt");
+      assert.equal(afterFlag.acknowledge, false);
+      assert.equal(afterFlag.flag, "--prompt");
+      assert.equal(afterFlag.path, "/bin/a");
+
+      // Clearing a field entirely is a change too.
+      assert.equal(editCommandDraft(acked, "path", "").acknowledge, false);
+      assert.equal(editCommandDraft(acked, "args", "").acknowledge, false);
+    },
+
+  "editCommandDraft keeps the acknowledgement for cosmetic edits": () => {
+    const acked = {
+      path: "/bin/a",
+      args: "-m fast",
+      flag: "-p",
+      acknowledge: true,
+    };
+    // Same tuple after trimming / collapsing: the user approved this command.
+    const p = editCommandDraft(acked, "path", "/bin/a ");
+    assert.equal(p.acknowledge, true);
+    assert.equal(
+      p.path,
+      "/bin/a ",
+      "the raw typed value is kept for the input",
+    );
+    const a = editCommandDraft(acked, "args", "-m   fast");
+    assert.equal(a.acknowledge, true);
+    assert.equal(a.args, "-m   fast");
+    const f = editCommandDraft(acked, "flag", " -p ");
+    assert.equal(f.acknowledge, true);
+    assert.equal(f.flag, " -p ");
+  },
+
+  "editCommandDraft never turns the acknowledgement on by itself": () => {
+    const unacked = {
+      path: "/bin/a",
+      args: "",
+      flag: "-p",
+      acknowledge: false,
+    };
+    assert.equal(
+      editCommandDraft(unacked, "path", "/bin/b").acknowledge,
+      false,
+    );
+    assert.equal(
+      editCommandDraft(unacked, "path", "/bin/a ").acknowledge,
+      false,
+    );
+  },
+
+  "editCommandDraft does not mutate its input": () => {
+    const acked = {
+      path: "/bin/a",
+      args: "",
+      flag: "-p",
+      acknowledge: true,
+    };
+    const copy = { ...acked };
+    editCommandDraft(acked, "path", "/bin/b");
+    assert.deepEqual(acked, copy);
+  },
+
+  "saving after an edit does not approve the new command until re-ticked":
+    () => {
+      const edited = editCommandDraft(
+        { path: "/bin/a", args: "", flag: "-p", acknowledge: true },
+        "path",
+        "/bin/b",
+      );
+      const patch = commandPatch(edited);
+      assert.equal(patch.command_path, "/bin/b");
+      assert.equal(patch.acknowledge_command, false);
+      const reticked = commandPatch({ ...edited, acknowledge: true });
+      assert.equal(reticked.command_path, "/bin/b");
+      assert.equal(reticked.acknowledge_command, true);
+    },
+
+  "editing back to the original value does not restore the acknowledgement":
+    () => {
+      const acked = {
+        path: "/bin/a",
+        args: "",
+        flag: "-p",
+        acknowledge: true,
+      };
+      const away = editCommandDraft(acked, "path", "/bin/b");
+      const back = editCommandDraft(away, "path", "/bin/a");
+      assert.equal(back.acknowledge, false, "the user must tick it again");
+    },
 };
 
 let failed = 0;

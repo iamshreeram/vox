@@ -53,6 +53,7 @@
     "test:first-run": "bun src/components/onboarding/firstRunFlow.test.ts",
     "test:models-ia": "bun src/components/settings/modelsPageIa.test.ts",
     "test:composer-form": "bun src/components/settings/composerForm.test.ts",
+    "test:command-ack:e2e": "playwright test tests/command-ack-reset.spec.ts --reporter=line",
     "test:converse-form": "bun src/components/settings/converseForm.test.ts",
     "test:realtime-form": "bun src/components/settings/realtimeForm.test.ts",
     "test:vault-rag": "bun src/components/settings/vaultRagForm.test.ts",

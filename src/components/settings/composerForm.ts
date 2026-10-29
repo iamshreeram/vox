@@ -125,6 +125,23 @@ export function commandPatch(d: CommandDraft): TtsComposerSettingsPatch {
   };
 }
 
+export type CommandField = "path" | "args" | "flag";
+
+/** One edit of the command form. The raw typed value is kept for the input; the
+ * acknowledgement is dropped as soon as the trimmed/collapsed command tuple
+ * differs from before, and is never raised here. Editing back does NOT restore it. */
+export function editCommandDraft(
+  d: CommandDraft,
+  field: CommandField,
+  value: string,
+): CommandDraft {
+  const next: CommandDraft = { ...d, [field]: value };
+  const unchanged =
+    ackTuple(next.path, next.args, next.flag) ===
+    ackTuple(d.path, d.args, d.flag);
+  return unchanged ? next : { ...next, acknowledge: false };
+}
+
 /** Compared with whitespace normalization; a blank flag equals "-p". */
 export function isCommandDraftDirty(
   d: CommandDraft,

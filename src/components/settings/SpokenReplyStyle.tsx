@@ -20,6 +20,7 @@ import {
   commandReadiness,
   composerFromApp,
   draftFromSettings,
+  editCommandDraft,
   isCommandDraftDirty,
   patchWith,
   statusLabelKey,
@@ -427,9 +428,10 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
                 type="text"
                 variant="compact"
                 value={commandDraft.path}
-                onChange={(event) =>
-                  setCommandDraft({ ...commandDraft, path: event.target.value })
-                }
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setCommandDraft((d) => editCommandDraft(d, "path", value));
+                }}
                 placeholder={t(
                   "settings.advanced.tts.composer.commandPathPlaceholder",
                 )}
@@ -449,9 +451,10 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
                 type="text"
                 variant="compact"
                 value={commandDraft.args}
-                onChange={(event) =>
-                  setCommandDraft({ ...commandDraft, args: event.target.value })
-                }
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setCommandDraft((d) => editCommandDraft(d, "args", value));
+                }}
                 placeholder={t(
                   "settings.advanced.tts.composer.commandArgsPlaceholder",
                 )}
@@ -471,9 +474,10 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
                 type="text"
                 variant="compact"
                 value={commandDraft.flag}
-                onChange={(event) =>
-                  setCommandDraft({ ...commandDraft, flag: event.target.value })
-                }
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setCommandDraft((d) => editCommandDraft(d, "flag", value));
+                }}
                 placeholder={t(
                   "settings.advanced.tts.composer.promptFlagPlaceholder",
                 )}
@@ -486,7 +490,7 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
               <ToggleSwitch
                 checked={commandDraft.acknowledge}
                 onChange={(checked) =>
-                  setCommandDraft({ ...commandDraft, acknowledge: checked })
+                  setCommandDraft((d) => ({ ...d, acknowledge: checked }))
                 }
                 disabled={busy}
                 label={t("settings.advanced.tts.composer.ackLabel")}
