@@ -110,6 +110,13 @@ pub fn segment_disposition(
     }
 }
 
+/// Pure: an open microphone must be closed and reopened when it was opened under an older
+/// generation. A stop followed by a start moves the generation while the stream stays open
+/// in the polling loop; reusing that mic would fail every session start ("Recorder is not open").
+pub fn mic_must_reopen(stream_open: bool, opened_under: u64, current: u64) -> bool {
+    stream_open && opened_under != current
+}
+
 /// Pure: only the first start claims the monitor thread, so repeated starts add no thread.
 pub fn try_claim_monitor(claimed: &AtomicBool) -> bool {
     !claimed.swap(true, Ordering::SeqCst)
@@ -199,6 +206,7 @@ impl AmbientListener {
         let callback_last_speech_ms = Arc::clone(&last_speech_ms);
         std::thread::spawn(move || {
             let mut stream_open = false;
+            let mut stream_generation = 0_u64;
             let mut session_active = false;
             let mut session_gen = 0_u64;
             loop {
@@ -231,6 +239,16 @@ impl AmbientListener {
                     }
                     continue;
                 }
+                if mic_must_reopen(stream_open, stream_generation, generation.current()) {
+                    // Stopped and started since this mic opened: discard the stale session
+                    // (its audio is never submitted) and reopen under the current generation.
+                    if session_active {
+                        session_active = false;
+                        let _ = stop_session(&recorder);
+                    }
+                    close_recorder(&recorder);
+                    stream_open = false;
+                }
                 if !stream_open {
                     let expected = generation.current();
                     let still_wanted = || {
@@ -247,7 +265,10 @@ impl AmbientListener {
                         || build_mic(&settings, Arc::clone(&callback_last_speech_ms)),
                     );
                     match opened {
-                        Ok(true) => stream_open = true,
+                        Ok(true) => {
+                            stream_open = true;
+                            stream_generation = expected;
+                        }
                         Ok(false) => continue,
                         Err(error) => {
                             warn!("Unable to start ambient microphone: {error}");
@@ -263,7 +284,14 @@ impl AmbientListener {
                             session_gen = generation.current();
                             last_speech_ms.store(monotonic_ms(), Ordering::SeqCst);
                         }
-                        Err(error) => warn!("Unable to start ambient VAD session: {error}"),
+                        Err(error) => {
+                            // Drop the mic so the next poll reopens it rather than retrying a dead stream.
+                            warn!("Unable to start ambient VAD session: {error}");
+                            close_recorder(&recorder);
+                            stream_open = false;
+                            std::thread::sleep(Duration::from_secs(2));
+                            continue;
+                        }
                     }
                 }
                 if session_active
@@ -652,6 +680,24 @@ mod tests {
             });
         assert_eq!(installed, Ok(true));
         assert!(!opened_closed.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn mic_opened_under_an_older_generation_is_reopened_after_a_stop_start_pair() {
+        // Between two polls the listener is stopped and started again: the generation moves
+        // twice while the stream stays open. The next poll must reopen, not reuse the mic
+        // that `stop` already closed (which would loop on "Recorder is not open").
+        let generation = AmbientGeneration::default();
+        let opened_under = generation.current();
+        generation.bump();
+        generation.bump();
+        assert!(mic_must_reopen(true, opened_under, generation.current()));
+        assert!(!mic_must_reopen(
+            true,
+            generation.current(),
+            generation.current()
+        ));
+        assert!(!mic_must_reopen(false, opened_under, generation.current()));
     }
 
     #[test]

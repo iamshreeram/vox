@@ -20,14 +20,14 @@ them in the UI does not affect the running app until Vox is restarted.
 
 ## Where settings live
 
-| Tab          | What is there                                                                                                                                                                                                                                    |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| General      | Voice commands, custom voice shortcuts, media controls; Voice conversation, with the wake word "Hey Jarvis" (always on); ambient mode (Listening, Experimental only) (start and stop, silence and turn limits, barge-in, persona, latency panel) |
-| Models       | Model settings (language, translate to English), model unload timeout, transcription models, voice activity detection engine, spoken replies, smart turn model, speaker filter model, reply style, realtime conversation                         |
-| Advanced     | Engine group: post-processing toggle, keyboard implementation, acceleration, keep microphone open                                                                                                                                                |
-| Post Process | Post-processing provider and model                                                                                                                                                                                                               |
-| Agents       | ACP agent, agent bridge, agent tools, coding jobs, memory, conversation memory and vault index                                                                                                                                                   |
-| Advanced     | The Experimental features switch (Experimental features). Off hides every experimental control                                                                                                                                                   |
+| Tab          | What is there                                                                                                                                                                                                                                               |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| General      | Voice commands, custom voice shortcuts, media controls; Voice conversation, with the opt-in wake word "Hey Jarvis" (off by default); ambient mode (start and stop, silence and turn limits, barge-in, persona, latency panel; Listening, Experimental only) |
+| Models       | Model settings (language, translate to English), model unload timeout, transcription models, voice activity detection engine, spoken replies, smart turn model, speaker filter model, reply style, realtime conversation                                    |
+| Advanced     | Engine group: post-processing toggle, keyboard implementation, acceleration, keep microphone open                                                                                                                                                           |
+| Post Process | Post-processing provider and model                                                                                                                                                                                                                          |
+| Agents       | ACP agent, agent bridge, agent tools, coding jobs, memory, conversation memory and vault index                                                                                                                                                              |
+| Advanced     | The Experimental features switch (Experimental features). Off hides every experimental control                                                                                                                                                              |
 
 Experimental features are gated by that switch. The Agents tab and the
 experimental controls on the other tabs stay hidden until it is turned on.

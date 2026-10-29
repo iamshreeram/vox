@@ -389,21 +389,6 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
     ["wake word cooldown", "cooldown", "wait", "pause", "milliseconds"],
   ),
   row(
-    "wakeWordSilence",
-    "conversation",
-    "settings.advanced.wakeWord.silenceTimeoutLabel",
-    "settings.advanced.wakeWord.silenceTimeoutDescription",
-    [
-      "wake word silence",
-      "silence timeout",
-      "auto finish",
-      "auto stop",
-      "silence",
-      "milliseconds",
-      "off",
-    ],
-  ),
-  row(
     "ambientMode",
     "listening",
     "settings.advanced.ambientMode.label",

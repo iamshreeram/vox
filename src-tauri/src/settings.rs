@@ -848,12 +848,10 @@ pub struct AppSettings {
     /// saved (`set_voice_shortcuts`) and again at match time.
     #[serde(default)]
     pub voice_shortcuts: Vec<crate::managers::voice_shortcuts::VoiceShortcut>,
-    /// How long (ms) of sustained mic silence after a wake-word-triggered
-    /// recording auto-finishes it (transcribe + route, same as pressing
-    /// the hotkey again) -- without this, a locked wake-word session waits
-    /// forever for a manual second press. 0 disables the behavior entirely
-    /// (falls back to manual-press-to-finish). Hotkey-triggered recordings
-    /// are completely unaffected by this setting.
+    /// Stored for downgrade compatibility only. No code path reads it and no
+    /// settings control writes it: the silence auto-finish belonged to the
+    /// removed wake-word dictation path. The field, its default and its clamp
+    /// stay so older builds and stored files keep loading.
     #[serde(default = "default_wake_word_silence_timeout_ms")]
     pub wake_word_silence_timeout_ms: u32,
     #[serde(default = "default_recording_retention_period")]
@@ -3637,6 +3635,29 @@ mod tests {
         let mut again: AppSettings = serde_json::from_value(current.clone()).unwrap();
         assert!(!apply_settings_migrations(&mut again, &current));
         assert_eq!(again.wake_word_action, WakeWordAction::Conversation);
+    }
+
+    #[test]
+    fn v2_settings_with_voice_request_keep_their_other_non_default_fields() {
+        // Schema 2 -> 3 must only rewrite the wake-word action; every other stored field,
+        // including non-default ones, survives the migration.
+        let raw = serde_json::json!({
+            "settings_schema_version": 2,
+            "onboarding_completed": false,
+            "whats_new_last_seen_version": default_whats_new_last_seen_version(),
+            "overlay_style": "live",
+            "chinese_script": "as_transcribed",
+            "wake_word_action": "voice_request",
+            "orb_size_px": 180,
+            "ambient_mode_enabled": true
+        });
+        let mut settings: AppSettings = serde_json::from_value(raw.clone()).unwrap();
+        assert!(apply_settings_migrations(&mut settings, &raw));
+        assert_eq!(settings.wake_word_action, WakeWordAction::Conversation);
+        assert_eq!(settings.settings_schema_version, 3);
+        assert_eq!(settings.orb_size_px, Some(180));
+        assert!(settings.ambient_mode_enabled);
+        assert_eq!(settings.overlay_style, OverlayStyle::Live);
     }
 
     #[test]

@@ -14,7 +14,7 @@ use crate::managers::wakeword::{
 };
 use crate::settings::{get_settings, AppSettings};
 use log::warn;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
@@ -28,142 +28,10 @@ pub fn should_feed_wakeword_frame(wake_word_enabled: bool, is_recording: bool) -
     wake_word_enabled && !is_recording
 }
 
-/// True iff a wake-word detection firing right now should actually trigger
-/// auto-starting a dictation recording.
+/// True iff a wake-word detection firing right now should be handled (it then
+/// starts a conversation). Detections are ignored while any recording owns the mic.
 pub fn should_auto_start_recording_on_detection(is_recording: bool) -> bool {
     !is_recording
-}
-
-/// True while a wake-word-triggered recording is in progress and hasn't
-/// yet been auto-finished by sustained silence. Reset at the start of
-/// EVERY recording regardless of trigger (see `on_recording_started`), so
-/// it can never leak into an unrelated later session (e.g. a manual
-/// hotkey recording that happens to start right after a wake-word one
-/// ends).
-static SILENCE_WATCH_ACTIVE: AtomicBool = AtomicBool::new(false);
-/// True once at least one non-silent mic-level sample has been observed
-/// during the currently-active watch -- i.e. the user has actually
-/// started talking. Before this flips true, `INITIAL_GRACE_MS` (not the
-/// shorter configured post-speech threshold) applies: a natural pause
-/// between finishing the wake phrase and beginning the actual sentence
-/// must never be mistaken for "already done talking".
-static HAS_VOICED: AtomicBool = AtomicBool::new(false);
-/// Epoch ms when the currently-active watch's recording started.
-static RECORDING_STARTED_AT_MS: AtomicU64 = AtomicU64::new(0);
-/// Epoch ms when the mic was last observed as NOT silent during the
-/// currently-active watch. Only meaningful once `HAS_VOICED` is true.
-static LAST_VOICED_AT_MS: AtomicU64 = AtomicU64::new(0);
-/// Threshold (ms) for the currently-active watch's post-speech silence
-/// rule, copied in once at `on_recording_started` time so the hot
-/// per-frame level callback never needs to touch settings.
-static SILENCE_TIMEOUT_MS: AtomicU64 = AtomicU64::new(0);
-
-/// How long to wait for the user to say ANYTHING at all after a
-/// wake-word-triggered recording starts, before giving up even though no
-/// speech was ever heard (safety net for a false wake-word trigger where
-/// nobody actually talks). Deliberately longer than the configured
-/// post-speech pause threshold: reacting to the wake-word confirmation
-/// and starting to speak takes longer than a normal mid-sentence breath.
-const INITIAL_GRACE_MS: u64 = 4000;
-
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
-
-/// Called once at the very start of every recording, regardless of how it
-/// was triggered. Only a wake-word-triggered start (`shortcut_str ==
-/// "wake_word"`, the exact source string `handle_detection` passes to
-/// `send_transcription_input`) arms the silence watch; every other
-/// trigger (hotkey, CLI, SIGUSR2, ...) explicitly disarms it. This is the
-/// single place that decides "is this session eligible for
-/// silence-auto-finish" -- calling it unconditionally on every start (not
-/// just wake-word ones) is what guarantees a stale armed watch can never
-/// bleed into a later, unrelated manual recording.
-pub fn on_recording_started(shortcut_str: &str, silence_timeout_ms: u32) {
-    if shortcut_str == "wake_word" && silence_timeout_ms > 0 {
-        SILENCE_TIMEOUT_MS.store(silence_timeout_ms as u64, Ordering::Relaxed);
-        RECORDING_STARTED_AT_MS.store(now_ms(), Ordering::Relaxed);
-        HAS_VOICED.store(false, Ordering::Relaxed);
-        LAST_VOICED_AT_MS.store(0, Ordering::Relaxed);
-        SILENCE_WATCH_ACTIVE.store(true, Ordering::Relaxed);
-    } else {
-        SILENCE_WATCH_ACTIVE.store(false, Ordering::Relaxed);
-    }
-}
-
-/// A mic-level reading counts as silence for auto-finish purposes when
-/// every bucket is at or below this floor -- mirrors the near-zero bars a
-/// human would visually read as silence in the overlay's own waveform.
-/// An empty slice (no buckets at all) also counts as silent.
-const SILENCE_LEVEL_FLOOR: f32 = 0.02;
-
-fn is_silent_mic_level(levels: &[f32]) -> bool {
-    levels.iter().all(|&v| v <= SILENCE_LEVEL_FLOOR)
-}
-
-/// Pure: two-phase auto-finish decision. Before any speech has been heard
-/// (`has_voiced == false`), the clock is measured from recording start
-/// against `initial_grace_ms`. Once speech has been heard, the clock
-/// resets to measure from the last-voiced sample against the (normally
-/// shorter) `post_speech_silence_ms`. Either threshold being `0` disables
-/// that phase's ability to fire.
-fn should_auto_finish(
-    has_voiced: bool,
-    now_ms: u64,
-    recording_started_at_ms: u64,
-    last_voiced_at_ms: u64,
-    initial_grace_ms: u64,
-    post_speech_silence_ms: u64,
-) -> bool {
-    let (reference, threshold) = if has_voiced {
-        (last_voiced_at_ms, post_speech_silence_ms)
-    } else {
-        (recording_started_at_ms, initial_grace_ms)
-    };
-    threshold > 0 && now_ms.saturating_sub(reference) >= threshold
-}
-
-/// Called on every mic-level sample while ANY recording is active (cheap
-/// no-op via the atomic load unless a wake-word silence watch is
-/// currently armed -- zero behavior change for hotkey recordings). Once
-/// enough silence has elapsed (per the two-phase `should_auto_finish`
-/// policy), re-sends the exact same external "press" signal a real
-/// second hotkey press would send to end a locked wake-word session --
-/// this reuses the already-correct, already-tested stop path in
-/// `TranscriptionCoordinator` instead of touching recording state
-/// directly.
-pub fn check_silence_and_maybe_finish(app: &AppHandle, levels: &[f32]) {
-    if !SILENCE_WATCH_ACTIVE.load(Ordering::Relaxed) {
-        return;
-    }
-    let now = now_ms();
-    if is_silent_mic_level(levels) {
-        let has_voiced = HAS_VOICED.load(Ordering::Relaxed);
-        let finish = should_auto_finish(
-            has_voiced,
-            now,
-            RECORDING_STARTED_AT_MS.load(Ordering::Relaxed),
-            LAST_VOICED_AT_MS.load(Ordering::Relaxed),
-            INITIAL_GRACE_MS,
-            SILENCE_TIMEOUT_MS.load(Ordering::Relaxed),
-        );
-        if finish {
-            // Disarm first so a slow stop can't cause a double-fire from a
-            // later call on this same still-silent recording.
-            SILENCE_WATCH_ACTIVE.store(false, Ordering::Relaxed);
-            crate::signal_handle::send_transcription_input(
-                app,
-                "transcribe",
-                "wake_word_silence_timeout",
-            );
-        }
-    } else {
-        HAS_VOICED.store(true, Ordering::Relaxed);
-        LAST_VOICED_AT_MS.store(now, Ordering::Relaxed);
-    }
 }
 
 fn configured_engine(
@@ -760,72 +628,5 @@ mod tests {
     fn unavailable_model_is_a_non_fatal_absent_engine() {
         let temp_dir = tempfile::tempdir().unwrap();
         assert!(configured_engine(temp_dir.path(), "not-installed", 0.5).is_none());
-    }
-
-    // ---- wake-word silence auto-finish (pure helpers) ----
-
-    #[test]
-    fn silence_all_buckets_at_or_below_floor_is_silent() {
-        assert!(is_silent_mic_level(&[0.0, 0.02, 0.0, 0.01]));
-    }
-
-    #[test]
-    fn silence_empty_levels_counts_as_silent() {
-        assert!(is_silent_mic_level(&[]));
-    }
-
-    #[test]
-    fn silence_any_bucket_above_floor_is_not_silent() {
-        assert!(!is_silent_mic_level(&[0.0, 0.0, 0.03, 0.0]));
-    }
-
-    #[test]
-    fn auto_finish_before_post_speech_threshold_is_false() {
-        assert!(!should_auto_finish(true, 1499, 0, 0, 4000, 1500));
-    }
-
-    #[test]
-    fn auto_finish_at_post_speech_threshold_is_true() {
-        assert!(should_auto_finish(true, 1500, 0, 0, 4000, 1500));
-    }
-
-    #[test]
-    fn auto_finish_past_post_speech_threshold_is_true() {
-        assert!(should_auto_finish(true, 5000, 0, 0, 4000, 1500));
-    }
-
-    #[test]
-    fn auto_finish_is_always_false_when_post_speech_threshold_is_zero_sentinel() {
-        // threshold_ms == 0 means the feature is disabled -- never fires,
-        // even with a very long silence.
-        assert!(!should_auto_finish(true, 999_999, 0, 0, 4000, 0));
-    }
-
-    #[test]
-    fn auto_finish_waiting_for_first_speech_uses_initial_grace_not_post_speech_threshold() {
-        // Not yet voiced, 1600ms since recording start -- that's PAST the
-        // 1500ms post-speech threshold but well under the 4000ms initial
-        // grace. Must NOT finish: this is the exact regression being
-        // fixed, where a brief natural pause before the user starts
-        // talking was wrongly treated as "already done talking".
-        assert!(!should_auto_finish(false, 1600, 0, 0, 4000, 1500));
-    }
-
-    #[test]
-    fn auto_finish_fires_after_initial_grace_elapses_with_no_speech_ever() {
-        // Safety net for a false wake-word trigger where nobody actually
-        // speaks: still finishes eventually, on the longer grace clock.
-        assert!(should_auto_finish(false, 4000, 0, 0, 4000, 1500));
-    }
-
-    #[test]
-    fn auto_finish_uses_last_voiced_as_reference_once_speech_has_happened() {
-        // Recording started at t=0, first (and last) voice heard at
-        // t=10_000 (a long intro before the pause) -- the post-speech
-        // clock must count from the last-voiced time, not from recording
-        // start (which would have already exceeded the threshold long
-        // ago).
-        assert!(!should_auto_finish(true, 11_000, 0, 10_000, 4000, 1500)); // only 1000ms since last voice
-        assert!(should_auto_finish(true, 11_500, 0, 10_000, 4000, 1500)); // 1500ms since last voice
     }
 }

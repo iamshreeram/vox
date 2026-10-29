@@ -348,10 +348,6 @@ fn create_audio_recorder(
             let app_handle = app_handle.clone();
             move |levels| {
                 utils::emit_levels(&app_handle, &levels);
-                crate::managers::wakeword_listener::check_silence_and_maybe_finish(
-                    &app_handle,
-                    &levels,
-                );
                 // Conversation sessions: non-blocking forward to the capture
                 // worker (a no-op unless a session is listening).
                 crate::managers::converse_hooks::on_levels(&levels);
