@@ -876,6 +876,8 @@ const MSG_TOO_LONG: &str = "That was too long for me. Please say it in parts.";
 const MSG_CANT_HEAR: &str =
     "I can't tell when you stop talking, so I'm ending this. Please try again somewhere quieter.";
 const MSG_MIC: &str = "I can't use the microphone right now.";
+/// Spoken when the speech-to-text model is missing or unloaded (#119). Not a microphone problem.
+const MSG_STT_MODEL: &str = "I can't use the speech recognition model right now.";
 const MSG_STOP_LISTENING: &str = "I'll stop listening now.";
 const MSG_OKAY: &str = "Okay.";
 const MSG_PASTE_FAILED: &str = "I couldn't paste that.";
@@ -894,6 +896,19 @@ const MSG_ANSWER_ONLY: &str =
     "Vault context is on, so I can only answer questions. Turn it off to dictate text or open things.";
 /// Queued once when the brain is slow (`SessionConfig::ack_after`).
 const MSG_ACK: &str = "One moment.";
+
+/// The fixed sentence spoken for a failed listen. Only a model problem gets its own sentence;
+/// every other kind is reported as a microphone problem.
+fn listen_failure_message(kind: &ListenFailure) -> &'static str {
+    match kind {
+        ListenFailure::ModelUnavailable => MSG_STT_MODEL,
+        ListenFailure::Busy
+        | ListenFailure::NoMicrophone
+        | ListenFailure::Permission
+        | ListenFailure::Other
+        | ListenFailure::StreamOpen => MSG_MIC,
+    }
+}
 
 const HISTORY_SIDE_MAX_CHARS: usize = 600;
 const STILL_SPEAKING_RETRY: Duration = Duration::from_secs(1);
@@ -2527,9 +2542,16 @@ async fn run_turns_loop(
         }
         let utterance = match heard {
             ListenOutcome::Aborted => return SessionEnd::Cancelled,
-            ListenOutcome::Failed(_) => {
+            ListenOutcome::Failed(kind) => {
                 return after_speech(
-                    speak(deps, cfg, cancel, MSG_MIC, Emotion::Neutral).await,
+                    speak(
+                        deps,
+                        cfg,
+                        cancel,
+                        listen_failure_message(&kind),
+                        Emotion::Neutral,
+                    )
+                    .await,
                     SessionEnd::AudioUnavailable,
                 );
             }
@@ -3483,11 +3505,37 @@ mod tests {
             ListenFailure::Other,
             ListenFailure::StreamOpen,
         ] {
+            // #119: a missing/unloaded speech-recognition model is NOT a microphone problem.
+            let expected = if matches!(f, ListenFailure::ModelUnavailable) {
+                "I can't use the speech recognition model right now."
+            } else {
+                "I can't use the microphone right now."
+            };
             let r = rig(vec![L::Out(ListenOutcome::Failed(f))], vec![]);
             assert_eq!(run(&r, &cfg()).await, SessionEnd::AudioUnavailable);
-            assert_eq!(r.log.says(), vec!["I can't use the microphone right now."]);
+            assert_eq!(r.log.says(), vec![expected]);
             assert_eq!(idle_count(&r), 1);
         }
+    }
+
+    #[test]
+    fn listen_failure_message_names_the_model_only_for_model_unavailable() {
+        assert_eq!(
+            listen_failure_message(&ListenFailure::ModelUnavailable),
+            MSG_STT_MODEL
+        );
+        for f in [
+            ListenFailure::Busy,
+            ListenFailure::NoMicrophone,
+            ListenFailure::Permission,
+            ListenFailure::Other,
+            ListenFailure::StreamOpen,
+        ] {
+            assert_eq!(listen_failure_message(&f), MSG_MIC, "{f:?}");
+        }
+        assert_ne!(MSG_STT_MODEL, MSG_MIC);
+        assert!(!MSG_STT_MODEL.to_lowercase().contains("microphone"));
+        assert!(MSG_STT_MODEL.to_lowercase().contains("speech recognition"));
     }
 
     // ------------------------------------------------------------------
@@ -4281,6 +4329,10 @@ mod converse_gate_m4_tests;
 #[cfg(test)]
 #[path = "converse_timing_m4_tests.rs"]
 mod converse_timing_m4_tests;
+
+#[cfg(test)]
+#[path = "converse_stt_failure_tests.rs"]
+mod converse_stt_failure_tests;
 
 #[cfg(test)]
 #[path = "converse_loop_voice_tests.rs"]
