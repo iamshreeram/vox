@@ -12,7 +12,7 @@ use crate::bubble_notice::NoticeCode;
 use crate::chat_presentation::{
     floating_supported, resolve_presentation, PlatformEnv, Presentation,
 };
-use crate::managers::chat_log::GateState;
+use crate::managers::chat_log::{GateState, Stamp};
 use crate::orb_session::{reconcile, transient_share, OrbAction, Phase, SessionMachine};
 
 /// How long a page may take to report ready after its window was created, in milliseconds.
@@ -232,6 +232,20 @@ impl BubbleShellCore {
                 self.waiting_for_ready = true;
             }
         }
+        self.finish(inp, Effects::default())
+    }
+
+    /// A reply started being spoken under `scope`. Judged by the hub like a line (A8-1).
+    pub fn speech_begin(&mut self, scope: u64, stamp: Stamp, inp: &ShellInputs) -> Effects {
+        self.sync(inp);
+        self.hub.speech_begin(scope, stamp, inp.gate, inp.now);
+        self.finish(inp, Effects::default())
+    }
+
+    /// The reply under `scope` stopped being spoken: its held lines are released.
+    pub fn speech_end(&mut self, scope: u64, inp: &ShellInputs) -> Effects {
+        self.sync(inp);
+        self.hub.speech_end(scope, inp.now);
         self.finish(inp, Effects::default())
     }
 

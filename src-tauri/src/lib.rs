@@ -18,6 +18,8 @@ mod bubble_g4b_fix_tests;
 mod bubble_geometry_tests;
 mod bubble_hub;
 #[cfg(test)]
+mod bubble_hub_hold_tests;
+#[cfg(test)]
 mod bubble_hub_tests;
 mod bubble_native;
 mod bubble_notice;

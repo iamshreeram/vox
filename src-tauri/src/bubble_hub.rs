@@ -5,6 +5,10 @@
 //! under an older session or recording epoch is refused. The projection is the only thing shown:
 //! it is empty unless every gate is open, and `publish` emits a new revision whenever the
 //! projection changes, so suppression and restoration are both visible to the page.
+//!
+//! Speech scopes: while a reply is being spoken, the assistant lines admitted under its scope
+//! are held (alive up to `HOLD_MAX_MS`). `speech_end` releases them with a short `LINGER_MS`.
+//! A scope whose end never arrives is forgotten after `HOLD_MAX_MS`.
 #![cfg_attr(not(test), allow(dead_code))]
 
 use crate::bubble_notice::NoticeCode;
@@ -14,6 +18,11 @@ use crate::managers::chat_log::{GateState, Stamp};
 pub const MAX_ITEMS: usize = 3;
 /// Fade-out at the end of a bubble's lifetime, in milliseconds.
 pub const FADE_MS: u64 = 600;
+/// Longest a held assistant line stays up, and the age after which a speech scope whose end was
+/// never received is forgotten. A deliberate cap: a lost signal must not pin a bubble forever.
+pub const HOLD_MAX_MS: u64 = 120_000;
+/// How long a held line stays after its speech scope ends, in milliseconds.
+pub const LINGER_MS: u64 = 2_000;
 /// Lifetime of a notice, in milliseconds (DESIGN.md A-C3).
 pub const NOTICE_TTL_MS: u64 = 4_000;
 /// The id of the notice projection. Transcript ids start above it: `on_entry` refuses id 0.
@@ -115,6 +124,10 @@ struct Stored {
     text: String,
     born_ms: u64,
     ttl_ms: u64,
+    /// The speech scope holding this line, while it is held.
+    scope: Option<u64>,
+    /// Whether the line is held by `scope` (lifetime `HOLD_MAX_MS` until released).
+    hold: bool,
 }
 
 impl Stored {
@@ -144,6 +157,8 @@ pub struct BubbleHub {
     rev: u64,
     highest_id: u64,
     items: Vec<Stored>,
+    /// Active speech scopes as (scope id, started at ms), oldest first.
+    scopes: Vec<(u64, u64)>,
     notice: Option<StoredNotice>,
     published: Vec<ProjItem>,
 }
@@ -162,6 +177,7 @@ impl BubbleHub {
             rev: 0,
             highest_id: 0,
             items: Vec::new(),
+            scopes: Vec::new(),
             notice: None,
             published: Vec::new(),
         }
@@ -222,9 +238,10 @@ impl BubbleHub {
         self.instance
     }
 
-    /// Session reset: every bubble is cleared.
+    /// Session reset: every bubble and every speech scope is cleared.
     pub fn on_reset(&mut self) {
         self.items.clear();
+        self.scopes.clear();
     }
 
     /// The user cleared the transcript: every bubble is cleared.
@@ -255,13 +272,23 @@ impl BubbleHub {
             return false;
         }
         self.highest_id = entry.id;
-        let ttl = ttl_ms(text.chars().count());
+        // An assistant line said while a reply is being spoken is held by the newest active scope.
+        let held_by = match entry.role {
+            BubbleRole::Assistant => self.scopes.last().map(|(id, _)| *id),
+            BubbleRole::User => None,
+        };
+        let (ttl, scope, hold) = match held_by {
+            Some(id) => (HOLD_MAX_MS, Some(id), true),
+            None => (ttl_ms(text.chars().count()), None, false),
+        };
         self.items.push(Stored {
             id: entry.id,
             role: entry.role,
             text,
             born_ms: now,
             ttl_ms: ttl,
+            scope,
+            hold,
         });
         let excess = self.items.len().saturating_sub(MAX_ITEMS);
         self.items.drain(..excess);
@@ -274,9 +301,52 @@ impl BubbleHub {
         self.notice = Some(StoredNotice { code, born_ms: now });
     }
 
-    /// Removes bubbles whose lifetime has ended.
+    /// A reply started being spoken under `scope`. Admitted exactly like a line: refused (returns
+    /// false, changes nothing) unless the hub is recording and armed and the stamp matches the
+    /// gate. A repeated begin of an active scope changes nothing and returns true.
+    pub fn speech_begin(&mut self, scope: u64, stamp: Stamp, gate: GateState, now: u64) -> bool {
+        self.prune(now);
+        if !self.recording || !self.armed {
+            return false;
+        }
+        if !gate.recording
+            || gate.session_token != stamp.session_token
+            || gate.rec_epoch != stamp.rec_epoch
+        {
+            return false;
+        }
+        if !self.scopes.iter().any(|(id, _)| *id == scope) {
+            self.scopes.push((scope, now));
+        }
+        true
+    }
+
+    /// The reply under `scope` stopped being spoken. The scope is removed and every line it held
+    /// is released: reborn at `now` with the short `LINGER_MS` lifetime. An unknown scope changes
+    /// nothing. Lines already pruned are not brought back.
+    pub fn speech_end(&mut self, scope: u64, now: u64) {
+        self.prune(now);
+        let before = self.scopes.len();
+        self.scopes.retain(|(id, _)| *id != scope);
+        if self.scopes.len() == before {
+            return;
+        }
+        for item in self.items.iter_mut() {
+            if item.hold && item.scope == Some(scope) {
+                item.born_ms = now;
+                item.ttl_ms = LINGER_MS;
+                item.hold = false;
+                item.scope = None;
+            }
+        }
+    }
+
+    /// Removes bubbles whose lifetime has ended, and speech scopes whose end never came within
+    /// `HOLD_MAX_MS` of their begin.
     pub fn prune(&mut self, now: u64) {
         self.items.retain(|item| item.alive(now));
+        self.scopes
+            .retain(|(_, started)| now < started.saturating_add(HOLD_MAX_MS));
     }
 
     /// What the page should show at `now`: at most `MAX_ITEMS` bubbles, oldest first, and only

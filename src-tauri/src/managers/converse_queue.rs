@@ -9,14 +9,14 @@
 //! the speaker, and `abort` becomes a no-op for the owner of any newer epoch.
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures_util::future::BoxFuture;
 
 use crate::managers::converse::{SayOutcome, SpeechQueue};
 use crate::managers::converse_audio::{wait_for_speech_end, SpeechProbe, WaitOutcome};
-use crate::managers::converse_platform::speech_deadline;
+use crate::managers::converse_platform::{speech_deadline, SpeechScope, SpeechSignal};
 use crate::managers::emotion::Emotion;
 use crate::managers::tts::{sanitize_speech_text, TtsManager};
 
@@ -39,15 +39,43 @@ pub struct TtsQueueSession {
     rate_wpm: Option<u32>,
     dead: AtomicBool,
     chars: AtomicUsize,
+    /// Speech-scope port (DESIGN D3). `None`: no scope is ever opened.
+    signal: Option<Arc<dyn SpeechSignal>>,
+    /// The session's one speech scope. Dropping the `Open` state (on `Closed`, or when the
+    /// session itself is dropped) ends the scope, so it ends exactly once.
+    scope: Mutex<ScopeState>,
+}
+
+/// Where the session's speech scope is in its life.
+enum ScopeState {
+    /// No push has succeeded yet, so no scope is open.
+    Idle,
+    /// The scope began on the first successful push and has not ended yet. The guard is only
+    /// held for its `Drop`, which ends the scope.
+    Open(#[allow(dead_code)] SpeechScope),
+    /// The scope ended (or never began); nothing begins again.
+    Closed,
 }
 
 impl TtsQueueSession {
     /// `None` unless the manager's backend is queue-capable AND `begin_utterance` succeeds
     /// (it fails while a recording is active). Consumes exactly one epoch on success.
+    #[cfg_attr(not(test), allow(dead_code))] // Production opens sessions with a port.
     pub fn open(
         tts: Arc<TtsManager>,
         voice: Option<String>,
         rate_wpm: Option<u32>,
+    ) -> Option<Arc<TtsQueueSession>> {
+        Self::open_with_signal(tts, voice, rate_wpm, None)
+    }
+
+    /// Like `open`, and the session reports its speech scope to `signal` (DESIGN D3): begun on
+    /// the first successful push, ended on finish, abort, a refused push, or drop.
+    pub fn open_with_signal(
+        tts: Arc<TtsManager>,
+        voice: Option<String>,
+        rate_wpm: Option<u32>,
+        signal: Option<Arc<dyn SpeechSignal>>,
     ) -> Option<Arc<TtsQueueSession>> {
         if !tts.queue_capable() {
             return None;
@@ -60,20 +88,54 @@ impl TtsQueueSession {
             rate_wpm,
             dead: AtomicBool::new(false),
             chars: AtomicUsize::new(0),
+            signal,
+            scope: Mutex::new(ScopeState::Idle),
         }))
     }
 
+    /// Begins the speech scope on the first successful push only (never again after it ended).
+    fn begin_scope(&self) {
+        let Some(signal) = self.signal.as_ref() else {
+            return;
+        };
+        let mut scope = self.lock_scope();
+        if matches!(*scope, ScopeState::Idle) {
+            *scope = ScopeState::Open(SpeechScope::open(signal.clone()));
+        }
+    }
+
+    /// Ends the speech scope, if one is open. Idempotent.
+    fn end_scope(&self) {
+        *self.lock_scope() = ScopeState::Closed;
+    }
+
+    fn lock_scope(&self) -> std::sync::MutexGuard<'_, ScopeState> {
+        self.scope
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// Like `SpeechQueue::finish` with an explicit overall deadline (tests use short ones).
+    /// The speech scope ends when this returns, whatever the outcome.
     pub async fn finish_within(&self, deadline: Duration) -> SayOutcome {
         let probe = Probe(&self.tts);
-        match wait_for_speech_end(&probe, self.epoch, deadline, Duration::from_millis(25)).await {
+        let outcome = match wait_for_speech_end(
+            &probe,
+            self.epoch,
+            deadline,
+            Duration::from_millis(25),
+        )
+        .await
+        {
             WaitOutcome::Done => SayOutcome::Done,
             WaitOutcome::Interrupted => SayOutcome::Interrupted,
             WaitOutcome::TimedOut => {
                 let _ = self.tts.stop_if_current(self.epoch);
                 SayOutcome::Failed
             }
-        }
+        };
+        self.end_scope();
+        outcome
     }
 }
 
@@ -99,19 +161,22 @@ impl SpeechQueue for TtsQueueSession {
             Ok(()) => {
                 self.chars
                     .fetch_add(sanitized.chars().count(), Ordering::Relaxed);
+                self.begin_scope();
                 true
             }
             Err(_) => {
                 self.dead.store(true, Ordering::Relaxed);
+                self.end_scope();
                 false
             }
         }
     }
 
-    /// Marks the session dead and `tts.stop_if_current(epoch)` (never disturbs the speech of a
-    /// newer epoch's owner).
+    /// Marks the session dead, ends its speech scope and `tts.stop_if_current(epoch)` (never
+    /// disturbs the speech of a newer epoch's owner).
     fn abort(&self) {
         self.dead.store(true, Ordering::Relaxed);
+        self.end_scope();
         let _ = self.tts.stop_if_current(self.epoch);
     }
 

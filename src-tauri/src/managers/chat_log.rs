@@ -214,6 +214,11 @@ pub enum ClearError {
 pub trait ChatEmitter: Send + Sync + 'static {
     /// Deliver one event. May block (the hooks never wait for it).
     fn emit(&self, event: &ChatEvent);
+
+    /// Deliver one speech mark, in order with `emit`. `on` marks the begin of a speech scope
+    /// (with the stamp it was admitted under) or its end (`None`). Marks are not transcript
+    /// entries. The default ignores them.
+    fn speech(&self, _scope: u64, _on: bool, _stamp: Option<Stamp>) {}
 }
 
 /// Tunables (tests shorten the Clear wait).
@@ -249,10 +254,21 @@ struct PendingEntry {
     stamp: Stamp,
 }
 
+/// Private: one item in the worker's queue, in call order: a line or a speech mark. Marks are
+/// not counted as pending and never reach the log.
+enum Queued {
+    Line(PendingEntry),
+    Mark {
+        scope: u64,
+        on: bool,
+        stamp: Option<Stamp>,
+    },
+}
+
 /// Private: everything hooks hand to the worker. Guarded by `Shared::inbox`.
 struct Inbox {
-    /// Admitted lines the worker has not taken yet.
-    entries: VecDeque<PendingEntry>,
+    /// Lines and speech marks the worker has not taken yet, in call order.
+    entries: VecDeque<Queued>,
     /// Admitted lines not yet applied (queued plus taken-but-in-flight). Bounded by PENDING_CAP.
     /// Decremented by the worker only after an entry was applied.
     pending: usize,
@@ -298,17 +314,26 @@ impl Inbox {
             || !self.clear_waiters.is_empty()
     }
 
-    /// Drop every queued line. They would be wiped anyway, so they are not counted as dropped.
-    fn discard_queued(&mut self) {
-        let n = self.entries.len();
-        self.entries.clear();
-        self.pending = self.pending.saturating_sub(n);
+    /// Drop queued lines. They would be wiped anyway, so they are not counted as dropped. Only
+    /// lines count toward `pending`. Speech marks are dropped too when `marks` is set (reset);
+    /// a clear keeps them, since the hub keeps its speech scopes across a clear.
+    fn discard_queued(&mut self, marks: bool) {
+        let lines = self
+            .entries
+            .iter()
+            .filter(|item| matches!(item, Queued::Line(_)))
+            .count();
+        self.entries.retain(|item| match item {
+            Queued::Line(_) => false,
+            Queued::Mark { .. } => !marks,
+        });
+        self.pending = self.pending.saturating_sub(lines);
     }
 }
 
 /// Private: the part of the inbox the worker takes in one swap. Never includes `shutdown`.
 struct Batch {
-    entries: VecDeque<PendingEntry>,
+    entries: VecDeque<Queued>,
     dropped: usize,
     wipe: Option<WipeKind>,
     waiters: Vec<(u64, ClearReply)>,
@@ -501,6 +526,11 @@ fn release_pending(shared: &Shared) {
     inbox.pending = inbox.pending.saturating_sub(1);
 }
 
+/// Private: deliver one speech mark. Panic-isolated like every other emit.
+fn emit_speech_guarded(emitter: &dyn ChatEmitter, scope: u64, on: bool, stamp: Option<Stamp>) {
+    let _ = catch_unwind(AssertUnwindSafe(|| emitter.speech(scope, on, stamp)));
+}
+
 /// Private: empty the log and emit Reset or Clear.
 fn apply_wipe(shared: &Shared, emitter: &dyn ChatEmitter, kind: WipeKind) {
     let event = {
@@ -590,15 +620,22 @@ fn apply_batch(shared: &Shared, emitter: &dyn ChatEmitter, batch: Batch) {
     if let Some(on) = recording {
         apply_recording(shared, emitter, on);
     }
-    for pending in entries {
-        push_entry(
-            shared,
-            emitter,
-            pending.role,
-            pending.text,
-            Some(pending.stamp),
-        );
-        release_pending(shared);
+    for item in entries {
+        match item {
+            Queued::Line(pending) => {
+                push_entry(
+                    shared,
+                    emitter,
+                    pending.role,
+                    pending.text,
+                    Some(pending.stamp),
+                );
+                release_pending(shared);
+            }
+            Queued::Mark { scope, on, stamp } => {
+                emit_speech_guarded(emitter, scope, on, stamp);
+            }
+        }
     }
     if dropped > 0 {
         let text = format!("system:dropped:{dropped}");
@@ -683,13 +720,42 @@ impl ChatLog {
         if inbox.pending >= PENDING_CAP {
             inbox.dropped += 1;
         } else {
-            inbox.entries.push_back(PendingEntry {
+            inbox.entries.push_back(Queued::Line(PendingEntry {
                 role,
                 text: cleaned,
                 stamp,
-            });
+            }));
             inbox.pending += 1;
         }
+        drop(inbox);
+        self.shared.notify();
+    }
+
+    /// A reply started being spoken. Stamped on the caller thread like a line, so nothing is
+    /// queued while recording is off. Queued in order with the lines, bypassing `PENDING_CAP`.
+    /// Not a transcript entry. No-op after shutdown.
+    pub fn speech_begin(&self, scope: u64) {
+        let Some(stamp) = self.gate.stamp() else {
+            return;
+        };
+        self.queue_mark(scope, true, Some(stamp));
+    }
+
+    /// A reply stopped being spoken. Never refused by the recording flag. Queued in order with
+    /// the lines, bypassing `PENDING_CAP`. No-op after shutdown.
+    pub fn speech_end(&self, scope: u64) {
+        self.queue_mark(scope, false, None);
+    }
+
+    /// Private: queue one speech mark behind the lines already queued.
+    fn queue_mark(&self, scope: u64, on: bool, stamp: Option<Stamp>) {
+        let Some(mut inbox) = self.shared.lock_inbox_hook() else {
+            return;
+        };
+        if inbox.shutdown {
+            return;
+        }
+        inbox.entries.push_back(Queued::Mark { scope, on, stamp });
         drop(inbox);
         self.shared.notify();
     }
@@ -702,7 +768,7 @@ impl ChatLog {
         if inbox.shutdown {
             return;
         }
-        inbox.discard_queued();
+        inbox.discard_queued(true);
         inbox.wipe = Some(WipeKind::Reset);
         drop(inbox);
         self.shared.notify();
@@ -763,7 +829,7 @@ impl ChatLog {
             if inbox.clear_waiters.len() >= CLEAR_WAITERS_CAP {
                 return Err(ClearError::Busy);
             }
-            inbox.discard_queued();
+            inbox.discard_queued(false);
             if !matches!(inbox.wipe, Some(WipeKind::Reset)) {
                 inbox.wipe = Some(WipeKind::Clear);
             }

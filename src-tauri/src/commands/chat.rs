@@ -6,7 +6,8 @@ use crate::bubble_hub::{BubbleRole, HubEntry};
 use crate::bubble_native;
 use crate::chat_window::CHAT_WINDOW_LABEL;
 use crate::managers::chat_log::{
-    ChatEmitter, ChatEvent, ChatEventKind, ChatLog, ChatRole, ChatSnapshot, ClearError, CHAT_EVENT,
+    ChatEmitter, ChatEvent, ChatEventKind, ChatLog, ChatRole, ChatSnapshot, ClearError, Stamp,
+    CHAT_EVENT,
 };
 use crate::settings;
 use std::sync::Arc;
@@ -52,6 +53,15 @@ impl ChatEmitter for TauriChatEmitter {
             ChatEventKind::Reset => bubble_native::chat_reset(&self.app),
             ChatEventKind::Clear => bubble_native::chat_clear(&self.app),
             ChatEventKind::State { .. } | ChatEventKind::Config { .. } => {}
+        }
+    }
+
+    /// Speech marks only feed the bubble shell. Nothing is sent to the chat window.
+    fn speech(&self, scope: u64, on: bool, stamp: Option<Stamp>) {
+        match (on, stamp) {
+            (true, Some(stamp)) => bubble_native::speech_begin(&self.app, scope, stamp),
+            (true, None) => {}
+            (false, _) => bubble_native::speech_end(&self.app, scope),
         }
     }
 }
