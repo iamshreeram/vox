@@ -21,6 +21,7 @@ import {
   ConversationVaultPathField,
   ConversationVaultToggle,
 } from "./ConversationMemorySettings";
+import { RememberConversationsSettings } from "./RememberConversationsSettings";
 import { VaultRagSettings } from "./VaultRagSettings";
 import { AgentToolsSettings } from "./AgentToolsSettings";
 import { JobsSettings } from "./JobsSettings";
@@ -79,6 +80,7 @@ export const PLACED_RENDERERS: Record<ControlId, () => React.ReactNode> = {
         descriptionMode="tooltip"
         grouped={true}
       />
+      <RememberConversationsSettings descriptionMode="tooltip" grouped={true} />
       <VaultRagSettings descriptionMode="tooltip" grouped={true} />
     </>
   ),
