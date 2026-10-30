@@ -9,7 +9,7 @@ use crate::managers::command_router::CommandAction;
 use crate::managers::converse::{
     Ears, Hands, ListenOutcome, Mouth, QuietOutcome, Reporter, SayOutcome, SessionConfig,
 };
-use crate::managers::converse_agent::plan_confirmation_prompt;
+use crate::managers::converse_agent::plan_confirmation_body;
 #[cfg(test)]
 pub use crate::managers::converse_plan::JobRequest;
 use crate::managers::converse_plan::{
@@ -64,12 +64,16 @@ const NO_PHRASES: &[&str] = &[
 
 /// Word key, identical to `converse_local::word_key`: lowercase, with ASCII
 /// punctuation and U+2019 removed.
-fn word_key(raw: &str) -> String {
+pub(crate) fn word_key(raw: &str) -> String {
     raw.chars()
         .filter(|c| !c.is_ascii_punctuation() && *c != '\u{2019}')
         .flat_map(|c| c.to_lowercase())
         .collect()
 }
+
+/// Spoken tail of every forced confirmation question (no approval words: the question must not
+/// echo an approval back into the answer window).
+pub const FORCED_PROMPT_TAIL: &str = "Should I do that?";
 
 /// Handle type for a pinned project directory (unix: an owned descriptor).
 #[cfg(unix)]
@@ -291,52 +295,68 @@ fn first_words(text: &str, count: usize) -> String {
         .join(" ")
 }
 
-/// The exact question spoken before a planner-derived effect runs while the session is tainted
-/// by an agent result (DESIGN 2.5, C6). `None` when the plan has no payload to describe: such a
-/// plan performs no effect, so there is nothing to confirm.
-pub fn forced_prompt(plan: &TurnPlan) -> Option<String> {
+/// The spoken body of a forced question: the description of the pending effect, ending with a
+/// period. `None` when the plan has no payload to describe: such a plan performs no effect, so
+/// there is nothing to confirm.
+pub fn forced_body(plan: &TurnPlan) -> Option<String> {
     match plan.kind {
         PlanKind::Command => {
             let command = plan.command.as_deref()?;
-            Some(format!(
-                "I am about to do this: {command}. Say yes to go ahead."
-            ))
+            Some(format!("I am about to do this: {command}."))
         }
         PlanKind::Paste => {
             let text = plan.paste_text.as_deref()?;
             let words = text.split_whitespace().count();
             let start = first_words(text, 12);
             Some(format!(
-                "I am about to paste {words} words starting with: {start}. Say yes to go ahead."
+                "I am about to paste {words} words starting with: {start}."
             ))
         }
         PlanKind::Job => {
             let job = plan.job.as_ref()?;
             Some(format!(
-                "I am about to start a coding job in {}: {}. Say yes to go ahead.",
+                "I am about to start a coding job in {}: {}.",
                 job.project, job.task
             ))
         }
         PlanKind::Agent => {
             let request = plan.agent.as_ref()?;
-            Some(format!(
-                "I am about to ask the agent: {}. Say yes to go ahead.",
-                request.task
-            ))
+            Some(format!("I am about to ask the agent: {}.", request.task))
         }
         PlanKind::SetRole => {
             let directive = plan.role.as_ref()?;
             let start = first_words(&directive.role, 12);
-            Some(format!(
-                "I am about to take this role: {start}. Say yes to go ahead."
-            ))
+            Some(format!("I am about to take this role: {start}."))
         }
         PlanKind::Plan => {
             let agent_plan = plan.plan.as_ref()?;
-            Some(plan_confirmation_prompt(&agent_plan.steps))
+            Some(
+                plan_confirmation_body(&agent_plan.steps)
+                    .trim_end()
+                    .to_string(),
+            )
         }
         _ => None,
     }
+}
+
+/// The exact question spoken before a planner-derived effect runs while the session is tainted
+/// by an agent result (DESIGN 2.5, C6): the body, one space, then `FORCED_PROMPT_TAIL`.
+pub fn forced_prompt(plan: &TurnPlan) -> Option<String> {
+    forced_body(plan).map(|body| format!("{body} {FORCED_PROMPT_TAIL}"))
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+/// The re-ask spoken once after an unclear answer (A3): it restates the same pending action,
+/// so the user hears exactly what the approval would run. The body's own final period is
+/// dropped before the sentence's period, so the question never has a double period.
+pub fn reask_prompt(plan: &TurnPlan) -> Option<String> {
+    forced_body(plan).map(|body| {
+        format!(
+            "I have not changed anything. Again: {}. {FORCED_PROMPT_TAIL}",
+            body.trim_end_matches('.')
+        )
+    })
 }
 
 /// Waits for the speaker to go quiet, retrying once after a stop. `false` if it

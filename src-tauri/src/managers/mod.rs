@@ -76,6 +76,10 @@ mod converse_barge_platform_tests;
 mod converse_barge_tests;
 pub mod converse_capture;
 pub mod converse_confirm;
+#[cfg_attr(not(test), allow(dead_code))]
+pub mod converse_confirm_judge;
+#[cfg(test)]
+mod converse_confirm_judge_tests;
 pub mod converse_context;
 pub mod converse_hooks;
 pub mod converse_latency;

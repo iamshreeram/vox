@@ -10,7 +10,7 @@ use super::*;
 use crate::managers::command_router::CommandAction;
 use crate::managers::converse_agent::AgentEvent;
 use crate::managers::converse_agent::AgentPoll;
-use crate::managers::converse_confirm::ValidatedCommand;
+use crate::managers::converse_confirm::{ValidatedCommand, FORCED_PROMPT_TAIL};
 use crate::managers::converse_context::note_agent_result;
 use crate::managers::converse_plan::TurnPlan;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -63,32 +63,32 @@ pub(super) enum EffectKind {
 
 /// The utterance that makes the planner emit this kind, the plan it emits, and the exact
 /// forced prompt the loop must speak for it.
-pub(super) fn effect_of(kind: EffectKind) -> (&'static str, TurnPlan, &'static str) {
+pub(super) fn effect_of(kind: EffectKind) -> (&'static str, TurnPlan, String) {
     match kind {
         EffectKind::Command => (
             "run the build",
             cmd_plan(CMD, "Running it."),
-            "I am about to do this: cargo build --release. Say yes to go ahead.",
+            format!("I am about to do this: cargo build --release. {FORCED_PROMPT_TAIL}"),
         ),
         EffectKind::Paste => (
             "type the report",
             paste_plan(PASTE_TEXT, "Pasted."),
-            "I am about to paste 13 words starting with: one two three four five six seven eight nine ten eleven twelve. Say yes to go ahead.",
+            format!("I am about to paste 13 words starting with: one two three four five six seven eight nine ten eleven twelve. {FORCED_PROMPT_TAIL}"),
         ),
         EffectKind::Job => (
             "start the job",
             job_plan(JOB_PROJECT, JOB_TASK, "Starting it."),
-            "I am about to start a coding job in vox: fix the flaky test. Say yes to go ahead.",
+            format!("I am about to start a coding job in vox: fix the flaky test. {FORCED_PROMPT_TAIL}"),
         ),
         EffectKind::Agent => (
             "check the build",
             agent_plan(AGENT_TASK2, "Checking."),
-            "I am about to ask the agent: check the build status. Say yes to go ahead.",
+            format!("I am about to ask the agent: check the build status. {FORCED_PROMPT_TAIL}"),
         ),
         EffectKind::SetRole => (
             "be my teacher",
             set_role(ROLE_TEACHER, "Okay."),
-            "I am about to take this role: a patient teacher for six year olds and their parents who ask. Say yes to go ahead.",
+            format!("I am about to take this role: a patient teacher for six year olds and their parents who ask. {FORCED_PROMPT_TAIL}"),
         ),
     }
 }
@@ -139,9 +139,7 @@ pub(super) fn prompted(r: &Rig, prompt: &str) -> bool {
 }
 
 pub(super) fn any_prompt(r: &Rig) -> bool {
-    spoken(r)
-        .iter()
-        .any(|s| s.ends_with("Say yes to go ahead."))
+    spoken(r).iter().any(|s| s.ends_with(FORCED_PROMPT_TAIL))
 }
 
 // ---- before any agent result nothing changes -------------------------------------------------
@@ -209,7 +207,7 @@ async fn t_forced_prompt_text_is_exact_for_every_kind() {
             run_with(&r, &vcfg(false, None), policy).await;
             let (_, _, prompt) = effect_of(kind);
             assert!(
-                prompted(&r, prompt),
+                prompted(&r, &prompt),
                 "{kind:?} policy={with_policy}: exact prompt {prompt:?} missing; spoken: {:?}",
                 spoken(&r)
             );
@@ -240,7 +238,7 @@ async fn t_yes_executes_the_described_payload_once() {
                 let policy: Option<&dyn PolicySource> = if with_policy { Some(&pol) } else { None };
                 run_with(&r, &vcfg(early, ack), policy).await;
                 let (_, _, prompt) = effect_of(kind);
-                assert!(prompted(&r, prompt), "{kind:?}: prompt spoken");
+                assert!(prompted(&r, &prompt), "{kind:?}: prompt spoken");
                 assert_eq!(
                     executed(&r, kind),
                     1,
@@ -274,7 +272,7 @@ async fn t_go_ahead_executes_the_described_payload_once() {
                 let policy: Option<&dyn PolicySource> = if with_policy { Some(&pol) } else { None };
                 run_with(&r, &vcfg(early, ack), policy).await;
                 let (_, _, prompt) = effect_of(kind);
-                assert!(prompted(&r, prompt), "{kind:?}: prompt spoken");
+                assert!(prompted(&r, &prompt), "{kind:?}: prompt spoken");
                 assert_eq!(
                     executed(&r, kind),
                     1,
@@ -362,9 +360,9 @@ async fn t_gate_on_still_asks_the_forced_yes_first() {
     };
     run_gated(&r, &acfg(), &pol).await;
     let said = spoken(&r);
-    let forced = said
-        .iter()
-        .position(|s| s == "I am about to do this: cargo build --release. Say yes to go ahead.");
+    let forced = said.iter().position(|s| {
+        s == &format!("I am about to do this: cargo build --release. {FORCED_PROMPT_TAIL}")
+    });
     let gate = said.iter().position(|s| s.ends_with("Say yes or no."));
     assert!(forced.is_some(), "forced prompt spoken: {said:?}");
     assert!(gate.is_some(), "the gate asked its own question: {said:?}");
@@ -664,7 +662,7 @@ async fn t_voice_cancel_while_tainted_is_not_prompted() {
     );
     let prompts = spoken(&r)
         .iter()
-        .filter(|s| s.ends_with("Say yes to go ahead."))
+        .filter(|s| s.ends_with(FORCED_PROMPT_TAIL))
         .count();
     assert_eq!(prompts, 1, "only the agent request was confirmed");
 }
@@ -707,7 +705,7 @@ async fn t_taint_lasts_the_session_each_effect_is_prompted() {
     );
     let prompts = spoken(&r)
         .iter()
-        .filter(|s| s.ends_with("Say yes to go ahead."))
+        .filter(|s| s.ends_with(FORCED_PROMPT_TAIL))
         .count();
     assert_eq!(prompts, 2, "both effects were prompted");
 }
@@ -731,7 +729,7 @@ async fn t_a_new_session_is_untainted() {
         .push_back(ok(cmd_plan(CMD, "Running it.")));
     let prompts_before = spoken(&r)
         .iter()
-        .filter(|s| s.ends_with("Say yes to go ahead."))
+        .filter(|s| s.ends_with(FORCED_PROMPT_TAIL))
         .count();
     run_with(&r, &acfg(), None).await;
     assert_eq!(
@@ -741,7 +739,7 @@ async fn t_a_new_session_is_untainted() {
     );
     let prompts_after = spoken(&r)
         .iter()
-        .filter(|s| s.ends_with("Say yes to go ahead."))
+        .filter(|s| s.ends_with(FORCED_PROMPT_TAIL))
         .count();
     assert_eq!(
         prompts_after, prompts_before,
