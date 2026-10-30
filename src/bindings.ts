@@ -264,8 +264,13 @@ async changeMemoryEnabledSetting(enabled: boolean) : Promise<Result<null, string
     else return { status: "error", error: e  as any };
 }
 },
-async clearConversationMemory() : Promise<number> {
-    return await TAURI_INVOKE("clear_conversation_memory");
+async clearConversationMemory() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_conversation_memory") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 },
 async conversationMemoryCount() : Promise<number> {
     return await TAURI_INVOKE("conversation_memory_count");

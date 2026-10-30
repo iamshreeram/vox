@@ -52,15 +52,25 @@ export const RememberConversationsSettings: React.FC<RememberConversationsSettin
     const runClear = async () => {
       setClearing(true);
       setClearFailed(false);
+      let failed = false;
       try {
-        await commands.clearConversationMemory();
+        const result = await commands.clearConversationMemory();
+        if (result.status === "error") {
+          console.error(
+            "Failed to clear remembered conversations:",
+            result.error,
+          );
+          failed = true;
+        }
       } catch (error) {
         console.error("Failed to clear remembered conversations:", error);
-        setClearFailed(true);
+        failed = true;
       } finally {
         setClearing(false);
         setConfirming(false);
       }
+      setClearFailed(failed);
+      // Re-read the count either way so the line shows what is actually stored.
       await refreshCount();
     };
 

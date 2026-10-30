@@ -39,6 +39,7 @@ const CONFIRM_ACTION = text(`${K}.clearConfirmAction`);
 const CONFIRM_TEXT = text(`${K}.clearConfirm`);
 const COUNT_3 = "Remembered conversations: 3";
 const COUNT_0 = "Remembered conversations: 0";
+const CLEAR_FAILED = text(`${K}.clearFailed`);
 
 const section = (page: Page, id: string): Locator =>
   page.locator(`[data-settings-section="${id}"]`);
@@ -131,7 +132,12 @@ test.describe("Remember recent conversations", () => {
   test("Clear asks for confirmation, then clears and shows 0 with the button disabled", async ({
     page,
   }) => {
-    await openRemember(page, { conversation_memory_count: 3 });
+    // The raw invoke value of a Result command is the Ok payload; the wrapper wraps it as
+    // { status: "ok", data: 3 }.
+    await openRemember(page, {
+      conversation_memory_count: 3,
+      clear_conversation_memory: 3,
+    });
     await clearButton(page).click();
     await expect(
       group(page).getByText(CONFIRM_TEXT, { exact: true }),
@@ -152,6 +158,63 @@ test.describe("Remember recent conversations", () => {
       .toBe(1);
     await expect(countLine(page)).toHaveText(COUNT_0);
     await expect(clearButton(page)).toBeDisabled();
+  });
+
+  test("a failed clear shows the error, keeps the old count and leaves Clear usable", async ({
+    page,
+  }) => {
+    await installTauriMock(page, {
+      settings: { experimental_enabled: true },
+      commands: { conversation_memory_count: 3 },
+    });
+    // The real command returns Err("clear failed"); Tauri rejects the invoke with that string,
+    // and the generated wrapper turns a non-Error rejection into { status: "error", error }.
+    await page.addInitScript(() => {
+      const internals = (
+        window as unknown as {
+          __TAURI_INTERNALS__: {
+            invoke: (
+              cmd: string,
+              args?: unknown,
+              options?: unknown,
+            ) => Promise<unknown>;
+          };
+        }
+      ).__TAURI_INTERNALS__;
+      const original = internals.invoke;
+      // Call through first so the mock still records the invoke, then reject.
+      internals.invoke = (cmd, args, options) =>
+        cmd === "clear_conversation_memory"
+          ? original(cmd, args, options).then(() =>
+              Promise.reject("clear failed"),
+            )
+          : original(cmd, args, options);
+    });
+    await page.goto("/");
+    await navItem(page, "Agents").click();
+    await expect(section(page, "agents")).toBeVisible();
+    const header = group(page).getByRole("button").first();
+    await header.click();
+    await expect(header).toHaveAttribute("aria-expanded", "true");
+    await expect(toggle(page)).toBeVisible();
+    await expect(countLine(page)).toHaveText(COUNT_3);
+
+    await clearButton(page).click();
+    await group(page)
+      .getByRole("button", { name: CONFIRM_ACTION, exact: true })
+      .click();
+
+    await expect(
+      group(page).getByRole("alert").filter({ hasText: CLEAR_FAILED }),
+    ).toBeVisible();
+    await expect
+      .poll(
+        async () =>
+          (await invokedArgs(page, "clear_conversation_memory")).length,
+      )
+      .toBe(1);
+    await expect(countLine(page)).toHaveText(COUNT_3);
+    await expect(clearButton(page)).toBeEnabled();
   });
 
   test("a failing count command still renders the group", async ({ page }) => {
