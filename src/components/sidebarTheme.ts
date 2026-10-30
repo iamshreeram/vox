@@ -39,7 +39,7 @@ const ITEM_BASE =
   "flex gap-2 items-center p-2 w-full rounded-lg cursor-pointer transition-all";
 
 const ITEM_ACTIVE =
-  "bg-linear-to-r from-accent-a to-accent-b text-on-accent shadow-md";
+  "bg-linear-to-r/srgb from-accent-a to-accent-b text-on-accent shadow-md";
 
 const ITEM_INACTIVE = "hover:bg-mid-gray/15 opacity-90 hover:opacity-100";
 

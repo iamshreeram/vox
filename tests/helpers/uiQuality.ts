@@ -719,6 +719,8 @@ export interface Metric {
   required: number;
   /** Signed luminance difference, used to find the luminance-equal crossings. */
   balanceAt: (bg: Rgb) => number;
+  /** Further signed differences whose luminance-equal crossings are also searched (two-tone rings). */
+  extraBalanceAt?: Array<(bg: Rgb) => number>;
 }
 
 export interface SweepResult {
@@ -792,7 +794,11 @@ export function sweep(stack: Stack, metric: Metric): SweepResult {
     }
   };
   const boundary = (bg: Rgb) => metric.ratioAt(bg) - metric.required;
-  const crossings: Array<(bg: Rgb) => number> = [boundary, metric.balanceAt];
+  const crossings: Array<(bg: Rgb) => number> = [
+    boundary,
+    metric.balanceAt,
+    ...(metric.extraBalanceAt ?? []),
+  ];
 
   for (const g of levels) for (const ts of combos) evalAt(ts, g);
 
@@ -940,24 +946,61 @@ function firstShadowColor(boxShadow: string): string | null {
   return match ? match[0] : null;
 }
 
+/** Colour and spread of each outer (non-inset) shadow in a computed box-shadow list. */
+export function parseShadows(
+  boxShadow: string,
+): Array<{ color: string; spread: number }> {
+  if (boxShadow === "none") return [];
+  const out: Array<{ color: string; spread: number }> = [];
+  for (const part of splitTopLevel(boxShadow)) {
+    const text = part.trim();
+    if (text === "" || /\binset\b/.test(text)) continue;
+    const colour = text.match(/rgba?\([^)]*\)|#[0-9a-f]{3,8}\b/i);
+    if (colour === null) continue;
+    const lengths = text
+      .replace(colour[0], " ")
+      .split(/\s+/)
+      .filter((t) => /px$/.test(t))
+      .map((t) => parseFloat(t));
+    out.push({ color: colour[0], spread: lengths[3] ?? 0 });
+  }
+  return out;
+}
+
 /**
- * The colour text of the ring that a focus change shows, or null when there is no indicator.
- * Used by checkFocusRing and to collect candidate colours before resolution.
+ * The colour texts of the ring that a focus change shows, or null when there is no indicator.
+ * One text for a single-tone ring; two (outline, then a spread shadow) for a two-tone ring, where
+ * the outline is at least 2px and the shadow spread at least 2px. Used by checkFocusRing and to
+ * collect candidate colours before resolution.
  */
-export function focusRingText(
+export function focusRingTexts(
   focused: FocusStyle,
   base: FocusStyle,
-): string | null {
+): string[] | null {
   const outlineVisible =
     focused.outlineStyle !== "none" && parseFloat(focused.outlineWidth) > 0;
   const outlineChanged =
     focused.outlineStyle !== base.outlineStyle ||
     focused.outlineWidth !== base.outlineWidth ||
     focused.outlineColor !== base.outlineColor;
-  if (outlineVisible && outlineChanged) return focused.outlineColor;
   const shadowChanged =
     focused.boxShadow !== "none" && focused.boxShadow !== base.boxShadow;
-  if (shadowChanged) return firstShadowColor(focused.boxShadow);
+  const spreadShadow = shadowChanged
+    ? parseShadows(focused.boxShadow).find((s) => s.spread >= 2)
+    : undefined;
+  if (
+    outlineVisible &&
+    outlineChanged &&
+    parseFloat(focused.outlineWidth) >= 2 &&
+    spreadShadow !== undefined
+  ) {
+    return [focused.outlineColor, spreadShadow.color];
+  }
+  if (outlineVisible && outlineChanged) return [focused.outlineColor];
+  if (shadowChanged) {
+    const first = firstShadowColor(focused.boxShadow);
+    return first === null ? null : [first];
+  }
   return null;
 }
 
@@ -968,21 +1011,25 @@ export function checkFocusRing(
   layers: LayerCase[],
   resolve: ColourResolver,
 ): FocusVerdict {
-  const ringText = focusRingText(focused, base);
-  if (ringText === null) {
+  const ringTexts = focusRingTexts(focused, base);
+  if (ringTexts === null) {
     return {
       pass: false,
       ratio: null,
       reason: "no focus indicator on :focus-visible",
     };
   }
-  const ring = resolve(ringText);
-  if (ring === null) {
-    return {
-      pass: false,
-      ratio: null,
-      reason: `unresolvable focus ring colour: ${ringText}`,
-    };
+  const tones: Rgba[] = [];
+  for (const text of ringTexts) {
+    const tone = resolve(text);
+    if (tone === null) {
+      return {
+        pass: false,
+        ratio: null,
+        reason: `unresolvable focus ring colour: ${text}`,
+      };
+    }
+    tones.push(tone);
   }
   const stack = buildStack(layers, resolve);
   if (typeof stack === "string") {
@@ -992,11 +1039,19 @@ export function checkFocusRing(
       reason: `unsupported background: ${stack}`,
     };
   }
+  // Two tones: at every backdrop at least one tone must reach the ratio (max over tones).
   const metric: Metric = {
     required: MIN_FOCUS_RING_RATIO,
-    ratioAt: (bg) => contrastRatio(over(ring, bg), bg),
+    ratioAt: (bg) =>
+      Math.max(...tones.map((ring) => contrastRatio(over(ring, bg), bg))),
     balanceAt: (bg) =>
-      relativeLuminance(over(ring, bg)) - relativeLuminance(bg),
+      relativeLuminance(over(tones[0], bg)) - relativeLuminance(bg),
+    extraBalanceAt: tones
+      .slice(1)
+      .map(
+        (ring) => (bg: Rgb) =>
+          relativeLuminance(over(ring, bg)) - relativeLuminance(bg),
+      ),
   };
   const worst = sweep(stack, metric).worst;
   const pass = worst >= MIN_FOCUS_RING_RATIO;
@@ -1045,6 +1100,25 @@ export function rovingArrowKey(
   if (groupRole !== "radiogroup" && groupRole !== "tablist") return null;
   if (orientation === "vertical") return "ArrowDown";
   return "ArrowRight";
+}
+
+/**
+ * Native radio groups (and role=radio members of a radiogroup) are reachable when one member is
+ * a Tab stop the walk focused: arrow keys then move through every enabled member of the group.
+ * Each group is the enabled member ids of one radio group; a group with no visited member adds
+ * nothing, so its members stay unreached.
+ */
+export function expandRovingGroups(
+  visitedIds: string[],
+  groups: string[][],
+): string[] {
+  const visited = new Set(visitedIds);
+  for (const group of groups) {
+    if (group.some((id) => visited.has(id))) {
+      for (const id of group) visited.add(id);
+    }
+  }
+  return [...visited];
 }
 
 // ---------------------------------------------------------------------------
@@ -1293,7 +1367,7 @@ export const ROW_TEXT_LIMIT = 60;
 export const ROW_CSS_LIMIT = 300;
 export const ROW_PARENT_LIMIT = 4;
 /** Maximum element crops written per run (tests/ui-quality.spec.ts). */
-export const CROP_CAP = 60;
+export const CROP_CAP = 120;
 
 /** One element's identity: tag, id, classes and its 1-based nth-of-type among same-tag siblings. */
 export interface NodeRaw {

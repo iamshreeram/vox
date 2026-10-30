@@ -49,7 +49,7 @@ export const Slider: React.FC<SliderProps> = ({
       disabled={disabled}
     >
       <div className="w-full">
-        <div className="flex items-center space-x-1 min-h-[24px]">
+        <div className="range-focus-ring flex items-center space-x-1 min-h-[24px]">
           <input
             type="range"
             aria-label={label}

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
-import { appendFileSync, mkdirSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import {
   emitMockEvent,
   getMockAppearance,
@@ -22,8 +23,10 @@ const OUT = "/tmp/voxui-r1";
 mkdirSync(OUT, { recursive: true });
 /** R2g: one element-level crop per distinct failing group, at most Q.CROP_CAP per run. */
 const CROPS = "/tmp/voxui-r2/crops";
+// R3g: stale crops from earlier runs are cleared so index.json only maps this run's files.
+rmSync(CROPS, { recursive: true, force: true });
 mkdirSync(CROPS, { recursive: true });
-const cropped = new Set<string>();
+const cropped = new Map<string, string>();
 
 const SIDEBAR_ITEM = "p.text-sm.font-medium.truncate[title]";
 const ALL_GATES = {
@@ -499,12 +502,28 @@ function observeFocus(): FocusObs {
   let groupRole: string | null = null;
   let orientation: string | null = null;
   let members: Element[] = [];
+  // Enabled, rendered members only: a disabled member can never be reached, so it must not hold
+  // the arrow walk open.
+  const usable = (m: Element): boolean => {
+    const r = m.getBoundingClientRect();
+    return (
+      !(m as HTMLButtonElement).disabled &&
+      m.getAttribute("aria-disabled") !== "true" &&
+      r.width > 0 &&
+      r.height > 0
+    );
+  };
   const group = el.closest("[role=radiogroup],[role=tablist]");
   if (group) {
     groupRole = group.getAttribute("role");
     orientation = group.getAttribute("aria-orientation");
-    members = Array.from(group.querySelectorAll("[role=radio],[role=tab]"));
-  } else if (el instanceof HTMLInputElement && el.type === "radio" && el.name) {
+    // Native radios inside a radiogroup container count as members too (R3-1/R3-2).
+    members = Array.from(
+      group.querySelectorAll("[role=radio],[role=tab],input[type=radio]"),
+    );
+  }
+  if (el instanceof HTMLInputElement && el.type === "radio" && el.name) {
+    // A native radio group is the set of same-name radios (one Tab stop, arrows inside).
     groupRole = "radiogroup";
     members = Array.from(
       document.querySelectorAll<HTMLInputElement>(
@@ -512,6 +531,7 @@ function observeFocus(): FocusObs {
       ),
     );
   }
+  members = members.filter(usable);
   return {
     qid: el.getAttribute("data-qa-id"),
     tag: el.tagName.toLowerCase(),
@@ -545,7 +565,8 @@ function findingsSink(
 
 /**
  * One element-level crop per distinct failing group (kind + selector path), written to
- * /tmp/voxui-r2/crops/<kind>-<n>.png. Bounded by Q.CROP_CAP files per run (counted on disk).
+ * /tmp/voxui-r2/crops/<kind>-<sha1(group) first 12 hex>.png. Capped at Q.CROP_CAP groups per run.
+ * index.json maps each group key ("<kind> <selector>") to its file name, rewritten on every crop.
  */
 async function cropFailingGroups(
   page: Page,
@@ -559,15 +580,19 @@ async function cropFailingGroups(
     if (cropped.has(group)) continue;
     const clip = Q.cropClip(v.detail.rect, viewport);
     if (clip === null) continue;
-    const files = readdirSync(CROPS).filter((f) => f.endsWith(".png"));
-    if (files.length >= Q.CROP_CAP) return;
-    const n = files.filter((f) => f.startsWith(`${v.kind}-`)).length + 1;
-    cropped.add(group);
+    if (cropped.size >= Q.CROP_CAP) return;
+    const hash = createHash("sha1").update(group).digest("hex").slice(0, 12);
+    const file = `${v.kind}-${hash}.png`;
+    cropped.set(group, file);
     await page.screenshot({
-      path: `${CROPS}/${v.kind}-${n}.png`,
+      path: `${CROPS}/${file}`,
       clip,
       timeout: 20_000,
     });
+    writeFileSync(
+      `${CROPS}/index.json`,
+      `${JSON.stringify(Object.fromEntries(cropped), null, 2)}\n`,
+    );
   }
 }
 
@@ -578,22 +603,30 @@ const slug = (s: string): string =>
     .replace(/^-|-$/g, "");
 
 /** Walks the Tab order from the first enabled element; arrow keys cover roving groups. */
-async function keyboardWalk(
-  page: Page,
-): Promise<{ visited: string[]; obs: Map<string, FocusObs>; steps: number }> {
+async function keyboardWalk(page: Page): Promise<{
+  visited: string[];
+  obs: Map<string, FocusObs>;
+  steps: number;
+  groups: string[][];
+}> {
   await page.keyboard.press("Shift");
   const start = await page.evaluate(focusFirstEnabled);
   let current = (await page.evaluate(observeFocus)) as FocusObs;
   const visited: string[] = [];
   const obs = new Map<string, FocusObs>();
+  const groups: string[][] = [];
   const record = (o: FocusObs) => {
     if (o.qid && !visited.includes(o.qid)) {
       visited.push(o.qid);
       obs.set(o.qid, o);
     }
+    if (o.groupRole === "radiogroup" && o.groupMembers.length > 0) {
+      const key = o.groupMembers.join(" ");
+      if (!groups.some((g) => g.join(" ") === key)) groups.push(o.groupMembers);
+    }
   };
   let steps = 0;
-  if (start === null) return { visited, obs, steps };
+  if (start === null) return { visited, obs, steps, groups };
   record(current);
   const startQid = current.qid;
   while (steps < Q.MAX_TAB_STEPS) {
@@ -622,7 +655,7 @@ async function keyboardWalk(
       }
     }
   }
-  return { visited, obs, steps };
+  return { visited, obs, steps, groups };
 }
 
 /** Full audit of one page state. Returns violations; soft-asserts every kind; writes findings. */
@@ -644,8 +677,7 @@ function focusColourStrings(observed: Iterable<FocusObs>): string[] {
   const out: string[] = [];
   for (const o of observed) {
     out.push(...Q.candidateColours(o.layers as Q.LayerCase[]));
-    const ring = Q.focusRingText(o.focused, o.base);
-    if (ring !== null) out.push(ring);
+    out.push(...(Q.focusRingTexts(o.focused, o.base) ?? []));
   }
   return out;
 }
@@ -784,7 +816,11 @@ async function auditVisit(
       page,
       focusColourStrings(walk.obs.values()),
     );
-    const reach = Q.analyzeTabWalk(enabledIds, walk.visited, walk.steps);
+    const reach = Q.analyzeTabWalk(
+      enabledIds,
+      Q.expandRovingGroups(walk.visited, walk.groups),
+      walk.steps,
+    );
     for (const id of reach.unreached) {
       const el = data.interactive.find((e) => e.qid === id);
       const detail = el ? Q.buildDetail(el.el) : null;
@@ -1329,13 +1365,10 @@ test.describe("negative fixtures: the gate must detect each injected defect", ()
     await page.keyboard.press("Tab");
     const obs = (await page.evaluate(observeFocus)) as FocusObs;
     expect(obs.tag, "the button must take focus").toBe("button");
-    const ringText = Q.focusRingText(obs.focused, obs.base);
+    const ringTexts = Q.focusRingTexts(obs.focused, obs.base) ?? [];
     const resolve = await Q.resolveColourMap(
       page,
-      Q.candidateColours(
-        obs.layers as Q.LayerCase[],
-        ringText ? [ringText] : [],
-      ),
+      Q.candidateColours(obs.layers as Q.LayerCase[], ringTexts),
     );
     const ring = Q.checkFocusRing(
       obs.focused,

@@ -346,6 +346,74 @@ const scenarios: Record<string, () => void> = {
       }
     },
 
+  "secondary and warning button labels reach 4.5:1 on the mid-gray fill and the card, per palette (R3-11..15)":
+    () => {
+      const button = readFileSync(
+        new URL("../components/ui/Button.tsx", import.meta.url),
+        "utf8",
+      );
+      assert.match(button, /secondary:\s*\n?\s*"text-text bg-mid-gray\/10/);
+      assert.match(button, /warning:\s*\n?\s*"text-text bg-mid-gray\/10/);
+      for (const palette of palettes) {
+        const fill = blendOver(MID_GRAY, 0.1, palette.background);
+        const card = blendOver(palette.text, 0.03, palette.background);
+        for (const [index, surface] of [fill, card].entries()) {
+          assertAtLeast(
+            contrastRatio(palette.text, surface),
+            4.5,
+            `${palette.name} secondary label on surface ${index} (${surface})`,
+          );
+        }
+      }
+    },
+
+  "disabled secondary labels dim to the muted token, not opacity, and keep 4.5:1 on the fill (R3-11..15)":
+    () => {
+      const button = readFileSync(
+        new URL("../components/ui/Button.tsx", import.meta.url),
+        "utf8",
+      );
+      const secondary = button.match(/secondary:\s*\n?\s*"([^"]*)"/);
+      assert.ok(secondary, "Button.tsx defines the secondary variant");
+      assert.match(secondary[1], /disabled:text-muted/);
+      assert.doesNotMatch(secondary[1], /disabled:opacity/);
+      for (const palette of palettes) {
+        const fill = blendOver(MID_GRAY, 0.1, palette.background);
+        const muted = blendOver(palette.text, MUTED_MIX, palette.background);
+        assertAtLeast(
+          contrastRatio(muted, fill),
+          4.5,
+          `${palette.name} disabled secondary label on fill`,
+        );
+      }
+    },
+
+  "settings row titles reach 4.5:1 when enabled (text) and when disabled (muted), on the card and mid-gray fills (R3-8..10)":
+    () => {
+      const container = readFileSync(
+        new URL("../components/ui/SettingContainer.tsx", import.meta.url),
+        "utf8",
+      );
+      assert.doesNotMatch(container, /disabled \? "opacity-50"/);
+      assert.match(container, /disabled \? "text-muted"/);
+      for (const palette of palettes) {
+        const card = blendOver(palette.text, 0.03, palette.background);
+        const muted = blendOver(palette.text, MUTED_MIX, palette.background);
+        for (const surface of [palette.background, card]) {
+          assertAtLeast(
+            contrastRatio(palette.text, surface),
+            4.5,
+            `${palette.name} enabled row title on ${surface}`,
+          );
+          assertAtLeast(
+            contrastRatio(muted, surface),
+            4.5,
+            `${palette.name} disabled row title on ${surface}`,
+          );
+        }
+      }
+    },
+
   "reduced motion: one global override zeroes animation and transition durations":
     () => {
       assert.match(

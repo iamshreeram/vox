@@ -20,26 +20,28 @@ export const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const baseClasses =
-    "font-medium rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer";
+    "font-medium rounded-lg border transition-colors disabled:cursor-not-allowed cursor-pointer";
 
   const variantClasses = {
     primary:
-      "btn-primary text-on-accent bg-linear-to-r from-accent-a to-accent-b border-transparent hover:brightness-110",
+      "btn-primary text-on-accent bg-linear-to-r/srgb from-accent-a to-accent-b border-transparent hover:brightness-110 disabled:opacity-50",
     "primary-soft":
-      "text-text bg-logo-primary/20 border-transparent hover:bg-logo-primary/30",
+      "text-text bg-logo-primary/20 border-transparent hover:bg-logo-primary/30 disabled:opacity-50",
     secondary:
-      "bg-mid-gray/10 border-mid-gray/20 hover:bg-background-ui/30 hover:border-logo-primary ",
+      "text-text bg-mid-gray/10 border-mid-gray/20 hover:bg-background-ui/30 hover:border-logo-primary disabled:text-muted",
     // Secondary's neutral resting look, but hover/focus use the semantic
     // --color-warning token (theme.css) instead of the pink accent — for
-    // buttons sitting on warning surfaces like SecureInputWarning
+    // buttons sitting on warning surfaces like SecureInputWarning.
+    // Text is the full text token (4.5:1 on the mid-gray fill). Disabled dims to the muted token,
+    // not opacity, so the disabled label keeps 4.5:1 (a11yTokens.test.ts).
     warning:
-      "text-text bg-mid-gray/10 border-mid-gray/20 hover:bg-warning/15 hover:border-warning",
+      "text-text bg-mid-gray/10 border-mid-gray/20 hover:bg-warning/15 hover:border-warning disabled:text-muted",
     danger:
-      "text-white bg-danger border-mid-gray/20 hover:bg-danger hover:border-danger",
+      "text-white bg-danger border-mid-gray/20 hover:bg-danger hover:border-danger disabled:opacity-50",
     "danger-ghost":
-      "text-danger border-transparent hover:text-danger hover:bg-danger-soft focus-visible:bg-danger-soft",
+      "text-danger border-transparent hover:text-danger hover:bg-danger-soft focus-visible:bg-danger-soft disabled:opacity-50",
     ghost:
-      "text-current border-transparent hover:bg-mid-gray/10 hover:border-logo-primary focus-visible:bg-mid-gray/20",
+      "text-current border-transparent hover:bg-mid-gray/10 hover:border-logo-primary focus-visible:bg-mid-gray/20 disabled:opacity-50",
   };
 
   const sizeClasses = {

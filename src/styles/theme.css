@@ -141,6 +141,18 @@
   box-shadow: inset 0 0 0 2px var(--color-on-accent);
 }
 
+/* Range sliders (UI enterprise R3-3): the thumb and track share one container, so the focus ring is
+   drawn on that container with the global --focus-ring (3:1 on the card). The input drops its own
+   outline so there is one ring, not two (a11yStatic.test.ts pins both rules). */
+.range-focus-ring:has(input[type="range"]:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+.range-focus-ring input[type="range"]:focus-visible {
+  outline: none;
+}
+
 /* Disabled accent-filled controls (R2-1..3). Opacity over the accent fill blends the on-accent label
    toward the page and drops it to ~2.5:1, so a disabled primary keeps full opacity and takes a neutral
    fill instead; the label stays --color-text on it (a11yTokens.test.ts pins 4.5:1). */

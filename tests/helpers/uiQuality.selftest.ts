@@ -23,7 +23,9 @@ import {
   contrastRatio,
   convergenceMismatches,
   evaluateTextContrast,
+  expandRovingGroups,
   expectedAppearance,
+  focusRingTexts,
   fontSizeOk,
   motionViolation,
   overflowPx,
@@ -535,6 +537,95 @@ scenario("a solid dark outline and a blue box-shadow ring pass", () => {
     true,
   );
 });
+
+scenario(
+  "a two-tone ring (white outline, black 4px shadow) passes over every backdrop",
+  () => {
+    const twoTone: FocusStyle = {
+      outlineStyle: "solid",
+      outlineWidth: "2px",
+      outlineColor: "rgb(255, 255, 255)",
+      boxShadow: "rgb(0, 0, 0) 0px 0px 0px 4px",
+    };
+    assert.equal(
+      focusRingTexts(twoTone, NO_FOCUS)?.length,
+      2,
+      "both tones must be read",
+    );
+    const verdict = checkFocusRing(twoTone, NO_FOCUS, [layer("none")], R);
+    assert.equal(verdict.pass, true, verdict.reason ?? "");
+  },
+);
+
+scenario("a single white ring on a white page fails (single-tone rule)", () => {
+  const white: FocusStyle = {
+    outlineStyle: "solid",
+    outlineWidth: "2px",
+    outlineColor: "rgb(255, 255, 255)",
+    boxShadow: "none",
+  };
+  const verdict = checkFocusRing(
+    white,
+    NO_FOCUS,
+    [layer("none", "rgb(255, 255, 255)")],
+    R,
+  );
+  assert.equal(verdict.pass, false);
+});
+
+scenario("a two-tone ring with two transparent tones fails", () => {
+  const clear: FocusStyle = {
+    outlineStyle: "solid",
+    outlineWidth: "2px",
+    outlineColor: "rgba(0, 0, 0, 0)",
+    boxShadow: "rgba(0, 0, 0, 0) 0px 0px 0px 4px",
+  };
+  const verdict = checkFocusRing(clear, NO_FOCUS, [layer("none")], R);
+  assert.equal(verdict.pass, false);
+});
+
+scenario("two tones of similar mid-grey fail over the backdrop", () => {
+  const greys: FocusStyle = {
+    outlineStyle: "solid",
+    outlineWidth: "2px",
+    outlineColor: "rgb(118, 118, 118)",
+    boxShadow: "rgb(120, 120, 120) 0px 0px 0px 4px",
+  };
+  const verdict = checkFocusRing(greys, NO_FOCUS, [layer("none")], R);
+  assert.equal(verdict.pass, false);
+});
+
+// --- roving groups (native radios and role=radio members) --------------------
+scenario(
+  "a native radio group with three radios is reachable from one tab stop",
+  () => {
+    const visited = expandRovingGroups(["r2"], [["r1", "r2", "r3"]]);
+    assert.deepEqual(
+      analyzeTabWalk(["r1", "r2", "r3"], visited, 2).unreached,
+      [],
+    );
+  },
+);
+
+scenario(
+  "a radio in a different name group with no tab stop reached is reported",
+  () => {
+    const visited = expandRovingGroups(["x1"], [["x1", "x2"], ["y1"]]);
+    assert.deepEqual(analyzeTabWalk(["x1", "x2", "y1"], visited, 3).unreached, [
+      "y1",
+    ]);
+  },
+);
+
+scenario(
+  "an unreachable enabled button is still reported beside a radio group",
+  () => {
+    const visited = expandRovingGroups(["r1"], [["r1", "r2"]]);
+    assert.deepEqual(analyzeTabWalk(["r1", "r2", "b1"], visited, 3).unreached, [
+      "b1",
+    ]);
+  },
+);
 
 scenario(
   "a focus ring over a gradient is measured over the composed background",

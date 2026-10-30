@@ -56,7 +56,7 @@ const selectStyles: StylesConfig<SelectOption, false> = {
     minHeight: 40,
     borderRadius: 6,
     borderColor: state.isFocused ? "var(--color-logo-primary)" : neutralBorder,
-    boxShadow: state.isFocused ? "0 0 0 1px var(--color-logo-primary)" : "none",
+    boxShadow: state.isFocused ? "0 0 0 2px var(--focus-ring)" : "none",
     backgroundColor: state.isFocused ? focusBackground : baseBackground,
     fontSize: "0.875rem",
     color: "var(--color-text)",

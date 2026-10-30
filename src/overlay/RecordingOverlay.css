@@ -384,7 +384,7 @@
   /* Equal side columns (min 22px to hold the cancel button) keep the center item
      — waveform or label — centered whether the pill is at min width or content-
      sized. */
-  grid-template-columns: minmax(22px, 1fr) auto minmax(22px, 1fr);
+  grid-template-columns: minmax(24px, 1fr) auto minmax(24px, 1fr);
   align-items: center;
 }
 .sbase-l {
@@ -559,8 +559,8 @@
   }
 }
 .sx {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   flex: none;
   padding: 0;

@@ -871,6 +871,10 @@ export const CORE_EXCLUDED: Readonly<Record<string, string>> = {
     "title of the consent dialog that opens from the Brain page; not a setting",
   "settings.modelSettings.title":
     'card title is templated with the active model name ("{{model}} Settings"), so it has no stable text to search or show; its rows are indexed directly under the General page',
+  "settings.models.searchPlaceholder":
+    "placeholder/accessible name of the model search box inside an indexed row, not a row title",
+  "settings.general.language.searchPlaceholder":
+    "placeholder/accessible name of the language search box inside an indexed row, not a row title",
   "settings.general.shortcut.title":
     "fallback row title shown only while shortcut bindings load or are missing; the searchable rows are the binding names",
   "settings.history.copyToClipboard":
