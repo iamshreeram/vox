@@ -12,6 +12,7 @@ use super::converse_agent_loop_tests::*;
 use super::*;
 use crate::managers::chat_log::ChatRole;
 use crate::managers::converse_agent::{AgentEvent, AgentPoll};
+use crate::managers::converse_confirm::FORCED_PROMPT_TAIL;
 use crate::managers::converse_plan::{AgentPlan, PlanKind, PlanStep, StepKind, TurnPlan};
 use crate::managers::tts::{sanitize_speech_text, MAX_SPEECH_CHARS};
 use std::collections::VecDeque;
@@ -136,6 +137,9 @@ fn crig(steps: Vec<Step>, turns: Vec<Turn>) -> CRig {
             script: Mutex::new(turns.into()),
             seen: Mutex::new(vec![]),
             log: log.clone(),
+            judge: Mutex::new(VecDeque::new()),
+            judge_calls: Mutex::new(vec![]),
+            judge_hangs: std::sync::atomic::AtomicBool::new(false),
         },
         barge,
         log,
@@ -247,7 +251,10 @@ fn plan_turn(speech: &str, steps: Vec<PlanStep>) -> Turn {
 
 const CMD: &str = "cargo build --release";
 const UTT: &str = "run the build";
-const PROMPT: &str = "I am about to do this: cargo build --release. Say yes to go ahead.";
+/// The forced question of the `CMD` command: the body plus the shared tail.
+fn prompt() -> String {
+    format!("I am about to do this: cargo build --release. {FORCED_PROMPT_TAIL}")
+}
 /// The action reply of an approved command is the plan's own speech (the hands' `Done` text is
 /// not spoken for a planner command).
 const ACTION_REPLY: &str = "Running it.";
@@ -439,7 +446,7 @@ async fn confirmation_prompt_yes_and_action_reply_are_recorded_in_order() {
     let rep = ChatRep::default();
     crun(&r, &ccfg(), &rep).await;
     assert!(
-        spoke(&r.log, PROMPT) && spoke(&r.log, ACTION_REPLY),
+        spoke(&r.log, &prompt()) && spoke(&r.log, ACTION_REPLY),
         "precondition: prompt and action reply were spoken: {:?} log {:?}",
         said_oracle(&r.log),
         r.log.lock().unwrap()
@@ -449,7 +456,7 @@ async fn confirmation_prompt_yes_and_action_reply_are_recorded_in_order() {
         &chat,
         &[
             (ChatRole::User, UTT),
-            (ChatRole::Assistant, PROMPT),
+            (ChatRole::Assistant, &prompt()),
             (ChatRole::User, "yes"),
             (ChatRole::Assistant, ACTION_REPLY),
         ],
@@ -462,31 +469,34 @@ async fn confirmation_prompt_yes_and_action_reply_are_recorded_in_order() {
     assert_eq!(count_log(&r.log, &format!("model:{CMD}")), 1, "ran once");
 }
 
-/// `yes please` is recorded once as User and runs nothing (exact-yes rule unchanged).
+/// `yes please` is recorded once as User and approves (a clear local agreement, DESIGN A6): the
+/// command runs once, and no decline is spoken.
 #[tokio::test]
-async fn yes_please_is_recorded_once_and_runs_nothing() {
+async fn yes_please_is_recorded_once_and_approves() {
     let r = command_taint(vec![heard("yes please")]);
     let rep = ChatRep::default();
     crun(&r, &ccfg(), &rep).await;
-    assert!(spoke(&r.log, PROMPT), "precondition: the prompt was spoken");
+    assert!(
+        spoke(&r.log, &prompt()),
+        "precondition: the prompt was spoken"
+    );
     let chat = lines(&rep);
     assert_subsequence(
         &chat,
         &[
-            (ChatRole::Assistant, PROMPT),
+            (ChatRole::Assistant, &prompt()),
             (ChatRole::User, "yes please"),
-            (ChatRole::Assistant, DECLINED),
         ],
+    );
+    assert!(
+        !chat.iter().any(|(_, t)| t == DECLINED),
+        "no decline was spoken: {chat:?}"
     );
     assert_eq!(
         users(&chat),
         vec![REQ, "thanks", UTT, "yes please", "hello there"]
     );
-    assert_eq!(
-        count_log(&r.log, &format!("model:{CMD}")),
-        0,
-        "nothing executed"
-    );
+    assert_eq!(count_log(&r.log, &format!("model:{CMD}")), 1, "ran once");
 }
 
 /// A refusal is recorded once as User; the decline is Assistant; nothing runs.
@@ -495,12 +505,15 @@ async fn refusal_is_recorded_once_and_runs_nothing() {
     let r = command_taint(vec![heard("no")]);
     let rep = ChatRep::default();
     crun(&r, &ccfg(), &rep).await;
-    assert!(spoke(&r.log, PROMPT), "precondition: the prompt was spoken");
+    assert!(
+        spoke(&r.log, &prompt()),
+        "precondition: the prompt was spoken"
+    );
     let chat = lines(&rep);
     assert_subsequence(
         &chat,
         &[
-            (ChatRole::Assistant, PROMPT),
+            (ChatRole::Assistant, &prompt()),
             (ChatRole::User, "no"),
             (ChatRole::Assistant, DECLINED),
         ],
@@ -519,7 +532,10 @@ async fn confirmation_answer_rejected_by_speaker_filter_is_not_recorded() {
     let r = command_taint(vec![outcome(ListenOutcome::Ignored)]);
     let rep = ChatRep::default();
     crun(&r, &ccfg(), &rep).await;
-    assert!(spoke(&r.log, PROMPT), "precondition: the prompt was spoken");
+    assert!(
+        spoke(&r.log, &prompt()),
+        "precondition: the prompt was spoken"
+    );
     let chat = lines(&rep);
     assert_eq!(
         users(&chat),
@@ -543,7 +559,10 @@ async fn empty_confirmation_answer_is_not_recorded() {
     let r = command_taint(vec![silent()]);
     let rep = ChatRep::default();
     crun(&r, &ccfg(), &rep).await;
-    assert!(spoke(&r.log, PROMPT), "precondition: the prompt was spoken");
+    assert!(
+        spoke(&r.log, &prompt()),
+        "precondition: the prompt was spoken"
+    );
     let chat = lines(&rep);
     assert_eq!(users(&chat), vec![REQ, "thanks", UTT, "hello there"]);
     assert_eq!(
