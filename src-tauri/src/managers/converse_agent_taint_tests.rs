@@ -217,8 +217,9 @@ async fn t_forced_prompt_text_is_exact_for_every_kind() {
     }
 }
 
-/// B9: exactly "yes" heard right after the prompt runs the SAME plan object, once, under every
-/// speech variant, with the policy absent and present (Job needs the policy: it cannot run without).
+/// B9: exactly "yes" or "go ahead" heard right after the prompt runs the SAME plan object, once,
+/// under every speech variant, with the policy absent and present (Job needs the policy: it cannot
+/// run without).
 #[tokio::test]
 async fn t_yes_executes_the_described_payload_once() {
     let kinds = [
@@ -249,6 +250,53 @@ async fn t_yes_executes_the_described_payload_once() {
             }
         }
     }
+}
+
+/// B9: "go ahead" heard right after the prompt runs the SAME plan object, once, under every speech
+/// variant, with the policy absent and present; the same matrix as the "yes" twin above.
+#[tokio::test]
+async fn t_go_ahead_executes_the_described_payload_once() {
+    let kinds = [
+        EffectKind::Command,
+        EffectKind::Paste,
+        EffectKind::Job,
+        EffectKind::Agent,
+        EffectKind::SetRole,
+    ];
+    for kind in kinds {
+        for (early, ack) in VARIANTS {
+            for with_policy in [false, true] {
+                if kind == EffectKind::Job && !with_policy {
+                    continue;
+                }
+                let r = tainted_rig(RESULT, kind, vec![heard("go ahead")], vec![]);
+                let pol = policy_on();
+                let policy: Option<&dyn PolicySource> = if with_policy { Some(&pol) } else { None };
+                run_with(&r, &vcfg(early, ack), policy).await;
+                let (_, _, prompt) = effect_of(kind);
+                assert!(prompted(&r, prompt), "{kind:?}: prompt spoken");
+                assert_eq!(
+                    executed(&r, kind),
+                    1,
+                    "{kind:?} early={early} ack={ack:?} policy={with_policy}: executed once: {:?}",
+                    entries(&r)
+                );
+            }
+        }
+    }
+}
+
+/// B9: "go ahead" without the Job policy cannot start a Job: the policy is required.
+#[tokio::test]
+async fn t_go_ahead_cannot_start_a_job_without_policy() {
+    let r = tainted_rig(RESULT, EffectKind::Job, vec![heard("go ahead")], vec![]);
+    run_with(&r, &vcfg(false, None), None).await;
+    assert_eq!(
+        executed(&r, EffectKind::Job),
+        0,
+        "Job without policy: {:?}",
+        entries(&r)
+    );
 }
 
 /// B9: an Agent yes starts the prepared launch built from the described task; the fingerprint of
@@ -337,16 +385,20 @@ async fn t_gate_on_still_asks_the_forced_yes_first() {
     );
 }
 
-/// B9: every reply other than exactly "yes" means no: the prompt is spoken, `Okay, I won't.` is
-/// spoken, nothing runs. Silence and mixed speech are included.
+/// B9: every reply other than exactly "yes" or "go ahead" means no: the prompt is spoken, `Okay, I
+/// won't.` is spoken, nothing runs. Silence and mixed speech are included.
 #[tokio::test]
-async fn t_anything_but_exact_yes_runs_nothing() {
+async fn t_anything_but_yes_or_go_ahead_runs_nothing() {
     let replies: Vec<(&str, Step)> = vec![
         ("okay", heard("okay")),
         ("sure", heard("sure")),
         ("yes please", heard("yes please")),
         ("mixed", heard("yes but delete it")),
         ("silence", silent()),
+        ("go ahead and delete it", heard("go ahead and delete it")),
+        ("yes go ahead", heard("yes go ahead")),
+        ("go ahead please", heard("go ahead please")),
+        ("okay go ahead", heard("okay go ahead")),
     ];
     let kinds = [
         EffectKind::Command,
