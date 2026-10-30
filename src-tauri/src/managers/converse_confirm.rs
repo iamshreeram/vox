@@ -251,11 +251,10 @@ pub(crate) async fn ask_and_listen(
     }
 }
 
-/// Strict classifier for forced confirmations (DESIGN 2.5, C6): true only when the utterance,
+/// Strict fast path of the forced confirmation (DESIGN 2.5, C6): true only when the utterance,
 /// lower-cased, punctuation-stripped and whitespace-normalised, is exactly `yes` or exactly
-/// `go ahead`. Everything else (`okay`, `sure`, `yes please`, `go ahead please`, mixed speech,
-/// silence, the forced prompt itself) is not an approval.
-#[cfg_attr(not(test), allow(dead_code))]
+/// `go ahead`. Every other answer is left to the local phrase table and the model judge
+/// (`converse_confirm_judge`); this function never approves anything else.
 pub fn classify_strict_yes(utterance: &str) -> bool {
     let key = utterance
         .split_whitespace()
@@ -264,29 +263,6 @@ pub fn classify_strict_yes(utterance: &str) -> bool {
         .collect::<Vec<_>>()
         .join(" ");
     key == "yes" || key == "go ahead"
-}
-
-/// Asks a forced yes/no question (DESIGN 2.5, C6). The same say, quiet wait, guard and single
-/// listen as `confirm_action`, but only exactly `yes` or `go ahead` approves (`classify_strict_yes`). The
-/// caller speaks the decline line; nothing runs unless this returns `Approved`.
-#[allow(dead_code)]
-pub async fn confirm_forced(
-    ears: &dyn Ears,
-    mouth: &dyn Mouth,
-    announcer: &Announcer,
-    question: &str,
-    cfg: &ConfirmConfig,
-    chat: Option<&dyn Reporter>,
-) -> Decision {
-    match ask_and_listen(ears, mouth, announcer, question, cfg, chat).await {
-        Ok(ListenOutcome::Utterance(text)) if classify_strict_yes(&text) => Decision::Approved,
-        Ok(ListenOutcome::Utterance(text)) if text.trim().is_empty() => {
-            Decision::Declined(DeclineReason::Silence)
-        }
-        Ok(ListenOutcome::Utterance(_)) => Decision::Declined(DeclineReason::Unclear),
-        Ok(other) => decision_for(other),
-        Err(reason) => Decision::Declined(reason),
-    }
 }
 
 /// The first `count` whitespace-separated words of `text`, joined by single spaces.

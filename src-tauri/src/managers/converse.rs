@@ -342,7 +342,6 @@ pub trait Brain: Send + Sync {
 
     /// Model judgement of one heard answer to a forced confirmation (DESIGN A4). The default
     /// is `Unavailable` and never touches `plan`, so brains without a judge fail closed.
-    #[cfg_attr(not(test), allow(dead_code))]
     fn judge_answer<'a>(&'a self, answer: &'a str) -> BoxFuture<'a, AnswerJudgement> {
         let _ = answer;
         Box::pin(async { AnswerJudgement::Unavailable })
@@ -899,7 +898,8 @@ const MSG_DONE: &str = "Done.";
 /// Spoken instead of any model-proposed paste or command while vault context is on (DESIGN 3.6).
 /// Spoken when a gated job's settings changed between approval and dispatch (DESIGN R3-2).
 const MSG_SETTINGS_CHANGED: &str = "Settings changed, so I didn't start it.";
-/// Spoken when a forced confirmation is not exactly `yes` or `go ahead` (DESIGN 2.5, C6).
+/// Spoken when a forced confirmation is refused, cut short or not heard (DESIGN 2.5, C6). The
+/// unclear-after-re-ask case speaks its own line (`decline_message`).
 const MSG_FORCED_DECLINED: &str = "Okay, I won't.";
 const MSG_ANSWER_ONLY: &str =
     "Vault context is on, so I can only answer questions. Turn it off to dictate text or open things.";

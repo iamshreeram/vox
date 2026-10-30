@@ -598,8 +598,9 @@ pub const PLAIN_MAX_TOKENS: u32 = 8;
 /// Why a plain judgement completion produced no text. Carries no content.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlainError {
-    /// The route cannot send a plain request (Off, Command, ACP/agent, direct endpoint,
-    /// unknown or incomplete model config). No external call and no process was started.
+    /// The route cannot send a plain request (Off, Command, ACP/agent, unknown or incomplete
+    /// model config, or a direct endpoint that cannot be prepared). No external call and no
+    /// process was started. A correctly configured DirectAnthropic endpoint is supported (A4b).
     Unsupported,
     /// The overall deadline elapsed (connect and read included).
     Timeout,
@@ -611,8 +612,9 @@ pub enum PlainError {
 ///
 /// Sends exactly two messages (`system`, `user`), no tools, no history, JSON /
 /// `response_format` mode OFF, `temperature` 0 and `max_tokens` <= [`PLAIN_MAX_TOKENS`].
-/// Only the composer's OpenAI-compatible model route is used (its streaming and legacy
-/// settings alike, sent as one non-streaming request). Every other route returns
+/// Two routes are supported: the DirectAnthropic realtime endpoint (A4b, see
+/// `complete_plain_direct`) and the composer's OpenAI-compatible model route (its streaming and
+/// legacy settings alike, sent as one non-streaming request). Every other route returns
 /// `Unsupported` before any network or process activity, with no fallback to another
 /// provider and never an ACP/agent launch. The reply is returned trimmed and otherwise
 /// unparsed. `deadline` bounds connect and read together.

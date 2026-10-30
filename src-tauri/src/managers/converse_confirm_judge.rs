@@ -47,6 +47,16 @@ const NEGATION_WORDS: &[&str] = &[
     "rather",
     "modify",
     "edit",
+    "wont",
+    "cant",
+    "shouldnt",
+    "wouldnt",
+    "couldnt",
+    "isnt",
+    "arent",
+    "hold",
+    "later",
+    "nevermind",
 ];
 
 /// Verdict and meta words: an utterance that talks about the judgement itself is never judged.

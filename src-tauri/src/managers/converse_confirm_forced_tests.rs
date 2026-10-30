@@ -300,6 +300,46 @@ async fn t5g_second_listen_silence_error_and_rejected_voice_end_without_running(
     }
 }
 
+#[tokio::test]
+async fn t5g_barge_on_the_second_listen_declines_without_a_second_reask() {
+    let r = tainted_rig(
+        RESULT,
+        EffectKind::Command,
+        vec![heard("sounds good to me"), outcome(ListenOutcome::Aborted)],
+        vec![],
+    );
+    judge_with(&r, &[AnswerJudgement::Unclear]);
+    run_with(&r, &acfg(), None).await;
+    assert_eq!(executed(&r, EffectKind::Command), 0, "nothing ran");
+    assert_eq!(reasks(&r, EffectKind::Command), 1, "no second re-ask");
+    assert_eq!(judge_calls(&r).len(), 1, "judge not called again");
+    assert!(said(&r, DECLINED), "declined: {:?}", spoken(&r));
+    assert!(said(&r, HI), "sentinel processed");
+}
+
+/// A barge during the re-ask speech (the mouth reports Interrupted) declines: nothing runs, the
+/// second listen never opens and the judge is not called again.
+#[tokio::test]
+async fn t5g_barge_during_the_reask_speech_declines_and_runs_nothing() {
+    let r = tainted_rig(
+        RESULT,
+        EffectKind::Command,
+        vec![heard("sounds good to me"), heard("yes")],
+        vec![],
+    );
+    // Says before the question: the ack, the agent result, the answer (all Done). Then the
+    // question (Done) and the re-ask (Interrupted).
+    let mut says = vec![SayOutcome::Done; 4];
+    says.push(SayOutcome::Interrupted);
+    *r.mouth.says.lock().unwrap() = VecDeque::from(says);
+    judge_with(&r, &[AnswerJudgement::Unclear]);
+    run_with(&r, &acfg(), None).await;
+    assert_eq!(executed(&r, EffectKind::Command), 0, "nothing ran");
+    assert_eq!(reasks(&r, EffectKind::Command), 1, "the re-ask was started");
+    assert_eq!(judge_calls(&r).len(), 1, "judge not called again");
+    assert!(said(&r, DECLINED), "declined: {:?}", spoken(&r));
+}
+
 // ---- T5 (h): a local refusal declines and never reaches the judge -------------------------
 
 #[tokio::test]

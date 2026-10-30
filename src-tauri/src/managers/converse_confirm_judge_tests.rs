@@ -260,6 +260,42 @@ fn t2_gate_blocks_every_negation_and_meta_token_anywhere() {
     }
 }
 
+/// Contraction and negation words, plus the change-request words added in S3, each keep an
+/// utterance away from the model in every position. A sentence without them still passes.
+#[test]
+fn t2_gate_blocks_contraction_and_change_words_and_passes_sounds_good() {
+    let tokens = [
+        "wont",
+        "cant",
+        "shouldnt",
+        "wouldnt",
+        "couldnt",
+        "isnt",
+        "arent",
+        "hold",
+        "later",
+        "nevermind",
+        "different",
+        "change",
+        "else",
+        "another",
+        "rather",
+        "modify",
+        "edit",
+    ];
+    for tok in tokens {
+        for text in [
+            tok.to_string(),
+            format!("uh {tok} sounds good"),
+            format!("sounds good {tok}"),
+            format!("sounds good, {tok}!"),
+        ] {
+            assert_eq!(judge_gate(&text, &[]), Gate::Block, "{text:?}");
+        }
+    }
+    assert_eq!(judge_gate("sounds good to me", &[]), Gate::Pass);
+}
+
 #[test]
 fn t2_gate_blocks_injection_style_text() {
     assert_eq!(

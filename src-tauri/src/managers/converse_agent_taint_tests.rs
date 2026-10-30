@@ -389,7 +389,8 @@ pub(super) const UNCLEAR_LINE: &str = "I didn't catch a clear yes, so I didn't d
 /// B9 (natural confirmation): an answer that is neither a clear local agreement nor a clear local
 /// refusal never runs anything. An unclear answer is re-asked once; a silent second listen ends the
 /// question with the Unclear line. Silence on the first listen is declined at once. The approving
-/// rows (okay, sure, yes please) are in `t_okay_sure_yes_please_and_go_ahead_approve_once`.
+/// rows (okay, sure, yes please) are in `t5a_clear_local_agreements_approve_once_without_the_judge`
+/// (converse_confirm_forced_tests.rs).
 #[tokio::test]
 async fn t_anything_but_yes_or_go_ahead_runs_nothing() {
     // (label, first answer, second answer when the first one is re-asked, expected spoken line)

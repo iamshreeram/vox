@@ -1067,7 +1067,6 @@ pub(crate) async fn plan_with_tools(
 /// Judges one answer through `completer` (the real `complete_plain` in production, a fake in
 /// tests). Only the fixed system text and the quoted answer reach the completer. Any error is
 /// `Unavailable`; the single content-free log line carries the verdict word only.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn judge_with<F, Fut>(completer: F, answer: &str) -> AnswerJudgement
 where
     F: FnOnce(String, String, Duration) -> Fut,

@@ -23,7 +23,8 @@
 //! 7. Plan speech (`TurnPlan.speech`) is the announcement; it is spoken once, AFTER step 1 starts.
 //!    Successor narration is `Step <k> of <n>: <spoken_word>.` (`StepKind::spoken_word`).
 //! 8. Forced confirmation (taint): the spoken text is `plan_confirmation_prompt(&steps)` and only
-//!    the exact `yes` runs the same prepared steps. Other replies decline with `decline_message`.
+//!    a clear yes (`yes`, `go ahead`, other clear agreements judged by the model) runs the same
+//!    prepared steps. A clear refusal declines; an unclear answer gets one re-ask first.
 //! 9. Fixed lines: `Step <k> of <n> failed. <msg>`, `Step <k> of <n> stopped unexpectedly. Stopping
 //!    the plan.`, `Step <k> of <n> took too long. Stopping the plan.` (deadline 3*turn_timeout+30s),
 //!    `I couldn't start step <k>. Stopping the plan.`, `The plan took too long. Stopping.`
@@ -1033,12 +1034,16 @@ async fn plan_announcement_is_spoken_once_after_step_one_starts() {
             .any(|s| s.contains(crate::managers::converse_confirm::FORCED_PROMPT_TAIL)),
         "no second question when untainted"
     );
+    assert!(
+        !spoken(&r).iter().any(|s| s.ends_with("Say yes or no.")),
+        "no yes-or-no question when untainted"
+    );
 }
 
 // ---- tests: forced confirmation after taint ----------------------------------------------------
 
 /// After an earlier agent result taints the session, a planned plan asks the exact forced prompt
-/// and runs only after the exact `yes`.
+/// and runs only after a clear yes.
 #[tokio::test]
 async fn forced_confirmation_after_taint_speaks_the_exact_prompt_and_waits_for_yes() {
     let steps = chain(&[(StepKind::Research, T1), (StepKind::Code, T2)]);
@@ -1064,7 +1069,7 @@ async fn forced_confirmation_after_taint_speaks_the_exact_prompt_and_waits_for_y
     );
 }
 
-/// Every reply other than the exact `yes` declines: no plan step starts.
+/// Clear refusals decline: no plan step starts.
 #[tokio::test]
 async fn forced_plan_declined_by_a_non_yes_reply_runs_nothing() {
     for reply in ["no", "stop", "nope"] {
