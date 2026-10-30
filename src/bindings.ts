@@ -2128,6 +2128,19 @@ async toggleChatWindowCommand() : Promise<Result<null, string>> {
 }
 },
 /**
+ * Hides the conversation window when the chat window asks for it (Escape, orb-click D1b). The
+ * allow-list admits only the chat window; any other calling label is a no-op. Hiding an already
+ * hidden window is harmless, so the command is idempotent.
+ */
+async chatHideWindow() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("chat_hide_window") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The orb pressed: starts the gesture with id `id` (the page counts its presses).
  */
 async orbPointerDown(id: number) : Promise<void> {

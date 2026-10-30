@@ -29,6 +29,8 @@ mod bubble_shell_core_tests;
 #[cfg(test)]
 mod bubble_wiring_contracts_tests;
 mod catalog;
+#[cfg(target_os = "macos")]
+mod chat_chrome;
 mod chat_opacity;
 mod chat_presentation;
 #[cfg(test)]
@@ -1407,6 +1409,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::chat::change_converse_chat_log_setting,
             commands::chat::change_converse_chat_open_on_start_setting,
             commands::chat::toggle_chat_window_command,
+            commands::chat::chat_hide_window,
             commands::orb::orb_pointer_down,
             commands::orb::orb_activate,
             commands::orb::orb_menu,

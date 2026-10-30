@@ -6,7 +6,7 @@
 //!   crate::activation_policy::{Policy {Regular, Accessory}, Inputs {main_visible, classic_chat_visible,
 //!     panel_needs_focus, tray_present: bool}, OpenKind {User, Auto, Peek}, desired(&Inputs) -> Policy,
 //!     open_may_focus(OpenKind) -> bool, open_may_change_policy(OpenKind) -> bool}
-//!   crate::window_commands::{ORB_LABEL: &str = "orb", ORB_COMMANDS: [&str; 5], CHAT_COMMANDS: [&str; 10],
+//!   crate::window_commands::{ORB_LABEL: &str = "orb", ORB_COMMANDS: [&str; 5], CHAT_COMMANDS: [&str; 11],
 //!     window_command_allowed(window_label: &str, command: &str) -> bool}
 //!   The existing crate::chat_window::chat_command_allowed stays UNCHANGED in G1 and is still the gate in
 //!   lib.rs (the new function replaces it in G3 when the commands exist).
@@ -62,6 +62,8 @@ const NEW_CHAT: [&str; 7] = [
     "chat_draft_clear",
     "chat_draft_flush_ack",
 ];
+/// Added by the orb-click chrome step (D1b): the chat window hides itself on Escape.
+const HIDE_CHAT: [&str; 1] = ["chat_hide_window"];
 const ORB: [&str; 5] = [
     "orb_pointer_down",
     "orb_activate",
@@ -81,7 +83,12 @@ fn the_constants_list_exactly_the_documented_commands() {
 
     let mut chat: Vec<&str> = CHAT_COMMANDS.to_vec();
     chat.sort_unstable();
-    let mut want: Vec<&str> = OLD_CHAT.iter().chain(NEW_CHAT.iter()).copied().collect();
+    let mut want: Vec<&str> = OLD_CHAT
+        .iter()
+        .chain(NEW_CHAT.iter())
+        .chain(HIDE_CHAT.iter())
+        .copied()
+        .collect();
     want.sort_unstable();
     assert_eq!(chat, want);
 }
@@ -106,8 +113,12 @@ fn the_orb_window_may_call_only_the_orb_commands() {
 }
 
 #[test]
-fn the_chat_window_may_call_only_its_ten_commands() {
-    for c in OLD_CHAT.iter().chain(NEW_CHAT.iter()) {
+fn the_chat_window_may_call_only_its_eleven_commands() {
+    for c in OLD_CHAT
+        .iter()
+        .chain(NEW_CHAT.iter())
+        .chain(HIDE_CHAT.iter())
+    {
         assert!(window_command_allowed("chat", c), "{c}");
     }
     for c in ORB {
@@ -126,7 +137,12 @@ fn the_chat_window_may_call_only_its_ten_commands() {
 #[test]
 fn every_other_window_is_refused_the_orb_and_chat_commands() {
     for label in ["main", "recording_overlay", "settings", "", "ORB", "Chat"] {
-        for c in ORB.iter().chain(OLD_CHAT.iter()).chain(NEW_CHAT.iter()) {
+        for c in ORB
+            .iter()
+            .chain(OLD_CHAT.iter())
+            .chain(NEW_CHAT.iter())
+            .chain(HIDE_CHAT.iter())
+        {
             assert!(!window_command_allowed(label, c), "{label}: {c}");
         }
         assert!(
