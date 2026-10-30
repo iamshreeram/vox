@@ -74,6 +74,8 @@ pub mod converse_barge_platform;
 mod converse_barge_platform_tests;
 #[cfg(test)]
 mod converse_barge_tests;
+#[cfg(test)]
+mod converse_brain_judge_tests;
 pub mod converse_capture;
 pub mod converse_confirm;
 #[cfg_attr(not(test), allow(dead_code))]

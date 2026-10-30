@@ -44,6 +44,9 @@ use crate::managers::converse_capture::{
 use crate::managers::converse_confirm::{
     DirFd, JobLaunch, JobStartOutcome, PinError, PolicySource, ValidatedCommand,
 };
+use crate::managers::converse_confirm_judge::{
+    judge_user_message, parse_judgement, AnswerJudgement, JUDGE_DEADLINE, JUDGE_SYSTEM,
+};
 use crate::managers::converse_latency::{LatencyEvent, EVENT_NAME};
 use crate::managers::converse_overlay::{OverlayDispatcher, ReadyGate};
 use crate::managers::converse_plan::{
@@ -64,7 +67,9 @@ use crate::managers::model::ModelManager;
 use crate::managers::ownership::{self, Busy, Lease, Owner};
 use crate::managers::realtime_complete::{login_shell_probe, Prepared, FIRST_TEXT_DEADLINE};
 use crate::managers::realtime_config::RealtimeConfig;
-use crate::managers::speech_backends::{complete, complete_streaming, effective_deadline};
+use crate::managers::speech_backends::{
+    complete, complete_plain, complete_streaming, effective_deadline, PlainError,
+};
 use crate::managers::speech_compose::ComposeError;
 use crate::managers::tool_loop::{
     run_tool_loop, LoopConfig, TaintState, ToolExecutor, ToolModel, REFUSAL_SPEECH,
@@ -1059,7 +1064,49 @@ pub(crate) async fn plan_with_tools(
     Ok(guard_plan(plan, taint, guard_actions))
 }
 
+/// Judges one answer through `completer` (the real `complete_plain` in production, a fake in
+/// tests). Only the fixed system text and the quoted answer reach the completer. Any error is
+/// `Unavailable`; the single content-free log line carries the verdict word only.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) async fn judge_with<F, Fut>(completer: F, answer: &str) -> AnswerJudgement
+where
+    F: FnOnce(String, String, Duration) -> Fut,
+    Fut: std::future::Future<Output = Result<String, PlainError>>,
+{
+    let outcome = completer(
+        JUDGE_SYSTEM.to_string(),
+        judge_user_message(answer),
+        JUDGE_DEADLINE,
+    )
+    .await;
+    let judgement = match outcome {
+        Ok(text) => parse_judgement(&text),
+        Err(_) => AnswerJudgement::Unavailable,
+    };
+    let word = match judgement {
+        AnswerJudgement::Approve => "approve",
+        AnswerJudgement::Decline => "decline",
+        AnswerJudgement::Unclear => "unclear",
+        AnswerJudgement::Unavailable => "unavailable",
+    };
+    log::info!("answer judged: {word}");
+    judgement
+}
+
 impl Brain for RealBrain {
+    fn judge_answer<'a>(&'a self, answer: &'a str) -> BoxFuture<'a, AnswerJudgement> {
+        Box::pin(async move {
+            let settings = get_settings(&self.app);
+            judge_with(
+                |system: String, user: String, deadline: Duration| async move {
+                    complete_plain(&settings, &system, &user, deadline).await
+                },
+                answer,
+            )
+            .await
+        })
+    }
+
     fn plan<'a>(&'a self, input: PlanInput<'a>) -> BoxFuture<'a, Result<TurnPlan, PlanError>> {
         Box::pin(async move {
             let settings = get_settings(&self.app);

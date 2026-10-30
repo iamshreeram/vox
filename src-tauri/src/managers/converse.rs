@@ -14,6 +14,7 @@ use crate::managers::converse_confirm::{
     DirFd, JobLaunch, JobStartOutcome, PinError, PolicySource, PrepareError, PreparedAction,
     ValidatedCommand,
 };
+use crate::managers::converse_confirm_judge::AnswerJudgement;
 use crate::managers::converse_context::{
     compose, neutralize, note_command, note_delivery_failed, note_failed, note_incomplete,
     note_interrupted, note_paste, note_paste_failed, CommandNote,
@@ -337,6 +338,14 @@ pub trait Brain: Send + Sync {
     ) -> BoxFuture<'a, Result<TurnPlan, PlanError>> {
         let _ = on_text;
         self.plan(input)
+    }
+
+    /// Model judgement of one heard answer to a forced confirmation (DESIGN A4). The default
+    /// is `Unavailable` and never touches `plan`, so brains without a judge fail closed.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn judge_answer<'a>(&'a self, answer: &'a str) -> BoxFuture<'a, AnswerJudgement> {
+        let _ = answer;
+        Box::pin(async { AnswerJudgement::Unavailable })
     }
 }
 
