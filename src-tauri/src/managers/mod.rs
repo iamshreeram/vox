@@ -62,6 +62,7 @@ pub mod conversation_store;
 mod conversation_store_tests;
 pub mod converse;
 pub mod converse_ack;
+pub mod converse_activation;
 pub mod converse_agent;
 pub mod converse_audio;
 pub mod converse_barge;

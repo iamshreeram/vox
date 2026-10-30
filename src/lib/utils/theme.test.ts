@@ -97,6 +97,7 @@ const snap = (over: Partial<AppearanceSnapshot> = {}): AppearanceSnapshot => ({
   theme: "system",
   custom_colors: null,
   accent: "amber",
+  orb_accent: null,
   chat_theme: "dark",
   visual_style: "vibrant",
   ...over,

@@ -233,6 +233,9 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
         <p className="text-xs text-muted px-3">
           {t("settings.floatingOrb.description")}
         </p>
+        <p className="text-xs text-muted px-3">
+          {t("settings.floatingOrb.colourHint")}
+        </p>
 
         <SettingContainer
           title={t("settings.floatingOrb.show.title")}

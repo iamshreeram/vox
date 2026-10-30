@@ -8,7 +8,7 @@
 //!   trait OrbHost {
 //!       fn orb_rect(&self) -> Option<Rect>;  fn scale(&self) -> f64;  fn move_to(&mut self, x: f64, y: f64);
 //!       fn emit_gesture(&mut self, id: u64, result: GestureResult);
-//!       fn click(&mut self);                  // toggles the chat surface
+//!       fn click(&mut self);                  // activates the conversation (N1b: start or stop, same as Enter/Space)
 //!       fn save_position(&mut self, final_orb: Rect);   // called exactly once per finished Drag, never for Click/Cancel
 //!       fn emit_gaze(&mut self, gaze: Gaze);
 //!   }
@@ -115,7 +115,7 @@ fn cursor(p: (f64, f64)) -> Cursor {
 // ---- gesture driver ----
 
 #[test]
-fn a_still_click_emits_click_then_toggles_the_chat_and_saves_nothing() {
+fn a_still_click_emits_click_then_activates_the_conversation_and_saves_nothing() {
     let mut d = GestureDriver::new();
     let mut h = Host::new();
     let c = cursor((130.0, 230.0));
@@ -150,7 +150,7 @@ fn a_drag_moves_the_window_saves_once_then_reports_the_drag() {
     assert_eq!(h.saved.len(), 1);
     assert_eq!((h.saved[0].x, h.saved[0].y), (470.0, 70.0));
     assert_eq!(h.gestures, vec![(4, GestureResult::Drag)]);
-    assert_eq!(h.clicks, 0, "a drag never toggles the chat");
+    assert_eq!(h.clicks, 0, "a drag never activates the conversation");
     assert_eq!(h.log, vec!["save", "gesture"]);
 }
 

@@ -9,7 +9,8 @@
 //! message text or positions.
 
 use crate::appearance;
-use crate::bubble_hub::{BubbleRole, HubEntry, Snapshot};
+use crate::bubble_hub::{BubbleRole, HubEntry, Snapshot, NOTICE_TTL_MS};
+use crate::bubble_notice::{wire_parts, NoticeCode};
 use crate::bubble_shell_core::{
     BubbleShellCore, Effects, SessionSurface, ShellInputs, READY_TIMEOUT_MS,
 };
@@ -223,7 +224,8 @@ fn apply_effects(app: &AppHandle, shell: &BubbleShell, effects: Effects) {
     }
 }
 
-/// Wire form of one bubble on `bubbles-state`.
+/// Wire form of one bubble on `bubbles-state`. `kind` is `"transcript"` or `"notice"`; a notice
+/// carries only `notice_code` (its `text` is empty), never free text.
 #[derive(Clone, Serialize)]
 struct BubbleItemPayload {
     id: u64,
@@ -231,6 +233,8 @@ struct BubbleItemPayload {
     text: String,
     age_ms: u64,
     ttl_ms: u64,
+    kind: &'static str,
+    notice_code: Option<&'static str>,
 }
 
 /// Wire form of a projection revision on `bubbles-state`.
@@ -251,15 +255,20 @@ fn emit_snapshot(app: &AppHandle, snapshot: &Snapshot) {
     let items = snapshot
         .items
         .iter()
-        .map(|item| BubbleItemPayload {
-            id: item.id,
-            role: match item.role {
-                BubbleRole::User => "user",
-                BubbleRole::Assistant => "assistant",
-            },
-            text: item.text.clone(),
-            age_ms: item.age_ms,
-            ttl_ms: item.ttl_ms,
+        .map(|item| {
+            let (kind, notice_code) = wire_parts(item.notice);
+            BubbleItemPayload {
+                id: item.id,
+                role: match item.role {
+                    BubbleRole::User => "user",
+                    BubbleRole::Assistant => "assistant",
+                },
+                text: item.text.clone(),
+                age_ms: item.age_ms,
+                ttl_ms: item.ttl_ms,
+                kind,
+                notice_code,
+            }
         })
         .collect();
     let payload = BubblesPayload {
@@ -697,6 +706,47 @@ pub fn speech_begin(app: &AppHandle, scope: u64, stamp: Stamp) {
 /// The reply under `scope` stopped being spoken.
 pub fn speech_end(app: &AppHandle, scope: u64) {
     update(app, move |core, inp| core.speech_end(scope, inp));
+}
+
+/// Shows a notice in the bubble window for `NOTICE_TTL_MS` (DESIGN.md A-C3). It needs no session
+/// and no transcript recording, never moves or re-targets the orb, and replaces a notice still
+/// showing. The window is built on the main thread when it does not exist yet.
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn show_notice(app: &AppHandle, code: NoticeCode) {
+    build_notice_window_on_main(app);
+    update(app, move |core, inp| core.notice(code, inp));
+    expire_notice_later(app);
+}
+
+/// Queues the main-thread build of the bubble window for a notice, then runs the executor so the
+/// page's ready report can show it.
+fn build_notice_window_on_main(app: &AppHandle) {
+    let job_app = app.clone();
+    let queued = app.run_on_main_thread(move || {
+        if let Some(shell) = job_app.try_state::<BubbleShell>() {
+            if ensure_bubble_window(&job_app, &shell) {
+                schedule(&job_app, &shell);
+            }
+        }
+    });
+    if let Err(e) = queued {
+        log::warn!("notice window could not be scheduled: {e}");
+    }
+}
+
+/// Re-evaluates the projection once the notice lifetime has passed, so the window hides and the
+/// page drops the notice. A stale timer changes nothing: the projection only expires by time.
+fn expire_notice_later(app: &AppHandle) {
+    let job_app = app.clone();
+    let spawned = thread::Builder::new()
+        .name("bubble-notice".into())
+        .spawn(move || {
+            thread::sleep(Duration::from_millis(NOTICE_TTL_MS));
+            update(&job_app, |core, inp| core.refresh(inp));
+        });
+    if let Err(e) = spawned {
+        log::warn!("notice timer could not start: {e}");
+    }
 }
 
 /// The transcript was reset for a new session.

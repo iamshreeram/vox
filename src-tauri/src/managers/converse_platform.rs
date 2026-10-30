@@ -97,6 +97,13 @@ fn conversation_vad_policy(_vad_enabled: bool) -> VadPolicy {
 pub const CONVERSE_STATE_EVENT: &str = "converse-state";
 /// Refusal when dictation owns the microphone or is still processing.
 pub const DICTATION_BUSY: &str = "Finish the current dictation before starting a conversation.";
+/// Refusal when spoken replies are off (the orb maps it to `tts_off`).
+pub const TTS_OFF_REFUSAL: &str =
+    "Turn on spoken replies in Settings > Models > Text-to-speech first.";
+/// Refusal when no reply backend is set up (the orb maps it to `composer_off`).
+pub const COMPOSER_OFF_REFUSAL: &str = "Set up a reply backend in the speech settings first.";
+/// Refusal when ambient listening is on (the orb maps it to `ambient`).
+pub const AMBIENT_REFUSAL: &str = "Turn off ambient listening before starting a conversation.";
 /// Refusal when voice enrollment holds the microphone (design A3').
 pub const ENROLLMENT_BUSY: &str = "Finish voice enrollment before starting a conversation.";
 
@@ -144,9 +151,7 @@ pub fn preflight_text_check(settings: &AppSettings) -> Result<(), String> {
 
 fn preflight_check_with(settings: &AppSettings, needs_spoken_replies: bool) -> Result<(), String> {
     if needs_spoken_replies && !settings.tts_enabled {
-        return Err(
-            "Turn on spoken replies in Settings > Models > Text-to-speech first.".to_string(),
-        );
+        return Err(TTS_OFF_REFUSAL.to_string());
     }
     if settings.exp_rt_enabled {
         crate::managers::realtime_config::preflight_realtime(settings).map_err(str::to_string)?;
@@ -155,11 +160,11 @@ fn preflight_check_with(settings: &AppSettings, needs_spoken_replies: bool) -> R
     let direct =
         crate::managers::realtime_config::RealtimeConfig::from_settings(settings).direct_endpoint;
     if !direct && settings_from_app(settings).mode == TtsComposerMode::Off {
-        return Err("Set up a reply backend in the speech settings first.".to_string());
+        return Err(COMPOSER_OFF_REFUSAL.to_string());
     }
     // Ambient listening must be off to converse. A wake word never blocks a conversation: it starts one.
     if crate::settings::ambient_effective(settings) {
-        return Err("Turn off ambient listening before starting a conversation.".to_string());
+        return Err(AMBIENT_REFUSAL.to_string());
     }
     // Model mode needs a usable connection: the Brain (when inherited) or a named model (own).
     // Checked after the ambient refusal, so it keeps its message.

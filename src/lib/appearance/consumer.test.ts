@@ -23,6 +23,7 @@ const snap = (over: Partial<AppearanceSnapshot> = {}): AppearanceSnapshot => ({
   accent: "amber",
   chat_theme: "dark",
   visual_style: "vibrant",
+  orb_accent: null,
   ...over,
 });
 
@@ -294,6 +295,59 @@ const scenarios: Record<string, () => void> = {
     assert.equal(calls, 1);
     media.setDark(true);
     assert.equal(calls, 1, "a fixed theme ignores the OS scheme");
+  },
+
+  "orb_accent: a valid accent is kept, anything else normalises to null":
+    () => {
+      for (const orb of [
+        "amber",
+        "blue",
+        "violet",
+        "emerald",
+        "rose",
+        "slate",
+      ]) {
+        assert.equal(
+          parseSnapshot(snap({ orb_accent: orb as never }))?.orb_accent,
+          orb,
+        );
+      }
+      assert.equal(parseSnapshot(snap({ orb_accent: null }))?.orb_accent, null);
+      const missing: Record<string, unknown> = { ...snap() };
+      delete missing.orb_accent;
+      assert.equal(parseSnapshot(missing)?.orb_accent, null, "missing is null");
+      for (const garbage of ["teal", "", "AMBER", 7, true, {}, ["blue"]]) {
+        const parsed = parseSnapshot({ ...snap(), orb_accent: garbage });
+        assert.ok(
+          parsed !== null,
+          `a bad orb_accent does not reject the snapshot: ${JSON.stringify(garbage)}`,
+        );
+        assert.equal(
+          parsed.orb_accent,
+          null,
+          `garbage ${JSON.stringify(garbage)} -> null`,
+        );
+      }
+    },
+
+  "orb_accent: a stale revision never changes the applied orb accent": () => {
+    const consumer = createAppearanceConsumer({
+      root: fakeRoot(),
+      matchMedia: fakeMedia(false).matchMedia,
+    });
+    assert.equal(consumer.accept(snap({ rev: 3, orb_accent: "blue" })), true);
+    assert.equal(consumer.accept(snap({ rev: 2, orb_accent: "rose" })), false);
+    assert.equal(consumer.accept(snap({ rev: 3, orb_accent: "rose" })), false);
+    assert.equal(consumer.snapshot()?.orb_accent, "blue");
+    assert.equal(
+      consumer.accept(snap({ rev: 4, orb_accent: "teal" as never })),
+      true,
+    );
+    assert.equal(
+      consumer.snapshot()?.orb_accent,
+      null,
+      "unknown normalises to null",
+    );
   },
 
   "the consumer and palette modules never invoke a command or import bindings at runtime":

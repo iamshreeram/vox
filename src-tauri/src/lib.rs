@@ -22,12 +22,17 @@ mod bubble_hub_hold_tests;
 #[cfg(test)]
 mod bubble_hub_tests;
 mod bubble_native;
+mod bubble_notice;
+#[cfg(test)]
+mod bubble_notice_tests;
 mod bubble_shell_core;
 #[cfg(test)]
 mod bubble_shell_core_tests;
 #[cfg(test)]
 mod bubble_wiring_contracts_tests;
 mod catalog;
+#[cfg(target_os = "macos")]
+mod chat_chrome;
 mod chat_opacity;
 mod chat_presentation;
 #[cfg(test)]
@@ -44,6 +49,11 @@ mod helpers;
 mod input;
 mod job_runtime;
 mod llm_client;
+#[cfg(test)]
+mod orb_accent_tests;
+mod orb_converse;
+#[cfg(test)]
+mod orb_converse_tests;
 #[cfg(test)]
 mod orb_engine_tests;
 mod orb_gaze;
@@ -1401,6 +1411,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::chat::change_converse_chat_log_setting,
             commands::chat::change_converse_chat_open_on_start_setting,
             commands::chat::toggle_chat_window_command,
+            commands::chat::chat_hide_window,
             commands::orb::orb_pointer_down,
             commands::orb::orb_activate,
             commands::orb::orb_menu,
@@ -1415,6 +1426,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::appearance::change_accent_setting,
             commands::appearance::change_chat_theme_setting,
             commands::appearance::change_visual_style_setting,
+            commands::appearance::change_orb_accent_setting,
             commands::orb::change_chat_presentation_setting,
             commands::orb::reset_orb_position,
             commands::converse_extras::change_speaker_filter_enabled_setting,
@@ -1429,6 +1441,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             managers::transcription::StreamPhaseEvent,
         ])
         .typ::<settings::AppSettings>()
+        .typ::<bubble_notice::NoticeCode>()
+        .typ::<orb_converse::OrbRefusalPayload>()
         .typ::<appearance::AppearanceSnapshot>()
         .typ::<managers::wakeword::WakeWordDetection>()
         .typ::<commands::ambient::AmbientAddressedPayload>()

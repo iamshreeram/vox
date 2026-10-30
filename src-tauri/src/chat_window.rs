@@ -56,6 +56,12 @@ pub fn chat_command_allowed(window_label: &str, command: &str) -> bool {
     !chat_only
 }
 
+/// Whether a `chat_hide_window` call from the window labelled `window_label` hides the chat window.
+/// Only the chat window itself may hide itself; any other calling label is a no-op.
+pub fn hide_request_applies(window_label: &str) -> bool {
+    window_label == CHAT_WINDOW_LABEL
+}
+
 /// Dev server port. Must match `devUrl` in `tauri.conf.json`. Only debug builds accept it.
 const DEV_SERVER_PORT: u16 = 1420;
 
@@ -159,7 +165,8 @@ fn build_chat_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     #[cfg(target_os = "macos")]
     let builder = builder
         .shadow(false)
-        .title_bar_style(tauri::TitleBarStyle::Transparent);
+        .title_bar_style(tauri::TitleBarStyle::Transparent)
+        .hidden_title(true);
     let built = builder.build();
     let window = match built {
         Ok(window) => {
@@ -171,22 +178,44 @@ fn build_chat_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
             return Err(e);
         }
     };
+    #[cfg(target_os = "macos")]
+    {
+        crate::chat_chrome::hide_window_buttons(&window);
+    }
 
     let close_app = app.clone();
     let focus_app = app.clone();
-    window.on_window_event(move |event| match event {
-        WindowEvent::CloseRequested { api, .. } => {
-            api.prevent_close();
-            if let Some(chat) = close_app.get_webview_window(CHAT_WINDOW_LABEL) {
-                hide_existing(&close_app, &chat);
+    window.on_window_event(move |event| {
+        // The system may re-show the window buttons on these events, so they are hidden again.
+        #[cfg(target_os = "macos")]
+        {
+            let chrome_event = matches!(
+                event,
+                WindowEvent::Focused(_)
+                    | WindowEvent::Resized(_)
+                    | WindowEvent::ScaleFactorChanged { .. }
+                    | WindowEvent::ThemeChanged(_)
+            );
+            if chrome_event {
+                if let Some(chat) = close_app.get_webview_window(CHAT_WINDOW_LABEL) {
+                    crate::chat_chrome::hide_window_buttons(&chat);
+                }
             }
         }
-        // Gaining focus re-sends the opacity, so a page that missed an event converges (A-T4).
-        WindowEvent::Focused(true) => {
-            emit_current_opacity(&focus_app);
-            appearance::emit_current(&focus_app);
+        match event {
+            WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                if let Some(chat) = close_app.get_webview_window(CHAT_WINDOW_LABEL) {
+                    hide_existing(&close_app, &chat);
+                }
+            }
+            // Gaining focus re-sends the opacity, so a page that missed an event converges (A-T4).
+            WindowEvent::Focused(true) => {
+                emit_current_opacity(&focus_app);
+                appearance::emit_current(&focus_app);
+            }
+            _ => {}
         }
-        _ => {}
     });
     start_replay_worker(app);
     Ok(window)
@@ -320,6 +349,10 @@ fn show_without_focus(app: &AppHandle, window: &WebviewWindow) {
     }
     log_window_result("unminimize", window.unminimize());
     log_window_result("show", window.show());
+    #[cfg(target_os = "macos")]
+    {
+        crate::chat_chrome::hide_window_buttons(window);
+    }
     crate::bubble_native::classic_visibility_changed(app, true);
     emit_current_opacity(app);
     appearance::emit_current(app);
@@ -342,6 +375,10 @@ fn show_existing(app: &AppHandle, window: &WebviewWindow) {
     }
     log_window_result("unminimize", window.unminimize());
     log_window_result("show", window.show());
+    #[cfg(target_os = "macos")]
+    {
+        crate::chat_chrome::hide_window_buttons(window);
+    }
     log_window_result("focus", window.set_focus());
     crate::bubble_native::classic_visibility_changed(app, true);
     emit_current_opacity(app);
@@ -351,7 +388,7 @@ fn show_existing(app: &AppHandle, window: &WebviewWindow) {
 /// Hides the window. Only after a successful hide, on macOS, when the main window is hidden
 /// and the tray is available, the app returns to accessory mode (no Dock icon), as the main
 /// window's close does.
-fn hide_existing(app: &AppHandle, window: &WebviewWindow) {
+pub(crate) fn hide_existing(app: &AppHandle, window: &WebviewWindow) {
     if let Err(e) = window.hide() {
         log::warn!("chat window hide failed: {e}");
         return;

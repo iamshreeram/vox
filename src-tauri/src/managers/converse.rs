@@ -2949,11 +2949,18 @@ fn record_turn(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegistryState {
     Idle,
-    Running(u64),
-    Draining(u64),
+    Starting(SessionId),
+    Running(SessionId),
+    Draining(SessionId),
 }
 
-/// Single-active-session lifecycle: Idle -> Running -> Draining -> Idle.
+/// Identity of one session, assigned at admission and strictly increasing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SessionId(pub u64);
+
+/// Single-active-session lifecycle: Idle -> Starting -> Running -> Draining -> Idle.
+/// Starting lasts from admission until the session reports it is listening; a failed start
+/// returns to Idle.
 pub struct SessionRegistry {
     #[allow(dead_code)]
     inner: Mutex<RegistryInner>,
@@ -2962,7 +2969,8 @@ pub struct SessionRegistry {
 #[allow(dead_code)]
 struct RegistryInner {
     state: RegistryState,
-    next_id: u64,
+    /// The last id issued by `try_begin` (0 before the first session).
+    last_id: SessionId,
     cancel_tx: Option<tokio::sync::watch::Sender<bool>>,
 }
 
@@ -2977,45 +2985,72 @@ impl SessionRegistry {
         SessionRegistry {
             inner: Mutex::new(RegistryInner {
                 state: RegistryState::Idle,
-                next_id: 1,
+                last_id: SessionId(0),
                 cancel_tx: None,
             }),
         }
     }
-    /// Only from Idle: becomes Running(id) and returns the cancel receiver.
-    pub fn try_begin(&self) -> Option<(u64, CancelToken)> {
+    /// Only from Idle: becomes Starting(id) and returns the cancel receiver.
+    pub fn try_begin(&self) -> Option<(SessionId, CancelToken)> {
         let mut inner = self.lock();
         if inner.state != RegistryState::Idle {
             return None;
         }
-        let id = inner.next_id;
-        inner.next_id = inner.next_id.saturating_add(1);
+        let id = SessionId(inner.last_id.0.saturating_add(1));
+        inner.last_id = id;
         let (tx, rx) = tokio::sync::watch::channel(false);
         inner.cancel_tx = Some(tx);
-        inner.state = RegistryState::Running(id);
+        inner.state = RegistryState::Starting(id);
         Some((id, rx.into()))
     }
-    /// Running -> Draining and send cancel (use `send_replace`: `send` drops the
-    /// value when no receiver is alive). False when Idle or already Draining.
+    /// Starting(id) -> Running(id): the session reports it is listening. False otherwise.
+    pub fn mark_running(&self, id: SessionId) -> bool {
+        let mut inner = self.lock();
+        if inner.state == RegistryState::Starting(id) {
+            inner.state = RegistryState::Running(id);
+            return true;
+        }
+        false
+    }
+    /// Legacy stop (programmatic, shutdown, `converse_stop`): resolves the CURRENT id under the
+    /// same lock and stops it when Starting or Running. False when Idle or already Draining.
+    /// Activation sources do not use this: they go through `orb_activation_decision`, which
+    /// ignores a Starting session.
     pub fn request_stop(&self) -> bool {
         let mut inner = self.lock();
         match inner.state {
-            RegistryState::Running(id) => {
-                inner.state = RegistryState::Draining(id);
-                if let Some(tx) = inner.cancel_tx.as_ref() {
-                    tx.send_replace(true);
-                }
-                true
+            RegistryState::Starting(id) | RegistryState::Running(id) => {
+                Self::stop_running(&mut inner, id)
             }
             RegistryState::Idle | RegistryState::Draining(_) => false,
         }
     }
-    /// Frees the registry only when `id` matches the current session.
-    pub fn finish(&self, id: u64) -> bool {
+    /// Compare-and-stop: Running(id) -> Draining(id) and cancel. False when the current
+    /// session is not `id` (a replaced session is never stopped), or it is not Running.
+    pub fn request_stop_if(&self, id: SessionId) -> bool {
+        let mut inner = self.lock();
+        match inner.state {
+            RegistryState::Running(current) if current == id => Self::stop_running(&mut inner, id),
+            _ => false,
+        }
+    }
+    /// Running(id) -> Draining(id) and send cancel (`send_replace`: `send` drops the value when
+    /// no receiver is alive).
+    fn stop_running(inner: &mut RegistryInner, id: SessionId) -> bool {
+        inner.state = RegistryState::Draining(id);
+        if let Some(tx) = inner.cancel_tx.as_ref() {
+            tx.send_replace(true);
+        }
+        true
+    }
+    /// Frees the registry only when `id` matches the current session (any phase).
+    pub fn finish(&self, id: SessionId) -> bool {
         let mut inner = self.lock();
         let matches = matches!(
             inner.state,
-            RegistryState::Running(current) | RegistryState::Draining(current) if current == id
+            RegistryState::Starting(current)
+                | RegistryState::Running(current)
+                | RegistryState::Draining(current) if current == id
         );
         if matches {
             inner.state = RegistryState::Idle;
@@ -3023,12 +3058,17 @@ impl SessionRegistry {
         }
         matches
     }
-    /// True for Running and Draining.
+    /// True for Starting, Running and Draining.
     pub fn is_active(&self) -> bool {
         self.state() != RegistryState::Idle
     }
     pub fn state(&self) -> RegistryState {
         self.lock().state
+    }
+    /// The phase and the session id, read under one lock. When Idle the id is the last issued.
+    pub fn snapshot(&self) -> (RegistryState, SessionId) {
+        let inner = self.lock();
+        (inner.state, inner.last_id)
     }
 
     /// Never panics on a poisoned mutex: the inner state is still valid.
@@ -4192,6 +4232,9 @@ mod tests {
         assert!(!reg.is_active());
         assert!(!reg.request_stop(), "stop on Idle is a no-op");
         let (id, token) = reg.try_begin().expect("begin from idle");
+        // A-C1b: admission is Starting; capture-ready (mark_running) makes it Running.
+        assert_eq!(reg.state(), RegistryState::Starting(id));
+        assert!(reg.mark_running(id));
         assert_eq!(reg.state(), RegistryState::Running(id));
         assert!(reg.is_active());
         assert!(reg.try_begin().is_none(), "double begin refused");
@@ -4212,13 +4255,14 @@ mod tests {
     fn registry_stale_finish_cannot_free_a_newer_session() {
         let reg = SessionRegistry::new();
         let (old, _t) = reg.try_begin().unwrap();
+        assert!(reg.mark_running(old));
         reg.request_stop();
         assert!(reg.finish(old));
         let (new, _t2) = reg.try_begin().unwrap();
         assert!(!reg.finish(old), "stale id must not free the new session");
-        assert_eq!(reg.state(), RegistryState::Running(new));
-        assert!(!reg.finish(new + 100));
-        assert!(reg.finish(new), "finish of a Running session frees it too");
+        assert_eq!(reg.state(), RegistryState::Starting(new));
+        assert!(!reg.finish(SessionId(new.0 + 100)));
+        assert!(reg.finish(new), "finish of a Starting session frees it too");
     }
 
     #[test]

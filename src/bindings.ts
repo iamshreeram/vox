@@ -2128,6 +2128,19 @@ async toggleChatWindowCommand() : Promise<Result<null, string>> {
 }
 },
 /**
+ * Hides the conversation window when the chat window asks for it (Escape, orb-click D1b). The
+ * allow-list admits only the chat window; any other calling label is a no-op. Hiding an already
+ * hidden window is harmless, so the command is idempotent.
+ */
+async chatHideWindow() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("chat_hide_window") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The orb pressed: starts the gesture with id `id` (the page counts its presses).
  */
 async orbPointerDown(id: number) : Promise<void> {
@@ -2221,6 +2234,12 @@ async changeChatThemeSetting(chatTheme: ChatTheme) : Promise<void> {
  */
 async changeVisualStyleSetting(visualStyle: VisualStyle) : Promise<void> {
     await TAURI_INVOKE("change_visual_style_setting", { visualStyle });
+},
+/**
+ * Saves the orb accent (`None` follows the app accent) and publishes the committed snapshot.
+ */
+async changeOrbAccentSetting(accent: Accent | null) : Promise<void> {
+    await TAURI_INVOKE("change_orb_accent_setting", { accent });
 },
 /**
  * Stores the chat presentation choice. `None` returns to the platform default.
@@ -2712,7 +2731,12 @@ chat_theme?: ChatTheme;
 /**
  * Visual style (vibrant or restrained). Set through `change_visual_style_setting`.
  */
-visual_style?: VisualStyle }
+visual_style?: VisualStyle; 
+/**
+ * Accent of the floating orb (DESIGN Revision 3, D3). `None` follows the app accent.
+ * Set through `change_orb_accent_setting`. Garbage reads as `None`.
+ */
+orb_accent?: Accent | null }
 /**
  * A committed appearance. `rev` grows on every commit and is independent of the opacity rev.
  * `custom_colors` is present only while the theme is `Custom`, so no other window receives the
@@ -2742,7 +2766,11 @@ chat_theme: ChatTheme;
 /**
  * The visual style.
  */
-visual_style: VisualStyle }
+visual_style: VisualStyle; 
+/**
+ * The orb accent. `None` follows the app accent. Always present on the wire (`null`).
+ */
+orb_accent: Accent | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AuxError = "busy" | "cancelled" | "not_installed" | "corrupt" | "url_not_allowed" | "download" | "io"
@@ -3119,6 +3147,39 @@ health: string;
  */
 failure: string | null }
 /**
+ * Why the orb refused a click. Serialised snake_case. A code this build does not know reads as
+ * `Unknown`, so an older page or a newer producer never breaks the stack.
+ */
+export type NoticeCode = 
+/**
+ * Dictation is running, so the orb cannot start a conversation.
+ */
+"dictation_busy" | 
+/**
+ * Spoken replies are turned off, so a conversation cannot speak its replies.
+ */
+"tts_off" | 
+/**
+ * No reply backend is configured for conversations and typed chat.
+ */
+"composer_off" | 
+/**
+ * Ambient listening is on.
+ */
+"ambient" | 
+/**
+ * Voice conversation is not available (the feature is off or not set up).
+ */
+"experimental_off" | 
+/**
+ * The text chat is ending.
+ */
+"text_ending" | 
+/**
+ * Any code this build does not know.
+ */
+"unknown"
+/**
  * The saved orb position: the monitor it was on plus its centre as a fraction of that monitor's
  * work area. Fractions survive resolution and scale changes; the name and key identify the
  * monitor when it returns.
@@ -3140,6 +3201,10 @@ fx: number;
  * Vertical centre as a fraction of the work-area height, in `[0, 1]`.
  */
 fy: number }
+/**
+ * Payload of `orb-refusal`: the fixed code and nothing else.
+ */
+export type OrbRefusalPayload = { code: NoticeCode }
 /**
  * Orb size preset. Stored in settings as `small`, `medium` or `large`.
  */

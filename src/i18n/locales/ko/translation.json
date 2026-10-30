@@ -345,6 +345,12 @@
           "slate": "Slate"
         }
       },
+      "orb": {
+        "title": "Orb colour",
+        "description": "The colour of the floating orb's ring. Follow app uses the accent above.",
+        "followApp": "Follow app",
+        "failed": "Could not save the orb colour. The previous colour is kept."
+      },
       "style": {
         "title": "Visual style",
         "description": "How much colour the interface uses.",
@@ -359,7 +365,7 @@
         "followApp": "Follow app",
         "dark": "Dark",
         "light": "Light",
-        "nativeNote": "The window title bar follows the app theme; a Light chat can keep a dark title bar."
+        "nativeNote": "Drag the conversation window by its top edge. Press Escape, use the shortcut or the tray icon to hide it."
       },
       "chatWindow": {
         "title": "Conversation window"
@@ -1537,7 +1543,7 @@
     },
     "floatingOrb": {
       "title": "Floating orb",
-      "description": "A small orb that stays on top of other apps. Click it to open the conversation.",
+      "description": "A small orb that stays on top of other apps. Click it to start or stop a voice conversation.",
       "show": {
         "title": "Show orb",
         "description": "Keep the orb on screen above other apps. You can also use the tray menu."
@@ -1575,7 +1581,8 @@
         "chatLogOff": "Bubbles need the conversation log, which is turned off.",
         "wakeDictation": "Hey Jarvis currently starts dictation, so no bubbles appear. Switch it to start a conversation.",
         "wakeButton": "Make Hey Jarvis start a conversation"
-      }
+      },
+      "colourHint": "To change the orb's colour, open Appearance > Orb colour."
     },
     "chatOpacity": {
       "title": "Conversation window opacity",
@@ -1716,7 +1723,7 @@
     },
     "section": {
       "title": "Conversation",
-      "description": "Hands-free conversation: Vox listens, answers aloud, and keeps a short memory of this session.",
+      "description": "Hands-free conversation: Vox listens, answers aloud, and keeps a short memory of this session. Clicking the floating orb starts or stops a conversation.",
       "startButton": "Start conversation",
       "stopButton": "Stop conversation",
       "stateLabel": "Status:",
@@ -1957,6 +1964,15 @@
     "label": "Vox orb. Press Enter to open the conversation.",
     "assistantName": "Vox assistant",
     "stateAnnounce": "{{name}}: {{state}}",
+    "refusal": {
+      "dictation_busy": "Dictation is using the microphone.",
+      "tts_off": "Spoken replies are off. Turn them on in Settings.",
+      "composer_off": "Set up a reply backend in Settings first.",
+      "ambient": "Ambient listening is on. Turn it off to talk.",
+      "experimental_off": "Voice conversation is not available.",
+      "text_ending": "Ending the text chat. Click again to talk.",
+      "unknown": "Vox cannot start a conversation right now."
+    },
     "face": {
       "idle": "Idle",
       "listening": "Listening",
@@ -1965,6 +1981,17 @@
       "speaking": "Speaking",
       "sleep": "Asleep",
       "concerned": "Concerned"
+    }
+  },
+  "bubbles": {
+    "notice": {
+      "dictation_busy": "Dictation is using the microphone.",
+      "tts_off": "Spoken replies are off. Turn them on in Settings.",
+      "composer_off": "Set up a reply backend in Settings first.",
+      "ambient": "Ambient listening is on. Turn it off to talk.",
+      "experimental_off": "Voice conversation is not available.",
+      "text_ending": "Ending the text chat. Click again to talk.",
+      "unknown": "Vox cannot start a conversation right now."
     }
   }
 }

@@ -127,6 +127,19 @@ pub async fn toggle_chat_window_command(app: AppHandle) -> Result<(), String> {
     crate::chat_surface::toggle(&app).map_err(|err| err.to_string())
 }
 
+/// Hides the conversation window when the chat window asks for it (Escape, orb-click D1b). The
+/// allow-list admits only the chat window; any other calling label is a no-op. Hiding an already
+/// hidden window is harmless, so the command is idempotent.
+#[tauri::command]
+#[specta::specta]
+pub fn chat_hide_window(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), String> {
+    if !crate::chat_window::hide_request_applies(window.label()) {
+        return Ok(());
+    }
+    crate::chat_window::hide_existing(&app, &window);
+    Ok(())
+}
+
 /// Sends one typed message to the conversation (DESIGN-TYPE Rev 4). The chat window is the only
 /// caller (the allow-list refuses it elsewhere). An idle conversation starts a text session; a
 /// running one takes the message in its loop. The text is never logged or echoed: the error is

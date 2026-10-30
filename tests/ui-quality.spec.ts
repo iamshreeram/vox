@@ -1199,6 +1199,84 @@ function consumerMismatches(
   return Q.convergenceMismatches(expected, observed);
 }
 
+/* ------------------------------------------------------------------ orb colour group (D3) */
+
+/**
+ * The Appearance page's "Orb colour" group, checked on top of the generic walk: it must exist, name
+ * Follow app and the six accents, give every swatch a 24 px target, and draw each swatch's boundary
+ * at >= 3:1 against its surface (the ring is the accent text role, which is >= 4.5:1 on light).
+ */
+async function auditOrbGroup(
+  page: Page,
+  surface: string,
+  variant: string,
+): Promise<void> {
+  const group = page.getByRole("radiogroup", { name: "Orb colour" });
+  await expect(group, `${variant}: orb colour group`).toBeVisible();
+  const radios = group.getByRole("radio");
+  const names = [
+    "Follow app",
+    "Amber",
+    "Blue",
+    "Violet",
+    "Emerald",
+    "Rose",
+    "Slate",
+  ];
+  await expect(radios, `${variant}: orb colour options`).toHaveCount(
+    names.length,
+  );
+  const info = await page.evaluate(() => {
+    const group = document.querySelector(
+      '[role="radiogroup"][aria-label="Orb colour"]',
+    );
+    const radios = [
+      ...(group?.querySelectorAll('[role="radio"]') ?? []),
+    ] as HTMLElement[];
+    return radios.map((el) => {
+      let backing = "";
+      let node: HTMLElement | null = el.parentElement;
+      while (node && backing === "") {
+        const css = getComputedStyle(node).backgroundColor;
+        if (css !== "rgba(0, 0, 0, 0)" && css !== "transparent") backing = css;
+        node = node.parentElement;
+      }
+      const box = el.getBoundingClientRect();
+      return {
+        name: el.getAttribute("aria-label") ?? "",
+        border: getComputedStyle(el).borderTopColor,
+        backing: backing || getComputedStyle(document.body).backgroundColor,
+        width: box.width,
+        height: box.height,
+      };
+    });
+  });
+  expect(
+    info.map((r) => r.name),
+    `${variant}: orb colour option names`,
+  ).toEqual(names);
+  const colours = info.flatMap((r) => [r.border, r.backing]);
+  const resolve = await Q.resolveColourMap(page, colours);
+  const violations: string[] = [];
+  for (const r of info) {
+    if (r.width < Q.MIN_TARGET_PX || r.height < Q.MIN_TARGET_PX) {
+      violations.push(`${r.name}: target ${r.width}x${r.height}px`);
+    }
+    const border = resolve(r.border);
+    const backing = resolve(r.backing);
+    if (border === null || backing === null) {
+      violations.push(`${r.name}: colour not resolved`);
+      continue;
+    }
+    const bg = Q.over(backing, { r: 255, g: 255, b: 255 });
+    const ratio = Q.contrastRatio(Q.over(border, bg), bg);
+    if (ratio < 3) {
+      violations.push(`${r.name}: boundary ${ratio.toFixed(2)}:1 < 3:1`);
+    }
+  }
+  expect(violations, `${variant} (${surface}): orb colour group`).toEqual([]);
+}
+
 /* ------------------------------------------------------------------ matrix: settings */
 
 test.describe("UI quality gate: settings (every page, 1100x760)", () => {
@@ -1240,6 +1318,9 @@ test.describe("UI quality gate: settings (every page, 1100x760)", () => {
           `${variant}/${titles[i]}`,
           { walk: true },
         );
+        if (titles[i] === "Appearance") {
+          await auditOrbGroup(page, combo.theme, variant);
+        }
         if ((await appearanceOf(page)) !== before) {
           // The walk moved a roving selection (theme, accent or style): restore the page for the next visit.
           await page.goto("/");

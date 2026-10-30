@@ -6,7 +6,11 @@
 
 use crate::managers::converse::{
     run_session, BoxFuture, Brain, CancelToken, Deps, Ears, Hands, Mouth, RegistryState, Reporter,
-    SessionConfig, SessionEnd, SessionRegistry, SessionState, TranscriptEvent, TranscriptSink,
+    SessionConfig, SessionEnd, SessionId, SessionRegistry, SessionState, TranscriptEvent,
+    TranscriptSink,
+};
+use crate::managers::converse_activation::{
+    orb_activation_decision, ActivationDecision, ActivationKind,
 };
 use crate::managers::converse_capture::CaptureHandle;
 use crate::managers::converse_confirm::PolicySource;
@@ -54,9 +58,9 @@ impl StartFail {
 
 /// The mode of the running session, keyed by its id, so a finished session never clears a
 /// newer one's mode.
-type SessionModeSlot = Arc<Mutex<Option<(u64, SessionMode)>>>;
+type SessionModeSlot = Arc<Mutex<Option<(SessionId, SessionMode)>>>;
 
-fn clear_mode(slot: &SessionModeSlot, id: u64) {
+fn clear_mode(slot: &SessionModeSlot, id: SessionId) {
     let mut guard = slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if matches!(*guard, Some((owner, _)) if owner == id) {
         *guard = None;
@@ -196,10 +200,18 @@ struct TextModeReporter {
     inner: ForwardReporter,
     /// True for a text session; a voice session passes every state through unchanged.
     text_mode: bool,
+    /// A-C1b: the registry and this session's id; the first `Listening` (capture ready) marks the
+    /// session Running. None in tests that build the reporter directly.
+    ready: Option<(Arc<SessionRegistry>, SessionId)>,
 }
 
 impl Reporter for TextModeReporter {
     fn state(&self, state: SessionState) {
+        if state == SessionState::Listening {
+            if let Some((registry, id)) = self.ready.as_ref() {
+                registry.mark_running(*id);
+            }
+        }
         if !self.text_mode {
             self.inner.state(state);
             return;
@@ -333,7 +345,7 @@ impl ConverseController {
             return Err(TEXT_ENDING.to_string());
         }
         self.start_with(SessionMode::Voice)
-            .map(|(id, _)| id)
+            .map(|(id, _)| id.0)
             .map_err(StartFail::into_message)
     }
 
@@ -341,13 +353,13 @@ impl ConverseController {
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn start_text(&self) -> Result<u64, String> {
         self.start_with(SessionMode::Text)
-            .map(|(id, _)| id)
+            .map(|(id, _)| id.0)
             .map_err(StartFail::into_message)
     }
 
     /// The shared start of both modes. Returns the session id and the inbox generation the
     /// session opened.
-    fn start_with(&self, mode: SessionMode) -> Result<(u64, u64), StartFail> {
+    fn start_with(&self, mode: SessionMode) -> Result<(SessionId, u64), StartFail> {
         let admission = self.platform.admit().map_err(StartFail::Admit)?;
         let preflight = match mode {
             SessionMode::Voice => self.platform.preflight(),
@@ -426,6 +438,7 @@ impl ConverseController {
                 let reporter = TextModeReporter {
                     inner: forward,
                     text_mode,
+                    ready: Some((registry.clone(), id)),
                 };
                 let deps = Deps {
                     policy: policy.as_deref(),
@@ -479,10 +492,48 @@ impl ConverseController {
         Ok((id, generation))
     }
 
-    /// Request the session to end. True if a Running session was asked to
-    /// stop; false when idle or already stopping. Idempotent.
+    /// Request the session to end. True if a Running or Starting session was asked to stop;
+    /// false when idle or already stopping. Idempotent. Activation sources do not use it
+    /// (see `activation_decision`).
     pub fn stop(&self) -> bool {
         self.registry.request_stop()
+    }
+
+    /// Compare-and-stop: stops only the session `id` when it is still the running one.
+    pub fn stop_if(&self, id: SessionId) -> bool {
+        self.registry.request_stop_if(id)
+    }
+
+    /// The decision for one activation (orb click, hotkey, tray), read under one registry lock.
+    /// A Starting session is never cancelled by an activation.
+    pub fn activation_decision(&self) -> ActivationDecision {
+        let (phase, id) = self.registry.snapshot();
+        orb_activation_decision(phase, self.session_kind(id))
+    }
+
+    /// Carries out the activation decision for the hotkey and tray. A start refusal is returned.
+    /// A text chat stops without a notice here; the orb path adds its own notice.
+    pub fn toggle(&self) -> Result<(), String> {
+        match self.activation_decision() {
+            ActivationDecision::Start => self.start().map(|_| ()),
+            ActivationDecision::RequestStopIf(id) | ActivationDecision::StopTextThenNotice(id) => {
+                self.stop_if(id);
+                Ok(())
+            }
+            ActivationDecision::Ignore => Ok(()),
+        }
+    }
+
+    /// The kind of the session `id` (Voice unless it is the running text chat).
+    fn session_kind(&self, id: SessionId) -> ActivationKind {
+        let guard = self
+            .session_mode
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match *guard {
+            Some((owner, SessionMode::Text)) if owner == id => ActivationKind::Text,
+            _ => ActivationKind::Voice,
+        }
     }
 
     /// True for Running and Stopping (draining).
@@ -510,7 +561,7 @@ impl ConverseController {
         }
     }
 
-    fn set_mode(&self, id: u64, mode: SessionMode) {
+    fn set_mode(&self, id: SessionId, mode: SessionMode) {
         let mut guard = self
             .session_mode
             .lock()
@@ -563,7 +614,8 @@ impl ConverseController {
     pub fn status(&self) -> ConverseStatus {
         match self.registry.state() {
             RegistryState::Idle => ConverseStatus::Idle,
-            RegistryState::Running(_) => ConverseStatus::Running,
+            // A Starting session is already live for the UI (it can be stopped once Running).
+            RegistryState::Starting(_) | RegistryState::Running(_) => ConverseStatus::Running,
             RegistryState::Draining(_) => ConverseStatus::Stopping,
         }
     }
@@ -681,6 +733,10 @@ mod tests {
         mouth_log: Arc<Mutex<Vec<String>>>,
         captures_made: AtomicUsize,
         panic_in_parts: AtomicBool,
+        /// Test hook (A-C1b): when set, `on_session_start` blocks while the session is Starting.
+        hold_start: AtomicBool,
+        start_entered: AtomicBool,
+        start_release: AtomicBool,
     }
     impl FakePlatform {
         fn new(mode: Mode) -> Arc<Self> {
@@ -696,6 +752,9 @@ mod tests {
                 mouth_log: Arc::new(Mutex::new(vec![])),
                 captures_made: AtomicUsize::new(0),
                 panic_in_parts: AtomicBool::new(false),
+                hold_start: AtomicBool::new(false),
+                start_entered: AtomicBool::new(false),
+                start_release: AtomicBool::new(false),
             })
         }
     }
@@ -740,6 +799,17 @@ mod tests {
                 policy: None,
                 announcer: None,
                 on_complete: None,
+            }
+        }
+        fn on_session_start(&self) {
+            if !self.hold_start.load(Ordering::SeqCst) {
+                return;
+            }
+            self.start_entered.store(true, Ordering::SeqCst);
+            let t = Instant::now();
+            while !self.start_release.load(Ordering::SeqCst) && t.elapsed() < Duration::from_secs(5)
+            {
+                std::thread::sleep(Duration::from_millis(2));
             }
         }
         fn on_state(&self, state: &'static str, end: Option<&'static str>) {
@@ -1308,6 +1378,63 @@ mod tests {
         assert!(c.stop());
         wait_until("drain", || !c.is_active());
         assert_eq!(c.status(), ConverseStatus::Idle);
+        reset_hooks();
+    }
+
+    // ------------- startup-safe lifecycle (A-C1b, DESIGN Rev 3) -------------
+
+    /// (b) A start paused right after admission (Starting): hotkey toggle, tray toggle and a
+    /// second orb activation must not cancel it; it still reaches Running and stays alive.
+    #[test]
+    fn starting_session_is_never_cancelled_by_toggles_and_reaches_running() {
+        let _g = lock();
+        reset_hooks();
+        let p = FakePlatform::new(Mode::Listening);
+        p.hold_start.store(true, Ordering::SeqCst);
+        let c = Arc::new(ConverseController::new(p.clone()));
+        let starter = {
+            let c = c.clone();
+            std::thread::spawn(move || c.start())
+        };
+        wait_until("start held in Starting", || {
+            p.start_entered.load(Ordering::SeqCst)
+        });
+        assert!(c.is_active());
+        assert_eq!(c.activation_decision(), ActivationDecision::Ignore);
+        assert_eq!(c.toggle(), Ok(()), "hotkey toggle while Starting");
+        assert_eq!(c.toggle(), Ok(()), "tray toggle while Starting");
+        assert_eq!(c.activation_decision(), ActivationDecision::Ignore);
+        p.start_release.store(true, Ordering::SeqCst);
+        assert!(starter.join().expect("starter thread").is_ok());
+        wait_until("running after start", || {
+            c.status() == ConverseStatus::Running && c.is_voice_active()
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(c.is_voice_active(), "session must survive the toggles");
+        assert!(
+            !p.events.lock().unwrap().iter().any(|(s, _)| *s == "idle"),
+            "no final idle: the session was never cancelled"
+        );
+        assert!(c.stop());
+        wait_until("drain", || !c.is_active());
+        reset_hooks();
+    }
+
+    /// (d) A start that fails after admission returns to Idle; a later toggle starts.
+    #[test]
+    fn start_failure_returns_to_idle_and_a_later_toggle_starts() {
+        let _g = lock();
+        reset_hooks();
+        let p = FakePlatform::new(Mode::Listening);
+        p.panic_in_parts.store(true, Ordering::SeqCst);
+        let c = ConverseController::new(p.clone());
+        assert_eq!(c.toggle(), Err(START_FAILED.to_string()));
+        assert_eq!(c.activation_decision(), ActivationDecision::Start);
+        p.panic_in_parts.store(false, Ordering::SeqCst);
+        assert_eq!(c.toggle(), Ok(()));
+        assert!(c.is_active());
+        assert!(c.stop());
+        wait_until("drain", || !c.is_active());
         reset_hooks();
     }
 }

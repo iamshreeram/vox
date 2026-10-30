@@ -11,7 +11,7 @@ import { APPEARANCE_DEFAULTS, resetPlan } from "./appearanceModel";
 
 /**
  * Reset to defaults, as an inline two-step confirm (not a native dialog). The first click only
- * asks; the second runs the plan: theme, accent, conversation theme, visual style, transparency.
+ * asks; the second runs the plan: theme, accent, conversation theme, visual style, transparency, then the orb colour.
  * The result is announced in a status region.
  */
 export const ResetAppearance: React.FC = () => {
@@ -19,6 +19,7 @@ export const ResetAppearance: React.FC = () => {
   const { settings, refreshSettings } = useSettings();
   // The store action reports whether the write was saved (the hook's copy does not).
   const updateSetting = useSettingsStore((state) => state.updateSetting);
+  const changeOrbAccent = useSettingsStore((state) => state.changeOrbAccent);
   const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
@@ -54,6 +55,8 @@ export const ResetAppearance: React.FC = () => {
         await refreshSettings();
       }
     }
+    // The orb colour is not in the plan (its pinned order is unchanged): it returns to Follow app.
+    allSaved = (await changeOrbAccent(null)) && allSaved;
     setConfirming(false);
     setFailed(!allSaved);
     setMessage(allSaved ? t("settings.appearance.reset.done") : "");

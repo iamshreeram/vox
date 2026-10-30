@@ -1,30 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { useTranslation } from "react-i18next";
 import { useSettings } from "@/hooks/useSettings";
 import { CHAT_PALETTES } from "@/chat/chatTheme";
 import { resolveAppearance } from "@/lib/appearance/palette";
+import { resolveOrbAccent, orbRingColour } from "@/orb/orbAccentResolve";
 import { SettingContainer } from "../../ui/SettingContainer";
-import { effectiveAppearance } from "./appearanceModel";
-
-const DARK_QUERY = "(prefers-color-scheme: dark)";
-
-/** The OS colour scheme, kept current so System follows a change while the page is open. */
-function usePrefersDark(): boolean {
-  const [prefersDark, setPrefersDark] = useState<boolean>(() =>
-    typeof window.matchMedia === "function"
-      ? window.matchMedia(DARK_QUERY).matches
-      : false,
-  );
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const query = window.matchMedia(DARK_QUERY);
-    const onChange = (event: MediaQueryListEvent) =>
-      setPrefersDark(event.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
-  return prefersDark;
-}
+import { effectiveAppearance, effectiveOrbAccent } from "./appearanceModel";
+import { appearanceBucket, usePrefersDark } from "./appearanceBucket";
 
 /**
  * A live sample of the chosen look: an orb, bubbles and a primary button drawn with the shared
@@ -47,8 +29,19 @@ export const AppearancePreview: React.FC = () => {
       accent: choice.accent,
       chat_theme: choice.chatTheme,
       visual_style: choice.visualStyle,
+      orb_accent: effectiveOrbAccent(settings?.orb_accent),
     },
     prefersDark,
+  );
+  // The orb ring follows the orb colour, or the app accent under Follow app (DESIGN D3).
+  const orbRing = orbRingColour(
+    "idle",
+    resolveOrbAccent(
+      choice.accent,
+      effectiveOrbAccent(settings?.orb_accent),
+      resolved.bucket,
+    ),
+    resolved.bucket,
   );
   const palette = CHAT_PALETTES[resolved.chatPalette];
   const paletteLabel =
@@ -72,10 +65,12 @@ export const AppearancePreview: React.FC = () => {
             <span
               aria-hidden="true"
               data-testid="appearance-preview-orb"
+              data-ring={orbRing}
               className="h-12 w-12 shrink-0 rounded-full"
               style={{
                 background:
                   "radial-gradient(circle at 35% 30%, var(--color-accent-a), var(--color-accent-b))",
+                boxShadow: `0 0 0 3px ${orbRing}`,
               }}
             />
             <span className="text-sm">

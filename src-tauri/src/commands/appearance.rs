@@ -26,3 +26,10 @@ pub async fn change_chat_theme_setting(app: AppHandle, chat_theme: ChatTheme) {
 pub async fn change_visual_style_setting(app: AppHandle, visual_style: VisualStyle) {
     commit_appearance(&app, |fields| fields.visual_style = visual_style);
 }
+
+/// Saves the orb accent (`None` follows the app accent) and publishes the committed snapshot.
+#[tauri::command]
+#[specta::specta]
+pub async fn change_orb_accent_setting(app: AppHandle, accent: Option<Accent>) {
+    commit_appearance(&app, |fields| fields.orb_accent = accent);
+}
