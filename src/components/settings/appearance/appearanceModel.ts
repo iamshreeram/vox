@@ -48,6 +48,46 @@ export const ACCENT_NAME_KEYS: Readonly<Record<AccentId, string>> = {
   slate: "settings.appearance.accent.swatch.slate",
 };
 
+/**
+ * The orb colour (DESIGN D3). `null` means follow the app accent and is the default; the six accents
+ * pick the orb's own colour. The first option is always Follow app.
+ */
+export type OrbChoice = AccentId | null;
+
+/** The id of the Follow app option. No accent is called "follow", so ids stay unique. */
+export const ORB_FOLLOW_ID = "follow";
+
+/** Follow app first, then the six accents in accent order. */
+export const ORB_CHOICES: readonly OrbChoice[] = [null, ...ACCENT_IDS];
+
+/** A stable id for one orb option: the accent id, or the follow id for null. */
+export function orbChoiceId(choice: OrbChoice): string {
+  return choice ?? ORB_FOLLOW_ID;
+}
+
+/** Translation key of an orb option's name: Follow app, or the accent's swatch name. */
+export function orbChoiceNameKey(choice: OrbChoice): string {
+  return choice === null
+    ? "settings.appearance.orb.followApp"
+    : ACCENT_NAME_KEYS[choice];
+}
+
+/**
+ * The stored orb accent as the page shows it. Absent or unknown values read as null (follow the app
+ * accent), so an older or garbled setting never leaves the group without a selection.
+ */
+export function effectiveOrbAccent(value: unknown): OrbChoice {
+  return (ACCENT_IDS as readonly string[]).includes(value as string)
+    ? (value as AccentId)
+    : null;
+}
+
+/** The index of an orb option in ORB_CHOICES (Follow app is 0). */
+export function orbSelectedIndex(choice: OrbChoice): number {
+  const index = ORB_CHOICES.indexOf(effectiveOrbAccent(choice));
+  return index < 0 ? 0 : index;
+}
+
 const isChatTheme = (
   value: unknown,
 ): value is "dark" | "light" | "follow_app" =>

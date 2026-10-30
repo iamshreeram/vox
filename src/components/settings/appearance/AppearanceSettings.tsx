@@ -5,6 +5,7 @@ import { PlacedGroups } from "../PlacedGroups";
 import { AccentPicker } from "./AccentPicker";
 import { AppearancePreview } from "./AppearancePreview";
 import { ChatThemeSetting } from "./ChatThemeSetting";
+import { OrbColorSetting } from "./OrbColorSetting";
 import { ResetAppearance } from "./ResetAppearance";
 import { ThemeSelector } from "./ThemeSelector";
 import { VisualStyleSetting } from "./VisualStyleSetting";
@@ -21,6 +22,7 @@ export const AppearanceSettings: React.FC = () => {
       <SettingsGroup title={t("settings.appearance.title")}>
         <ThemeSelector descriptionMode="tooltip" grouped={true} />
         <AccentPicker descriptionMode="tooltip" grouped={true} />
+        <OrbColorSetting descriptionMode="tooltip" grouped={true} />
         <VisualStyleSetting descriptionMode="tooltip" grouped={true} />
         <ChatThemeSetting descriptionMode="tooltip" grouped={true} />
         <AppearancePreview />

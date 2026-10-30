@@ -316,6 +316,12 @@
           "slate": "Slate"
         }
       },
+      "orb": {
+        "title": "Orb colour",
+        "description": "The colour of the floating orb's ring. Follow app uses the accent above.",
+        "followApp": "Follow app",
+        "failed": "Could not save the orb colour. The previous colour is kept."
+      },
       "style": {
         "title": "Visual style",
         "description": "How much colour the interface uses.",
@@ -1537,7 +1543,7 @@
     },
     "floatingOrb": {
       "title": "Floating orb",
-      "description": "A small orb that stays on top of other apps. Click it to open the conversation.",
+      "description": "A small orb that stays on top of other apps. Click it to start or stop a voice conversation.",
       "show": {
         "title": "Show orb",
         "description": "Keep the orb on screen above other apps. You can also use the tray menu."
@@ -1575,7 +1581,8 @@
         "chatLogOff": "Bubbles need the conversation log, which is turned off.",
         "wakeDictation": "Hey Jarvis currently starts dictation, so no bubbles appear. Switch it to start a conversation.",
         "wakeButton": "Make Hey Jarvis start a conversation"
-      }
+      },
+      "colourHint": "To change the orb's colour, open Appearance > Orb colour."
     },
     "chatOpacity": {
       "title": "Conversation window opacity",

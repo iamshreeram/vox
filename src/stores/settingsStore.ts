@@ -43,6 +43,7 @@ interface SettingsStore {
     key: K,
     value: Settings[K],
   ) => Promise<boolean>;
+  changeOrbAccent: (accent: Accent | null) => Promise<boolean>;
   resetSetting: (key: keyof Settings) => Promise<void>;
   refreshSettings: () => Promise<void>;
   refreshAudioDevices: () => Promise<void>;
@@ -89,6 +90,9 @@ const DEFAULT_AUDIO_DEVICE: AudioDevice = {
   name: "Default",
   is_default: true,
 };
+
+// Orb colour writes are numbered so a late failure never undoes a newer choice (DESIGN D3).
+let orbAccentWrites = 0;
 
 const settingUpdaters: {
   [K in keyof Settings]?: (value: Settings[K]) => Promise<unknown>;
@@ -250,6 +254,9 @@ const settingUpdaters: {
   custom_theme_colors: (value) =>
     commands.updateCustomThemeColors(value as CustomThemeColors),
   accent: (value) => commands.changeAccentSetting(value as Accent),
+  // null = follow the app accent (the default).
+  orb_accent: (value) =>
+    commands.changeOrbAccentSetting((value as Accent | null) ?? null),
   chat_theme: (value) => commands.changeChatThemeSetting(value as ChatTheme),
   visual_style: (value) =>
     commands.changeVisualStyleSetting(value as VisualStyle),
@@ -651,6 +658,33 @@ export const useSettingsStore = create<SettingsStore>()(
         return false;
       } finally {
         setUpdating(updateKey, false);
+      }
+    },
+
+    // Orb colour (DESIGN D3): optimistic, with a rollback only for the newest write. Resolves to
+    // whether the backend saved it, so the page can show an error.
+    changeOrbAccent: async (accent) => {
+      const previous = get().settings?.orb_accent ?? null;
+      orbAccentWrites += 1;
+      const write = orbAccentWrites;
+      set((state) => ({
+        settings: state.settings
+          ? { ...state.settings, orb_accent: accent }
+          : null,
+      }));
+      try {
+        await commands.changeOrbAccentSetting(accent);
+        return true;
+      } catch (error) {
+        console.error("Failed to update orb colour:", error);
+        if (write === orbAccentWrites) {
+          set((state) => ({
+            settings: state.settings
+              ? { ...state.settings, orb_accent: previous }
+              : null,
+          }));
+        }
+        return false;
       }
     },
 

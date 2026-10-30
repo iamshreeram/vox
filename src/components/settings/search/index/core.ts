@@ -147,6 +147,25 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
     ],
   },
   {
+    id: "appearance.orbColour",
+    section: "appearance",
+    groupKey: "settings.appearance.title",
+    labelKey: "settings.appearance.orb.title",
+    descriptionKey: "settings.appearance.orb.description",
+    keywords: [
+      "orb",
+      "orb colour",
+      "orb color",
+      "colour",
+      "color",
+      "ring",
+      "floating",
+      "floating orb",
+      "follow app",
+      "accent",
+    ],
+  },
+  {
     id: "appearance.visualStyle",
     section: "appearance",
     groupKey: "settings.appearance.title",
@@ -902,6 +921,12 @@ export const CORE_EXCLUDED: Readonly<Record<string, string>> = {
  * produce; `ids: []` requires a note explaining why nothing there is a row.
  */
 export const CORE_DYNAMIC: readonly DynamicFamily[] = [
+  {
+    source: "src/components/settings/appearance/OrbColorSetting.tsx",
+    prefix: "settings.appearance.orb.",
+    ids: [],
+    note: "the orb option names are Follow app (settings.appearance.orb.followApp) and the accent swatch names read from ACCENT_NAME_KEYS; the Orb colour row itself is the searchable entry",
+  },
   {
     source: "src/components/settings/appearance/AccentPicker.tsx",
     prefix: "settings.appearance.accent.swatch.",
