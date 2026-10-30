@@ -940,31 +940,70 @@ export interface FocusVerdict {
 
 export const MIN_FOCUS_RING_RATIO = 3;
 
-/** The first colour in a computed box-shadow (browsers serialise shadow colours as rgb()/rgba()). */
-function firstShadowColor(boxShadow: string): string | null {
-  const match = boxShadow.match(/rgba?\([^)]*\)|#[0-9a-f]{3,8}\b/i);
-  return match ? match[0] : null;
-}
-
-/** Colour and spread of each outer (non-inset) shadow in a computed box-shadow list. */
-export function parseShadows(
+/**
+ * Every visible shadow layer of a computed or authored box-shadow list, in order (R5g). A layer is
+ * dropped when its colour is `transparent` or has alpha 0; an unparseable colour is kept so that it
+ * is reported as unresolvable. Colour functions may hold commas and spaces (`rgb(0 0 0)`).
+ */
+export function parseShadowLayers(
   boxShadow: string,
-): Array<{ color: string; spread: number }> {
+): Array<{ color: string; spread: number; inset: boolean }> {
   if (boxShadow === "none") return [];
-  const out: Array<{ color: string; spread: number }> = [];
+  const out: Array<{ color: string; spread: number; inset: boolean }> = [];
   for (const part of splitTopLevel(boxShadow)) {
     const text = part.trim();
-    if (text === "" || /\binset\b/.test(text)) continue;
-    const colour = text.match(/rgba?\([^)]*\)|#[0-9a-f]{3,8}\b/i);
+    if (text === "" || text === "none") continue;
+    const colour = text.match(
+      /rgba?\([^)]*\)|#[0-9a-f]{3,8}\b|\btransparent\b/i,
+    );
     if (colour === null) continue;
+    const parsed = parseSrgbLiteral(colour[0]);
+    if (parsed !== null && parsed.a === 0) continue;
     const lengths = text
       .replace(colour[0], " ")
       .split(/\s+/)
       .filter((t) => /px$/.test(t))
       .map((t) => parseFloat(t));
-    out.push({ color: colour[0], spread: lengths[3] ?? 0 });
+    out.push({
+      color: colour[0],
+      spread: lengths[3] ?? 0,
+      inset: /\binset\b/.test(text),
+    });
   }
   return out;
+}
+
+/** Colour and spread of each outer (non-inset) visible shadow in a computed box-shadow list. */
+export function parseShadows(
+  boxShadow: string,
+): Array<{ color: string; spread: number }> {
+  return parseShadowLayers(boxShadow)
+    .filter((s) => !s.inset)
+    .map((s) => ({ color: s.color, spread: s.spread }));
+}
+
+/**
+ * Where the focus ring is painted (R5g). An outline or a non-inset box-shadow is drawn OUTSIDE the
+ * element, so it is judged against what is visible around the element (its parent stack). An inset
+ * box-shadow is drawn over the element's own fill. Null when there is no ring.
+ */
+export type RingPlacement = "outside" | "inset";
+
+export function ringPlacementOf(
+  focused: FocusStyle,
+  base: FocusStyle,
+): RingPlacement | null {
+  if (focusRingTexts(focused, base) === null) return null;
+  const outlineVisible =
+    focused.outlineStyle !== "none" && parseFloat(focused.outlineWidth) > 0;
+  const outlineChanged =
+    focused.outlineStyle !== base.outlineStyle ||
+    focused.outlineWidth !== base.outlineWidth ||
+    focused.outlineColor !== base.outlineColor;
+  if (outlineVisible && outlineChanged) return "outside";
+  return parseShadowLayers(focused.boxShadow).some((s) => !s.inset)
+    ? "outside"
+    : "inset";
 }
 
 /**
@@ -988,6 +1027,10 @@ export function focusRingTexts(
   const spreadShadow = shadowChanged
     ? parseShadows(focused.boxShadow).find((s) => s.spread >= 2)
     : undefined;
+  // The shadow ring is the first visible outer layer; an inset layer only when no outer one exists.
+  const layersNow = shadowChanged ? parseShadowLayers(focused.boxShadow) : [];
+  const shadowRing =
+    layersNow.find((s) => !s.inset) ?? layersNow.find((s) => s.inset);
   if (
     outlineVisible &&
     outlineChanged &&
@@ -997,10 +1040,7 @@ export function focusRingTexts(
     return [focused.outlineColor, spreadShadow.color];
   }
   if (outlineVisible && outlineChanged) return [focused.outlineColor];
-  if (shadowChanged) {
-    const first = firstShadowColor(focused.boxShadow);
-    return first === null ? null : [first];
-  }
+  if (shadowRing !== undefined) return [shadowRing.color];
   return null;
 }
 
@@ -1031,7 +1071,14 @@ export function checkFocusRing(
     }
     tones.push(tone);
   }
-  const stack = buildStack(layers, resolve);
+  // R5g: an outline or outer shadow is painted outside the element, so its backdrop is the parent
+  // stack (the element's own fill is not behind it). An inset shadow is painted over the element's
+  // fill, so the full chain (ending at the element) is the backdrop. layers is root-first, element
+  // last. A single-layer chain has no parent to use, so it stays the backdrop (no page is known).
+  const placement = ringPlacementOf(focused, base);
+  const backdropLayers =
+    placement === "outside" && layers.length > 1 ? layers.slice(0, -1) : layers;
+  const stack = buildStack(backdropLayers, resolve);
   if (typeof stack === "string") {
     return {
       pass: false,
@@ -1090,6 +1137,8 @@ export interface VisualProbe {
 export interface ControlCandidate {
   probe: VisualProbe;
   ring: boolean;
+  /** Short description (tag and classes) that names the box in a size message (R5g). */
+  name?: string;
 }
 
 /** The element that draws the focus ring: E itself, a candidate by index, or none. */
@@ -1134,12 +1183,52 @@ export function visualTargetOk(
   candidates: ControlCandidate[],
   labels: VisualProbe[],
 ): boolean {
-  const boxes: VisualProbe[] = [self, ...labels];
-  if (holder.kind === "self") boxes.push(self);
-  if (holder.kind === "candidate") boxes.push(candidates[holder.index].probe);
-  const width = Math.max(...boxes.map((b) => b.width));
-  const height = Math.max(...boxes.map((b) => b.height));
-  return targetSizeOk(width, height);
+  return measureTarget(self, holder, candidates, labels).ok;
+}
+
+/** The box that sets a target size and what it is (R5g: named in the size message). */
+export interface TargetMeasure {
+  width: number;
+  height: number;
+  ok: boolean;
+  /** The measured box, e.g. "E", "V(E) div.track" or "label 1". */
+  source: string;
+}
+
+/**
+ * Target size of E on max(E, V(E), labels), with the box that supplied each dimension (R5g). Used
+ * by the size stage so that its message names the measured element, not the 1x1 input.
+ */
+export function measureTarget(
+  self: VisualProbe,
+  holder: RingHolder,
+  candidates: ControlCandidate[],
+  labels: VisualProbe[],
+): TargetMeasure {
+  const boxes: Array<{ probe: VisualProbe; source: string }> = [
+    { probe: self, source: "E" },
+  ];
+  labels.forEach((probe, i) => boxes.push({ probe, source: `label ${i + 1}` }));
+  if (holder.kind === "candidate") {
+    const c = candidates[holder.index];
+    boxes.push({
+      probe: c.probe,
+      source: `V(E) ${c.name ?? `candidate ${holder.index + 1}`}`,
+    });
+  }
+  const widest = boxes.reduce((a, b) =>
+    b.probe.width > a.probe.width ? b : a,
+  );
+  const tallest = boxes.reduce((a, b) =>
+    b.probe.height > a.probe.height ? b : a,
+  );
+  const width = widest.probe.width;
+  const height = tallest.probe.height;
+  const source =
+    widest.source === tallest.source
+      ? widest.source
+      : `width from ${widest.source}, height from ${tallest.source}`;
+  return { width, height, ok: targetSizeOk(width, height), source };
 }
 
 /** Whether a focus change shows any ring on this element (single or two-tone). */

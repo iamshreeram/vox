@@ -452,6 +452,8 @@ interface FocusCandidate {
   focused: Q.FocusStyle;
   base: Q.FocusStyle;
   layers: Q.LayerCase[];
+  /** Tag and classes, named in the size message when this candidate is measured (R5g). */
+  desc: string;
 }
 
 interface FocusObs {
@@ -489,8 +491,28 @@ function focusFirstEnabled(): string | null {
   return null;
 }
 
+/**
+ * Waits until the transitions and finite animations of these nodes have finished, or 400 ms (R5g).
+ * Runs in the page. A read at t0 gives the pre-transition value: react-select's control has
+ * `transition: all 150ms`, so its ring is absent at t0 and present once settled.
+ */
+async function settleAnimations(nodes: Element[]): Promise<void> {
+  // Reading a computed style flushes pending style changes, so transitions exist before we ask.
+  for (const n of nodes) getComputedStyle(n).boxShadow;
+  const finite = nodes
+    .flatMap((n) => n.getAnimations())
+    .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity);
+  const done = Promise.all(
+    finite.map((a) => a.finished.catch(() => undefined)),
+  );
+  await Promise.race([
+    done,
+    new Promise<void>((resolve) => setTimeout(resolve, 400)),
+  ]);
+}
+
 /** The focused element's focus styles (focused and base), its backgrounds and its roving group. */
-function observeFocus(): FocusObs {
+async function observeFocus(): Promise<FocusObs> {
   const el = document.activeElement as HTMLElement | null;
   if (!el || el === document.body) {
     return {
@@ -534,8 +556,6 @@ function observeFocus(): FocusObs {
       boxShadow: s.boxShadow,
     };
   };
-  const focused = style(el);
-  const focusVisible = el.matches(":focus-visible");
   const probeOf = (node: Element) => {
     const r = node.getBoundingClientRect();
     const s = getComputedStyle(node);
@@ -569,6 +589,11 @@ function observeFocus(): FocusObs {
       };
     });
   };
+  const describe = (node: Element): string =>
+    node.tagName.toLowerCase() +
+    (typeof node.className === "string" && node.className.trim()
+      ? "." + node.className.trim().split(/\s+/).slice(0, 2).join(".")
+      : "");
   const siblingNodes: Element[] = [];
   for (
     let s = el.nextElementSibling;
@@ -584,16 +609,32 @@ function observeFocus(): FocusObs {
   )
     ancestorNodes.push(n);
   const visualNodes = [...siblingNodes, ...ancestorNodes];
-  const focusedVisual = visualNodes.map((n) => style(n));
   const labelNodes = new Set<Element>(
     Array.from((el as HTMLInputElement).labels ?? []),
   );
   const wrapping = el.closest("label");
   if (wrapping) labelNodes.add(wrapping);
+  const nodes: Element[] = [el, ...visualNodes];
+
+  // The focus that just happened settles first, so its ring is read at rest (R5g).
+  await settleAnimations(nodes);
+  const focusVisible = el.matches(":focus-visible");
+  // The base is read with transitions switched off: a blur would otherwise start a transition
+  // whose t0 value is still the focused one. The inline style is restored afterwards.
   el.blur();
+  const savedTransitions = nodes.map(
+    (n) => (n as HTMLElement).style.transition,
+  );
+  nodes.forEach((n) => ((n as HTMLElement).style.transition = "none"));
   const base = style(el);
   const baseVisual = visualNodes.map((n) => style(n));
+  nodes.forEach(
+    (n, i) => ((n as HTMLElement).style.transition = savedTransitions[i]),
+  );
   el.focus();
+  await settleAnimations(nodes);
+  const focused = style(el);
+  const focusedVisual = visualNodes.map((n) => style(n));
 
   let cum = 1;
   const layers: Q.LayerCase[] = [];
@@ -673,6 +714,7 @@ function observeFocus(): FocusObs {
       focused: focusedVisual[i],
       base: baseVisual[i],
       layers: layersFor(n),
+      desc: describe(n),
     })),
   };
 }
@@ -826,9 +868,11 @@ const controlOf = (c: {
   probe: Q.VisualProbe;
   focused: Q.FocusStyle;
   base: Q.FocusStyle;
+  desc: string;
 }): Q.ControlCandidate => ({
   probe: c.probe,
   ring: Q.hasFocusDiff(c.focused, c.base),
+  name: c.desc,
 });
 
 /** The ring holder (V(E)) of an observed element and the candidates it was chosen from (R4g). */
@@ -1037,18 +1081,23 @@ async function auditVisit(
     }
   }
 
-  // Target size on max(E, V(E), labels) (R4g). Without a walk there is no ring holder, so V = E.
+  // Target size on max(E, V(E), labels) (R4g), the same boxes as the ring stage (R5g). Without a
+  // walk there is no ring holder, so V = E. The message names the box that was measured.
   for (const el of data.interactive) {
     if (!el.visible || !el.enabled) continue;
     const { holder, candidates } = visualOf(walked?.obs.get(el.qid));
-    if (
-      !Q.visualTargetOk(el.probe, holder, candidates.map(controlOf), el.labels)
-    ) {
+    const measure = Q.measureTarget(
+      el.probe,
+      holder,
+      candidates.map(controlOf),
+      el.labels,
+    );
+    if (!measure.ok) {
       const detail = Q.buildDetail(el.el);
       add(
         "size",
         detail.path,
-        `${el.width.toFixed(0)}x${el.height.toFixed(0)}px (E; no visual control or label reaches the minimum)`,
+        `${measure.width.toFixed(1)}x${measure.height.toFixed(1)}px measured on ${measure.source} (no visual control or label reaches the minimum)`,
         `>= ${Q.MIN_TARGET_PX}x${Q.MIN_TARGET_PX}px visual control`,
         detail,
       );

@@ -36,7 +36,9 @@ import {
   rovingArrowKey,
   targetSizeOk,
   isVisuallyHidden,
+  measureTarget,
   ringHolderOf,
+  ringPlacementOf,
   visualTargetOk,
   type ElementRaw,
   type FocusStyle,
@@ -755,6 +757,191 @@ scenario("a tall section wrapper cannot hold a ring for its input", () => {
   const holder = ringHolderOf(cand(box(300, 24), false), [section]);
   assert.deepEqual(holder, { kind: "none" });
 });
+
+// --- R5g: ring colour, ring backdrop, size message ---------------------------
+scenario(
+  "the ring colour is the first visible shadow, not a transparent first layer",
+  () => {
+    const ring: FocusStyle = {
+      outlineStyle: "none",
+      outlineWidth: "0px",
+      outlineColor: "rgb(0, 0, 0)",
+      boxShadow: "transparent 0 0 0 0, rgb(0 0 0) 0 0 0 4px",
+    };
+    assert.deepEqual(focusRingTexts(ring, NO_FOCUS), ["rgb(0 0 0)"]);
+    const verdict = checkFocusRing(
+      ring,
+      NO_FOCUS,
+      [layer("none", "rgb(255, 255, 255)")],
+      R,
+    );
+    assert.equal(verdict.pass, true, verdict.reason ?? "");
+  },
+);
+
+scenario("a computed transparent first layer is skipped the same way", () => {
+  const ring: FocusStyle = {
+    outlineStyle: "none",
+    outlineWidth: "0px",
+    outlineColor: "rgb(0, 0, 0)",
+    boxShadow:
+      "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgb(15, 15, 15) 0px 0px 0px 4px",
+  };
+  assert.deepEqual(focusRingTexts(ring, NO_FOCUS), ["rgb(15, 15, 15)"]);
+});
+
+scenario("only transparent shadow layers give no focus indicator", () => {
+  const ring: FocusStyle = {
+    outlineStyle: "none",
+    outlineWidth: "0px",
+    outlineColor: "rgb(0, 0, 0)",
+    boxShadow: "rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+  };
+  assert.equal(focusRingTexts(ring, NO_FOCUS), null);
+});
+
+const RING_WHITE = "rgb(255, 255, 255) 0px 0px 0px 2px";
+const outerWhite: FocusStyle = {
+  outlineStyle: "none",
+  outlineWidth: "0px",
+  outlineColor: "rgb(0, 0, 0)",
+  boxShadow: RING_WHITE,
+};
+const DARK_CARD = layer("none", "rgb(20, 20, 20)");
+const WHITE_CARD = layer("none", "rgb(255, 255, 255)");
+const AMBER_FILL = layer("none", "rgb(245, 158, 11)");
+
+scenario(
+  "an outer ring is judged on the card, not on the element's own fill",
+  () => {
+    assert.equal(ringPlacementOf(outerWhite, NO_FOCUS), "outside");
+    // White ring around an amber swatch on a dark card: visible (outside the swatch).
+    const dark = checkFocusRing(
+      outerWhite,
+      NO_FOCUS,
+      [DARK_CARD, AMBER_FILL],
+      R,
+    );
+    assert.equal(dark.pass, true, dark.reason ?? "");
+  },
+);
+
+scenario(
+  "the same white outer ring fails when the card behind it is white",
+  () => {
+    const white = checkFocusRing(
+      outerWhite,
+      NO_FOCUS,
+      [WHITE_CARD, AMBER_FILL],
+      R,
+    );
+    assert.equal(white.pass, false);
+  },
+);
+
+scenario("an inset ring is judged on the element's own fill", () => {
+  const insetWhite: FocusStyle = {
+    ...outerWhite,
+    boxShadow: "rgb(255, 255, 255) 0px 0px 0px 2px inset",
+  };
+  assert.equal(ringPlacementOf(insetWhite, NO_FOCUS), "inset");
+  // White over amber is 2.15:1 even though the dark card behind would pass it.
+  assert.equal(
+    checkFocusRing(insetWhite, NO_FOCUS, [DARK_CARD, AMBER_FILL], R).pass,
+    false,
+  );
+  // A dark inset ring over amber passes (about 7.9:1 against the fill).
+  const insetDark: FocusStyle = {
+    ...outerWhite,
+    boxShadow: "rgb(26, 18, 4) 0px 0px 0px 2px inset",
+  };
+  assert.equal(
+    checkFocusRing(insetDark, NO_FOCUS, [WHITE_CARD, AMBER_FILL], R).pass,
+    true,
+  );
+});
+
+scenario(
+  "a 24x24 track behind a hidden 1x1 input passes and names the track",
+  () => {
+    const track = {
+      probe: box(24, 24, "auto", "none"),
+      ring: true,
+      name: "div.track",
+    };
+    const holder = ringHolderOf(cand(SR_ONLY, false), [track]);
+    const measure = measureTarget(SR_ONLY, holder, [track], []);
+    assert.equal(measure.ok, true);
+    assert.match(measure.source, /track/);
+  },
+);
+
+scenario(
+  "a 22.5px track behind a hidden input fails and the message names the track",
+  () => {
+    const track = {
+      probe: box(41.25, 22.5, "auto", "none"),
+      ring: true,
+      name: "div.track",
+    };
+    const holder = ringHolderOf(cand(SR_ONLY, false), [track]);
+    const measure = measureTarget(SR_ONLY, holder, [track], []);
+    assert.equal(measure.ok, false);
+    assert.equal(measure.height, 22.5);
+    assert.match(measure.source, /track/);
+    assert.doesNotMatch(measure.source, /^E$/);
+  },
+);
+
+scenario(
+  "react-select: a 4x24 input is measured on its 556x46 control, ring on the control",
+  () => {
+    const input = box(4, 24);
+    const control = {
+      probe: box(556, 46),
+      ring: true,
+      name: "div.app-select__control",
+    };
+    const holder = ringHolderOf(cand(input, false), [control]);
+    assert.deepEqual(holder, { kind: "candidate", index: 0 });
+    const measure = measureTarget(input, holder, [control], []);
+    assert.equal(measure.ok, true);
+    assert.match(measure.source, /app-select__control/);
+    const ring: FocusStyle = {
+      outlineStyle: "none",
+      outlineWidth: "0px",
+      outlineColor: "rgb(0, 0, 0)",
+      boxShadow: "rgb(15, 15, 15) 0px 0px 0px 2px",
+    };
+    const page = layer("none", "rgb(255, 255, 255)");
+    assert.equal(
+      checkFocusRing(
+        ring,
+        NO_FOCUS,
+        [page, layer("none", "rgb(245, 245, 245)")],
+        R,
+      ).pass,
+      true,
+    );
+  },
+);
+
+scenario(
+  "react-select: a container with no ring fails the ring and the size rules",
+  () => {
+    const input = box(4, 24);
+    const control = {
+      probe: box(556, 46),
+      ring: false,
+      name: "div.app-select__control",
+    };
+    const holder = ringHolderOf(cand(input, false), [control]);
+    assert.deepEqual(holder, { kind: "none" });
+    const measure = measureTarget(input, holder, [control], []);
+    assert.equal(measure.ok, false);
+    assert.equal(measure.source, "E");
+  },
+);
 
 scenario("font size >= 12px, target >= 24x24, overflow in px", () => {
   assert.equal(fontSizeOk(11.9), false);

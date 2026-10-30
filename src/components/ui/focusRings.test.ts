@@ -76,6 +76,17 @@ const scenarios: Record<string, () => void> = {
       assert.doesNotMatch(toggle, /ring-logo-primary/);
     },
 
+  // UI enterprise R5a: the switch track is 24px tall at the 15px root (h-6 would be 22.5px).
+  "ToggleSwitch and the orb toggle track have a min-h-[24px] 24px track (R5a)":
+    () => {
+      const orb = read("../settings/orb/FloatingOrbSettings.tsx");
+      assert.match(
+        toggle,
+        /className="relative w-\[44px\] h-\[24px\] min-h-\[24px\]/,
+      );
+      assert.match(orb, /h-\[24px\] min-h-\[24px\] w-\[44px\] rounded-full/);
+    },
+
   "FillerWordRemoval: each native radio label draws the ring on the label when its radio has focus (R4-a)":
     () => {
       assert.match(filler, /className="radio-focus-label flex min-h-\[24px\]/);

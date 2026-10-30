@@ -169,4 +169,41 @@ test.describe("ui-quality helpers: browser reference", () => {
       `pixels off the composed colour +-2: ${JSON.stringify(outside.slice(0, 3))}`,
     ).toBe(0);
   });
+
+  test("focus ring read after settle: a transitioning box-shadow is wrong at t0 and right once settled (R5g)", async ({
+    page,
+  }) => {
+    // The ring arrives over 400ms (transition: box-shadow), like react-select's `transition: all`.
+    await page.setContent(
+      '<style>#b{transition:box-shadow 400ms linear}#b:focus-visible{box-shadow:0 0 0 4px rgb(0,0,0)}</style><body style="margin:0;background:#ffffff"><button id="b" style="margin:40px">Save</button></body>',
+    );
+    await page.keyboard.press("Tab");
+    // t0: read straight after the focus, while the transition has only just started.
+    const t0 = await page.evaluate(
+      () => getComputedStyle(document.getElementById("b") as Element).boxShadow,
+    );
+    // Settle: wait for every finite animation on the element (the same rule as the gate).
+    const settled = await page.evaluate(async () => {
+      const b = document.getElementById("b") as Element;
+      const finite = b
+        .getAnimations()
+        .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity);
+      await Promise.all(finite.map((a) => a.finished.catch(() => undefined)));
+      return getComputedStyle(b).boxShadow;
+    });
+    expect(t0, "the ring must still be transitioning at t0").not.toBe(settled);
+    expect(settled, "the settled ring is a 4px black shadow").toBe(
+      "rgb(0, 0, 0) 0px 0px 0px 4px",
+    );
+    // The gate reads the settled value: one outer ring, black, spread 4px. t0 does not show it.
+    expect(Q.parseShadows(settled)).toEqual([
+      { color: "rgb(0, 0, 0)", spread: 4 },
+    ]);
+    expect(
+      Q.parseShadows(t0).some(
+        (s) => s.spread >= 4 && s.color === "rgb(0, 0, 0)",
+      ),
+      "t0 must not show the settled ring",
+    ).toBe(false);
+  });
 });
