@@ -1,19 +1,24 @@
-// The orb page's look: the app accent, the orb's own accent and the bucket the page renders in. The
-// appearance consumer writes it (main.tsx, onApplied); OrbApp reads it through useSyncExternalStore.
-// Pure: no DOM and no invoke, so the static test in orbRefusal.test.ts covers it.
+// The orb page's look: the app accent, the orb colour and the bucket the page renders in. The
+// appearance consumer writes it (orb/main.tsx, onApplied); OrbApp reads it through
+// useSyncExternalStore. Pure: no DOM and no invoke, so the static test in orbRefusal.test.ts covers it.
+import type { OrbColor } from "../bindings";
 import type { AccentBucket, AccentId } from "../styles/accents";
 import { DEFAULT_ACCENT } from "../styles/accents";
 
 export interface OrbLook {
   /** The app accent of the applied snapshot. */
   accent: AccentId;
-  /** The orb's own accent, or null to follow the app accent. */
-  orbAccent: AccentId | null;
+  /** The orb colour as stored: auto (default), app, or one of the six accents (A5). */
+  orbColor: OrbColor;
   /** The bucket the orb page renders in. */
   bucket: AccentBucket;
 }
 
-let look: OrbLook = { accent: DEFAULT_ACCENT, orbAccent: null, bucket: "dark" };
+let look: OrbLook = {
+  accent: DEFAULT_ACCENT,
+  orbColor: "auto",
+  bucket: "dark",
+};
 const listeners = new Set<() => void>();
 
 export function getOrbLook(): OrbLook {
@@ -24,7 +29,7 @@ export function getOrbLook(): OrbLook {
 export function setOrbLook(next: OrbLook): void {
   if (
     next.accent === look.accent &&
-    next.orbAccent === look.orbAccent &&
+    next.orbColor === look.orbColor &&
     next.bucket === look.bucket
   ) {
     return;

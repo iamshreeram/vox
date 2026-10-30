@@ -3,7 +3,7 @@
 // The page seeds its first paint from the `ap` query parameter the Rust side writes, then applies
 // `appearance` events. An event applies only when its rev is strictly higher than the one applied.
 // The consumer never invokes a command and never reads a settings store.
-import type { AppearanceSnapshot } from "@/bindings";
+import type { AppearanceSnapshot, OrbColor } from "@/bindings";
 import {
   applyResolvedAppearance,
   resolveAppearance,
@@ -18,6 +18,16 @@ export const APPEARANCE_EVENT = "appearance";
 export const SEED_PARAM = "ap";
 /** A seed longer than this (after decoding) is refused before it is parsed. */
 export const MAX_SEED_LENGTH = 4096;
+
+/**
+ * The orb colour ids, in Appearance order: Auto first (the default), Follow app second, then the six
+ * accents (A5). Anything else normalises to 'auto'.
+ */
+export const ORB_COLOR_IDS: readonly OrbColor[] = [
+  "auto",
+  "app",
+  ...ACCENT_IDS,
+];
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 const THEMES = ["system", "light", "dark", "aurora", "custom"] as const;
@@ -117,9 +127,9 @@ export function parseSnapshot(payload: unknown): AppearanceSnapshot | null {
     return null;
   }
 
-  // The orb accent is optional and normalised: a missing or unknown value reads as null (follow
-  // the app accent), so an older or garbled snapshot never rejects the whole appearance.
-  const orbAccent = oneOf(p.orb_accent, ACCENT_IDS);
+  // The orb colour is always a string (A5, D2): a missing, null or unknown value reads as 'auto', so
+  // an older or garbled snapshot never rejects the whole appearance.
+  const orbAccent: OrbColor = oneOf(p.orb_accent, ORB_COLOR_IDS) ?? "auto";
 
   return {
     rev,

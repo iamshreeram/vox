@@ -8,6 +8,7 @@ import type { AppearanceSnapshot } from "@/bindings";
 import {
   APPEARANCE_EVENT,
   MAX_SEED_LENGTH,
+  ORB_COLOR_IDS,
   SEED_PARAM,
   createAppearanceConsumer,
   parseSeed,
@@ -23,7 +24,7 @@ const snap = (over: Partial<AppearanceSnapshot> = {}): AppearanceSnapshot => ({
   accent: "amber",
   chat_theme: "dark",
   visual_style: "vibrant",
-  orb_accent: null,
+  orb_accent: "auto",
   ...over,
 });
 
@@ -297,9 +298,12 @@ const scenarios: Record<string, () => void> = {
     assert.equal(calls, 1, "a fixed theme ignores the OS scheme");
   },
 
-  "orb_accent: a valid accent is kept, anything else normalises to null":
+  // RE-POINTED (A5): null/missing/garbage normalise to 'auto' (was null). Valid values are kept.
+  "orb_accent: all eight orb colours are kept, anything else normalises to auto":
     () => {
       for (const orb of [
+        "auto",
+        "app",
         "amber",
         "blue",
         "violet",
@@ -312,11 +316,29 @@ const scenarios: Record<string, () => void> = {
           orb,
         );
       }
-      assert.equal(parseSnapshot(snap({ orb_accent: null }))?.orb_accent, null);
+      assert.equal(
+        parseSnapshot(snap({ orb_accent: null as never }))?.orb_accent,
+        "auto",
+      );
       const missing: Record<string, unknown> = { ...snap() };
       delete missing.orb_accent;
-      assert.equal(parseSnapshot(missing)?.orb_accent, null, "missing is null");
-      for (const garbage of ["teal", "", "AMBER", 7, true, {}, ["blue"]]) {
+      assert.equal(
+        parseSnapshot(missing)?.orb_accent,
+        "auto",
+        "missing is auto",
+      );
+      for (const garbage of [
+        "teal",
+        "",
+        "AMBER",
+        "bogus",
+        7,
+        42,
+        true,
+        undefined,
+        {},
+        ["blue"],
+      ]) {
         const parsed = parseSnapshot({ ...snap(), orb_accent: garbage });
         assert.ok(
           parsed !== null,
@@ -324,8 +346,32 @@ const scenarios: Record<string, () => void> = {
         );
         assert.equal(
           parsed.orb_accent,
-          null,
-          `garbage ${JSON.stringify(garbage)} -> null`,
+          "auto",
+          `garbage ${JSON.stringify(garbage)} -> auto`,
+        );
+      }
+    },
+
+  "orb_accent: ORB_COLOR_IDS lists auto, app, then the six accents": () => {
+    assert.deepEqual(ORB_COLOR_IDS, [
+      "auto",
+      "app",
+      "amber",
+      "blue",
+      "violet",
+      "emerald",
+      "rose",
+      "slate",
+    ]);
+  },
+
+  "orb_accent: normalisation of null, undefined, bogus, 42, {} and AMBER is auto":
+    () => {
+      for (const value of [null, undefined, "bogus", 42, {}, "AMBER"]) {
+        assert.equal(
+          parseSnapshot({ ...snap(), orb_accent: value })?.orb_accent,
+          "auto",
+          `${String(value)} -> auto`,
         );
       }
     },
@@ -343,10 +389,11 @@ const scenarios: Record<string, () => void> = {
       consumer.accept(snap({ rev: 4, orb_accent: "teal" as never })),
       true,
     );
+    // RE-POINTED (A5): was null; an unknown value normalises to 'auto'.
     assert.equal(
       consumer.snapshot()?.orb_accent,
-      null,
-      "unknown normalises to null",
+      "auto",
+      "unknown normalises to auto",
     );
   },
 

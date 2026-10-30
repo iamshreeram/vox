@@ -99,33 +99,37 @@ const scenarios: Record<string, () => void> = {
         "Slate",
       ]);
     },
-  "orb colour: follow app first, then the six accents, in accent order": () => {
-    assert.deepEqual(ORB_CHOICES, [null, ...ACCENT_IDS]);
-    assert.equal(ORB_CHOICES.length, 7);
-  },
+  // RE-POINTED (A5): the orb colour is 'auto' first, then 'app' (Follow app), then the six accents.
+  "orb colour: auto first, follow app second, then the six accents, in accent order":
+    () => {
+      assert.deepEqual(ORB_CHOICES, ["auto", "app", ...ACCENT_IDS]);
+      assert.equal(ORB_CHOICES.length, 8);
+    },
   "orb colour: option ids are unique and follow has its own id": () => {
     const ids = ORB_CHOICES.map(orbChoiceId);
     assert.equal(new Set(ids).size, ids.length);
-    assert.equal(orbChoiceId(null), ORB_FOLLOW_ID);
-    assert.equal(ids[0], "follow");
+    assert.equal(orbChoiceId("app"), ORB_FOLLOW_ID);
+    assert.equal(ids[0], "auto");
     assert.ok(!ACCENT_IDS.includes(ORB_FOLLOW_ID as never));
   },
-  "orb colour: selection maps null to the first option and each accent to its own":
+  "orb colour: selection maps auto to the first option and each accent to its own":
     () => {
-      assert.equal(orbSelectedIndex(null), 0);
-      assert.equal(orbSelectedIndex("amber"), 1);
-      assert.equal(orbSelectedIndex("slate"), 6);
+      assert.equal(orbSelectedIndex("auto"), 0);
+      assert.equal(orbSelectedIndex("amber"), 2);
+      assert.equal(orbSelectedIndex("slate"), 7);
     },
-  "orb colour: unknown or absent stored values read as follow the app": () => {
-    assert.equal(effectiveOrbAccent(null), null);
-    assert.equal(effectiveOrbAccent(undefined), null);
-    assert.equal(effectiveOrbAccent("magenta"), null);
-    assert.equal(effectiveOrbAccent(42), null);
+  "orb colour: unknown or absent stored values read as auto": () => {
+    assert.equal(effectiveOrbAccent(null), "auto");
+    assert.equal(effectiveOrbAccent(undefined), "auto");
+    assert.equal(effectiveOrbAccent("magenta"), "auto");
+    assert.equal(effectiveOrbAccent(42), "auto");
     assert.equal(effectiveOrbAccent("rose"), "rose");
+    assert.equal(effectiveOrbAccent("app"), "app");
     assert.equal(orbSelectedIndex("magenta" as never), 0);
   },
-  "orb colour: names are Follow app and the accent names": () => {
-    assert.equal(orbChoiceNameKey(null), "settings.appearance.orb.followApp");
+  "orb colour: names are Auto, Follow app and the accent names": () => {
+    // RE-POINTED (A5): null was Follow app; 'app' is Follow app now.
+    assert.equal(orbChoiceNameKey("app"), "settings.appearance.orb.followApp");
     assert.equal(
       orbChoiceNameKey("blue"),
       "settings.appearance.accent.swatch.blue",
@@ -136,6 +140,7 @@ const scenarios: Record<string, () => void> = {
         .reduce((n, p) => n[p], en),
     );
     assert.deepEqual(names, [
+      "Auto (changes with what Vox is doing)",
       "Follow app",
       "Amber",
       "Blue",
