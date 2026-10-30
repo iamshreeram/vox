@@ -890,7 +890,7 @@ const MSG_DONE: &str = "Done.";
 /// Spoken instead of any model-proposed paste or command while vault context is on (DESIGN 3.6).
 /// Spoken when a gated job's settings changed between approval and dispatch (DESIGN R3-2).
 const MSG_SETTINGS_CHANGED: &str = "Settings changed, so I didn't start it.";
-/// Spoken when a forced confirmation is not an exact yes (DESIGN 2.5, C6).
+/// Spoken when a forced confirmation is not exactly `yes` or `go ahead` (DESIGN 2.5, C6).
 const MSG_FORCED_DECLINED: &str = "Okay, I won't.";
 const MSG_ANSWER_ONLY: &str =
     "Vault context is on, so I can only answer questions. Turn it off to dictate text or open things.";

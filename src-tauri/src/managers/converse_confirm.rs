@@ -248,8 +248,9 @@ async fn ask_and_listen(
 }
 
 /// Strict classifier for forced confirmations (DESIGN 2.5, C6): true only when the utterance,
-/// lower-cased, punctuation-stripped and whitespace-normalised, is exactly `yes`. Everything
-/// else (`okay`, `sure`, `yes please`, mixed speech, silence) is not an approval.
+/// lower-cased, punctuation-stripped and whitespace-normalised, is exactly `yes` or exactly
+/// `go ahead`. Everything else (`okay`, `sure`, `yes please`, `go ahead please`, mixed speech,
+/// silence, the forced prompt itself) is not an approval.
 pub fn classify_strict_yes(utterance: &str) -> bool {
     let key = utterance
         .split_whitespace()
@@ -257,11 +258,11 @@ pub fn classify_strict_yes(utterance: &str) -> bool {
         .filter(|k| !k.is_empty())
         .collect::<Vec<_>>()
         .join(" ");
-    key == "yes"
+    key == "yes" || key == "go ahead"
 }
 
 /// Asks a forced yes/no question (DESIGN 2.5, C6). The same say, quiet wait, guard and single
-/// listen as `confirm_action`, but only an exact `yes` approves (`classify_strict_yes`). The
+/// listen as `confirm_action`, but only exactly `yes` or `go ahead` approves (`classify_strict_yes`). The
 /// caller speaks the decline line; nothing runs unless this returns `Approved`.
 pub async fn confirm_forced(
     ears: &dyn Ears,
