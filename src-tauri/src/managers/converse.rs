@@ -9,11 +9,12 @@ use crate::managers::converse_agent::{
 };
 use crate::managers::converse_barge::{BargeCapture, BargeIn, BargeWatch, ReplyGate};
 use crate::managers::converse_confirm::{
-    confirm_action_recorded, confirm_config_for, confirm_forced, confirmation_question,
-    decline_message, fingerprint_for, forced_prompt, prepare_action, Decision, DeclineReason,
-    DirFd, JobLaunch, JobStartOutcome, PinError, PolicySource, PrepareError, PreparedAction,
-    ValidatedCommand,
+    confirm_action_recorded, confirm_config_for, confirmation_question, decline_message,
+    fingerprint_for, forced_prompt, prepare_action, Decision, DeclineReason, DirFd, JobLaunch,
+    JobStartOutcome, PinError, PolicySource, PrepareError, PreparedAction, ValidatedCommand,
 };
+use crate::managers::converse_confirm_forced::{confirm_forced_natural, reask_for_question};
+use crate::managers::converse_confirm_judge::AnswerJudgement;
 use crate::managers::converse_context::{
     compose, neutralize, note_command, note_delivery_failed, note_failed, note_incomplete,
     note_interrupted, note_paste, note_paste_failed, CommandNote,
@@ -348,6 +349,13 @@ pub trait Brain: Send + Sync {
         let _ = on_text;
         self.plan(input)
     }
+
+    /// Model judgement of one heard answer to a forced confirmation (DESIGN A4). The default
+    /// is `Unavailable` and never touches `plan`, so brains without a judge fail closed.
+    fn judge_answer<'a>(&'a self, answer: &'a str) -> BoxFuture<'a, AnswerJudgement> {
+        let _ = answer;
+        Box::pin(async { AnswerJudgement::Unavailable })
+    }
 }
 
 /// How one accepted user utterance ended (DESIGN Rev 3, 8.2). Compile-only stub.
@@ -385,6 +393,10 @@ pub struct TranscriptEvent {
 /// Receives transcript events for one session. Compile-only stub.
 pub trait TranscriptSink: Send + Sync {
     fn record(&self, ev: TranscriptEvent);
+
+    /// The session saw untrusted content (agent result, tool output, vault or RAG evidence).
+    /// Default: ignored. Called by the turn loop once `Carry.tainted` is set (DESIGN C2).
+    fn untrusted(&self) {}
 }
 
 /// Session-scoped journal of the utterance in progress: the speech handed to the mouth and the
@@ -452,20 +464,20 @@ fn speech_outcome(kind: &PlanKind) -> TurnOutcome {
     match kind {
         PlanKind::Clarify => TurnOutcome::Clarified,
         PlanKind::End => TurnOutcome::Ended,
-        // Job plans are parsed only when jobs are allowed and are routed through gate_and_run;
-        // without a policy they are never produced, so this branch only sees answer-like speech.
-        // role kinds are answer-like for the history label (their own handling is in execute_plan).
+        // Locally handled: the role or lesson state changes here, and the utterance is not an
+        // answer from the model (DESIGN A9). Only model-answered turns may be Answered.
+        PlanKind::SetRole | PlanKind::ClearRole | PlanKind::Resume => TurnOutcome::Acted,
+        // Plans the model returned: the utterance went to the model route. Job plans are parsed
+        // only when jobs are allowed and are routed through gate_and_run; without a policy they
+        // are never produced, so this branch only sees answer-like speech.
         PlanKind::Answer
         | PlanKind::Paste
         | PlanKind::Command
         | PlanKind::Job
-        | PlanKind::SetRole
-        | PlanKind::ClearRole
         // Stage 2 (C3 wires the real behaviour): an agent plan is answer-like until then.
         | PlanKind::Agent
         // Stage 4 (S4 wires the executor): a plan is answer-like for the history label.
-        | PlanKind::Plan
-        | PlanKind::Resume => TurnOutcome::Answered,
+        | PlanKind::Plan => TurnOutcome::Answered,
     }
 }
 
@@ -710,6 +722,9 @@ pub trait Reporter: Send + Sync {
     /// Receives one transcript event per accepted utterance. Default: ignored.
     fn transcript(&self, _ev: TranscriptEvent) {}
 
+    /// The session saw untrusted content. Default: ignored. Forwarded to the transcript sink.
+    fn untrusted(&self) {}
+
     /// Chat window: receives one recorded line (user text or speech handed to the voice).
     /// Default: ignored (DESIGN-CHAT 2.2). Stub: the spec tests are red until the hooks land.
     fn chat(&self, _role: crate::managers::chat_log::ChatRole, _text: &str) {}
@@ -917,7 +932,8 @@ const MSG_DONE: &str = "Done.";
 /// Spoken instead of any model-proposed paste or command while vault context is on (DESIGN 3.6).
 /// Spoken when a gated job's settings changed between approval and dispatch (DESIGN R3-2).
 const MSG_SETTINGS_CHANGED: &str = "Settings changed, so I didn't start it.";
-/// Spoken when a forced confirmation is not an exact yes (DESIGN 2.5, C6).
+/// Spoken when a forced confirmation is refused, cut short or not heard (DESIGN 2.5, C6). The
+/// unclear-after-re-ask case speaks its own line (`decline_message`).
 const MSG_FORCED_DECLINED: &str = "Okay, I won't.";
 const MSG_ANSWER_ONLY: &str =
     "Vault context is on, so I can only answer questions. Turn it off to dictate text or open things.";
@@ -1628,6 +1644,7 @@ async fn brain_turn(
         last_draft: carry.last_draft.as_deref(),
         style: &cfg.style,
         vault_context: None,
+        memory_context: None,
         role: carry.role.as_deref(),
         lesson_paused: carry.lesson.is_some(),
         roles_enabled: true,
@@ -1898,6 +1915,7 @@ async fn lesson_start_turn(
         last_draft: None,
         style: &cfg.style,
         vault_context: None,
+        memory_context: None,
         role: carry.role.as_deref(),
         lesson_paused: false,
         roles_enabled: true,
@@ -2241,7 +2259,7 @@ async fn run_final_plan(
     };
     match ask_forced(deps, cfg, cancel, carry, &question).await {
         Decision::Approved => gate_and_run(deps, cfg, cancel, confirmed, carry).await,
-        Decision::Declined(_) => decline_forced(deps, cfg, cancel, carry).await,
+        Decision::Declined(reason) => decline_forced(deps, cfg, cancel, carry, &reason).await,
     }
 }
 
@@ -2275,8 +2293,8 @@ async fn forced_agent(
     let Some(question) = forced_prompt(&plan) else {
         return Ok(Some(failed_summary()));
     };
-    if let Decision::Declined(_) = ask_forced(deps, cfg, cancel, carry, &question).await {
-        return decline_forced(deps, cfg, cancel, carry).await;
+    if let Decision::Declined(reason) = ask_forced(deps, cfg, cancel, carry, &question).await {
+        return decline_forced(deps, cfg, cancel, carry, &reason).await;
     }
     if !deps.hands.agent_launch_still_valid(&launch) {
         carry.journal.set(TurnOutcome::Blocked, None);
@@ -2310,11 +2328,14 @@ async fn ask_forced(
     let fallback = Announcer::new(Arc::new(NoAnnounce));
     let announcer = deps.announcer.unwrap_or(&fallback);
     let config = confirm_config_for(cfg);
-    let asked = confirm_forced(
+    let reask = reask_for_question(question);
+    let asked = confirm_forced_natural(
         deps.ears,
         deps.mouth,
         announcer,
+        deps.brain,
         question,
+        reask.as_deref(),
         &config,
         Some(deps.reporter),
     );
@@ -2326,22 +2347,28 @@ async fn ask_forced(
     decision
 }
 
-/// Declines a forced question: nothing runs and the decline line is spoken. A cancelled
-/// session ends without speaking.
+/// Declines a forced question: nothing runs and the decline line is spoken. An unclear answer
+/// (after the re-ask) speaks the Unclear line; every other reason speaks the fixed decline line.
+/// A cancelled session ends without speaking.
 async fn decline_forced(
     deps: &Deps<'_>,
     cfg: &SessionConfig,
     cancel: &mut CancelToken,
     carry: &mut Carry,
+    reason: &DeclineReason,
 ) -> Result<Option<String>, SessionEnd> {
     if is_cancelled(cancel) {
         return Err(SessionEnd::Cancelled);
     }
+    let line = match reason {
+        DeclineReason::Unclear => decline_message(DeclineReason::Unclear),
+        _ => MSG_FORCED_DECLINED,
+    };
     carry
         .journal
         .set(TurnOutcome::Blocked, Some("declined".to_string()));
-    into_result(speak_or_end(deps, cfg, cancel, MSG_FORCED_DECLINED, Emotion::Neutral).await)?;
-    Ok(Some(compose(MSG_FORCED_DECLINED, "")))
+    into_result(speak_or_end(deps, cfg, cancel, line, Emotion::Neutral).await)?;
+    Ok(Some(compose(line, "")))
 }
 
 /// Announcer stand-in used when the session has none: it never speaks queued text, so a
@@ -2480,6 +2507,10 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
     let mut carry = Carry::default();
     let end = run_turns_loop(outer, cfg, cancel, &mut carry).await;
     converse_agent_loop::end_agent_session(&mut carry);
+    // C2: the loop can exit on any path; a taint set by the last turn is reported here.
+    if carry.tainted {
+        outer.reporter.untrusted();
+    }
     end
 }
 
@@ -2517,6 +2548,10 @@ async fn run_turns_loop(
     let deps = &tapped;
 
     loop {
+        // C2: once a turn has tainted the session, every later turn reports it (idempotent).
+        if carry.tainted {
+            deps.reporter.untrusted();
+        }
         if is_cancelled(cancel) {
             return SessionEnd::Cancelled;
         }
@@ -4439,6 +4474,18 @@ mod converse_agent_loop;
 #[cfg(test)]
 #[path = "converse_agent_taint_tests.rs"]
 mod converse_agent_taint_tests;
+
+#[cfg(test)]
+#[path = "converse_memory_session_tests.rs"]
+mod memory_session_tests;
+
+#[cfg(test)]
+#[path = "converse_confirm_forced_tests.rs"]
+mod converse_confirm_forced_tests;
+
+#[cfg(test)]
+#[path = "converse_forced_plan_tests.rs"]
+mod converse_forced_plan_tests;
 
 #[cfg(test)]
 #[path = "converse_agent_fix_tests.rs"]

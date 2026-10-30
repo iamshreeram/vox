@@ -1323,3 +1323,74 @@ fn duplicate_question_text_is_not_needed_to_confirm() {
     };
     assert!(confirmation_question(&action).len() < 100);
 }
+
+// ------------------------------------------------------------------ classify_strict_yes
+
+/// Approval (go-ahead): the whole utterance is exactly `yes` or exactly `go ahead` after the
+/// existing normalisation (case, ASCII punctuation and U+2019 removed, whitespace collapsed).
+#[test]
+fn classify_strict_yes_approves_only_exact_yes_or_go_ahead() {
+    use crate::managers::converse_plan::{AgentRequest, RoleDirective, StepKind};
+
+    for ok in [
+        "yes",
+        "Yes.",
+        " YES ",
+        "go ahead",
+        "Go ahead!",
+        "go   ahead",
+        "GO AHEAD.",
+    ] {
+        assert!(classify_strict_yes(ok), "must approve {ok:?}");
+    }
+
+    let long = "a".repeat(10_000);
+    let mut refused: Vec<String> = vec![
+        "go ahead and delete it".into(),
+        "yes go ahead".into(),
+        "go ahead please".into(),
+        "okay go ahead".into(),
+        "goahead".into(),
+        "go-ahead".into(),
+        "go".into(),
+        "ahead".into(),
+        "yes please".into(),
+        "okay".into(),
+        "sure".into(),
+        "\u{0443}es".into(),
+        "g\u{043E} ahead".into(),
+        "".into(),
+        "   ".into(),
+        long,
+    ];
+
+    // Every complete forced prompt, one per PlanKind with a payload.
+    let mut paste = plan(PlanKind::Paste);
+    paste.paste_text = Some("one two three".to_string());
+    let mut command = plan(PlanKind::Command);
+    command.command = Some("cargo build".to_string());
+    let mut agent = plan(PlanKind::Agent);
+    agent.agent = Some(AgentRequest {
+        task: "summarise the notes".to_string(),
+        kind: StepKind::General,
+    });
+    let mut role = plan(PlanKind::SetRole);
+    role.role = Some(RoleDirective {
+        role: "a patient tutor".to_string(),
+        task: None,
+        resume: false,
+    });
+    for p in [
+        command,
+        paste,
+        job_plan("notes", "tidy the folder"),
+        agent,
+        role,
+    ] {
+        refused.push(forced_prompt(&p).expect("every kind here has a payload to describe"));
+    }
+
+    for text in &refused {
+        assert!(!classify_strict_yes(text), "must refuse {text:?}");
+    }
+}

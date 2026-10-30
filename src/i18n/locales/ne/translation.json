@@ -1295,6 +1295,18 @@
           "description": "Log per-turn latency numbers only. No text or tokens are logged."
         }
       },
+      "rememberConversations": {
+        "label": "Remember recent conversations",
+        "description": "Off by default. Vox keeps short summaries of your recent voice conversations on this device, and it uses your configured model for two things. First, when a conversation ends, what you said by voice and the replies you got (not dictated text or commands handled on this device) are sent to that model to write a short summary. Second, the newest summaries are sent to the model at the start of your next voice conversation, so you can say 'let's continue where we left off'. Vox keeps at most the 20 newest short summaries on this device, with secrets removed on a best-effort basis. Conversations that used agents, tools or your notes are not remembered at all. Turning this off stops all of it at once, and Clear deletes everything.",
+        "countLabel": "Remembered conversations: {{count}}",
+        "clearTitle": "Remembered conversations",
+        "clearDescription": "Deletes every remembered conversation summary on this device. Nothing is sent when you clear.",
+        "clearButton": "Clear remembered conversations",
+        "clearConfirm": "Delete every remembered conversation summary on this device? This cannot be undone.",
+        "clearConfirmAction": "Confirm clear",
+        "clearCancel": "Cancel",
+        "clearFailed": "Could not clear the remembered conversations. Try again."
+      },
       "conversationMemory": {
         "recordsLabel": "Save conversation records",
         "recordsDescription": "Saves a local record of your voice conversations so you can look back at them later. Off by default; nothing is saved unless you turn this on. Redaction of sensitive text is best-effort, so review what is saved. Conversation summaries are generated with the model endpoint your conversation already uses.",

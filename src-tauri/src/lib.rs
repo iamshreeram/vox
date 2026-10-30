@@ -455,6 +455,23 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             None
         }
     };
+    // Conversation memory is optional too: a store that cannot open is logged with a fixed
+    // message and skipped; the commands tolerate its absence.
+    let conversation_memory = crate::portable::app_data_dir(app_handle)
+        .map_err(|_| ())
+        .and_then(|dir| {
+            managers::conversation_memory::ConversationMemory::open(
+                &dir.join("conversation_memory.db"),
+            )
+            .map_err(|_| ())
+        });
+    let conversation_memory = match conversation_memory {
+        Ok(store) => Some(Arc::new(store)),
+        Err(()) => {
+            log::warn!("Conversation memory unavailable: store did not open");
+            None
+        }
+    };
     let conversation_log = Arc::new(managers::conversation::ConversationLog::new());
     let command_router = Arc::new(CommandRouter::new(new_app_discovery()));
     let wakeword_listener = Arc::new(WakeWordListener::new(app_handle.clone()));
@@ -484,6 +501,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(memory_manager.clone());
     if let Some(store) = conversation_store {
         app_handle.manage(store);
+    }
+    if let Some(memory) = conversation_memory {
+        app_handle.manage(memory);
     }
     app_handle.manage(conversation_log);
     // Persistent ACP agent client used by dictation escalation (DESIGN rev 3.1 section 3).
@@ -1350,6 +1370,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::memory::memory_list_all,
             commands::memory::memory_forget,
             commands::memory::memory_set_enabled,
+            commands::conversation_memory::clear_conversation_memory,
+            commands::conversation_memory::conversation_memory_count,
+            commands::conversation_memory::change_conversation_memory_setting,
             shortcut::change_agent_context_setting,
             shortcut::agent_clear_conversation,
             commands::ambient::ambient_set_enabled,

@@ -95,6 +95,7 @@ fn plan_input<'a>(agent: bool, planner: bool) -> PlanInput<'a> {
         last_draft: None,
         style: "warm and brief",
         vault_context: None,
+        memory_context: None,
         role: None,
         lesson_paused: false,
         roles_enabled: false,

@@ -167,6 +167,7 @@ fn plan_input<'a>() -> PlanInput<'a> {
         last_draft: None,
         style: "",
         vault_context: None,
+        memory_context: None,
         lesson_paused: false,
         role: None,
         roles_enabled: false,

@@ -880,6 +880,7 @@ fn plan_input(role: Option<&str>) -> PlanInput<'_> {
         last_draft: None,
         style: "warm and brief",
         vault_context: None,
+        memory_context: None,
         role,
         lesson_paused: false,
         roles_enabled: true,

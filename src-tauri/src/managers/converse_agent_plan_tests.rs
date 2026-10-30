@@ -44,6 +44,7 @@ fn input<'a>(role: Option<&'a str>, roles: bool, agent: bool) -> PlanInput<'a> {
         last_draft: None,
         style: "warm and brief",
         vault_context: None,
+        memory_context: None,
         role,
         lesson_paused: false,
         roles_enabled: roles,

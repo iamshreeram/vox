@@ -264,6 +264,28 @@ async changeMemoryEnabledSetting(enabled: boolean) : Promise<Result<null, string
     else return { status: "error", error: e  as any };
 }
 },
+async clearConversationMemory() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_conversation_memory") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async conversationMemoryCount() : Promise<number> {
+    return await TAURI_INVOKE("conversation_memory_count");
+},
+/**
+ * Persists the opt-in setting, then bumps the epoch (after the write, on every call).
+ */
+async changeConversationMemorySetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_conversation_memory_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Turns conversation records (SQLite) on or off. Off by default.
  */
@@ -2642,6 +2664,12 @@ conversation_records_enabled?: boolean;
  * Also write a Markdown note into the vault (needs `conversation_records_enabled`).
  */
 conversation_records_to_vault?: boolean; 
+/**
+ * Remember recent conversations so later ones can continue them. Opt-in, default OFF.
+ * When on, finished conversation turns are summarised with the configured summary
+ * model and the summaries are sent to the conversation model at later sessions.
+ */
+conversation_memory_enabled?: boolean; 
 /**
  * Absolute path of the notes vault folder used for notes and vault context.
  */

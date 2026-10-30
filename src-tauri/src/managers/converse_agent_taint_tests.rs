@@ -10,7 +10,7 @@ use super::*;
 use crate::managers::command_router::CommandAction;
 use crate::managers::converse_agent::AgentEvent;
 use crate::managers::converse_agent::AgentPoll;
-use crate::managers::converse_confirm::ValidatedCommand;
+use crate::managers::converse_confirm::{reask_prompt, ValidatedCommand, FORCED_PROMPT_TAIL};
 use crate::managers::converse_context::note_agent_result;
 use crate::managers::converse_plan::TurnPlan;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -63,32 +63,32 @@ pub(super) enum EffectKind {
 
 /// The utterance that makes the planner emit this kind, the plan it emits, and the exact
 /// forced prompt the loop must speak for it.
-pub(super) fn effect_of(kind: EffectKind) -> (&'static str, TurnPlan, &'static str) {
+pub(super) fn effect_of(kind: EffectKind) -> (&'static str, TurnPlan, String) {
     match kind {
         EffectKind::Command => (
             "run the build",
             cmd_plan(CMD, "Running it."),
-            "I am about to do this: cargo build --release. Say yes to go ahead.",
+            format!("I am about to do this: cargo build --release. {FORCED_PROMPT_TAIL}"),
         ),
         EffectKind::Paste => (
             "type the report",
             paste_plan(PASTE_TEXT, "Pasted."),
-            "I am about to paste 13 words starting with: one two three four five six seven eight nine ten eleven twelve. Say yes to go ahead.",
+            format!("I am about to paste 13 words starting with: one two three four five six seven eight nine ten eleven twelve. {FORCED_PROMPT_TAIL}"),
         ),
         EffectKind::Job => (
             "start the job",
             job_plan(JOB_PROJECT, JOB_TASK, "Starting it."),
-            "I am about to start a coding job in vox: fix the flaky test. Say yes to go ahead.",
+            format!("I am about to start a coding job in vox: fix the flaky test. {FORCED_PROMPT_TAIL}"),
         ),
         EffectKind::Agent => (
             "check the build",
             agent_plan(AGENT_TASK2, "Checking."),
-            "I am about to ask the agent: check the build status. Say yes to go ahead.",
+            format!("I am about to ask the agent: check the build status. {FORCED_PROMPT_TAIL}"),
         ),
         EffectKind::SetRole => (
             "be my teacher",
             set_role(ROLE_TEACHER, "Okay."),
-            "I am about to take this role: a patient teacher for six year olds and their parents who ask. Say yes to go ahead.",
+            format!("I am about to take this role: a patient teacher for six year olds and their parents who ask. {FORCED_PROMPT_TAIL}"),
         ),
     }
 }
@@ -139,9 +139,7 @@ pub(super) fn prompted(r: &Rig, prompt: &str) -> bool {
 }
 
 pub(super) fn any_prompt(r: &Rig) -> bool {
-    spoken(r)
-        .iter()
-        .any(|s| s.ends_with("Say yes to go ahead."))
+    spoken(r).iter().any(|s| s.ends_with(FORCED_PROMPT_TAIL))
 }
 
 // ---- before any agent result nothing changes -------------------------------------------------
@@ -203,13 +201,13 @@ async fn t_forced_prompt_text_is_exact_for_every_kind() {
     ];
     for kind in kinds {
         for with_policy in [false, true] {
-            let r = tainted_rig(RESULT, kind, vec![heard("okay")], vec![]);
+            let r = tainted_rig(RESULT, kind, vec![heard("no")], vec![]);
             let pol = policy_on();
             let policy: Option<&dyn PolicySource> = if with_policy { Some(&pol) } else { None };
             run_with(&r, &vcfg(false, None), policy).await;
             let (_, _, prompt) = effect_of(kind);
             assert!(
-                prompted(&r, prompt),
+                prompted(&r, &prompt),
                 "{kind:?} policy={with_policy}: exact prompt {prompt:?} missing; spoken: {:?}",
                 spoken(&r)
             );
@@ -217,8 +215,9 @@ async fn t_forced_prompt_text_is_exact_for_every_kind() {
     }
 }
 
-/// B9: exactly "yes" heard right after the prompt runs the SAME plan object, once, under every
-/// speech variant, with the policy absent and present (Job needs the policy: it cannot run without).
+/// B9: exactly "yes" or "go ahead" heard right after the prompt runs the SAME plan object, once,
+/// under every speech variant, with the policy absent and present (Job needs the policy: it cannot
+/// run without).
 #[tokio::test]
 async fn t_yes_executes_the_described_payload_once() {
     let kinds = [
@@ -239,7 +238,7 @@ async fn t_yes_executes_the_described_payload_once() {
                 let policy: Option<&dyn PolicySource> = if with_policy { Some(&pol) } else { None };
                 run_with(&r, &vcfg(early, ack), policy).await;
                 let (_, _, prompt) = effect_of(kind);
-                assert!(prompted(&r, prompt), "{kind:?}: prompt spoken");
+                assert!(prompted(&r, &prompt), "{kind:?}: prompt spoken");
                 assert_eq!(
                     executed(&r, kind),
                     1,
@@ -249,6 +248,53 @@ async fn t_yes_executes_the_described_payload_once() {
             }
         }
     }
+}
+
+/// B9: "go ahead" heard right after the prompt runs the SAME plan object, once, under every speech
+/// variant, with the policy absent and present; the same matrix as the "yes" twin above.
+#[tokio::test]
+async fn t_go_ahead_executes_the_described_payload_once() {
+    let kinds = [
+        EffectKind::Command,
+        EffectKind::Paste,
+        EffectKind::Job,
+        EffectKind::Agent,
+        EffectKind::SetRole,
+    ];
+    for kind in kinds {
+        for (early, ack) in VARIANTS {
+            for with_policy in [false, true] {
+                if kind == EffectKind::Job && !with_policy {
+                    continue;
+                }
+                let r = tainted_rig(RESULT, kind, vec![heard("go ahead")], vec![]);
+                let pol = policy_on();
+                let policy: Option<&dyn PolicySource> = if with_policy { Some(&pol) } else { None };
+                run_with(&r, &vcfg(early, ack), policy).await;
+                let (_, _, prompt) = effect_of(kind);
+                assert!(prompted(&r, &prompt), "{kind:?}: prompt spoken");
+                assert_eq!(
+                    executed(&r, kind),
+                    1,
+                    "{kind:?} early={early} ack={ack:?} policy={with_policy}: executed once: {:?}",
+                    entries(&r)
+                );
+            }
+        }
+    }
+}
+
+/// B9: "go ahead" without the Job policy cannot start a Job: the policy is required.
+#[tokio::test]
+async fn t_go_ahead_cannot_start_a_job_without_policy() {
+    let r = tainted_rig(RESULT, EffectKind::Job, vec![heard("go ahead")], vec![]);
+    run_with(&r, &vcfg(false, None), None).await;
+    assert_eq!(
+        executed(&r, EffectKind::Job),
+        0,
+        "Job without policy: {:?}",
+        entries(&r)
+    );
 }
 
 /// B9: an Agent yes starts the prepared launch built from the described task; the fingerprint of
@@ -314,9 +360,9 @@ async fn t_gate_on_still_asks_the_forced_yes_first() {
     };
     run_gated(&r, &acfg(), &pol).await;
     let said = spoken(&r);
-    let forced = said
-        .iter()
-        .position(|s| s == "I am about to do this: cargo build --release. Say yes to go ahead.");
+    let forced = said.iter().position(|s| {
+        s == &format!("I am about to do this: cargo build --release. {FORCED_PROMPT_TAIL}")
+    });
     let gate = said.iter().position(|s| s.ends_with("Say yes or no."));
     assert!(forced.is_some(), "forced prompt spoken: {said:?}");
     assert!(gate.is_some(), "the gate asked its own question: {said:?}");
@@ -337,16 +383,49 @@ async fn t_gate_on_still_asks_the_forced_yes_first() {
     );
 }
 
-/// B9: every reply other than exactly "yes" means no: the prompt is spoken, `Okay, I won't.` is
-/// spoken, nothing runs. Silence and mixed speech are included.
+/// The line spoken when an answer is still unclear after the one re-ask (DESIGN D4).
+pub(super) const UNCLEAR_LINE: &str = "I didn't catch a clear yes, so I didn't do it.";
+
+/// B9 (natural confirmation): an answer that is neither a clear local agreement nor a clear local
+/// refusal never runs anything. An unclear answer is re-asked once; a silent second listen ends the
+/// question with the Unclear line. Silence on the first listen is declined at once. The approving
+/// rows (okay, sure, yes please) are in `t5a_clear_local_agreements_approve_once_without_the_judge`
+/// (converse_confirm_forced_tests.rs).
 #[tokio::test]
-async fn t_anything_but_exact_yes_runs_nothing() {
-    let replies: Vec<(&str, Step)> = vec![
-        ("okay", heard("okay")),
-        ("sure", heard("sure")),
-        ("yes please", heard("yes please")),
-        ("mixed", heard("yes but delete it")),
-        ("silence", silent()),
+async fn t_anything_but_yes_or_go_ahead_runs_nothing() {
+    // (label, first answer, second answer when the first one is re-asked, expected spoken line)
+    let rows: Vec<(&str, Step, Option<Step>, &str)> = vec![
+        (
+            "mixed",
+            heard("yes but delete it"),
+            Some(silent()),
+            UNCLEAR_LINE,
+        ),
+        ("silence", silent(), None, DECLINED),
+        (
+            "go ahead and delete it",
+            heard("go ahead and delete it"),
+            Some(silent()),
+            UNCLEAR_LINE,
+        ),
+        (
+            "yes go ahead",
+            heard("yes go ahead"),
+            Some(silent()),
+            UNCLEAR_LINE,
+        ),
+        (
+            "go ahead please",
+            heard("go ahead please"),
+            Some(silent()),
+            UNCLEAR_LINE,
+        ),
+        (
+            "okay go ahead",
+            heard("okay go ahead"),
+            Some(silent()),
+            UNCLEAR_LINE,
+        ),
     ];
     let kinds = [
         EffectKind::Command,
@@ -356,9 +435,14 @@ async fn t_anything_but_exact_yes_runs_nothing() {
         EffectKind::SetRole,
     ];
     for kind in kinds {
-        for (label, reply) in &replies {
+        let reask = reask_prompt(&effect_of(kind).1).expect("every kind here has a payload");
+        for (label, first, second, line) in &rows {
             for with_policy in [false, true] {
-                let r = tainted_rig(RESULT, kind, vec![step_clone(reply)], vec![]);
+                let mut tail = vec![step_clone(first)];
+                if let Some(next) = second {
+                    tail.push(step_clone(next));
+                }
+                let r = tainted_rig(RESULT, kind, tail, vec![]);
                 let pol = policy_on();
                 let policy: Option<&dyn PolicySource> = if with_policy { Some(&pol) } else { None };
                 run_with(&r, &vcfg(false, None), policy).await;
@@ -368,9 +452,19 @@ async fn t_anything_but_exact_yes_runs_nothing() {
                     "{kind:?} reply {label} policy={with_policy}"
                 );
                 assert!(
-                    spoken(&r).iter().any(|s| s == DECLINED),
-                    "{kind:?} reply {label}: declined: {:?}",
+                    spoken(&r).iter().any(|s| s == line),
+                    "{kind:?} reply {label}: expected {line:?}: {:?}",
                     spoken(&r)
+                );
+                let reasks = spoken(&r).iter().filter(|s| **s == reask).count();
+                assert_eq!(
+                    reasks,
+                    usize::from(second.is_some()),
+                    "{kind:?} reply {label}: re-asks"
+                );
+                assert!(
+                    spoken(&r).iter().any(|s| s == "Hi there."),
+                    "{kind:?} reply {label}: the terminal sentinel was still processed"
                 );
             }
         }
@@ -457,7 +551,7 @@ async fn t_malicious_result_is_neutralised_and_forces_the_confirmation() {
 
     for kind in [EffectKind::Command, EffectKind::SetRole, EffectKind::Agent] {
         for context_turns in [6usize, 0usize] {
-            let r = tainted_rig(MALICIOUS, kind, vec![heard("okay")], vec![]);
+            let r = tainted_rig(MALICIOUS, kind, vec![heard("no")], vec![]);
             let cfg = SessionConfig {
                 context_turns,
                 ..acfg()
@@ -488,7 +582,7 @@ async fn t_malicious_result_is_neutralised_and_forces_the_confirmation() {
 /// instruction: the next planner call sees only the neutralised note entry.
 #[tokio::test]
 async fn t_result_text_reaches_history_only_as_a_neutralised_note() {
-    let r = tainted_rig(MALICIOUS, EffectKind::Command, vec![heard("okay")], vec![]);
+    let r = tainted_rig(MALICIOUS, EffectKind::Command, vec![heard("no")], vec![]);
     run_with(&r, &acfg(), None).await;
     let call = seen_by_utt(&r, "thanks");
     let note_value = note_agent_result(MALICIOUS);
@@ -612,7 +706,7 @@ async fn t_voice_cancel_while_tainted_is_not_prompted() {
     );
     let prompts = spoken(&r)
         .iter()
-        .filter(|s| s.ends_with("Say yes to go ahead."))
+        .filter(|s| s.ends_with(FORCED_PROMPT_TAIL))
         .count();
     assert_eq!(prompts, 1, "only the agent request was confirmed");
 }
@@ -629,7 +723,7 @@ async fn t_taint_lasts_the_session_each_effect_is_prompted() {
             heard("run the build"),
             heard("yes"),
             heard("run the tests"),
-            heard("okay"),
+            heard("no"),
             heard("hello there"),
         ],
         vec![
@@ -655,7 +749,7 @@ async fn t_taint_lasts_the_session_each_effect_is_prompted() {
     );
     let prompts = spoken(&r)
         .iter()
-        .filter(|s| s.ends_with("Say yes to go ahead."))
+        .filter(|s| s.ends_with(FORCED_PROMPT_TAIL))
         .count();
     assert_eq!(prompts, 2, "both effects were prompted");
 }
@@ -663,7 +757,7 @@ async fn t_taint_lasts_the_session_each_effect_is_prompted() {
 /// B9: a new conversation is untainted: the same effect runs without a prompt.
 #[tokio::test]
 async fn t_a_new_session_is_untainted() {
-    let r = tainted_rig(RESULT, EffectKind::Agent, vec![heard("okay")], vec![]);
+    let r = tainted_rig(RESULT, EffectKind::Agent, vec![heard("no")], vec![]);
     run_with(&r, &acfg(), None).await;
     assert_eq!(executed(&r, EffectKind::Agent), 0, "session one declined");
 
@@ -679,7 +773,7 @@ async fn t_a_new_session_is_untainted() {
         .push_back(ok(cmd_plan(CMD, "Running it.")));
     let prompts_before = spoken(&r)
         .iter()
-        .filter(|s| s.ends_with("Say yes to go ahead."))
+        .filter(|s| s.ends_with(FORCED_PROMPT_TAIL))
         .count();
     run_with(&r, &acfg(), None).await;
     assert_eq!(
@@ -689,7 +783,7 @@ async fn t_a_new_session_is_untainted() {
     );
     let prompts_after = spoken(&r)
         .iter()
-        .filter(|s| s.ends_with("Say yes to go ahead."))
+        .filter(|s| s.ends_with(FORCED_PROMPT_TAIL))
         .count();
     assert_eq!(
         prompts_after, prompts_before,

@@ -13,6 +13,7 @@ use crate::managers::converse_agent::{
 };
 use crate::managers::converse_barge::{BargeCapture, BargeIn, BargeWatch, ReplyGate};
 use crate::managers::converse_confirm::{ActionPolicy, FileId, LaunchConfig};
+use crate::managers::converse_confirm_judge::AnswerJudgement;
 use crate::managers::converse_context::note_agent_result;
 use crate::managers::converse_plan::{
     AgentRequest, JobMode, JobRequest, PlanError, PlanInput, PlanKind, RoleDirective, TurnPlan,
@@ -581,6 +582,13 @@ pub(super) struct LBrain {
     pub(super) script: Mutex<VecDeque<Turn>>,
     pub(super) seen: Mutex<Vec<Seen>>,
     pub(super) log: Shared,
+    /// Scripted answers of `judge_answer`, one per call; empty => `Unavailable`. Plan turns are
+    /// never consumed by the judge.
+    pub(super) judge: Mutex<VecDeque<AnswerJudgement>>,
+    /// Every answer `judge_answer` was asked about, in order.
+    pub(super) judge_calls: Mutex<Vec<String>>,
+    /// When set, `judge_answer` never completes (the caller must cancel or time out).
+    pub(super) judge_hangs: AtomicBool,
 }
 
 impl LBrain {
@@ -600,6 +608,20 @@ impl LBrain {
 }
 
 impl Brain for LBrain {
+    fn judge_answer<'a>(&'a self, answer: &'a str) -> BoxFuture<'a, AnswerJudgement> {
+        self.judge_calls.lock().unwrap().push(answer.to_string());
+        if self.judge_hangs.load(Ordering::SeqCst) {
+            return Box::pin(pending::<AnswerJudgement>());
+        }
+        let judged = self
+            .judge
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or(AnswerJudgement::Unavailable);
+        Box::pin(async move { judged })
+    }
+
     fn plan<'a>(&'a self, input: PlanInput<'a>) -> BoxFuture<'a, Result<TurnPlan, PlanError>> {
         self.record(&input);
         let t = self.next();
@@ -687,6 +709,9 @@ pub(super) fn rig_with(steps: Vec<Step>, turns: Vec<Turn>) -> Rig {
             script: Mutex::new(turns.into()),
             seen: Mutex::new(vec![]),
             log: log.clone(),
+            judge: Mutex::new(VecDeque::new()),
+            judge_calls: Mutex::new(vec![]),
+            judge_hangs: AtomicBool::new(false),
         },
         reporter: LReporter,
         cancel: Arc::new(tx),

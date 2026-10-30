@@ -1180,6 +1180,11 @@ pub struct AppSettings {
     /// Also write a Markdown note into the vault (needs `conversation_records_enabled`).
     #[serde(default)]
     pub conversation_records_to_vault: bool,
+    /// Remember recent conversations so later ones can continue them. Opt-in, default OFF.
+    /// When on, finished conversation turns are summarised with the configured summary
+    /// model and the summaries are sent to the conversation model at later sessions.
+    #[serde(default)]
+    pub conversation_memory_enabled: bool,
     /// Absolute path of the notes vault folder used for notes and vault context.
     #[serde(default)]
     pub vault_path: String,
@@ -2569,6 +2574,7 @@ pub fn get_default_settings() -> AppSettings {
         exp_rt_timing_log: false,
         conversation_records_enabled: false,
         conversation_records_to_vault: false,
+        conversation_memory_enabled: false,
         vault_path: String::new(),
         vault_context_enabled: false,
         vault_rag_enabled: false,
@@ -3572,6 +3578,32 @@ mod tests {
         assert!(loaded.conversation_records_to_vault);
         assert_eq!(loaded.vault_path, "/Users/example/Notes");
         assert!(loaded.vault_context_enabled);
+    }
+
+    #[test]
+    fn conversation_memory_defaults_off() {
+        let settings = get_default_settings();
+        assert!(!settings.conversation_memory_enabled);
+    }
+
+    #[test]
+    fn conversation_memory_defaults_off_when_missing_from_legacy_settings() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("conversation_memory_enabled");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.conversation_memory_enabled);
+    }
+
+    #[test]
+    fn conversation_memory_round_trips_true() {
+        let mut settings = get_default_settings();
+        settings.conversation_memory_enabled = true;
+        let json = serde_json::to_string(&settings).unwrap();
+        let loaded: AppSettings = serde_json::from_str(&json).unwrap();
+        assert!(loaded.conversation_memory_enabled);
     }
 
     #[test]
