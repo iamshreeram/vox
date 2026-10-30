@@ -491,28 +491,25 @@ function focusFirstEnabled(): string | null {
   return null;
 }
 
-/**
- * Waits until the transitions and finite animations of these nodes have finished, or 400 ms (R5g).
- * Runs in the page. A read at t0 gives the pre-transition value: react-select's control has
- * `transition: all 150ms`, so its ring is absent at t0 and present once settled.
- */
-async function settleAnimations(nodes: Element[]): Promise<void> {
-  // Reading a computed style flushes pending style changes, so transitions exist before we ask.
-  for (const n of nodes) getComputedStyle(n).boxShadow;
-  const finite = nodes
-    .flatMap((n) => n.getAnimations())
-    .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity);
-  const done = Promise.all(
-    finite.map((a) => a.finished.catch(() => undefined)),
-  );
-  await Promise.race([
-    done,
-    new Promise<void>((resolve) => setTimeout(resolve, 400)),
-  ]);
-}
-
 /** The focused element's focus styles (focused and base), its backgrounds and its roving group. */
 async function observeFocus(): Promise<FocusObs> {
+  // Defined inside, not at module scope: page.evaluate serialises this function into the page,
+  // where a module-level helper does not exist (R6 fix). Waits for transitions and finite
+  // animations to finish, or 400 ms (R5g); a t0 read would see the pre-transition value.
+  const settleAnimations = async (nodes: Element[]): Promise<void> => {
+    // Reading a computed style flushes pending style changes, so transitions exist before we ask.
+    for (const n of nodes) getComputedStyle(n).boxShadow;
+    const finite = nodes
+      .flatMap((n) => n.getAnimations())
+      .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity);
+    const done = Promise.all(
+      finite.map((a) => a.finished.catch(() => undefined)),
+    );
+    await Promise.race([
+      done,
+      new Promise<void>((resolve) => setTimeout(resolve, 400)),
+    ]);
+  };
   const el = document.activeElement as HTMLElement | null;
   if (!el || el === document.body) {
     return {
@@ -563,6 +560,8 @@ async function observeFocus(): Promise<FocusObs> {
     for (let n: Element | null = node; n; n = n.parentElement)
       opacity *= parseFloat(getComputedStyle(n).opacity);
     return {
+      x: r.x,
+      y: r.y,
       width: r.width,
       height: r.height,
       opacity,
@@ -601,10 +600,11 @@ async function observeFocus(): Promise<FocusObs> {
     s = s.nextElementSibling
   )
     siblingNodes.push(s);
+  // Five levels (R6): page code is serialised, so the limit is a literal (Q.MAX_HOLDER_LEVELS).
   const ancestorNodes: Element[] = [];
   for (
     let n = el.parentElement;
-    n && n !== document.body && ancestorNodes.length < 3;
+    n && n !== document.body && ancestorNodes.length < 5;
     n = n.parentElement
   )
     ancestorNodes.push(n);
@@ -622,6 +622,9 @@ async function observeFocus(): Promise<FocusObs> {
   // The base is read with transitions switched off: a blur would otherwise start a transition
   // whose t0 value is still the focused one. The inline style is restored afterwards.
   el.blur();
+  // React commits the blur (react-select's isFocused class) after the event, not during it: wait a
+  // macrotask before reading the base, or the base still carries the focus ring (R6 root cause).
+  await new Promise<void>((resolve) => setTimeout(resolve, 50));
   const savedTransitions = nodes.map(
     (n) => (n as HTMLElement).style.transition,
   );
@@ -632,6 +635,8 @@ async function observeFocus(): Promise<FocusObs> {
     (n, i) => ((n as HTMLElement).style.transition = savedTransitions[i]),
   );
   el.focus();
+  // Same commit flush after focus, so transitions started by the React commit are awaited (R6).
+  await new Promise<void>((resolve) => setTimeout(resolve, 50));
   await settleAnimations(nodes);
   const focused = style(el);
   const focusedVisual = visualNodes.map((n) => style(n));

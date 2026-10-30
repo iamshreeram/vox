@@ -1117,13 +1117,17 @@ export function checkFocusRing(
 // label, and a narrow native radio or react-select input is drawn by a wrapper that owns the ring.
 // Rule: V(E) is the ring holder when one exists, otherwise E itself. The ring holder is E when E
 // is not hidden and shows a focus diff; otherwise the first non-hidden sibling or ancestor (up to
-// three levels, height <= MAX_CONTROL_HEIGHT_PX) that shows a focus diff on :focus-visible.
+// five levels, height <= MAX_CONTROL_HEIGHT_PX, rect containing E) that shows a focus diff on
+// :focus-visible. The focus diff is read against a base taken after React has committed the blur.
 // Target size is measured on max(E, V(E), associated labels), so a hidden input with no visible
 // control stays 1x1 and fails, and a 13px radio inside a 24px label passes.
 // ---------------------------------------------------------------------------
 
 /** Box and computed visual state of one element (rect in CSS px). */
 export interface VisualProbe {
+  /** Viewport position (CSS px). Optional: containment is only checked when both boxes carry it. */
+  x?: number;
+  y?: number;
   width: number;
   height: number;
   opacity: number;
@@ -1148,7 +1152,10 @@ export type RingHolder =
   | { kind: "none" };
 
 /** Tallest wrapper that may stand in for a control (rules out page sections). */
-export const MAX_CONTROL_HEIGHT_PX = 48;
+export const MAX_CONTROL_HEIGHT_PX = 64;
+
+/** Ancestor levels searched for a ring holder (R6: react-select input sits 3 levels below its control). */
+export const MAX_HOLDER_LEVELS = 5;
 
 /** sr-only, clip, clip-path, 1px box or opacity 0: the element is not visible on its own. */
 export function isVisuallyHidden(p: VisualProbe): boolean {
@@ -1156,6 +1163,27 @@ export function isVisuallyHidden(p: VisualProbe): boolean {
   if (p.opacity === 0) return true;
   if (p.clip !== "auto" && /rect\(\s*0(px)?[\s,]/.test(p.clip)) return true;
   return p.clipPath !== "none" && p.clipPath !== "";
+}
+
+/**
+ * Whether `outer` contains `inner` (0.5px tolerance). True when either box has no position, so the
+ * rule is not applied to coordinate-free probes.
+ */
+export function containsBox(outer: VisualProbe, inner: VisualProbe): boolean {
+  if (
+    outer.x === undefined ||
+    outer.y === undefined ||
+    inner.x === undefined ||
+    inner.y === undefined
+  )
+    return true;
+  const tol = 0.5;
+  return (
+    outer.x <= inner.x + tol &&
+    outer.y <= inner.y + tol &&
+    outer.x + outer.width >= inner.x + inner.width - tol &&
+    outer.y + outer.height >= inner.y + inner.height - tol
+  );
 }
 
 /** Ring holder for E (see the rule above). Candidates are ordered nearest first. */
@@ -1168,7 +1196,8 @@ export function ringHolderOf(
     (c) =>
       c.ring &&
       !isVisuallyHidden(c.probe) &&
-      c.probe.height <= MAX_CONTROL_HEIGHT_PX,
+      c.probe.height <= MAX_CONTROL_HEIGHT_PX &&
+      (isVisuallyHidden(self.probe) || containsBox(c.probe, self.probe)),
   );
   return index >= 0 ? { kind: "candidate", index } : { kind: "none" };
 }
