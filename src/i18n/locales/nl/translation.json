@@ -1413,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "Instellingen doorzoeken",
+      "placeholder": "Zoeken",
       "label": "Instellingen doorzoeken",
       "clear": "Zoekopdracht wissen",
       "noResults": "Geen instellingen gevonden voor “{{query}}”",

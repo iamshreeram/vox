@@ -1413,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "Search settings",
+      "placeholder": "Search",
       "label": "Search settings",
       "clear": "Clear search",
       "noResults": "No settings found for “{{query}}”",

@@ -1413,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "חיפוש בהגדרות",
+      "placeholder": "חיפוש",
       "label": "חיפוש בהגדרות",
       "clear": "נקה חיפוש",
       "noResults": "לא נמצאו הגדרות עבור “{{query}}”",

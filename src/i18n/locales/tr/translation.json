@@ -1413,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "Ayarlarda ara",
+      "placeholder": "Ara",
       "label": "Ayarlarda ara",
       "clear": "Aramayı temizle",
       "noResults": "“{{query}}” için ayar bulunamadı",

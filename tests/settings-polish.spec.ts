@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { installTauriMock } from "./fixtures/tauriMock";
 
@@ -23,6 +23,26 @@ const PAGES = [
   "Advanced",
   "About",
 ];
+
+// Locales whose search placeholder is the longest after the shortening (ru, de, ja, fr, es).
+const LONG_PLACEHOLDER_LOCALES = ["ru", "de", "ja", "fr", "es"];
+
+async function measurePlaceholder(
+  field: Locator,
+): Promise<{ text: number; room: number }> {
+  return field.evaluate((input: HTMLInputElement) => {
+    const style = getComputedStyle(input);
+    const canvas = document.createElement("canvas").getContext("2d");
+    if (!canvas) return { text: Infinity, room: 0 };
+    canvas.font = style.font;
+    const text = canvas.measureText(input.placeholder).width;
+    const room =
+      input.clientWidth -
+      parseFloat(style.paddingLeft) -
+      parseFloat(style.paddingRight);
+    return { text, room };
+  });
+}
 
 async function open(page: Page, size: { width: number; height: number }) {
   await page.setViewportSize(size);
@@ -72,22 +92,40 @@ test.describe("settings polish", () => {
       page,
     }) => {
       await open(page, size);
-      const fits = await page
-        .getByRole("combobox", { name: /search settings/i })
-        .evaluate((input: HTMLInputElement) => {
-          const style = getComputedStyle(input);
-          const canvas = document.createElement("canvas").getContext("2d");
-          if (!canvas) return false;
-          canvas.font = style.font;
-          const text = canvas.measureText(input.placeholder).width;
-          const room =
-            input.clientWidth -
-            parseFloat(style.paddingLeft) -
-            parseFloat(style.paddingRight);
-          return text <= room;
-        });
-      expect(fits, "placeholder is cut").toBe(true);
+      const measured = await measurePlaceholder(
+        page.getByRole("combobox", { name: /search settings/i }),
+      );
+      expect(measured.text <= measured.room, "placeholder is cut").toBe(true);
+      // Linux CI falls back to wider fonts (~20%); keep at least 25% of the room free.
+      expect(
+        measured.text <= measured.room * 0.75,
+        "placeholder leaves less than 25% margin",
+      ).toBe(true);
     });
+
+    for (const language of LONG_PLACEHOLDER_LOCALES) {
+      test(`the ${language} placeholder fits the sidebar field at ${size.width}x${size.height}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize(size);
+        await installTauriMock(page, {
+          settings: {
+            brain_provider_id: "",
+            brain_model: "",
+            app_language: language,
+          },
+        });
+        await page.goto("/");
+        // The label is translated per locale, so address the sidebar field by position.
+        const field = page.locator("div.w-40 input[role='combobox']");
+        await expect(field).toBeVisible();
+        const measured = await measurePlaceholder(field);
+        expect(
+          measured.text <= measured.room * 0.75,
+          `placeholder (${language}) leaves less than 25% margin`,
+        ).toBe(true);
+      });
+    }
   }
 });
 

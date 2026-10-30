@@ -1413,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "Søg i indstillinger",
+      "placeholder": "Søg",
       "label": "Søg i indstillinger",
       "clear": "Ryd søgning",
       "noResults": "Ingen indstillinger fundet for »{{query}}«",

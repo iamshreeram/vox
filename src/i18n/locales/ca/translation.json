@@ -1413,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "Cerca a la configuració",
+      "placeholder": "Cerca",
       "label": "Cerca a la configuració",
       "clear": "Esborra la cerca",
       "noResults": "No s'han trobat configuracions per a «{{query}}»",

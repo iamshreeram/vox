@@ -1413,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "搜尋設定",
+      "placeholder": "搜尋",
       "label": "搜尋設定",
       "clear": "清除搜尋",
       "noResults": "找不到與「{{query}}」相關的設定",

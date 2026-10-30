@@ -1413,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "Buscar en la configuración",
+      "placeholder": "Buscar",
       "label": "Buscar en la configuración",
       "clear": "Borrar búsqueda",
       "noResults": "No se encontraron ajustes para «{{query}}»",

@@ -1413,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "設定を検索",
+      "placeholder": "検索",
       "label": "設定を検索",
       "clear": "検索をクリア",
       "noResults": "「{{query}}」に一致する設定が見つかりません",

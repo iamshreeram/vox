@@ -1413,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "Rechercher dans les paramètres",
+      "placeholder": "Chercher",
       "label": "Rechercher dans les paramètres",
       "clear": "Effacer la recherche",
       "noResults": "Aucun paramètre trouvé pour « {{query}} »",

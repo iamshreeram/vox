@@ -1413,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "Cari pengaturan",
+      "placeholder": "Cari",
       "label": "Cari pengaturan",
       "clear": "Hapus pencarian",
       "noResults": "Tidak ada pengaturan yang ditemukan untuk “{{query}}”",

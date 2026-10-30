@@ -1413,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "Tìm kiếm cài đặt",
+      "placeholder": "Tìm kiếm",
       "label": "Tìm kiếm cài đặt",
       "clear": "Xóa tìm kiếm",
       "noResults": "Không tìm thấy cài đặt nào cho “{{query}}”",

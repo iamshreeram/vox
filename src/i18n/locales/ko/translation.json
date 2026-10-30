@@ -1413,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "설정 검색",
+      "placeholder": "검색",
       "label": "설정 검색",
       "clear": "검색 지우기",
       "noResults": "“{{query}}”에 대한 설정을 찾을 수 없습니다",

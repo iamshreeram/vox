@@ -1413,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "Hledat v nastavení",
+      "placeholder": "Hledat",
       "label": "Hledat v nastavení",
       "clear": "Vymazat hledání",
       "noResults": "Nebyla nalezena žádná nastavení pro „{{query}}“",
