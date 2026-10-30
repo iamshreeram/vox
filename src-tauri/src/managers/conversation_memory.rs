@@ -5,9 +5,6 @@
 //! pending write: a clear or a setting change bumps it, and any write that
 //! started under an older epoch is refused.
 
-// Wired by the session step (step 3 removes this allowance).
-#![allow(dead_code)]
-
 use crate::managers::conversation_record::{
     clean_summary, fallback_summary, summary_prompt, TurnOutcomeLabel, TurnRecord,
 };
@@ -167,7 +164,8 @@ impl ConversationMemory {
         ConversationMemory::from_connection(conn, MEMORY_CAP, MEMORY_MAX_CHARS)
     }
 
-    /// Opens an in-memory database with the production limits.
+    /// Opens an in-memory database with the production limits (tests only).
+    #[cfg(test)]
     pub fn open_in_memory() -> Result<ConversationMemory, MemoryError> {
         let conn = Connection::open_in_memory().map_err(|e| db_error("open memory", e))?;
         ConversationMemory::from_connection(conn, MEMORY_CAP, MEMORY_MAX_CHARS)

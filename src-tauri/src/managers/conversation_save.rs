@@ -18,6 +18,7 @@ use crate::managers::vault_context::build_vault_block;
 use crate::settings::AppSettings;
 use futures_util::future::BoxFuture;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -29,6 +30,8 @@ use std::time::Duration;
 pub struct TranscriptCollector {
     state: Mutex<CollectorState>,
     started_at_ms: i64,
+    /// Set by `TranscriptSink::untrusted`. Independent of the `MAX_TURNS` bound.
+    untrusted: AtomicBool,
 }
 
 #[derive(Default)]
@@ -46,6 +49,8 @@ pub struct CollectedSession {
     pub dropped: usize,
     /// Creation time of the collector, in ms since the Unix epoch (from the injected clock).
     pub started_at_ms: i64,
+    /// True when the session reported untrusted ingress (see `TranscriptSink::untrusted`).
+    pub untrusted: bool,
 }
 
 impl TranscriptCollector {
@@ -59,6 +64,7 @@ impl TranscriptCollector {
         TranscriptCollector {
             state: Mutex::new(CollectorState::default()),
             started_at_ms: clock(),
+            untrusted: AtomicBool::new(false),
         }
     }
 
@@ -76,6 +82,7 @@ impl TranscriptCollector {
             turns,
             dropped,
             started_at_ms: self.started_at_ms,
+            untrusted: self.untrusted.swap(false, Ordering::SeqCst),
         }
     }
 }
@@ -87,6 +94,11 @@ impl Default for TranscriptCollector {
 }
 
 impl TranscriptSink for TranscriptCollector {
+    /// Marks the session as having seen untrusted content. Never subject to the turn bound.
+    fn untrusted(&self) {
+        self.untrusted.store(true, Ordering::SeqCst);
+    }
+
     /// Sanitizes the event and appends it, or counts it as dropped once the bound is reached.
     fn record(&self, ev: TranscriptEvent) {
         let turn = sanitize_turn(

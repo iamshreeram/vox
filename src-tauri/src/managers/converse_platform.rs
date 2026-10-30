@@ -17,7 +17,10 @@ use crate::managers::brain::{missing_message, resolve, BrainFeature, Resolved};
 use crate::managers::chat_log::{ChatLog, ChatRole};
 use crate::managers::chat_tap::ChatTap;
 use crate::managers::composer_config::{settings_from_app, TtsComposerMode};
-use crate::managers::conversation_memory::MemoryContext;
+use crate::managers::conversation_memory::{
+    load_for_session, remember_finish, remember_start, ConversationMemory, MemoryContext,
+    MEMORY_DEADLINE,
+};
 use crate::managers::conversation_record::SessionRecord;
 use crate::managers::conversation_save::{
     load_vault_block, save_session, vault_context_active, CollectedSession, RecordStoreSink,
@@ -1142,6 +1145,93 @@ pub(crate) fn vault_text_allowed(settings: &AppSettings) -> bool {
     is_http_model_route(settings)
 }
 
+/// Whether session memory is on for one voice session (DESIGN D4, C6): the setting, the managed
+/// store and the HTTP model route must all hold at session start.
+pub(crate) fn memory_session_on(enabled: bool, store_present: bool, route_allowed: bool) -> bool {
+    enabled && store_present && route_allowed
+}
+
+/// Whether a voice session collects transcript events: records or memory need them (A2).
+pub(crate) fn session_collects(records_on: bool, memory_on: bool) -> bool {
+    records_on || memory_on
+}
+
+/// Phase one of the session memory save (D3), run synchronously when the session ends. Writes
+/// the fallback row and returns its id. Nothing is written when the setting is off now, or when
+/// the session is tainted or saw untrusted content.
+pub(crate) fn memory_start_row(
+    memory: &ConversationMemory,
+    epoch_at_start: u64,
+    session: &CollectedSession,
+    end: SessionEnd,
+    ended_ms: i64,
+    still_enabled: bool,
+    tainted: bool,
+) -> Option<i64> {
+    if !still_enabled {
+        return None;
+    }
+    remember_start(
+        memory,
+        epoch_at_start,
+        session.started_at_ms,
+        ended_ms,
+        &session.turns,
+        end,
+        tainted || session.untrusted,
+    )
+}
+
+/// The memory half of `on_complete`: writes the fallback row now, then spawns the model summary
+/// on a blocking thread, the same way `save_session_for_app` runs. The summary is dispatched only
+/// while the epoch is unchanged and the HTTP route is still active (checked again in `allowed`).
+fn finish_memory_session(
+    app: AppHandle,
+    store: Arc<ConversationMemory>,
+    epoch_at_start: u64,
+    session: &CollectedSession,
+    end: SessionEnd,
+    tainted: bool,
+) {
+    let still_enabled = get_settings(&app).conversation_memory_enabled;
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let Some(id) = memory_start_row(
+        &store,
+        epoch_at_start,
+        session,
+        end,
+        now_ms,
+        still_enabled,
+        tainted,
+    ) else {
+        return;
+    };
+    let turns = session.turns.clone();
+    let settings = get_settings(&app);
+    tauri::async_runtime::spawn(async move {
+        let joined = tauri::async_runtime::spawn_blocking(move || {
+            let summarizer = RouteSummarizer::new(settings);
+            let allowed = move || {
+                let current = get_settings(&app);
+                current.conversation_memory_enabled && vault_text_allowed(&current)
+            };
+            tauri::async_runtime::block_on(remember_finish(
+                &store,
+                &summarizer,
+                epoch_at_start,
+                id,
+                &turns,
+                MEMORY_DEADLINE,
+                &allowed,
+            ))
+        })
+        .await;
+        if joined.is_err() {
+            log::error!("conversation memory summary task failed");
+        }
+    });
+}
+
 /// Saves a finished session. Runs inside the detached task spawned by `on_complete`, so the
 /// session never waits on it. Only fixed error kinds are logged, never transcript, summary or
 /// path text (DESIGN Rev 3, 3.5 (3)). Each sink failure is independent.
@@ -1329,6 +1419,26 @@ impl Platform for RealPlatform {
         let save = SaveSettings::from_settings(&settings);
         let records_on = save.records_enabled;
         let vault_route = is_http_model_route(&settings);
+        // Session memory (D4): the store must be managed and the setting on, on an HTTP route.
+        // The epoch is read BEFORE the block is loaded: a later clear or setting change makes
+        // this session's block and its pending write stale.
+        let memory_store: Option<Arc<ConversationMemory>> = self
+            .app
+            .try_state::<Arc<ConversationMemory>>()
+            .map(|s| s.inner().clone());
+        let memory_on = memory_session_on(
+            settings.conversation_memory_enabled,
+            memory_store.is_some(),
+            vault_text_allowed(&settings),
+        );
+        let (memory_ctx, epoch_at_start) = match (&memory_store, memory_on) {
+            (Some(store), true) => {
+                let epoch = store.epoch();
+                let ctx = load_for_session(store, chrono::Utc::now().timestamp_millis());
+                (ctx, epoch)
+            }
+            _ => (None, 0),
+        };
         // The RAG session is pinned here, from atomics only, and only when RAG may be used
         // (DESIGN 3.1, 3.2). Off or ineligible sessions carry no session at all.
         let rag = if rag_possible(&settings) {
@@ -1341,7 +1451,8 @@ impl Platform for RealPlatform {
         let vault_block: Arc<std::sync::Mutex<Option<String>>> =
             Arc::new(std::sync::Mutex::new(None));
 
-        let collector: Option<Arc<TranscriptCollector>> = if records_on {
+        let collector: Option<Arc<TranscriptCollector>> = if session_collects(records_on, memory_on)
+        {
             Some(Arc::new(TranscriptCollector::new()))
         } else {
             None
@@ -1352,18 +1463,39 @@ impl Platform for RealPlatform {
         // Only the vault path is handed to the prepare step, and only the model route uses it.
         let prepare = vault_prepare(&settings, vault_block.clone());
 
+        // One taint flag per session: the brain sets it, and `on_complete` reads it at the end.
+        let taint = TaintState::new();
+        let memory_job = match (memory_on, memory_store) {
+            (true, Some(store)) => Some((store, epoch_at_start)),
+            _ => None,
+        };
+
         let on_complete: Option<Box<dyn FnOnce(SessionEnd) + Send>> = match collector {
             Some(collector) => {
                 let app = self.app.clone();
                 let settings_snapshot = settings.clone();
+                let taint_seen = taint.clone();
                 Some(Box::new(move |end: SessionEnd| {
                     let session = collector.take();
-                    let app = app.clone();
-                    let settings_snapshot = settings_snapshot.clone();
+                    // Memory first, synchronously: the fallback row exists before this returns.
+                    if let Some((store, epoch)) = memory_job {
+                        finish_memory_session(
+                            app.clone(),
+                            store,
+                            epoch,
+                            &session,
+                            end,
+                            taint_seen.is_tainted(),
+                        );
+                    }
                     // Only spawns: the session never waits on the save (DESIGN 3.5 (2)).
-                    tauri::async_runtime::spawn(async move {
-                        save_session_for_app(app, settings_snapshot, session, end).await;
-                    });
+                    if records_on {
+                        let app = app.clone();
+                        let settings_snapshot = settings_snapshot.clone();
+                        tauri::async_runtime::spawn(async move {
+                            save_session_for_app(app, settings_snapshot, session, end).await;
+                        });
+                    }
                 }))
             }
             None => None,
@@ -1416,11 +1548,10 @@ impl Platform for RealPlatform {
                 core: BrainCore {
                     vault_block,
                     vault_route,
-                    taint: TaintState::new(),
+                    taint: taint.clone(),
                     rag,
                     retrieval_deadline: RETRIEVAL_DEADLINE,
-                    // Set by the save step (3c); no session carries memory yet.
-                    memory: None,
+                    memory: memory_ctx,
                     #[cfg(test)]
                     after_retrieve: None,
                 },
