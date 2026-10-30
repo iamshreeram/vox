@@ -25,7 +25,8 @@ use crate::managers::conversation_save::{
 use crate::managers::conversation_store::ConversationStore;
 use crate::managers::converse::{
     endpoint_config, BoxFuture, Brain, Ears, Hands, ListenOutcome, Mouth, PhraseOutcome,
-    QuietOutcome, SayOutcome, SessionConfig, SessionEnd, SpeechQueue, TranscriptSink,
+    QuietOutcome, SayOutcome, SessionConfig, SessionEnd, SpeechQueue, SpeechSegment,
+    TranscriptSink,
 };
 use crate::managers::converse_agent::{
     agent_launch_allowed, cap_result, resolve_step_agent, AgentEvent, AgentPoll, AgentRun,
@@ -77,6 +78,7 @@ use crate::settings::{get_settings, AppSettings};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
@@ -227,10 +229,16 @@ pub fn map_compose_error(err: ComposeError) -> PlanError {
     }
 }
 
-/// Upper bound on how long one spoken reply may take: max(10 s, 0.8 s per
-/// word + 5 s).
+/// Upper bound on how long one spoken reply may take: max(10 s, 0.8 s per word + 5 s).
+///
+/// A word is a whitespace-separated word or, for text that has few spaces (Japanese, Chinese,
+/// Thai), six characters, whichever count is larger (`chars / 6 + 1`). Spaced text keeps the
+/// word count unless its words are long. The character estimate is the one the Natural and
+/// Phonon queue uses.
 pub fn speech_deadline(text: &str) -> Duration {
-    let words = text.split_whitespace().count() as u64;
+    let spaced_words = text.split_whitespace().count() as u64;
+    let char_words = (text.chars().count() as u64) / 6 + 1;
+    let words = spaced_words.max(char_words);
     let estimate_ms = words.saturating_mul(800).saturating_add(5_000);
     Duration::from_millis(estimate_ms.max(10_000))
 }
@@ -443,9 +451,73 @@ impl SpeechProbe for TtsProbe<'_> {
     }
 }
 
+/// Port (DESIGN D3): receives the begin and end of one speech scope. The real app implements it
+/// for the chat log, which forwards the marks to the bubble hub in order with the lines.
+pub trait SpeechSignal: Send + Sync {
+    /// A speech scope began. Called on the speaking thread, before the line it belongs to.
+    fn begin(&self, scope: u64);
+    /// The speech scope ended. Called exactly once per begin.
+    fn end(&self, scope: u64);
+}
+
+impl SpeechSignal for ChatLog {
+    fn begin(&self, scope: u64) {
+        self.speech_begin(scope);
+    }
+    fn end(&self, scope: u64) {
+        self.speech_end(scope);
+    }
+}
+
+/// Process-wide source of unique speech scope ids.
+static SPEECH_SCOPES: AtomicU64 = AtomicU64::new(1);
+
+/// A fresh speech scope id, unique for the life of the process.
+pub(crate) fn next_speech_scope() -> u64 {
+    SPEECH_SCOPES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// One open speech scope: begun by `open`, ended exactly once when dropped.
+pub(crate) struct SpeechScope {
+    signal: Arc<dyn SpeechSignal>,
+    scope: u64,
+}
+
+impl SpeechScope {
+    /// Begins a fresh scope on `signal`.
+    pub(crate) fn open(signal: Arc<dyn SpeechSignal>) -> Self {
+        let scope = next_speech_scope();
+        signal.begin(scope);
+        SpeechScope { signal, scope }
+    }
+}
+
+impl Drop for SpeechScope {
+    fn drop(&mut self) {
+        self.signal.end(self.scope);
+    }
+}
+
+impl SpeechSegment for SpeechScope {}
+
+/// The segment a mouth opens for one line: a scope on `signal` when TTS output is enabled and a
+/// port is configured, otherwise nothing (the line is recorded, no hold is taken).
+pub(crate) fn speech_segment(
+    tts_enabled: bool,
+    signal: Option<&Arc<dyn SpeechSignal>>,
+) -> Option<Box<dyn SpeechSegment>> {
+    if !tts_enabled {
+        return None;
+    }
+    let signal = signal?;
+    Some(Box::new(SpeechScope::open(signal.clone())))
+}
+
 struct RealMouth {
     app: AppHandle,
     tts: Arc<TtsManager>,
+    /// The speech-scope port. `None`: no bubble hold is ever taken.
+    speech: Option<Arc<dyn SpeechSignal>>,
 }
 
 impl RealMouth {
@@ -458,7 +530,8 @@ impl RealMouth {
         }
         let voice = settings.tts_voice.clone();
         let rate = Some(settings.tts_rate_wpm);
-        let session = TtsQueueSession::open(self.tts.clone(), voice, rate)?;
+        let session =
+            TtsQueueSession::open_with_signal(self.tts.clone(), voice, rate, self.speech.clone())?;
         Some(session)
     }
 
@@ -522,6 +595,11 @@ impl Mouth for RealMouth {
 
     fn open_queue(&self) -> Option<Arc<dyn SpeechQueue>> {
         self.open_queue_inner()
+    }
+
+    fn open_segment(&self) -> Option<Box<dyn SpeechSegment>> {
+        let enabled = get_settings(&self.app).tts_enabled;
+        speech_segment(enabled, self.speech.as_ref())
     }
 
     fn wait_quiet(&self, max: Duration) -> BoxFuture<'_, QuietOutcome> {
@@ -1389,6 +1467,10 @@ impl Platform for RealPlatform {
             mouth: Box::new(RealMouth {
                 app: self.app.clone(),
                 tts,
+                speech: self
+                    .app
+                    .try_state::<Arc<ChatLog>>()
+                    .map(|chat| Arc::clone(chat.inner()) as Arc<dyn SpeechSignal>),
             }),
             hands: Box::new(match &self.job_runtime {
                 Some(rt) => RealHands {
@@ -1764,6 +1846,46 @@ mod tests {
         assert_eq!(speech_deadline(&twenty), Duration::from_secs(21));
         let hundred = vec!["word"; 100].join(" ");
         assert_eq!(speech_deadline(&hundred), Duration::from_secs(85));
+    }
+
+    #[test]
+    fn speech_deadline_counts_characters_for_text_without_spaces() {
+        // A sentence in Japanese, Chinese or Thai has no spaces, so it used to count as one
+        // word and the speech was cut at the ten second floor. Same estimate as the Natural
+        // and Phonon queue: about six characters per word, plus one.
+        let japanese_120 = "\u{3042}".repeat(120);
+        assert_eq!(
+            speech_deadline(&japanese_120),
+            Duration::from_millis(21_800)
+        );
+        let japanese_600 = "\u{3042}".repeat(600);
+        assert_eq!(
+            speech_deadline(&japanese_600),
+            Duration::from_millis(85_800)
+        );
+        let thai_120 = "\u{0e01}".repeat(120);
+        assert_eq!(speech_deadline(&thai_120), Duration::from_millis(21_800));
+        // A short line still gets the ten second floor.
+        let short = "\u{3042}".repeat(30);
+        assert_eq!(speech_deadline(&short), Duration::from_secs(10));
+    }
+
+    #[test]
+    fn speech_deadline_for_spaced_languages_is_unchanged_when_the_word_count_dominates() {
+        // Whitespace words win whenever they are the larger count.
+        let arabic = vec!["\u{0645}\u{0631}\u{062d}\u{0628}\u{0627}"; 20].join(" ");
+        assert_eq!(speech_deadline(&arabic), Duration::from_secs(21));
+        let english = vec!["word"; 20].join(" ");
+        assert_eq!(speech_deadline(&english), Duration::from_secs(21));
+    }
+
+    #[test]
+    fn speech_deadline_uses_the_character_estimate_for_long_spaced_words() {
+        // Twenty ten-letter words: 219 characters, so 219 / 6 + 1 = 37 words, which is more
+        // than the 20 whitespace words. Long words take longer to say, so the deadline grows.
+        let long_words = vec!["abcdefghij"; 20].join(" ");
+        assert_eq!(long_words.chars().count(), 219);
+        assert_eq!(speech_deadline(&long_words), Duration::from_millis(34_600));
     }
 
     #[test]

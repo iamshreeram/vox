@@ -39,6 +39,8 @@ mod brain_store_tests;
 mod brain_tests;
 pub mod chat_log;
 #[cfg(test)]
+mod chat_log_speech_tests;
+#[cfg(test)]
 mod chat_log_stamp_tests;
 #[cfg(test)]
 mod chat_log_tests;

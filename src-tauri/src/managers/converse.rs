@@ -220,7 +220,17 @@ pub trait Mouth: Send + Sync {
     fn open_queue(&self) -> Option<Arc<dyn SpeechQueue>> {
         None
     }
+    /// Opens a speech segment (one stretch of spoken reply) synchronously, before the line it
+    /// belongs to is recorded. The returned guard ends the segment when dropped. `None` (the
+    /// default) when nothing is spoken right now, so no bubble hold is taken.
+    fn open_segment(&self) -> Option<Box<dyn SpeechSegment>> {
+        None
+    }
 }
+
+/// Marker for one open speech segment. Implementors end the segment in `Drop`, so a segment
+/// ends exactly once however its owner finishes.
+pub trait SpeechSegment: Send {}
 
 /// One turn's queued speech (see `converse_queue::TtsQueueSession`).
 pub trait SpeechQueue: Send + Sync {
@@ -544,8 +554,16 @@ fn record_speech(reporter: &dyn Reporter, text: &str) {
 impl Mouth for JournalMouth<'_> {
     fn say<'a>(&'a self, text: &'a str, emotion: Emotion) -> BoxFuture<'a, SayOutcome> {
         self.journal.submit(text);
+        // The segment opens first, synchronously, so its begin precedes the recorded line. The
+        // guard moves into the playback future: it ends when the say completes, or when the
+        // future is dropped unpolled, mid-say or after completion.
+        let segment = self.inner.open_segment();
         record_speech(self.reporter, text);
-        self.inner.say(text, emotion)
+        let say = self.inner.say(text, emotion);
+        Box::pin(async move {
+            let _segment = segment;
+            say.await
+        })
     }
     fn wait_quiet(&self, max: Duration) -> BoxFuture<'_, QuietOutcome> {
         self.inner.wait_quiet(max)
@@ -555,6 +573,9 @@ impl Mouth for JournalMouth<'_> {
     }
     fn open_queue(&self) -> Option<Arc<dyn SpeechQueue>> {
         self.inner.open_queue()
+    }
+    fn open_segment(&self) -> Option<Box<dyn SpeechSegment>> {
+        self.inner.open_segment()
     }
 }
 
@@ -609,6 +630,12 @@ impl Mouth for GatedMouth<'_> {
             inner: queue,
             gate: self.gate.clone(),
         }))
+    }
+
+    fn open_segment(&self) -> Option<Box<dyn SpeechSegment>> {
+        self.gate
+            .with_admission(|| self.inner.open_segment())
+            .flatten()
     }
 }
 
@@ -1515,6 +1542,10 @@ impl Mouth for TimedMouth<'_> {
 
     fn open_queue(&self) -> Option<Arc<dyn SpeechQueue>> {
         self.inner.open_queue()
+    }
+
+    fn open_segment(&self) -> Option<Box<dyn SpeechSegment>> {
+        self.inner.open_segment()
     }
 }
 
@@ -4293,6 +4324,10 @@ mod tests {
 #[cfg(test)]
 #[path = "converse_stream_loop_tests.rs"]
 mod stream_loop_tests;
+
+#[cfg(test)]
+#[path = "converse_speech_scope_tests.rs"]
+mod speech_scope_tests;
 
 #[cfg(test)]
 #[path = "converse_context_loop_tests.rs"]

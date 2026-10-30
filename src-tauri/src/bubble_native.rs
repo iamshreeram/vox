@@ -15,7 +15,7 @@ use crate::bubble_shell_core::{
 };
 use crate::chat_presentation::{floating_supported, ORB_VISIBLE_DEFAULT};
 use crate::chat_window::{self, is_app_navigation};
-use crate::managers::chat_log::{ChatLog, GateState};
+use crate::managers::chat_log::{ChatLog, GateState, Stamp};
 use crate::orb_geometry::{
     anchor_for_side, monitor_for, place_bubbles, BubblePlacement, Rect, Size, BUBBLE_H_LOGICAL,
     BUBBLE_W_LOGICAL, MIN_BUBBLE_H_LOGICAL, MIN_BUBBLE_W_LOGICAL,
@@ -686,6 +686,17 @@ pub fn session_ended(app: &AppHandle) {
 /// A transcript line reached the hub. Admitted only against the chat log's current tuple.
 pub fn chat_entry(app: &AppHandle, entry: HubEntry) {
     update(app, move |core, inp| core.chat_entry(entry, inp));
+}
+
+/// A reply started being spoken under `scope`. Judged against the chat log's live gate, the same
+/// way as a line.
+pub fn speech_begin(app: &AppHandle, scope: u64, stamp: Stamp) {
+    update(app, move |core, inp| core.speech_begin(scope, stamp, inp));
+}
+
+/// The reply under `scope` stopped being spoken.
+pub fn speech_end(app: &AppHandle, scope: u64) {
+    update(app, move |core, inp| core.speech_end(scope, inp));
 }
 
 /// The transcript was reset for a new session.
