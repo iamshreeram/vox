@@ -3189,6 +3189,10 @@ fx: number;
  */
 fy: number }
 /**
+ * Payload of `orb-refusal`: the fixed code and nothing else.
+ */
+export type OrbRefusalPayload = { code: NoticeCode }
+/**
  * Orb size preset. Stored in settings as `small`, `medium` or `large`.
  */
 export type OrbSize = 

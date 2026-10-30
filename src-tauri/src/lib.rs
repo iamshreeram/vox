@@ -47,6 +47,9 @@ mod job_runtime;
 mod llm_client;
 #[cfg(test)]
 mod orb_accent_tests;
+mod orb_converse;
+#[cfg(test)]
+mod orb_converse_tests;
 #[cfg(test)]
 mod orb_engine_tests;
 mod orb_gaze;
@@ -1434,6 +1437,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         ])
         .typ::<settings::AppSettings>()
         .typ::<bubble_notice::NoticeCode>()
+        .typ::<orb_converse::OrbRefusalPayload>()
         .typ::<appearance::AppearanceSnapshot>()
         .typ::<managers::wakeword::WakeWordDetection>()
         .typ::<commands::ambient::AmbientAddressedPayload>()
