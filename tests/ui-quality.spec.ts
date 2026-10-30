@@ -178,27 +178,21 @@ function collectPage(): PageData {
   };
   const layersOf = (el: Element) => {
     let cum = 1;
-    const layers: Array<{
-      background: string;
-      backgroundImage: string;
-      opacity: number;
-    }> = [];
+    const layers: Q.LayerCase[] = [];
     const filters: string[] = [];
     for (const n of chainOf(el)) {
       const s = getComputedStyle(n);
       cum *= parseFloat(s.opacity);
       if (s.filter !== "none") filters.push(s.filter);
-      if (
-        s.backgroundImage !== "none" ||
-        (s.backgroundColor !== "rgba(0, 0, 0, 0)" &&
-          s.backgroundColor !== "transparent")
-      ) {
-        layers.push({
-          background: s.backgroundColor,
-          backgroundImage: s.backgroundImage,
-          opacity: cum,
-        });
-      }
+      layers.push({
+        background: s.backgroundColor,
+        backgroundImage: s.backgroundImage,
+        opacity: cum,
+        mixBlendMode: s.mixBlendMode,
+        maskImage: s.maskImage,
+        backdropFilter: s.backdropFilter,
+        filter: s.filter,
+      });
     }
     return { layers, filters, opacity: cum };
   };
@@ -425,27 +419,21 @@ function observeFocus(): FocusObs {
   el.focus();
 
   let cum = 1;
-  const layers: Array<{
-    background: string;
-    backgroundImage: string;
-    opacity: number;
-  }> = [];
+  const layers: Q.LayerCase[] = [];
   const chain: Element[] = [];
   for (let n: Element | null = el; n; n = n.parentElement) chain.unshift(n);
   for (const n of chain) {
     const s = getComputedStyle(n);
     cum *= parseFloat(s.opacity);
-    if (
-      s.backgroundImage !== "none" ||
-      (s.backgroundColor !== "rgba(0, 0, 0, 0)" &&
-        s.backgroundColor !== "transparent")
-    ) {
-      layers.push({
-        background: s.backgroundColor,
-        backgroundImage: s.backgroundImage,
-        opacity: cum,
-      });
-    }
+    layers.push({
+      background: s.backgroundColor,
+      backgroundImage: s.backgroundImage,
+      opacity: cum,
+      mixBlendMode: s.mixBlendMode,
+      maskImage: s.maskImage,
+      backdropFilter: s.backdropFilter,
+      filter: s.filter,
+    });
   }
 
   let groupRole: string | null = null;
@@ -551,6 +539,30 @@ async function keyboardWalk(
 }
 
 /** Full audit of one page state. Returns violations; soft-asserts every kind; writes findings. */
+/**
+ * Every colour string the text audit of one page needs: text colours and every chain element's
+ * background and gradient stops. Resolved once in the page (Q.resolveColourMap), so no colour is
+ * ever parsed by regex. Focus colours are collected from the keyboard walk (see focusColourStrings).
+ */
+function textColourStrings(data: PageData): string[] {
+  const out: string[] = [];
+  for (const t of data.texts) {
+    out.push(...Q.candidateColours(t.layers, [t.color]));
+  }
+  return out;
+}
+
+/** Colour strings for the focus-ring checks of the observed keyboard-walk elements. */
+function focusColourStrings(observed: Iterable<FocusObs>): string[] {
+  const out: string[] = [];
+  for (const o of observed) {
+    out.push(...Q.candidateColours(o.layers as Q.LayerCase[]));
+    const ring = Q.focusRingText(o.focused, o.base);
+    if (ring !== null) out.push(ring);
+  }
+  return out;
+}
+
 async function auditVisit(
   page: Page,
   collector: Q.ConsoleErrorCollector,
@@ -567,6 +579,7 @@ async function auditVisit(
     required: string,
   ) => v.push({ kind, surface, variant, selector, measured, required });
 
+  const resolve = await Q.resolveColourMap(page, textColourStrings(data));
   const seen = new Set<string>();
   for (const t of data.texts) {
     const key = JSON.stringify([
@@ -579,7 +592,7 @@ async function auditVisit(
     ]);
     if (seen.has(key)) continue;
     seen.add(key);
-    const verdict = Q.evaluateTextOverBackdrops(t as Q.TextCase);
+    const verdict = Q.evaluateTextContrast(t as Q.TextCase, resolve);
     if (!verdict.pass) {
       add(
         "contrast",
@@ -646,6 +659,10 @@ async function auditVisit(
       .filter((e) => e.visible && e.enabled)
       .map((e) => e.qid);
     const walk = await keyboardWalk(page);
+    const focusResolve = await Q.resolveColourMap(
+      page,
+      focusColourStrings(walk.obs.values()),
+    );
     const reach = Q.analyzeTabWalk(enabledIds, walk.visited, walk.steps);
     for (const id of reach.unreached) {
       const el = data.interactive.find((e) => e.qid === id);
@@ -672,12 +689,12 @@ async function auditVisit(
           "focus not :focus-visible on keyboard focus",
           ":focus-visible",
         );
-      for (const b of ["white", "black"] as const) {
+      {
         const ring = Q.checkFocusRing(
           o.focused,
           o.base,
           o.layers as Q.LayerCase[],
-          b,
+          focusResolve,
         );
         if (!ring.pass)
           add(
@@ -1166,7 +1183,8 @@ test.describe("negative fixtures: the gate must detect each injected defect", ()
     const data = (await page.evaluate(collectPage)) as PageData;
     const text = data.texts.find((t) => t.text === "Gradient text");
     expect(text, "fixture text found").toBeDefined();
-    const verdict = Q.evaluateTextOverBackdrops(text as Q.TextCase);
+    const resolve = await Q.resolveColourMap(page, textColourStrings(data));
+    const verdict = Q.evaluateTextContrast(text as Q.TextCase, resolve);
     expect(
       verdict.pass,
       "the gate must reject #767676 on a black-to-white gradient",
@@ -1181,11 +1199,19 @@ test.describe("negative fixtures: the gate must detect each injected defect", ()
     await page.keyboard.press("Tab");
     const obs = (await page.evaluate(observeFocus)) as FocusObs;
     expect(obs.tag, "the button must take focus").toBe("button");
+    const ringText = Q.focusRingText(obs.focused, obs.base);
+    const resolve = await Q.resolveColourMap(
+      page,
+      Q.candidateColours(
+        obs.layers as Q.LayerCase[],
+        ringText ? [ringText] : [],
+      ),
+    );
     const ring = Q.checkFocusRing(
       obs.focused,
       obs.base,
       obs.layers as Q.LayerCase[],
-      "white",
+      resolve,
     );
     expect(ring.pass, "the gate must reject a transparent ring").toBe(false);
   });

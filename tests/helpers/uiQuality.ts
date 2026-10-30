@@ -1,7 +1,13 @@
-// Pure helpers for the UI quality gate (UI enterprise S5, DESIGN Revision 3 D5 / A6 / A6c).
+// Pure helpers for the UI quality gate (UI enterprise S5, DESIGN Revision 5: A6, A6c, A6d, A6e).
 // No Playwright runtime import: the only Playwright type is type-only, so bun can run the
-// self-tests (tests/helpers/uiQuality.selftest.ts) against exactly the code the e2e spec uses.
-// Nothing here changes product code: it measures computed styles that the spec collects in page.
+// self-tests (tests/helpers/uiQuality.selftest.ts). Nothing here changes product code.
+//
+// Colour model (A6d/A6e): every CSS colour string is resolved by the BROWSER (resolveColourMap ->
+// resolveColoursInPage: a 2D canvas with colorSpace 'srgb' paints the colour and reads one pixel).
+// Nothing is parsed by regex on the production path. Out-of-gamut values are clamped by the canvas.
+// The canvas stores premultiplied 8-bit values, so channels of translucent colours carry up to
+// about 0.5/alpha levels of rounding; the pixel-reference test in ui-quality-reference.spec.ts
+// bounds the end-to-end effect.
 
 import type { Page } from "@playwright/test";
 import type { AppearanceSnapshot } from "@/bindings";
@@ -13,7 +19,7 @@ import { DEFAULT_ACCENT } from "../../src/styles/accents";
 // Colour model
 // ---------------------------------------------------------------------------
 
-/** An sRGB colour with channels in 0..255 and alpha in 0..1. */
+/** An sRGB colour with channels in 0..255 and alpha in 0..1 (straight, not premultiplied). */
 export interface Rgba {
   r: number;
   g: number;
@@ -28,16 +34,23 @@ export interface Rgb {
   b: number;
 }
 
-/** The two backdrops the translucent windows are evaluated over (A6 / D5). */
-export const BACKDROPS = {
-  white: { r: 255, g: 255, b: 255 } as Rgb,
-  black: { r: 0, g: 0, b: 0 } as Rgb,
-} as const;
+/** Resolves a CSS colour string to sRGB RGBA, or null when it cannot be resolved (the row fails). */
+export type ColourResolver = (css: string) => Rgba | null;
 
-export type BackdropName = keyof typeof BACKDROPS;
+/**
+ * Grey backdrop levels a translucent surface is evaluated over (A6e(c)): 0, 8, ..., 248, and 255.
+ * Interior crossings between levels are found by bisection in the sweep.
+ */
+export const BACKDROP_LEVELS: readonly number[] = [
+  ...Array.from({ length: 32 }, (_, i) => i * 8),
+  255,
+];
 
-/** Parses a CSS colour string as the browser serialises computed colours. Null when unsupported. */
-export function parseCssColor(input: string): Rgba | null {
+/**
+ * Literal parser for hex, rgb()/rgba() and color(srgb). TEST FIXTURE ONLY: it lets the self-tests
+ * run in bun without a browser. The production path resolves colours in the browser instead.
+ */
+export function parseSrgbLiteral(input: string): Rgba | null {
   const text = input.trim().toLowerCase();
   if (text === "transparent") return { r: 0, g: 0, b: 0, a: 0 };
   const hex = text.match(/^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/);
@@ -118,6 +131,75 @@ function parseAlpha(token: string): number | null {
   return Number.isNaN(v) ? null : Math.min(1, Math.max(0, v));
 }
 
+/**
+ * Resolves colours in the page. Passed to page.evaluate, so it must be self-contained.
+ * An sRGB 2D canvas paints each string into one pixel. A string is valid when assigning it to
+ * fillStyle changes the value read back, checked against two different sentinels so that an
+ * invalid string (which leaves the sentinel in place) is never mistaken for a valid one.
+ * Throws when an sRGB canvas cannot be created: the run must fail, not guess.
+ */
+export function resolveColoursInPage(
+  strings: string[],
+): Record<string, { r: number; g: number; b: number; a: number } | null> {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  const ctx = canvas.getContext("2d", {
+    colorSpace: "srgb",
+    willReadFrequently: true,
+  } as CanvasRenderingContext2DSettings);
+  if (ctx === null)
+    throw new Error("sRGB 2D canvas unavailable: colour resolution cannot run");
+  const sentinels = ["#010203", "#fdfeff"];
+  const accepted = (css: string, sentinel: string): boolean => {
+    ctx.fillStyle = sentinel;
+    const before = ctx.fillStyle;
+    ctx.fillStyle = css;
+    return ctx.fillStyle !== before;
+  };
+  const out: Record<
+    string,
+    { r: number; g: number; b: number; a: number } | null
+  > = {};
+  for (const css of strings) {
+    if (Object.prototype.hasOwnProperty.call(out, css)) continue;
+    if (!accepted(css, sentinels[0]) && !accepted(css, sentinels[1])) {
+      out[css] = null;
+      continue;
+    }
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillStyle = css;
+    ctx.fillRect(0, 0, 1, 1);
+    // getImageData returns straight (un-premultiplied) channels.
+    const px = ctx.getImageData(0, 0, 1, 1).data;
+    out[css] = { r: px[0], g: px[1], b: px[2], a: px[3] / 255 };
+  }
+  return out;
+}
+
+/**
+ * Resolves every candidate string once in the page and returns a synchronous resolver.
+ * Strings the page did not resolve (or were never asked for) resolve to null, so the row fails.
+ */
+export async function resolveColourMap(
+  page: Pick<Page, "evaluate">,
+  strings: string[],
+): Promise<ColourResolver> {
+  const unique = [...new Set(strings)];
+  const map = (await page.evaluate(resolveColoursInPage, unique)) as Record<
+    string,
+    Rgba | null
+  >;
+  return (css: string) =>
+    Object.prototype.hasOwnProperty.call(map, css) ? map[css] : null;
+}
+
+/** Resolver backed by a map returned from the page (for tests that already hold resolved values). */
+export function resolverOf(map: Record<string, Rgba | null>): ColourResolver {
+  return (css: string) =>
+    Object.prototype.hasOwnProperty.call(map, css) ? map[css] : null;
+}
+
 /** Source-over composite of a translucent colour onto an opaque one. */
 export function over(top: Rgba, below: Rgb): Rgb {
   return {
@@ -146,17 +228,19 @@ export function contrastRatio(a: Rgb, b: Rgb): number {
 }
 
 // ---------------------------------------------------------------------------
-// Paints: solid colours and sRGB linear gradients (A6c). Everything else is unsupported.
+// Gradients (A6c, A6d, A6e). Linear gradients are sampled at their stop positions. Radial and
+// conic gradients are geometry-free: each consecutive stop pair is swept over its full range, so
+// the sweep covers every colour any pixel can show. Both interpolate premultiplied sRGB.
 // ---------------------------------------------------------------------------
 
 export interface GradientStop {
   color: Rgba;
-  /** Position along the gradient line, 0..1. */
+  /** Position used for sampling, 0..1 (uniform for radial and conic). */
   pos: number;
 }
 
 export type Paint =
-  | { kind: "linear"; stops: GradientStop[] }
+  | { kind: "gradient"; stops: GradientStop[] }
   | { kind: "unsupported"; reason: string };
 
 /** Minimum samples per gradient segment (A6c). */
@@ -183,110 +267,176 @@ export function splitTopLevel(input: string, separator = ","): string[] {
 }
 
 /**
- * Parses a computed `background-image` value into paints, TOP-most first (CSS order).
- * `none` gives []. Anything other than a sRGB linear-gradient is returned as 'unsupported'.
+ * Splits one colour-stop argument into its colour text and trailing position tokens, e.g.
+ * "rgb(0 0 0) 50%" -> { colourText: "rgb(0 0 0)", positions: ["50%"] }. Structure only: the
+ * colour text itself is resolved by the browser.
  */
-export function parseBackgroundImage(value: string): Paint[] {
-  const v = value.trim();
-  if (v === "" || v === "none") return [];
-  if (/url\(/i.test(v)) {
-    return [{ kind: "unsupported", reason: "url() image" }];
+export function splitStop(arg: string): {
+  colourText: string;
+  positions: string[];
+} {
+  let rest = arg.trim();
+  const positions: string[] = [];
+  for (let i = 0; i < 2; i += 1) {
+    const match = rest.match(/\s+(-?(?:\d+\.?\d*|\.\d+)(?:%|[a-z]+)?)$/i);
+    if (match === null || match.index === undefined) break;
+    positions.unshift(match[1]);
+    rest = rest.slice(0, match.index).trim();
   }
-  return splitTopLevel(v).map((item): Paint => {
-    const lower = item.toLowerCase();
-    if (lower.startsWith("linear-gradient(") && lower.endsWith(")")) {
-      return parseLinearGradient(item.slice("linear-gradient(".length, -1));
-    }
-    if (/^(repeating-)?radial-gradient\(/.test(lower)) {
-      return { kind: "unsupported", reason: "radial gradient" };
-    }
-    if (/^(repeating-)?conic-gradient\(/.test(lower)) {
-      return { kind: "unsupported", reason: "conic gradient" };
-    }
-    return {
-      kind: "unsupported",
-      reason: `unknown image: ${item.slice(0, 40)}`,
-    };
-  });
+  return { colourText: rest, positions };
 }
 
-const DIRECTION = /^(to\s+\S+(\s+\S+)?|-?[\d.]+(deg|grad|rad|turn))$/i;
+/** Where the colour-interpolation space or a non-sRGB space is named (`in oklab`). */
+function interpolationSpace(prelude: string): string | null {
+  const match = prelude.match(/\bin\s+([a-z0-9-]+)/i);
+  return match === null ? null : match[1].toLowerCase();
+}
 
-/** Parses the inside of a linear-gradient(...) into an sRGB paint, or 'unsupported'. */
-export function parseLinearGradient(inner: string): Paint {
+function isPrelude(kind: "linear" | "radial" | "conic", arg: string): boolean {
+  if (kind === "linear")
+    return /^(to\s|in\s|-?[\d.]+(deg|grad|rad|turn)\b)/i.test(arg);
+  return /^(circle|ellipse|closest-|farthest-|at\s|from\s|in\s|[-+]?[\d.])/i.test(
+    arg,
+  );
+}
+
+export interface GradientSpec {
+  kind: "linear" | "radial" | "conic";
+  stops: Array<{ colourText: string; pos: number | null }>;
+}
+
+/**
+ * Parses the inside of a gradient function. Returns a reason string when the gradient cannot be
+ * measured: a non-sRGB interpolation space, a colour-interpolation hint, px stop positions on a
+ * linear gradient, or fewer than two stops.
+ */
+export function parseGradientSpec(
+  kind: "linear" | "radial" | "conic",
+  inner: string,
+): GradientSpec | string {
   const args = splitTopLevel(inner);
-  if (args.length === 0)
-    return { kind: "unsupported", reason: "empty gradient" };
-  let index = 0;
-  const first = args[0];
-  if (/\bin\s+/i.test(first) && !DIRECTION.test(first)) {
-    // `in <space>` on its own first argument, or combined with a direction.
-    const space = first.match(/\bin\s+([a-z-]+)/i);
-    if (space === null || space[1].toLowerCase() !== "srgb") {
-      return {
-        kind: "unsupported",
-        reason: `non-sRGB interpolation space (${space ? space[1] : "?"})`,
-      };
-    }
-    index = 1;
-  } else if (DIRECTION.test(first)) {
-    index = 1;
-  }
-  const stopArgs = args.slice(index);
-  if (stopArgs.length < 2) {
-    return { kind: "unsupported", reason: "fewer than two colour stops" };
-  }
-  const parsed: Array<{ color: Rgba; pos: number | null }> = [];
+  if (args.length === 0) return "empty gradient";
+  const prelude = isPrelude(kind, args[0]) ? args[0] : "";
+  const space = interpolationSpace(prelude);
+  if (space !== null && space !== "srgb")
+    return `non-sRGB interpolation space (${space})`;
+  const stopArgs = prelude ? args.slice(1) : args;
+  if (stopArgs.length < 2) return "fewer than two colour stops";
+  const stops: GradientSpec["stops"] = [];
   for (const arg of stopArgs) {
-    if (/^-?[\d.]+%$/.test(arg)) {
-      return { kind: "unsupported", reason: "colour-interpolation hint" };
+    if (/^-?[\d.]+%$/.test(arg)) return "colour-interpolation hint";
+    const { colourText, positions } = splitStop(arg);
+    if (positions.length > 2) return "unparseable stop positions";
+    let pos: number | null = null;
+    if (positions.length > 0) {
+      if (kind === "linear") {
+        if (!positions[0].endsWith("%"))
+          return "px stop position (not resolvable without geometry)";
+        pos = Number(positions[0].slice(0, -1)) / 100;
+      }
     }
-    const withPos =
-      arg.match(/^(.*\))\s+(-?[\d.]+%)$/) ?? arg.match(/^(\S+)\s+(-?[\d.]+%)$/);
-    const colourText = withPos ? withPos[1] : arg;
-    const color = parseCssColor(colourText);
-    if (color === null) {
-      return {
-        kind: "unsupported",
-        reason: `unparseable stop colour: ${colourText.slice(0, 40)}`,
-      };
-    }
-    if (!withPos && /\s-?[\d.]+px$/.test(arg)) {
-      return {
-        kind: "unsupported",
-        reason: "px stop position (not resolvable without geometry)",
-      };
-    }
-    const pos = withPos ? Number(withPos[2].slice(0, -1)) / 100 : null;
-    parsed.push({ color, pos });
+    stops.push({ colourText, pos });
   }
-  // CSS fills missing positions evenly between known neighbours; ends default to 0 and 1.
-  const positions = parsed.map((p) => p.pos);
-  if (positions[0] === null) positions[0] = 0;
-  if (positions[positions.length - 1] === null)
-    positions[positions.length - 1] = 1;
-  for (let i = 0; i < positions.length; i += 1) {
-    if (positions[i] !== null) continue;
-    let prev = i - 1;
-    while (positions[prev] === null) prev -= 1;
-    let next = i + 1;
-    while (positions[next] === null) next += 1;
-    const step =
-      ((positions[next] as number) - (positions[prev] as number)) /
-      (next - prev);
-    positions[i] = (positions[prev] as number) + step * (i - prev);
+  return { kind, stops };
+}
+
+/** Parses one computed background-image item into a paint (top-most first in the list). */
+export function paintOf(item: string, resolve: ColourResolver): Paint {
+  const lower = item.toLowerCase();
+  if (lower.startsWith("url(")) return unsupported("url() image");
+  if (lower.startsWith("repeating-"))
+    return unsupported("repeating gradient (not swept)");
+  const match = lower.match(/^(linear|radial|conic)-gradient\(/);
+  if (match === null || !lower.endsWith(")"))
+    return unsupported(`unknown image: ${item.slice(0, 40)}`);
+  const kind = match[1] as "linear" | "radial" | "conic";
+  const spec = parseGradientSpec(kind, item.slice(match[0].length, -1));
+  if (typeof spec === "string") return unsupported(spec);
+  return gradientPaint(spec, resolve);
+}
+
+function unsupported(reason: string): Paint {
+  return { kind: "unsupported", reason };
+}
+
+/** Stop positions: linear keeps its own (CSS fills missing ones evenly); radial and conic use uniform. */
+function gradientPaint(spec: GradientSpec, resolve: ColourResolver): Paint {
+  const n = spec.stops.length;
+  let positions: number[];
+  if (spec.kind === "linear") {
+    const known: Array<number | null> = spec.stops.map((s) => s.pos);
+    if (known[0] === null) known[0] = 0;
+    if (known[n - 1] === null) known[n - 1] = 1;
+    for (let i = 0; i < n; i += 1) {
+      if (known[i] !== null) continue;
+      let prev = i - 1;
+      while (known[prev] === null) prev -= 1;
+      let next = i + 1;
+      while (known[next] === null) next += 1;
+      const step =
+        ((known[next] as number) - (known[prev] as number)) / (next - prev);
+      known[i] = (known[prev] as number) + step * (i - prev);
+    }
+    positions = [];
+    let floor = 0;
+    for (const value of known) {
+      const pos = Math.max(floor, value as number);
+      floor = pos;
+      positions.push(pos);
+    }
+  } else {
+    positions = spec.stops.map((_, i) => i / (n - 1));
   }
   const stops: GradientStop[] = [];
-  let floor = 0;
-  parsed.forEach((p, i) => {
-    const pos = Math.max(floor, positions[i] as number);
-    floor = pos;
-    stops.push({ color: p.color, pos });
-  });
-  return { kind: "linear", stops };
+  for (let i = 0; i < n; i += 1) {
+    const color = resolve(spec.stops[i].colourText);
+    if (color === null)
+      return unsupported(
+        `unresolvable stop colour: ${spec.stops[i].colourText.slice(0, 40)}`,
+      );
+    stops.push({ color, pos: positions[i] });
+  }
+  return { kind: "gradient", stops };
 }
 
-/** Colour of a sRGB gradient at position t, interpolated premultiplied (CSS default). */
+/**
+ * Parses a computed `background-image` value into paints, TOP-most first (CSS order).
+ * `none` gives []. url(), repeating gradients and unknown images are 'unsupported'.
+ */
+export function parseBackgroundImage(
+  value: string,
+  resolve: ColourResolver,
+): Paint[] {
+  const v = value.trim();
+  if (v === "" || v === "none") return [];
+  return splitTopLevel(v).map((item) => paintOf(item, resolve));
+}
+
+/**
+ * Every colour string the measurement will need: background colours, gradient stop colours
+ * (structure split only) and the extra strings given (text colours, ring colours). Collect these,
+ * resolve them once in the page with resolveColourMap, then pass that resolver to the checks.
+ */
+export function candidateColours(
+  layers: LayerCase[],
+  extra: string[] = [],
+): string[] {
+  const out = new Set<string>(extra);
+  for (const layer of layers) {
+    out.add(layer.background);
+    for (const item of splitTopLevel(layer.backgroundImage)) {
+      const match = item.match(/^(linear|radial|conic)-gradient\((.*)\)$/i);
+      if (match === null) continue;
+      const kind = match[1].toLowerCase() as "linear" | "radial" | "conic";
+      const spec = parseGradientSpec(kind, match[2]);
+      if (typeof spec === "string") continue;
+      for (const stop of spec.stops) out.add(stop.colourText);
+    }
+  }
+  return [...out];
+}
+
+/** Colour sRGB gradient at position t, interpolated premultiplied (the CSS default). */
 export function gradientColorAt(stops: GradientStop[], t: number): Rgba {
   if (t <= stops[0].pos) return stops[0].color;
   const last = stops[stops.length - 1];
@@ -352,15 +502,23 @@ export function bisectRoot(
 }
 
 // ---------------------------------------------------------------------------
-// Text contrast over the effective background (A6 (iii) / A6c)
+// Layer stack: the complete background of one element and its ancestors (A6e(b), (d))
 // ---------------------------------------------------------------------------
 
-/** One ancestor-or-self background layer, outermost first, as the browser computed it. */
+/**
+ * One chain element, ancestors first (outermost first). Every element on the chain is included,
+ * even one with no background, because blend modes, masks, filters and opacity on any of them
+ * change what the text sits on.
+ */
 export interface LayerCase {
   background: string;
   backgroundImage: string;
   /** Cumulative `opacity` of this element and its ancestors (1 when fully opaque). */
   opacity: number;
+  mixBlendMode?: string;
+  maskImage?: string;
+  backdropFilter?: string;
+  filter?: string;
 }
 
 /** A text node as collected from the page. */
@@ -377,13 +535,14 @@ export interface TextCase {
 
 export interface ContrastVerdict {
   pass: boolean;
-  /** Worst contrast over the continuous background range. */
+  /** Worst contrast over every evaluated background. */
   ratio: number;
   required: number;
-  backdrop: BackdropName;
+  /** Grey backdrop level of the worst case; null when the stack is opaque (no backdrop used). */
+  backdrop: number | null;
   /** Gradient position where the worst contrast occurs (null for a flat background). */
   worstAt: number | null;
-  /** Number of evaluated background positions (>= 65 per gradient segment). */
+  /** Number of evaluated gradient sample positions (>= 65 per gradient segment). */
   samples: number;
   reason: string | null;
 }
@@ -397,37 +556,104 @@ export function requiredContrast(
   return large ? 3 : 4.5;
 }
 
-type Op =
-  | { kind: "solid"; color: Rgba }
-  | { kind: "linear"; stops: GradientStop[] };
-
-/** Flattens layers (outermost first) into paint operations, bottom-most first, or a reason string. */
-function flattenLayers(layers: LayerCase[]): Op[] | string {
-  const ops: Op[] = [];
-  for (const layer of layers) {
-    const bg = parseCssColor(layer.background);
-    if (bg === null) return `unparseable background-color: ${layer.background}`;
-    if (bg.a > 0)
-      ops.push({ kind: "solid", color: { ...bg, a: bg.a * layer.opacity } });
-    const images = parseBackgroundImage(layer.backgroundImage);
-    // Computed order is top-most first; the bottom-most image is painted first.
-    for (const paint of [...images].reverse()) {
-      if (paint.kind === "unsupported") return paint.reason;
-      ops.push({
-        kind: "linear",
-        stops: paint.stops.map((s) => ({
-          ...s,
-          color: { ...s.color, a: s.color.a * layer.opacity },
-        })),
-      });
-    }
-  }
-  return ops;
+/**
+ * Why a chain element cannot be measured: opacity below 1, a blend mode, a mask, a backdrop
+ * filter or a filter. Any of these transforms what lies beneath it, so an opaque colour cannot
+ * be trusted to be the visible colour below it. Null when the element is clean.
+ */
+export function layerEffect(layer: LayerCase): string | null {
+  if (layer.opacity !== 1) return `opacity ${layer.opacity}`;
+  if (layer.mixBlendMode && layer.mixBlendMode !== "normal")
+    return `mix-blend-mode ${layer.mixBlendMode}`;
+  if (layer.maskImage && layer.maskImage !== "none")
+    return `mask ${layer.maskImage}`;
+  if (layer.backdropFilter && layer.backdropFilter !== "none")
+    return `backdrop-filter ${layer.backdropFilter}`;
+  if (layer.filter && layer.filter !== "none") return `filter ${layer.filter}`;
+  return null;
 }
 
-/** The composed background at a gradient position t (flat when there are no gradients). */
-function backgroundAt(ops: Op[], base: Rgb, t: number): Rgb {
-  let acc = base;
+type Item =
+  | { kind: "solid"; color: Rgba }
+  | { kind: "gradient"; stops: GradientStop[] }
+  | { kind: "fail"; reason: string };
+
+/** A paint operation of the measured stack, bottom-most first. */
+export type Op =
+  | { kind: "solid"; color: Rgba }
+  | { kind: "gradient"; stops: GradientStop[] };
+
+export interface Stack {
+  /** Operations above the bypass point, bottom-most first. */
+  ops: Op[];
+  /** True when nothing opaque hides the backdrop, so the backdrop levels must be swept. */
+  backdrop: boolean;
+}
+
+/**
+ * Composes the complete background of an element bottom-up (A6e(b)). Scanning from the top,
+ * the top-most provably opaque colour is the bypass point: everything beneath it is hidden and is
+ * ignored. Every layer above it is measured, and an unsupported paint there fails the row.
+ * Any effect on any chain element fails the row (layerEffect). More than one gradient above the
+ * bypass fails too: one shared sample position cannot cover two independent gradients.
+ */
+export function buildStack(
+  layers: LayerCase[],
+  resolve: ColourResolver,
+): Stack | string {
+  for (const layer of layers) {
+    const effect = layerEffect(layer);
+    if (effect !== null) return `effect on the chain: ${effect}`;
+  }
+  const items: Item[] = [];
+  for (const layer of layers) {
+    const bg = resolve(layer.background);
+    if (bg === null)
+      items.push({
+        kind: "fail",
+        reason: `unparseable background-color: ${layer.background}`,
+      });
+    else if (bg.a > 0) items.push({ kind: "solid", color: bg });
+    // Computed order is top-most first; the bottom-most image is painted first.
+    for (const paint of [
+      ...parseBackgroundImage(layer.backgroundImage, resolve),
+    ].reverse()) {
+      if (paint.kind === "unsupported")
+        items.push({ kind: "fail", reason: paint.reason });
+      else items.push({ kind: "gradient", stops: paint.stops });
+    }
+  }
+  let bypass = -1;
+  items.forEach((item, index) => {
+    if (item.kind === "solid" && item.color.a === 1) bypass = index;
+  });
+  const start = Math.max(0, bypass);
+  const above = items.slice(start);
+  for (const item of above) {
+    if (item.kind === "fail") return item.reason;
+  }
+  const gradients = above.filter((item) => item.kind === "gradient").length;
+  if (gradients > 1)
+    return "more than one gradient above the opaque background";
+  const ops: Op[] = above.map((item) =>
+    item.kind === "solid"
+      ? { kind: "solid", color: item.color }
+      : { kind: "gradient", stops: (item as { stops: GradientStop[] }).stops },
+  );
+  return { ops, backdrop: bypass < 0 };
+}
+
+/** Sample positions along the (single) gradient of a stack: 0 when there is none. */
+function samplePointsOf(ops: Op[]): number[] {
+  for (const op of ops) {
+    if (op.kind === "gradient") return gradientSamplePoints(op.stops);
+  }
+  return [0];
+}
+
+/** The composed background at gradient position t over a grey backdrop level g. */
+function composeAt(ops: Op[], grey: number, t: number): Rgb {
+  let acc: Rgb = { r: grey, g: grey, b: grey };
   for (const op of ops) {
     const color = op.kind === "solid" ? op.color : gradientColorAt(op.stops, t);
     acc = over(color, acc);
@@ -435,122 +661,154 @@ function backgroundAt(ops: Op[], base: Rgb, t: number): Rgb {
   return acc;
 }
 
-function gradientPoints(ops: Op[]): number[] {
-  const points = new Set<number>([0]);
-  for (const op of ops) {
-    if (op.kind === "linear") {
-      for (const p of gradientSamplePoints(op.stops)) points.add(p);
-    }
-  }
-  return [...points].sort((a, b) => a - b);
+/** A measured property of the composed background, evaluated at every sample. */
+export interface Metric {
+  /** Contrast ratio at one composed background (higher is better). */
+  ratioAt: (bg: Rgb) => number;
+  /** The threshold the worst ratio must reach. */
+  required: number;
+  /** Signed luminance difference, used to find the luminance-equal crossings. */
+  balanceAt: (bg: Rgb) => number;
+}
+
+export interface SweepResult {
+  worst: number;
+  worstAt: number | null;
+  worstGrey: number | null;
+  points: number;
 }
 
 /**
- * Worst-case contrast of one text node over one opaque backdrop. Layers are composed
- * outermost first with their alpha; gradients are evaluated over the continuous range
- * (sampled at >= 64 points per segment, plus bisection for the luminance-equal and the
- * 4.5:1-boundary positions). Unsupported paints and filters fail explicitly.
+ * Worst ratio of a metric over the stack (A6c, A6e(c)). Evaluated on the grid of gradient sample
+ * points x backdrop levels, plus the interior crossings (bisection) where the metric's boundary
+ * or the luminance-equal line is crossed along the gradient at each level and along the backdrop
+ * at each sample point.
+ */
+export function sweep(stack: Stack, metric: Metric): SweepResult {
+  const points = samplePointsOf(stack.ops);
+  const levels = stack.backdrop ? BACKDROP_LEVELS : [0];
+  let worst = Infinity;
+  let worstAt: number | null = null;
+  let worstGrey: number | null = null;
+  const evalAt = (t: number, g: number) => {
+    const ratio = metric.ratioAt(composeAt(stack.ops, g, t));
+    if (ratio < worst) {
+      worst = ratio;
+      worstAt = t;
+      worstGrey = stack.backdrop ? g : null;
+    }
+  };
+  const boundary = (bg: Rgb) => metric.ratioAt(bg) - metric.required;
+  const crossings: Array<(bg: Rgb) => number> = [boundary, metric.balanceAt];
+
+  for (const g of levels) for (const t of points) evalAt(t, g);
+
+  for (const g of levels) {
+    for (const f of crossings) {
+      const at = (t: number) => f(composeAt(stack.ops, g, t));
+      for (let i = 0; i < points.length - 1; i += 1) {
+        const flo = at(points[i]);
+        const fhi = at(points[i + 1]);
+        if (flo === 0 || fhi === 0 || Math.sign(flo) === Math.sign(fhi))
+          continue;
+        evalAt(bisectRoot(at, points[i], points[i + 1]), g);
+      }
+    }
+  }
+
+  if (stack.backdrop) {
+    for (const t of points) {
+      for (const f of crossings) {
+        const at = (g: number) => f(composeAt(stack.ops, g, t));
+        for (let i = 0; i < levels.length - 1; i += 1) {
+          const flo = at(levels[i]);
+          const fhi = at(levels[i + 1]);
+          if (flo === 0 || fhi === 0 || Math.sign(flo) === Math.sign(fhi))
+            continue;
+          evalAt(t, bisectRoot(at, levels[i], levels[i + 1]));
+        }
+      }
+    }
+  }
+
+  return { worst, worstAt, worstGrey, points: points.length };
+}
+
+/** Composed background range (per channel) over the gradient sample points, over black. */
+export function composedRange(
+  layers: LayerCase[],
+  resolve: ColourResolver,
+): { min: Rgb; max: Rgb } | string {
+  const stack = buildStack(layers, resolve);
+  if (typeof stack === "string") return stack;
+  const colours = samplePointsOf(stack.ops).map((t) =>
+    composeAt(stack.ops, 0, t),
+  );
+  return {
+    min: {
+      r: Math.min(...colours.map((c) => c.r)),
+      g: Math.min(...colours.map((c) => c.g)),
+      b: Math.min(...colours.map((c) => c.b)),
+    },
+    max: {
+      r: Math.max(...colours.map((c) => c.r)),
+      g: Math.max(...colours.map((c) => c.g)),
+      b: Math.max(...colours.map((c) => c.b)),
+    },
+  };
+}
+
+/**
+ * Worst-case contrast of one text node over the complete composed background (A6, A6c, A6e).
+ * Unsupported paints, unresolvable colours and effects on the chain fail explicitly.
  */
 export function evaluateTextContrast(
   text: TextCase,
-  backdrop: BackdropName,
+  resolve: ColourResolver,
 ): ContrastVerdict {
-  const base = BACKDROPS[backdrop];
   const required = requiredContrast(text.fontSizePx, text.fontWeight);
-  const fail = (reason: string, samples = 0): ContrastVerdict => ({
+  const fail = (reason: string): ContrastVerdict => ({
     pass: false,
     ratio: 0,
     required,
-    backdrop,
+    backdrop: null,
     worstAt: null,
-    samples,
+    samples: 0,
     reason,
   });
   if (text.filters.length > 0) {
     return fail(`unsupported filter on text chain: ${text.filters.join(", ")}`);
   }
-  const fg = parseCssColor(text.color);
-  if (fg === null) return fail(`unparseable text colour: ${text.color}`);
-  const ops = flattenLayers(text.layers);
-  if (typeof ops === "string") return fail(`unsupported background: ${ops}`);
+  if (text.opacity !== 1)
+    return fail(`opacity ${text.opacity} on the text chain`);
+  const fg = resolve(text.color);
+  if (fg === null) return fail(`unresolvable text colour: ${text.color}`);
+  const stack = buildStack(text.layers, resolve);
+  if (typeof stack === "string")
+    return fail(`unsupported background: ${stack}`);
 
-  const textAlpha = fg.a * text.opacity;
-  const textAt = (bg: Rgb): Rgb => over({ ...fg, a: textAlpha }, bg);
-  const contrastAt = (t: number): number => {
-    const bg = backgroundAt(ops, base, t);
-    return contrastRatio(textAt(bg), bg);
-  };
-
-  const points = gradientPoints(ops);
-  let worst = Infinity;
-  let worstAt: number | null = null;
-  const consider = (t: number) => {
-    const c = contrastAt(t);
-    if (c < worst) {
-      worst = c;
-      worstAt = t;
-    }
-  };
-  for (const t of points) consider(t);
-
-  // Interior roots: background luminance equal to the text luminance, and the required-ratio
-  // boundary. Found by sign changes between neighbouring samples, then bisected.
-  const lumDiff = (t: number): number => {
-    const bg = backgroundAt(ops, base, t);
-    return relativeLuminance(bg) - relativeLuminance(textAt(bg));
-  };
-  const boundary = (t: number): number => contrastAt(t) - required;
-  for (const f of [lumDiff, boundary]) {
-    for (let i = 0; i < points.length - 1; i += 1) {
-      const lo = points[i];
-      const hi = points[i + 1];
-      const flo = f(lo);
-      const fhi = f(hi);
-      if (flo === 0 || fhi === 0 || Math.sign(flo) === Math.sign(fhi)) continue;
-      consider(bisectRoot(f, lo, hi));
-    }
-  }
-
-  return {
-    pass: worst >= required,
-    ratio: worst,
+  const textOver = (bg: Rgb): Rgb => over(fg, bg);
+  const metric: Metric = {
     required,
-    backdrop,
-    worstAt,
-    samples: points.length,
-    reason:
-      worst >= required ? null : `contrast ${worst.toFixed(2)} < ${required}`,
+    ratioAt: (bg) => contrastRatio(textOver(bg), bg),
+    balanceAt: (bg) => relativeLuminance(bg) - relativeLuminance(textOver(bg)),
   };
-}
-
-/** Evaluates one text node over both backdrops and returns the worst verdict (A6: white AND black). */
-export function evaluateTextOverBackdrops(text: TextCase): ContrastVerdict {
-  const verdicts = (Object.keys(BACKDROPS) as BackdropName[]).map((b) =>
-    evaluateTextContrast(text, b),
-  );
-  const failing = verdicts.find((v) => !v.pass);
-  if (failing !== undefined) return failing;
-  return verdicts.reduce((worst, v) => (v.ratio < worst.ratio ? v : worst));
-}
-
-/**
- * Composed backgrounds of an element over a backdrop, one per sampled gradient position
- * (used for the focus-ring contrast). Unsupported paints return a reason instead.
- */
-export function backgroundsOf(
-  layers: LayerCase[],
-  backdrop: BackdropName,
-): Rgb[] | string {
-  const ops = flattenLayers(layers);
-  if (typeof ops === "string") return ops;
-  return gradientPoints(ops).map((t) =>
-    backgroundAt(ops, BACKDROPS[backdrop], t),
-  );
+  const result = sweep(stack, metric);
+  const pass = result.worst >= required;
+  return {
+    pass,
+    ratio: result.worst,
+    required,
+    backdrop: result.worstGrey,
+    worstAt: result.worstAt,
+    samples: result.points,
+    reason: pass ? null : `contrast ${result.worst.toFixed(2)} < ${required}`,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Focus indicator (A6 (iv)): computed outline or box-shadow present on :focus-visible
-// and different from the base state, ring colour >= 3:1 against the adjacent background.
+// and different from the base state, ring colour >= 3:1 against the composed background.
 // ---------------------------------------------------------------------------
 
 export interface FocusStyle {
@@ -574,55 +832,65 @@ function firstShadowColor(boxShadow: string): string | null {
   return match ? match[0] : null;
 }
 
-/** Checks the focus ring of one element. `backdrops` are the composed backgrounds around it. */
-export function checkFocusRing(
+/**
+ * The colour text of the ring that a focus change shows, or null when there is no indicator.
+ * Used by checkFocusRing and to collect candidate colours before resolution.
+ */
+export function focusRingText(
   focused: FocusStyle,
   base: FocusStyle,
-  layers: LayerCase[],
-  backdrop: BackdropName,
-): FocusVerdict {
+): string | null {
   const outlineVisible =
     focused.outlineStyle !== "none" && parseFloat(focused.outlineWidth) > 0;
   const outlineChanged =
     focused.outlineStyle !== base.outlineStyle ||
     focused.outlineWidth !== base.outlineWidth ||
     focused.outlineColor !== base.outlineColor;
+  if (outlineVisible && outlineChanged) return focused.outlineColor;
   const shadowChanged =
     focused.boxShadow !== "none" && focused.boxShadow !== base.boxShadow;
-  if (!((outlineVisible && outlineChanged) || shadowChanged)) {
+  if (shadowChanged) return firstShadowColor(focused.boxShadow);
+  return null;
+}
+
+/** Checks the focus ring of one element over its composed background (A6e(f)). */
+export function checkFocusRing(
+  focused: FocusStyle,
+  base: FocusStyle,
+  layers: LayerCase[],
+  resolve: ColourResolver,
+): FocusVerdict {
+  const ringText = focusRingText(focused, base);
+  if (ringText === null) {
     return {
       pass: false,
       ratio: null,
       reason: "no focus indicator on :focus-visible",
     };
   }
-  let ringText: string | null = null;
-  if (outlineVisible && outlineChanged) {
-    ringText = focused.outlineColor;
-  } else {
-    ringText = firstShadowColor(focused.boxShadow);
-  }
-  const ring = ringText === null ? null : parseCssColor(ringText);
+  const ring = resolve(ringText);
   if (ring === null) {
     return {
       pass: false,
       ratio: null,
-      reason: `unparseable focus ring colour: ${ringText}`,
+      reason: `unresolvable focus ring colour: ${ringText}`,
     };
   }
-  const backgrounds = backgroundsOf(layers, backdrop);
-  if (typeof backgrounds === "string") {
+  const stack = buildStack(layers, resolve);
+  if (typeof stack === "string") {
     return {
       pass: false,
       ratio: null,
-      reason: `unsupported background: ${backgrounds}`,
+      reason: `unsupported background: ${stack}`,
     };
   }
-  let worst = Infinity;
-  for (const bg of backgrounds) {
-    const composed = over(ring, bg);
-    worst = Math.min(worst, contrastRatio(composed, bg));
-  }
+  const metric: Metric = {
+    required: MIN_FOCUS_RING_RATIO,
+    ratioAt: (bg) => contrastRatio(over(ring, bg), bg),
+    balanceAt: (bg) =>
+      relativeLuminance(over(ring, bg)) - relativeLuminance(bg),
+  };
+  const worst = sweep(stack, metric).worst;
   const pass = worst >= MIN_FOCUS_RING_RATIO;
   return {
     pass,

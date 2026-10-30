@@ -80,6 +80,7 @@
     "test:ui-polish": "bun src/components/decorativeClasses.test.ts && bun src/overlay/overlayTokens.test.ts && bun src/components/footer/footerLabels.test.ts && bun src/components/ui/pageHeader.test.ts && bun src/components/settings/setup/setupBanner.test.ts && bun src/styles/a11yTokens.test.ts && bun src/components/a11yStatic.test.ts && bun src/components/ui/dialogA11y.test.ts",
     "test:ui-quality:helpers": "bun tests/helpers/uiQuality.selftest.ts",
     "test:ui-quality:e2e": "playwright test tests/ui-quality.spec.ts --workers=1 --reporter=line",
+    "test:ui-quality:reference:e2e": "playwright test tests/ui-quality-reference.spec.ts --workers=1 --reporter=line",
     "test:restrained:e2e": "playwright test tests/restrained-style.spec.ts --reporter=line",
     "test:settings-polish:e2e": "playwright test tests/settings-polish.spec.ts --reporter=line",
     "test:chat:polish:e2e": "playwright test tests/chat-polish.spec.ts --reporter=line"
