@@ -771,8 +771,16 @@ const placed = (
 const SR_ONLY_AT = placed(924, 464, 1, 1);
 const SELECT_INPUT = placed(309, 421, 3.6, 24);
 const selectChain = (controlRing: boolean, controlHeight = 46) => [
-  { probe: placed(309, 419, 492.7, 28), ring: false, name: "div.app-select__input-container" },
-  { probe: placed(297, 411, 516.7, 44), ring: false, name: "div.app-select__value-container" },
+  {
+    probe: placed(309, 419, 492.7, 28),
+    ring: false,
+    name: "div.app-select__input-container",
+  },
+  {
+    probe: placed(297, 411, 516.7, 44),
+    ring: false,
+    name: "div.app-select__value-container",
+  },
   {
     probe: placed(296, 410, 555.7, controlHeight),
     ring: controlRing,
@@ -780,14 +788,20 @@ const selectChain = (controlRing: boolean, controlHeight = 46) => [
   },
 ];
 
-scenario("react-select shape: ring on the control holds for the 3.6px input", () => {
-  const candidates = selectChain(true);
-  const holder = ringHolderOf({ probe: SELECT_INPUT, ring: false }, candidates);
-  assert.deepEqual(holder, { kind: "candidate", index: 2 });
-  const measure = measureTarget(SELECT_INPUT, holder, candidates, []);
-  assert.equal(measure.ok, true);
-  assert.match(measure.source, /app-select__control/);
-});
+scenario(
+  "react-select shape: ring on the control holds for the 3.6px input",
+  () => {
+    const candidates = selectChain(true);
+    const holder = ringHolderOf(
+      { probe: SELECT_INPUT, ring: false },
+      candidates,
+    );
+    assert.deepEqual(holder, { kind: "candidate", index: 2 });
+    const measure = measureTarget(SELECT_INPUT, holder, candidates, []);
+    assert.equal(measure.ok, true);
+    assert.match(measure.source, /app-select__control/);
+  },
+);
 
 scenario("react-select shape: no ring on any ancestor fails (negative)", () => {
   const candidates = selectChain(false);
@@ -802,12 +816,19 @@ scenario("a ring on a box that does not contain E is not its holder", () => {
   assert.deepEqual(holder, { kind: "none" });
 });
 
-scenario("a hidden input keeps the sibling track holder (containment not applied)", () => {
-  // sr-only input is a 1px clipped box at the label origin, not inside its visual track.
-  const track = { probe: placed(900, 460, 44, 24), ring: true, name: "div.track" };
-  const holder = ringHolderOf({ probe: SR_ONLY_AT, ring: false }, [track]);
-  assert.deepEqual(holder, { kind: "candidate", index: 0 });
-});
+scenario(
+  "a hidden input keeps the sibling track holder (containment not applied)",
+  () => {
+    // sr-only input is a 1px clipped box at the label origin, not inside its visual track.
+    const track = {
+      probe: placed(900, 460, 44, 24),
+      ring: true,
+      name: "div.track",
+    };
+    const holder = ringHolderOf({ probe: SR_ONLY_AT, ring: false }, [track]);
+    assert.deepEqual(holder, { kind: "candidate", index: 0 });
+  },
+);
 
 scenario("a ring on a holder taller than 64px is rejected", () => {
   const holder = ringHolderOf(
@@ -818,7 +839,11 @@ scenario("a ring on a holder taller than 64px is rejected", () => {
 });
 
 scenario("a 64px control holds at the limit (fifth level)", () => {
-  const outer = { probe: placed(296, 400, 555.7, 64), ring: true, name: "outer" };
+  const outer = {
+    probe: placed(296, 400, 555.7, 64),
+    ring: true,
+    name: "outer",
+  };
   const chain = [
     { probe: placed(309, 419, 492.7, 28), ring: false, name: "l1" },
     { probe: placed(297, 411, 516.7, 44), ring: false, name: "l2" },

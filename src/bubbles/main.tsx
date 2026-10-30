@@ -20,11 +20,15 @@ const consumer = createAppearanceConsumer({
 });
 const seed = parseSeed(window.location.search);
 if (seed !== null) consumer.accept(seed);
-listen(APPEARANCE_EVENT, (event) => {
-  consumer.accept(event.payload);
-}).catch((error: unknown) => {
-  console.warn("bubbles: failed to subscribe to appearance", error);
-});
+// Tauri v2 defines __TAURI_INTERNALS__ in every webview. The browser preview has none, so it
+// skips the subscription instead of logging a second warning (BubblesApp warns once for it).
+if ("__TAURI_INTERNALS__" in window) {
+  listen(APPEARANCE_EVENT, (event) => {
+    consumer.accept(event.payload);
+  }).catch((error: unknown) => {
+    console.warn("bubbles: failed to subscribe to appearance", error);
+  });
+}
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

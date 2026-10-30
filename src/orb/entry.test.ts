@@ -68,9 +68,13 @@ const scenarios: Record<string, () => void> = {
     const css = read("../bubbles/bubbles.css");
     const user = css.match(/\.bubble-user\s*\{([^}]*)\}/)?.[1] ?? "";
     const assistant = css.match(/\.bubble-assistant\s*\{([^}]*)\}/)?.[1] ?? "";
-    assert.match(user, /background:\s*var\(--color-accent-a\)/);
+    // Pin re-pointed (R7): the translucency e2e (alpha 0.6-0.95) needs an
+    // rgba fill, so the fills are per-theme `--bubble-*-fill` tokens defined in
+    // theme.css and mirrored from the ACCENTS table (a11yTokens.test.ts pins
+    // contrast over white and black). Colours still come from tokens.
+    assert.match(user, /background:\s*var\(--bubble-user-fill\)/);
     assert.match(user, /color:\s*var\(--color-on-accent\)/);
-    assert.match(assistant, /background:\s*var\(--color-accent-soft\)/);
+    assert.match(assistant, /background:\s*var\(--bubble-assistant-fill\)/);
     assert.match(assistant, /color:\s*var\(--color-accent-text\)/);
     assert.doesNotMatch(
       css,

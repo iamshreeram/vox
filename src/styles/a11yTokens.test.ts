@@ -447,6 +447,54 @@ const scenarios: Record<string, () => void> = {
       }
     },
 
+  "bubble text keeps 4.5:1 over the translucent bubble fill (95%) on white and on black, per bucket and accent (restrained style only changes card tokens, not accents)":
+    () => {
+      const BUBBLE_ALPHA = 0.95; // theme.css --bubble-*-fill: rgba(... 0.95) of the accent roles
+      // The theme.css literals equal the ACCENTS table at 95% (a pinned mirror, no drift).
+      const literal = (hex: string, alpha: string): string => {
+        const channels = [1, 3, 5].map((i) =>
+          parseInt(hex.slice(i, i + 2), 16),
+        );
+        return `rgba(${channels.join(", ")}, ${alpha})`;
+      };
+      for (const bucket of ["light", "dark"] as const) {
+        for (const id of ACCENT_IDS) {
+          const roles = ACCENTS[id][bucket];
+          const pairs: [string, string][] = [
+            [`--${bucket}-bubble-user-fill`, literal(roles.fillA, "0.95")],
+            [`--${bucket}-bubble-assistant-fill`, literal(roles.soft, "0.95")],
+          ];
+          for (const [name, value] of pairs) {
+            assert.ok(
+              css.includes(`${name}: ${value};`),
+              `theme.css ${name} for ${id} is ${value}`,
+            );
+          }
+        }
+      }
+      const backdrops = ["#ffffff", "#000000"];
+      for (const palette of palettes) {
+        if (palette.bucket === null) continue;
+        for (const id of ACCENT_IDS) {
+          const roles = ACCENTS[id][palette.bucket];
+          for (const backdrop of backdrops) {
+            const userFill = blendOver(roles.fillA, BUBBLE_ALPHA, backdrop);
+            assertAtLeast(
+              contrastRatio(roles.onFill, userFill),
+              4.5,
+              `${palette.name}/${id} user bubble over ${backdrop}`,
+            );
+            const assistantFill = blendOver(roles.soft, BUBBLE_ALPHA, backdrop);
+            assertAtLeast(
+              contrastRatio(roles.text, assistantFill),
+              4.5,
+              `${palette.name}/${id} assistant bubble over ${backdrop}`,
+            );
+          }
+        }
+      }
+    },
+
   "reduced motion: one global override zeroes animation and transition durations":
     () => {
       assert.match(
