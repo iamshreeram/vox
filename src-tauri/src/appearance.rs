@@ -48,6 +48,8 @@ pub struct AppearanceSnapshot {
     pub chat_theme: ChatTheme,
     /// The visual style.
     pub visual_style: VisualStyle,
+    /// The orb accent. `None` follows the app accent. Always present on the wire (`null`).
+    pub orb_accent: Option<Accent>,
 }
 
 /// The appearance fields of the settings, and the only ones a commit may change.
@@ -58,6 +60,7 @@ pub struct AppearanceFields {
     pub accent: Accent,
     pub chat_theme: ChatTheme,
     pub visual_style: VisualStyle,
+    pub orb_accent: Option<Accent>,
 }
 
 impl AppearanceFields {
@@ -69,6 +72,7 @@ impl AppearanceFields {
             accent: settings.accent,
             chat_theme: settings.chat_theme,
             visual_style: settings.visual_style,
+            orb_accent: settings.orb_accent,
         }
     }
 
@@ -79,6 +83,7 @@ impl AppearanceFields {
         settings.accent = self.accent;
         settings.chat_theme = self.chat_theme;
         settings.visual_style = self.visual_style;
+        settings.orb_accent = self.orb_accent;
     }
 }
 
@@ -92,6 +97,7 @@ pub fn snapshot_from_settings(rev: u64, settings: &AppSettings) -> AppearanceSna
         accent: settings.accent,
         chat_theme: settings.chat_theme,
         visual_style: settings.visual_style,
+        orb_accent: settings.orb_accent,
     }
 }
 

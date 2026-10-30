@@ -2223,6 +2223,12 @@ async changeVisualStyleSetting(visualStyle: VisualStyle) : Promise<void> {
     await TAURI_INVOKE("change_visual_style_setting", { visualStyle });
 },
 /**
+ * Saves the orb accent (`None` follows the app accent) and publishes the committed snapshot.
+ */
+async changeOrbAccentSetting(accent: Accent | null) : Promise<void> {
+    await TAURI_INVOKE("change_orb_accent_setting", { accent });
+},
+/**
  * Stores the chat presentation choice. `None` returns to the platform default.
  */
 async changeChatPresentationSetting(value: Presentation | null) : Promise<void> {
@@ -2712,7 +2718,12 @@ chat_theme?: ChatTheme;
 /**
  * Visual style (vibrant or restrained). Set through `change_visual_style_setting`.
  */
-visual_style?: VisualStyle }
+visual_style?: VisualStyle; 
+/**
+ * Accent of the floating orb (DESIGN Revision 3, D3). `None` follows the app accent.
+ * Set through `change_orb_accent_setting`. Garbage reads as `None`.
+ */
+orb_accent?: Accent | null }
 /**
  * A committed appearance. `rev` grows on every commit and is independent of the opacity rev.
  * `custom_colors` is present only while the theme is `Custom`, so no other window receives the
@@ -2742,7 +2753,11 @@ chat_theme: ChatTheme;
 /**
  * The visual style.
  */
-visual_style: VisualStyle }
+visual_style: VisualStyle; 
+/**
+ * The orb accent. `None` follows the app accent. Always present on the wire (`null`).
+ */
+orb_accent: Accent | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AuxError = "busy" | "cancelled" | "not_installed" | "corrupt" | "url_not_allowed" | "download" | "io"

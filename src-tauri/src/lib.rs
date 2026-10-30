@@ -43,6 +43,8 @@ mod input;
 mod job_runtime;
 mod llm_client;
 #[cfg(test)]
+mod orb_accent_tests;
+#[cfg(test)]
 mod orb_engine_tests;
 mod orb_gaze;
 mod orb_geometry;
@@ -1413,6 +1415,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::appearance::change_accent_setting,
             commands::appearance::change_chat_theme_setting,
             commands::appearance::change_visual_style_setting,
+            commands::appearance::change_orb_accent_setting,
             commands::orb::change_chat_presentation_setting,
             commands::orb::reset_orb_position,
             commands::converse_extras::change_speaker_filter_enabled_setting,
