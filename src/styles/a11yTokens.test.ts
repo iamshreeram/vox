@@ -172,6 +172,39 @@ const scenarios: Record<string, () => void> = {
       }
     },
 
+  "accent swatch focus rings (R4-1), table over accent x palette: the outer --focus-ring is 3:1 on the page and the restrained card, and the on-accent inner ring is 3:1 on both fill ends":
+    () => {
+      for (const palette of palettes) {
+        const outer = palette.text;
+        const page = palette.background;
+        const card =
+          palette.bucket === null
+            ? blendOver(palette.text, 0.03, palette.background)
+            : RESTRAINED_CARD_HEX[palette.bucket];
+        assertAtLeast(
+          contrastRatio(outer, page),
+          3,
+          `${palette.name} swatch outer ring vs page`,
+        );
+        assertAtLeast(
+          contrastRatio(outer, card),
+          3,
+          `${palette.name} swatch outer ring vs restrained card`,
+        );
+        if (palette.bucket === null) continue;
+        for (const id of ACCENT_IDS) {
+          const roles = ACCENTS[id][palette.bucket];
+          for (const fill of [roles.fillA, roles.fillB]) {
+            assertAtLeast(
+              contrastRatio(roles.onFill, fill),
+              3,
+              `${palette.name}/${id} swatch inner ring on fill ${fill}`,
+            );
+          }
+        }
+      }
+    },
+
   "selected surfaces, accent fills and their text reach 4.5:1 for every palette, style and accent (table, R1a)":
     () => {
       // Rows: light and dark for each of the six accents (vibrant accent tokens), plus aurora once

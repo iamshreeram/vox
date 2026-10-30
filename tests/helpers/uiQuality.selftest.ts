@@ -35,6 +35,9 @@ import {
   resolverOf,
   rovingArrowKey,
   targetSizeOk,
+  isVisuallyHidden,
+  ringHolderOf,
+  visualTargetOk,
   type ElementRaw,
   type FocusStyle,
   type LayerCase,
@@ -681,6 +684,76 @@ scenario("accessible names follow the documented source order", () => {
   assert.equal(accessibleName({ labelledBy: "Theme", title: "t" }), "Theme");
   assert.equal(accessibleName({ alt: "Logo" }), "Logo");
   assert.equal(checkAccessibleName({ visibleText: "   " }).pass, false);
+});
+
+// --- visual control V(E) (R4g) -------------------------------------------
+const box = (
+  width: number,
+  height: number,
+  clip = "auto",
+  clipPath = "none",
+  opacity = 1,
+) => ({ width, height, opacity, clip, clipPath });
+const SR_ONLY = box(1, 1, "rect(0px, 0px, 0px, 0px)");
+const cand = (probe: ReturnType<typeof box>, ring: boolean) => ({
+  probe,
+  ring,
+});
+
+scenario(
+  "sr-only and clipped probes are visually hidden; a normal box is not",
+  () => {
+    assert.equal(isVisuallyHidden(SR_ONLY), true);
+    assert.equal(isVisuallyHidden(box(16, 16, "auto", "inset(50%)")), true);
+    assert.equal(isVisuallyHidden(box(16, 16, "auto", "none", 0)), true);
+    assert.equal(isVisuallyHidden(box(16, 16)), false);
+  },
+);
+
+scenario("hidden toggle with a peer-styled track ring passes", () => {
+  const track = cand(box(44, 24, "auto", "none"), true);
+  const holder = ringHolderOf(cand(SR_ONLY, false), [track]);
+  assert.deepEqual(holder, { kind: "candidate", index: 0 });
+  assert.equal(visualTargetOk(SR_ONLY, holder, [track], []), true);
+});
+
+scenario("hidden toggle with no ring anywhere fails", () => {
+  const track = cand(box(44, 24), false);
+  const holder = ringHolderOf(cand(SR_ONLY, false), [track]);
+  assert.deepEqual(holder, { kind: "none" });
+  assert.equal(visualTargetOk(SR_ONLY, holder, [track], []), false);
+});
+
+scenario("13px radio inside a 24px label passes the target rule", () => {
+  const radio = box(13, 13);
+  const label = box(60, 24);
+  const holder = ringHolderOf(cand(radio, false), []);
+  assert.deepEqual(holder, { kind: "none" });
+  assert.equal(visualTargetOk(radio, holder, [], [label]), true);
+});
+
+scenario("13px radio alone fails the target rule", () => {
+  assert.equal(visualTargetOk(box(13, 13), { kind: "none" }, [], []), false);
+});
+
+scenario("slider input ring drawn by the wrapper passes", () => {
+  const wrapper = cand(box(300, 32), true);
+  const input = box(300, 24);
+  const holder = ringHolderOf(cand(input, false), [wrapper]);
+  assert.deepEqual(holder, { kind: "candidate", index: 0 });
+  assert.equal(visualTargetOk(input, holder, [wrapper], []), true);
+});
+
+scenario("wrapper without a ring fails the ring rule", () => {
+  const wrapper = cand(box(300, 32), false);
+  const holder = ringHolderOf(cand(box(300, 24), false), [wrapper]);
+  assert.deepEqual(holder, { kind: "none" });
+});
+
+scenario("a tall section wrapper cannot hold a ring for its input", () => {
+  const section = cand(box(700, 400), true);
+  const holder = ringHolderOf(cand(box(300, 24), false), [section]);
+  assert.deepEqual(holder, { kind: "none" });
 });
 
 scenario("font size >= 12px, target >= 24x24, overflow in px", () => {

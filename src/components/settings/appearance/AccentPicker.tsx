@@ -86,7 +86,11 @@ export const AccentPicker: React.FC<AccentPickerProps> = ({
                 onKeyDown={(event) => onKeyDown(event, index)}
                 className={[
                   "flex h-10 w-10 items-center justify-center rounded-full border-2 cursor-pointer motion-reduce:transition-none",
-                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-a",
+                  // Two-tone focus ring (R4-1): outer 2px ring is the global --focus-ring (3:1 on the
+                  // card in every palette); inner 2px ring is the on-accent colour (4.5:1 on both fill
+                  // ends, a11yTokens.test.ts). Selection keeps its check mark, so it is not colour-only.
+                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--focus-ring)",
+                  "focus-visible:inset-ring-2 focus-visible:inset-ring-(--color-on-accent)",
                   "disabled:cursor-not-allowed disabled:opacity-50",
                   isSelected
                     ? "border-accent-a ring-2 ring-offset-2 ring-accent-a"

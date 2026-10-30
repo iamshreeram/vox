@@ -153,6 +153,18 @@
   outline: none;
 }
 
+/* Native radios in a label (UI enterprise R4-d): the ring is drawn on the LABEL (the visible row,
+   at least 24px tall) when its radio has keyboard focus. The radio drops its own outline so there is
+   one ring. focusRings.test.ts pins both rules. */
+.radio-focus-label:has(input[type="radio"]:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+.radio-focus-label input[type="radio"]:focus-visible {
+  outline: none;
+}
+
 /* Disabled accent-filled controls (R2-1..3). Opacity over the accent fill blends the on-accent label
    toward the page and drops it to ~2.5:1, so a disabled primary keeps full opacity and takes a neutral
    fill instead; the label stays --color-text on it (a11yTokens.test.ts pins 4.5:1). */

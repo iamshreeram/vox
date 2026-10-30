@@ -1065,6 +1065,89 @@ export function checkFocusRing(
 }
 
 // ---------------------------------------------------------------------------
+// Visual control V(E) (R4g). The element the user sees and clicks is not always the interactive
+// element: a visually hidden checkbox (sr-only, clip, 1px box, opacity 0) is drawn by a sibling or
+// label, and a narrow native radio or react-select input is drawn by a wrapper that owns the ring.
+// Rule: V(E) is the ring holder when one exists, otherwise E itself. The ring holder is E when E
+// is not hidden and shows a focus diff; otherwise the first non-hidden sibling or ancestor (up to
+// three levels, height <= MAX_CONTROL_HEIGHT_PX) that shows a focus diff on :focus-visible.
+// Target size is measured on max(E, V(E), associated labels), so a hidden input with no visible
+// control stays 1x1 and fails, and a 13px radio inside a 24px label passes.
+// ---------------------------------------------------------------------------
+
+/** Box and computed visual state of one element (rect in CSS px). */
+export interface VisualProbe {
+  width: number;
+  height: number;
+  opacity: number;
+  /** Computed clip ("auto" when not clipped). */
+  clip: string;
+  /** Computed clip-path ("none" when not clipped). */
+  clipPath: string;
+}
+
+/** A sibling or ancestor that may draw the control; ring is focus diff on :focus-visible. */
+export interface ControlCandidate {
+  probe: VisualProbe;
+  ring: boolean;
+}
+
+/** The element that draws the focus ring: E itself, a candidate by index, or none. */
+export type RingHolder =
+  | { kind: "self" }
+  | { kind: "candidate"; index: number }
+  | { kind: "none" };
+
+/** Tallest wrapper that may stand in for a control (rules out page sections). */
+export const MAX_CONTROL_HEIGHT_PX = 48;
+
+/** sr-only, clip, clip-path, 1px box or opacity 0: the element is not visible on its own. */
+export function isVisuallyHidden(p: VisualProbe): boolean {
+  if (p.width <= 1 || p.height <= 1) return true;
+  if (p.opacity === 0) return true;
+  if (p.clip !== "auto" && /rect\(\s*0(px)?[\s,]/.test(p.clip)) return true;
+  return p.clipPath !== "none" && p.clipPath !== "";
+}
+
+/** Ring holder for E (see the rule above). Candidates are ordered nearest first. */
+export function ringHolderOf(
+  self: ControlCandidate,
+  candidates: ControlCandidate[],
+): RingHolder {
+  if (!isVisuallyHidden(self.probe) && self.ring) return { kind: "self" };
+  const index = candidates.findIndex(
+    (c) =>
+      c.ring &&
+      !isVisuallyHidden(c.probe) &&
+      c.probe.height <= MAX_CONTROL_HEIGHT_PX,
+  );
+  return index >= 0 ? { kind: "candidate", index } : { kind: "none" };
+}
+
+/**
+ * Target size of E (R4g): max(E, V(E), labels) per dimension. V(E) is the ring holder when one
+ * exists, otherwise E. Labels are the associated <label> boxes.
+ */
+export function visualTargetOk(
+  self: VisualProbe,
+  holder: RingHolder,
+  candidates: ControlCandidate[],
+  labels: VisualProbe[],
+): boolean {
+  const boxes: VisualProbe[] = [self, ...labels];
+  if (holder.kind === "self") boxes.push(self);
+  if (holder.kind === "candidate") boxes.push(candidates[holder.index].probe);
+  const width = Math.max(...boxes.map((b) => b.width));
+  const height = Math.max(...boxes.map((b) => b.height));
+  return targetSizeOk(width, height);
+}
+
+/** Whether a focus change shows any ring on this element (single or two-tone). */
+export function hasFocusDiff(focused: FocusStyle, base: FocusStyle): boolean {
+  return focusRingTexts(focused, base) !== null;
+}
+
+// ---------------------------------------------------------------------------
 // Bounded Tab walk (A6 (iv)): <= 300 steps, roving tab-stop groups via arrow keys.
 // ---------------------------------------------------------------------------
 

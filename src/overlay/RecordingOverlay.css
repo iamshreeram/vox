@@ -609,7 +609,9 @@
 }
 .swork-label {
   font-size: 12px;
-  color: var(--s-muted);
+  /* Text colour blended 78% over the background, the same mix as --color-muted (UI enterprise R4-2:
+     the former --s-muted measured 4.45:1 on the light work chip). overlayTokens.test.ts pins 4.5:1. */
+  color: color-mix(in srgb, var(--color-text) 78%, var(--color-background));
   white-space: nowrap;
   padding: 0 8px; /* breathing room from the spinner / cancel when content-sized */
   /* Safety net: ellipsize rather than clip if a label exceeds the max pill width. */

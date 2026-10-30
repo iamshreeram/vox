@@ -1,6 +1,13 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import {
   emitMockEvent,
   getMockAppearance,
@@ -24,9 +31,20 @@ mkdirSync(OUT, { recursive: true });
 /** R2g: one element-level crop per distinct failing group, at most Q.CROP_CAP per run. */
 const CROPS = "/tmp/voxui-r2/crops";
 // R3g: stale crops from earlier runs are cleared so index.json only maps this run's files.
-rmSync(CROPS, { recursive: true, force: true });
+// R4t: Playwright restarts a worker after a failing test and re-evaluates this module, so only
+// the main process (no TEST_WORKER_INDEX) clears; workers keep the crops and index written so far.
+if (process.env.TEST_WORKER_INDEX === undefined) {
+  rmSync(CROPS, { recursive: true, force: true });
+}
 mkdirSync(CROPS, { recursive: true });
-const cropped = new Map<string, string>();
+const CROP_INDEX = `${CROPS}/index.json`;
+const cropped = new Map<string, string>(
+  existsSync(CROP_INDEX)
+    ? Object.entries(
+        JSON.parse(readFileSync(CROP_INDEX, "utf8")) as Record<string, string>,
+      )
+    : [],
+);
 
 const SIDEBAR_ITEM = "p.text-sm.font-medium.truncate[title]";
 const ALL_GATES = {
@@ -153,6 +171,8 @@ interface InteractiveRaw {
   parts: Q.NameParts;
   width: number;
   height: number;
+  probe: Q.VisualProbe;
+  labels: Q.VisualProbe[];
 }
 
 interface PageData {
@@ -293,6 +313,28 @@ function collectPage(): PageData {
     });
   }
 
+  const probeOf = (node: Element): Q.VisualProbe => {
+    const r = node.getBoundingClientRect();
+    const s = getComputedStyle(node);
+    let opacity = 1;
+    for (let n: Element | null = node; n; n = n.parentElement)
+      opacity *= parseFloat(getComputedStyle(n).opacity);
+    return {
+      width: r.width,
+      height: r.height,
+      opacity,
+      clip: s.clip,
+      clipPath: s.clipPath,
+    };
+  };
+  const labelsOf = (el: Element): Element[] => {
+    const out = new Set<Element>(
+      Array.from((el as HTMLInputElement).labels ?? []),
+    );
+    const wrapping = el.closest("label");
+    if (wrapping) out.add(wrapping);
+    return Array.from(out);
+  };
   const interactiveEls = Array.from(
     document.querySelectorAll<HTMLElement>(
       "button, a[href], input:not([type=hidden]), select, textarea, summary, [role=button], [role=switch], [role=radio], [role=slider], [role=tab], [role=checkbox]",
@@ -337,6 +379,8 @@ function collectPage(): PageData {
       },
       width: r.width,
       height: r.height,
+      probe: probeOf(el),
+      labels: labelsOf(el).map(probeOf),
     };
   });
 
@@ -401,6 +445,15 @@ function collectPage(): PageData {
   };
 }
 
+/** A sibling or ancestor that may draw the visual control of an element (R4g). */
+interface FocusCandidate {
+  kind: "sibling" | "ancestor";
+  probe: Q.VisualProbe;
+  focused: Q.FocusStyle;
+  base: Q.FocusStyle;
+  layers: Q.LayerCase[];
+}
+
 interface FocusObs {
   qid: string | null;
   tag: string;
@@ -412,6 +465,9 @@ interface FocusObs {
   groupRole: string | null;
   orientation: string | null;
   groupMembers: string[];
+  probe: Q.VisualProbe;
+  labels: Q.VisualProbe[];
+  candidates: FocusCandidate[];
 }
 
 /** Focuses the first enabled, visible interactive element in DOM order. Returns its qid or null. */
@@ -458,6 +514,15 @@ function observeFocus(): FocusObs {
       groupRole: null,
       orientation: null,
       groupMembers: [],
+      probe: {
+        width: 0,
+        height: 0,
+        opacity: 1,
+        clip: "auto",
+        clipPath: "none",
+      },
+      labels: [],
+      candidates: [],
     };
   }
   const style = (node: Element): Q.FocusStyle => {
@@ -471,8 +536,63 @@ function observeFocus(): FocusObs {
   };
   const focused = style(el);
   const focusVisible = el.matches(":focus-visible");
+  const probeOf = (node: Element) => {
+    const r = node.getBoundingClientRect();
+    const s = getComputedStyle(node);
+    let opacity = 1;
+    for (let n: Element | null = node; n; n = n.parentElement)
+      opacity *= parseFloat(getComputedStyle(n).opacity);
+    return {
+      width: r.width,
+      height: r.height,
+      opacity,
+      clip: s.clip,
+      clipPath: s.clipPath,
+    };
+  };
+  const layersFor = (node: Element): Q.LayerCase[] => {
+    const up: Element[] = [];
+    for (let n: Element | null = node; n; n = n.parentElement) up.unshift(n);
+    let cum = 1;
+    return up.map((n) => {
+      const s = getComputedStyle(n);
+      cum *= parseFloat(s.opacity);
+      return {
+        background: s.backgroundColor,
+        backgroundImage: s.backgroundImage,
+        opacity: cum,
+        mixBlendMode: s.mixBlendMode,
+        maskImage: s.maskImage,
+        backdropFilter: s.backdropFilter,
+        filter: s.filter,
+        by: n.tagName.toLowerCase(),
+      };
+    });
+  };
+  const siblingNodes: Element[] = [];
+  for (
+    let s = el.nextElementSibling;
+    s && siblingNodes.length < 2;
+    s = s.nextElementSibling
+  )
+    siblingNodes.push(s);
+  const ancestorNodes: Element[] = [];
+  for (
+    let n = el.parentElement;
+    n && n !== document.body && ancestorNodes.length < 3;
+    n = n.parentElement
+  )
+    ancestorNodes.push(n);
+  const visualNodes = [...siblingNodes, ...ancestorNodes];
+  const focusedVisual = visualNodes.map((n) => style(n));
+  const labelNodes = new Set<Element>(
+    Array.from((el as HTMLInputElement).labels ?? []),
+  );
+  const wrapping = el.closest("label");
+  if (wrapping) labelNodes.add(wrapping);
   el.blur();
   const base = style(el);
+  const baseVisual = visualNodes.map((n) => style(n));
   el.focus();
 
   let cum = 1;
@@ -545,6 +665,15 @@ function observeFocus(): FocusObs {
     groupMembers: members
       .map((m) => m.getAttribute("data-qa-id") ?? "")
       .filter(Boolean),
+    probe: probeOf(el),
+    labels: Array.from(labelNodes).map(probeOf),
+    candidates: visualNodes.map((n, i) => ({
+      kind: i < siblingNodes.length ? "sibling" : "ancestor",
+      probe: probeOf(n),
+      focused: focusedVisual[i],
+      base: baseVisual[i],
+      layers: layersFor(n),
+    })),
   };
 }
 
@@ -590,7 +719,7 @@ async function cropFailingGroups(
       timeout: 20_000,
     });
     writeFileSync(
-      `${CROPS}/index.json`,
+      CROP_INDEX,
       `${JSON.stringify(Object.fromEntries(cropped), null, 2)}\n`,
     );
   }
@@ -678,8 +807,39 @@ function focusColourStrings(observed: Iterable<FocusObs>): string[] {
   for (const o of observed) {
     out.push(...Q.candidateColours(o.layers as Q.LayerCase[]));
     out.push(...(Q.focusRingTexts(o.focused, o.base) ?? []));
+    for (const c of o.candidates) {
+      out.push(...Q.candidateColours(c.layers));
+      out.push(...(Q.focusRingTexts(c.focused, c.base) ?? []));
+    }
   }
   return out;
+}
+
+/** Ring candidates the visual control rule may use: siblings only when E is visually hidden. */
+function candidatesFor(o: FocusObs): FocusCandidate[] {
+  return Q.isVisuallyHidden(o.probe)
+    ? o.candidates
+    : o.candidates.filter((c) => c.kind !== "sibling");
+}
+
+const controlOf = (c: {
+  probe: Q.VisualProbe;
+  focused: Q.FocusStyle;
+  base: Q.FocusStyle;
+}): Q.ControlCandidate => ({
+  probe: c.probe,
+  ring: Q.hasFocusDiff(c.focused, c.base),
+});
+
+/** The ring holder (V(E)) of an observed element and the candidates it was chosen from (R4g). */
+function visualOf(o: FocusObs | undefined): {
+  holder: Q.RingHolder;
+  candidates: FocusCandidate[];
+} {
+  if (!o) return { holder: { kind: "none" }, candidates: [] };
+  const candidates = candidatesFor(o);
+  const holder = Q.ringHolderOf(controlOf(o), candidates.map(controlOf));
+  return { holder, candidates };
 }
 
 async function auditVisit(
@@ -762,15 +922,6 @@ async function auditVisit(
           detail,
         );
     }
-    if (!Q.targetSizeOk(el.width, el.height)) {
-      add(
-        "size",
-        detail.path,
-        `${el.width.toFixed(0)}x${el.height.toFixed(0)}px`,
-        `>= ${Q.MIN_TARGET_PX}x${Q.MIN_TARGET_PX}px`,
-        detail,
-      );
-    }
   }
 
   const overflow = Q.overflowPx(data.overflow.docWidth, data.overflow.viewport);
@@ -807,11 +958,12 @@ async function auditVisit(
     }
   }
 
-  if (opts.walk) {
+  const walked = opts.walk ? await keyboardWalk(page) : null;
+  if (walked !== null) {
     const enabledIds = data.interactive
       .filter((e) => e.visible && e.enabled)
       .map((e) => e.qid);
-    const walk = await keyboardWalk(page);
+    const walk = walked;
     const focusResolve = await Q.resolveColourMap(
       page,
       focusColourStrings(walk.obs.values()),
@@ -853,22 +1005,53 @@ async function auditVisit(
           detail,
         );
       {
-        const ring = Q.checkFocusRing(
-          o.focused,
-          o.base,
-          o.layers as Q.LayerCase[],
-          focusResolve,
-        );
-        if (!ring.pass)
+        // Ring on the visual control V(E): E itself, or the holder found by visualOf (R4g).
+        const { holder, candidates } = visualOf(o);
+        if (holder.kind === "none") {
           add(
             "focus",
             path,
-            ring.reason ?? "no ring",
-            `ring >= ${Q.MIN_FOCUS_RING_RATIO}:1`,
+            "no focus indicator on the element or its visual control",
+            `ring on the element or its visual control, >= ${Q.MIN_FOCUS_RING_RATIO}:1`,
             detail,
-            Q.offendingPaint(o.layers as Q.LayerCase[], focusResolve),
           );
+        } else {
+          const src = holder.kind === "self" ? o : candidates[holder.index];
+          const ring = Q.checkFocusRing(
+            src.focused,
+            src.base,
+            src.layers as Q.LayerCase[],
+            focusResolve,
+          );
+          if (!ring.pass)
+            add(
+              "focus",
+              path,
+              ring.reason ?? "no ring",
+              `ring >= ${Q.MIN_FOCUS_RING_RATIO}:1`,
+              detail,
+              Q.offendingPaint(src.layers as Q.LayerCase[], focusResolve),
+            );
+        }
       }
+    }
+  }
+
+  // Target size on max(E, V(E), labels) (R4g). Without a walk there is no ring holder, so V = E.
+  for (const el of data.interactive) {
+    if (!el.visible || !el.enabled) continue;
+    const { holder, candidates } = visualOf(walked?.obs.get(el.qid));
+    if (
+      !Q.visualTargetOk(el.probe, holder, candidates.map(controlOf), el.labels)
+    ) {
+      const detail = Q.buildDetail(el.el);
+      add(
+        "size",
+        detail.path,
+        `${el.width.toFixed(0)}x${el.height.toFixed(0)}px (E; no visual control or label reaches the minimum)`,
+        `>= ${Q.MIN_TARGET_PX}x${Q.MIN_TARGET_PX}px visual control`,
+        detail,
+      );
     }
   }
 
@@ -1042,7 +1225,7 @@ test.describe("UI quality gate: settings (every page, 1100x760)", () => {
         collector,
         "settings-760x600",
         `light/vibrant/amber/${title}`,
-        { walk: false },
+        { walk: true },
       );
     }
   });

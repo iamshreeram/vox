@@ -70,7 +70,8 @@ export function AppearanceRadioGroup<V extends string>({
             }}
             className={[
               "flex min-w-[10rem] flex-1 flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-start cursor-pointer",
-              "transition-colors motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-a",
+              "transition-colors motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--focus-ring)",
+              "focus-visible:inset-ring-2 focus-visible:inset-ring-(--color-on-accent)",
               isSelected
                 ? "border-accent-a bg-accent-soft ring-2 ring-accent-a"
                 : "border-mid-gray/30 hover:bg-mid-gray/10",
