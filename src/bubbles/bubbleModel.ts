@@ -10,13 +10,44 @@ const DISPLAY_CAP = 240;
 
 export type BubbleRole = "user" | "assistant";
 
-/** One bubble as Rust sends it in a snapshot. */
+/** A transcript line, or a notice (a refusal code, never text; DESIGN.md A-C3). */
+export type BubbleKind = "transcript" | "notice";
+
+/** The notice codes Rust sends, plus "unknown" for anything this page does not know. */
+export const NOTICE_CODES = [
+  "dictation_busy",
+  "tts_off",
+  "composer_off",
+  "ambient",
+  "experimental_off",
+  "text_ending",
+  "unknown",
+] as const;
+
+export type NoticeCode = (typeof NOTICE_CODES)[number];
+
+/** A code this page knows, or "unknown" for anything else (missing, empty, malformed). */
+export function toNoticeCode(value: unknown): NoticeCode {
+  return typeof value === "string" &&
+    (NOTICE_CODES as readonly string[]).includes(value)
+    ? (value as NoticeCode)
+    : "unknown";
+}
+
+/** The i18n key of a notice's text. Never the raw code. */
+export function noticeMessageKey(code: unknown): string {
+  return `bubbles.notice.${toNoticeCode(code)}`;
+}
+
+/** One bubble as Rust sends it in a snapshot. `kind` missing means a transcript line. */
 export type BubbleItemWire = {
   id: number;
   role: BubbleRole;
   text: string;
   age_ms: number;
   ttl_ms: number;
+  kind?: BubbleKind;
+  notice_code?: string | null;
 };
 
 /** Where the stack hugs its window: the top when it sits below the orb, else the bottom. */
@@ -36,6 +67,8 @@ type StoredBubble = {
   text: string;
   bornAt: number;
   ttlMs: number;
+  kind: BubbleKind;
+  noticeCode: NoticeCode | null;
 };
 
 export type PageState = {
@@ -50,6 +83,9 @@ export type VisibleBubble = {
   role: BubbleRole;
   text: string;
   opacity: number;
+  kind: BubbleKind;
+  /** The notice code when `kind` is "notice", else null. */
+  noticeCode: NoticeCode | null;
 };
 
 export type EnterMotion = {
@@ -92,13 +128,18 @@ export function applySnapshot(
     instance: state.instance,
     rev: snapshot.rev,
     anchor,
-    items: snapshot.items.map((item) => ({
-      id: item.id,
-      role: item.role,
-      text: item.text,
-      bornAt: nowMs - item.age_ms,
-      ttlMs: item.ttl_ms,
-    })),
+    items: snapshot.items.map((item) => {
+      const kind: BubbleKind = item.kind === "notice" ? "notice" : "transcript";
+      return {
+        id: item.id,
+        role: item.role,
+        text: item.text,
+        bornAt: nowMs - item.age_ms,
+        ttlMs: item.ttl_ms,
+        kind,
+        noticeCode: kind === "notice" ? toNoticeCode(item.notice_code) : null,
+      };
+    }),
   };
 }
 
@@ -118,7 +159,14 @@ export function visibleBubbles(
     }
     const fadeStart = item.ttlMs - FADE_MS;
     const opacity = age <= fadeStart ? 1 : (item.ttlMs - age) / FADE_MS;
-    visible.push({ id: item.id, role: item.role, text: item.text, opacity });
+    visible.push({
+      id: item.id,
+      role: item.role,
+      text: item.text,
+      opacity,
+      kind: item.kind,
+      noticeCode: item.noticeCode,
+    });
   }
   return visible;
 }

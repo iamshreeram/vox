@@ -6,9 +6,15 @@ import { ACCENT_IDS } from "../../../styles/accents";
 import {
   APPEARANCE_DEFAULTS,
   ACCENT_NAME_KEYS,
+  ORB_CHOICES,
+  ORB_FOLLOW_ID,
   accentEnabledFor,
   effectiveAppearance,
+  effectiveOrbAccent,
   nextRadioIndex,
+  orbChoiceId,
+  orbChoiceNameKey,
+  orbSelectedIndex,
   resetPlan,
   resolveSearchEntryId,
   rovingTabStops,
@@ -92,6 +98,61 @@ const scenarios: Record<string, () => void> = {
         "Rose",
         "Slate",
       ]);
+    },
+  "orb colour: follow app first, then the six accents, in accent order": () => {
+    assert.deepEqual(ORB_CHOICES, [null, ...ACCENT_IDS]);
+    assert.equal(ORB_CHOICES.length, 7);
+  },
+  "orb colour: option ids are unique and follow has its own id": () => {
+    const ids = ORB_CHOICES.map(orbChoiceId);
+    assert.equal(new Set(ids).size, ids.length);
+    assert.equal(orbChoiceId(null), ORB_FOLLOW_ID);
+    assert.equal(ids[0], "follow");
+    assert.ok(!ACCENT_IDS.includes(ORB_FOLLOW_ID as never));
+  },
+  "orb colour: selection maps null to the first option and each accent to its own":
+    () => {
+      assert.equal(orbSelectedIndex(null), 0);
+      assert.equal(orbSelectedIndex("amber"), 1);
+      assert.equal(orbSelectedIndex("slate"), 6);
+    },
+  "orb colour: unknown or absent stored values read as follow the app": () => {
+    assert.equal(effectiveOrbAccent(null), null);
+    assert.equal(effectiveOrbAccent(undefined), null);
+    assert.equal(effectiveOrbAccent("magenta"), null);
+    assert.equal(effectiveOrbAccent(42), null);
+    assert.equal(effectiveOrbAccent("rose"), "rose");
+    assert.equal(orbSelectedIndex("magenta" as never), 0);
+  },
+  "orb colour: names are Follow app and the accent names": () => {
+    assert.equal(orbChoiceNameKey(null), "settings.appearance.orb.followApp");
+    assert.equal(
+      orbChoiceNameKey("blue"),
+      "settings.appearance.accent.swatch.blue",
+    );
+    const names = ORB_CHOICES.map((choice) =>
+      orbChoiceNameKey(choice)
+        .split(".")
+        .reduce((n, p) => n[p], en),
+    );
+    assert.deepEqual(names, [
+      "Follow app",
+      "Amber",
+      "Blue",
+      "Violet",
+      "Emerald",
+      "Rose",
+      "Slate",
+    ]);
+  },
+  "orb colour: the copy says the orb starts a conversation and points to Appearance":
+    () => {
+      const floating = en.settings.floatingOrb;
+      assert.match(floating.description, /start or stop a voice conversation/);
+      assert.doesNotMatch(floating.description, /open the conversation/);
+      assert.match(floating.colourHint, /Appearance/);
+      assert.match(floating.colourHint, /Orb colour/);
+      assert.equal(en.settings.appearance.orb.title, "Orb colour");
     },
   "effective values: absent or garbage settings read as the defaults": () => {
     assert.deepEqual(

@@ -11,6 +11,7 @@ use crate::chat_presentation::{
 };
 use crate::chat_surface;
 use crate::chat_window::{is_app_navigation, CHAT_WINDOW_LABEL};
+use crate::orb_converse;
 use crate::orb_gaze::Gaze;
 use crate::orb_geometry::{
     clamp_orb, clamp_orb_px, effective_orb_logical_px, monitor_for, nearest_preset, orb_px_logical,
@@ -920,7 +921,7 @@ fn execute(app: &AppHandle, calls: Vec<Call>) {
                     },
                 );
             }
-            Call::Click => toggle_chat(app),
+            Call::Click => orb_converse::activate(app),
             Call::Save(rect, rev) => save_position(app, rect, rev),
             Call::Gaze(gaze) => {
                 let _ = app.emit_to(
@@ -999,9 +1000,9 @@ pub fn pointer_down(app: &AppHandle, id: u64) {
     }
 }
 
-/// Keyboard activation: toggles the conversation surface.
+/// Keyboard activation (Enter, Space): the same activation as a click.
 pub fn activate(app: &AppHandle) {
-    toggle_chat(app);
+    orb_converse::activate(app);
 }
 
 /// Records the page's reduced-motion preference. Wakes the ticker so a change takes effect at once.

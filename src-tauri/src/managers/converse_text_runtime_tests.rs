@@ -596,3 +596,32 @@ fn only_a_voice_session_counts_as_voice_active_for_the_cancel_button() {
     assert!(!c.is_voice_active());
     reset_hooks();
 }
+
+#[test]
+fn an_orb_activation_over_a_running_text_chat_stops_it_and_never_starts_voice() {
+    let _g = lock();
+    reset_hooks();
+    let p = TextPlatform::new();
+    let c = controller(&p);
+    c.start_text().expect("text session starts");
+    // Running is the registry phase the activation decision reads (Starting would be Ignore).
+    wait_until("registry running", || {
+        matches!(c.registry.state(), RegistryState::Running(_))
+    });
+    let (_, id) = c.registry.snapshot();
+    let decision = c.activation_decision();
+    assert_eq!(decision, ActivationDecision::StopTextThenNotice(id));
+    assert_ne!(decision, ActivationDecision::Start);
+    assert!(
+        !matches!(decision, ActivationDecision::RequestStopIf(_)),
+        "a text chat is not a voice session"
+    );
+    assert_eq!(
+        p.voice_parts.load(Ordering::SeqCst),
+        0,
+        "no voice session is built by the decision"
+    );
+    assert!(c.stop_if(id));
+    wait_until("idle", || c.status() == ConverseStatus::Idle);
+    reset_hooks();
+}

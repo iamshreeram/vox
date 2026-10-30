@@ -58,6 +58,7 @@ const EVENT = "converse-chat";
 const SNAPSHOT_COMMAND = "get_chat_snapshot";
 const CLEAR_COMMAND = "clear_chat_log";
 const SEND_COMMAND = "send_chat_message";
+const HIDE_COMMAND = "chat_hide_window";
 const ALLOWED_PREFIX = "plugin:event|";
 const CHAT_PAGE = "/src/chat/index.html";
 
@@ -417,7 +418,7 @@ test.describe("Conversation window: Clear and command allow-list", () => {
     await expect(bubbles(page)).toHaveText(["still here"]);
   });
 
-  test("the page calls no command other than get_chat_snapshot, clear_chat_log and send_chat_message", async ({
+  test("the page calls no command other than get_chat_snapshot, clear_chat_log, send_chat_message and chat_hide_window", async ({
     page,
   }) => {
     await openChat(page, { snapshots: [snapshot(0, [])], clearFails: false });
@@ -433,6 +434,7 @@ test.describe("Conversation window: Clear and command allow-list", () => {
         name === SNAPSHOT_COMMAND ||
         name === CLEAR_COMMAND ||
         name === SEND_COMMAND ||
+        name === HIDE_COMMAND ||
         name.startsWith(ALLOWED_PREFIX);
       expect(allowed, `unexpected command ${name}`).toBe(true);
     }

@@ -1,13 +1,15 @@
 // Conversation window body. Protocol (DESIGN-CHAT A4): subscribe to `converse-chat` first,
 // buffer until the first snapshot is applied, then apply live events; a gap refetches once,
 // a stale snapshot is discarded and refetched at most once more, window focus refetches once.
-// The only commands used are get_chat_snapshot, clear_chat_log and send_chat_message (DESIGN-TYPE).
+// The only commands used are get_chat_snapshot, clear_chat_log, send_chat_message (DESIGN-TYPE)
+// and chat_hide_window (Escape hides the window, DESIGN D1b).
 // The typing box sends a message and clears itself only on success; the transcript line arrives
 // through the same converse-chat events as a spoken one (no local echo).
 import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -26,6 +28,7 @@ import {
   nextClearStep,
   type ClearStep,
 } from "./clearConfirm";
+import { createOnceGuard, escAction } from "./escHide";
 import voxIcon from "./assets/vox-icon.png";
 import { accentStyle, accentTextStyle } from "./chatTheme";
 import {
@@ -134,6 +137,39 @@ export default function ChatWindow() {
     viewRef.current = next;
     setView(next);
   }, []);
+
+  // Escape (D1b): cancels the inline Clear confirmation first, otherwise hides the window with one
+  // in-flight call at a time. The draft is left alone so it is still there when the window returns.
+  const hideGuard = useMemo(
+    () => createOnceGuard(() => commands.chatHideWindow()),
+    [],
+  );
+
+  useEffect(() => {
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      const action = escAction(
+        { confirming: clearStep === "confirming", hiding: hideGuard.inFlight },
+        {
+          key: e.key,
+          altKey: e.altKey,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+          shiftKey: e.shiftKey,
+          isComposing: e.isComposing,
+          keyCode: e.keyCode,
+        },
+      );
+      if (action === "ignore") return;
+      e.preventDefault();
+      if (action === "cancelConfirm") {
+        setClearStep((step) => nextClearStep(step, "cancel"));
+      } else {
+        hideGuard.trigger();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [clearStep, hideGuard]);
 
   useEffect(() => {
     let disposed = false;

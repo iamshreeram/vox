@@ -64,6 +64,7 @@ fn snapshot_payload_has_exactly_the_snake_case_wire_keys() {
             "accent",
             "chat_theme",
             "custom_colors",
+            "orb_accent",
             "rev",
             "theme",
             "visual_style"
@@ -644,8 +645,8 @@ fn all_five_writers_go_through_commit_appearance_once_each() {
     );
     assert_eq!(
         commands.matches("commit_appearance(").count(),
-        3,
-        "three new writers"
+        4,
+        "four new writers"
     );
     for command in [
         "change_accent_setting",

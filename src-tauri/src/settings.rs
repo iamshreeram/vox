@@ -468,6 +468,16 @@ where
     lenient_wire(deserializer, ChatTheme::from_wire)
 }
 
+/// Field-local deserializer for `orb_accent`. Garbage, numbers, null and other JSON types read as
+/// `None` (follow the app accent). Never an error.
+pub fn deserialize_orb_accent<'de, D>(deserializer: D) -> Result<Option<Accent>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = serde_json::Value::deserialize(deserializer)?;
+    Ok(raw.as_str().and_then(Accent::from_wire))
+}
+
 /// Field-local deserializer for `visual_style`. Garbage reads as `Vibrant`.
 pub fn deserialize_visual_style<'de, D>(deserializer: D) -> Result<VisualStyle, D::Error>
 where
@@ -1243,6 +1253,10 @@ pub struct AppSettings {
     /// Visual style (vibrant or restrained). Set through `change_visual_style_setting`.
     #[serde(default, deserialize_with = "deserialize_visual_style")]
     pub visual_style: VisualStyle,
+    /// Accent of the floating orb (DESIGN Revision 3, D3). `None` follows the app accent.
+    /// Set through `change_orb_accent_setting`. Garbage reads as `None`.
+    #[serde(default, deserialize_with = "deserialize_orb_accent")]
+    pub orb_accent: Option<Accent>,
 }
 
 /// Default vault folders for the RAG index (DESIGN Rev 5, 3.1).
@@ -1584,7 +1598,7 @@ pub fn dictation_agent_enabled(s: &AppSettings) -> bool {
 /// the first-run fields, the orb and chat presentation fields (`chat_presentation`,
 /// `orb_visible`, `orb_size`, `orb_size_px`, `orb_position`, `chat_opacity_pct`) and the
 /// appearance fields (`theme`, `custom_theme_colors`, `accent`, `chat_theme`, `visual_style`,
-/// changed only by `appearance::commit_appearance`). Returns `incoming` with those fields replaced by the
+/// `orb_accent`, changed only by `appearance::commit_appearance`). Returns `incoming` with those fields replaced by the
 /// committed values, and every other field as incoming.
 pub fn preserve_launch_fields(mut incoming: AppSettings, committed: &AppSettings) -> AppSettings {
     incoming.acp_agent_enabled = committed.acp_agent_enabled;
@@ -1612,6 +1626,7 @@ fn copy_appearance_fields(target: &mut AppSettings, source: &AppSettings) {
     target.accent = source.accent;
     target.chat_theme = source.chat_theme;
     target.visual_style = source.visual_style;
+    target.orb_accent = source.orb_accent;
 }
 
 /// Copies the orb and chat presentation fields from `source`, so a stale whole-object write
@@ -2576,6 +2591,7 @@ pub fn get_default_settings() -> AppSettings {
         accent: Accent::default(),
         chat_theme: ChatTheme::default(),
         visual_style: VisualStyle::default(),
+        orb_accent: None,
     }
 }
 

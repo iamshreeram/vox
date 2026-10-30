@@ -30,7 +30,7 @@ pub const ORB_COMMANDS: [&str; 5] = [
 ];
 
 /// Commands the chat window (classic or panel) may invoke.
-pub const CHAT_COMMANDS: [&str; 10] = [
+pub const CHAT_COMMANDS: [&str; 11] = [
     "get_chat_snapshot",
     "clear_chat_log",
     "send_chat_message",
@@ -41,15 +41,17 @@ pub const CHAT_COMMANDS: [&str; 10] = [
     "chat_draft_get",
     "chat_draft_clear",
     "chat_draft_flush_ack",
+    "chat_hide_window",
 ];
 
 /// Commands only the main window may invoke: the conversation opacity setting (Track T) and the
 /// three appearance setters (UI enterprise S1). Every other window, the overlay included, is refused.
-pub const MAIN_ONLY_COMMANDS: [&str; 4] = [
+pub const MAIN_ONLY_COMMANDS: [&str; 5] = [
     "change_chat_opacity_setting",
     "change_accent_setting",
     "change_chat_theme_setting",
     "change_visual_style_setting",
+    "change_orb_accent_setting",
 ];
 
 /// Whether the window labelled `window_label` may invoke `command`.

@@ -5,10 +5,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useTranslation } from "react-i18next";
 import {
   applySnapshot,
   createState,
   fitBubbles,
+  noticeMessageKey,
   visibleBubbles,
   type PageState,
   type Snapshot,
@@ -67,6 +69,7 @@ function newest(
 }
 
 export default function BubblesApp(): React.ReactElement {
+  const { t } = useTranslation();
   const [instance] = useState(() => readInstance(window.location.search));
   const [state, setState] = useState<PageState>(() =>
     createState(instance ?? -1),
@@ -151,17 +154,33 @@ export default function BubblesApp(): React.ReactElement {
       className="bubble-stack"
       data-anchor={state.anchor}
     >
-      {shown.map((bubble) => (
-        <div
-          key={bubble.id}
-          data-testid="bubble"
-          data-role={bubble.role}
-          className={`bubble bubble-${bubble.role}`}
-          style={{ opacity: reducedMotion ? 1 : bubble.opacity }}
-        >
-          {bubble.text}
-        </div>
-      ))}
+      {shown.map((bubble) =>
+        bubble.kind === "notice" ? (
+          // A notice shows its localised text only; the code itself is never rendered.
+          <div
+            key={bubble.id}
+            data-testid="bubble"
+            data-kind="notice"
+            data-role={bubble.role}
+            role="status"
+            aria-live="polite"
+            className={`bubble bubble-${bubble.role} bubble-notice`}
+            style={{ opacity: reducedMotion ? 1 : bubble.opacity }}
+          >
+            {t(noticeMessageKey(bubble.noticeCode))}
+          </div>
+        ) : (
+          <div
+            key={bubble.id}
+            data-testid="bubble"
+            data-role={bubble.role}
+            className={`bubble bubble-${bubble.role}`}
+            style={{ opacity: reducedMotion ? 1 : bubble.opacity }}
+          >
+            {bubble.text}
+          </div>
+        ),
+      )}
     </div>
   );
 }

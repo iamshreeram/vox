@@ -66,6 +66,7 @@ export interface MockAppearance {
   accent: unknown;
   chat_theme: unknown;
   visual_style: unknown;
+  orb_accent: unknown;
 }
 
 /** Consumer window labels the Rust side addresses with `emit_to` (appearance.rs CONSUMER_LABELS). */
@@ -149,6 +150,7 @@ function installTauriMockInPage(arg: MockInitArg): void {
     change_accent_setting: ["accent", "accent"],
     change_chat_theme_setting: ["chat_theme", "chatTheme"],
     change_visual_style_setting: ["visual_style", "visualStyle"],
+    change_orb_accent_setting: ["orb_accent", "accent"],
   };
   const CONSUMER_LABELS = ["chat", "orb", "orb-bubbles"];
   const emitted: Array<{ label: string; event: string; payload: unknown }> = [];
@@ -163,6 +165,7 @@ function installTauriMockInPage(arg: MockInitArg): void {
     accent: settings.accent ?? "amber",
     chat_theme: settings.chat_theme ?? "dark",
     visual_style: settings.visual_style ?? "vibrant",
+    orb_accent: settings.orb_accent ?? null,
   });
   const commitAppearance = (
     command: string,

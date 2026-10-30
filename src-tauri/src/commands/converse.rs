@@ -62,16 +62,13 @@ pub fn change_converse_context_turns_setting(app: AppHandle, value: u32) -> Resu
 /// Tauri event carrying a human-readable start refusal (`String` payload).
 pub const CONVERSE_ERROR_EVENT: &str = "converse-error";
 
-/// Shared toggle used by the shortcut action and the tray item: stop when a
-/// session is active, otherwise start one. A start refusal is emitted as a
+/// Shared toggle used by the shortcut action and the tray item. It goes through the same
+/// registry decision as the orb (A-C1b): a Starting session is never cancelled, a Running
+/// session is stopped, an idle controller starts one. A start refusal is emitted as a
 /// `converse-error` event carrying only the human message.
 pub fn toggle_conversation(app: &AppHandle) {
     let controller = app.state::<Arc<ConverseController>>();
-    if controller.is_active() {
-        controller.stop();
-        return;
-    }
-    if let Err(message) = controller.start() {
+    if let Err(message) = controller.toggle() {
         if app.emit(CONVERSE_ERROR_EVENT, message).is_err() {
             log::debug!("converse: error event not delivered");
         }

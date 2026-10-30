@@ -66,7 +66,7 @@ pub trait OrbHost {
     fn move_to(&mut self, x: f64, y: f64);
     /// Reports how gesture `id` ended.
     fn emit_gesture(&mut self, id: u64, result: GestureResult);
-    /// Toggles the conversation surface. Called for a click only.
+    /// Starts or stops a voice conversation. Called for a click only, as Enter and Space do.
     fn click(&mut self);
     /// Saves the orb position. Called exactly once per finished drag, never for a click or cancel.
     fn save_position(&mut self, final_orb: Rect);

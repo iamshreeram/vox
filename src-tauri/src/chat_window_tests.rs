@@ -561,12 +561,16 @@ fn window_code_has_no_filesystem_or_console_output() {
     // keeps conversation content out of every log line.
     let re =
         Regex::new(r"\bstd::fs\b|\bfs::|\bFile::|\b(?:e)?println!|\bdbg!").expect("valid regex");
-    let code = window_code();
-    let hits: Vec<&str> = code.lines().filter(|l| re.is_match(l)).collect();
-    assert!(
-        hits.is_empty(),
-        "chat_window.rs must not touch fs or print to the console: {hits:?}"
-    );
+    for (file, code) in [
+        ("chat_window.rs", window_code()),
+        ("chat_chrome.rs", chrome_code()),
+    ] {
+        let hits: Vec<&str> = code.lines().filter(|l| re.is_match(l)).collect();
+        assert!(
+            hits.is_empty(),
+            "{file} must not touch fs or print to the console: {hits:?}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1124,4 +1128,173 @@ fn the_capability_file_is_unchanged_listen_only() {
         .map(|s| s.to_string())
         .collect();
     assert_eq!(actual, expected);
+}
+
+// ---------------------------------------------------------------------------------------------
+// 9. Native chrome (orb-click D1, A-C5) and chat_hide_window (D1b)
+// ---------------------------------------------------------------------------------------------
+
+fn chrome_code() -> String {
+    code_only(&read_crate_file("src/chat_chrome.rs"))
+}
+
+#[test]
+fn window_keeps_native_decorations_and_hides_the_title_text_on_macos() {
+    let code = window_code();
+    assert!(code.contains(".decorations(true)"), "decorations stay on");
+    let cfg = code
+        .find("#[cfg(target_os = \"macos\")]")
+        .expect("macOS block present");
+    let rest = &code[cfg..];
+    assert!(
+        rest.contains(".hidden_title(true)"),
+        "macOS builder hides the title text"
+    );
+    assert_eq!(
+        code.matches("TitleBarStyle::Transparent").count(),
+        1,
+        "TitleBarStyle::Transparent stays exactly once"
+    );
+}
+
+#[test]
+fn chrome_helper_runs_on_creation_on_every_show_and_on_window_events() {
+    let code = window_code();
+    for name in ["build_chat_window", "show_existing", "show_without_focus"] {
+        assert!(
+            fn_body(&code, name).contains("hide_window_buttons("),
+            "{name} applies the hidden window buttons"
+        );
+    }
+    let build = fn_body(&code, "build_chat_window");
+    for kind in [
+        "WindowEvent::Focused(",
+        "WindowEvent::Resized(",
+        "WindowEvent::ScaleFactorChanged",
+        "WindowEvent::ThemeChanged(",
+    ] {
+        assert!(build.contains(kind), "event handler reacts to {kind}");
+    }
+    assert!(
+        build.contains("CloseRequested"),
+        "the close handling stays in place"
+    );
+    assert!(
+        build.contains("hide_existing(&close_app"),
+        "CloseRequested still goes through hide_existing"
+    );
+}
+
+#[test]
+fn chrome_helper_hides_exactly_the_three_standard_buttons_and_changes_nothing_else() {
+    let code = chrome_code();
+    for button in [
+        "NSWindowButton::CloseButton",
+        "NSWindowButton::MiniaturizeButton",
+        "NSWindowButton::ZoomButton",
+    ] {
+        assert!(code.contains(button), "{button} hidden");
+    }
+    assert!(code.contains("setHidden(true)"), "buttons are hidden");
+    assert!(
+        !code.contains("setHidden(false)"),
+        "the helper never shows a button"
+    );
+    for forbidden in [
+        "setStyleMask",
+        "setTitlebarAppearsTransparent",
+        "setTitleVisibility",
+        "setLevel",
+        "setFrame",
+        "setCollectionBehavior",
+        "setOpaque",
+        "setBackgroundColor",
+        "setHasShadow",
+        "setHidesOnDeactivate",
+        "unwrap()",
+        "expect(",
+        "panic!",
+    ] {
+        assert!(
+            !code.contains(forbidden),
+            "chat_chrome.rs must not use {forbidden}"
+        );
+    }
+}
+
+#[test]
+fn chat_chrome_is_macos_only_and_prints_or_writes_nothing() {
+    let lib = read_crate_file("src/lib.rs");
+    assert!(
+        lib.contains("#[cfg(target_os = \"macos\")]\nmod chat_chrome;"),
+        "lib.rs declares chat_chrome only on macOS"
+    );
+    let re =
+        Regex::new(r"\bstd::fs\b|\bfs::|\bFile::|\b(?:e)?println!|\bdbg!").expect("valid regex");
+    let hits: Vec<String> = chrome_code()
+        .lines()
+        .filter(|l| re.is_match(l))
+        .map(str::to_string)
+        .collect();
+    assert!(
+        hits.is_empty(),
+        "chat_chrome.rs must not touch fs or print: {hits:?}"
+    );
+}
+
+#[test]
+fn chat_hide_window_applies_only_to_the_chat_label() {
+    assert!(hide_request_applies("chat"));
+    for label in [
+        "main",
+        "orb",
+        "orb-bubbles",
+        "recording_overlay",
+        "",
+        "Chat",
+    ] {
+        assert!(!hide_request_applies(label), "{label} must be a no-op");
+    }
+}
+
+#[test]
+fn chat_hide_window_is_listed_once_in_chat_commands_and_registered() {
+    use crate::window_commands::CHAT_COMMANDS;
+    assert_eq!(CHAT_COMMANDS.len(), 11, "CHAT_COMMANDS grows 10 -> 11");
+    assert_eq!(
+        CHAT_COMMANDS
+            .iter()
+            .filter(|c| **c == "chat_hide_window")
+            .count(),
+        1,
+        "chat_hide_window listed exactly once"
+    );
+    let registered = registered_commands();
+    assert!(
+        registered.iter().any(|c| c == "chat_hide_window"),
+        "lib.rs registers chat_hide_window"
+    );
+}
+
+#[test]
+fn chat_hide_window_command_checks_the_label_and_hides_through_hide_existing() {
+    let src = code_only(&read_crate_file("src/commands/chat.rs"));
+    let body = fn_body(&src, "chat_hide_window");
+    let check = body
+        .find("hide_request_applies(")
+        .expect("command checks the calling label");
+    let hide = body
+        .find("hide_existing(")
+        .expect("command hides through hide_existing");
+    assert!(check < hide, "the label check runs before any hide");
+    assert!(body.contains("Ok(())"), "the command returns Ok");
+}
+
+#[test]
+fn chat_hide_window_is_in_bindings_ts() {
+    let bindings = read_crate_file("../src/bindings.ts");
+    assert!(
+        bindings.contains("TAURI_INVOKE(\"chat_hide_window\")"),
+        "bindings.ts exports the chat_hide_window invoke"
+    );
 }

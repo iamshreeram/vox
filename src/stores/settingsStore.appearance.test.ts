@@ -8,12 +8,16 @@ const calls = vi.hoisted(() => ({
   chatTheme: [] as unknown[],
   visualStyle: [] as unknown[],
   theme: [] as unknown[],
+  orbAccent: [] as unknown[],
 }));
 const failing = vi.hoisted(() => ({
   accent: false,
   chatTheme: false,
   visualStyle: false,
+  orbAccent: false,
 }));
+// When set, the next orb write waits on this gate before it resolves (stale-response test).
+const gate = vi.hoisted(() => ({ pending: null as null | Promise<void> }));
 
 vi.mock("@/bindings", () => ({
   commands: {
@@ -33,6 +37,14 @@ vi.mock("@/bindings", () => ({
       calls.theme.push(theme);
       return { status: "ok", data: null };
     }),
+    changeOrbAccentSetting: vi.fn(async (accent: unknown) => {
+      calls.orbAccent.push(accent);
+      // The outcome is decided when the call is made, so a later change of `failing` does not
+      // rewrite an earlier request.
+      const shouldFail = failing.orbAccent;
+      if (gate.pending) await gate.pending;
+      if (shouldFail) throw new Error("orb accent rejected");
+    }),
   },
 }));
 vi.mock("@tauri-apps/api/event", () => ({
@@ -47,6 +59,7 @@ const BASE = {
   chat_theme: "dark",
   visual_style: "vibrant",
   theme: "system",
+  orb_accent: null,
 } as const;
 
 beforeEach(() => {
@@ -54,9 +67,12 @@ beforeEach(() => {
   calls.chatTheme.length = 0;
   calls.visualStyle.length = 0;
   calls.theme.length = 0;
+  calls.orbAccent.length = 0;
   failing.accent = false;
   failing.chatTheme = false;
   failing.visualStyle = false;
+  failing.orbAccent = false;
+  gate.pending = null;
   useSettingsStore.setState({
     settings: { ...BASE } as never,
     isUpdating: {},
@@ -106,5 +122,57 @@ describe("appearance fields follow the theme pattern", () => {
   it("theme keeps its own command", async () => {
     await useSettingsStore.getState().updateSetting("theme", "dark");
     expect(calls.theme).toEqual(["dark"]);
+  });
+});
+
+describe("orb colour (D3)", () => {
+  it("changeOrbAccent writes optimistically and calls changeOrbAccentSetting with the value", async () => {
+    const ok = await useSettingsStore.getState().changeOrbAccent("violet");
+    expect(ok).toBe(true);
+    expect(calls.orbAccent).toEqual(["violet"]);
+    expect(useSettingsStore.getState().settings?.orb_accent).toBe("violet");
+  });
+
+  it("changeOrbAccent(null) writes follow-the-app and never sends an accent", async () => {
+    useSettingsStore.setState({
+      settings: { ...BASE, orb_accent: "rose" } as never,
+    });
+    const ok = await useSettingsStore.getState().changeOrbAccent(null);
+    expect(ok).toBe(true);
+    expect(calls.orbAccent).toEqual([null]);
+    expect(useSettingsStore.getState().settings?.orb_accent).toBeNull();
+  });
+
+  it("a rejected write rolls back to the previous value and reports failure", async () => {
+    useSettingsStore.setState({
+      settings: { ...BASE, orb_accent: "blue" } as never,
+    });
+    failing.orbAccent = true;
+    const ok = await useSettingsStore.getState().changeOrbAccent("emerald");
+    expect(ok).toBe(false);
+    expect(calls.orbAccent).toEqual(["emerald"]);
+    expect(useSettingsStore.getState().settings?.orb_accent).toBe("blue");
+  });
+
+  it("a stale failure does not undo a newer choice", async () => {
+    let release: () => void = () => undefined;
+    gate.pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    failing.orbAccent = true;
+    const first = useSettingsStore.getState().changeOrbAccent("rose");
+    // The second write starts before the first one settles and succeeds.
+    failing.orbAccent = false;
+    gate.pending = null;
+    const second = useSettingsStore.getState().changeOrbAccent("slate");
+    release();
+    expect(await second).toBe(true);
+    expect(await first).toBe(false);
+    expect(useSettingsStore.getState().settings?.orb_accent).toBe("slate");
+  });
+
+  it("updateSetting('orb_accent') uses the same command (coverage and reset path)", async () => {
+    await useSettingsStore.getState().updateSetting("orb_accent", "blue");
+    expect(calls.orbAccent).toEqual(["blue"]);
   });
 });
