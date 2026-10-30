@@ -169,7 +169,7 @@ test.describe("Appearance page: controls reach their commands", () => {
     });
     await expect(
       page.getByText(
-        "The conversation window has no title bar buttons. Drag it by its top edge. Press Escape, use the shortcut or the tray icon to hide it.",
+        "Drag the conversation window by its top edge. Press Escape, use the shortcut or the tray icon to hide it.",
       ),
     ).toBeVisible();
   });

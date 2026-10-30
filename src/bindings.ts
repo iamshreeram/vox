@@ -3156,11 +3156,11 @@ export type NoticeCode =
  */
 "dictation_busy" | 
 /**
- * Spoken replies are turned off.
+ * Spoken replies are turned off, so a conversation cannot speak its replies.
  */
 "tts_off" | 
 /**
- * Typed chat is turned off.
+ * No reply backend is configured for conversations and typed chat.
  */
 "composer_off" | 
 /**
@@ -3168,7 +3168,7 @@ export type NoticeCode =
  */
 "ambient" | 
 /**
- * The experimental feature is turned off.
+ * Voice conversation is not available (the feature is off or not set up).
  */
 "experimental_off" | 
 /**

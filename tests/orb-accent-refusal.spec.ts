@@ -100,7 +100,7 @@ test.describe("orb refusal", () => {
     await open(page);
     await emitMockEvent(page, "orb-refusal", { code: "dictation_busy" });
     const status = page.locator(STATUS);
-    await expect(status).toHaveText("Dictation is using the microphone");
+    await expect(status).toHaveText("Dictation is using the microphone.");
     await expect(page.locator(`${ORB} .vox-avatar`)).toHaveAttribute(
       "data-face",
       "concerned",
@@ -121,7 +121,9 @@ test.describe("orb refusal", () => {
     await open(page);
     await emitMockEvent(page, "orb-refusal", { code: "<b>not a code</b>" });
     const status = page.locator(STATUS);
-    await expect(status).toHaveText("Could not start the conversation");
+    await expect(status).toHaveText(
+      "Vox cannot start a conversation right now.",
+    );
     expect(await page.content()).not.toContain("not a code");
   });
 });

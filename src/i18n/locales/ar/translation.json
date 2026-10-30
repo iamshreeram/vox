@@ -1394,7 +1394,7 @@
         "followApp": "Follow app",
         "dark": "Dark",
         "light": "Light",
-        "nativeNote": "The conversation window has no title bar buttons. Drag it by its top edge. Press Escape, use the shortcut or the tray icon to hide it."
+        "nativeNote": "Drag the conversation window by its top edge. Press Escape, use the shortcut or the tray icon to hide it."
       },
       "chatWindow": {
         "title": "Conversation window"
@@ -1723,7 +1723,7 @@
     },
     "section": {
       "title": "Conversation",
-      "description": "Hands-free conversation: Vox listens, answers aloud, and keeps a short memory of this session.",
+      "description": "Hands-free conversation: Vox listens, answers aloud, and keeps a short memory of this session. Clicking the floating orb starts or stops a conversation.",
       "startButton": "Start conversation",
       "stopButton": "Stop conversation",
       "stateLabel": "Status:",
@@ -1965,13 +1965,13 @@
     "assistantName": "Vox assistant",
     "stateAnnounce": "{{name}}: {{state}}",
     "refusal": {
-      "dictation_busy": "Dictation is using the microphone",
-      "tts_off": "Turn on spoken replies in Settings",
-      "composer_off": "Voice conversation is turned off in Settings",
-      "ambient": "Ambient listening is on; turn it off to talk",
-      "experimental_off": "Voice conversation is not available",
-      "text_ending": "Ending the text chat; click again to talk",
-      "unknown": "Could not start the conversation"
+      "dictation_busy": "Dictation is using the microphone.",
+      "tts_off": "Spoken replies are off. Turn them on in Settings.",
+      "composer_off": "Set up a reply backend in Settings first.",
+      "ambient": "Ambient listening is on. Turn it off to talk.",
+      "experimental_off": "Voice conversation is not available.",
+      "text_ending": "Ending the text chat. Click again to talk.",
+      "unknown": "Vox cannot start a conversation right now."
     },
     "face": {
       "idle": "Idle",
@@ -1985,13 +1985,13 @@
   },
   "bubbles": {
     "notice": {
-      "dictation_busy": "Dictation is running. Finish it first.",
-      "tts_off": "Spoken replies are off.",
-      "composer_off": "Typed chat is off.",
-      "ambient": "Ambient listening is on, so the orb can't start a conversation.",
-      "experimental_off": "This feature is turned off in settings.",
-      "text_ending": "The text chat is ending.",
-      "unknown": "Vox can't do that right now."
+      "dictation_busy": "Dictation is using the microphone.",
+      "tts_off": "Spoken replies are off. Turn them on in Settings.",
+      "composer_off": "Set up a reply backend in Settings first.",
+      "ambient": "Ambient listening is on. Turn it off to talk.",
+      "experimental_off": "Voice conversation is not available.",
+      "text_ending": "Ending the text chat. Click again to talk.",
+      "unknown": "Vox cannot start a conversation right now."
     }
   }
 }

@@ -18,7 +18,7 @@ use crate::orb_converse::*;
 use crate::orb_window::ORB_WINDOW_LABEL;
 use crate::window_commands::ORB_COMMANDS;
 use std::cell::{Cell, RefCell};
-use std::sync::Mutex;
+use std::sync::{Barrier, Mutex};
 
 /// Production source without its comment lines, so pins match code only.
 fn code_only(src: &str) -> String {
@@ -299,6 +299,83 @@ fn controller_messages_classify_to_their_refusal() {
     );
 }
 
+/// The names of the refusal-like constants declared in one source file: `pub const NAME: &str`
+/// whose name ends in a refusal suffix. A new one in these files must get a row in the table.
+fn refusal_const_names(src: &str) -> Vec<String> {
+    const SUFFIXES: [&str; 5] = ["_REFUSAL", "_BUSY", "_RUNNING", "_ENDING", "_FAILED"];
+    src.lines()
+        .filter_map(|line| line.trim_start().strip_prefix("pub const "))
+        .filter(|rest| rest.contains(": &str"))
+        .filter_map(|rest| rest.split(':').next())
+        .map(str::trim)
+        .filter(|name| SUFFIXES.iter().any(|suffix| name.ends_with(suffix)))
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn every_refusal_constant_in_the_converse_sources_is_classified() {
+    use crate::managers::converse_platform as platform;
+    use crate::managers::converse_runtime as runtime;
+    // (constant name, its value, the StartError it must classify to). A constant that is not
+    // in this table fails the test, so a new refusal cannot ship unclassified.
+    let table: [(&str, &str, StartError); 8] = [
+        (
+            "DICTATION_BUSY",
+            platform::DICTATION_BUSY,
+            StartError::DictationBusy,
+        ),
+        (
+            "ENROLLMENT_BUSY",
+            platform::ENROLLMENT_BUSY,
+            StartError::EnrollmentBusy,
+        ),
+        (
+            "TTS_OFF_REFUSAL",
+            platform::TTS_OFF_REFUSAL,
+            StartError::TtsOff,
+        ),
+        (
+            "COMPOSER_OFF_REFUSAL",
+            platform::COMPOSER_OFF_REFUSAL,
+            StartError::ComposerOff,
+        ),
+        (
+            "AMBIENT_REFUSAL",
+            platform::AMBIENT_REFUSAL,
+            StartError::Ambient,
+        ),
+        (
+            "ALREADY_RUNNING",
+            runtime::ALREADY_RUNNING,
+            StartError::AlreadyRunning,
+        ),
+        ("START_FAILED", runtime::START_FAILED, StartError::Unmapped),
+        ("TEXT_ENDING", runtime::TEXT_ENDING, StartError::TextEnding),
+    ];
+    let mut declared = refusal_const_names(include_str!("managers/converse_platform.rs"));
+    declared.extend(refusal_const_names(include_str!(
+        "managers/converse_runtime.rs"
+    )));
+    assert!(
+        declared.len() >= table.len(),
+        "the scan must find the constants: {declared:?}"
+    );
+    for name in &declared {
+        assert!(
+            table.iter().any(|(row, _, _)| row == name),
+            "{name} is a refusal constant with no row in the classification table"
+        );
+    }
+    for (name, value, want) in table {
+        assert!(
+            declared.iter().any(|d| d == name),
+            "{name} is in the table but no longer declared"
+        );
+        assert_eq!(classify_start_error(value), want, "{name}");
+    }
+}
+
 #[test]
 fn a_refused_start_publishes_its_code_and_already_running_is_silent() {
     let lock = Mutex::new(ClickLockout::default());
@@ -368,6 +445,123 @@ fn orb_hotkey_and_wake_starts_admit_exactly_one_session() {
     assert!(first.is_ok());
     assert_eq!(second, Err(ALREADY_RUNNING.to_string()));
     assert_eq!(third, Err(ALREADY_RUNNING.to_string()));
+}
+
+/// A port that may be shared across threads: the real registry and the same start entry.
+struct SharedPort<'a> {
+    reg: &'a SessionRegistry,
+    held: Mutex<Vec<crate::managers::converse::CancelToken>>,
+    stops: Mutex<usize>,
+    notices: Mutex<Vec<NoticeCode>>,
+}
+
+impl ActivationPort for SharedPort<'_> {
+    fn decision(&self) -> ActivationDecision {
+        let (phase, _) = self.reg.snapshot();
+        orb_activation_decision(phase, ActivationKind::Voice)
+    }
+    fn start(&self) -> Result<(), String> {
+        match self.reg.try_begin() {
+            Some((_, token)) => {
+                self.held
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push(token);
+                Ok(())
+            }
+            None => Err(ALREADY_RUNNING.to_string()),
+        }
+    }
+    fn stop_if(&self, id: SessionId) -> bool {
+        *self
+            .stops
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) += 1;
+        self.reg.request_stop_if(id)
+    }
+    fn notify(&self, code: NoticeCode) {
+        self.notices
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(code);
+    }
+}
+
+/// A clock that always reads zero: every activation runs against a fresh lockout.
+struct ZeroClock;
+impl Clock for ZeroClock {
+    fn now_ms(&self) -> u64 {
+        0
+    }
+}
+
+#[test]
+fn orb_hotkey_and_wake_starts_race_at_a_barrier_and_admit_exactly_one() {
+    for round in 0..50 {
+        let reg = SessionRegistry::new();
+        let port = SharedPort {
+            reg: &reg,
+            held: Mutex::new(Vec::new()),
+            stops: Mutex::new(0),
+            notices: Mutex::new(Vec::new()),
+        };
+        let orb_lock = Mutex::new(ClickLockout::default());
+        let barrier = Barrier::new(3);
+        let (orb, hotkey, wake) = std::thread::scope(|scope| {
+            let orb = scope.spawn(|| {
+                barrier.wait();
+                activate_with(&port, &orb_lock, &ZeroClock)
+            });
+            let hotkey = scope.spawn(|| {
+                barrier.wait();
+                activate_with(&port, &Mutex::new(ClickLockout::default()), &ZeroClock)
+            });
+            let wake = scope.spawn(|| {
+                barrier.wait();
+                port.start()
+            });
+            (orb.join(), hotkey.join(), wake.join())
+        });
+        let orb = orb.expect("orb thread");
+        let hotkey = hotkey.expect("hotkey thread");
+        let wake = wake.expect("wake thread");
+        let admitted = usize::from(orb == Outcome::Start)
+            + usize::from(hotkey == Outcome::Start)
+            + usize::from(wake.is_ok());
+        assert_eq!(
+            admitted, 1,
+            "round {round}: orb {orb:?}, hotkey {hotkey:?}, wake {wake:?}"
+        );
+        assert!(
+            matches!(orb, Outcome::Start | Outcome::Ignored),
+            "round {round}: orb {orb:?}"
+        );
+        assert!(
+            matches!(hotkey, Outcome::Start | Outcome::Ignored),
+            "round {round}: hotkey {hotkey:?}"
+        );
+        assert_eq!(
+            port.held.lock().map(|held| held.len()).unwrap_or(0),
+            1,
+            "round {round}: one token held"
+        );
+        assert_eq!(
+            *port.stops.lock().unwrap_or_else(|p| p.into_inner()),
+            0,
+            "round {round}: no activation may stop a Starting session"
+        );
+        assert!(
+            port.notices
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .is_empty(),
+            "round {round}: an admitted or already-running start shows no notice"
+        );
+        assert!(
+            matches!(reg.state(), RegistryState::Starting(_)),
+            "round {round}: the admitted session is still Starting, never cancelled"
+        );
+    }
 }
 
 // ---- event contract ----

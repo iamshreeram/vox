@@ -12,13 +12,13 @@ use specta::Type;
 pub enum NoticeCode {
     /// Dictation is running, so the orb cannot start a conversation.
     DictationBusy,
-    /// Spoken replies are turned off.
+    /// Spoken replies are turned off, so a conversation cannot speak its replies.
     TtsOff,
-    /// Typed chat is turned off.
+    /// No reply backend is configured for conversations and typed chat.
     ComposerOff,
     /// Ambient listening is on.
     Ambient,
-    /// The experimental feature is turned off.
+    /// Voice conversation is not available (the feature is off or not set up).
     ExperimentalOff,
     /// The text chat is ending.
     TextEnding,

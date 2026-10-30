@@ -492,8 +492,9 @@ impl ConverseController {
         Ok((id, generation))
     }
 
-    /// Request the session to end. True if a Running session was asked to
-    /// stop; false when idle, starting or already stopping. Idempotent.
+    /// Request the session to end. True if a Running or Starting session was asked to stop;
+    /// false when idle or already stopping. Idempotent. Activation sources do not use it
+    /// (see `activation_decision`).
     pub fn stop(&self) -> bool {
         self.registry.request_stop()
     }

@@ -24,8 +24,8 @@ const INSTANCE = 9;
 const EVENT = "bubbles-state";
 const NOTICE_TTL_MS = 4000;
 
-const TTS_OFF_TEXT = "Spoken replies are off.";
-const UNKNOWN_TEXT = "Vox can't do that right now.";
+const TTS_OFF_TEXT = "Spoken replies are off. Turn them on in Settings.";
+const UNKNOWN_TEXT = "Vox cannot start a conversation right now.";
 
 type NoticeWire = {
   id: number;
@@ -102,7 +102,7 @@ test.describe("Bubble notices", () => {
     await open(page);
     await emitMockEvent(page, EVENT, snapshot(1, [notice("composer_off")]));
     const shown = bubbles(page).first();
-    await expect(shown).toHaveText("Typed chat is off.");
+    await expect(shown).toHaveText("Set up a reply backend in Settings first.");
     const animation = await shown.evaluate(
       (node) => getComputedStyle(node).animationName,
     );

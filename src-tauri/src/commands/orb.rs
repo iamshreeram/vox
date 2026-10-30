@@ -55,7 +55,7 @@ pub async fn orb_pointer_down(app: AppHandle, id: u64) {
     orb_native::pointer_down(&app, id);
 }
 
-/// Keyboard activation of the orb: toggles the conversation surface.
+/// Keyboard activation of the orb: starts or stops a voice conversation.
 #[tauri::command]
 #[specta::specta]
 pub async fn orb_activate(app: AppHandle) {
