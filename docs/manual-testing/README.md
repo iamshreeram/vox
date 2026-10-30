@@ -6,28 +6,22 @@ your answers are saved per test id.
 
 ## Start the guide
 
-```sh
-python3 docs/manual-testing/serve.py          # default port 8765
-python3 docs/manual-testing/serve.py 8798     # or pick a port
-```
+Open `docs/manual-testing/experimental-features.html` directly in a browser
+(double-click it, or run `open docs/manual-testing/experimental-features.html`
+on macOS). It needs no server and no extra tools.
 
-Open the address it prints (for example `http://127.0.0.1:8765/`).
-The server listens on 127.0.0.1 only and needs only the Python standard library.
+## Where your answers are saved
 
-You can also open `experimental-features.html` directly in a browser. In that
-case answers stay in that browser only, so use **Save progress file** from time
-to time.
+Answers are saved in your browser, for that exact file location. If you move or
+rename the page, or clear the browser data, the page starts empty again.
 
-## Where feedback is saved
+- **Save progress file** downloads all results and notes as a file. Press it
+  now and then, and always before you close the browser for the day.
+- **Load progress file...** puts a saved file back.
+- The page keeps automatic browser backups; **Restore this backup** brings one back.
+- **Download report (.md)** and **Download data (.json)** produce the reports.
 
-With `serve.py` running, every answer is also written to disk:
-
-- `docs/manual-testing/feedback.json`: the current answers.
-- `docs/manual-testing/feedback.prev.json`: the copy before the last save.
-- `docs/manual-testing/feedback-history/`: timestamped copies, at most one every
-  10 minutes, last 30 kept.
-
-These files are personal and are listed in `.gitignore`. Never commit them.
+Progress files and reports are personal. Do not commit them.
 
 ## Priorities
 
