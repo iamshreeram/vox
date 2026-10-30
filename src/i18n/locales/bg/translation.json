@@ -1957,6 +1957,15 @@
     "label": "Vox orb. Press Enter to open the conversation.",
     "assistantName": "Vox assistant",
     "stateAnnounce": "{{name}}: {{state}}",
+    "refusal": {
+      "dictation_busy": "Dictation is using the microphone",
+      "tts_off": "Turn on spoken replies in Settings",
+      "composer_off": "Voice conversation is turned off in Settings",
+      "ambient": "Ambient listening is on; turn it off to talk",
+      "experimental_off": "Voice conversation is not available",
+      "text_ending": "Ending the text chat; click again to talk",
+      "unknown": "Could not start the conversation"
+    },
     "face": {
       "idle": "Idle",
       "listening": "Listening",

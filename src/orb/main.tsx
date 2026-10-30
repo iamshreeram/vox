@@ -10,6 +10,7 @@ import "../chat/i18n";
 import "../chat/avatar.css";
 import "./orb.css";
 import OrbApp from "./OrbApp";
+import { setOrbLook } from "./orbAppearance";
 import {
   APPEARANCE_EVENT,
   createAppearanceConsumer,
@@ -19,6 +20,14 @@ import {
 const consumer = createAppearanceConsumer({
   root: document.documentElement,
   matchMedia: (query) => window.matchMedia(query),
+  // The orb's own accent and bucket feed the orb page (orb_accent null follows the app accent).
+  onApplied: (resolved, snapshot) => {
+    setOrbLook({
+      accent: snapshot.accent,
+      orbAccent: snapshot.orb_accent ?? null,
+      bucket: resolved.bucket,
+    });
+  },
 });
 const seed = parseSeed(window.location.search);
 if (seed !== null) consumer.accept(seed);

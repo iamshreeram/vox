@@ -2,7 +2,13 @@
 // It only reads the conversation face and sends gestures to the native side, which decides
 // drag, click, menu and activation. The commands used here are fixed names, invoked directly
 // (they are not in bindings.ts yet). Rejections are swallowed: the page logs nothing.
-import { useEffect, useReducer, useRef, useState } from "react";
+import {
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type {
   CSSProperties,
   KeyboardEvent,
@@ -31,6 +37,16 @@ import {
   orbReducer,
   type FaceView,
 } from "./orbModel";
+import { orbRingColour, resolveOrbAccent } from "./orbAccentResolve";
+import { getOrbLook, subscribeOrbLook } from "./orbAppearance";
+import {
+  initialRefusal,
+  refusalReducer,
+  startRefusalTimers,
+} from "./orbRefusal";
+
+/** The conversation states: a refusal's text clears when one of them starts. */
+const CONVERSATION_STATES = ["listening", "thinking", "speaking", "acting"];
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 const FACES: readonly AvatarFace[] = [
@@ -87,6 +103,10 @@ export default function OrbApp() {
   const pressCounterRef = useRef(0);
   const reducedRef = useRef(false);
   const fetchedRef = useRef(false);
+  // The face the conversation shows when no refusal is in progress (restored after `concerned`).
+  const baseFaceRef = useRef<AvatarFace>("idle");
+  const [refusal, dispatchRefusal] = useReducer(refusalReducer, initialRefusal);
+  const look = useSyncExternalStore(subscribeOrbLook, getOrbLook);
 
   const reducedMotion = state.reducedMotion;
   const pouncing = state.pouncing;
@@ -116,10 +136,9 @@ export default function OrbApp() {
         .then((payload: unknown) => {
           // Only before any conversation event: a live event always wins over the snapshot.
           if (faceRef.current.seq === 0) {
-            dispatch({
-              type: "face",
-              face: toFace(orbFace(faceName(fieldOf(payload, "face")))),
-            });
+            const face = toFace(orbFace(faceName(fieldOf(payload, "face"))));
+            baseFaceRef.current = face;
+            dispatch({ type: "face", face });
           }
         })
         .catch(() => undefined);
@@ -139,10 +158,19 @@ export default function OrbApp() {
         const next = faceFromEvent(faceRef.current, event.payload);
         if (next === faceRef.current) return;
         faceRef.current = next;
-        dispatch({
-          type: "face",
-          face: toFace(orbFace(avatarFace(next.state, next.end))),
-        });
+        const face = toFace(orbFace(avatarFace(next.state, next.end)));
+        baseFaceRef.current = face;
+        dispatch({ type: "face", face });
+        // A conversation that starts ends the refusal text (A-C2).
+        if (CONVERSATION_STATES.includes(next.state)) {
+          dispatchRefusal({ type: "clear" });
+        }
+      }),
+    );
+
+    subscribe(
+      listen<unknown>("orb-refusal", (event) => {
+        dispatchRefusal({ type: "refuse", payload: event.payload });
       }),
     );
 
@@ -174,6 +202,26 @@ export default function OrbApp() {
     };
   }, []);
 
+  // A refusal: `concerned` for CONCERNED_MS, then the text clears after REFUSAL_TEXT_MS. Each
+  // refusal starts its own timers; a newer refusal or a click cancels the older ones.
+  useEffect(() => {
+    if (refusal.seq === 0) return undefined;
+    const seq = refusal.seq;
+    dispatch({ type: "face", face: "concerned" });
+    return startRefusalTimers(
+      {
+        setTimeout: (fn, ms) => setTimeout(fn, ms),
+        clearTimeout: (handle) =>
+          clearTimeout(handle as ReturnType<typeof setTimeout>),
+      },
+      {
+        onConcernedEnd: () =>
+          dispatch({ type: "face", face: baseFaceRef.current }),
+        onTextEnd: () => dispatchRefusal({ type: "clear", seq }),
+      },
+    );
+  }, [refusal.seq]);
+
   // A click pounce lasts POUNCE_MS.
   useEffect(() => {
     if (!pouncing) return undefined;
@@ -202,6 +250,7 @@ export default function OrbApp() {
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
     if (!isPrimaryPress(event)) return;
+    dispatchRefusal({ type: "clear" });
     pressCounterRef.current += 1;
     const id = pressCounterRef.current;
     dispatch({ type: "down", id });
@@ -222,12 +271,24 @@ export default function OrbApp() {
     const command = keyCommand(event);
     if (command === null) return;
     event.preventDefault();
+    if (command === "activate") dispatchRefusal({ type: "clear" });
     send(command === "activate" ? "orb_activate" : "orb_menu");
   };
 
   const classes = ["orb-root", ...orbClasses(state)].join(" ");
+  // An orb accent the user picked drives the ring; otherwise the orb follows the app accent tokens.
+  const accentStyle =
+    look.orbAccent === null
+      ? orbAccentStyle(state.face)
+      : {
+          "--chat-accent": orbRingColour(
+            state.face,
+            resolveOrbAccent(look.accent, look.orbAccent, look.bucket),
+            look.bucket,
+          ),
+        };
   const style = {
-    ...orbAccentStyle(state.face),
+    ...accentStyle,
     "--gaze-x": gaze.x,
     "--gaze-y": gaze.y,
   } as CSSProperties;
@@ -255,6 +316,14 @@ export default function OrbApp() {
           name: t("orb.assistantName"),
           state: t(`orb.face.${state.face}`),
         })}
+      </span>
+      {/* The refusal text is announced as text (A-C2); the code itself is never shown. */}
+      <span
+        role="status"
+        data-testid="orb-refusal-status"
+        className="orb-sr-only"
+      >
+        {refusal.key === null ? "" : t(refusal.key)}
       </span>
     </>
   );

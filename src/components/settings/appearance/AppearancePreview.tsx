@@ -47,6 +47,8 @@ export const AppearancePreview: React.FC = () => {
       accent: choice.accent,
       chat_theme: choice.chatTheme,
       visual_style: choice.visualStyle,
+      // The orb accent has no preview control yet: the preview shows the app palette.
+      orb_accent: null,
     },
     prefersDark,
   );

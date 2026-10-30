@@ -117,6 +117,10 @@ export function parseSnapshot(payload: unknown): AppearanceSnapshot | null {
     return null;
   }
 
+  // The orb accent is optional and normalised: a missing or unknown value reads as null (follow
+  // the app accent), so an older or garbled snapshot never rejects the whole appearance.
+  const orbAccent = oneOf(p.orb_accent, ACCENT_IDS);
+
   return {
     rev,
     theme,
@@ -124,6 +128,7 @@ export function parseSnapshot(payload: unknown): AppearanceSnapshot | null {
     accent,
     chat_theme: chatTheme,
     visual_style: visualStyle,
+    orb_accent: orbAccent,
   };
 }
 
