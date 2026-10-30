@@ -4428,5 +4428,9 @@ mod converse_agent_taint_tests;
 mod converse_confirm_forced_tests;
 
 #[cfg(test)]
+#[path = "converse_forced_plan_tests.rs"]
+mod converse_forced_plan_tests;
+
+#[cfg(test)]
 #[path = "converse_agent_fix_tests.rs"]
 mod converse_agent_fix_tests;
