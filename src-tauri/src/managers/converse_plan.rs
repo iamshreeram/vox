@@ -227,6 +227,9 @@ pub struct PlanInput<'a> {
     pub style: &'a str,
     /// Vault context block (DESIGN Rev 3, 3.4); `None` keeps the prompt byte-identical.
     pub vault_context: Option<&'a str>,
+    /// Session memory block (DESIGN D4, C6): reference data at the top of the first user message.
+    /// It never taints the session. `None` keeps the prompt byte-identical.
+    pub memory_context: Option<&'a str>,
     /// Stage 1 roles: the active role text, if any.
     pub role: Option<&'a str>,
     /// Stage 1 lessons: a lesson is paused with unspoken content.
@@ -267,6 +270,11 @@ pub fn build_plan_prompt(input: &PlanInput) -> PlanPrompt {
         input.vault_context,
     );
     let mut user = String::new();
+    if let Some(block) = input.memory_context {
+        user.push_str(&crate::managers::converse_platform::memory_user_block(
+            block,
+        ));
+    }
 
     let start = input.history.len().saturating_sub(MAX_HISTORY_ITEMS);
     let recent = &input.history[start..];
@@ -1209,6 +1217,7 @@ mod tests {
             last_draft: d,
             style: "warm and brief",
             vault_context: None,
+            memory_context: None,
             role: None,
             lesson_paused: false,
             roles_enabled: false,

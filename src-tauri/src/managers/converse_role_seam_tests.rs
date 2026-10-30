@@ -91,6 +91,7 @@ fn plain_input<'a>(role: Option<&'a str>, roles_enabled: bool) -> PlanInput<'a> 
         last_draft: None,
         style: "",
         vault_context: None,
+        memory_context: None,
         role,
         lesson_paused: false,
         roles_enabled,

@@ -383,6 +383,10 @@ pub struct TranscriptEvent {
 /// Receives transcript events for one session. Compile-only stub.
 pub trait TranscriptSink: Send + Sync {
     fn record(&self, ev: TranscriptEvent);
+
+    /// The session saw untrusted content (agent result, tool output, vault or RAG evidence).
+    /// Default: ignored. Called by the turn loop once `Carry.tainted` is set (DESIGN C2).
+    fn untrusted(&self) {}
 }
 
 /// Session-scoped journal of the utterance in progress: the speech handed to the mouth and the
@@ -450,20 +454,20 @@ fn speech_outcome(kind: &PlanKind) -> TurnOutcome {
     match kind {
         PlanKind::Clarify => TurnOutcome::Clarified,
         PlanKind::End => TurnOutcome::Ended,
-        // Job plans are parsed only when jobs are allowed and are routed through gate_and_run;
-        // without a policy they are never produced, so this branch only sees answer-like speech.
-        // role kinds are answer-like for the history label (their own handling is in execute_plan).
+        // Locally handled: the role or lesson state changes here, and the utterance is not an
+        // answer from the model (DESIGN A9). Only model-answered turns may be Answered.
+        PlanKind::SetRole | PlanKind::ClearRole | PlanKind::Resume => TurnOutcome::Acted,
+        // Plans the model returned: the utterance went to the model route. Job plans are parsed
+        // only when jobs are allowed and are routed through gate_and_run; without a policy they
+        // are never produced, so this branch only sees answer-like speech.
         PlanKind::Answer
         | PlanKind::Paste
         | PlanKind::Command
         | PlanKind::Job
-        | PlanKind::SetRole
-        | PlanKind::ClearRole
         // Stage 2 (C3 wires the real behaviour): an agent plan is answer-like until then.
         | PlanKind::Agent
         // Stage 4 (S4 wires the executor): a plan is answer-like for the history label.
-        | PlanKind::Plan
-        | PlanKind::Resume => TurnOutcome::Answered,
+        | PlanKind::Plan => TurnOutcome::Answered,
     }
 }
 
@@ -690,6 +694,9 @@ pub trait Reporter: Send + Sync {
 
     /// Receives one transcript event per accepted utterance. Default: ignored.
     fn transcript(&self, _ev: TranscriptEvent) {}
+
+    /// The session saw untrusted content. Default: ignored. Forwarded to the transcript sink.
+    fn untrusted(&self) {}
 
     /// Chat window: receives one recorded line (user text or speech handed to the voice).
     /// Default: ignored (DESIGN-CHAT 2.2). Stub: the spec tests are red until the hooks land.
@@ -1606,6 +1613,7 @@ async fn brain_turn(
         last_draft: carry.last_draft.as_deref(),
         style: &cfg.style,
         vault_context: None,
+        memory_context: None,
         role: carry.role.as_deref(),
         lesson_paused: carry.lesson.is_some(),
         roles_enabled: true,
@@ -1876,6 +1884,7 @@ async fn lesson_start_turn(
         last_draft: None,
         style: &cfg.style,
         vault_context: None,
+        memory_context: None,
         role: carry.role.as_deref(),
         lesson_paused: false,
         roles_enabled: true,
@@ -2467,6 +2476,10 @@ async fn run_turns(outer: &Deps<'_>, cfg: &SessionConfig, cancel: &mut CancelTok
     let mut carry = Carry::default();
     let end = run_turns_loop(outer, cfg, cancel, &mut carry).await;
     converse_agent_loop::end_agent_session(&mut carry);
+    // C2: the loop can exit on any path; a taint set by the last turn is reported here.
+    if carry.tainted {
+        outer.reporter.untrusted();
+    }
     end
 }
 
@@ -2504,6 +2517,10 @@ async fn run_turns_loop(
     let deps = &tapped;
 
     loop {
+        // C2: once a turn has tainted the session, every later turn reports it (idempotent).
+        if carry.tainted {
+            deps.reporter.untrusted();
+        }
         if is_cancelled(cancel) {
             return SessionEnd::Cancelled;
         }
@@ -4422,6 +4439,10 @@ mod converse_agent_loop;
 #[cfg(test)]
 #[path = "converse_agent_taint_tests.rs"]
 mod converse_agent_taint_tests;
+
+#[cfg(test)]
+#[path = "converse_memory_session_tests.rs"]
+mod memory_session_tests;
 
 #[cfg(test)]
 #[path = "converse_confirm_forced_tests.rs"]

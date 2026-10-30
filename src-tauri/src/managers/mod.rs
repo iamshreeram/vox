@@ -49,6 +49,11 @@ pub mod command_router;
 pub mod composer_config;
 pub mod composer_rules;
 pub mod conversation;
+pub mod conversation_memory;
+#[cfg(test)]
+mod conversation_memory_fail_tests;
+#[cfg(test)]
+mod conversation_memory_tests;
 pub mod conversation_record;
 #[cfg(test)]
 mod conversation_record_tests;
@@ -87,6 +92,8 @@ pub mod converse_context;
 pub mod converse_hooks;
 pub mod converse_latency;
 pub mod converse_local;
+#[cfg(test)]
+mod converse_memory_inject_tests;
 pub mod converse_overlay;
 pub mod converse_plan;
 #[cfg(test)]

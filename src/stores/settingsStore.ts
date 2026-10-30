@@ -270,6 +270,8 @@ const settingUpdaters: {
     commands.changeConversationRecordsSetting(value as boolean),
   conversation_records_to_vault: (value) =>
     commands.changeConversationRecordsToVaultSetting(value as boolean),
+  conversation_memory_enabled: (value) =>
+    commands.changeConversationMemorySetting(value as boolean),
   agent_tools_enabled: (value) =>
     commands.changeAgentToolsSetting(value as boolean),
   agent_tools_guard_actions: (value) =>

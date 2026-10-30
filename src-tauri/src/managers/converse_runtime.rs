@@ -82,6 +82,28 @@ fn guard_on_complete(
     })
 }
 
+/// The end of a session whose body panicked (G4). The Carry-only taint is lost with the unwind,
+/// so the reporter is told the session was untrusted first: a panicked session never stores a
+/// memory row. The end is `Cancelled`, as before.
+pub(crate) fn session_end_after_panic(reporter: &dyn Reporter) -> SessionEnd {
+    reporter.untrusted();
+    SessionEnd::Cancelled
+}
+
+/// The production forwarding reporter for one session, built for tests (G3). Same struct the
+/// session task builds, without the state and latency wiring.
+#[cfg(test)]
+pub(crate) fn forward_reporter_for_tests(
+    platform: Arc<dyn Platform>,
+    transcript: Option<Arc<dyn TranscriptSink>>,
+) -> impl Reporter {
+    ForwardReporter {
+        platform,
+        transcript,
+        latency_sink: None,
+    }
+}
+
 /// Everything one session needs, built fresh per session.
 pub struct SessionParts {
     pub ears: Box<dyn Ears>,
@@ -228,6 +250,10 @@ impl Reporter for TextModeReporter {
         self.inner.transcript(ev);
     }
 
+    fn untrusted(&self) {
+        self.inner.untrusted();
+    }
+
     fn chat(&self, role: crate::managers::chat_log::ChatRole, text: &str) {
         self.inner.chat(role, text);
     }
@@ -266,6 +292,12 @@ impl Reporter for ForwardReporter {
     fn transcript(&self, ev: TranscriptEvent) {
         if let Some(sink) = self.transcript.as_ref() {
             sink.record(ev);
+        }
+    }
+
+    fn untrusted(&self) {
+        if let Some(sink) = self.transcript.as_ref() {
+            sink.untrusted();
         }
     }
 
@@ -458,7 +490,7 @@ impl ConverseController {
                 };
                 FutureExt::catch_unwind(AssertUnwindSafe(body))
                     .await
-                    .unwrap_or(SessionEnd::Cancelled)
+                    .unwrap_or_else(|_| session_end_after_panic(&reporter))
             };
             // Finalizer: exact order, always runs. The barge-in monitor (its stream and worker)
             // ends first: before the capture worker and long before the admission is released

@@ -11,6 +11,7 @@ pub mod brain;
 pub mod bubbles;
 pub mod chat;
 pub mod chat_opacity;
+pub mod conversation_memory;
 pub mod conversation_records;
 pub mod converse;
 pub mod converse_extras;

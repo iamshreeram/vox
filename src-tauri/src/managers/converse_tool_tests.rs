@@ -445,6 +445,7 @@ fn input_with<'a>(utterance: &'a str, vault: Option<&'a str>) -> PlanInput<'a> {
         last_draft: None,
         style: "",
         vault_context: vault,
+        memory_context: None,
         lesson_paused: false,
         role: None,
         roles_enabled: false,

@@ -356,6 +356,7 @@ fn prompt_for(history: Vec<(String, String)>) -> crate::managers::converse_plan:
         last_draft: None,
         style: &style,
         vault_context: None,
+        memory_context: None,
         lesson_paused: false,
         role: None,
         roles_enabled: false,

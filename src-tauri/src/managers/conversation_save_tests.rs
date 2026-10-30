@@ -197,6 +197,7 @@ fn turn(i: usize) -> TurnRecord {
 
 fn session(turns: usize) -> CollectedSession {
     CollectedSession {
+        untrusted: false,
         turns: (0..turns).map(turn).collect(),
         dropped: 0,
         started_at_ms: START_MS,
