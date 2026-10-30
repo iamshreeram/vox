@@ -8,10 +8,16 @@ use crate::settings;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
-/// Deletes every remembered summary. Returns the rows deleted; 0 when there is no store or
-/// the store reports an error.
-pub fn clear_memory(mem: Option<&ConversationMemory>) -> usize {
-    mem.and_then(|memory| memory.clear().ok()).unwrap_or(0)
+/// The fixed user-facing failure text of a clear (never a database detail).
+pub(crate) const CLEAR_FAILED: &str = "clear failed";
+
+/// Deletes every remembered summary. Returns the rows deleted; `Ok(0)` when there is no store.
+/// A store error is reported as the fixed text `clear failed`, never any detail.
+pub fn clear_memory(mem: Option<&ConversationMemory>) -> Result<usize, String> {
+    match mem {
+        None => Ok(0),
+        Some(memory) => memory.clear().map_err(|_| CLEAR_FAILED.to_string()),
+    }
 }
 
 /// Number of remembered summaries; 0 when there is no store or the store reports an error.
@@ -34,7 +40,7 @@ fn managed_memory(app: &AppHandle) -> Option<Arc<ConversationMemory>> {
 
 #[tauri::command]
 #[specta::specta]
-pub fn clear_conversation_memory(app: AppHandle) -> usize {
+pub fn clear_conversation_memory(app: AppHandle) -> Result<usize, String> {
     clear_memory(managed_memory(&app).as_deref())
 }
 
@@ -58,6 +64,7 @@ pub fn change_conversation_memory_setting(app: AppHandle, enabled: bool) -> Resu
 #[cfg(test)]
 mod tests {
     use super::{apply_setting_change, clear_memory, memory_count};
+
     use crate::managers::conversation_memory::{ConversationMemory, MemoryError};
 
     fn store() -> ConversationMemory {
@@ -76,7 +83,7 @@ mod tests {
         let mem = store();
         put(&mem, 1_000, "first summary");
         put(&mem, 2_000, "second summary");
-        assert_eq!(clear_memory(Some(&mem)), 2);
+        assert_eq!(clear_memory(Some(&mem)), Ok(2));
         assert_eq!(mem.count().unwrap(), 0);
     }
 
@@ -84,7 +91,7 @@ mod tests {
     fn clear_bumps_the_epoch_so_a_pre_clear_write_is_stale() {
         let mem = store();
         let before = mem.epoch();
-        clear_memory(Some(&mem));
+        assert_eq!(clear_memory(Some(&mem)), Ok(0));
         assert_eq!(
             mem.add(before, 0, 1_000, 2, "late write", false),
             Err(MemoryError::Stale)
@@ -93,7 +100,7 @@ mod tests {
 
     #[test]
     fn clear_without_a_store_returns_zero() {
-        assert_eq!(clear_memory(None), 0);
+        assert_eq!(clear_memory(None), Ok(0));
     }
 
     #[test]

@@ -304,6 +304,7 @@ pub(super) fn core_for(rag: Option<RagSession>, vault_route: bool) -> BrainCore 
         rag,
         retrieval_deadline: Duration::from_secs(2),
         memory: None,
+        notes_used: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         #[cfg(test)]
         after_retrieve: None,
     }

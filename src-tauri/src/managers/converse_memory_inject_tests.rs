@@ -69,6 +69,7 @@ fn core_with(memory: Option<MemoryContext>, vault_route: bool) -> BrainCore {
         rag: None,
         retrieval_deadline: Duration::from_secs(2),
         memory,
+        notes_used: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         after_retrieve: None,
     }
 }

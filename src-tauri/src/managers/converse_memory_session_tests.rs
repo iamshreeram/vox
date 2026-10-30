@@ -402,6 +402,7 @@ async fn t_a8_second_session_prompt_carries_the_first_session_summary() {
         rag: None,
         retrieval_deadline: Duration::from_secs(2),
         memory: ctx,
+        notes_used: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         after_retrieve: None,
     };
     let block = memory_for_plan(&core, &http_settings(true)).expect("block on the first call");
@@ -452,6 +453,8 @@ async fn t_a10_ii_tool_output_writes_no_row() {
 }
 
 /// (iii) RAG or vault evidence: `mark_vault_taint` on an evidence block.
+/// Synthetic: it calls `mark_vault_taint` directly. The real planning paths (plain route,
+/// tool route, RAG evidence) are proven by the `t_v1_*` tests below, which call `plan_turn_core`.
 #[tokio::test]
 async fn t_a10_iii_vault_evidence_writes_no_row() {
     let rig = plain_rig();
@@ -908,4 +911,307 @@ async fn t_g4_panicking_session_writes_no_row() {
     let id = memory_start_row(&memory, memory.epoch(), &session, end, NOW, true, false);
     assert_eq!(id, None, "a panicked session writes no row");
     assert_eq!(memory.count().expect("count"), 0);
+}
+
+// ---- V1: notes reach a plan on either route, so the session is not remembered -----------------
+
+use crate::managers::converse_platform::{same_summary_route, summary_allowed};
+use crate::managers::converse_rag_tests::{plan_once, rag_settings, request_text};
+
+/// A vault note that must never reach a remembered summary of this session.
+const NOTES: &str = "PRIVATE-NOTE-42: the vault says the launch is on Friday.";
+
+/// A plain brain core whose M1 slot holds `notes` (`None` is an empty slot).
+fn core_with_notes(notes: Option<&str>) -> BrainCore {
+    let core = core_for(None, true);
+    if let Ok(mut slot) = core.vault_block.lock() {
+        *slot = notes.map(str::to_string);
+    }
+    core
+}
+
+/// The end-of-session decision as `on_complete` makes it: the taint OR the notes flag.
+fn remember_decision(memory: &ConversationMemory, core: &BrainCore) -> Option<i64> {
+    let session = two_answered_turns_collected();
+    let tainted = core.taint.is_tainted() || core.notes_used.load(AtomicOrdering::SeqCst);
+    memory_start_row(
+        memory,
+        memory.epoch(),
+        &session,
+        SessionEnd::UserEnded,
+        NOW,
+        true,
+        tainted,
+    )
+}
+
+/// The request bodies the loopback server received, as text.
+fn sent_texts(seen: &Arc<std::sync::Mutex<Vec<Vec<u8>>>>) -> Vec<String> {
+    seen.lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .iter()
+        .map(|raw| request_text(raw))
+        .collect()
+}
+
+/// (a) plain route, notes in the slot: the notes reach the model, the flag is set, the taint
+/// is still untouched (the plain-route guard is unchanged), and no row is written.
+#[tokio::test]
+async fn t_v1_a_plain_route_with_notes_is_not_remembered() {
+    let (base, seen) = serve_sequence(vec![text_reply(&plan_json("answer", "Friday."))]);
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let settings = rag_settings(tmp.path(), false, &base);
+    let core = core_with_notes(Some(NOTES));
+    let memory = memory_db();
+
+    plan_once(
+        &core,
+        &settings,
+        "when is launch",
+        Arc::new(AtomicUsize::new(0)),
+    )
+    .await
+    .expect("plain route plan");
+
+    assert!(
+        sent_texts(&seen).iter().any(|text| text.contains(NOTES)),
+        "the notes reached the model on the plain route"
+    );
+    assert!(core.notes_used.load(AtomicOrdering::SeqCst), "flag set");
+    assert!(!core.taint.is_tainted(), "TaintState stays untainted");
+    assert_eq!(remember_decision(&memory, &core), None, "no row");
+    assert_eq!(memory.count().expect("count"), 0);
+}
+
+/// (b) same call with an empty slot: the flag stays false and the row is written.
+#[tokio::test]
+async fn t_v1_b_plain_route_without_notes_is_remembered() {
+    let (base, _seen) = serve_sequence(vec![text_reply(&plan_json("answer", "Friday."))]);
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let settings = rag_settings(tmp.path(), false, &base);
+    let core = core_with_notes(None);
+    let memory = memory_db();
+
+    plan_once(
+        &core,
+        &settings,
+        "when is launch",
+        Arc::new(AtomicUsize::new(0)),
+    )
+    .await
+    .expect("plain route plan");
+
+    assert!(!core.notes_used.load(AtomicOrdering::SeqCst), "flag false");
+    assert!(remember_decision(&memory, &core).is_some(), "row written");
+    assert_eq!(memory.count().expect("count"), 1);
+}
+
+/// (c) tool route, notes in the slot: the flag is set, the taint is set as before, no row.
+#[tokio::test]
+async fn t_v1_c_tool_route_with_notes_is_tainted_and_not_remembered() {
+    let (base, _seen) = serve_sequence(vec![text_reply(&plan_json("answer", "Friday."))]);
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let settings = rag_settings(tmp.path(), true, &base);
+    let core = core_with_notes(Some(NOTES));
+    let memory = memory_db();
+
+    plan_once(
+        &core,
+        &settings,
+        "when is launch",
+        Arc::new(AtomicUsize::new(0)),
+    )
+    .await
+    .expect("tool route plan");
+
+    assert!(core.notes_used.load(AtomicOrdering::SeqCst), "flag set");
+    assert!(core.taint.is_tainted(), "the tool route taints as before");
+    assert_eq!(remember_decision(&memory, &core), None, "no row");
+}
+
+/// (d) RAG evidence on the plain route: the evidence block sets the flag and no row is written.
+#[tokio::test]
+async fn t_v1_d_rag_evidence_is_not_remembered() {
+    let (base, _seen) = serve_sequence(vec![text_reply(&plan_json("answer", "On track."))]);
+    let rig = ready_rig(&base, false);
+    let core = core_for(Some(rig.runtime.session(&rig.settings)), true);
+    let memory = memory_db();
+
+    plan_once(
+        &core,
+        &rig.settings,
+        "status of Atlas",
+        Arc::new(AtomicUsize::new(0)),
+    )
+    .await
+    .expect("plan with evidence");
+
+    assert!(core.notes_used.load(AtomicOrdering::SeqCst), "flag set");
+    assert_eq!(remember_decision(&memory, &core), None, "no row");
+    assert_eq!(memory.count().expect("count"), 0);
+}
+
+/// (e) the flag is sticky: a later turn with no notes leaves it set and the row still unwritten.
+#[tokio::test]
+async fn t_v1_e_flag_stays_set_after_a_later_turn_without_notes() {
+    let (base, _seen) = serve_sequence(vec![
+        text_reply(&plan_json("answer", "Friday.")),
+        text_reply(&plan_json("answer", "Still Friday.")),
+    ]);
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let settings = rag_settings(tmp.path(), false, &base);
+    let core = core_with_notes(Some(NOTES));
+    let memory = memory_db();
+    let calls = Arc::new(AtomicUsize::new(0));
+
+    plan_once(&core, &settings, "when is launch", calls.clone())
+        .await
+        .expect("first turn");
+    if let Ok(mut slot) = core.vault_block.lock() {
+        *slot = None;
+    }
+    plan_once(&core, &settings, "and the date", calls)
+        .await
+        .expect("second turn without notes");
+
+    assert!(core.notes_used.load(AtomicOrdering::SeqCst), "still set");
+    assert_eq!(remember_decision(&memory, &core), None, "no row");
+}
+
+// ---- V4: the summary route is re-checked against the snapshot ---------------------------------
+
+/// Settings with a direct summary route to a fixed endpoint, model and token.
+fn summary_settings() -> crate::settings::AppSettings {
+    let mut s = get_default_settings();
+    s.exp_rt_enabled = true;
+    s.exp_rt_direct_endpoint = true;
+    s.exp_rt_endpoint_url = "https://summary.example.invalid/v1".into();
+    s.exp_rt_model = "model-a".into();
+    s.exp_rt_token = "token-a".into();
+    s
+}
+
+/// Whether mutating one field of a copy changes the summary route.
+fn route_changes_when(mutate: impl FnOnce(&mut crate::settings::AppSettings)) -> bool {
+    let base = summary_settings();
+    let mut changed = base.clone();
+    mutate(&mut changed);
+    !same_summary_route(&base, &changed)
+}
+
+#[test]
+fn t_v4_unrelated_settings_keep_the_route() {
+    let base = summary_settings();
+    let mut other = base.clone();
+    other.tts_enabled = !base.tts_enabled;
+    other.vault_path = "/somewhere/else".into();
+    other.conversation_memory_enabled = true;
+    assert!(same_summary_route(&base, &other));
+    assert!(
+        summary_allowed(&other, &base),
+        "allowed when only unrelated settings differ"
+    );
+}
+
+#[test]
+fn t_v4_endpoint_change_is_not_the_same_route() {
+    assert!(route_changes_when(
+        |s| s.exp_rt_endpoint_url = "https://other.example.invalid/v1".into()
+    ));
+}
+
+#[test]
+fn t_v4_model_change_is_not_the_same_route() {
+    assert!(route_changes_when(|s| s.exp_rt_model = "model-b".into()));
+}
+
+#[test]
+fn t_v4_token_change_is_not_the_same_route() {
+    assert!(route_changes_when(|s| s.exp_rt_token = "token-b".into()));
+}
+
+#[test]
+fn t_v4_route_kind_change_is_not_the_same_route() {
+    assert!(route_changes_when(|s| s.exp_rt_direct_endpoint = false));
+}
+
+#[test]
+fn t_v4_stream_flag_change_is_not_the_same_route() {
+    assert!(route_changes_when(
+        |s| s.exp_rt_stream_reply = !s.exp_rt_stream_reply
+    ));
+}
+
+#[test]
+fn t_v4_composer_mode_change_is_not_the_same_route() {
+    assert!(route_changes_when(|s| {
+        s.tts_composer_mode = crate::managers::composer_config::TtsComposerMode::Model
+    }));
+}
+
+#[test]
+fn t_v4_composer_model_change_is_not_the_same_route() {
+    assert!(route_changes_when(
+        |s| s.tts_composer_model = "composer-b".into()
+    ));
+}
+
+#[test]
+fn t_v4_brain_source_change_is_not_the_same_route() {
+    assert!(route_changes_when(|s| {
+        use crate::settings::BrainSource;
+        s.brain_source_realtime = match s.brain_source_realtime {
+            BrainSource::Own => BrainSource::Inherit,
+            BrainSource::Inherit => BrainSource::Own,
+        };
+    }));
+}
+
+#[test]
+fn t_v4_brain_model_change_is_not_the_same_route() {
+    assert!(route_changes_when(|s| s.brain_model = "brain-b".into()));
+}
+
+#[test]
+fn t_v4_api_key_change_is_not_the_same_route() {
+    assert!(route_changes_when(|s| {
+        s.post_process_api_keys
+            .insert("provider-x".into(), "key-b".into());
+    }));
+}
+
+#[test]
+fn t_v4_provider_base_url_change_is_not_the_same_route() {
+    let base = get_default_settings();
+    assert!(
+        !base.post_process_providers.is_empty(),
+        "the default table has providers"
+    );
+    assert!(route_changes_when(|s| {
+        if let Some(p) = s.post_process_providers.first_mut() {
+            p.base_url.push_str("/changed");
+        }
+    }));
+}
+
+#[test]
+fn t_v4_allowed_needs_memory_on_the_http_route_and_the_same_route() {
+    let base = summary_settings();
+    let mut on = base.clone();
+    on.conversation_memory_enabled = true;
+    assert!(
+        summary_allowed(&on, &on.clone()),
+        "on, HTTP route, same route"
+    );
+
+    let mut off = on.clone();
+    off.conversation_memory_enabled = false;
+    assert!(!summary_allowed(&off, &on), "setting off stops the summary");
+
+    let mut moved = on.clone();
+    moved.exp_rt_endpoint_url = "https://moved.example.invalid/v1".into();
+    assert!(
+        !summary_allowed(&moved, &on),
+        "a route switch stops the summary"
+    );
 }

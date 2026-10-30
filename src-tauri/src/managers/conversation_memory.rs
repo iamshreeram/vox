@@ -334,17 +334,23 @@ impl ConversationMemory {
         usize::try_from(n).map_err(|_| MemoryError::Db("row count out of range".into()))
     }
 
-    /// Deletes every row and increments the epoch in one transaction. Returns
-    /// the number of rows deleted.
+    /// Deletes every row and increments the epoch. The epoch moves under the same lock even
+    /// when the delete fails, so every pending write from before the clear is refused either
+    /// way (a privacy action must never look like it did nothing). Returns the rows deleted.
     pub fn clear(&self) -> Result<usize, MemoryError> {
-        let mut conn = self.lock()?;
-        let tx = begin(&mut conn)?;
-        let deleted = tx
-            .execute("DELETE FROM conversation_memory", [])
-            .map_err(|e| db_error("clear", e))?;
-        tx.commit().map_err(|e| db_error("commit clear", e))?;
+        let mut conn = self.conn.lock().unwrap_or_else(PoisonError::into_inner);
+        let deleted = delete_all_rows(&mut conn);
         self.epoch.fetch_add(1, Ordering::SeqCst);
-        Ok(deleted)
+        deleted
+    }
+
+    /// Test only: switches the connection to read-only (`PRAGMA query_only = ON`), so every
+    /// later write fails with a database error while reads still work.
+    #[cfg(test)]
+    pub(crate) fn force_read_only_for_tests(&self) {
+        if let Ok(conn) = self.lock() {
+            let _ = conn.pragma_update(None, "query_only", "ON");
+        }
     }
 
     /// Refuses a write whose epoch is no longer current. Caller holds the lock.
@@ -391,6 +397,16 @@ impl ConversationMemory {
             .map_err(|e| db_error("evict", e))?;
         }
     }
+}
+
+/// Deletes every row in one transaction and returns the count. Caller holds the lock.
+fn delete_all_rows(conn: &mut Connection) -> Result<usize, MemoryError> {
+    let tx = begin(conn)?;
+    let deleted = tx
+        .execute("DELETE FROM conversation_memory", [])
+        .map_err(|e| db_error("clear", e))?;
+    tx.commit().map_err(|e| db_error("commit clear", e))?;
+    Ok(deleted)
 }
 
 /// Maps a rusqlite error to `MemoryError::Db` with a fixed context label.

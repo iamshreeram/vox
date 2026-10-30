@@ -1151,6 +1151,58 @@ pub(crate) fn memory_session_on(enabled: bool, store_present: bool, route_allowe
     enabled && store_present && route_allowed
 }
 
+/// The provider rows a summary call can reach: id, base URL, models endpoint and flags.
+fn summary_providers(s: &AppSettings) -> Vec<(String, String, Option<String>, bool, bool)> {
+    s.post_process_providers
+        .iter()
+        .map(|p| {
+            (
+                p.id.clone(),
+                p.base_url.clone(),
+                p.models_endpoint.clone(),
+                p.supports_structured_output,
+                p.allow_base_url_edit,
+            )
+        })
+        .collect()
+}
+
+/// Whether two settings snapshots send a summary to the same place with the same credential
+/// reference (DESIGN Rev 5, V4). Compares exactly what `RouteSummarizer` reads: the route kind
+/// and its inputs (realtime direct endpoint, stream flags, endpoint, model and token; composer
+/// mode, provider and model), the Brain routing of the realtime stream, the provider table and
+/// the API keys. Unrelated settings are ignored.
+pub(crate) fn same_summary_route(a: &AppSettings, b: &AppSettings) -> bool {
+    crate::managers::conversation_save::summary_route(a)
+        == crate::managers::conversation_save::summary_route(b)
+        && a.exp_rt_enabled == b.exp_rt_enabled
+        && a.exp_rt_direct_endpoint == b.exp_rt_direct_endpoint
+        && a.exp_rt_stream_reply == b.exp_rt_stream_reply
+        && a.exp_rt_endpoint_url == b.exp_rt_endpoint_url
+        && a.exp_rt_model == b.exp_rt_model
+        && a.exp_rt_token.as_str() == b.exp_rt_token.as_str()
+        && a.tts_composer_mode == b.tts_composer_mode
+        && a.tts_composer_provider_id == b.tts_composer_provider_id
+        && a.tts_composer_model == b.tts_composer_model
+        && a.brain_schema_v1 == b.brain_schema_v1
+        && a.brain_source_realtime == b.brain_source_realtime
+        && a.brain_provider_id == b.brain_provider_id
+        && a.brain_base_url == b.brain_base_url
+        && a.brain_model == b.brain_model
+        && a.brain_token.as_str() == b.brain_token.as_str()
+        && a.brain_transcript_consent_dest == b.brain_transcript_consent_dest
+        && summary_providers(a) == summary_providers(b)
+        && *a.post_process_api_keys == *b.post_process_api_keys
+}
+
+/// The memory summary may be dispatched only while the setting is on, the HTTP model route is
+/// active, and the route is still the one the summarizer was built from (DESIGN Rev 5, V4).
+pub(crate) fn summary_allowed(current: &AppSettings, snapshot: &AppSettings) -> bool {
+    current.conversation_memory_enabled
+        && vault_text_allowed(current)
+        && same_summary_route(current, snapshot)
+}
+
 /// Whether a voice session collects transcript events: records or memory need them (A2).
 pub(crate) fn session_collects(records_on: bool, memory_on: bool) -> bool {
     records_on || memory_on
@@ -1210,11 +1262,10 @@ fn finish_memory_session(
     let settings = get_settings(&app);
     tauri::async_runtime::spawn(async move {
         let joined = tauri::async_runtime::spawn_blocking(move || {
+            // The snapshot the summarizer is built from; `allowed` re-checks the route against it.
+            let snapshot = settings.clone();
             let summarizer = RouteSummarizer::new(settings);
-            let allowed = move || {
-                let current = get_settings(&app);
-                current.conversation_memory_enabled && vault_text_allowed(&current)
-            };
+            let allowed = move || summary_allowed(&get_settings(&app), &snapshot);
             tauri::async_runtime::block_on(remember_finish(
                 &store,
                 &summarizer,
@@ -1465,6 +1516,10 @@ impl Platform for RealPlatform {
 
         // One taint flag per session: the brain sets it, and `on_complete` reads it at the end.
         let taint = TaintState::new();
+        // Set by `plan_turn_core` whenever a vault or notes block reaches a plan (DESIGN Rev 5,
+        // V1). Sticky for the session. It is separate from `taint`, which the plain route never sets.
+        let notes_used = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let notes_seen = notes_used.clone();
         let memory_job = match (memory_on, memory_store) {
             (true, Some(store)) => Some((store, epoch_at_start)),
             _ => None,
@@ -1479,14 +1534,9 @@ impl Platform for RealPlatform {
                     let session = collector.take();
                     // Memory first, synchronously: the fallback row exists before this returns.
                     if let Some((store, epoch)) = memory_job {
-                        finish_memory_session(
-                            app.clone(),
-                            store,
-                            epoch,
-                            &session,
-                            end,
-                            taint_seen.is_tainted(),
-                        );
+                        let tainted = taint_seen.is_tainted()
+                            || notes_seen.load(std::sync::atomic::Ordering::SeqCst);
+                        finish_memory_session(app.clone(), store, epoch, &session, end, tainted);
                     }
                     // Only spawns: the session never waits on the save (DESIGN 3.5 (2)).
                     if records_on {
@@ -1552,6 +1602,7 @@ impl Platform for RealPlatform {
                     rag,
                     retrieval_deadline: RETRIEVAL_DEADLINE,
                     memory: memory_ctx,
+                    notes_used,
                     #[cfg(test)]
                     after_retrieve: None,
                 },
@@ -1609,6 +1660,7 @@ impl Platform for RealPlatform {
                     retrieval_deadline: RETRIEVAL_DEADLINE,
                     // Set by the save step (3c); no session carries memory yet.
                     memory: None,
+                    notes_used: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                     #[cfg(test)]
                     after_retrieve: None,
                 },
@@ -2433,6 +2485,10 @@ pub(crate) struct BrainCore {
     /// Session memory block captured at start (DESIGN D4). `None` until the save step wires it;
     /// the text chat session never sets it. Read through `memory_for_plan` on every plan call.
     pub(crate) memory: Option<MemoryContext>,
+    /// Sticky for the session: set once a non-empty vault or notes block was placed in any plan,
+    /// on either route (DESIGN Rev 5, V1). Read at session end, with `taint`, to decide whether
+    /// the session may be remembered. Never reset, and it never changes `taint` or the guards.
+    pub(crate) notes_used: Arc<std::sync::atomic::AtomicBool>,
     /// Test-only: runs inside the gated retrieval closure, after retrieval and the readiness read.
     #[cfg(test)]
     pub(crate) after_retrieve: Option<RetrieveHook>,
@@ -2450,6 +2506,12 @@ pub(crate) async fn plan_turn_core(
 ) -> Result<TurnPlan, PlanError> {
     let rag_block = prepare_rag_evidence(core, settings, input.utterance).await;
     let block = merge_vault_context(m1_context(core, settings), rag_block.as_deref());
+    // Any notes text placed in this plan marks the session for the whole session (V1), whatever
+    // the route. Only the notes flag is set here: `taint` and the plain-route guards are unchanged.
+    if block.as_deref().is_some_and(|text| !text.trim().is_empty()) {
+        core.notes_used
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
     let memory = memory_for_plan(core, settings);
     let input = PlanInput {
         vault_context: block.as_deref(),
