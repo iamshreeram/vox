@@ -49,6 +49,9 @@ pub mod command_router;
 pub mod composer_config;
 pub mod composer_rules;
 pub mod conversation;
+pub mod conversation_memory;
+#[cfg(test)]
+mod conversation_memory_tests;
 pub mod conversation_record;
 #[cfg(test)]
 mod conversation_record_tests;
