@@ -224,7 +224,7 @@ fn record_answer(chat: Option<&dyn Reporter>, outcome: &ListenOutcome) {
 
 /// Speaks `question` and listens once for the answer, with the timing of `confirm_action`.
 /// `Err` when the question could not be spoken or no answer window opened.
-async fn ask_and_listen(
+pub(crate) async fn ask_and_listen(
     ears: &dyn Ears,
     mouth: &dyn Mouth,
     announcer: &Announcer,
@@ -255,6 +255,7 @@ async fn ask_and_listen(
 /// lower-cased, punctuation-stripped and whitespace-normalised, is exactly `yes` or exactly
 /// `go ahead`. Everything else (`okay`, `sure`, `yes please`, `go ahead please`, mixed speech,
 /// silence, the forced prompt itself) is not an approval.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn classify_strict_yes(utterance: &str) -> bool {
     let key = utterance
         .split_whitespace()
@@ -268,6 +269,7 @@ pub fn classify_strict_yes(utterance: &str) -> bool {
 /// Asks a forced yes/no question (DESIGN 2.5, C6). The same say, quiet wait, guard and single
 /// listen as `confirm_action`, but only exactly `yes` or `go ahead` approves (`classify_strict_yes`). The
 /// caller speaks the decline line; nothing runs unless this returns `Approved`.
+#[allow(dead_code)]
 pub async fn confirm_forced(
     ears: &dyn Ears,
     mouth: &dyn Mouth,
@@ -370,7 +372,7 @@ async fn wait_until_quiet(mouth: &dyn Mouth, quiet_wait: Duration) -> bool {
 }
 
 /// Maps the outcome of one listen to a confirmation decision.
-fn decision_for(outcome: ListenOutcome) -> Decision {
+pub(crate) fn decision_for(outcome: ListenOutcome) -> Decision {
     match outcome {
         ListenOutcome::Utterance(text) if text.trim().is_empty() => {
             Decision::Declined(DeclineReason::Silence)

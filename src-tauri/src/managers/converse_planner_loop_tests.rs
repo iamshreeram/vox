@@ -1028,7 +1028,9 @@ async fn plan_announcement_is_spoken_once_after_step_one_starts() {
     let say_at = index_of(&r, &format!("say:{SPEECH}")).expect("announced");
     assert!(start_at < say_at, "step 1 starts before the announcement");
     assert!(
-        !spoken(&r).iter().any(|s| s.contains("Say yes")),
+        !spoken(&r)
+            .iter()
+            .any(|s| s.contains(crate::managers::converse_confirm::FORCED_PROMPT_TAIL)),
         "no second question when untainted"
     );
 }
@@ -1065,7 +1067,7 @@ async fn forced_confirmation_after_taint_speaks_the_exact_prompt_and_waits_for_y
 /// Every reply other than the exact `yes` declines: no plan step starts.
 #[tokio::test]
 async fn forced_plan_declined_by_a_non_yes_reply_runs_nothing() {
-    for reply in ["okay", "yeah", "yes please"] {
+    for reply in ["no", "stop", "nope"] {
         let steps = chain(&[(StepKind::Research, T1), (StepKind::Code, T2)]);
         let r = rig(
             vec![heard(REQ), heard("make a plan"), heard(reply)],

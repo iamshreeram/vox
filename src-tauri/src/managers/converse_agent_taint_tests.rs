@@ -10,7 +10,7 @@ use super::*;
 use crate::managers::command_router::CommandAction;
 use crate::managers::converse_agent::AgentEvent;
 use crate::managers::converse_agent::AgentPoll;
-use crate::managers::converse_confirm::{ValidatedCommand, FORCED_PROMPT_TAIL};
+use crate::managers::converse_confirm::{reask_prompt, ValidatedCommand, FORCED_PROMPT_TAIL};
 use crate::managers::converse_context::note_agent_result;
 use crate::managers::converse_plan::TurnPlan;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -201,7 +201,7 @@ async fn t_forced_prompt_text_is_exact_for_every_kind() {
     ];
     for kind in kinds {
         for with_policy in [false, true] {
-            let r = tainted_rig(RESULT, kind, vec![heard("okay")], vec![]);
+            let r = tainted_rig(RESULT, kind, vec![heard("no")], vec![]);
             let pol = policy_on();
             let policy: Option<&dyn PolicySource> = if with_policy { Some(&pol) } else { None };
             run_with(&r, &vcfg(false, None), policy).await;
@@ -383,20 +383,48 @@ async fn t_gate_on_still_asks_the_forced_yes_first() {
     );
 }
 
-/// B9: every reply other than exactly "yes" or "go ahead" means no: the prompt is spoken, `Okay, I
-/// won't.` is spoken, nothing runs. Silence and mixed speech are included.
+/// The line spoken when an answer is still unclear after the one re-ask (DESIGN D4).
+pub(super) const UNCLEAR_LINE: &str = "I didn't catch a clear yes, so I didn't do it.";
+
+/// B9 (natural confirmation): an answer that is neither a clear local agreement nor a clear local
+/// refusal never runs anything. An unclear answer is re-asked once; a silent second listen ends the
+/// question with the Unclear line. Silence on the first listen is declined at once. The approving
+/// rows (okay, sure, yes please) are in `t_okay_sure_yes_please_and_go_ahead_approve_once`.
 #[tokio::test]
 async fn t_anything_but_yes_or_go_ahead_runs_nothing() {
-    let replies: Vec<(&str, Step)> = vec![
-        ("okay", heard("okay")),
-        ("sure", heard("sure")),
-        ("yes please", heard("yes please")),
-        ("mixed", heard("yes but delete it")),
-        ("silence", silent()),
-        ("go ahead and delete it", heard("go ahead and delete it")),
-        ("yes go ahead", heard("yes go ahead")),
-        ("go ahead please", heard("go ahead please")),
-        ("okay go ahead", heard("okay go ahead")),
+    // (label, first answer, second answer when the first one is re-asked, expected spoken line)
+    let rows: Vec<(&str, Step, Option<Step>, &str)> = vec![
+        (
+            "mixed",
+            heard("yes but delete it"),
+            Some(silent()),
+            UNCLEAR_LINE,
+        ),
+        ("silence", silent(), None, DECLINED),
+        (
+            "go ahead and delete it",
+            heard("go ahead and delete it"),
+            Some(silent()),
+            UNCLEAR_LINE,
+        ),
+        (
+            "yes go ahead",
+            heard("yes go ahead"),
+            Some(silent()),
+            UNCLEAR_LINE,
+        ),
+        (
+            "go ahead please",
+            heard("go ahead please"),
+            Some(silent()),
+            UNCLEAR_LINE,
+        ),
+        (
+            "okay go ahead",
+            heard("okay go ahead"),
+            Some(silent()),
+            UNCLEAR_LINE,
+        ),
     ];
     let kinds = [
         EffectKind::Command,
@@ -406,9 +434,14 @@ async fn t_anything_but_yes_or_go_ahead_runs_nothing() {
         EffectKind::SetRole,
     ];
     for kind in kinds {
-        for (label, reply) in &replies {
+        let reask = reask_prompt(&effect_of(kind).1).expect("every kind here has a payload");
+        for (label, first, second, line) in &rows {
             for with_policy in [false, true] {
-                let r = tainted_rig(RESULT, kind, vec![step_clone(reply)], vec![]);
+                let mut tail = vec![step_clone(first)];
+                if let Some(next) = second {
+                    tail.push(step_clone(next));
+                }
+                let r = tainted_rig(RESULT, kind, tail, vec![]);
                 let pol = policy_on();
                 let policy: Option<&dyn PolicySource> = if with_policy { Some(&pol) } else { None };
                 run_with(&r, &vcfg(false, None), policy).await;
@@ -418,9 +451,19 @@ async fn t_anything_but_yes_or_go_ahead_runs_nothing() {
                     "{kind:?} reply {label} policy={with_policy}"
                 );
                 assert!(
-                    spoken(&r).iter().any(|s| s == DECLINED),
-                    "{kind:?} reply {label}: declined: {:?}",
+                    spoken(&r).iter().any(|s| s == line),
+                    "{kind:?} reply {label}: expected {line:?}: {:?}",
                     spoken(&r)
+                );
+                let reasks = spoken(&r).iter().filter(|s| **s == reask).count();
+                assert_eq!(
+                    reasks,
+                    usize::from(second.is_some()),
+                    "{kind:?} reply {label}: re-asks"
+                );
+                assert!(
+                    spoken(&r).iter().any(|s| s == "Hi there."),
+                    "{kind:?} reply {label}: the terminal sentinel was still processed"
                 );
             }
         }
@@ -507,7 +550,7 @@ async fn t_malicious_result_is_neutralised_and_forces_the_confirmation() {
 
     for kind in [EffectKind::Command, EffectKind::SetRole, EffectKind::Agent] {
         for context_turns in [6usize, 0usize] {
-            let r = tainted_rig(MALICIOUS, kind, vec![heard("okay")], vec![]);
+            let r = tainted_rig(MALICIOUS, kind, vec![heard("no")], vec![]);
             let cfg = SessionConfig {
                 context_turns,
                 ..acfg()
@@ -538,7 +581,7 @@ async fn t_malicious_result_is_neutralised_and_forces_the_confirmation() {
 /// instruction: the next planner call sees only the neutralised note entry.
 #[tokio::test]
 async fn t_result_text_reaches_history_only_as_a_neutralised_note() {
-    let r = tainted_rig(MALICIOUS, EffectKind::Command, vec![heard("okay")], vec![]);
+    let r = tainted_rig(MALICIOUS, EffectKind::Command, vec![heard("no")], vec![]);
     run_with(&r, &acfg(), None).await;
     let call = seen_by_utt(&r, "thanks");
     let note_value = note_agent_result(MALICIOUS);
@@ -679,7 +722,7 @@ async fn t_taint_lasts_the_session_each_effect_is_prompted() {
             heard("run the build"),
             heard("yes"),
             heard("run the tests"),
-            heard("okay"),
+            heard("no"),
             heard("hello there"),
         ],
         vec![
@@ -713,7 +756,7 @@ async fn t_taint_lasts_the_session_each_effect_is_prompted() {
 /// B9: a new conversation is untainted: the same effect runs without a prompt.
 #[tokio::test]
 async fn t_a_new_session_is_untainted() {
-    let r = tainted_rig(RESULT, EffectKind::Agent, vec![heard("okay")], vec![]);
+    let r = tainted_rig(RESULT, EffectKind::Agent, vec![heard("no")], vec![]);
     run_with(&r, &acfg(), None).await;
     assert_eq!(executed(&r, EffectKind::Agent), 0, "session one declined");
 

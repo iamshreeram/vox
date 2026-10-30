@@ -18,10 +18,35 @@ const JUDGE_MAX_WORDS: usize = 12;
 /// Shared contiguous word run that makes an utterance an echo of spoken text.
 const ECHO_RUN_WORDS: usize = 4;
 
-/// Negation, condition and contrast words: any of them keeps an utterance away from the model.
+/// Negation, condition, contrast and change-request words: any of them keeps an utterance away
+/// from the model (fail closed). The list only ever blocks.
 const NEGATION_WORDS: &[&str] = &[
-    "no", "not", "dont", "never", "stop", "wait", "cancel", "abort", "but", "except", "unless",
-    "instead", "however", "only", "if", "maybe", "nope", "nah", "nothing",
+    "no",
+    "not",
+    "dont",
+    "never",
+    "stop",
+    "wait",
+    "cancel",
+    "abort",
+    "but",
+    "except",
+    "unless",
+    "instead",
+    "however",
+    "only",
+    "if",
+    "maybe",
+    "nope",
+    "nah",
+    "nothing",
+    "different",
+    "change",
+    "else",
+    "another",
+    "rather",
+    "modify",
+    "edit",
 ];
 
 /// Verdict and meta words: an utterance that talks about the judgement itself is never judged.
@@ -159,6 +184,13 @@ pub enum Gate {
     Block,
 }
 
+/// True when the utterance is a contiguous run of two or more words of a spoken text (a fragment
+/// of the question or of the re-ask). Such a fragment is never judged; it is not an agreement.
+fn spoken_fragment(text: &str, spoken: &[&str]) -> bool {
+    let utterance = words(text);
+    utterance.len() >= 2 && spoken.iter().any(|s| contains_run(&words(s), &utterance))
+}
+
 /// Gate before any model call (fail closed). The word lists only ever block.
 pub fn judge_gate(text: &str, spoken: &[&str]) -> Gate {
     if text.trim().is_empty()
@@ -166,6 +198,7 @@ pub fn judge_gate(text: &str, spoken: &[&str]) -> Gate {
         || text.chars().any(char::is_control)
         || text.split_whitespace().count() > JUDGE_MAX_WORDS
         || echo_blocked(text, spoken)
+        || spoken_fragment(text, spoken)
     {
         return Gate::Block;
     }

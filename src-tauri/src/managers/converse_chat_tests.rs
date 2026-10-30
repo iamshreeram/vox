@@ -137,6 +137,9 @@ fn crig(steps: Vec<Step>, turns: Vec<Turn>) -> CRig {
             script: Mutex::new(turns.into()),
             seen: Mutex::new(vec![]),
             log: log.clone(),
+            judge: Mutex::new(VecDeque::new()),
+            judge_calls: Mutex::new(vec![]),
+            judge_hangs: std::sync::atomic::AtomicBool::new(false),
         },
         barge,
         log,
@@ -466,9 +469,10 @@ async fn confirmation_prompt_yes_and_action_reply_are_recorded_in_order() {
     assert_eq!(count_log(&r.log, &format!("model:{CMD}")), 1, "ran once");
 }
 
-/// `yes please` is recorded once as User and runs nothing (exact-yes rule unchanged).
+/// `yes please` is recorded once as User and approves (a clear local agreement, DESIGN A6): the
+/// command runs once, and no decline is spoken.
 #[tokio::test]
-async fn yes_please_is_recorded_once_and_runs_nothing() {
+async fn yes_please_is_recorded_once_and_approves() {
     let r = command_taint(vec![heard("yes please")]);
     let rep = ChatRep::default();
     crun(&r, &ccfg(), &rep).await;
@@ -482,18 +486,17 @@ async fn yes_please_is_recorded_once_and_runs_nothing() {
         &[
             (ChatRole::Assistant, &prompt()),
             (ChatRole::User, "yes please"),
-            (ChatRole::Assistant, DECLINED),
         ],
+    );
+    assert!(
+        !chat.iter().any(|(_, t)| t == DECLINED),
+        "no decline was spoken: {chat:?}"
     );
     assert_eq!(
         users(&chat),
         vec![REQ, "thanks", UTT, "yes please", "hello there"]
     );
-    assert_eq!(
-        count_log(&r.log, &format!("model:{CMD}")),
-        0,
-        "nothing executed"
-    );
+    assert_eq!(count_log(&r.log, &format!("model:{CMD}")), 1, "ran once");
 }
 
 /// A refusal is recorded once as User; the decline is Assistant; nothing runs.
