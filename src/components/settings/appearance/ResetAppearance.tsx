@@ -2,6 +2,7 @@ import React, { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { commands } from "@/bindings";
 import { useSettings } from "@/hooks/useSettings";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { applyTheme } from "@/lib/utils/theme";
 import { DEFAULT_ACCENT } from "@/styles/accents";
 import { Button } from "../../ui/Button";
@@ -15,13 +16,18 @@ import { APPEARANCE_DEFAULTS, resetPlan } from "./appearanceModel";
  */
 export const ResetAppearance: React.FC = () => {
   const { t } = useTranslation();
-  const { settings, updateSetting, refreshSettings } = useSettings();
+  const { settings, refreshSettings } = useSettings();
+  // The store action reports whether the write was saved (the hook's copy does not).
+  const updateSetting = useSettingsStore((state) => state.updateSetting);
   const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState("");
+  const [failed, setFailed] = useState(false);
   const confirmId = useId();
 
   const runReset = async (): Promise<void> => {
     // Apply the visible part at once, then save each setting in plan order.
+    // Any failed write marks the whole reset as failed: no success message is shown.
+    let allSaved = true;
     applyTheme(
       APPEARANCE_DEFAULTS.theme,
       settings?.custom_theme_colors,
@@ -29,22 +35,28 @@ export const ResetAppearance: React.FC = () => {
       APPEARANCE_DEFAULTS.visualStyle,
     );
     for (const step of resetPlan()) {
-      if (step.kind === "theme") await updateSetting("theme", step.value);
-      else if (step.kind === "accent")
-        await updateSetting("accent", step.value);
-      else if (step.kind === "chatTheme") {
-        await updateSetting("chat_theme", step.value);
+      if (step.kind === "theme") {
+        allSaved = (await updateSetting("theme", step.value)) && allSaved;
+      } else if (step.kind === "accent") {
+        allSaved = (await updateSetting("accent", step.value)) && allSaved;
+      } else if (step.kind === "chatTheme") {
+        allSaved = (await updateSetting("chat_theme", step.value)) && allSaved;
       } else if (step.kind === "visualStyle") {
-        await updateSetting("visual_style", step.value);
+        allSaved =
+          (await updateSetting("visual_style", step.value)) && allSaved;
       } else {
-        await commands
-          .changeChatOpacitySetting(step.value)
-          .catch(() => undefined);
+        try {
+          await commands.changeChatOpacitySetting(step.value);
+        } catch (error) {
+          console.error("Failed to reset chat opacity:", error);
+          allSaved = false;
+        }
         await refreshSettings();
       }
     }
     setConfirming(false);
-    setMessage(t("settings.appearance.reset.done"));
+    setFailed(!allSaved);
+    setMessage(allSaved ? t("settings.appearance.reset.done") : "");
   };
 
   return (
@@ -82,6 +94,7 @@ export const ResetAppearance: React.FC = () => {
               size="sm"
               onClick={() => {
                 setMessage("");
+                setFailed(false);
                 setConfirming(true);
               }}
             >
@@ -89,9 +102,15 @@ export const ResetAppearance: React.FC = () => {
             </Button>
           </div>
         )}
-        <p role="status" aria-live="polite" className="text-xs text-muted">
-          {message}
-        </p>
+        {failed ? (
+          <p role="alert" className="text-xs text-danger">
+            {t("settings.appearance.reset.failed")}
+          </p>
+        ) : (
+          <p role="status" aria-live="polite" className="text-xs text-muted">
+            {message}
+          </p>
+        )}
       </div>
     </SettingContainer>
   );

@@ -283,7 +283,8 @@
         "confirm": "Reset all five appearance settings to their defaults?",
         "confirmAction": "Confirm reset",
         "cancel": "Cancel",
-        "done": "Appearance reset to defaults."
+        "done": "Appearance reset to defaults.",
+        "failed": "Some appearance settings could not be reset. Try again."
       }
     },
     "general": {

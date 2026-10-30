@@ -42,7 +42,7 @@ interface SettingsStore {
   updateSetting: <K extends keyof Settings>(
     key: K,
     value: Settings[K],
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   resetSetting: (key: keyof Settings) => Promise<void>;
   refreshSettings: () => Promise<void>;
   refreshAudioDevices: () => Promise<void>;
@@ -624,7 +624,7 @@ export const useSettingsStore = create<SettingsStore>()(
     updateSetting: async <K extends keyof Settings>(
       key: K,
       value: Settings[K],
-    ) => {
+    ): Promise<boolean> => {
       const { settings, setUpdating } = get();
       const updateKey = String(key);
       const originalValue = settings?.[key];
@@ -642,11 +642,13 @@ export const useSettingsStore = create<SettingsStore>()(
         } else if (key !== "bindings" && key !== "selected_model") {
           console.warn(`No handler for setting: ${String(key)}`);
         }
+        return true;
       } catch (error) {
         console.error(`Failed to update setting ${String(key)}:`, error);
         if (settings) {
           set({ settings: { ...settings, [key]: originalValue } });
         }
+        return false;
       } finally {
         setUpdating(updateKey, false);
       }

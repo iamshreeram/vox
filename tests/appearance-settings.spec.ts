@@ -254,6 +254,52 @@ test.describe("Appearance page: preview and reset", () => {
       "Appearance reset to defaults.",
     );
   });
+
+  for (const [label, failingCommand] of [
+    ["chat opacity", OPACITY_CALL],
+    ["accent", ACCENT_CALL],
+  ] as const) {
+    test(`a failed ${label} write during Reset shows an error and no success message`, async ({
+      page,
+    }) => {
+      await openAppearance(page, {
+        theme: "dark",
+        accent: "blue",
+        chat_theme: "light",
+        visual_style: "restrained",
+        chat_opacity_pct: 40,
+      });
+      // Make exactly one reset write reject; the mock still records the others.
+      await page.evaluate((command) => {
+        const internals = (
+          window as unknown as {
+            __TAURI_INTERNALS__: {
+              invoke: (cmd: string, args?: unknown, opts?: unknown) => unknown;
+            };
+          }
+        ).__TAURI_INTERNALS__;
+        const original = internals.invoke;
+        internals.invoke = (cmd, args, opts) =>
+          cmd === command
+            ? Promise.reject(new Error("blocked by test"))
+            : original(cmd, args, opts);
+      }, failingCommand);
+      await page
+        .getByRole("button", { name: "Reset appearance to defaults" })
+        .click();
+      await page.getByRole("button", { name: "Confirm reset" }).click();
+      await expect(page.getByRole("alert")).toContainText(
+        "Some appearance settings could not be reset.",
+      );
+      await expect(page.getByText("Appearance reset to defaults.")).toHaveCount(
+        0,
+      );
+      // The reset still attempts the remaining writes.
+      await expect
+        .poll(async () => (await getMockCalls(page, THEME_CALL)).length)
+        .toBe(1);
+    });
+  }
 });
 
 test.describe("Appearance page: keyboard and layout", () => {
