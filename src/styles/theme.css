@@ -306,3 +306,25 @@
   --dark-color-logo-primary: #cbd5e1;
   --dark-color-accent-ui: #cbd5e1;
 }
+
+/* Restrained visual style (UI enterprise S4a, DESIGN A5 / U5). Selected by data-style="restrained"
+   on <html>; vibrant (no attribute) is the default look and is untouched. These are neutral,
+   bucket-agnostic mixes of the active text and background, so light, dark, custom and the OS
+   scheme all follow. The component-level rules live in App.css under the same attribute.
+   Mirrored in src/styles/restrained.ts (restrained.test.ts pins the values). */
+/* Values are pinned (whitespace-insensitively) by restrained.test.ts. */
+:root[data-style="restrained"] {
+  --style-card-bg: color-mix(
+    in srgb,
+    var(--color-text) 3%,
+    var(--color-background)
+  );
+  --style-card-border: color-mix(
+    in srgb,
+    var(--color-text) 14%,
+    var(--color-background)
+  );
+  --style-card-shadow: 0 1px 2px
+    color-mix(in srgb, var(--color-text) 8%, transparent);
+  --style-radius: 0.5rem;
+}

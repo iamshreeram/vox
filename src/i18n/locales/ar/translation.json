@@ -197,6 +197,7 @@
         "description": "إعداد اختصارات لوحة المفاتيح لبدء تسجيل التفريغ الصوتي",
         "loading": "...جاري تحميل الاختصارات",
         "none": "لا توجد اختصارات مجهزة",
+        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
         "notFound": "الاختصار غير موجود",
         "pressKeys": "...اضغط على المفاتيح",
         "bindings": {

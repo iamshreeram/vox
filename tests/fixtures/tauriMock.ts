@@ -86,6 +86,7 @@ function installTauriMockInPage(arg: MockInitArg): void {
   }
   interface VoxMockWindow {
     __TAURI_INTERNALS__: unknown;
+    __TAURI_EVENT_PLUGIN_INTERNALS__: unknown;
     __TAURI_OS_PLUGIN_INTERNALS__: unknown;
     __voxMock: {
       setSetting: (key: string, value: unknown) => void;
@@ -276,6 +277,12 @@ function installTauriMockInPage(arg: MockInitArg): void {
       currentWebview: { windowLabel: "main", label: "main" },
     },
     plugins: {},
+  };
+
+  // @tauri-apps/api 2.11 unlistens through this object on unmount; the real runtime injects it.
+  // Without it, a StrictMode unlisten throws and the whole settings window goes blank.
+  win.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+    unregisterListener: () => {},
   };
 
   win.__TAURI_OS_PLUGIN_INTERNALS__ = {

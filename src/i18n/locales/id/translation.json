@@ -200,6 +200,7 @@
         "description": "Atur pintasan keyboard untuk memulai perekaman ucapan-ke-teks",
         "loading": "Memuat pintasan...",
         "none": "Belum ada pintasan yang diatur",
+        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
         "notFound": "Pintasan tidak ditemukan",
         "pressKeys": "Tekan tombol...",
         "bindings": {

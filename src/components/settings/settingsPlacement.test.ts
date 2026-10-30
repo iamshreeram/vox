@@ -220,12 +220,13 @@ const scenarios: Record<string, () => void> = {
     );
     for (const id of NEW_GROUP_IDS) assert.ok(ids.includes(id), id);
   },
-  "only the Text-to-speech and engine groups are open by default": () => {
-    assert.deepEqual(
-      PLACED_GROUPS.filter((g) => g.defaultOpen).map((g) => g.id),
-      ["spokenReplies", "engine"],
-    );
-  },
+  "only the Text-to-speech, engine and chat window groups are open by default":
+    () => {
+      assert.deepEqual(
+        PLACED_GROUPS.filter((g) => g.defaultOpen).map((g) => g.id),
+        ["chatWindow", "spokenReplies", "engine"],
+      );
+    },
   "every group has a non-empty translation title key": () => {
     for (const g of PLACED_GROUPS) {
       assert.match(g.titleKey, /^settings\.[A-Za-z.]+$/, g.id);

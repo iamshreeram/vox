@@ -26,9 +26,9 @@ const variantStyles: Record<
     text: "text-warning",
   },
   info: {
-    container: "bg-blue-500/10",
-    icon: "text-blue-500",
-    text: "text-blue-400",
+    container: "bg-logo-primary/10",
+    icon: "text-logo-primary",
+    text: "text-text",
   },
   success: {
     container: "bg-success-soft",

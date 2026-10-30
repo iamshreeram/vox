@@ -119,6 +119,41 @@
   );
 }
 
+/* Restrained visual style (UI enterprise S4a, DESIGN A5 / U5). Only applies under
+   data-style="restrained"; the vibrant default rules above are unchanged. Neutral cards with one
+   radius and a subtle elevation, no accent bar, a flat page, solid accent buttons and neutral
+   badges. Tokens come from theme.css (--style-*). */
+:root[data-style="restrained"] {
+  background-image: none;
+}
+
+:root[data-style="restrained"] .settings-card {
+  background: var(--style-card-bg);
+  border: 1px solid var(--style-card-border);
+  border-radius: var(--style-radius);
+  box-shadow: var(--style-card-shadow);
+}
+
+:root[data-style="restrained"] .settings-card::before {
+  content: none;
+}
+
+:root[data-style="restrained"] .settings-card-title::before {
+  background: var(--color-mid-gray);
+}
+
+/* Solid accent fill instead of the vibrant gradient (primary buttons, toggles, sliders). */
+:root[data-style="restrained"] .btn-primary {
+  background-image: none;
+  background-color: var(--color-accent-ui);
+}
+
+/* Neutral badge: no accent fill. */
+:root[data-style="restrained"] .badge-primary {
+  background-color: var(--style-card-border);
+  color: var(--color-text);
+}
+
 .container {
   margin: 0;
   padding-top: 10vh;

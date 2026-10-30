@@ -24,7 +24,7 @@ export const Button: React.FC<ButtonProps> = ({
 
   const variantClasses = {
     primary:
-      "text-on-accent bg-linear-to-r from-accent-a to-accent-b border-transparent hover:brightness-110 focus:ring-1 focus:ring-accent-a",
+      "btn-primary text-on-accent bg-linear-to-r from-accent-a to-accent-b border-transparent hover:brightness-110 focus:ring-1 focus:ring-accent-a",
     "primary-soft":
       "text-text bg-logo-primary/20 border-transparent hover:bg-logo-primary/30 focus:ring-1 focus:ring-logo-primary",
     secondary:

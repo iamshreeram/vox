@@ -200,6 +200,7 @@
         "description": "Konfigurer tastaturgenveje til at udløse tale-til-tekst-optagelse",
         "loading": "Indlæser genveje...",
         "none": "Ingen genveje konfigureret",
+        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
         "notFound": "Genvej ikke fundet",
         "pressKeys": "Tryk på ønskede taster...",
         "bindings": {

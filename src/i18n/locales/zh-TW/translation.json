@@ -200,6 +200,7 @@
         "description": "設定啟動語音轉文字錄製的鍵盤快捷鍵",
         "loading": "載入快捷鍵中...",
         "none": "未設定快捷鍵",
+        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
         "notFound": "未找到快捷鍵",
         "pressKeys": "請按鍵...",
         "bindings": {

@@ -200,6 +200,7 @@
         "description": "Configureer sneltoetsen om spraak-naar-tekst-opnames te starten",
         "loading": "Sneltoetsen laden...",
         "none": "Geen sneltoetsen geconfigureerd",
+        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
         "notFound": "Sneltoets niet gevonden",
         "pressKeys": "Druk op toetsen...",
         "bindings": {

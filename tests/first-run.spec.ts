@@ -371,7 +371,8 @@ test.describe("First run", () => {
 
     await navItem(page, "Models").click();
     await expect(section(page, "models")).toBeVisible();
-    const callout = tid(page, "finish-setup-callout");
+    // S4a: the one setup-status banner replaces the Finish setup callout.
+    const callout = tid(page, "setup-status-banner");
     await expect(callout).toBeVisible();
     await expect(callout).toContainText(
       label("settings.models.finishSetup.title"),
@@ -389,6 +390,6 @@ test.describe("First run", () => {
     await expectMainApp(page);
     await navItem(page, "Models").click();
     await expect(section(page, "models")).toBeVisible();
-    await expect(tid(page, "finish-setup-callout")).toHaveCount(0);
+    await expect(tid(page, "setup-status-banner")).toHaveCount(0);
   });
 });

@@ -18,6 +18,7 @@ import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import SecureInputWarning from "./components/SecureInputWarning";
 import Footer from "./components/footer";
+import { PageHeader } from "./components/ui/PageHeader";
 import Onboarding, {
   AccessibilityOnboarding,
   FirstRunBrainStep,
@@ -60,6 +61,19 @@ const stepFromSettings = (
 ): OnboardingStep => {
   if (result.status !== "ok") return "done";
   return nextFirstRunStep(result.data) ?? "done";
+};
+
+/** Optional one-line page descriptions under the shared PageHeader (UI enterprise S4a, U9). */
+const PAGE_DESCRIPTION_KEYS: Partial<Record<SidebarSection, string>> = {
+  models: "settings.models.description",
+};
+
+const describePage = (
+  section: SidebarSection,
+  translate: (key: string) => string,
+): string | undefined => {
+  const key = PAGE_DESCRIPTION_KEYS[section];
+  return key ? translate(key) : undefined;
 };
 
 const renderSettingsContent = (
@@ -572,6 +586,10 @@ function App() {
                 className="flex-1 overflow-y-auto"
               >
                 <div className="flex flex-col items-center p-4 gap-4">
+                  <PageHeader
+                    title={t(SECTIONS_CONFIG[currentSection].labelKey)}
+                    description={describePage(currentSection, t)}
+                  />
                   <AccessibilityPermissions />
                   <SecureInputWarning />
                   {renderSettingsContent(currentSection, setOnboardingPreview)}

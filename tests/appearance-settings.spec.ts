@@ -178,8 +178,10 @@ test.describe("Appearance page: controls reach their commands", () => {
     page,
   }) => {
     await openAppearance(page);
-    // The Conversation window card starts collapsed, as the old Conversation group did: open it.
-    await page.locator('[data-group-id="chatWindow"] button').first().click();
+    // S4a housekeeping: the chat-window card is open by default (was collapsed), so no click.
+    await expect(
+      page.locator('[data-group-id="chatWindow"] button').first(),
+    ).toHaveAttribute("aria-expanded", "true");
     const slider = page.locator('[data-testid="chat-opacity-slider"]');
     await expect(slider).toBeVisible();
     await slider.fill("50");

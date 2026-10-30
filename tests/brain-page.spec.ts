@@ -324,7 +324,8 @@ test.describe("Brain page", () => {
     await installTauriMock(page, { settings: LOCAL_CONSENTED });
     await page.goto("/");
     await expect(navItem(page, "General")).toBeVisible();
-    const notice = tid(page, "brain-notice-composer");
+    // S4a: the one setup-status banner replaces the per-feature notice on General.
+    const notice = tid(page, "setup-status-banner");
     await expect(notice).toBeVisible();
     await expect(notice).toContainText(/brain/i);
     await expect(notice).toContainText(FEATURE_LABEL.composer);
@@ -370,7 +371,7 @@ test.describe("Brain page", () => {
   }) => {
     await installTauriMock(page, { settings: LOCAL_CONSENTED });
     await page.goto("/");
-    await tid(page, "brain-notice-composer")
+    await tid(page, "setup-status-banner")
       .getByRole("button", { name: /own setup/i })
       .click();
     const calls = await getMockCalls(page, "brain_use_for_feature");

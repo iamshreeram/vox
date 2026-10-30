@@ -38,7 +38,7 @@ const LEVEL_META: Record<
   },
   2: {
     tag: "DEBUG",
-    tagClass: "text-sky-600 dark:text-sky-400",
+    tagClass: "text-logo-primary",
     msgClass: "text-text/80",
   },
   3: {

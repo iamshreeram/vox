@@ -111,7 +111,7 @@ export const PLACED_GROUPS: readonly PlacedGroup[] = [
     id: "chatWindow",
     section: "appearance",
     titleKey: "settings.appearance.chatWindow.title",
-    defaultOpen: false,
+    defaultOpen: true,
     experimental: false,
     controls: [{ id: "chatOpacity" }],
   },

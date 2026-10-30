@@ -63,6 +63,23 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
     keywords: ["orb", "floating", "position", "reset", "corner", "move"],
   },
   {
+    id: "general.floatingOrb.surface",
+    section: "general",
+    groupId: "conversation",
+    groupKey: "settings.general.groups.conversation",
+    labelKey: "settings.floatingOrb.surface.title",
+    descriptionKey: "settings.floatingOrb.surface.description",
+    keywords: ["orb", "floating", "surface", "chat", "bubbles", "talk", "when"],
+  },
+  {
+    id: "general.floatingOrb.sizePresets",
+    section: "general",
+    groupId: "conversation",
+    groupKey: "settings.general.groups.conversation",
+    labelKey: "settings.floatingOrb.size.presets",
+    keywords: ["orb", "size", "preset", "small", "medium", "large"],
+  },
+  {
     id: "models.language",
     section: "models",
     groupId: "sttModels",

@@ -293,6 +293,7 @@
         "description": "Configura le scorciatoie per attivare la trascrizione vocale",
         "loading": "Caricamento delle scorciatoie...",
         "none": "Nessuna scorciatoia configurata",
+        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
         "notFound": "Scorciatoia non trovata",
         "pressKeys": "Premi i tasti...",
         "bindings": {

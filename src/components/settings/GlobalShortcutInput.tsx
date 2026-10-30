@@ -11,6 +11,7 @@ import { useSettings } from "../../hooks/useSettings";
 import { useOsType } from "../../hooks/useOsType";
 import { commands } from "@/bindings";
 import { toast } from "sonner";
+import { shortcutEmptyModel } from "./shortcutEmptyState";
 
 interface GlobalShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
@@ -212,7 +213,7 @@ export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
   if (isLoading) {
     return (
       <SettingContainer
-        title={t("settings.general.shortcut.title")}
+        title={t(shortcutEmptyModel(shortcutId).titleKey)}
         description={t("settings.general.shortcut.description")}
         descriptionMode={descriptionMode}
         grouped={grouped}
@@ -228,13 +229,16 @@ export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
   if (Object.keys(bindings).length === 0) {
     return (
       <SettingContainer
-        title={t("settings.general.shortcut.title")}
+        title={t(shortcutEmptyModel(shortcutId).titleKey)}
         description={t("settings.general.shortcut.description")}
         descriptionMode={descriptionMode}
         grouped={grouped}
       >
         <div className="text-sm text-mid-gray">
           {t("settings.general.shortcut.none")}
+        </div>
+        <div className="text-xs text-mid-gray">
+          {t(shortcutEmptyModel(shortcutId).bodyKey)}
         </div>
       </SettingContainer>
     );
@@ -244,13 +248,16 @@ export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
   if (!binding) {
     return (
       <SettingContainer
-        title={t("settings.general.shortcut.title")}
+        title={t(shortcutEmptyModel(shortcutId).titleKey)}
         description={t("settings.general.shortcut.notFound")}
         descriptionMode={descriptionMode}
         grouped={grouped}
       >
         <div className="text-sm text-mid-gray">
           {t("settings.general.shortcut.none")}
+        </div>
+        <div className="text-xs text-mid-gray">
+          {t(shortcutEmptyModel(shortcutId).bodyKey)}
         </div>
       </SettingContainer>
     );

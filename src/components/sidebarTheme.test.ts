@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   SECTION_IDS,
   SECTION_ICON_CLASS,
+  sidebarIconClass,
   sidebarItemClass,
 } from "./sidebarTheme";
 
@@ -52,6 +53,52 @@ const scenarios: Record<string, () => void> = {
     assert.ok(!inactive.includes("text-on-accent"));
     assert.ok(inactive.includes("hover:"));
     assert.ok(inactive.includes("rounded-lg"));
+  },
+  "vibrant (the default) keeps the per-section hue and the gradient item":
+    () => {
+      for (const id of SECTION_IDS) {
+        assert.equal(
+          sidebarIconClass(id, false, "vibrant"),
+          SECTION_ICON_CLASS[id],
+        );
+        assert.equal(sidebarIconClass(id, false), SECTION_ICON_CLASS[id]);
+      }
+      assert.equal(sidebarItemClass(true, "vibrant"), sidebarItemClass(true));
+      assert.ok(sidebarItemClass(true).includes("bg-linear-to-r"));
+    },
+  "restrained icons use currentColor for every section, accent only when selected":
+    () => {
+      for (const id of SECTION_IDS) {
+        assert.equal(sidebarIconClass(id, false, "restrained"), "text-current");
+        assert.equal(
+          sidebarIconClass(id, true, "restrained"),
+          "text-accent-text",
+          `${id} selected icon`,
+        );
+      }
+    },
+  "restrained selected item: soft accent tint, accent text and a 3px accent indicator":
+    () => {
+      const active = sidebarItemClass(true, "restrained");
+      for (const token of [
+        "bg-accent-soft",
+        "text-accent-text",
+        "before:w-[3px]",
+        "before:bg-accent-a",
+        "rounded-lg",
+      ]) {
+        assert.ok(active.includes(token), `restrained active missing ${token}`);
+      }
+      assert.ok(!active.includes("bg-linear-to-r"), "no heavy gradient");
+      assert.ok(!active.includes("shadow-md"), "no heavy shadow");
+    },
+  "restrained inactive item is neutral and keeps the hover state": () => {
+    const inactive = sidebarItemClass(false, "restrained");
+    assert.ok(inactive.includes("hover:bg-mid-gray/15"));
+    assert.ok(
+      !/text-(sky|blue|violet|rose|orange|emerald|indigo)/.test(inactive),
+    );
+    assert.ok(!inactive.includes("bg-accent-soft"));
   },
 };
 

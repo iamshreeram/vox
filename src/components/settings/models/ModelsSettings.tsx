@@ -22,7 +22,7 @@ import { PlacedGroups } from "../PlacedGroups";
 import { CollapsibleSettingsGroup } from "../../ui/CollapsibleSettingsGroup";
 import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
 import { ModelSettingsCard } from "./ModelSettingsCard";
-import { FinishSetupCallout } from "./FinishSetupCallout";
+import { SetupStatusBanner } from "../setup/SetupStatusBanner";
 
 // check if model supports a language based on its supported_languages list
 const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
@@ -234,16 +234,7 @@ export const ModelsSettings: React.FC = () => {
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-4">
-      <div className="mb-4">
-        <h1 className="text-xl font-semibold mb-2">
-          {t("settings.models.title")}
-        </h1>
-        <p className="text-sm text-text/60">
-          {t("settings.models.description")}
-        </p>
-      </div>
-
-      <FinishSetupCallout />
+      <SetupStatusBanner page="models" />
 
       <CollapsibleSettingsGroup
         id="sttModels"

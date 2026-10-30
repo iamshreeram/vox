@@ -200,6 +200,7 @@
         "description": "Налаштуйте клавіатурні скорочення для запуску запису мовлення в текст",
         "loading": "Завантаження скорочень...",
         "none": "Скорочення не налаштовані",
+        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
         "notFound": "Скорочення не знайдено",
         "pressKeys": "Натисніть клавіші...",
         "bindings": {
