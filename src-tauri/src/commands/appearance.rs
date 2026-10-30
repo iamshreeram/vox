@@ -3,7 +3,7 @@
 //! goes through `appearance::commit_appearance`, so it writes once and publishes once.
 
 use crate::appearance::commit_appearance;
-use crate::settings::{Accent, ChatTheme, VisualStyle};
+use crate::settings::{Accent, ChatTheme, OrbColor, VisualStyle};
 use tauri::AppHandle;
 
 /// Saves the accent and publishes the committed snapshot to every consumer window.
@@ -27,9 +27,9 @@ pub async fn change_visual_style_setting(app: AppHandle, visual_style: VisualSty
     commit_appearance(&app, |fields| fields.visual_style = visual_style);
 }
 
-/// Saves the orb accent (`None` follows the app accent) and publishes the committed snapshot.
+/// Saves the orb colour (`auto`, `app` or an accent) and publishes the committed snapshot.
 #[tauri::command]
 #[specta::specta]
-pub async fn change_orb_accent_setting(app: AppHandle, accent: Option<Accent>) {
-    commit_appearance(&app, |fields| fields.orb_accent = accent);
+pub async fn change_orb_accent_setting(app: AppHandle, color: OrbColor) {
+    commit_appearance(&app, |fields| fields.orb_accent = color);
 }

@@ -399,6 +399,40 @@ impl Accent {
     }
 }
 
+/// Colour of the floating orb's globe and rings (feat/orb-globe-colours, DESIGN Revision 3, D2).
+/// `Auto` changes with what Vox is doing, `App` follows the app accent, and the six accents are
+/// fixed. Wire values are lowercase. Only the field-local deserializer below reads stored values.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum OrbColor {
+    #[default]
+    Auto,
+    App,
+    Amber,
+    Blue,
+    Violet,
+    Emerald,
+    Rose,
+    Slate,
+}
+
+impl OrbColor {
+    /// The stored wire value of a known colour. Matching is exact.
+    pub fn from_wire(value: &str) -> Option<Self> {
+        match value {
+            "auto" => Some(OrbColor::Auto),
+            "app" => Some(OrbColor::App),
+            "amber" => Some(OrbColor::Amber),
+            "blue" => Some(OrbColor::Blue),
+            "violet" => Some(OrbColor::Violet),
+            "emerald" => Some(OrbColor::Emerald),
+            "rose" => Some(OrbColor::Rose),
+            "slate" => Some(OrbColor::Slate),
+            _ => None,
+        }
+    }
+}
+
 /// Conversation window theme (UI enterprise, DESIGN Revision 3, A4). `Dark` is today's look.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
@@ -468,14 +502,14 @@ where
     lenient_wire(deserializer, ChatTheme::from_wire)
 }
 
-/// Field-local deserializer for `orb_accent`. Garbage, numbers, null and other JSON types read as
-/// `None` (follow the app accent). Never an error.
-pub fn deserialize_orb_accent<'de, D>(deserializer: D) -> Result<Option<Accent>, D::Error>
+/// Field-local deserializer for `orb_accent`. Missing, null, unknown or wrong-case strings, and
+/// any other JSON type read as `Auto`. Never an error. A stored `null` from the previous release
+/// (which meant "follow the app") migrates to `Auto` by design.
+pub fn deserialize_orb_accent<'de, D>(deserializer: D) -> Result<OrbColor, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let raw = serde_json::Value::deserialize(deserializer)?;
-    Ok(raw.as_str().and_then(Accent::from_wire))
+    lenient_wire(deserializer, OrbColor::from_wire)
 }
 
 /// Field-local deserializer for `visual_style`. Garbage reads as `Vibrant`.
@@ -1258,10 +1292,10 @@ pub struct AppSettings {
     /// Visual style (vibrant or restrained). Set through `change_visual_style_setting`.
     #[serde(default, deserialize_with = "deserialize_visual_style")]
     pub visual_style: VisualStyle,
-    /// Accent of the floating orb (DESIGN Revision 3, D3). `None` follows the app accent.
-    /// Set through `change_orb_accent_setting`. Garbage reads as `None`.
+    /// Colour of the floating orb's globe and rings (DESIGN Revision 3, D2). `Auto` by default.
+    /// Set through `change_orb_accent_setting`. Garbage reads as `Auto`.
     #[serde(default, deserialize_with = "deserialize_orb_accent")]
-    pub orb_accent: Option<Accent>,
+    pub orb_accent: OrbColor,
 }
 
 /// Default vault folders for the RAG index (DESIGN Rev 5, 3.1).
@@ -2597,7 +2631,7 @@ pub fn get_default_settings() -> AppSettings {
         accent: Accent::default(),
         chat_theme: ChatTheme::default(),
         visual_style: VisualStyle::default(),
-        orb_accent: None,
+        orb_accent: OrbColor::Auto,
     }
 }
 

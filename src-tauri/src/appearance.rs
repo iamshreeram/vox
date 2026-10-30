@@ -11,7 +11,7 @@ use crate::chat_opacity::{replay_interval, CHAT_OPACITY};
 use crate::chat_window::CHAT_WINDOW_LABEL;
 use crate::orb_window::ORB_WINDOW_LABEL;
 use crate::settings::{
-    self, Accent, AppSettings, ChatTheme, CustomThemeColors, Theme, VisualStyle,
+    self, Accent, AppSettings, ChatTheme, CustomThemeColors, OrbColor, Theme, VisualStyle,
 };
 use crate::window_commands::BUBBLES_WINDOW_LABEL;
 use serde::{Deserialize, Serialize};
@@ -48,8 +48,8 @@ pub struct AppearanceSnapshot {
     pub chat_theme: ChatTheme,
     /// The visual style.
     pub visual_style: VisualStyle,
-    /// The orb accent. `None` follows the app accent. Always present on the wire (`null`).
-    pub orb_accent: Option<Accent>,
+    /// The orb colour (`auto`, `app` or an accent). Always present on the wire as a string.
+    pub orb_accent: OrbColor,
 }
 
 /// The appearance fields of the settings, and the only ones a commit may change.
@@ -60,7 +60,7 @@ pub struct AppearanceFields {
     pub accent: Accent,
     pub chat_theme: ChatTheme,
     pub visual_style: VisualStyle,
-    pub orb_accent: Option<Accent>,
+    pub orb_accent: OrbColor,
 }
 
 impl AppearanceFields {
