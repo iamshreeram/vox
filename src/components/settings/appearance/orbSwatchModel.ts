@@ -6,6 +6,15 @@ import { contrastRatio } from "@/styles/wcag";
 import type { AccentId } from "@/styles/accents";
 import type { OrbChoice } from "./appearanceModel";
 
+/**
+ * The outline every orb swatch draws (A6): the bucket TEXT role of the app accent, never the fill.
+ * The text role is >= 4.5:1 on both bucket surfaces (asserted by the swatch test), so the outline
+ * stays visible on light and dark, whatever the sphere or quarter colour under it.
+ */
+export const OUTLINE_ROLE = "var(--color-accent-text)";
+/** Stroke width of the outline ring, in SVG units (the swatch is 28 units across). */
+export const OUTLINE_STROKE = 1.5;
+
 /** Near-black and white: the two colours the selected check may use inside a swatch. */
 export const CHECK_DARK = "#111111";
 export const CHECK_LIGHT = "#FFFFFF";
@@ -39,7 +48,7 @@ export function orbSwatchSpec(choice: OrbChoice): OrbSwatchSpec {
     return { kind: "auto", quarters: AUTO_QUARTERS, check: CHECK_DARK };
   }
   if (choice === "app") {
-    return { kind: "app", check: "var(--color-accent-a)" };
+    return { kind: "app", check: OUTLINE_ROLE };
   }
   const stops: GlobeStops = GLOBE_STOPS[choice as AccentId];
   return { kind: "sphere", stops, check: checkColourFor(stops) };

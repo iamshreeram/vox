@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ACCENT_IDS } from "@/styles/accents";
+import {
+  ACCENT_IDS,
+  ACCENTS,
+  ACCENT_CSS_PROPERTIES,
+  ACCENT_SURFACE,
+  type AccentBucket,
+} from "@/styles/accents";
 import { contrastRatio } from "@/styles/wcag";
 import { GLOBE_STOPS } from "@/orb/globePalette";
 import { ORB_CHOICES, orbChoiceNameKey } from "./appearanceModel";
@@ -10,6 +16,8 @@ import {
   AUTO_QUARTERS,
   CHECK_DARK,
   CHECK_LIGHT,
+  OUTLINE_ROLE,
+  OUTLINE_STROKE,
   checkColourFor,
   orbSwatchSpec,
   sphereGradientId,
@@ -82,6 +90,33 @@ const scenarios: Record<string, () => void> = {
     assert.equal(new Set(ids).size, ids.length);
     for (const id of ids) assert.match(id, /^[A-Za-z0-9_-]+$/);
   },
+  "every swatch outline is the bucket text role, >= 3:1 on both bucket surfaces":
+    () => {
+      // A6: the outline is a text-role token (never the accent fill) and is drawn at a visible width.
+      assert.equal(OUTLINE_ROLE, `var(--${ACCENT_CSS_PROPERTIES.text})`);
+      assert.ok(OUTLINE_STROKE >= 1.5 && OUTLINE_STROKE <= 2);
+      const buckets: AccentBucket[] = ["light", "dark"];
+      for (const bucket of buckets) {
+        for (const accent of ACCENT_IDS) {
+          const ratio = contrastRatio(
+            ACCENTS[accent][bucket].text,
+            ACCENT_SURFACE[bucket],
+          );
+          assert.ok(
+            ratio >= 3,
+            `${accent} outline on ${bucket} ${ratio.toFixed(2)}:1`,
+          );
+        }
+      }
+    },
+  "the Follow app ring and the selected check use the text role, not the fill":
+    () => {
+      assert.equal(orbSwatchSpec("app").check, OUTLINE_ROLE);
+      const source = read("OrbColorSetting.tsx");
+      assert.doesNotMatch(source, /var\(--color-accent-a\)/);
+      assert.match(source, /data-orb-outline/);
+      assert.match(source, /data-orb-check/);
+    },
   "the component never uses a fixed gradient id": () => {
     const source = read("OrbColorSetting.tsx");
     assert.match(source, /useId\(\)/);

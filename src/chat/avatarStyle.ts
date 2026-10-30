@@ -35,12 +35,17 @@ export function avatarStyle(
 ): Record<string, string> {
   const globe = resolveGlobe(face, look.orbColor, look.appAccent);
   if (globe.kind === "app") {
+    // Rings take the bucket text role on light: the accent fill is below 3:1 on the light surface (A6).
+    const ring =
+      look.bucket === "light"
+        ? "var(--color-accent-text)"
+        : "var(--vox-app-accent)";
     return {
       "--vox-app-accent": "var(--color-accent-a)",
       "--vox-orb-hi": appModeStops.hi,
       "--vox-orb-mid": appModeStops.mid,
       "--vox-orb-lo": appModeStops.lo,
-      "--chat-accent": "var(--vox-app-accent)",
+      "--chat-accent": ring,
     };
   }
   const pick = resolveOrbAccent(look.appAccent, look.orbColor, look.bucket);

@@ -215,7 +215,13 @@ test.describe("Orb colour: live preview", () => {
     const orb = page.getByTestId("appearance-preview-orb");
     await expect(orb).toHaveAttribute("data-ring", ACCENTS.blue.light.text);
     await orbRadio(page, FOLLOW_APP).click();
-    await expect(orb).toHaveAttribute("data-ring", ACCENTS.rose.light.text);
+    // Follow app draws the ring from the text role on light (A6): the reported ring is that token,
+    // and the drawn .vox-ring-1 stroke is the rose text role (V3).
+    await expect(orb).toHaveAttribute("data-ring", "var(--color-accent-text)");
+    await expect(orb.locator(".vox-ring-1")).toHaveCSS(
+      "stroke",
+      new RegExp(hexToRgb(ACCENTS.rose.light.text).replace(/[()]/g, "\\$&")),
+    );
   });
 });
 

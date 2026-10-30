@@ -3,8 +3,8 @@ import { useTranslation } from "react-i18next";
 import { useSettings } from "@/hooks/useSettings";
 import { CHAT_PALETTES } from "@/chat/chatTheme";
 import { resolveAppearance } from "@/lib/appearance/palette";
-import { resolveOrbAccent, orbRingColour } from "@/orb/orbAccentResolve";
 import VoxAvatar from "@/chat/VoxAvatar";
+import { avatarStyle } from "@/chat/avatarStyle";
 import "@/chat/avatar.css";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { effectiveAppearance, effectiveOrbAccent } from "./appearanceModel";
@@ -35,19 +35,15 @@ export const AppearancePreview: React.FC = () => {
     },
     prefersDark,
   );
-  // The orb ring follows the orb colour, or the app accent under Follow app (DESIGN D3).
-  const orbColor = effectiveOrbAccent(settings?.orb_accent);
-  const orbRing = orbRingColour(
-    "idle",
-    resolveOrbAccent(choice.accent, orbColor, resolved.bucket),
-    resolved.bucket,
-  );
   // The same avatar the orb page and the conversation window draw, on the preview's own bucket.
+  const orbColor = effectiveOrbAccent(settings?.orb_accent);
   const avatarLook = {
     orbColor,
     appAccent: choice.accent,
     bucket: resolved.bucket,
   };
+  // The ring the preview reports is the ring the avatar draws (A6, V3): the same avatarStyle value.
+  const orbRing = avatarStyle("idle", avatarLook)["--chat-accent"];
   const palette = CHAT_PALETTES[resolved.chatPalette];
   const paletteLabel =
     resolved.chatPalette === "light"

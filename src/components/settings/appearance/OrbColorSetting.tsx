@@ -15,6 +15,8 @@ import {
   type OrbChoice,
 } from "./appearanceModel";
 import {
+  OUTLINE_ROLE,
+  OUTLINE_STROKE,
   orbSwatchSpec,
   sphereGradientId,
   type OrbSwatchSpec,
@@ -36,6 +38,18 @@ const OrbSwatch: React.FC<{ spec: OrbSwatchSpec }> = ({ spec }) => {
   const centre = size / 2;
   const radius = 13;
   const common = { width: size, height: size, viewBox: `0 0 ${size} ${size}` };
+  // The outline every sphere and the Auto swatch draw (A6): visible on light and dark.
+  const outline = (c: number, r: number) => (
+    <circle
+      data-orb-outline=""
+      cx={c}
+      cy={c}
+      r={r}
+      fill="none"
+      strokeWidth={OUTLINE_STROKE}
+      style={{ stroke: OUTLINE_ROLE }}
+    />
+  );
 
   if (spec.kind === "sphere") {
     return (
@@ -53,6 +67,7 @@ const OrbSwatch: React.FC<{ spec: OrbSwatchSpec }> = ({ spec }) => {
           r={radius}
           fill={`url(#${gradientId})`}
         />
+        {outline(centre, radius)}
       </svg>
     );
   }
@@ -78,18 +93,20 @@ const OrbSwatch: React.FC<{ spec: OrbSwatchSpec }> = ({ spec }) => {
         {quarter(90, emerald)}
         {quarter(180, violet)}
         {quarter(270, amber)}
+        {outline(centre, radius)}
       </svg>
     );
   }
   return (
     <svg {...common} aria-hidden="true" focusable="false">
       <circle
+        data-orb-outline=""
         cx={centre}
         cy={centre}
         r={radius - 2}
         fill="none"
         strokeWidth={3}
-        style={{ stroke: "var(--color-accent-a)" }}
+        style={{ stroke: OUTLINE_ROLE }}
       />
     </svg>
   );
@@ -169,12 +186,15 @@ export const OrbColorSetting: React.FC<OrbColorSettingProps> = ({
                   // --focus-ring, the inner ring the on-accent colour.
                   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--focus-ring)",
                   "focus-visible:inset-ring-2 focus-visible:inset-ring-(--color-on-accent)",
-                  isSelected ? "ring-2 ring-offset-2 ring-accent-a" : "",
+                  isSelected
+                    ? "ring-2 ring-offset-2 ring-(--color-accent-text)"
+                    : "",
                 ].join(" ")}
               >
                 <OrbSwatch spec={spec} />
                 {isSelected ? (
                   <Check
+                    data-orb-check=""
                     aria-hidden="true"
                     size={18}
                     strokeWidth={3}

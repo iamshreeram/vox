@@ -1201,10 +1201,141 @@ function consumerMismatches(
 
 /* ------------------------------------------------------------------ orb colour group (D3) */
 
+/** One orb swatch as drawn: its outline stroke, its selected check and the surfaces under the check. */
+interface OrbSwatchObs {
+  name: string;
+  width: number;
+  height: number;
+  backing: string;
+  /** Computed stroke of the [data-orb-outline] element, or null when no outline is drawn. */
+  outline: string | null;
+  /** Computed colour of the [data-orb-check] element, or null when the swatch is not selected. */
+  check: string | null;
+  /** The fills the check stands on: the sphere's hi and mid stops, or the Auto quarters. */
+  checkSurfaces: string[];
+}
+
+/**
+ * Reads what each orb swatch DRAWS (A6, V1): the svg outline stroke, the selected check colour and
+ * the sphere or quarter fills under the check. A swatch whose outline is missing reads as null.
+ */
+async function collectOrbSwatches(page: Page): Promise<OrbSwatchObs[]> {
+  return page.evaluate(() => {
+    const group = document.querySelector(
+      '[role="radiogroup"][aria-label="Orb colour"]',
+    );
+    const radios = [
+      ...(group?.querySelectorAll('[role="radio"]') ?? []),
+    ] as HTMLElement[];
+    return radios.map((el) => {
+      let backing = "";
+      let node: HTMLElement | null = el.parentElement;
+      while (node && backing === "") {
+        const css = getComputedStyle(node).backgroundColor;
+        if (css !== "rgba(0, 0, 0, 0)" && css !== "transparent") backing = css;
+        node = node.parentElement;
+      }
+      const outline = el.querySelector("[data-orb-outline]");
+      const check = el.querySelector("[data-orb-check]");
+      const svg = el.querySelector("svg");
+      // Stops at offsets up to 55% are the sphere's hi and mid: the check stands on them.
+      const stops = [...(svg?.querySelectorAll("stop") ?? [])].filter(
+        (stop) => {
+          const offset = stop.getAttribute("offset") ?? "0";
+          const fraction = offset.endsWith("%")
+            ? Number.parseFloat(offset) / 100
+            : Number.parseFloat(offset);
+          return fraction <= 0.55;
+        },
+      );
+      const quarters = [...(svg?.querySelectorAll("path") ?? [])];
+      const box = el.getBoundingClientRect();
+      return {
+        name: el.getAttribute("aria-label") ?? "",
+        width: box.width,
+        height: box.height,
+        backing: backing || getComputedStyle(document.body).backgroundColor,
+        outline: outline ? getComputedStyle(outline).stroke : null,
+        check: check ? getComputedStyle(check).color : null,
+        checkSurfaces: (stops.length > 0 ? stops : quarters).map((node) =>
+          node instanceof SVGStopElement
+            ? getComputedStyle(node).stopColor
+            : getComputedStyle(node).fill,
+        ),
+      };
+    });
+  });
+}
+
+/**
+ * Violations of the orb swatch drawing rules (empty = pass): a 24 px target, a drawn outline of
+ * >= 3:1 against the surface, and a selected check of >= 3:1 against every fill it stands on (or the
+ * surface, for the Follow app ring). Shared by the page audit and the negative fixtures.
+ */
+async function orbSwatchViolations(
+  page: Page,
+  swatches: OrbSwatchObs[],
+): Promise<string[]> {
+  const colours = swatches.flatMap((s) => [
+    s.backing,
+    ...(s.outline ? [s.outline] : []),
+    ...(s.check ? [s.check] : []),
+    ...s.checkSurfaces,
+  ]);
+  const resolve = await Q.resolveColourMap(page, colours);
+  const white = { r: 255, g: 255, b: 255 };
+  const violations: string[] = [];
+  for (const s of swatches) {
+    if (s.width < Q.MIN_TARGET_PX || s.height < Q.MIN_TARGET_PX) {
+      violations.push(`${s.name}: target ${s.width}x${s.height}px`);
+    }
+    const backing = resolve(s.backing);
+    if (backing === null) {
+      violations.push(`${s.name}: surface not resolved`);
+      continue;
+    }
+    const bg = Q.over(backing, white);
+    if (s.outline === null) {
+      violations.push(`${s.name}: no outline drawn`);
+    } else {
+      const outline = resolve(s.outline);
+      if (outline === null) {
+        violations.push(`${s.name}: outline colour not resolved`);
+      } else {
+        const ratio = Q.contrastRatio(Q.over(outline, bg), bg);
+        if (ratio < 3) {
+          violations.push(`${s.name}: outline ${ratio.toFixed(2)}:1 < 3:1`);
+        }
+      }
+    }
+    if (s.check !== null) {
+      const check = resolve(s.check);
+      const surfaces =
+        s.checkSurfaces.length > 0 ? s.checkSurfaces : [s.backing];
+      for (const surface of surfaces) {
+        const under = resolve(surface);
+        if (check === null || under === null) {
+          violations.push(`${s.name}: check colour not resolved`);
+          break;
+        }
+        const ratio = Q.contrastRatio(
+          Q.over(check, Q.over(under, white)),
+          Q.over(under, white),
+        );
+        if (ratio < 3) {
+          violations.push(`${s.name}: check ${ratio.toFixed(2)}:1 < 3:1`);
+        }
+      }
+    }
+  }
+  return violations;
+}
+
 /**
  * The Appearance page's "Orb colour" group, checked on top of the generic walk: it must exist, name
- * Auto, Follow app colour and the six accents, give every swatch a 24 px target, and draw each swatch's boundary
- * at >= 3:1 against its surface (the ring is the accent text role, which is >= 4.5:1 on light).
+ * Auto, Follow app colour and the six accents, give every swatch a 24 px target, draw an outline of
+ * >= 3:1 on every swatch, and draw the selected check at >= 3:1 on what it stands on (V1: measured
+ * from the drawn svg, never a CSS border that is absent).
  */
 async function auditOrbGroup(
   page: Page,
@@ -1227,54 +1358,12 @@ async function auditOrbGroup(
   await expect(radios, `${variant}: orb colour options`).toHaveCount(
     names.length,
   );
-  const info = await page.evaluate(() => {
-    const group = document.querySelector(
-      '[role="radiogroup"][aria-label="Orb colour"]',
-    );
-    const radios = [
-      ...(group?.querySelectorAll('[role="radio"]') ?? []),
-    ] as HTMLElement[];
-    return radios.map((el) => {
-      let backing = "";
-      let node: HTMLElement | null = el.parentElement;
-      while (node && backing === "") {
-        const css = getComputedStyle(node).backgroundColor;
-        if (css !== "rgba(0, 0, 0, 0)" && css !== "transparent") backing = css;
-        node = node.parentElement;
-      }
-      const box = el.getBoundingClientRect();
-      return {
-        name: el.getAttribute("aria-label") ?? "",
-        border: getComputedStyle(el).borderTopColor,
-        backing: backing || getComputedStyle(document.body).backgroundColor,
-        width: box.width,
-        height: box.height,
-      };
-    });
-  });
+  const swatches = await collectOrbSwatches(page);
   expect(
-    info.map((r) => r.name),
+    swatches.map((s) => s.name),
     `${variant}: orb colour option names`,
   ).toEqual(names);
-  const colours = info.flatMap((r) => [r.border, r.backing]);
-  const resolve = await Q.resolveColourMap(page, colours);
-  const violations: string[] = [];
-  for (const r of info) {
-    if (r.width < Q.MIN_TARGET_PX || r.height < Q.MIN_TARGET_PX) {
-      violations.push(`${r.name}: target ${r.width}x${r.height}px`);
-    }
-    const border = resolve(r.border);
-    const backing = resolve(r.backing);
-    if (border === null || backing === null) {
-      violations.push(`${r.name}: colour not resolved`);
-      continue;
-    }
-    const bg = Q.over(backing, { r: 255, g: 255, b: 255 });
-    const ratio = Q.contrastRatio(Q.over(border, bg), bg);
-    if (ratio < 3) {
-      violations.push(`${r.name}: boundary ${ratio.toFixed(2)}:1 < 3:1`);
-    }
-  }
+  const violations = await orbSwatchViolations(page, swatches);
   expect(violations, `${variant} (${surface}): orb colour group`).toEqual([]);
 }
 
@@ -1714,6 +1803,48 @@ test.describe("negative fixtures: the gate must detect each injected defect", ()
       reach.unreached.length,
       "the gate must report the tabindex=-1 button",
     ).toBeGreaterThan(0);
+  });
+
+  test("NEG orb swatch with a low-contrast outline is flagged (V1: the drawn stroke, not a CSS border)", async ({
+    page,
+  }) => {
+    const swatch = (outline: string): string =>
+      `<button role="radio" aria-label="Blue" aria-checked="false" style="width:40px;height:40px;background:transparent;border:0"><svg width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="13" fill="#3B82F6"/>${outline}</svg></button>`;
+    const group = (inner: string): string =>
+      `<body style="margin:0;background:#fbfbfb"><div role="radiogroup" aria-label="Orb colour">${inner}</div></body>`;
+    // Control: a text-role outline (>= 3:1 on the light surface) passes the same detector.
+    await page.setContent(
+      group(
+        swatch(
+          '<circle data-orb-outline="" cx="14" cy="14" r="13" fill="none" stroke-width="1.5" style="stroke:#1d4ed8"/>',
+        ),
+      ),
+    );
+    const good = await collectOrbSwatches(page);
+    expect(
+      await orbSwatchViolations(page, good),
+      "the control swatch must pass",
+    ).toEqual([]);
+    // A pale outline (about 1.2:1) must be reported.
+    await page.setContent(
+      group(
+        swatch(
+          '<circle data-orb-outline="" cx="14" cy="14" r="13" fill="none" stroke-width="1.5" style="stroke:#e6e6e6"/>',
+        ),
+      ),
+    );
+    const pale = await collectOrbSwatches(page);
+    expect(
+      (await orbSwatchViolations(page, pale)).join("\n"),
+      "the gate must report the low-contrast outline",
+    ).toMatch(/Blue: outline .* < 3:1/);
+    // No outline at all (the 0px border of the defect) must be reported.
+    await page.setContent(group(swatch("")));
+    const bare = await collectOrbSwatches(page);
+    expect(
+      (await orbSwatchViolations(page, bare)).join("\n"),
+      "the gate must report a swatch with no drawn outline",
+    ).toMatch(/Blue: no outline drawn/);
   });
 
   test("NEG dropped appearance event is detected by the convergence check", async ({

@@ -232,6 +232,12 @@ async function ringStroke(page: Page, avatar: string): Promise<string> {
   );
 }
 
+/** Parses a computed `rgb(r, g, b)` or `rgba(...)` string. */
+function parseCss(value: string): Rgb {
+  const parts = (value.match(/[\d.]+/g) ?? []).map(Number);
+  return { r: parts[0] ?? 0, g: parts[1] ?? 0, b: parts[2] ?? 0 };
+}
+
 const navItem = (page: Page, label: string): Locator =>
   page.locator("p", { hasText: new RegExp(`^${label}$`) });
 const section = (page: Page, id: string): Locator =>
@@ -532,6 +538,107 @@ test.describe("orb globe colour", () => {
       dist(await centreColour(page, ORB_AVATAR), globeNew),
       "orb and chat globes match",
     ).toBeLessThanOrEqual(25);
+  });
+
+  // ------------------------------------------------------------- (i) conversation window, app mode (V2)
+
+  test("(i) conversation window app mode: cyan, then a newer green, then a stale blue is ignored; status pill unchanged", async ({
+    page,
+  }) => {
+    await openChat(
+      page,
+      snap({
+        theme: "custom",
+        custom_colors: CYAN,
+        accent: "amber",
+        chat_theme: "dark",
+        orb_accent: "app",
+      }),
+    );
+    const drive = faceDriver(page);
+    const pill = page.locator(".chat-pill");
+    await expect(pill).toHaveAttribute("role", "status");
+
+    // Idle: the globe and the rings take the live custom cyan.
+    expect(
+      polylineDistance(
+        await centreColour(page, CHAT_AVATAR),
+        appFamily(hex(CYAN.accent)),
+      ),
+      "idle globe is the app cyan",
+    ).toBeLessThanOrEqual(TOLERANCE);
+    expect(
+      parseCss(await ringStroke(page, CHAT_AVATAR)).b,
+      "idle ring is cyan",
+    ).toBeGreaterThan(200);
+
+    // Then thinking: the globe and the rings still take the live custom cyan.
+    await drive("thinking");
+    await expect(page.locator(CHAT_AVATAR)).toHaveAttribute(
+      "data-face",
+      "thinking",
+    );
+    expect(
+      polylineDistance(
+        await centreColour(page, CHAT_AVATAR),
+        appFamily(hex(CYAN.accent)),
+      ),
+      "thinking globe is the app cyan",
+    ).toBeLessThanOrEqual(TOLERANCE);
+    const cyanRing = parseCss(await ringStroke(page, CHAT_AVATAR));
+    expect(cyanRing.g, "cyan ring has high green").toBeGreaterThan(180);
+    expect(cyanRing.b, "cyan ring has high blue").toBeGreaterThan(200);
+    expect(cyanRing.r, "cyan ring has low red").toBeLessThan(100);
+    const pillText = (await pill.textContent())?.trim() ?? "";
+    expect(pillText.length).toBeGreaterThan(0);
+
+    // A newer green custom accent recolours the globe and rings.
+    await emitMockEvent(
+      page,
+      "appearance",
+      snap({
+        rev: 2,
+        theme: "custom",
+        custom_colors: GREEN,
+        accent: "amber",
+        chat_theme: "dark",
+        orb_accent: "app",
+      }),
+    );
+    await expect
+      .poll(async () => isGreen(await centreColour(page, CHAT_AVATAR)), {
+        timeout: 5000,
+      })
+      .toBe(true);
+    const greenRing = parseCss(await ringStroke(page, CHAT_AVATAR));
+    expect(greenRing.g, "green ring follows the newer event").toBeGreaterThan(
+      150,
+    );
+    expect(greenRing.r, "green ring has low red").toBeLessThan(100);
+
+    // A stale blue event (rev 1) is ignored: globe, rings and pill keep the green state.
+    await emitMockEvent(
+      page,
+      "appearance",
+      snap({
+        rev: 1,
+        theme: "custom",
+        custom_colors: CYAN,
+        accent: "amber",
+        chat_theme: "dark",
+        orb_accent: "app",
+      }),
+    );
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    expect(isGreen(await centreColour(page, CHAT_AVATAR))).toBe(true);
+    expect(parseCss(await ringStroke(page, CHAT_AVATAR))).toEqual(greenRing);
+    expect((await pill.textContent())?.trim()).toBe(pillText);
+    await expect(pill).toHaveAttribute("role", "status");
   });
 
   // ------------------------------------------------------------- (f) appearance page
