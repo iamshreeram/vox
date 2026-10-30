@@ -1,6 +1,15 @@
 @import "tailwindcss";
 @import "./styles/theme.css";
 
+/* Type floor (policy: no rendered text below 12px). The root font-size is 15px
+   (see :root below), so Tailwind's default text-xs (0.75rem) resolves to 11.25px.
+   Only the xs step is raised; the other steps keep their proportions. Guarded by
+   src/styles/typeFloor.test.ts. */
+@theme {
+  --text-xs: 0.8rem;
+  --text-xs--line-height: calc(1 / 0.8);
+}
+
 /* Register the shared color tokens (src/styles/theme.css) as Tailwind
    utilities */
 @theme inline {

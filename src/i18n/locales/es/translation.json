@@ -1624,7 +1624,9 @@
     "open": "Abrir",
     "copy": "Copiar",
     "clear": "Limpiar",
-    "noOptionsFound": "No se encontraron opciones"
+    "noOptionsFound": "No se encontraron opciones",
+    "reset": "Restablecer",
+    "seek": "Buscar"
   },
   "accessibility": {
     "permissionsDescription": "Vox necesita permisos de accesibilidad para escribir texto transcrito.",

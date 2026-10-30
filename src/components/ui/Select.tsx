@@ -18,6 +18,8 @@ type BaseProps = {
   value: string | null;
   options: SelectOption[];
   placeholder?: string;
+  /** Accessible name of the combobox input; defaults to the placeholder. */
+  ariaLabel?: string;
   disabled?: boolean;
   isLoading?: boolean;
   isClearable?: boolean;
@@ -72,6 +74,8 @@ const selectStyles: StylesConfig<SelectOption, false> = {
   input: (base) => ({
     ...base,
     color: "var(--color-text)",
+    // 24px minimum text-entry box (WCAG 2.5.8); the control itself is already >= 40px.
+    minHeight: 24,
   }),
   singleValue: (base) => ({
     ...base,
@@ -126,6 +130,7 @@ export const Select: React.FC<SelectProps> = React.memo(
     value,
     options,
     placeholder,
+    ariaLabel,
     disabled,
     isLoading,
     isClearable = true,
@@ -157,6 +162,7 @@ export const Select: React.FC<SelectProps> = React.memo(
       options,
       onChange: handleChange,
       placeholder,
+      "aria-label": ariaLabel ?? placeholder,
       isDisabled: disabled,
       isLoading,
       onBlur,

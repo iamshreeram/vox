@@ -1624,7 +1624,9 @@
     "open": "Öppna",
     "copy": "Kopiera",
     "clear": "Rensa",
-    "noOptionsFound": "Inga alternativ hittades"
+    "noOptionsFound": "Inga alternativ hittades",
+    "reset": "Återställ",
+    "seek": "Spola"
   },
   "accessibility": {
     "permissionsDescription": "Vox behöver behörighet för hjälpmedel för att kunna skriva transkriberad text.",

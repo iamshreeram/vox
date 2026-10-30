@@ -1627,7 +1627,9 @@
     "open": "Buka",
     "copy": "Salin",
     "clear": "Bersihkan",
-    "noOptionsFound": "Tidak ada opsi yang ditemukan"
+    "noOptionsFound": "Tidak ada opsi yang ditemukan",
+    "reset": "Atur ulang",
+    "seek": "Cari"
   },
   "accessibility": {
     "permissionsDescription": "Vox memerlukan izin aksesibilitas untuk mengetik teks hasil transkripsi.",

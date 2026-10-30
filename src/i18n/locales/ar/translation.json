@@ -1624,7 +1624,9 @@
     "open": "فتح",
     "copy": "نسخ",
     "clear": "مسح",
-    "noOptionsFound": "لم يتم العثور على خيارات"
+    "noOptionsFound": "لم يتم العثور على خيارات",
+    "reset": "إعادة تعيين",
+    "seek": "بحث"
   },
   "accessibility": {
     "permissionsDescription": ".يحتاج Vox إلى أذونات إمكانية الوصول لكتابة النص المفرغ",

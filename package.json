@@ -27,7 +27,7 @@
     "test:floating-orb:e2e": "playwright test tests/floating-orb-settings.spec.ts --reporter=line",
     "test:bubbles:e2e": "playwright test tests/bubbles-page.spec.ts --reporter=line",
     "test:bubbles:anchor:e2e": "playwright test tests/bubbles-anchor.spec.ts --reporter=line",
-    "test:theme": "bun src/styles/theme.test.ts && bun src/styles/accents.test.ts && bun src/styles/restrained.test.ts",
+    "test:theme": "bun src/styles/theme.test.ts && bun src/styles/accents.test.ts && bun src/styles/restrained.test.ts && bun src/styles/typeFloor.test.ts",
     "test:theme-utils": "bun src/lib/utils/theme.test.ts && bun src/lib/appearance/consumer.test.ts",
     "test:sidebar-theme": "bun src/components/sidebarTheme.test.ts",
     "test:appearance": "bun src/components/settings/appearance/appearanceModel.test.ts && vitest run src/stores/settingsStore.appearance.test.ts",

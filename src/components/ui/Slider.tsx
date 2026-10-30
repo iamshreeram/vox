@@ -52,15 +52,17 @@ export const Slider: React.FC<SliderProps> = ({
         <div className="flex items-center space-x-1 h-6">
           <input
             type="range"
+            aria-label={label}
             min={min}
             max={max}
             step={step}
             value={value}
             onChange={handleChange}
             disabled={disabled}
-            className="flex-grow h-2 rounded-lg appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            // h-6 is the 24px hit box; py-2 + bg-clip-content keep the paint at the old 8px track.
+            className="flex-grow h-6 py-2 bg-clip-content rounded-lg appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             style={{
-              background: `linear-gradient(to right, var(--color-accent-a), var(--color-accent-b) ${
+              backgroundImage: `linear-gradient(to right, var(--color-accent-a), var(--color-accent-b) ${
                 ((value - min) / (max - min)) * 100
               }%, rgba(128, 128, 128, 0.2) ${
                 ((value - min) / (max - min)) * 100

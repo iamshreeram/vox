@@ -257,6 +257,7 @@ export const ModelsSettings: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t("settings.models.searchPlaceholder")}
+            aria-label={t("settings.models.searchPlaceholder")}
             className="w-full pl-9 pr-3 py-2 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded-lg placeholder:text-muted"
           />
         </div>
@@ -359,6 +360,9 @@ export const ModelsSettings: React.FC = () => {
                             }
                           }}
                           placeholder={t(
+                            "settings.general.language.searchPlaceholder",
+                          )}
+                          aria-label={t(
                             "settings.general.language.searchPlaceholder",
                           )}
                           className="w-full px-2 py-1 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded-md"

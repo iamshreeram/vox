@@ -1627,7 +1627,9 @@
     "open": "Åbn",
     "copy": "Kopiér",
     "clear": "Ryd",
-    "noOptionsFound": "Ingen muligheder fundet"
+    "noOptionsFound": "Ingen muligheder fundet",
+    "reset": "Nulstil",
+    "seek": "Søg"
   },
   "accessibility": {
     "permissionsDescription": "Vox har brug for tilgængelighedstilladelser for at skrive den transskriberede tekst.",

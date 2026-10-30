@@ -1624,7 +1624,9 @@
     "open": "Otevřít",
     "copy": "Kopírovat",
     "clear": "Vymazat",
-    "noOptionsFound": "Nenalezeny žádné možnosti"
+    "noOptionsFound": "Nenalezeny žádné možnosti",
+    "reset": "Obnovit",
+    "seek": "Přetočit"
   },
   "accessibility": {
     "permissionsDescription": "Vox potřebuje oprávnění usnadnění přístupu, aby mohlo psát přepsaný text.",

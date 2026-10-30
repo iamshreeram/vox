@@ -1624,7 +1624,9 @@
     "open": "Aç",
     "copy": "Kopyala",
     "clear": "Temizle",
-    "noOptionsFound": "Seçenek bulunamadı"
+    "noOptionsFound": "Seçenek bulunamadı",
+    "reset": "Sıfırla",
+    "seek": "Konuma git"
   },
   "accessibility": {
     "permissionsDescription": "Vox, transkribe edilen metni yazabilmek için erişilebilirlik izinlerine ihtiyaç duyar.",

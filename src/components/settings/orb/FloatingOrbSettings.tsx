@@ -247,6 +247,7 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
             <input
               type="checkbox"
               data-testid="floating-orb-show"
+              aria-label={t("settings.floatingOrb.show.title")}
               className="peer absolute inset-0 z-10 m-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
               checked={toggle.checked}
               disabled={controlsDisabled}
@@ -321,7 +322,7 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
                 data-testid="floating-orb-size-slider"
                 aria-label={t("settings.floatingOrb.size.title")}
                 aria-valuetext={sizeLabel}
-                className="w-40 cursor-pointer disabled:cursor-not-allowed"
+                className="w-40 h-6 cursor-pointer disabled:cursor-not-allowed"
                 min={ORB_PX_MIN}
                 max={ORB_PX_MAX}
                 step={ORB_PX_STEP}

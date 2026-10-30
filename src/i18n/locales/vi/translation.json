@@ -1624,7 +1624,9 @@
     "open": "Mở",
     "copy": "Sao chép",
     "clear": "Xóa",
-    "noOptionsFound": "Không tìm thấy tùy chọn"
+    "noOptionsFound": "Không tìm thấy tùy chọn",
+    "reset": "Đặt lại",
+    "seek": "Tua"
   },
   "accessibility": {
     "permissionsDescription": "Vox cần quyền truy cập để gõ văn bản đã chuyển đổi.",

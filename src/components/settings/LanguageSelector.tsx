@@ -180,6 +180,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
                   onChange={handleSearchChange}
                   onKeyDown={handleKeyDown}
                   placeholder={t("settings.general.language.searchPlaceholder")}
+                  aria-label={t("settings.general.language.searchPlaceholder")}
                   className="w-full px-2 py-1 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded focus-visible:border-logo-primary"
                 />
               </div>

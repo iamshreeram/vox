@@ -169,6 +169,42 @@ const scenarios: Record<string, () => void> = {
   "every icon-only button has an accessible name": () => {
     assert.deepEqual(iconButtonOffenders(), []);
   },
+  // UI enterprise R1b: controls forward their row label as the accessible name.
+  "ToggleSwitch names its checkbox from the row label": () => {
+    const text = read(path.join(srcRoot, "components/ui/ToggleSwitch.tsx"));
+    assert.match(text, /aria-label=\{label\}/);
+  },
+  "Slider names its range input from the row label": () => {
+    const text = read(path.join(srcRoot, "components/ui/Slider.tsx"));
+    assert.match(text, /aria-label=\{label\}/);
+  },
+  "Select forwards an accessible name to react-select": () => {
+    const text = read(path.join(srcRoot, "components/ui/Select.tsx"));
+    assert.match(text, /"aria-label": ariaLabel \?\? placeholder/);
+  },
+  "ResetButton has a translated default accessible name": () => {
+    const text = read(path.join(srcRoot, "components/ui/ResetButton.tsx"));
+    assert.match(text, /aria-label=\{ariaLabel \?\? t\("common\.reset"\)\}/);
+  },
+  "every raw <input> has an accessible name source": () => {
+    const offenders: string[] = [];
+    for (const file of files.filter((f) => f.endsWith(".tsx"))) {
+      const text = read(file);
+      // Prop-forwarding primitives (`{...props}`) take their name from the caller.
+      if (/\{\.\.\.props\}/.test(text)) continue;
+      for (const match of text.matchAll(/<input(?=[\s>/])/g)) {
+        const start = match.index ?? 0;
+        const end = openTagEnd(text, start + match[0].length);
+        if (end < 0) continue;
+        const openTag = text.slice(start, end + 1);
+        if (/type=["'](hidden)["']/.test(openTag)) continue;
+        if (/aria-label|aria-labelledby|\btitle=|\bid=/.test(openTag)) continue;
+        const line = text.slice(0, start).split("\n").length;
+        offenders.push(`${rel(file)}:${line} <input> without a name source`);
+      }
+    }
+    assert.deepEqual(offenders, []);
+  },
 };
 
 let failed = 0;

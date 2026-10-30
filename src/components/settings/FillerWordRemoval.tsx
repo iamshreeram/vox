@@ -123,6 +123,7 @@ export const FillerWordRemoval: React.FC<FillerWordRemovalProps> = React.memo(
               >
                 <input
                   type="radio"
+                  aria-label={option.label}
                   name="custom-filler-words-mode"
                   value={option.value}
                   checked={choice === option.value}

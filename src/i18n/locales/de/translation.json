@@ -1624,7 +1624,9 @@
     "open": "Öffnen",
     "copy": "Kopieren",
     "clear": "Leeren",
-    "noOptionsFound": "Keine Optionen gefunden"
+    "noOptionsFound": "Keine Optionen gefunden",
+    "reset": "Zurücksetzen",
+    "seek": "Spulen"
   },
   "accessibility": {
     "permissionsDescription": "Vox benötigt Bedienungshilfen-Berechtigungen, um transkribierten Text einzugeben.",

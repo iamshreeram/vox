@@ -1627,7 +1627,9 @@
     "open": "Obre",
     "copy": "Copia",
     "clear": "Neteja",
-    "noOptionsFound": "No s'ha trobat cap opció"
+    "noOptionsFound": "No s'ha trobat cap opció",
+    "reset": "Restableix",
+    "seek": "Cerca"
   },
   "accessibility": {
     "permissionsDescription": "El Vox necessita permisos d'accessibilitat per escriure el text transcrit.",

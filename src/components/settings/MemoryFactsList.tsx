@@ -62,6 +62,7 @@ export const MemoryFactsList: React.FC = () => {
             if (e.key === "Enter") handleAdd();
           }}
           placeholder={t("settings.advanced.memory.addPlaceholder")}
+          aria-label={t("settings.advanced.memory.addPlaceholder")}
           className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-mid-gray/20 bg-background"
         />
         <Button

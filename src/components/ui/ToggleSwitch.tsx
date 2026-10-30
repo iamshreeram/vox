@@ -40,6 +40,7 @@ export const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
           type="checkbox"
           value=""
           className="sr-only peer"
+          aria-label={label}
           checked={checked}
           disabled={disabled || isUpdating}
           onChange={(e) => onChange(e.target.checked)}
