@@ -4335,8 +4335,7 @@ function backup(why) {
   } catch (e) {}
 }
 backup("opened the page");
-var IS_SERVER = location.protocol === "http:";
-var savedTimer = null, bkTimer = null, srvTimer = null, lastSave = { server: null };
+var savedTimer = null, bkTimer = null;
 function save() {
   S.savedAt = Date.now();
   var ok = false;
@@ -4346,27 +4345,7 @@ function save() {
   el.classList.add("show");
   clearTimeout(savedTimer); savedTimer = setTimeout(function () { el.classList.remove("show"); }, 1500);
   clearTimeout(bkTimer); bkTimer = setTimeout(function () { backup("automatic"); refreshStore(); }, 30000);
-  if (IS_SERVER) { clearTimeout(srvTimer); srvTimer = setTimeout(pushServer, 600); }
 }
-function pushServer() {
-  return fetch("/api/state", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(S) })
-    .then(function (r) { lastSave.server = r.ok; refreshStore(); })
-    .catch(function () { lastSave.server = false; refreshStore(); });
-}
-function pullServer() {
-  fetch("/api/state").then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
-    if (d && d.tests && (d.savedAt || 0) > (S.savedAt || 0) && hasData(normalize(d))) {
-      backup("before loading the copy saved on disk");
-      S = d;
-      try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
-      render(); lastSave.server = true;
-    } else if (hasData(S)) { pushServer(); }
-    refreshStore();
-  }).catch(function () { lastSave.server = false; refreshStore(); });
-}
-window.addEventListener("pagehide", function () {
-  if (IS_SERVER && navigator.sendBeacon) { try { navigator.sendBeacon("/api/state", new Blob([JSON.stringify(S)], { type:"application/json" })); } catch (e) {} }
-});
 function progressFile() { return JSON.stringify({ app:"vox-test-guide", version:2, savedAt:Date.now(), state:S }, null, 2); }
 function loadProgress(text) {
   var o = JSON.parse(text), st = o && o.state ? o.state : o;
@@ -4382,11 +4361,8 @@ function restoreBackup(i) {
 }
 function refreshStore() {
   var b = document.getElementById("storeBanner"), msg, cls = "banner";
-  if (!storageOk) { cls += " bad"; msg = "This browser is not letting the page save, so your answers will be lost when you refresh. Press <b>Save progress file</b> often" + (IS_SERVER ? "." : ", or start the saving server (see below)."); }
-  else if (IS_SERVER) {
-    cls += lastSave.server === false ? " bad" : " good";
-    msg = lastSave.server === false ? "Cannot reach the saving server right now. Your answers are still saved in this browser." : "Saved in this browser <b>and</b> on disk in <code>docs/manual-testing/feedback.json</code> by serve.py.";
-  } else { msg = "Saved in this browser for this exact file location. It would be lost if you move or rename the page, clear site data or use a private window. Press <b>Save progress file</b> now and then, or run <code>python3 docs/manual-testing/serve.py</code> and open the address it prints to also save on disk."; }
+  if (!storageOk) { cls += " bad"; msg = "This browser is not letting the page save, so your answers will be lost when you refresh. Press <b>Save progress file</b> often."; }
+  else { msg = "Saved in this browser for this exact file location. It would be lost if you move or rename the page, clear site data or use a private window. Press <b>Save progress file</b> now and then."; }
   b.className = cls; b.innerHTML = msg;
   var sel = document.getElementById("bkSel"), l = backups();
   sel.innerHTML = '<option value="">' + (l.length ? "Automatic backups (" + l.length + ")..." : "No automatic backups yet") + '</option>' +
@@ -4837,7 +4813,6 @@ fillVoices();
 render();
 renderNav();
 refreshStore();
-if (IS_SERVER) pullServer();
 document.getElementById("navSearch").oninput = function () { filterNav(this.value); };
 function downloadProgress() { download("vox-progress-" + stamp() + ".json", progressFile(), "application/json"); }
 document.querySelectorAll(".dlProgress").forEach(function (b) { b.onclick = downloadProgress; });

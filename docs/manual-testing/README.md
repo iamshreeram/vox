@@ -6,28 +6,61 @@ your answers are saved per test id.
 
 ## Start the guide
 
-```sh
-python3 docs/manual-testing/serve.py          # default port 8765
-python3 docs/manual-testing/serve.py 8798     # or pick a port
-```
+Open `docs/manual-testing/experimental-features.html` directly in a browser
+(double-click it, or run `open docs/manual-testing/experimental-features.html`
+on macOS). It needs no server and no extra tools.
 
-Open the address it prints (for example `http://127.0.0.1:8765/`).
-The server listens on 127.0.0.1 only and needs only the Python standard library.
+## Where your answers are saved
 
-You can also open `experimental-features.html` directly in a browser. In that
-case answers stay in that browser only, so use **Save progress file** from time
-to time.
+Answers are saved in your browser, for that exact file location. If you move or
+rename the page, or clear the browser data, the page starts empty again.
 
-## Where feedback is saved
+- **Save progress file** downloads all results and notes as a file. Press it
+  now and then, and always before you close the browser for the day.
+- **Load progress file...** puts a saved file back.
+- The page keeps automatic browser backups; **Restore this backup** brings one back.
+- **Download report (.md)** and **Download data (.json)** produce the reports.
 
-With `serve.py` running, every answer is also written to disk:
+Progress files and reports are personal. Do not commit them.
 
-- `docs/manual-testing/feedback.json`: the current answers.
-- `docs/manual-testing/feedback.prev.json`: the copy before the last save.
-- `docs/manual-testing/feedback-history/`: timestamped copies, at most one every
-  10 minutes, last 30 kept.
+## Priorities
 
-These files are personal and are listed in `.gitignore`. Never commit them.
+Every test has a priority, shown as a badge on its card:
+
+- **P0 - UAT: must pass (start here).** The talk-and-listen loop (hearing you,
+  talking back, a natural conversation, interrupting, stopping) and anything that
+  could act or leak without asking (confirmations, secret files, agent write
+  approvals, logs). Each P0 test must stand on its own: it names its setup and
+  cleanup, and it never points at another test or section.
+- **P1 - Main features.**
+- **P2 - Edge cases and options.** Everything not listed in P0, P1 or the not-built list.
+- **Not built yet (do not test).** Planned work. A not-built test is never a failure.
+
+Rules the checker enforces:
+
+- Every test is in exactly one bucket. P0 has 15 to 40 tests.
+- A P0 test is never developer-only (`dev`). `dev` tests say "debug build" in `warn`.
+- The not-built bucket holds exactly the planned tests.
+
+The guide has two views, chosen with the **Priority view / Section view** menu
+(saved in this browser). The priority view opens P0 first and lists each test
+once, in run order, with a "From" line naming its section. The section view is
+the original layout. A **P0 only** / **P0 + P1** filter sits next to the status
+filter.
+
+The **UAT (P0)** line at the top counts P0 results. Only **Pass** is a pass;
+Skip, Blocked and not run are not. It shows `ALL n P0 TESTS PASSED` when every
+P0 test passes, otherwise `NOT READY: k of n P0 tests not passed`. The Markdown
+report repeats this, and the JSON file has `summaryByPriority` and `uatVerdict`.
+
+### How to change a priority
+
+The priority lists are the `PRI` literal in the page script (`P0`, `P1`, `X`).
+`P2` stays empty in the source: `applyPriority()` fills it with every test that is
+in no list, in section order. To move a test, edit its entry in `PRI` (keep the
+list order, because P0 runs in list order). Add a new test id to `P0`, `P1` or
+`X`, or leave it out to make it P2. Then run the checker. Never put an id in two
+lists.
 
 ## Priorities
 
