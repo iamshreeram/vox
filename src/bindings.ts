@@ -3134,6 +3134,39 @@ health: string;
  */
 failure: string | null }
 /**
+ * Why the orb refused a click. Serialised snake_case. A code this build does not know reads as
+ * `Unknown`, so an older page or a newer producer never breaks the stack.
+ */
+export type NoticeCode = 
+/**
+ * Dictation is running, so the orb cannot start a conversation.
+ */
+"dictation_busy" | 
+/**
+ * Spoken replies are turned off.
+ */
+"tts_off" | 
+/**
+ * Typed chat is turned off.
+ */
+"composer_off" | 
+/**
+ * Ambient listening is on.
+ */
+"ambient" | 
+/**
+ * The experimental feature is turned off.
+ */
+"experimental_off" | 
+/**
+ * The text chat is ending.
+ */
+"text_ending" | 
+/**
+ * Any code this build does not know.
+ */
+"unknown"
+/**
  * The saved orb position: the monitor it was on plus its centre as a fraction of that monitor's
  * work area. Fractions survive resolution and scale changes; the name and key identify the
  * monitor when it returns.

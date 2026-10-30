@@ -1,11 +1,12 @@
 // Entry for the bubble page (DESIGN.md R6-4, A7-2). A pure renderer: it shows the snapshots that
 // Rust sends on `bubbles-state`. Appearance (UI enterprise S2, A1/A2) is listen-only too: the seed
-// in the page URL plus `appearance` events, through the shared consumer. It needs no app settings
-// and no i18n, because it shows no user-facing strings of its own.
+// in the page URL plus `appearance` events, through the shared consumer. Notice texts (DESIGN.md
+// A-C3) use the chat page's listen-only i18n bootstrap, which calls no command.
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
 import "../styles/theme.css";
+import "../chat/i18n";
 import "./bubbles.css";
 import BubblesApp from "./BubblesApp";
 import {

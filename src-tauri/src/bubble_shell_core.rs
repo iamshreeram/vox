@@ -8,6 +8,7 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
 use crate::bubble_hub::{BubbleHub, HubEntry, Snapshot};
+use crate::bubble_notice::NoticeCode;
 use crate::chat_presentation::{
     floating_supported, resolve_presentation, PlatformEnv, Presentation,
 };
@@ -231,6 +232,13 @@ impl BubbleShellCore {
                 self.waiting_for_ready = true;
             }
         }
+        self.finish(inp, Effects::default())
+    }
+
+    /// Shows a notice (DESIGN.md A-C3). Touches only the bubble stack: no session change, no orb
+    /// action, no classic window. The page must be ready; the gates are checked when projected.
+    pub fn notice(&mut self, code: NoticeCode, inp: &ShellInputs) -> Effects {
+        self.hub.on_notice(code, inp.now);
         self.finish(inp, Effects::default())
     }
 

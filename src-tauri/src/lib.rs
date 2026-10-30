@@ -20,6 +20,9 @@ mod bubble_hub;
 #[cfg(test)]
 mod bubble_hub_tests;
 mod bubble_native;
+mod bubble_notice;
+#[cfg(test)]
+mod bubble_notice_tests;
 mod bubble_shell_core;
 #[cfg(test)]
 mod bubble_shell_core_tests;
@@ -1430,6 +1433,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             managers::transcription::StreamPhaseEvent,
         ])
         .typ::<settings::AppSettings>()
+        .typ::<bubble_notice::NoticeCode>()
         .typ::<appearance::AppearanceSnapshot>()
         .typ::<managers::wakeword::WakeWordDetection>()
         .typ::<commands::ambient::AmbientAddressedPayload>()

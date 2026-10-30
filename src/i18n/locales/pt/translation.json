@@ -1966,5 +1966,16 @@
       "sleep": "Asleep",
       "concerned": "Concerned"
     }
+  },
+  "bubbles": {
+    "notice": {
+      "dictation_busy": "Dictation is running. Finish it first.",
+      "tts_off": "Spoken replies are off.",
+      "composer_off": "Typed chat is off.",
+      "ambient": "Ambient listening is on, so the orb can't start a conversation.",
+      "experimental_off": "This feature is turned off in settings.",
+      "text_ending": "The text chat is ending.",
+      "unknown": "Vox can't do that right now."
+    }
   }
 }

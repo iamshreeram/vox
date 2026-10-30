@@ -7,12 +7,17 @@
 //! projection changes, so suppression and restoration are both visible to the page.
 #![cfg_attr(not(test), allow(dead_code))]
 
+use crate::bubble_notice::NoticeCode;
 use crate::managers::chat_log::{GateState, Stamp};
 
 /// Most bubbles shown at once. The oldest is dropped when a newer line arrives.
 pub const MAX_ITEMS: usize = 3;
 /// Fade-out at the end of a bubble's lifetime, in milliseconds.
 pub const FADE_MS: u64 = 600;
+/// Lifetime of a notice, in milliseconds (DESIGN.md A-C3).
+pub const NOTICE_TTL_MS: u64 = 4_000;
+/// The id of the notice projection. Transcript ids start above it: `on_entry` refuses id 0.
+const NOTICE_ID: u64 = 0;
 
 /// Longest display text kept, in characters (ellipsis included).
 const DISPLAY_CAP: usize = 240;
@@ -87,6 +92,8 @@ pub struct ProjItem {
     pub age_ms: u64,
     /// Lifetime in milliseconds.
     pub ttl_ms: u64,
+    /// The notice code when this item is a notice (its `text` is empty), `None` for a line.
+    pub notice: Option<NoticeCode>,
 }
 
 /// A revision of the projection, as sent to the page.
@@ -117,6 +124,13 @@ impl Stored {
     }
 }
 
+/// The one notice shown at a time, with its admission time.
+#[derive(Debug, Clone, Copy)]
+struct StoredNotice {
+    code: NoticeCode,
+    born_ms: u64,
+}
+
 /// The bubble state machine. Owned by the native shell behind one lock.
 #[derive(Debug)]
 pub struct BubbleHub {
@@ -130,6 +144,7 @@ pub struct BubbleHub {
     rev: u64,
     highest_id: u64,
     items: Vec<Stored>,
+    notice: Option<StoredNotice>,
     published: Vec<ProjItem>,
 }
 
@@ -147,6 +162,7 @@ impl BubbleHub {
             rev: 0,
             highest_id: 0,
             items: Vec::new(),
+            notice: None,
             published: Vec::new(),
         }
     }
@@ -252,6 +268,12 @@ impl BubbleHub {
         true
     }
 
+    /// Shows a notice in place of any earlier one. It needs no session and no transcript
+    /// recording; only the page and the orb gates (see `notice_gates_open`) apply.
+    pub fn on_notice(&mut self, code: NoticeCode, now: u64) {
+        self.notice = Some(StoredNotice { code, born_ms: now });
+    }
+
     /// Removes bubbles whose lifetime has ended.
     pub fn prune(&mut self, now: u64) {
         self.items.retain(|item| item.alive(now));
@@ -260,23 +282,41 @@ impl BubbleHub {
     /// What the page should show at `now`: at most `MAX_ITEMS` bubbles, oldest first, and only
     /// while every gate is open. Otherwise empty.
     pub fn projection(&self, now: u64) -> Vec<ProjItem> {
-        if !self.gates_open() {
-            return Vec::new();
+        let mut out = Vec::new();
+        if self.gates_open() {
+            out.extend(
+                self.items
+                    .iter()
+                    .filter(|item| item.alive(now))
+                    .map(|item| ProjItem {
+                        id: item.id,
+                        role: item.role,
+                        text: item.text.clone(),
+                        age_ms: now.saturating_sub(item.born_ms),
+                        ttl_ms: item.ttl_ms,
+                        notice: None,
+                    }),
+            );
         }
-        self.items
-            .iter()
-            .filter(|item| item.alive(now))
-            .map(|item| ProjItem {
-                id: item.id,
-                role: item.role,
-                text: item.text.clone(),
-                age_ms: now.saturating_sub(item.born_ms),
-                ttl_ms: item.ttl_ms,
-            })
-            .collect()
+        if self.notice_gates_open() {
+            if let Some(notice) = self
+                .notice
+                .filter(|n| now < n.born_ms.saturating_add(NOTICE_TTL_MS))
+            {
+                out.push(ProjItem {
+                    id: NOTICE_ID,
+                    role: BubbleRole::Assistant,
+                    text: String::new(),
+                    age_ms: now.saturating_sub(notice.born_ms),
+                    ttl_ms: NOTICE_TTL_MS,
+                    notice: Some(notice.code),
+                });
+            }
+        }
+        out
     }
 
-    /// Every gate that must be open for anything to show.
+    /// Every gate that must be open for a transcript line to show.
     fn gates_open(&self) -> bool {
         self.armed
             && self.recording
@@ -284,6 +324,12 @@ impl BubbleHub {
             && self.orb_visible
             && !self.classic_visible
             && self.placement_ok
+    }
+
+    /// Every gate that must be open for a notice to show: the page and the orb's bubble stack,
+    /// without a session or transcript recording.
+    fn notice_gates_open(&self) -> bool {
+        self.ready && self.orb_visible && !self.classic_visible && self.placement_ok
     }
 
     /// Prunes, then bumps the revision and remembers the projection when it changed. Returns
@@ -337,6 +383,10 @@ impl BubbleHub {
 fn same_items(a: &[ProjItem], b: &[ProjItem]) -> bool {
     a.len() == b.len()
         && a.iter().zip(b.iter()).all(|(x, y)| {
-            x.id == y.id && x.role == y.role && x.text == y.text && x.ttl_ms == y.ttl_ms
+            x.id == y.id
+                && x.role == y.role
+                && x.text == y.text
+                && x.ttl_ms == y.ttl_ms
+                && x.notice == y.notice
         })
 }
