@@ -20,11 +20,11 @@ import {
 const consumer = createAppearanceConsumer({
   root: document.documentElement,
   matchMedia: (query) => window.matchMedia(query),
-  // The orb's own accent and bucket feed the orb page (orb_accent null follows the app accent).
+  // The orb colour, app accent and the app bucket feed the orb page (a missing orb colour is auto).
   onApplied: (resolved, snapshot) => {
     setOrbLook({
       accent: snapshot.accent,
-      orbAccent: snapshot.orb_accent ?? null,
+      orbColor: snapshot.orb_accent ?? "auto",
       bucket: resolved.bucket,
     });
   },

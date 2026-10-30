@@ -162,7 +162,11 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
       "floating",
       "floating orb",
       "follow app",
+      "follow app colour",
       "accent",
+      "globe",
+      "auto",
+      "sphere",
     ],
   },
   {

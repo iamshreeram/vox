@@ -16,6 +16,7 @@ import "../styles/theme.css";
 import "./i18n";
 import "./chat.css";
 import ChatWindow from "./ChatWindow";
+import { chatOrbLookFor, publishChatOrbLook } from "./chatOrbLook";
 import { chatPaletteVariables, type ChatPaletteName } from "./chatTheme";
 import {
   alphaForPct,
@@ -47,8 +48,11 @@ applyPalette("dark", DEFAULT_ACCENT);
 const consumer = createAppearanceConsumer({
   root: document.documentElement,
   matchMedia: (query) => window.matchMedia(query),
-  onApplied: (resolved) =>
-    applyPalette(resolved.chatPalette, resolved.accent ?? DEFAULT_ACCENT),
+  // The conversation window's globe follows the chat surface's bucket (A3), not the app bucket.
+  onApplied: (resolved, snapshot) => {
+    applyPalette(resolved.chatPalette, resolved.accent ?? DEFAULT_ACCENT);
+    publishChatOrbLook(chatOrbLookFor(resolved, snapshot));
+  },
 });
 const seed = parseSeed(window.location.search);
 if (seed !== null) consumer.accept(seed);

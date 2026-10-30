@@ -4,6 +4,8 @@ import { useSettings } from "@/hooks/useSettings";
 import { CHAT_PALETTES } from "@/chat/chatTheme";
 import { resolveAppearance } from "@/lib/appearance/palette";
 import { resolveOrbAccent, orbRingColour } from "@/orb/orbAccentResolve";
+import VoxAvatar from "@/chat/VoxAvatar";
+import "@/chat/avatar.css";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { effectiveAppearance, effectiveOrbAccent } from "./appearanceModel";
 import { appearanceBucket, usePrefersDark } from "./appearanceBucket";
@@ -34,15 +36,18 @@ export const AppearancePreview: React.FC = () => {
     prefersDark,
   );
   // The orb ring follows the orb colour, or the app accent under Follow app (DESIGN D3).
+  const orbColor = effectiveOrbAccent(settings?.orb_accent);
   const orbRing = orbRingColour(
     "idle",
-    resolveOrbAccent(
-      choice.accent,
-      effectiveOrbAccent(settings?.orb_accent),
-      resolved.bucket,
-    ),
+    resolveOrbAccent(choice.accent, orbColor, resolved.bucket),
     resolved.bucket,
   );
+  // The same avatar the orb page and the conversation window draw, on the preview's own bucket.
+  const avatarLook = {
+    orbColor,
+    appAccent: choice.accent,
+    bucket: resolved.bucket,
+  };
   const palette = CHAT_PALETTES[resolved.chatPalette];
   const paletteLabel =
     resolved.chatPalette === "light"
@@ -66,13 +71,12 @@ export const AppearancePreview: React.FC = () => {
               aria-hidden="true"
               data-testid="appearance-preview-orb"
               data-ring={orbRing}
-              className="h-12 w-12 shrink-0 rounded-full"
-              style={{
-                background:
-                  "radial-gradient(circle at 35% 30%, var(--color-accent-a), var(--color-accent-b))",
-                boxShadow: `0 0 0 3px ${orbRing}`,
-              }}
-            />
+              className="relative h-12 w-12 shrink-0 overflow-hidden"
+            >
+              <span className="absolute left-1/2 top-1/2 block -translate-x-1/2 -translate-y-1/2 scale-[0.325]">
+                <VoxAvatar face="idle" look={avatarLook} />
+              </span>
+            </span>
             <span className="text-sm">
               {t("settings.appearance.preview.orb")}
             </span>

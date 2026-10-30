@@ -1203,7 +1203,7 @@ function consumerMismatches(
 
 /**
  * The Appearance page's "Orb colour" group, checked on top of the generic walk: it must exist, name
- * Follow app and the six accents, give every swatch a 24 px target, and draw each swatch's boundary
+ * Auto, Follow app colour and the six accents, give every swatch a 24 px target, and draw each swatch's boundary
  * at >= 3:1 against its surface (the ring is the accent text role, which is >= 4.5:1 on light).
  */
 async function auditOrbGroup(
@@ -1215,7 +1215,8 @@ async function auditOrbGroup(
   await expect(group, `${variant}: orb colour group`).toBeVisible();
   const radios = group.getByRole("radio");
   const names = [
-    "Follow app",
+    "Auto (changes with what Vox is doing)",
+    "Follow app colour",
     "Amber",
     "Blue",
     "Violet",

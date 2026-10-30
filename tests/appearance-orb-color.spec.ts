@@ -7,15 +7,18 @@ import {
 import { ACCENTS } from "../src/styles/accents";
 
 /*
- * Appearance > Orb colour (DESIGN Revision 3, D3). The group is a radiogroup of "Follow app" plus
- * the six accents. Choosing one saves `orb_accent` through change_orb_accent_setting (null for
- * follow), the committed snapshot is published to the consumer windows, the live preview ring
+ * Appearance > Orb colour (DESIGN Revision 3, D3, D4). The group is a radiogroup of "Auto" and
+ * "Follow app colour" plus the six accents. Choosing one saves `orb_accent` through
+ * change_orb_accent_setting ("auto" for Auto, "app" for Follow app colour, the accent id otherwise),
+ * the committed snapshot is published to the consumer windows, the live preview ring
  * follows the choice, Reset returns it to follow, and the group is never disabled.
  */
 
 const ORB_CALL = "change_orb_accent_setting";
 const ACCENT_CALL = "change_accent_setting";
 const THEME_CALL = "change_theme_setting";
+const AUTO = "Auto (changes with what Vox is doing)";
+const FOLLOW_APP = "Follow app colour";
 
 const section = (page: Page, id: string): Locator =>
   page.locator(`[data-settings-section="${id}"]`);
@@ -43,7 +46,8 @@ const hexToRgb = (hex: string): string => {
 };
 
 const ORB_NAMES = [
-  "Follow app",
+  AUTO,
+  FOLLOW_APP,
   "Amber",
   "Blue",
   "Violet",
@@ -53,22 +57,19 @@ const ORB_NAMES = [
 ];
 
 test.describe("Orb colour: structure", () => {
-  test("a radiogroup named Orb colour with Follow app first, then the six accents", async ({
+  test("a radiogroup named Orb colour with Auto first, then Follow app colour, then the six accents", async ({
     page,
   }) => {
     await openAppearance(page);
     await expect(orbGroup(page)).toBeVisible();
     const radios = orbGroup(page).getByRole("radio");
-    await expect(radios).toHaveCount(7);
+    await expect(radios).toHaveCount(8);
     for (let i = 0; i < ORB_NAMES.length; i += 1) {
       await expect(radios.nth(i)).toHaveAccessibleName(ORB_NAMES[i]);
     }
-    // Follow app is the default selection.
-    await expect(orbRadio(page, "Follow app")).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-    await expect(orbRadio(page, "Follow app")).toHaveAttribute("tabindex", "0");
+    // Auto is the default selection.
+    await expect(orbRadio(page, AUTO)).toHaveAttribute("aria-checked", "true");
+    await expect(orbRadio(page, AUTO)).toHaveAttribute("tabindex", "0");
   });
 
   test("every swatch is at least 24 by 24 px", async ({ page }) => {
@@ -105,22 +106,22 @@ test.describe("Orb colour: persistence", () => {
     await expect
       .poll(async () => (await getMockCalls(page, ORB_CALL)).length)
       .toBe(1);
-    expect((await getMockCalls(page, ORB_CALL))[0]).toEqual({ accent: "blue" });
+    expect((await getMockCalls(page, ORB_CALL))[0]).toEqual({ color: "blue" });
     await expect(orbRadio(page, "Blue")).toHaveAttribute(
       "aria-checked",
       "true",
     );
   });
 
-  test("choosing Follow app sends null and is announced by a snapshot event", async ({
+  test("choosing Follow app colour sends app and is announced by a snapshot event", async ({
     page,
   }) => {
     await openAppearance(page, { orb_accent: "violet" });
-    await orbRadio(page, "Follow app").click();
+    await orbRadio(page, FOLLOW_APP).click();
     await expect
       .poll(async () => (await getMockCalls(page, ORB_CALL)).length)
       .toBe(1);
-    expect((await getMockCalls(page, ORB_CALL))[0]).toEqual({ accent: null });
+    expect((await getMockCalls(page, ORB_CALL))[0]).toEqual({ color: "app" });
     await expect
       .poll(
         async () =>
@@ -132,7 +133,7 @@ test.describe("Orb colour: persistence", () => {
     const last = (await getMockEmits(page)).filter(
       (emit) => emit.label === "orb" && emit.event === "appearance",
     );
-    expect(last.at(-1)?.payload).toMatchObject({ orb_accent: null });
+    expect(last.at(-1)?.payload).toMatchObject({ orb_accent: "app" });
   });
 
   test("the orb colour does not change the app accent", async ({ page }) => {
@@ -150,30 +151,36 @@ test.describe("Orb colour: keyboard", () => {
     page,
   }) => {
     await openAppearance(page);
-    await orbRadio(page, "Follow app").focus();
+    await orbRadio(page, AUTO).focus();
     await page.keyboard.press("ArrowRight");
     await expect
       .poll(async () => (await getMockCalls(page, ORB_CALL)).length)
       .toBe(1);
-    expect((await getMockCalls(page, ORB_CALL))[0]).toEqual({
-      accent: "amber",
+    expect((await getMockCalls(page, ORB_CALL))[0]).toEqual({ color: "app" });
+    await expect(orbRadio(page, FOLLOW_APP)).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect
+      .poll(async () => (await getMockCalls(page, ORB_CALL)).length)
+      .toBe(2);
+    expect((await getMockCalls(page, ORB_CALL))[1]).toEqual({
+      color: "amber",
     });
     await expect(orbRadio(page, "Amber")).toBeFocused();
     await page.keyboard.press("End");
     expect((await getMockCalls(page, ORB_CALL)).at(-1)).toEqual({
-      accent: "slate",
+      color: "slate",
     });
     await page.keyboard.press("Home");
     expect((await getMockCalls(page, ORB_CALL)).at(-1)).toEqual({
-      accent: null,
+      color: "auto",
     });
-    await expect(orbRadio(page, "Follow app")).toBeFocused();
+    await expect(orbRadio(page, AUTO)).toBeFocused();
   });
 
   test("the focused swatch shows a visible focus ring", async ({ page }) => {
     await openAppearance(page);
-    await orbRadio(page, "Follow app").focus();
-    const ring = await orbRadio(page, "Follow app").evaluate((el) => {
+    await orbRadio(page, AUTO).focus();
+    const ring = await orbRadio(page, AUTO).evaluate((el) => {
       const style = getComputedStyle(el);
       return `${style.outlineStyle} ${style.outlineWidth} ${style.boxShadow}`;
     });
@@ -193,21 +200,21 @@ test.describe("Orb colour: live preview", () => {
       await orbRadio(page, name).click();
       const expected = hexToRgb(ACCENTS[id].light.text);
       await expect(orb).toHaveAttribute("data-ring", ACCENTS[id].light.text);
-      await expect(orb).toHaveCSS(
-        "box-shadow",
+      await expect(orb.locator(".vox-ring-1")).toHaveCSS(
+        "stroke",
         new RegExp(expected.replace(/[()]/g, "\\$&")),
       );
     }
   });
 
-  test("Follow app makes the preview ring use the app accent", async ({
+  test("Follow app colour makes the preview ring use the app accent", async ({
     page,
   }) => {
     await page.emulateMedia({ colorScheme: "light" });
     await openAppearance(page, { accent: "rose", orb_accent: "blue" });
     const orb = page.getByTestId("appearance-preview-orb");
     await expect(orb).toHaveAttribute("data-ring", ACCENTS.blue.light.text);
-    await orbRadio(page, "Follow app").click();
+    await orbRadio(page, FOLLOW_APP).click();
     await expect(orb).toHaveAttribute("data-ring", ACCENTS.rose.light.text);
   });
 });
@@ -223,15 +230,13 @@ test.describe("Orb colour: themes, reset and failure", () => {
         .poll(async () => (await getMockCalls(page, ORB_CALL)).length)
         .toBe(1);
       expect((await getMockCalls(page, ORB_CALL))[0]).toEqual({
-        accent: "blue",
+        color: "blue",
       });
       await page.goto("/");
     }
   });
 
-  test("Reset to defaults returns the orb colour to Follow app", async ({
-    page,
-  }) => {
+  test("Reset to defaults returns the orb colour to Auto", async ({ page }) => {
     await openAppearance(page, { orb_accent: "blue" });
     await page
       .getByRole("button", { name: "Reset appearance to defaults" })
@@ -240,11 +245,8 @@ test.describe("Orb colour: themes, reset and failure", () => {
     await expect
       .poll(async () => (await getMockCalls(page, ORB_CALL)).length)
       .toBe(1);
-    expect((await getMockCalls(page, ORB_CALL))[0]).toEqual({ accent: null });
-    await expect(orbRadio(page, "Follow app")).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    expect((await getMockCalls(page, ORB_CALL))[0]).toEqual({ color: "auto" });
+    await expect(orbRadio(page, AUTO)).toHaveAttribute("aria-checked", "true");
     expect((await getMockCalls(page, THEME_CALL)).at(-1)).toEqual({
       theme: "system",
     });

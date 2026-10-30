@@ -141,7 +141,7 @@ const scenarios: Record<string, () => void> = {
     );
     assert.deepEqual(names, [
       "Auto (changes with what Vox is doing)",
-      "Follow app",
+      "Follow app colour",
       "Amber",
       "Blue",
       "Violet",

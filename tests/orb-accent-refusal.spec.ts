@@ -5,7 +5,7 @@
  *
  * Covered:
  *   - the appearance event with orb_accent changes the ring colour (computed stroke) in light and dark
- *   - orb_accent null follows the app accent again
+ *   - orb_accent "app" (Follow app colour) follows the app accent again
  *   - orb-refusal {code} shows the localised sr-only status text and the concerned face, then clears
  *   - a garbage orb-refusal payload shows the generic text, never a raw code
  */
@@ -27,7 +27,7 @@ function snapshot(over: Record<string, unknown>) {
     accent: "amber",
     chat_theme: "dark",
     visual_style: "vibrant",
-    orb_accent: null,
+    orb_accent: "auto",
     ...over,
   };
 }
@@ -75,7 +75,7 @@ test.describe("orb accent", () => {
     await expect.poll(() => ringStroke(page)).toBe(rgb("#6d28d9"));
   });
 
-  test("a null orb accent follows the app accent again", async ({ page }) => {
+  test("the app orb accent follows the app accent again", async ({ page }) => {
     await open(page);
     await emitMockEvent(
       page,
@@ -86,7 +86,12 @@ test.describe("orb accent", () => {
     await emitMockEvent(
       page,
       "appearance",
-      snapshot({ rev: 3, theme: "dark", accent: "blue", orb_accent: null }),
+      snapshot({
+        rev: 3,
+        theme: "dark",
+        accent: "blue",
+        orb_accent: "app",
+      }),
     );
     // Blue's dark fillA (#60a5fa): the app accent, not the orb accent.
     await expect.poll(() => ringStroke(page)).toBe(rgb("#60a5fa"));

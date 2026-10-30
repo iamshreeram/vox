@@ -48,7 +48,7 @@ export function appearanceBucket(
       accent: choice.accent,
       chat_theme: choice.chatTheme,
       visual_style: choice.visualStyle,
-      orb_accent: null,
+      orb_accent: "auto",
     },
     prefersDark,
   ).bucket;

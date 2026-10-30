@@ -1,12 +1,10 @@
-import React, { useRef, useState } from "react";
+import React, { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { ACCENTS } from "@/styles/accents";
 import { SettingContainer } from "../../ui/SettingContainer";
 import {
-  effectiveAppearance,
   effectiveOrbAccent,
   nextRadioIndex,
   ORB_CHOICES,
@@ -16,7 +14,11 @@ import {
   rovingTabStops,
   type OrbChoice,
 } from "./appearanceModel";
-import { appearanceBucket, usePrefersDark } from "./appearanceBucket";
+import {
+  orbSwatchSpec,
+  sphereGradientId,
+  type OrbSwatchSpec,
+} from "./orbSwatchModel";
 
 interface OrbColorSettingProps {
   descriptionMode?: "inline" | "tooltip";
@@ -24,9 +26,79 @@ interface OrbColorSettingProps {
 }
 
 /**
- * Orb colour (DESIGN D3): a radio group of "Follow app" and the six accents. It sets the floating
- * orb's own colour only, so the app palette is unchanged and the group is never disabled (the orb
- * has its own face under every theme). A save that fails is rolled back and says so.
+ * One option's swatch: a small sphere painted from the globe's gradient stops (D4). Auto is four
+ * state colours in quarters; Follow app is a ring in the app accent. Each instance has its own
+ * gradient id (useId), because several swatches live in one document.
+ */
+const OrbSwatch: React.FC<{ spec: OrbSwatchSpec }> = ({ spec }) => {
+  const gradientId = sphereGradientId(useId());
+  const size = 28;
+  const centre = size / 2;
+  const radius = 13;
+  const common = { width: size, height: size, viewBox: `0 0 ${size} ${size}` };
+
+  if (spec.kind === "sphere") {
+    return (
+      <svg {...common} aria-hidden="true" focusable="false">
+        <defs>
+          <radialGradient id={gradientId} cx="35%" cy="30%" r="75%">
+            <stop offset="0%" stopColor={spec.stops.hi} />
+            <stop offset="55%" stopColor={spec.stops.mid} />
+            <stop offset="100%" stopColor={spec.stops.lo} />
+          </radialGradient>
+        </defs>
+        <circle
+          cx={centre}
+          cy={centre}
+          r={radius}
+          fill={`url(#${gradientId})`}
+        />
+      </svg>
+    );
+  }
+  if (spec.kind === "auto") {
+    // Four quarters, clockwise from the top: blue, emerald, violet, amber (the state colours).
+    const [blue, emerald, violet, amber] = spec.quarters;
+    const quarter = (startDeg: number, colour: string) => {
+      const toRad = (deg: number) => ((deg - 90) * Math.PI) / 180;
+      const x1 = centre + radius * Math.cos(toRad(startDeg));
+      const y1 = centre + radius * Math.sin(toRad(startDeg));
+      const x2 = centre + radius * Math.cos(toRad(startDeg + 90));
+      const y2 = centre + radius * Math.sin(toRad(startDeg + 90));
+      return (
+        <path
+          d={`M ${centre} ${centre} L ${x1} ${y1} A ${radius} ${radius} 0 0 1 ${x2} ${y2} Z`}
+          fill={colour}
+        />
+      );
+    };
+    return (
+      <svg {...common} aria-hidden="true" focusable="false">
+        {quarter(0, blue)}
+        {quarter(90, emerald)}
+        {quarter(180, violet)}
+        {quarter(270, amber)}
+      </svg>
+    );
+  }
+  return (
+    <svg {...common} aria-hidden="true" focusable="false">
+      <circle
+        cx={centre}
+        cy={centre}
+        r={radius - 2}
+        fill="none"
+        strokeWidth={3}
+        style={{ stroke: "var(--color-accent-a)" }}
+      />
+    </svg>
+  );
+};
+
+/**
+ * Orb colour (DESIGN D3, D4, A5): a radio group of Auto, Follow app colour and the six accents.
+ * It sets the floating orb's own colour only, so the app palette is unchanged and the group is
+ * never disabled. A save that fails is rolled back and says so.
  */
 export const OrbColorSetting: React.FC<OrbColorSettingProps> = ({
   descriptionMode = "tooltip",
@@ -35,15 +107,12 @@ export const OrbColorSetting: React.FC<OrbColorSettingProps> = ({
   const { t } = useTranslation();
   const { settings } = useSettings();
   const changeOrbAccent = useSettingsStore((state) => state.changeOrbAccent);
-  const prefersDark = usePrefersDark();
   const [failed, setFailed] = useState(false);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const app = effectiveAppearance(settings ?? {});
   const orb = effectiveOrbAccent(settings?.orb_accent);
   const selected = orbSelectedIndex(orb);
   const stops = rovingTabStops(selected, ORB_CHOICES.length);
-  const bucket = appearanceBucket(settings, prefersDark);
   const groupName = t("settings.appearance.orb.title");
 
   const choose = async (choice: OrbChoice): Promise<void> => {
@@ -78,11 +147,7 @@ export const OrbColorSetting: React.FC<OrbColorSettingProps> = ({
           {ORB_CHOICES.map((choice, index) => {
             const isSelected = index === selected;
             const name = t(orbChoiceNameKey(choice));
-            // Follow app previews the app accent; an accent shows its own colours.
-            const swatch = ACCENTS[choice ?? app.accent][bucket];
-            // The boundary is the accent text role on light and the first fill on dark: both are
-            // at least 3:1 against their surface (checked by the UI quality gate).
-            const boundary = bucket === "light" ? swatch.text : swatch.fillA;
+            const spec = orbSwatchSpec(choice);
             return (
               <button
                 key={orbChoiceId(choice)}
@@ -99,25 +164,22 @@ export const OrbColorSetting: React.FC<OrbColorSettingProps> = ({
                 onClick={() => void choose(choice)}
                 onKeyDown={(event) => onKeyDown(event, index)}
                 className={[
-                  "flex h-10 w-10 items-center justify-center rounded-full border-2 cursor-pointer motion-reduce:transition-none",
+                  "relative flex h-10 w-10 items-center justify-center rounded-full cursor-pointer motion-reduce:transition-none",
                   // Two-tone focus ring, as the accent swatches: the outer ring is the global
                   // --focus-ring, the inner ring the on-accent colour.
                   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--focus-ring)",
                   "focus-visible:inset-ring-2 focus-visible:inset-ring-(--color-on-accent)",
-                  choice === null ? "border-dashed" : "",
                   isSelected ? "ring-2 ring-offset-2 ring-accent-a" : "",
                 ].join(" ")}
-                style={{
-                  backgroundImage: `linear-gradient(135deg, ${swatch.fillA}, ${swatch.fillB})`,
-                  borderColor: boundary,
-                }}
               >
+                <OrbSwatch spec={spec} />
                 {isSelected ? (
                   <Check
                     aria-hidden="true"
                     size={18}
                     strokeWidth={3}
-                    style={{ color: swatch.onFill }}
+                    className="absolute"
+                    style={{ color: spec.check }}
                   />
                 ) : null}
               </button>
@@ -127,6 +189,9 @@ export const OrbColorSetting: React.FC<OrbColorSettingProps> = ({
         <p className="text-sm text-muted">
           {/* The name is shown under the swatches so colour is never the only cue. */}
           {t(orbChoiceNameKey(orb))}
+        </p>
+        <p className="text-xs text-muted">
+          {t("settings.appearance.orb.helper")}
         </p>
         {failed ? (
           <p role="alert" className="text-xs text-danger">

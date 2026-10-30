@@ -150,7 +150,7 @@ function installTauriMockInPage(arg: MockInitArg): void {
     change_accent_setting: ["accent", "accent"],
     change_chat_theme_setting: ["chat_theme", "chatTheme"],
     change_visual_style_setting: ["visual_style", "visualStyle"],
-    change_orb_accent_setting: ["orb_accent", "accent"],
+    change_orb_accent_setting: ["orb_accent", "color"],
   };
   const CONSUMER_LABELS = ["chat", "orb", "orb-bubbles"];
   const emitted: Array<{ label: string; event: string; payload: unknown }> = [];
@@ -165,7 +165,7 @@ function installTauriMockInPage(arg: MockInitArg): void {
     accent: settings.accent ?? "amber",
     chat_theme: settings.chat_theme ?? "dark",
     visual_style: settings.visual_style ?? "vibrant",
-    orb_accent: settings.orb_accent ?? null,
+    orb_accent: settings.orb_accent ?? "auto",
   });
   const commitAppearance = (
     command: string,

@@ -32,12 +32,10 @@ import {
   keyCommand,
   nextGlintDelay,
   orbClasses,
-  orbAccentStyle,
   orbFace,
   orbReducer,
   type FaceView,
 } from "./orbModel";
-import { orbRingColour, resolveOrbAccent } from "./orbAccentResolve";
 import { getOrbLook, subscribeOrbLook } from "./orbAppearance";
 import {
   initialRefusal,
@@ -276,19 +274,8 @@ export default function OrbApp() {
   };
 
   const classes = ["orb-root", ...orbClasses(state)].join(" ");
-  // An orb accent the user picked drives the ring; otherwise the orb follows the app accent tokens.
-  const accentStyle =
-    look.orbAccent === null
-      ? orbAccentStyle(state.face)
-      : {
-          "--chat-accent": orbRingColour(
-            state.face,
-            resolveOrbAccent(look.accent, look.orbAccent, look.bucket),
-            look.bucket,
-          ),
-        };
+  // The avatar owns the globe's colours (its own --chat-accent and stops), so the root sets gaze only.
   const style = {
-    ...accentStyle,
     "--gaze-x": gaze.x,
     "--gaze-y": gaze.y,
   } as CSSProperties;
@@ -308,7 +295,14 @@ export default function OrbApp() {
         onContextMenu={onContextMenu}
         onKeyDown={onKeyDown}
       >
-        <VoxAvatar face={state.face} />
+        <VoxAvatar
+          face={state.face}
+          look={{
+            orbColor: look.orbColor,
+            appAccent: look.accent,
+            bucket: look.bucket,
+          }}
+        />
       </div>
       {/* The face is announced as text, not only as colour and motion (U13). */}
       <span role="status" className="orb-sr-only">

@@ -251,8 +251,10 @@
       },
       "orb": {
         "title": "Orb colour",
-        "description": "The colour of the floating orb's ring. Follow app uses the accent above.",
-        "followApp": "Follow app",
+        "description": "The colour of the floating orb. Follow app uses your app colour.",
+        "auto": "Auto (changes with what Vox is doing)",
+        "followApp": "Follow app colour",
+        "helper": "Auto changes colour with what Vox is doing; Follow app uses your app colour.",
         "failed": "Could not save the orb colour. The previous colour is kept."
       },
       "style": {
@@ -1594,7 +1596,8 @@
         "wakeDictation": "Hey Jarvis currently starts dictation, so no bubbles appear. Switch it to start a conversation.",
         "wakeButton": "Make Hey Jarvis start a conversation"
       },
-      "colourHint": "To change the orb's colour, open Appearance > Orb colour."
+      "colourHint": "To change the orb's colour, open Appearance > Orb colour.",
+      "colourAuto": "Auto changes the globe colour with what Vox is doing. Follow app colour uses your app colour instead."
     },
     "chatOpacity": {
       "title": "Conversation window opacity",
