@@ -86,7 +86,7 @@ export const AccentPicker: React.FC<AccentPickerProps> = ({
                 onKeyDown={(event) => onKeyDown(event, index)}
                 className={[
                   "flex h-10 w-10 items-center justify-center rounded-full border-2 cursor-pointer motion-reduce:transition-none",
-                  "focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-a",
+                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-a",
                   "disabled:cursor-not-allowed disabled:opacity-50",
                   isSelected
                     ? "border-accent-a ring-2 ring-offset-2 ring-accent-a"
@@ -108,12 +108,12 @@ export const AccentPicker: React.FC<AccentPickerProps> = ({
             );
           })}
         </div>
-        <p className="text-sm text-mid-gray">
+        <p className="text-sm text-muted">
           {/* Names are shown under the swatch row so colour is never the only cue. */}
           {t(ACCENT_NAME_KEYS[accent])}
         </p>
         {locked ? (
-          <p data-testid="accent-locked-note" className="text-sm text-mid-gray">
+          <p data-testid="accent-locked-note" className="text-sm text-muted">
             {t("settings.appearance.accent.locked")}
           </p>
         ) : null}

@@ -54,16 +54,14 @@ export const CollapsibleSettingsGroup: React.FC<
       >
         <ChevronRight
           aria-hidden="true"
-          className={`w-4 h-4 shrink-0 text-mid-gray transition-transform duration-200 ${open ? "rotate-90" : ""}`}
+          className={`w-4 h-4 shrink-0 text-muted transition-transform duration-200 ${open ? "rotate-90" : ""}`}
         />
         <span className="flex-1 min-w-0">
-          <span className="settings-card-title block text-xs font-medium text-mid-gray uppercase tracking-wide">
+          <span className="settings-card-title block text-xs font-medium text-muted uppercase tracking-wide">
             {title}
           </span>
           {description && open && (
-            <span className="block text-xs text-mid-gray mt-1">
-              {description}
-            </span>
+            <span className="block text-xs text-muted mt-1">{description}</span>
           )}
         </span>
       </button>

@@ -94,12 +94,12 @@ export const TtsEngineCard: React.FC<TtsEngineCardProps> = ({
   const details = (
     <>
       {card.disabledReason !== null && (
-        <p className="text-xs text-mid-gray">
+        <p className="text-xs text-muted">
           {t("settings.advanced.tts.engines.unavailable")}
         </p>
       )}
       {card.selected && card.disabledReason !== null && (
-        <p className="text-xs text-mid-gray">
+        <p className="text-xs text-muted">
           {t("settings.advanced.tts.engines.unsupportedSelected")}
         </p>
       )}
@@ -214,16 +214,16 @@ export const PhononEngineBody: React.FC<PhononEngineBodyProps> = ({
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-xs text-mid-gray">
+      <p className="text-xs text-muted">
         {t("settings.advanced.tts.engines.phonon.description")}
         {card.showRateNote
           ? ` ${t("settings.advanced.tts.engines.phonon.fixedVoiceRate")}`
           : ""}
       </p>
-      <p className="text-xs text-mid-gray">
+      <p className="text-xs text-muted">
         {t("settings.advanced.tts.engines.phonon.help")}
       </p>
-      <p className="text-xs text-mid-gray">
+      <p className="text-xs text-muted">
         {t("settings.advanced.tts.engines.phonon.license", {
           license: licenseBadge?.license ?? "",
         })}
@@ -287,7 +287,7 @@ export const PhononEngineBody: React.FC<PhononEngineBodyProps> = ({
             </div>
           )}
           {card.primaryAction === null && card.error === null && (
-            <span className="text-sm text-mid-gray">
+            <span className="text-sm text-muted">
               {t("settings.advanced.tts.natural.model.working")}
             </span>
           )}
@@ -317,7 +317,7 @@ export const PhononEngineBody: React.FC<PhononEngineBodyProps> = ({
             <div className="flex flex-col gap-1 rounded-lg border border-warning/40 bg-warning/10 p-3">
               <p className="text-sm">{errorText(card.error.kind)}</p>
               {card.error.showImportHint && (
-                <p className="text-xs text-mid-gray">
+                <p className="text-xs text-muted">
                   {card.error.kind === "proxy"
                     ? t("settings.advanced.tts.engines.proxyHint")
                     : t("settings.advanced.tts.engines.importHint")}

@@ -99,7 +99,7 @@ export const AgentNamesField: React.FC<AgentSettingProps> = ({
           </p>
         )}
         {atLimit && (
-          <p className="text-xs text-mid-gray">
+          <p className="text-xs text-muted">
             {t("settings.experimental.jobs.agents.limit", {
               max: MAX_AGENT_NAMES,
             })}

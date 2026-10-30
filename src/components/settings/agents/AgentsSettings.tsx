@@ -7,7 +7,7 @@ export const AgentsSettings: React.FC = () => {
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-3">
-      <h2 className="px-1 text-xs font-medium text-mid-gray uppercase tracking-wide">
+      <h2 className="px-1 text-xs font-medium text-muted uppercase tracking-wide">
         {t("settings.agents.title")}
       </h2>
       <PlacedGroups section="agents" />

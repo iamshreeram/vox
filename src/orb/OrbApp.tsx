@@ -233,20 +233,29 @@ export default function OrbApp() {
   } as CSSProperties;
 
   return (
-    <div
-      data-testid="orb"
-      role="button"
-      tabIndex={0}
-      aria-label={t("orb.label")}
-      className={classes}
-      style={style}
-      onPointerDown={onPointerDown}
-      onPointerEnter={() => dispatch({ type: "hover", on: true })}
-      onPointerLeave={() => dispatch({ type: "hover", on: false })}
-      onContextMenu={onContextMenu}
-      onKeyDown={onKeyDown}
-    >
-      <VoxAvatar face={state.face} />
-    </div>
+    <>
+      <div
+        data-testid="orb"
+        role="button"
+        tabIndex={0}
+        aria-label={t("orb.label")}
+        className={classes}
+        style={style}
+        onPointerDown={onPointerDown}
+        onPointerEnter={() => dispatch({ type: "hover", on: true })}
+        onPointerLeave={() => dispatch({ type: "hover", on: false })}
+        onContextMenu={onContextMenu}
+        onKeyDown={onKeyDown}
+      >
+        <VoxAvatar face={state.face} />
+      </div>
+      {/* The face is announced as text, not only as colour and motion (U13). */}
+      <span role="status" className="orb-sr-only">
+        {t("orb.stateAnnounce", {
+          name: t("orb.assistantName"),
+          state: t(`orb.face.${state.face}`),
+        })}
+      </span>
+    </>
   );
 }

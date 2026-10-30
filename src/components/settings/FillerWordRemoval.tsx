@@ -148,10 +148,10 @@ export const FillerWordRemoval: React.FC<FillerWordRemovalProps> = React.memo(
                   "settings.advanced.fillerWordRemoval.customLabel",
                 )}
               />
-              <p className="text-xs text-mid-gray">
+              <p className="text-xs text-muted">
                 {t("settings.advanced.fillerWordRemoval.customHelp")}
               </p>
-              <p className="text-xs text-mid-gray">
+              <p className="text-xs text-muted">
                 {t("settings.advanced.fillerWordRemoval.customCount", {
                   count: parsed.length,
                   max: MAX_WORDS,
@@ -172,7 +172,7 @@ export const FillerWordRemoval: React.FC<FillerWordRemovalProps> = React.memo(
                 </p>
               )}
               {parsed.length === 0 && (
-                <p className="text-xs text-mid-gray">
+                <p className="text-xs text-muted">
                   {t("settings.advanced.fillerWordRemoval.customEmpty")}
                 </p>
               )}

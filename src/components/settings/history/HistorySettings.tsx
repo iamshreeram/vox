@@ -35,7 +35,7 @@ const IconButton: React.FC<{
     className={`p-1.5 rounded-md flex items-center justify-center transition-colors cursor-pointer disabled:cursor-not-allowed disabled:text-text/20 ${
       active
         ? "text-logo-primary hover:text-logo-primary/80"
-        : "text-text/50 hover:text-logo-primary"
+        : "text-muted hover:text-logo-primary"
     }`}
     title={title}
   >
@@ -252,7 +252,7 @@ export const HistorySettings: React.FC = () => {
 
   if (state.loading) {
     content = (
-      <div className="px-4 py-3 text-center text-text/60">
+      <div className="px-4 py-3 text-center text-muted">
         {t("settings.history.loading")}
       </div>
     );
@@ -264,7 +264,7 @@ export const HistorySettings: React.FC = () => {
     );
   } else if (!hasEntries) {
     content = (
-      <div className="px-4 py-3 text-center text-text/60">
+      <div className="px-4 py-3 text-center text-muted">
         {state.mode === "search"
           ? t("settings.history.noResults")
           : t("settings.history.empty")}
@@ -307,7 +307,7 @@ export const HistorySettings: React.FC = () => {
       <div className="space-y-2">
         <div className="px-4 flex items-center justify-between">
           <div>
-            <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
+            <h2 className="text-xs font-medium text-muted uppercase tracking-wide">
               {t("settings.history.title")}
             </h2>
           </div>
@@ -463,7 +463,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             ? ""
             : hasTranscription
               ? "text-text/90 select-text cursor-text whitespace-pre-wrap break-words"
-              : "text-text/40"
+              : "text-muted"
         }`}
         style={
           retrying

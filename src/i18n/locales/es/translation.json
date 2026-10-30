@@ -1945,9 +1945,23 @@
         "speech_stuck": "Speech output got stuck, so the conversation stopped.",
         "turn_limit": "Stopped at the turn limit."
       }
-    }
+    },
+    "clearConfirm": "Confirm clear",
+    "clearCancel": "Cancel",
+    "clearPrompt": "Clear the conversation log? This cannot be undone."
   },
   "orb": {
-    "label": "Vox orb. Press Enter to open the conversation."
+    "label": "Vox orb. Press Enter to open the conversation.",
+    "assistantName": "Vox assistant",
+    "stateAnnounce": "{{name}}: {{state}}",
+    "face": {
+      "idle": "Idle",
+      "listening": "Listening",
+      "thinking": "Thinking",
+      "acting": "Acting",
+      "speaking": "Speaking",
+      "sleep": "Asleep",
+      "concerned": "Concerned"
+    }
   }
 }

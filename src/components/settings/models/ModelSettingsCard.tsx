@@ -23,7 +23,7 @@ export const ModelSettingsCard: React.FC = () => {
 
   return (
     <>
-      <h2 className="px-3 pt-3 pb-1 text-xs font-medium text-mid-gray uppercase tracking-wide">
+      <h2 className="px-3 pt-3 pb-1 text-xs font-medium text-muted uppercase tracking-wide">
         {t("settings.modelSettings.title", {
           model: currentModelInfo.name,
         })}

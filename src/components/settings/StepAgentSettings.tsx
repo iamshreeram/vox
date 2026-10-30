@@ -236,7 +236,7 @@ export const StepAgentSettings: React.FC<{
         <p className="text-sm font-medium">
           {t("settings.advanced.acpAgent.stepAgents.title")}
         </p>
-        <p className="text-xs text-mid-gray">
+        <p className="text-xs text-muted">
           {t("settings.advanced.acpAgent.stepAgents.description")}
         </p>
       </div>

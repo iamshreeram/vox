@@ -54,7 +54,7 @@ export const BrainFeatureGroup: React.FC = () => {
               </p>
               <p
                 data-testid={`brain-feature-${feature}-state`}
-                className="text-xs text-mid-gray"
+                className="text-xs text-muted"
               >
                 {t(`settings.brain.state.${state.state}`)}
               </p>

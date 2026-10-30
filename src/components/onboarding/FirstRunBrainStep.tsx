@@ -131,7 +131,7 @@ export const FirstRunBrainStep: React.FC<FirstRunBrainStepProps> = ({
           />
           {canUse && (
             <div className="px-4 pb-3 space-y-2">
-              <p className="text-sm text-mid-gray">
+              <p className="text-sm text-muted">
                 {t("onboarding.firstRun.brain.consentLine", {
                   destination: shownDestination,
                 })}

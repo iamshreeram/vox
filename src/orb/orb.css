@@ -141,3 +141,13 @@ body,
     transition: none !important;
   }
 }
+
+/* Screen-reader-only live text for the orb's face (U13): clipped, takes no space, stays in the tree. */
+.orb-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

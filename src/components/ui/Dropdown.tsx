@@ -95,7 +95,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
           }`}
         >
           {options.length === 0 ? (
-            <div className="px-2 py-1 text-sm text-mid-gray">
+            <div className="px-2 py-1 text-sm text-muted">
               {t("common.noOptionsFound")}
             </div>
           ) : (
@@ -121,7 +121,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
                   {option.label}
                 </span>
                 {option.description && (
-                  <span className="mt-0.5 block whitespace-normal text-xs font-normal leading-snug text-mid-gray">
+                  <span className="mt-0.5 block whitespace-normal text-xs font-normal leading-snug text-muted">
                     {option.description}
                   </span>
                 )}

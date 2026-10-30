@@ -81,7 +81,7 @@ export const BrainTestGroup: React.FC<BrainTestGroupProps> = ({
 
   return (
     <div className="px-4 py-3 space-y-3">
-      <p className="text-sm text-mid-gray">
+      <p className="text-sm text-muted">
         {t("settings.brain.test.description")}
       </p>
       {label !== "" && (

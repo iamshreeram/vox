@@ -122,7 +122,7 @@ export const SpeakerFilterSettings: React.FC<SpeakerFilterSettingsProps> = ({
         <p className="text-sm font-medium">
           {t("converse.voice.speaker.disclosure.lead")}
         </p>
-        <p className="text-xs text-mid-gray">
+        <p className="text-xs text-muted">
           {t("converse.voice.speaker.disclosure.detail")}
         </p>
       </div>
@@ -140,7 +140,7 @@ export const SpeakerFilterSettings: React.FC<SpeakerFilterSettingsProps> = ({
         grouped={grouped}
       />
       {speakerFilterInactiveNote(enabled, ready, enrolled) && (
-        <p className="px-3 text-xs text-mid-gray">
+        <p className="px-3 text-xs text-muted">
           {t("converse.voice.speaker.inactiveNote")}
         </p>
       )}

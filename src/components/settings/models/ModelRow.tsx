@@ -105,7 +105,7 @@ const CARD_STYLES = {
   left: "flex flex-col items-start flex-1 min-w-0",
   nameRow: "flex items-center gap-3 flex-wrap",
   title: "text-base font-semibold text-text transition-colors",
-  description: "text-text/60 text-sm leading-relaxed",
+  description: "text-muted text-sm leading-relaxed",
 };
 
 const ENGINE_STYLES = {
@@ -114,7 +114,7 @@ const ENGINE_STYLES = {
   left: "flex flex-col gap-1",
   nameRow: "flex flex-wrap items-center gap-2",
   title: "text-sm font-medium",
-  description: "text-xs text-mid-gray",
+  description: "text-xs text-muted",
 };
 
 /** Clamp to 0..100; missing or NaN counts as 0. */
@@ -320,14 +320,14 @@ const ModelRow: React.FC<ModelRowProps> = ({
           />
         </div>
         <div className="flex items-center justify-between text-xs mt-1">
-          <span className="text-text/50">
+          <span className="text-muted">
             {labels.downloading
               ? labels.downloading(Math.round(percent))
               : `${Math.round(percent)}%`}
           </span>
           <div className="flex items-center gap-2">
             {speedMbPerSecond !== undefined && speedMbPerSecond > 0 && (
-              <span className="tabular-nums text-text/50">
+              <span className="tabular-nums text-muted">
                 {labels.speed
                   ? labels.speed(speedMbPerSecond.toFixed(1))
                   : speedMbPerSecond.toFixed(1)}
@@ -362,7 +362,7 @@ const ModelRow: React.FC<ModelRowProps> = ({
         <div className="w-full h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
           <div className="h-full bg-logo-primary rounded-full animate-pulse w-full" />
         </div>
-        <p className="text-xs text-text/50 mt-1">{busyLabel}</p>
+        <p className="text-xs text-muted mt-1">{busyLabel}</p>
       </div>
     ) : null;
 
@@ -434,7 +434,7 @@ const ModelRow: React.FC<ModelRowProps> = ({
           {description !== undefined && (
             <p className={styles.description}>{description}</p>
           )}
-          {licence && <p className="text-xs text-text/50">{licence}</p>}
+          {licence && <p className="text-xs text-muted">{licence}</p>}
           {details}
         </div>
         {aside}
@@ -449,7 +449,7 @@ const ModelRow: React.FC<ModelRowProps> = ({
           <div className="flex items-center gap-3 w-full -mb-0.5 mt-0.5 h-5">
             {tags}
             {meta && (
-              <span className="flex items-center gap-1.5 ms-auto text-xs text-text/50">
+              <span className="flex items-center gap-1.5 ms-auto text-xs text-muted">
                 {meta}
               </span>
             )}

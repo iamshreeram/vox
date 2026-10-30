@@ -212,7 +212,7 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
     return (
       <>
         <div className="px-3 pt-2">
-          <p className="text-xs text-mid-gray">
+          <p className="text-xs text-muted">
             {t("settings.advanced.acpAgent.description")}
           </p>
         </div>

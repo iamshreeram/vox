@@ -62,9 +62,7 @@ export const CustomThemeEditor: React.FC = () => {
               className="h-8 w-12 cursor-pointer rounded border border-mid-gray/20 bg-transparent p-0"
               aria-label={t(labelKey)}
             />
-            <span className="text-sm font-mono text-mid-gray">
-              {colors[key]}
-            </span>
+            <span className="text-sm font-mono text-muted">{colors[key]}</span>
           </div>
         </SettingContainer>
       ))}

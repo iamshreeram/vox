@@ -83,6 +83,21 @@
   --color-text-stroke: #f6f6f6;
   --color-mid-gray: #808080;
 
+  /* Muted text (secondary labels, placeholders, empty states, hints). The text colour blended 68%
+     over the page background: >= 4.5:1 on the page, the restrained card, every mid-gray surface and
+     the worst stop of every Vibrant gradient, in every palette (a11yTokens.test.ts). Replaces the
+     former `text-mid-gray` text usage, which measured 3.9:1 on the light page. */
+  --color-muted: color-mix(
+    in srgb,
+    var(--color-text) 68%,
+    var(--color-background)
+  );
+
+  /* ONE focus ring for every control (UI enterprise U10). It is the text colour, so it is 3:1 or
+     better on the page in every palette. Filled accent controls add an inner on-accent ring
+     (see the .btn-primary rule below), so the ring also reads against the fill. */
+  --focus-ring: var(--color-text);
+
   /* Active palette — defaults to light, follows the OS via the media query
      below, or is forced by `data-theme` (see the overrides below). */
   --color-text: var(--light-color-text);
@@ -104,6 +119,34 @@
   --color-success: var(--light-color-success);
   --color-success-soft: var(--light-color-success-soft);
   --color-warning-soft: var(--light-color-warning-soft);
+}
+
+/* Shared focus ring (UI enterprise U10): 2px outline, 2px offset, :focus-visible only, so the ring
+   shows for keyboard focus and not for mouse clicks. Components must not remove outlines without
+   this replacement (a11yStatic.test.ts). */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Accent-filled controls: a 2px inner ring in the on-accent text colour, so the focus indicator also
+   contrasts with the fill it sits on (a11yTokens.test.ts pins the 4.5:1 pair). */
+.btn-primary:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--color-on-accent);
+}
+
+/* Reduced motion (UI enterprise U12): every transition and animation in every window that imports
+   this sheet (settings, chat, orb, bubbles, overlay) is shortened to an instant change. Stylesheets
+   without their own override are covered by this one (a11yStatic.test.ts). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @media (prefers-color-scheme: dark) {

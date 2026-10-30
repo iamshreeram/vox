@@ -218,7 +218,7 @@ export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
         descriptionMode={descriptionMode}
         grouped={grouped}
       >
-        <div className="text-sm text-mid-gray">
+        <div className="text-sm text-muted">
           {t("settings.general.shortcut.loading")}
         </div>
       </SettingContainer>
@@ -234,10 +234,10 @@ export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
         descriptionMode={descriptionMode}
         grouped={grouped}
       >
-        <div className="text-sm text-mid-gray">
+        <div className="text-sm text-muted">
           {t("settings.general.shortcut.none")}
         </div>
-        <div className="text-xs text-mid-gray">
+        <div className="text-xs text-muted">
           {t(shortcutEmptyModel(shortcutId).bodyKey)}
         </div>
       </SettingContainer>
@@ -253,10 +253,10 @@ export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
         descriptionMode={descriptionMode}
         grouped={grouped}
       >
-        <div className="text-sm text-mid-gray">
+        <div className="text-sm text-muted">
           {t("settings.general.shortcut.none")}
         </div>
-        <div className="text-xs text-mid-gray">
+        <div className="text-xs text-muted">
           {t(shortcutEmptyModel(shortcutId).bodyKey)}
         </div>
       </SettingContainer>

@@ -89,7 +89,7 @@ export const ResetAppearance: React.FC = () => {
             </Button>
           </div>
         )}
-        <p role="status" aria-live="polite" className="text-xs text-mid-gray">
+        <p role="status" aria-live="polite" className="text-xs text-muted">
           {message}
         </p>
       </div>

@@ -21,6 +21,11 @@ import type {
   KeyboardEvent,
 } from "react";
 import VoxAvatar from "./VoxAvatar";
+import {
+  CLEAR_CONFIRM_MS,
+  nextClearStep,
+  type ClearStep,
+} from "./clearConfirm";
 import voxIcon from "./assets/vox-icon.png";
 import { accentStyle, accentTextStyle } from "./chatTheme";
 import {
@@ -113,6 +118,8 @@ export default function ChatWindow() {
   const lastEntryIdRef = useRef<number | undefined>(undefined);
   const [unseen, setUnseen] = useState(false);
   const [clearing, setClearing] = useState(false);
+  // Inline two-step Clear (U15a): idle shows Clear; confirming shows Confirm clear / Cancel for 4 s.
+  const [clearStep, setClearStep] = useState<ClearStep>("idle");
   const [clearFailed, setClearFailed] = useState(false);
   // Typing box. draftRef mirrors draft so handlers always see the latest text; sendingRef is the
   // synchronous in-flight guard (a same-tick second submit must not wait for a React render).
@@ -228,8 +235,26 @@ export default function ChatWindow() {
     setUnseen(false);
   };
 
+  useEffect(() => {
+    if (clearStep !== "confirming") return;
+    const timer = window.setTimeout(
+      () => setClearStep((step) => nextClearStep(step, "timeout")),
+      CLEAR_CONFIRM_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [clearStep]);
+
+  const onRequestClear = () => {
+    setClearStep((step) => nextClearStep(step, "request"));
+  };
+
+  const onCancelClear = () => {
+    setClearStep((step) => nextClearStep(step, "cancel"));
+  };
+
   const onClear = async () => {
     if (clearing) return;
+    setClearStep((step) => nextClearStep(step, "confirm"));
     setClearing(true);
     setClearFailed(false);
     try {
@@ -351,14 +376,37 @@ export default function ChatWindow() {
           {view.recording ? null : (
             <span className="chat-rec-off">{t("chat.recordingOff")}</span>
           )}
-          <button
-            type="button"
-            className="chat-clear"
-            onClick={onClear}
-            disabled={clearing}
-          >
-            {t("chat.clear")}
-          </button>
+          <span role="status" className="chat-clear-status">
+            {clearStep === "confirming" ? t("chat.clearPrompt") : ""}
+          </span>
+          {clearStep === "idle" ? (
+            <button
+              type="button"
+              className="chat-clear"
+              onClick={onRequestClear}
+              disabled={clearing}
+            >
+              {t("chat.clear")}
+            </button>
+          ) : (
+            <div className="chat-clear-confirm">
+              <button
+                type="button"
+                className="chat-clear chat-clear-danger"
+                onClick={onClear}
+                disabled={clearing}
+              >
+                {t("chat.clearConfirm")}
+              </button>
+              <button
+                type="button"
+                className="chat-clear"
+                onClick={onCancelClear}
+              >
+                {t("chat.clearCancel")}
+              </button>
+            </div>
+          )}
         </div>
       </header>
       <section className="chat-stage">
@@ -370,7 +418,7 @@ export default function ChatWindow() {
           <span />
           <span />
         </div>
-        <p className="chat-pill">
+        <p className="chat-pill" role="status">
           <span className="chat-pill-dot" aria-hidden="true" />
           <span className="chat-pill-text">{t(caption.key)}</span>
           {caption.reasonKey ? (
@@ -389,6 +437,7 @@ export default function ChatWindow() {
           className="chat-log"
           role="log"
           aria-live="polite"
+          aria-relevant="additions"
           onScroll={onLogScroll}
         >
           {view.entries.length === 0 ? (

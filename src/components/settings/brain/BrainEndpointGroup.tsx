@@ -272,7 +272,7 @@ export const BrainEndpointGroup: React.FC<BrainEndpointGroupProps> = ({
               {t("settings.brain.token.clear")}
             </Button>
           </div>
-          <p data-testid="brain-token-status" className="text-xs text-mid-gray">
+          <p data-testid="brain-token-status" className="text-xs text-muted">
             {tokenSet
               ? t("settings.brain.token.saved")
               : t("settings.brain.token.none")}

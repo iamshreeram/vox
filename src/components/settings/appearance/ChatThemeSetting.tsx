@@ -50,7 +50,7 @@ export const ChatThemeSetting: React.FC<ChatThemeSettingProps> = ({
             if (value !== chatTheme) void updateSetting("chat_theme", value);
           }}
         />
-        <p className="text-xs text-mid-gray">
+        <p className="text-xs text-muted">
           {t("settings.appearance.chatTheme.nativeNote")}
         </p>
       </div>

@@ -17,6 +17,6 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
 }) => (
   <div className="max-w-3xl w-full mx-auto px-1">
     <h1 className="text-xl font-semibold">{title}</h1>
-    {description && <p className="mt-1 text-sm text-text/60">{description}</p>}
+    {description && <p className="mt-1 text-sm text-muted">{description}</p>}
   </div>
 );

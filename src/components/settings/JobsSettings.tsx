@@ -80,7 +80,7 @@ const JobStatusCard: React.FC = () => {
         <p className="truncate font-mono text-xs">{status.project}</p>
       )}
       {running && (
-        <p className="text-xs text-mid-gray">
+        <p className="text-xs text-muted">
           {t("settings.experimental.jobs.status.elapsed", {
             elapsed: formatElapsed(status.elapsed_secs),
           })}
@@ -204,7 +204,7 @@ export const JobsSettings: React.FC<JobsSettingsProps> = React.memo(
         />
         <JobStatusCard />
         <div className="px-3 py-2">
-          <p className="text-xs text-mid-gray">
+          <p className="text-xs text-muted">
             {t("settings.experimental.jobs.warning")}
           </p>
         </div>

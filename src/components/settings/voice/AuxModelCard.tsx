@@ -83,7 +83,7 @@ export const AuxModelCard: React.FC<AuxModelCardProps> = ({
     >
       <div className="flex flex-col gap-2">
         {!loaded ? (
-          <span className="text-sm text-mid-gray">
+          <span className="text-sm text-muted">
             {t("converse.voice.model.checking")}
           </span>
         ) : (

@@ -89,7 +89,7 @@ export const VoiceShortcutsEditor: React.FC<VoiceShortcutsEditorProps> =
       >
         <div className="space-y-2">
           {draft.length === 0 && (
-            <p className="text-sm text-mid-gray">
+            <p className="text-sm text-muted">
               {t("settings.advanced.voiceShortcuts.empty")}
             </p>
           )}

@@ -54,8 +54,12 @@ const scenarios: Record<string, () => void> = {
       assert.equal(placementOf(id).section, "general", `${id} section`);
       assert.equal(placementOf(id).groupId, "conversation", `${id} group`);
     }
+    // Re-pointed (old: [conversation, persona, replyStyle, floatingOrb, realtime,
+    // latencyPanel]): wake word moved into the non-experimental Conversation group
+    // in PR #120, so it is listed here too.
     assert.deepEqual(controls("conversation"), [
       "conversation",
+      "wakeWord",
       "persona",
       "replyStyle",
       "floatingOrb",
@@ -80,7 +84,14 @@ const scenarios: Record<string, () => void> = {
   },
 
   "the groups needed for a working install are not experimental": () => {
-    const open = new Set(["spokenReplies", "vadEngine", "conversation"]);
+    // Re-pointed: the Appearance chat-window group (chatWindow) is non-experimental
+    // so appearance controls are available without Experimental (old: expected true).
+    const open = new Set([
+      "spokenReplies",
+      "vadEngine",
+      "conversation",
+      "chatWindow",
+    ]);
     for (const group of PLACED_GROUPS) {
       assert.equal(
         group.experimental,
@@ -189,14 +200,17 @@ const scenarios: Record<string, () => void> = {
       );
       assert.ok(group);
       const flags = { memoryEnabled: false, agentBridgeEnabled: false };
+      // Re-pointed: wakeWord is a non-experimental Conversation control (PR #120).
       assert.deepEqual(visibleControls(group, flags, false), [
         "conversation",
+        "wakeWord",
         "persona",
         "replyStyle",
         "floatingOrb",
       ]);
       assert.deepEqual(visibleControls(group, flags, true), [
         "conversation",
+        "wakeWord",
         "persona",
         "replyStyle",
         "floatingOrb",

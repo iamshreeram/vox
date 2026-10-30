@@ -183,7 +183,7 @@ const SourceUpdateChecker: React.FC<SourceUpdateCheckerProps> = ({
             className={`transition-colors disabled:opacity-50 tabular-nums ${
               isAvailable
                 ? "text-logo-primary hover:text-logo-primary/80 font-medium"
-                : "text-text/60 hover:text-text/80"
+                : "text-muted hover:text-text/80"
             }`}
           >
             {label}
@@ -192,7 +192,7 @@ const SourceUpdateChecker: React.FC<SourceUpdateCheckerProps> = ({
           <span
             title={footerTitle}
             className={`tabular-nums ${
-              isAvailable ? "text-logo-primary font-medium" : "text-text/60"
+              isAvailable ? "text-logo-primary font-medium" : "text-muted"
             }`}
           >
             {label}

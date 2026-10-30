@@ -356,7 +356,7 @@ export const SettingsSearchBox: React.FC<SettingsSearchBoxProps> = ({
             composingRef.current = false;
             compositionEndedAtRef.current = Date.now();
           }}
-          className={`w-full ps-7 ${hasQuery ? "pe-7" : "pe-2"} py-1.5 text-sm rounded-lg border border-mid-gray/20 bg-background focus:outline-none focus:ring-1 focus:ring-logo-primary`}
+          className={`w-full ps-7 ${hasQuery ? "pe-7" : "pe-2"} py-1.5 text-sm rounded-lg border border-mid-gray/20 bg-background`}
         />
         {hasQuery && (
           <button

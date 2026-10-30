@@ -47,7 +47,7 @@ export const VaultRagPreview: React.FC<VaultRagPreviewProps> = ({
         </Button>
       </div>
       {preview !== null && preview.length === 0 && (
-        <p className="text-xs text-mid-gray">
+        <p className="text-xs text-muted">
           {t("settings.experimental.vaultRag.preview.empty")}
         </p>
       )}
