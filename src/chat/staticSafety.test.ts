@@ -6,10 +6,12 @@ import { describe, expect, it } from "vitest";
 
 const CHAT_DIR = fileURLToPath(new URL(".", import.meta.url));
 // DESIGN-TYPE Rev 1: the user asked to type, so exactly one command is added.
+// D1b (orb-click): Escape hides the window, so chatHideWindow is the fourth allowed command.
 const ALLOWED_COMMANDS = new Set([
   "getChatSnapshot",
   "clearChatLog",
   "sendChatMessage",
+  "chatHideWindow",
 ]);
 
 function sourceFiles(dir: string): string[] {
@@ -90,7 +92,7 @@ describe("src/chat static safety scan", () => {
     expect(offenders(/\bhref\s*:/)).toEqual([]);
   });
 
-  it("calls only the three allowed backend commands through bindings", () => {
+  it("calls only the four allowed backend commands through bindings", () => {
     const called = new Set<string>();
     for (const file of TEXT) {
       for (const match of file.src.matchAll(/\bcommands\.(\w+)\s*\(/g)) {

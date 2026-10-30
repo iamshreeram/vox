@@ -169,7 +169,7 @@ test.describe("Appearance page: controls reach their commands", () => {
     });
     await expect(
       page.getByText(
-        "The window title bar follows the app theme; a Light chat can keep a dark title bar.",
+        "The conversation window has no title bar buttons. Drag it by its top edge. Press Escape, use the shortcut or the tray icon to hide it.",
       ),
     ).toBeVisible();
   });

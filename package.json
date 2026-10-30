@@ -86,7 +86,8 @@
     "test:ui-quality:reference:e2e": "playwright test tests/ui-quality-reference.spec.ts --workers=1 --reporter=line",
     "test:restrained:e2e": "playwright test tests/restrained-style.spec.ts --reporter=line",
     "test:settings-polish:e2e": "playwright test tests/settings-polish.spec.ts --reporter=line",
-    "test:chat:polish:e2e": "playwright test tests/chat-polish.spec.ts --reporter=line"
+    "test:chat:polish:e2e": "playwright test tests/chat-polish.spec.ts --reporter=line",
+    "test:chat:esc:e2e": "playwright test tests/chat-esc.spec.ts --reporter=line"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.16",

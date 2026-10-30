@@ -12,8 +12,8 @@ interface ChatThemeSettingProps {
 }
 
 /**
- * Colours of the conversation window: follow the app, or fix Dark or Light. The title bar is
- * drawn by the system, so a note says it can keep the app's dark chrome (DESIGN A9).
+ * Colours of the conversation window: follow the app, or fix Dark or Light. The window has no
+ * title bar buttons (macOS hides them); a note says how to drag it and hide it (DESIGN D1, D1b).
  */
 export const ChatThemeSetting: React.FC<ChatThemeSettingProps> = ({
   descriptionMode = "tooltip",

@@ -1394,7 +1394,7 @@
         "followApp": "Follow app",
         "dark": "Dark",
         "light": "Light",
-        "nativeNote": "The window title bar follows the app theme; a Light chat can keep a dark title bar."
+        "nativeNote": "The conversation window has no title bar buttons. Drag it by its top edge. Press Escape, use the shortcut or the tray icon to hide it."
       },
       "chatWindow": {
         "title": "Conversation window"
