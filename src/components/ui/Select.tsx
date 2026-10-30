@@ -115,7 +115,9 @@ const selectStyles: StylesConfig<SelectOption, false> = {
   }),
   placeholder: (base) => ({
     ...base,
-    color: "color-mix(in srgb, var(--color-mid-gray) 65%, transparent)",
+    // Muted text is >= 4.5:1 on the page and every control surface (a11yTokens.test.ts); the former
+    // mid-gray at 65% measured ~2:1 on the dark page.
+    color: "var(--color-muted)",
   }),
 };
 

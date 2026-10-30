@@ -562,7 +562,7 @@ export function requiredContrast(
  * be trusted to be the visible colour below it. Null when the element is clean.
  */
 export function layerEffect(layer: LayerCase): string | null {
-  if (layer.opacity !== 1) return `opacity ${layer.opacity}`;
+  // Opacity below 1 is MEASURED (A6e(b)): buildStack multiplies it into the alpha.
   if (layer.mixBlendMode && layer.mixBlendMode !== "normal")
     return `mix-blend-mode ${layer.mixBlendMode}`;
   if (layer.maskImage && layer.maskImage !== "none")
@@ -594,8 +594,9 @@ export interface Stack {
  * Composes the complete background of an element bottom-up (A6e(b)). Scanning from the top,
  * the top-most provably opaque colour is the bypass point: everything beneath it is hidden and is
  * ignored. Every layer above it is measured, and an unsupported paint there fails the row.
- * Any effect on any chain element fails the row (layerEffect). More than one gradient above the
- * bypass fails too: one shared sample position cannot cover two independent gradients.
+ * Any effect on any chain element fails the row (layerEffect). Opacity below 1 is measured: each
+ * element's cumulative opacity multiplies its alpha. More than one gradient above the bypass is
+ * measured by the cross-product sweep (see sweep).
  */
 export function buildStack(
   layers: LayerCase[],
@@ -632,9 +633,6 @@ export function buildStack(
   for (const item of above) {
     if (item.kind === "fail") return item.reason;
   }
-  const gradients = above.filter((item) => item.kind === "gradient").length;
-  if (gradients > 1)
-    return "more than one gradient above the opaque background";
   const ops: Op[] = above.map((item) =>
     item.kind === "solid"
       ? { kind: "solid", color: item.color }
@@ -643,19 +641,69 @@ export function buildStack(
   return { ops, backdrop: bypass < 0 };
 }
 
-/** Sample positions along the (single) gradient of a stack: 0 when there is none. */
-function samplePointsOf(ops: Op[]): number[] {
-  for (const op of ops) {
-    if (op.kind === "gradient") return gradientSamplePoints(op.stops);
-  }
-  return [0];
+/** Cap on samples per gradient layer in the cross-product grid (A6e(b), N >= 2). */
+export const GRID_CAP_PER_LAYER = 48;
+/** Cap on the total evaluated combinations (gradient samples x backdrop levels). */
+export const MAX_GRID_COMBOS = 200_000;
+
+function clamp01(v: number): number {
+  return Math.min(1, Math.max(0, v));
 }
 
-/** The composed background at gradient position t over a grey backdrop level g. */
-function composeAt(ops: Op[], grey: number, t: number): Rgb {
+/**
+ * Per-layer sample set for the cross-product grid: every stop position (clamped) plus a uniform
+ * grid, at most `cap` values in total, sorted.
+ */
+function capSamples(stops: GradientStop[], cap: number): number[] {
+  const fixed = [...new Set(stops.map((s) => clamp01(s.pos)))];
+  const room = Math.max(2, cap - fixed.length);
+  const uniform = Array.from({ length: room }, (_, i) => i / (room - 1));
+  return [...new Set([...fixed, ...uniform])].sort((x, y) => x - y);
+}
+
+/** Position of the lowest and highest luminance of one gradient over black (alpha composited). */
+function luminanceExtremes(stops: GradientStop[], points: number[]): number[] {
+  let lo = points[0];
+  let hi = points[0];
+  let loL = Infinity;
+  let hiL = -Infinity;
+  for (const t of points) {
+    const l = relativeLuminance(
+      over(gradientColorAt(stops, t), { r: 0, g: 0, b: 0 }),
+    );
+    if (l < loL) {
+      loL = l;
+      lo = t;
+    }
+    if (l > hiL) {
+      hiL = l;
+      hi = t;
+    }
+  }
+  return [lo, hi];
+}
+
+/** Cartesian product of value lists (each combination is one entry per list). */
+function cartesian(lists: number[][]): number[][] {
+  let out: number[][] = [[]];
+  for (const list of lists) {
+    const next: number[][] = [];
+    for (const prefix of out) for (const v of list) next.push([...prefix, v]);
+    out = next;
+  }
+  return out;
+}
+
+/**
+ * The composed background with gradient k at position ts[k] (gradients in stack order, bottom
+ * first), over a grey backdrop level `grey`.
+ */
+function composeWith(ops: Op[], grey: number, ts: number[]): Rgb {
   let acc: Rgb = { r: grey, g: grey, b: grey };
+  let k = 0;
   for (const op of ops) {
-    const color = op.kind === "solid" ? op.color : gradientColorAt(op.stops, t);
+    const color =
+      op.kind === "solid" ? op.color : gradientColorAt(op.stops, ts[k++]);
     acc = over(color, acc);
   }
   return acc;
@@ -684,54 +732,109 @@ export interface SweepResult {
  * or the luminance-equal line is crossed along the gradient at each level and along the backdrop
  * at each sample point.
  */
+/**
+ * Worst ratio of a metric over the complete composed stack (A6c, A6e(b), A6e(c)).
+ *
+ * DENSE-GRID CHECK, NOT A PROOF. Each gradient layer is sampled (one layer: >= 64 samples per
+ * stop pair; two or more layers: at most GRID_CAP_PER_LAYER samples, always including the stop
+ * positions). The composite is evaluated over the cross-product of the per-layer samples, times
+ * the grey backdrop levels when the stack is translucent. If there are more than three gradient
+ * layers, or the product exceeds MAX_GRID_COMBOS, the samples are subsampled uniformly and every
+ * combination of the per-layer luminance extremes is added. Interior crossings are then found by
+ * bisection along each axis (each gradient, then the backdrop) with the other axes held at their
+ * samples. Tolerance: 1/255 per channel in the grid. A pass means no sampled or bisected point
+ * fails; it does not prove that no point between samples fails.
+ */
 export function sweep(stack: Stack, metric: Metric): SweepResult {
-  const points = samplePointsOf(stack.ops);
-  const levels = stack.backdrop ? BACKDROP_LEVELS : [0];
+  const grads = stack.ops.filter(
+    (op): op is Extract<Op, { kind: "gradient" }> => op.kind === "gradient",
+  );
+  const n = grads.length;
+  const levels: readonly number[] = stack.backdrop ? BACKDROP_LEVELS : [0];
+
+  // Per-gradient sample sets (stack order, bottom first).
+  let sets: number[][];
+  let extra: number[][] = [];
+  if (n <= 1) {
+    sets = grads.map((g) => gradientSamplePoints(g.stops));
+  } else {
+    const product = (cap: number) => Math.pow(cap, n) * levels.length;
+    let cap = GRID_CAP_PER_LAYER;
+    const subsampled = n > 3 || product(cap) > MAX_GRID_COMBOS;
+    if (subsampled)
+      cap = Math.max(
+        2,
+        Math.floor(Math.pow(MAX_GRID_COMBOS / levels.length, 1 / n)),
+      );
+    sets = grads.map((g) => capSamples(g.stops, cap));
+    if (subsampled) {
+      const points = grads.map((g, k) => {
+        const extremes = luminanceExtremes(g.stops, sets[k]);
+        sets[k] = [...new Set([...sets[k], ...extremes])].sort((x, y) => x - y);
+        return extremes;
+      });
+      extra = cartesian(points);
+    }
+  }
+
+  const combos = [...cartesian(sets), ...extra];
   let worst = Infinity;
   let worstAt: number | null = null;
   let worstGrey: number | null = null;
-  const evalAt = (t: number, g: number) => {
-    const ratio = metric.ratioAt(composeAt(stack.ops, g, t));
+  const evalAt = (ts: number[], g: number) => {
+    const ratio = metric.ratioAt(composeWith(stack.ops, g, ts));
     if (ratio < worst) {
       worst = ratio;
-      worstAt = t;
+      worstAt = ts.length > 0 ? ts[0] : null;
       worstGrey = stack.backdrop ? g : null;
     }
   };
   const boundary = (bg: Rgb) => metric.ratioAt(bg) - metric.required;
   const crossings: Array<(bg: Rgb) => number> = [boundary, metric.balanceAt];
 
-  for (const g of levels) for (const t of points) evalAt(t, g);
+  for (const g of levels) for (const ts of combos) evalAt(ts, g);
 
+  // Interior crossings along each gradient axis, other axes held at their samples.
   for (const g of levels) {
     for (const f of crossings) {
-      const at = (t: number) => f(composeAt(stack.ops, g, t));
-      for (let i = 0; i < points.length - 1; i += 1) {
-        const flo = at(points[i]);
-        const fhi = at(points[i + 1]);
-        if (flo === 0 || fhi === 0 || Math.sign(flo) === Math.sign(fhi))
-          continue;
-        evalAt(bisectRoot(at, points[i], points[i + 1]), g);
-      }
-    }
-  }
-
-  if (stack.backdrop) {
-    for (const t of points) {
-      for (const f of crossings) {
-        const at = (g: number) => f(composeAt(stack.ops, g, t));
-        for (let i = 0; i < levels.length - 1; i += 1) {
-          const flo = at(levels[i]);
-          const fhi = at(levels[i + 1]);
-          if (flo === 0 || fhi === 0 || Math.sign(flo) === Math.sign(fhi))
-            continue;
-          evalAt(t, bisectRoot(at, levels[i], levels[i + 1]));
+      for (let k = 0; k < n; k += 1) {
+        const others = sets.filter((_, i) => i !== k);
+        for (const fixed of cartesian(others)) {
+          const at = (t: number) => {
+            const ts = [...fixed.slice(0, k), t, ...fixed.slice(k)];
+            return f(composeWith(stack.ops, g, ts));
+          };
+          const axis = sets[k];
+          for (let i = 0; i < axis.length - 1; i += 1) {
+            const flo = at(axis[i]);
+            const fhi = at(axis[i + 1]);
+            if (flo === 0 || fhi === 0 || Math.sign(flo) === Math.sign(fhi))
+              continue;
+            const root = bisectRoot(at, axis[i], axis[i + 1]);
+            evalAt([...fixed.slice(0, k), root, ...fixed.slice(k)], g);
+          }
         }
       }
     }
   }
 
-  return { worst, worstAt, worstGrey, points: points.length };
+  // Interior crossings along the backdrop at each gradient combination.
+  if (stack.backdrop) {
+    for (const ts of combos) {
+      for (const f of crossings) {
+        const at = (g: number) => f(composeWith(stack.ops, g, ts));
+        for (let i = 0; i < levels.length - 1; i += 1) {
+          const flo = at(levels[i]);
+          const fhi = at(levels[i + 1]);
+          if (flo === 0 || fhi === 0 || Math.sign(flo) === Math.sign(fhi))
+            continue;
+          evalAt(ts, bisectRoot(at, levels[i], levels[i + 1]));
+        }
+      }
+    }
+  }
+
+  return { worst, worstAt, worstGrey, points: combos.length };
 }
 
 /** Composed background range (per channel) over the gradient sample points, over black. */
@@ -741,9 +844,11 @@ export function composedRange(
 ): { min: Rgb; max: Rgb } | string {
   const stack = buildStack(layers, resolve);
   if (typeof stack === "string") return stack;
-  const colours = samplePointsOf(stack.ops).map((t) =>
-    composeAt(stack.ops, 0, t),
+  const grads = stack.ops.filter(
+    (op): op is Extract<Op, { kind: "gradient" }> => op.kind === "gradient",
   );
+  const sets = grads.map((g) => gradientSamplePoints(g.stops));
+  const colours = cartesian(sets).map((ts) => composeWith(stack.ops, 0, ts));
   return {
     min: {
       r: Math.min(...colours.map((c) => c.r)),
@@ -779,10 +884,11 @@ export function evaluateTextContrast(
   if (text.filters.length > 0) {
     return fail(`unsupported filter on text chain: ${text.filters.join(", ")}`);
   }
-  if (text.opacity !== 1)
-    return fail(`opacity ${text.opacity} on the text chain`);
-  const fg = resolve(text.color);
-  if (fg === null) return fail(`unresolvable text colour: ${text.color}`);
+  const fgResolved = resolve(text.color);
+  if (fgResolved === null)
+    return fail(`unresolvable text colour: ${text.color}`);
+  // Text opacity (cumulative over the text chain) multiplies the text colour's alpha (A6e(b)).
+  const fg: Rgba = { ...fgResolved, a: fgResolved.a * text.opacity };
   const stack = buildStack(text.layers, resolve);
   if (typeof stack === "string")
     return fail(`unsupported background: ${stack}`);

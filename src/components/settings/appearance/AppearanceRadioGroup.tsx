@@ -90,7 +90,11 @@ export function AppearanceRadioGroup<V extends string>({
               {choice.label}
             </span>
             {choice.hint ? (
-              <span className="text-xs text-muted">{choice.hint}</span>
+              <span
+                className={`text-xs ${isSelected ? "text-accent-text" : "text-muted"}`}
+              >
+                {choice.hint}
+              </span>
             ) : null}
           </button>
         );

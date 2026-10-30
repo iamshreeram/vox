@@ -326,7 +326,7 @@ scenario("the large-text rule uses 3:1 at 24px and 18.66px bold", () => {
 
 // --- chain effects and explicit failures ----------------------------------
 scenario(
-  "blend mode, mask, backdrop-filter and ancestor opacity on the chain FAIL",
+  "blend mode, mask and backdrop-filter on the chain FAIL (opacity is measured)",
   () => {
     const cases2: LayerCase[][] = [
       [layer("none", "rgb(255, 255, 255)", 1, { mixBlendMode: "multiply" })],
@@ -336,7 +336,6 @@ scenario(
           backdropFilter: "blur(4px)",
         }),
       ],
-      [layer("none", "transparent", 0.5), layer("none", "rgb(255, 255, 255)")],
     ];
     for (const layers of cases2) {
       const verdict = evaluateTextContrast(text("rgb(0, 0, 0)", layers), R);
@@ -394,6 +393,88 @@ scenario(
     );
   },
 );
+
+// --- multi-layer and opacity measurement (A6e(b)) ----------------------------
+const WHITE_30 =
+  "radial-gradient(rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.3) 100%)";
+
+scenario(
+  "#767676 text over two overlapping transparent radial layers atop #767676 MUST FAIL",
+  () => {
+    const verdict = evaluateTextContrast(
+      text(GRAY_767676, [
+        layer(`${TRANSPARENT_RADIAL}, ${TRANSPARENT_RADIAL}`, GRAY_767676),
+      ]),
+      R,
+    );
+    assert.equal(verdict.pass, false, verdict.reason ?? "");
+    assert.ok(verdict.ratio < 1.05, `ratio ${verdict.ratio}`);
+  },
+);
+
+scenario(
+  "two layers that jointly fail, where neither layer alone fails, MUST FAIL",
+  () => {
+    // White text. One white layer at alpha 0..0.3 over black stays <= 76 grey: passes alone.
+    // Two stacked, the composite reaches about 130 grey: fails (about 3.8:1).
+    const single = evaluateTextContrast(
+      text("rgb(255, 255, 255)", [layer(WHITE_30, "rgb(0, 0, 0)")]),
+      R,
+    );
+    assert.equal(single.pass, true, `single layer: ${single.reason ?? ""}`);
+    const joint = evaluateTextContrast(
+      text("rgb(255, 255, 255)", [
+        layer(`${WHITE_30}, ${WHITE_30}`, "rgb(0, 0, 0)"),
+      ]),
+      R,
+    );
+    assert.equal(joint.pass, false, "two layers together must fail");
+    assert.ok(joint.ratio < 4.5, `joint ratio ${joint.ratio}`);
+  },
+);
+
+scenario("a passing two-layer control passes (white on dark radials)", () => {
+  const verdict = evaluateTextContrast(
+    text("rgb(255, 255, 255)", [
+      layer(`${RADIAL_DARK}, ${RADIAL_DARK}`, "rgb(0, 0, 0)"),
+    ]),
+    R,
+  );
+  assert.equal(verdict.pass, true, verdict.reason ?? "");
+});
+
+scenario(
+  "#444 text at opacity .4 on white FAILS (measured, not waived)",
+  () => {
+    const verdict = evaluateTextContrast(
+      text(
+        "rgb(68, 68, 68)",
+        [
+          layer("none", "rgb(255, 255, 255)", 1),
+          layer("none", "rgba(0, 0, 0, 0)", 0.4),
+        ],
+        { opacity: 0.4 },
+      ),
+      R,
+    );
+    assert.equal(verdict.pass, false, verdict.reason ?? "");
+  },
+);
+
+scenario("black text at opacity .9 on white passes (measured)", () => {
+  const verdict = evaluateTextContrast(
+    text(
+      "rgb(0, 0, 0)",
+      [
+        layer("none", "rgb(255, 255, 255)", 1),
+        layer("none", "rgba(0, 0, 0, 0)", 0.9),
+      ],
+      { opacity: 0.9 },
+    ),
+    R,
+  );
+  assert.equal(verdict.pass, true, verdict.reason ?? "");
+});
 
 // --- focus ring -------------------------------------------------------------
 scenario("a transparent focus ring is detected as missing", () => {

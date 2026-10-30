@@ -598,7 +598,9 @@ async function auditVisit(
         "contrast",
         `${t.selector} "${t.text}"`,
         verdict.reason ?? verdict.ratio.toFixed(2),
-        `>= ${verdict.required}:1 (${verdict.backdrop})`,
+        verdict.backdrop === null
+          ? `>= ${verdict.required}:1`
+          : `>= ${verdict.required}:1 (backdrop ${verdict.backdrop})`,
       );
     }
     if (!Q.fontSizeOk(t.fontSizePx)) {

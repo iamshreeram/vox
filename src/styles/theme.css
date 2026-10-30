@@ -34,6 +34,11 @@
   --aurora-color-error: #f87171;
   /* Accent FILL for toggles, sliders and primary buttons. Kept deeper than the logo teal so white thumbs and white button text stay readable. */
   --aurora-color-background-ui: #0d9488;
+  /* Aurora selected surface (dark tint, not the light cream default), its accent text on that
+     surface, and its solid accent fill for solid primary buttons (white text on it >= 4.5:1). */
+  --aurora-color-accent-soft: #1f2d3d;
+  --aurora-color-accent-text: #5eead4;
+  --aurora-color-accent-ui: #0f766e;
 
   /* Vibrant accent gradient (a -> b) used by toggles, sliders, the active
      sidebar item and primary buttons. on-accent is the text color placed on
@@ -229,6 +234,9 @@
   --color-accent-a: var(--aurora-color-accent-a);
   --color-accent-b: var(--aurora-color-accent-b);
   --color-on-accent: var(--aurora-color-on-accent);
+  --color-accent-soft: var(--aurora-color-accent-soft);
+  --color-accent-text: var(--aurora-color-accent-text);
+  --color-accent-ui: var(--aurora-color-accent-ui);
   --color-danger: var(--color-error);
   --color-danger-soft: var(--aurora-color-danger-soft);
   --color-success: var(--aurora-color-success);
@@ -253,6 +261,9 @@
   --color-accent-a: #2dd4bf;
   --color-accent-b: #a78bfa;
   --color-on-accent: #111111;
+  --color-accent-soft: #1f2d3d;
+  --color-accent-text: #5eead4;
+  --color-accent-ui: #0f766e;
   --color-danger: var(--color-error);
   --color-background-ui: var(--aurora-color-background-ui);
   --color-success: #34d399;

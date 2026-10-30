@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { ACCENT_IDS, ACCENTS, type AccentBucket } from "./accents";
-import { blendOver, contrastRatio } from "./wcag";
+import { RESTRAINED_CARD_HEX } from "./restrained";
+import { blendOver, contrastRatio, relativeLuminance } from "./wcag";
 
 // UI enterprise S4b (DESIGN D4 U10 focus, U11 contrast, U12 motion). The CSS token pairs are
 // evaluated by replaying the same colour maths the stylesheet uses (color-mix in sRGB equals a
@@ -164,6 +165,109 @@ const scenarios: Record<string, () => void> = {
               contrastRatio(roles.onFill, fill),
               4.5,
               `${palette.name}/${id} inner focus ring on fill ${fill}`,
+            );
+          }
+        }
+      }
+    },
+
+  "selected surfaces, accent fills and their text reach 4.5:1 for every palette, style and accent (table, R1a)":
+    () => {
+      // Rows: light and dark for each of the six accents (vibrant accent tokens), plus aurora once
+      // (aurora owns its palette and ignores the accent). Restrained uses the same selected and fill
+      // tokens and adds its neutral card surface.
+      const rows: {
+        label: string;
+        bucket: AccentBucket | null;
+        page: Palette;
+        soft: string;
+        text: string;
+        ui: string;
+        onAccent: string;
+        fillA: string;
+        fillB: string;
+      }[] = [];
+      for (const palette of palettes) {
+        if (palette.bucket === null) {
+          rows.push({
+            label: "aurora",
+            bucket: null,
+            page: palette,
+            soft: base("aurora-color-accent-soft"),
+            text: base("aurora-color-accent-text"),
+            ui: base("aurora-color-accent-ui"),
+            onAccent: base("aurora-color-on-accent"),
+            fillA: base("aurora-color-accent-a"),
+            fillB: base("aurora-color-accent-b"),
+          });
+          continue;
+        }
+        for (const id of ACCENT_IDS) {
+          const roles = ACCENTS[id][palette.bucket];
+          rows.push({
+            label: `${palette.name}/${id}`,
+            bucket: palette.bucket,
+            page: palette,
+            soft: roles.soft,
+            text: roles.text,
+            ui: roles.ui,
+            onAccent: roles.onFill,
+            fillA: roles.fillA,
+            fillB: roles.fillB,
+          });
+        }
+      }
+      for (const style of ["vibrant", "restrained"]) {
+        for (const row of rows) {
+          const label = `${style}/${row.label}`;
+          const pageText = row.page.text;
+          // Selected surface: accent text (the hint captions) and body text sit on it.
+          assertAtLeast(
+            contrastRatio(row.text, row.soft),
+            4.5,
+            `${label} accent text on selected surface`,
+          );
+          assertAtLeast(
+            contrastRatio(pageText, row.soft),
+            4.5,
+            `${label} body text on selected surface`,
+          );
+          // Filled controls: on-accent text on both gradient ends and on the solid accent fill.
+          for (const [fill, name] of [
+            [row.fillA, "fillA"],
+            [row.fillB, "fillB"],
+            [row.ui, "ui"],
+          ] as const) {
+            assertAtLeast(
+              contrastRatio(row.onAccent, fill),
+              4.5,
+              `${label} on-accent on ${name}`,
+            );
+          }
+          // The selected surface is a dark tint in the dark bucket (never the light cream).
+          if (row.bucket === "dark") {
+            assert.ok(
+              relativeLuminance(row.soft) < 0.1,
+              `${label} dark selected surface ${row.soft} must be dark`,
+            );
+          }
+          if (style === "restrained") {
+            const card =
+              row.bucket === null
+                ? blendOver(pageText, 0.03, row.page.background)
+                : RESTRAINED_CARD_HEX[row.bucket];
+            assertAtLeast(
+              contrastRatio(pageText, card),
+              4.5,
+              `${label} body text on restrained card`,
+            );
+            assertAtLeast(
+              contrastRatio(
+                blendOver(pageText, MUTED_MIX, row.page.background),
+                card,
+              ),
+              4.5,
+              `${label} muted text on restrained card`,
             );
           }
         }
