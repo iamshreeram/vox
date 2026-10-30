@@ -7,6 +7,11 @@ import assert from "node:assert/strict";
 import {
   BACKDROP_LEVELS,
   ConsoleErrorCollector,
+  buildDetail,
+  buildFindingRow,
+  cropClip,
+  offendingPaint,
+  selectorPath,
   MAX_TAB_STEPS,
   MIN_SAMPLES_PER_SEGMENT,
   accessibleName,
@@ -28,6 +33,7 @@ import {
   resolverOf,
   rovingArrowKey,
   targetSizeOk,
+  type ElementRaw,
   type FocusStyle,
   type LayerCase,
   type TextCase,
@@ -708,6 +714,208 @@ scenario("a converged consumer reports no mismatch", () => {
   const expected = expectedAppearance(SNAP_NEW, false);
   assert.deepEqual(convergenceMismatches(expected, { ...expected }), []);
 });
+
+// --- finding rows (R2g): element evidence, stable paths, paint cause, crops --
+const KNOWN_OUTER =
+  '<button id="save" class="btn primary extra" data-qa-id="q3">' +
+  "x".repeat(250) +
+  "</button>";
+const KNOWN_ELEMENT: ElementRaw = {
+  node: {
+    tag: "button",
+    id: "save",
+    classes: ["btn", "primary", "extra"],
+    nth: 2,
+  },
+  ancestors: [
+    { tag: "div", id: "", classes: ["card"], nth: 1 },
+    { tag: "main", id: "app", classes: [], nth: 1 },
+    { tag: "body", id: "", classes: [], nth: 1 },
+    { tag: "div", id: "root", classes: ["shell", "wide", "x"], nth: 1 },
+    { tag: "section", id: "", classes: [], nth: 3 },
+  ],
+  outerHTML: KNOWN_OUTER,
+  text: "  Save \n now ",
+  dataAttrs: ['data-qa-id="q3"'],
+  rect: { x: 10, y: 20, width: 80, height: 32 },
+};
+const WHITE = { r: 255, g: 255, b: 255, a: 1 };
+const BLACK = { r: 0, g: 0, b: 0, a: 1 };
+const CLEAR = { r: 0, g: 0, b: 0, a: 0 };
+
+scenario(
+  "finding row: a known element yields its path, html, parents, text, src and rect",
+  () => {
+    const d = buildDetail(KNOWN_ELEMENT);
+    assert.equal(
+      d.path,
+      "main#app:nth-of-type(1) > div.card:nth-of-type(1) > button#save.btn.primary:nth-of-type(2)",
+    );
+    assert.equal(d.html, KNOWN_OUTER.slice(0, 200));
+    assert.equal(d.html.length, 200);
+    assert.deepEqual(d.parents, [
+      "div.card",
+      "main#app",
+      "body",
+      "div#root.shell.wide",
+    ]);
+    assert.equal(d.text, "Save now");
+    assert.equal(d.src, 'data-qa-id="q3" class="btn primary extra"');
+    assert.deepEqual(d.rect, { x: 10, y: 20, width: 80, height: 32 });
+  },
+);
+
+scenario("finding row: a selector path is at most three levels deep", () => {
+  const path = selectorPath(KNOWN_ELEMENT.node, KNOWN_ELEMENT.ancestors);
+  assert.equal(path.split(" > ").length, 3);
+  assert.equal(
+    selectorPath({ tag: "p", id: "", classes: [], nth: 1 }, []),
+    "p:nth-of-type(1)",
+  );
+});
+
+scenario(
+  "finding row: an unsupported oklab paint is attributed to its painting element with its CSS",
+  () => {
+    const resolve = resolverOf({
+      "rgb(0, 0, 0)": BLACK,
+      "rgb(255, 255, 255)": WHITE,
+      "rgba(0, 0, 0, 0)": CLEAR,
+    });
+    const item = "linear-gradient(in oklab, rgb(0, 0, 0), oklch(50% 0.1 20))";
+    const layers = [
+      layer("none", "rgb(255, 255, 255)", 1, { by: "body" }),
+      layer(item, "rgba(0, 0, 0, 0)", 1, { by: "div#panel.surface" }),
+    ];
+    assert.deepEqual(offendingPaint(layers, resolve), {
+      css: `background-image: ${item}`,
+      by: "div#panel.surface",
+    });
+  },
+);
+
+scenario(
+  "finding row: an over-long paint CSS is truncated to 300 characters",
+  () => {
+    const resolve = resolverOf({
+      "rgb(0, 0, 0)": BLACK,
+      "rgba(0, 0, 0, 0)": CLEAR,
+    });
+    const item = `linear-gradient(in oklab, rgb(0, 0, 0), ${"x".repeat(400)})`;
+    const cause = offendingPaint(
+      [layer(item, "rgba(0, 0, 0, 0)", 1, { by: "div#big" })],
+      resolve,
+    );
+    assert.ok(cause !== null, "the unsupported paint must be attributed");
+    assert.equal(cause.css.length, 300);
+    assert.ok(
+      cause.css.startsWith("background-image: linear-gradient(in oklab"),
+    );
+  },
+);
+
+scenario(
+  "finding row: an effect on the chain is attributed to its element",
+  () => {
+    const cause = offendingPaint(
+      [
+        layer("none", "rgba(0, 0, 0, 0)", 1, {
+          by: "section#hero",
+          mixBlendMode: "multiply",
+        }),
+      ],
+      resolverOf({}),
+    );
+    assert.deepEqual(cause, {
+      css: "mix-blend-mode: multiply",
+      by: "section#hero",
+    });
+  },
+);
+
+scenario("finding row: a measurable paint gives no paint cause", () => {
+  const resolve = resolverOf({
+    "rgb(0, 0, 0)": BLACK,
+    "rgb(255, 255, 255)": WHITE,
+    "rgba(0, 0, 0, 0)": CLEAR,
+  });
+  const cause = offendingPaint(
+    [layer(BLACK_TO_WHITE, "rgba(0, 0, 0, 0)", 1, { by: "div#ok" })],
+    resolve,
+  );
+  assert.equal(cause, null);
+});
+
+scenario(
+  "finding row: an element finding carries evidence; a page-level finding carries nulls",
+  () => {
+    const detail = buildDetail(KNOWN_ELEMENT);
+    const row = buildFindingRow(
+      {
+        kind: "focus",
+        surface: "s",
+        variant: "v",
+        selector: detail.path,
+        measured: "m",
+        required: "r",
+      },
+      detail,
+      { css: "mix-blend-mode: multiply", by: "section#hero" },
+      "/tmp/x.png",
+    );
+    assert.equal(row.selector, detail.path);
+    assert.equal(row.html, detail.html);
+    assert.deepEqual(row.parents, detail.parents);
+    assert.equal(row.paintCss, "mix-blend-mode: multiply");
+    assert.equal(row.paintBy, "section#hero");
+    const bare = buildFindingRow(
+      {
+        kind: "overflow",
+        surface: "s",
+        variant: "v",
+        selector: "document",
+        measured: "1px",
+        required: "0px",
+      },
+      null,
+      null,
+      null,
+    );
+    assert.equal(bare.html, null);
+    assert.equal(bare.rect, null);
+    assert.equal(bare.paintCss, null);
+    assert.equal(bare.screenshot, null);
+  },
+);
+
+scenario(
+  "crop: a rectangle is padded and clamped to the viewport; off-screen gives null",
+  () => {
+    const viewport = { width: 1100, height: 760 };
+    assert.deepEqual(
+      cropClip({ x: 10, y: 10, width: 50, height: 20 }, viewport),
+      {
+        x: 2,
+        y: 2,
+        width: 66,
+        height: 36,
+      },
+    );
+    assert.deepEqual(
+      cropClip({ x: 1090, y: 750, width: 50, height: 50 }, viewport),
+      {
+        x: 1082,
+        y: 742,
+        width: 18,
+        height: 18,
+      },
+    );
+    assert.equal(
+      cropClip({ x: -200, y: 0, width: 50, height: 20 }, viewport),
+      null,
+    );
+  },
+);
 
 // --- runner -----------------------------------------------------------------
 let failed = 0;

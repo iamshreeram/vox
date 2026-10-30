@@ -310,7 +310,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           onMouseDown={handleSliderMouseDown}
           onTouchStart={handleSliderTouchStart}
           aria-label={t("audioPlayer.seek")}
-          className={`flex-1 h-6 py-2.5 bg-clip-content rounded-lg appearance-none cursor-pointer ${progressPercent >= 99.5 ? "[&::-webkit-slider-thumb]:translate-x-0.5 [&::-moz-range-thumb]:translate-x-0.5" : ""}`}
+          className={`flex-1 min-h-[24px] py-2.5 bg-clip-content rounded-lg appearance-none cursor-pointer ${progressPercent >= 99.5 ? "[&::-webkit-slider-thumb]:translate-x-0.5 [&::-moz-range-thumb]:translate-x-0.5" : ""}`}
           style={{
             backgroundImage: `linear-gradient(to right, #FAA2CA 0%, #FAA2CA ${progressPercent}%, rgba(128, 128, 128, 0.2) ${progressPercent}%, rgba(128, 128, 128, 0.2) 100%)`,
           }}

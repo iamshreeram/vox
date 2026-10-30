@@ -38,9 +38,13 @@ body,
   overflow: visible;
 }
 
+/* Two-tone focus ring (R2-12): a 2px dark band (box-shadow, touching the orb) and a 2px light outline
+   outside it, so the ring has 3:1 or better contrast on a light or a dark backdrop. No animation, so
+   reduced motion needs nothing extra. Pinned by orbFocus.test.ts. */
 .orb-root:focus-visible {
-  outline: 2px solid var(--chat-accent);
-  outline-offset: -4px;
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px #000000;
 }
 
 /* Hover lift (A2): the root moves, the avatar keeps its own animations. */

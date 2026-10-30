@@ -74,8 +74,14 @@ const selectStyles: StylesConfig<SelectOption, false> = {
   input: (base) => ({
     ...base,
     color: "var(--color-text)",
-    // 24px minimum text-entry box (WCAG 2.5.8); the control itself is already >= 40px.
+    // 24px minimum text-entry box (WCAG 2.5.8); the control itself is already >= 40px. The inner
+    // text box is sized inline by react-select's autosizer (4px when empty), so its own min size is
+    // set here too (R2-11).
     minHeight: 24,
+    "& input": {
+      minWidth: 24,
+      minHeight: 24,
+    },
   }),
   singleValue: (base) => ({
     ...base,

@@ -88,13 +88,14 @@
   --color-text-stroke: #f6f6f6;
   --color-mid-gray: #808080;
 
-  /* Muted text (secondary labels, placeholders, empty states, hints). The text colour blended 68%
-     over the page background: >= 4.5:1 on the page, the restrained card, every mid-gray surface and
-     the worst stop of every Vibrant gradient, in every palette (a11yTokens.test.ts). Replaces the
-     former `text-mid-gray` text usage, which measured 3.9:1 on the light page. */
+  /* Muted text (secondary labels, placeholders, empty states, hints). The text colour blended 78%
+     over the page background: >= 4.5:1 on the page, the restrained card, every mid-gray surface, the
+     worst stop of every Vibrant gradient and the selected accent tint, in every palette
+     (a11yTokens.test.ts). 68% measured 4.28:1 on the footer (R2-9/10). Replaces the former
+     `text-mid-gray` text usage, which measured 3.9:1 on the light page. */
   --color-muted: color-mix(
     in srgb,
-    var(--color-text) 68%,
+    var(--color-text) 78%,
     var(--color-background)
   );
 
@@ -138,6 +139,20 @@
    contrasts with the fill it sits on (a11yTokens.test.ts pins the 4.5:1 pair). */
 .btn-primary:focus-visible {
   box-shadow: inset 0 0 0 2px var(--color-on-accent);
+}
+
+/* Disabled accent-filled controls (R2-1..3). Opacity over the accent fill blends the on-accent label
+   toward the page and drops it to ~2.5:1, so a disabled primary keeps full opacity and takes a neutral
+   fill instead; the label stays --color-text on it (a11yTokens.test.ts pins 4.5:1). */
+.btn-primary:disabled {
+  opacity: 1;
+  background-image: none;
+  background-color: color-mix(
+    in srgb,
+    var(--color-text) 20%,
+    var(--color-background)
+  );
+  color: var(--color-text);
 }
 
 /* Reduced motion (UI enterprise U12): every transition and animation in every window that imports

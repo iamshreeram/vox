@@ -1,6 +1,7 @@
-import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useContext, useEffect, useId, useRef, useState } from "react";
 import { Tooltip } from "./Tooltip";
 import {
+  SettingLabelContext,
   SettingsGroupContext,
   groupedRowClass,
   shouldShowTooltip,
@@ -30,6 +31,7 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
   const [showTooltip, setShowTooltip] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const { density, visible } = useContext(SettingsGroupContext);
+  const titleId = useId();
 
   // A collapsed group must not leave its tooltip open (reopening keeps it closed).
   useEffect(() => {
@@ -70,6 +72,7 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
         <div className={containerClasses} data-setting-title={title}>
           <div className="flex items-center gap-2 mb-2">
             <h3
+              id={titleId}
               className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}
             >
               {title}
@@ -81,28 +84,28 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
               onMouseLeave={() => setShowTooltip(false)}
               onClick={toggleTooltip}
             >
-              <svg
-                className="w-4 h-4 text-muted cursor-help hover:text-logo-primary transition-colors duration-200 select-none"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+              {/* A real button gives a 24px hit target (WCAG 2.5.8); the 16px icon is unchanged. Enter and
+                  Space arrive as native clicks, which the wrapper's onClick turns into the tooltip toggle. */}
+              <button
+                type="button"
                 aria-label="More information"
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    toggleTooltip();
-                  }
-                }}
+                className="inline-flex items-center justify-center min-w-[24px] min-h-[24px] text-muted hover:text-logo-primary cursor-help transition-colors duration-200 select-none"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
+                <svg
+                  className="w-4 h-4 pointer-events-none"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+              </button>
               {shouldShowTooltip(showTooltip, visible) && (
                 <Tooltip targetRef={tooltipRef} position="top">
                   <p className="text-sm text-center leading-relaxed">
@@ -112,7 +115,11 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
               )}
             </div>
           </div>
-          <div className="w-full">{children}</div>
+          <div className="w-full">
+            <SettingLabelContext.Provider value={titleId}>
+              {children}
+            </SettingLabelContext.Provider>
+          </div>
         </div>
       );
     }
@@ -120,14 +127,21 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
     return (
       <div className={containerClasses} data-setting-title={title}>
         <div className="mb-2">
-          <h3 className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}>
+          <h3
+            id={titleId}
+            className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}
+          >
             {title}
           </h3>
           <p className={`text-sm ${disabled ? "opacity-50" : ""}`}>
             {description}
           </p>
         </div>
-        <div className="w-full">{children}</div>
+        <div className="w-full">
+          <SettingLabelContext.Provider value={titleId}>
+            {children}
+          </SettingLabelContext.Provider>
+        </div>
       </div>
     );
   }
@@ -143,6 +157,7 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
         <div className="max-w-2/3">
           <div className="flex items-center gap-2">
             <h3
+              id={titleId}
               className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}
             >
               {title}
@@ -154,28 +169,28 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
               onMouseLeave={() => setShowTooltip(false)}
               onClick={toggleTooltip}
             >
-              <svg
-                className="w-4 h-4 text-muted cursor-help hover:text-logo-primary transition-colors duration-200 select-none"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+              {/* A real button gives a 24px hit target (WCAG 2.5.8); the 16px icon is unchanged. Enter and
+                  Space arrive as native clicks, which the wrapper's onClick turns into the tooltip toggle. */}
+              <button
+                type="button"
                 aria-label="More information"
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    toggleTooltip();
-                  }
-                }}
+                className="inline-flex items-center justify-center min-w-[24px] min-h-[24px] text-muted hover:text-logo-primary cursor-help transition-colors duration-200 select-none"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
+                <svg
+                  className="w-4 h-4 pointer-events-none"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+              </button>
               {shouldShowTooltip(showTooltip, visible) && (
                 <Tooltip targetRef={tooltipRef} position={tooltipPosition}>
                   <p className="text-sm text-center leading-relaxed">
@@ -186,7 +201,11 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
             </div>
           </div>
         </div>
-        <div className="relative">{children}</div>
+        <div className="relative">
+          <SettingLabelContext.Provider value={titleId}>
+            {children}
+          </SettingLabelContext.Provider>
+        </div>
       </div>
     );
   }
@@ -194,14 +213,21 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
   return (
     <div className={horizontalContainerClasses} data-setting-title={title}>
       <div className="max-w-2/3">
-        <h3 className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}>
+        <h3
+          id={titleId}
+          className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}
+        >
           {title}
         </h3>
         <p className={`text-sm ${disabled ? "opacity-50" : ""}`}>
           {description}
         </p>
       </div>
-      <div className="relative">{children}</div>
+      <div className="relative">
+        <SettingLabelContext.Provider value={titleId}>
+          {children}
+        </SettingLabelContext.Provider>
+      </div>
     </div>
   );
 };

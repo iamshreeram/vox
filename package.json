@@ -39,7 +39,7 @@
     "test:chat:opacity:e2e": "playwright test tests/chat-opacity.spec.ts --reporter=line",
     "test:chat-opacity-form": "bun src/components/settings/chatOpacity/chatOpacityForm.test.ts",
     "test:models-page:e2e": "playwright test tests/models-page.spec.ts --reporter=line",
-    "test:orb": "bun src/orb/orbModel.test.ts && bun src/orb/orbAccent.test.ts && bun src/orb/entry.test.ts",
+    "test:orb": "bun src/orb/orbModel.test.ts && bun src/orb/orbAccent.test.ts && bun src/orb/entry.test.ts && bun src/orb/orbFocus.test.ts",
     "test:bubbles": "bun src/bubbles/bubbleModel.test.ts && bun src/bubbles/bubbleAnchor.test.ts",
     "test:no-gpu": "bun src/bubbles/noGpu.test.ts",
     "test:orb:e2e": "playwright test tests/orb-page.spec.ts --reporter=line",

@@ -119,7 +119,7 @@ export const FillerWordRemoval: React.FC<FillerWordRemovalProps> = React.memo(
             {choiceOptions.map((option) => (
               <label
                 key={option.value}
-                className="flex items-center gap-2 text-sm cursor-pointer"
+                className="flex min-h-[24px] items-center gap-2 text-sm cursor-pointer"
               >
                 <input
                   type="radio"

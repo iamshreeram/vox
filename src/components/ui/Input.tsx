@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useContext } from "react";
+import { SettingLabelContext } from "./settingsGroupContext";
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   variant?: "default" | "compact";
@@ -10,6 +11,8 @@ export const Input: React.FC<InputProps> = ({
   disabled,
   ...props
 }) => {
+  // Named by the enclosing setting row title when no aria-label is given (R2-7).
+  const labelledBy = useContext(SettingLabelContext);
   const baseClasses =
     "px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 rounded-md text-start transition-all duration-150";
 
@@ -26,6 +29,7 @@ export const Input: React.FC<InputProps> = ({
     <input
       className={`${baseClasses} ${variantClasses[variant]} ${interactiveClasses} ${className}`}
       disabled={disabled}
+      aria-labelledby={props["aria-label"] ? undefined : labelledBy}
       {...props}
     />
   );

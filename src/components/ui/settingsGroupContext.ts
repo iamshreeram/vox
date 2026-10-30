@@ -24,3 +24,8 @@ export function shouldShowTooltip(
 ): boolean {
   return showTooltip && visible;
 }
+
+/** The id of the visible title of the enclosing SettingContainer. Text inputs and textareas inside a
+ *  setting row read it as their accessible name (aria-labelledby), so they are named by the same
+ *  i18n title the user sees. Undefined outside a SettingContainer. */
+export const SettingLabelContext = createContext<string | undefined>(undefined);

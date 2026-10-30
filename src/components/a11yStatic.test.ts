@@ -159,6 +159,40 @@ function iconButtonOffenders(): string[] {
   return offenders;
 }
 
+// ---- Target size: rem-based size utilities are not 24px at the 15px root --------------------
+// Rule (UI enterprise R2a): the app root font-size is 15px, so Tailwind's rem utilities are smaller
+// than they read (h-6 = 22.5px). A literal h-6 / w-6 / min-h-6 / min-w-6 (or size-6) on an
+// interactive element (button, input, select, textarea, a, Button, Input, Textarea, IconButton) must
+// also carry an explicit px minimum: min-h-[24px] and min-w-[24px].
+const INTERACTIVE_OPEN =
+  /<(button|input|select|textarea|a|Button|Input|Textarea|IconButton)(?=[\s>/])/g;
+const REM_SIZE_6 = /(?:^|[\s"'`{])(?:min-|max-)?(?:[hw]|size)-6(?=[\s"'`}])/;
+
+function smallTargetOffenders(): string[] {
+  const offenders: string[] = [];
+  for (const file of files.filter((f) => f.endsWith(".tsx"))) {
+    const text = read(file);
+    for (const match of text.matchAll(INTERACTIVE_OPEN)) {
+      const start = match.index ?? 0;
+      const end = openTagEnd(text, start + match[0].length);
+      if (end < 0) continue;
+      const openTag = text.slice(start, end + 1);
+      if (!REM_SIZE_6.test(openTag)) continue;
+      if (
+        openTag.includes("min-h-[24px]") &&
+        openTag.includes("min-w-[24px]")
+      ) {
+        continue;
+      }
+      const line = text.slice(0, start).split("\n").length;
+      offenders.push(
+        `${rel(file)}:${line} <${match[1]}> rem size-6 without min-h/min-w-[24px]`,
+      );
+    }
+  }
+  return offenders;
+}
+
 const scenarios: Record<string, () => void> = {
   "no outline removal without a focus-visible replacement": () => {
     assert.deepEqual(outlineOffenders(), []);
@@ -169,11 +203,37 @@ const scenarios: Record<string, () => void> = {
   "every icon-only button has an accessible name": () => {
     assert.deepEqual(iconButtonOffenders(), []);
   },
+  "no rem-based h-6/w-6 size on an interactive element without an explicit 24px px minimum (R2-4..13)":
+    () => {
+      assert.deepEqual(smallTargetOffenders(), []);
+    },
   // UI enterprise R1b: controls forward their row label as the accessible name.
   "ToggleSwitch names its checkbox from the row label": () => {
     const text = read(path.join(srcRoot, "components/ui/ToggleSwitch.tsx"));
     assert.match(text, /aria-label=\{label\}/);
   },
+  "Input and Textarea are named by the enclosing setting row title (R2-7)":
+    () => {
+      for (const file of [
+        "components/ui/Input.tsx",
+        "components/ui/Textarea.tsx",
+      ]) {
+        const text = read(path.join(srcRoot, file));
+        assert.match(
+          text,
+          /aria-labelledby=\{props\["aria-label"\] \? undefined : labelledBy\}/,
+        );
+      }
+      const container = read(
+        path.join(srcRoot, "components/ui/SettingContainer.tsx"),
+      );
+      assert.match(container, /const titleId = useId\(\);/);
+      assert.match(container, /<h3\s+id=\{titleId\}/);
+      assert.match(
+        container,
+        /<SettingLabelContext\.Provider value=\{titleId\}>/,
+      );
+    },
   "Slider names its range input from the row label": () => {
     const text = read(path.join(srcRoot, "components/ui/Slider.tsx"));
     assert.match(text, /aria-label=\{label\}/);

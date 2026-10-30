@@ -15,7 +15,8 @@ const base = (name: string): string => {
   return match[1].toLowerCase();
 };
 
-const MUTED_MIX = 0.68; // --color-muted: color-mix(in srgb, var(--color-text) 68%, background)
+const MUTED_MIX = 0.78; // --color-muted: color-mix(in srgb, var(--color-text) 78%, background)
+const DISABLED_ACCENT_MIX = 0.2; // .btn-primary:disabled fill: color-mix(text 20%, background)
 const DISABLED_OPACITY = 0.5; // disabled:opacity-50
 const MID_GRAY = "#808080";
 
@@ -65,11 +66,11 @@ const scenarios: Record<string, () => void> = {
       assert.match(css, /:focus-visible\s*\{[^}]*outline-offset:\s*2px/);
     },
 
-  "muted text is a dedicated token that blends the text colour 68% over the background":
+  "muted text is a dedicated token that blends the text colour 78% over the background":
     () => {
       assert.match(
         css,
-        /--color-muted:\s*color-mix\(\s*in srgb,\s*var\(--color-text\)\s*68%/,
+        /--color-muted:\s*color-mix\(\s*in srgb,\s*var\(--color-text\)\s*78%/,
       );
     },
 
@@ -270,6 +271,77 @@ const scenarios: Record<string, () => void> = {
               `${label} muted text on restrained card`,
             );
           }
+        }
+      }
+    },
+
+  "muted text also reaches 4.5:1 on the selected accent tint, for every accent and bucket (R2-9/10)":
+    () => {
+      for (const palette of palettes) {
+        if (palette.bucket === null) continue;
+        const muted = blendOver(palette.text, MUTED_MIX, palette.background);
+        for (const id of ACCENT_IDS) {
+          const soft = ACCENTS[id][palette.bucket].soft;
+          assertAtLeast(
+            contrastRatio(muted, soft),
+            4.5,
+            `${palette.name}/${id} muted on selected tint ${soft}`,
+          );
+        }
+      }
+    },
+
+  "disabled accent-filled buttons keep their label at 4.5:1 on the neutral disabled fill (R2-1..3)":
+    () => {
+      const app = readFileSync(new URL("../App.css", import.meta.url), "utf8");
+      for (const palette of palettes) {
+        const disabledFill = blendOver(
+          palette.text,
+          DISABLED_ACCENT_MIX,
+          palette.background,
+        );
+        assertAtLeast(
+          contrastRatio(palette.text, disabledFill),
+          4.5,
+          `${palette.name} disabled primary label on its fill`,
+        );
+      }
+      assert.match(
+        css,
+        /\.btn-primary:disabled\s*\{[^}]*opacity:\s*1[^}]*background-color:\s*color-mix\(\s*in srgb,\s*var\(--color-text\)\s*20%/,
+      );
+      assert.match(
+        app,
+        /:root\[data-style="restrained"\] \.btn-primary:disabled\s*\{[^}]*background-color:\s*color-mix\(\s*in srgb,\s*var\(--color-text\)\s*20%/,
+      );
+    },
+
+  "restrained solid primary: the label is --color-on-accent on the accent-ui fill, >= 4.5:1 for every accent and palette (R2-1..3 exact pairs)":
+    () => {
+      const app = readFileSync(new URL("../App.css", import.meta.url), "utf8");
+      assert.match(
+        app,
+        /:root\[data-style="restrained"\] \.btn-primary\s*\{[^}]*background-color:\s*var\(--color-accent-ui\)/,
+      );
+      for (const palette of palettes) {
+        if (palette.bucket === null) {
+          assertAtLeast(
+            contrastRatio(
+              base("aurora-color-on-accent"),
+              base("aurora-color-accent-ui"),
+            ),
+            4.5,
+            "aurora restrained primary label on accent-ui",
+          );
+          continue;
+        }
+        for (const id of ACCENT_IDS) {
+          const roles = ACCENTS[id][palette.bucket];
+          assertAtLeast(
+            contrastRatio(roles.onFill, roles.ui),
+            4.5,
+            `${palette.name}/${id} restrained primary label ${roles.onFill} on ${roles.ui}`,
+          );
         }
       }
     },

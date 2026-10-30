@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync } from "node:fs";
 import {
   emitMockEvent,
   getMockAppearance,
@@ -20,6 +20,10 @@ import * as Q from "./helpers/uiQuality";
 
 const OUT = "/tmp/voxui-r1";
 mkdirSync(OUT, { recursive: true });
+/** R2g: one element-level crop per distinct failing group, at most Q.CROP_CAP per run. */
+const CROPS = "/tmp/voxui-r2/crops";
+mkdirSync(CROPS, { recursive: true });
+const cropped = new Set<string>();
 
 const SIDEBAR_ITEM = "p.text-sm.font-medium.truncate[title]";
 const ALL_GATES = {
@@ -104,6 +108,8 @@ type Violation = {
   selector: string;
   measured: string;
   required: string;
+  detail: Q.ElementDetail | null;
+  paint: Q.PaintCause | null;
 };
 
 const KINDS: Violation["kind"][] = [
@@ -125,7 +131,7 @@ const KINDS: Violation["kind"][] = [
 
 interface TextRaw {
   text: string;
-  selector: string;
+  el: Q.ElementRaw;
   color: string;
   fontSizePx: number;
   fontWeight: number;
@@ -140,7 +146,7 @@ interface InteractiveRaw {
   role: string | null;
   enabled: boolean;
   visible: boolean;
-  selector: string;
+  el: Q.ElementRaw;
   parts: Q.NameParts;
   width: number;
   height: number;
@@ -149,9 +155,9 @@ interface InteractiveRaw {
 interface PageData {
   texts: TextRaw[];
   interactive: InteractiveRaw[];
-  blur: Array<{ selector: string; backdropFilter: string; filter: string }>;
-  motion: Q.MotionSample[];
-  overflow: { docWidth: number; viewport: number; offenders: string[] };
+  blur: Array<{ el: Q.ElementRaw; backdropFilter: string; filter: string }>;
+  motion: Array<Q.MotionSample & { el: Q.ElementRaw }>;
+  overflow: { docWidth: number; viewport: number; offenders: Q.ElementRaw[] };
   appearance: {
     theme: string | null;
     accent: string | null;
@@ -176,6 +182,52 @@ function collectPage(): PageData {
     for (let n: Element | null = el; n; n = n.parentElement) chain.unshift(n);
     return chain;
   };
+  const nodeOf = (n: Element): Q.NodeRaw => {
+    const siblings = Array.from(n.parentElement?.children ?? []).filter(
+      (c) => c.tagName === n.tagName,
+    );
+    const classes =
+      typeof n.className === "string"
+        ? n.className.split(/\s+/).filter(Boolean)
+        : [];
+    return {
+      tag: n.tagName.toLowerCase(),
+      id: n.id,
+      classes,
+      nth: Math.max(1, siblings.indexOf(n) + 1),
+    };
+  };
+  // Literal limits only: this function is serialised into the page (200 html, 200 text, 4 parents).
+  const rawCache = new Map<Element, Q.ElementRaw>();
+  const rawOf = (el: Element): Q.ElementRaw => {
+    const cached = rawCache.get(el);
+    if (cached) return cached;
+    const ancestors: Q.NodeRaw[] = [];
+    for (
+      let n: Element | null = el.parentElement;
+      n && n !== document.documentElement && ancestors.length < 4;
+      n = n.parentElement
+    )
+      ancestors.push(nodeOf(n));
+    const r = el.getBoundingClientRect();
+    const raw: Q.ElementRaw = {
+      node: nodeOf(el),
+      ancestors,
+      outerHTML: el.outerHTML.slice(0, 200),
+      text: (el.textContent ?? "").slice(0, 200),
+      dataAttrs: Array.from(el.attributes)
+        .filter((a) => a.name.startsWith("data-"))
+        .map((a) => `${a.name}="${a.value}"`),
+      rect: {
+        x: Math.round(r.x),
+        y: Math.round(r.y),
+        width: Math.round(r.width),
+        height: Math.round(r.height),
+      },
+    };
+    rawCache.set(el, raw);
+    return raw;
+  };
   const layersOf = (el: Element) => {
     let cum = 1;
     const layers: Q.LayerCase[] = [];
@@ -192,6 +244,7 @@ function collectPage(): PageData {
         maskImage: s.maskImage,
         backdropFilter: s.backdropFilter,
         filter: s.filter,
+        by: describeEl(n),
       });
     }
     return { layers, filters, opacity: cum };
@@ -227,7 +280,7 @@ function collectPage(): PageData {
     const { layers, filters, opacity } = layersOf(el);
     texts.push({
       text: raw.slice(0, 60),
-      selector: describeEl(el),
+      el: rawOf(el),
       color: s.color,
       fontSizePx: parseFloat(s.fontSize),
       fontWeight: parseFloat(s.fontWeight),
@@ -270,7 +323,7 @@ function collectPage(): PageData {
         el.getAttribute("aria-disabled") !== "true" &&
         !el.closest("[inert]"),
       visible: visibleEl(el),
-      selector: describeEl(el),
+      el: rawOf(el),
       parts: {
         labelledBy,
         ariaLabel: el.getAttribute("aria-label") ?? undefined,
@@ -291,7 +344,7 @@ function collectPage(): PageData {
     const s = getComputedStyle(el);
     if (s.backdropFilter !== "none" || /blur\(/i.test(s.filter)) {
       blur.push({
-        selector: describeEl(el),
+        el: rawOf(el),
         backdropFilter: s.backdropFilter,
         filter: s.filter,
       });
@@ -301,6 +354,7 @@ function collectPage(): PageData {
     if (animated || transitioned) {
       motion.push({
         selector: describeEl(el),
+        el: rawOf(el),
         animationName: s.animationName,
         animationDuration: s.animationDuration,
         transitionProperty: s.transitionProperty,
@@ -311,7 +365,7 @@ function collectPage(): PageData {
 
   const root = document.documentElement;
   const viewport = root.clientWidth;
-  const offenders: string[] = [];
+  const offenders: Q.ElementRaw[] = [];
   for (const el of all) {
     const r = el.getBoundingClientRect();
     if (r.width <= 0 || r.right <= viewport + 1 || !visibleEl(el)) continue;
@@ -327,7 +381,7 @@ function collectPage(): PageData {
         break;
       }
     }
-    if (!clipped && offenders.length < 5) offenders.push(describeEl(el));
+    if (!clipped && offenders.length < 5) offenders.push(rawOf(el));
   }
 
   return {
@@ -433,6 +487,12 @@ function observeFocus(): FocusObs {
       maskImage: s.maskImage,
       backdropFilter: s.backdropFilter,
       filter: s.filter,
+      by:
+        n.tagName.toLowerCase() +
+        (n.id ? "#" + n.id : "") +
+        (typeof n.className === "string" && n.className.trim()
+          ? "." + n.className.trim().split(/\s+/).slice(0, 2).join(".")
+          : ""),
     });
   }
 
@@ -470,17 +530,44 @@ function observeFocus(): FocusObs {
 
 /* ------------------------------------------------------------------ harness helpers */
 
+/** Writes one JSONL row per violation: element evidence, paint cause and screenshot (R2g). */
 function findingsSink(
-  surface: string,
-  variant: string,
   violations: Violation[],
   screenshot: string | null,
 ): void {
   for (const v of violations) {
     appendFileSync(
       `${OUT}/findings.jsonl`,
-      `${JSON.stringify({ ...v, screenshot })}\n`,
+      `${JSON.stringify(Q.buildFindingRow(v, v.detail, v.paint, screenshot))}\n`,
     );
+  }
+}
+
+/**
+ * One element-level crop per distinct failing group (kind + selector path), written to
+ * /tmp/voxui-r2/crops/<kind>-<n>.png. Bounded by Q.CROP_CAP files per run (counted on disk).
+ */
+async function cropFailingGroups(
+  page: Page,
+  violations: Violation[],
+): Promise<void> {
+  const viewport = page.viewportSize();
+  if (viewport === null) return;
+  for (const v of violations) {
+    if (v.detail === null) continue;
+    const group = `${v.kind} ${v.selector}`;
+    if (cropped.has(group)) continue;
+    const clip = Q.cropClip(v.detail.rect, viewport);
+    if (clip === null) continue;
+    const files = readdirSync(CROPS).filter((f) => f.endsWith(".png"));
+    if (files.length >= Q.CROP_CAP) return;
+    const n = files.filter((f) => f.startsWith(`${v.kind}-`)).length + 1;
+    cropped.add(group);
+    await page.screenshot({
+      path: `${CROPS}/${v.kind}-${n}.png`,
+      clip,
+      timeout: 20_000,
+    });
   }
 }
 
@@ -577,7 +664,19 @@ async function auditVisit(
     selector: string,
     measured: string,
     required: string,
-  ) => v.push({ kind, surface, variant, selector, measured, required });
+    detail: Q.ElementDetail | null = null,
+    paint: Q.PaintCause | null = null,
+  ) =>
+    v.push({
+      kind,
+      surface,
+      variant,
+      selector,
+      measured,
+      required,
+      detail,
+      paint,
+    });
 
   const resolve = await Q.resolveColourMap(page, textColourStrings(data));
   const seen = new Set<string>();
@@ -592,29 +691,29 @@ async function auditVisit(
     ]);
     if (seen.has(key)) continue;
     seen.add(key);
+    const detail = Q.buildDetail(t.el);
+    const label = `${detail.path} "${t.text}"`;
     const verdict = Q.evaluateTextContrast(t as Q.TextCase, resolve);
     if (!verdict.pass) {
       add(
         "contrast",
-        `${t.selector} "${t.text}"`,
+        label,
         verdict.reason ?? verdict.ratio.toFixed(2),
         verdict.backdrop === null
           ? `>= ${verdict.required}:1`
           : `>= ${verdict.required}:1 (backdrop ${verdict.backdrop})`,
+        detail,
+        Q.offendingPaint(t.layers, resolve),
       );
     }
     if (!Q.fontSizeOk(t.fontSizePx)) {
-      add(
-        "font",
-        `${t.selector} "${t.text}"`,
-        `${t.fontSizePx}px`,
-        `>= ${Q.MIN_FONT_PX}px`,
-      );
+      add("font", label, `${t.fontSizePx}px`, `>= ${Q.MIN_FONT_PX}px`, detail);
     }
   }
 
   for (const el of data.interactive) {
     if (!el.visible || !el.enabled) continue;
+    const detail = Q.buildDetail(el.el);
     const isNamed =
       ["button", "input", "select", "textarea"].includes(el.tag) ||
       ["button", "switch", "radio", "slider", "tab", "checkbox"].includes(
@@ -623,37 +722,57 @@ async function auditVisit(
     if (isNamed) {
       const name = Q.checkAccessibleName(el.parts);
       if (!name.pass)
-        add("name", el.selector, "no accessible name", "non-empty name");
+        add(
+          "name",
+          detail.path,
+          "no accessible name",
+          "non-empty name",
+          detail,
+        );
     }
     if (!Q.targetSizeOk(el.width, el.height)) {
       add(
         "size",
-        el.selector,
+        detail.path,
         `${el.width.toFixed(0)}x${el.height.toFixed(0)}px`,
         `>= ${Q.MIN_TARGET_PX}x${Q.MIN_TARGET_PX}px`,
+        detail,
       );
     }
   }
 
   const overflow = Q.overflowPx(data.overflow.docWidth, data.overflow.viewport);
   if (overflow > 0) add("overflow", "document", `${overflow}px`, "0px");
-  for (const o of data.overflow.offenders)
-    add("overflow", o, "extends past the viewport", "inside viewport");
+  for (const o of data.overflow.offenders) {
+    const detail = Q.buildDetail(o);
+    add(
+      "overflow",
+      detail.path,
+      "extends past the viewport",
+      "inside viewport",
+      detail,
+    );
+  }
 
   for (const m of data.motion) {
     const reason = Q.motionViolation(m);
-    if (reason !== null)
+    if (reason !== null) {
+      const detail = Q.buildDetail(m.el);
       add(
         "motion",
-        m.selector,
+        detail.path,
         reason,
         `<= ${Q.MAX_REDUCED_MOTION_SECONDS}s under reduced motion`,
+        detail,
       );
+    }
   }
   for (const b of data.blur) {
     const reason = Q.blurViolation(b.backdropFilter, b.filter);
-    if (reason !== null)
-      add("blur", b.selector, reason, "no blur or backdrop-filter");
+    if (reason !== null) {
+      const detail = Q.buildDetail(b.el);
+      add("blur", detail.path, reason, "no blur or backdrop-filter", detail);
+    }
   }
 
   if (opts.walk) {
@@ -668,11 +787,13 @@ async function auditVisit(
     const reach = Q.analyzeTabWalk(enabledIds, walk.visited, walk.steps);
     for (const id of reach.unreached) {
       const el = data.interactive.find((e) => e.qid === id);
+      const detail = el ? Q.buildDetail(el.el) : null;
       add(
         "keyboard",
-        el?.selector ?? id,
+        detail?.path ?? id,
         "not reached by Tab or arrow keys",
         "reachable",
+        detail,
       );
     }
     if (reach.capped)
@@ -684,12 +805,16 @@ async function auditVisit(
       );
     for (const o of walk.obs.values()) {
       if (o.tag === "body") continue;
+      const el = data.interactive.find((e) => e.qid === o.qid);
+      const detail = el ? Q.buildDetail(el.el) : null;
+      const path = detail?.path ?? o.tag;
       if (!o.focusVisible)
         add(
           "focus",
-          o.tag,
+          path,
           "focus not :focus-visible on keyboard focus",
           ":focus-visible",
+          detail,
         );
       {
         const ring = Q.checkFocusRing(
@@ -701,9 +826,11 @@ async function auditVisit(
         if (!ring.pass)
           add(
             "focus",
-            o.tag + (o.qid ? ` [${o.qid}]` : ""),
+            path,
             ring.reason ?? "no ring",
             `ring >= ${Q.MIN_FOCUS_RING_RATIO}:1`,
+            detail,
+            Q.offendingPaint(o.layers as Q.LayerCase[], focusResolve),
           );
       }
     }
@@ -725,7 +852,8 @@ async function auditVisit(
     shot = `${OUT}/${slug(surface + "-" + variant)}.png`;
     await page.screenshot({ path: shot, fullPage: false, timeout: 20_000 });
   }
-  findingsSink(surface, variant, v, shot);
+  findingsSink(v, shot);
+  await cropFailingGroups(page, v);
   for (const kind of KINDS) {
     const list = v.filter((x) => x.kind === kind);
     const first = list[0];

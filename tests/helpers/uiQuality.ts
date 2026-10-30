@@ -519,6 +519,8 @@ export interface LayerCase {
   maskImage?: string;
   backdropFilter?: string;
   filter?: string;
+  /** Element that owns this layer (tag#id.class), for finding rows. */
+  by?: string;
 }
 
 /** A text node as collected from the page. */
@@ -1279,4 +1281,208 @@ export function convergenceMismatches(
 
 function normaliseCss(value: string): string {
   return value.replace(/\s+/g, "").toLowerCase();
+}
+
+// ---------------------------------------------------------------------------
+// Finding rows (R2g): element evidence, stable selector paths, paint attribution, crops.
+// Pure functions over plain data: the page collects an ElementRaw, these format it.
+// ---------------------------------------------------------------------------
+
+export const ROW_HTML_LIMIT = 200;
+export const ROW_TEXT_LIMIT = 60;
+export const ROW_CSS_LIMIT = 300;
+export const ROW_PARENT_LIMIT = 4;
+/** Maximum element crops written per run (tests/ui-quality.spec.ts). */
+export const CROP_CAP = 60;
+
+/** One element's identity: tag, id, classes and its 1-based nth-of-type among same-tag siblings. */
+export interface NodeRaw {
+  tag: string;
+  id: string;
+  classes: string[];
+  nth: number;
+}
+
+/** One element as read from the page. `ancestors` are nearest first. */
+export interface ElementRaw {
+  node: NodeRaw;
+  ancestors: NodeRaw[];
+  outerHTML: string;
+  text: string;
+  /** data-* attributes as name="value". */
+  dataAttrs: string[];
+  rect: { x: number; y: number; width: number; height: number };
+}
+
+export interface ElementDetail {
+  /** Stable selector path: self and up to two ancestors, tag#id.class:nth-of-type(n). */
+  path: string;
+  html: string;
+  parents: string[];
+  rect: { x: number; y: number; width: number; height: number };
+  text: string;
+  src: string;
+}
+
+/** The computed CSS that made a paint unmeasurable, and the chain element that painted it. */
+export interface PaintCause {
+  css: string;
+  by: string | null;
+}
+
+export function truncate(value: string, limit: number): string {
+  return value.length > limit ? value.slice(0, limit) : value;
+}
+
+/** tag#id.class (first two classes). */
+export function formatNode(node: NodeRaw): string {
+  const cls = node.classes.filter(Boolean).slice(0, 2).join(".");
+  return node.tag + (node.id ? `#${node.id}` : "") + (cls ? `.${cls}` : "");
+}
+
+/** Self and up to two ancestors (three levels), each with its nth-of-type, joined by " > ". */
+export function selectorPath(node: NodeRaw, ancestors: NodeRaw[]): string {
+  const chain = [...ancestors.slice(0, 2).reverse(), node];
+  return chain.map((n) => `${formatNode(n)}:nth-of-type(${n.nth})`).join(" > ");
+}
+
+export function buildDetail(raw: ElementRaw): ElementDetail {
+  const classAttr =
+    raw.node.classes.length > 0 ? `class="${raw.node.classes.join(" ")}"` : "";
+  return {
+    path: selectorPath(raw.node, raw.ancestors),
+    html: truncate(raw.outerHTML, ROW_HTML_LIMIT),
+    parents: raw.ancestors.slice(0, ROW_PARENT_LIMIT).map(formatNode),
+    rect: { ...raw.rect },
+    text: truncate(raw.text.replace(/\s+/g, " ").trim(), ROW_TEXT_LIMIT),
+    src: truncate(
+      [...raw.dataAttrs, classAttr].filter((s) => s.length > 0).join(" "),
+      ROW_HTML_LIMIT,
+    ),
+  };
+}
+
+function effectCss(layer: LayerCase): string | null {
+  if (layer.mixBlendMode && layer.mixBlendMode !== "normal")
+    return `mix-blend-mode: ${layer.mixBlendMode}`;
+  if (layer.maskImage && layer.maskImage !== "none")
+    return `mask-image: ${layer.maskImage}`;
+  if (layer.backdropFilter && layer.backdropFilter !== "none")
+    return `backdrop-filter: ${layer.backdropFilter}`;
+  if (layer.filter && layer.filter !== "none") return `filter: ${layer.filter}`;
+  return null;
+}
+
+/**
+ * The computed property and value that make the stack of one element unmeasurable, mirroring
+ * buildStack's order: effects on any chain layer first, then unsupported paints above the bypass.
+ * Null when buildStack would measure the stack. `css` is truncated to ROW_CSS_LIMIT.
+ */
+export function offendingPaint(
+  layers: LayerCase[],
+  resolve: ColourResolver,
+): PaintCause | null {
+  for (const layer of layers) {
+    const css = effectCss(layer);
+    if (css !== null)
+      return { css: truncate(css, ROW_CSS_LIMIT), by: layer.by ?? null };
+  }
+  type Entry = { opaque: boolean; fail: PaintCause | null };
+  const entries: Entry[] = [];
+  for (const layer of layers) {
+    const by = layer.by ?? null;
+    const bg = resolve(layer.background);
+    if (bg === null) {
+      entries.push({
+        opaque: false,
+        fail: {
+          css: truncate(`background-color: ${layer.background}`, ROW_CSS_LIMIT),
+          by,
+        },
+      });
+    } else if (bg.a > 0) {
+      entries.push({ opaque: bg.a === 1, fail: null });
+    }
+    const imageValue = layer.backgroundImage.trim();
+    const images =
+      imageValue === "" || imageValue === "none"
+        ? []
+        : splitTopLevel(imageValue);
+    for (const item of images.reverse()) {
+      const paint = paintOf(item, resolve);
+      if (paint.kind === "unsupported") {
+        entries.push({
+          opaque: false,
+          fail: {
+            css: truncate(`background-image: ${item}`, ROW_CSS_LIMIT),
+            by,
+          },
+        });
+      } else {
+        entries.push({ opaque: false, fail: null });
+      }
+    }
+  }
+  let bypass = -1;
+  entries.forEach((e, index) => {
+    if (e.opaque) bypass = index;
+  });
+  for (const e of entries.slice(Math.max(0, bypass))) {
+    if (e.fail !== null) return e.fail;
+  }
+  return null;
+}
+
+export interface FindingRowInput {
+  kind: string;
+  surface: string;
+  variant: string;
+  selector: string;
+  measured: string;
+  required: string;
+}
+
+/** One JSONL finding row. Element and paint fields are null when the finding has no element. */
+export interface FindingRow extends FindingRowInput {
+  html: string | null;
+  parents: string[] | null;
+  rect: ElementDetail["rect"] | null;
+  text: string | null;
+  src: string | null;
+  paintCss: string | null;
+  paintBy: string | null;
+  screenshot: string | null;
+}
+
+export function buildFindingRow(
+  input: FindingRowInput,
+  detail: ElementDetail | null,
+  paint: PaintCause | null,
+  screenshot: string | null,
+): FindingRow {
+  return {
+    ...input,
+    html: detail?.html ?? null,
+    parents: detail?.parents ?? null,
+    rect: detail?.rect ?? null,
+    text: detail?.text ?? null,
+    src: detail?.src ?? null,
+    paintCss: paint?.css ?? null,
+    paintBy: paint?.by ?? null,
+    screenshot,
+  };
+}
+
+/** Element crop rectangle clamped to the viewport with padding; null when nothing is visible. */
+export function cropClip(
+  rect: ElementDetail["rect"],
+  viewport: { width: number; height: number },
+  pad = 8,
+): { x: number; y: number; width: number; height: number } | null {
+  const x0 = Math.max(0, rect.x - pad);
+  const y0 = Math.max(0, rect.y - pad);
+  const x1 = Math.min(viewport.width, rect.x + rect.width + pad);
+  const y1 = Math.min(viewport.height, rect.y + rect.height + pad);
+  if (x1 <= x0 || y1 <= y0) return null;
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }

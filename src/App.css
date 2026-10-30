@@ -152,10 +152,21 @@
   background: var(--color-mid-gray);
 }
 
-/* Solid accent fill instead of the vibrant gradient (primary buttons, toggles, sliders). */
+/* Solid accent fill instead of the vibrant gradient (primary buttons, toggles, sliders). The label is
+   --color-on-accent, the text colour the table pins at >= 4.5:1 on this fill (a11yTokens.test.ts). */
 :root[data-style="restrained"] .btn-primary {
   background-image: none;
   background-color: var(--color-accent-ui);
+}
+
+/* Disabled restrained primary: the neutral disabled fill from theme.css, not the accent fill (R2-1..3). */
+:root[data-style="restrained"] .btn-primary:disabled {
+  background-color: color-mix(
+    in srgb,
+    var(--color-text) 20%,
+    var(--color-background)
+  );
+  color: var(--color-text);
 }
 
 /* Neutral badge: no accent fill. */
