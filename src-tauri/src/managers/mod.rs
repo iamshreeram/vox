@@ -83,6 +83,8 @@ pub mod converse_context;
 pub mod converse_hooks;
 pub mod converse_latency;
 pub mod converse_local;
+#[cfg(test)]
+mod converse_memory_inject_tests;
 pub mod converse_overlay;
 pub mod converse_plan;
 #[cfg(test)]

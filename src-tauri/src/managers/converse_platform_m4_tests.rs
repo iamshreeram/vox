@@ -45,6 +45,7 @@ fn plain_input() -> PlanInput<'static> {
         last_draft: None,
         style: "plain",
         vault_context: None,
+        memory_context: None,
         lesson_paused: false,
         role: None,
         roles_enabled: false,

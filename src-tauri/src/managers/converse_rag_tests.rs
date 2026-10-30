@@ -208,6 +208,7 @@ pub(super) fn input_with(utterance: &str) -> PlanInput<'_> {
         last_draft: None,
         style: "",
         vault_context: None,
+        memory_context: None,
         lesson_paused: false,
         role: None,
         roles_enabled: false,
@@ -302,6 +303,7 @@ pub(super) fn core_for(rag: Option<RagSession>, vault_route: bool) -> BrainCore 
         taint: TaintState::new(),
         rag,
         retrieval_deadline: Duration::from_secs(2),
+        memory: None,
         #[cfg(test)]
         after_retrieve: None,
     }

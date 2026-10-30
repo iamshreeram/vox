@@ -38,6 +38,7 @@ fn input<'a>(role: Option<&'a str>, paused: bool, enabled: bool) -> PlanInput<'a
         last_draft: None,
         style: "warm and brief",
         vault_context: None,
+        memory_context: None,
         role,
         lesson_paused: paused,
         roles_enabled: enabled,

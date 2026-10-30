@@ -99,6 +99,47 @@ impl std::fmt::Display for MemoryError {
 
 impl std::error::Error for MemoryError {}
 
+/// The memory block of one voice session, captured at session start (DESIGN D4, C6).
+///
+/// `current` returns the text only while the epoch still equals the one captured here. A clear
+/// or a setting change bumps the epoch, so the block leaves every later prompt at once.
+#[derive(Debug)]
+pub struct MemoryContext {
+    text: String,
+    epoch_at_start: u64,
+    epoch_handle: Arc<AtomicU64>,
+}
+
+impl MemoryContext {
+    /// Wraps `text`, captured under `epoch_at_start`, watched through `epoch_handle`.
+    pub fn new(text: String, epoch_at_start: u64, epoch_handle: Arc<AtomicU64>) -> Self {
+        MemoryContext {
+            text,
+            epoch_at_start,
+            epoch_handle,
+        }
+    }
+
+    /// The block text, but only while the epoch is unchanged since capture.
+    pub fn current(&self) -> Option<&str> {
+        if self.epoch_handle.load(Ordering::SeqCst) == self.epoch_at_start {
+            Some(self.text.as_str())
+        } else {
+            None
+        }
+    }
+}
+
+/// Captures the memory block for a new session. The epoch is read FIRST, so any clear or
+/// setting change after this point makes the block stale. `None` when the store is empty or
+/// cannot be read.
+pub fn load_for_session(memory: &ConversationMemory, now_ms: i64) -> Option<MemoryContext> {
+    let epoch = memory.epoch();
+    let entries = memory.recent(GUARANTEED_RECENT + 3).ok()?;
+    let text = build_memory_block(&entries, now_ms)?;
+    Some(MemoryContext::new(text, epoch, memory.epoch_handle()))
+}
+
 /// Handle to the `conversation_memory.db` file.
 ///
 /// One connection guarded by a mutex, so methods take `&self`. The epoch is
