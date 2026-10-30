@@ -294,6 +294,44 @@ fn discarding_queued_signals_does_not_free_the_slot_of_a_line_in_flight() {
 }
 
 #[test]
+fn a_clear_keeps_queued_signals_but_drops_queued_lines() {
+    // The hub keeps its scopes across a clear, so a queued end must survive it: dropping it
+    // would leave later lines held for up to the safety cap.
+    let rec = Rec::new(false);
+    let log = start(&rec);
+    log.say(ChatRole::Assistant, "blocker");
+    assert!(rec.wait_entered("blocker", 3_000));
+    log.speech_begin(6);
+    log.say(ChatRole::Assistant, "queued line");
+    log.speech_end(6);
+    // `clear` waits for the worker, which is blocked in the emitter: open it from another
+    // thread once the clear has been requested.
+    let opener = {
+        let rec = rec.clone();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            rec.set_open(true);
+        })
+    };
+    let _ = log.clear();
+    opener.join().expect("opener thread");
+    assert!(
+        rec.wait_for(|l| l.contains(&"S-6".to_string()), 5_000),
+        "{:?}",
+        rec.log()
+    );
+    let all = rec.log();
+    assert!(
+        all.contains(&"S+6".to_string()),
+        "the queued begin survives a clear"
+    );
+    assert!(
+        !all.contains(&"E:queued line".to_string()),
+        "the queued line does not"
+    );
+}
+
+#[test]
 fn the_calls_are_harmless_after_shutdown() {
     let rec = Rec::new(true);
     let log = start(&rec);

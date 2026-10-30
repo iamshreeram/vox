@@ -182,6 +182,8 @@ fn stop_before_finish_ends_the_scope_exactly_once() {
     let session = queue_session(&ledger, tts);
     assert!(session.push("One", Emotion::Neutral));
     session.abort();
+    // Ended by the abort itself, not only by the Drop that follows.
+    assert_eq!(ledger.ends(), ledger.begins(), "abort closes the scope");
     session.abort();
     drop(session);
     let begun = ledger.begins();
@@ -197,6 +199,12 @@ fn refused_push_after_a_success_ends_the_scope_exactly_once() {
     assert!(session.push("One", Emotion::Neutral));
     let _newer = tts.begin_utterance().unwrap(); // supersedes the session
     assert!(!session.push("Two", Emotion::Neutral));
+    // Ended by the refused push itself, not only by the Drop that follows.
+    assert_eq!(
+        ledger.ends(),
+        ledger.begins(),
+        "a refused push closes the scope"
+    );
     assert!(!session.push("Three", Emotion::Neutral));
     drop(session);
     let begun = ledger.begins();
