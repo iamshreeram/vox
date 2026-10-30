@@ -9,11 +9,12 @@ use crate::managers::converse_agent::{
 };
 use crate::managers::converse_barge::{BargeCapture, BargeIn, BargeWatch, ReplyGate};
 use crate::managers::converse_confirm::{
-    confirm_action_recorded, confirm_config_for, confirm_forced, confirmation_question,
-    decline_message, fingerprint_for, forced_prompt, prepare_action, Decision, DeclineReason,
-    DirFd, JobLaunch, JobStartOutcome, PinError, PolicySource, PrepareError, PreparedAction,
-    ValidatedCommand,
+    confirm_action_recorded, confirm_config_for, confirmation_question, decline_message,
+    fingerprint_for, forced_prompt, prepare_action, Decision, DeclineReason, DirFd, JobLaunch,
+    JobStartOutcome, PinError, PolicySource, PrepareError, PreparedAction, ValidatedCommand,
 };
+use crate::managers::converse_confirm_forced::{confirm_forced_natural, reask_for_question};
+use crate::managers::converse_confirm_judge::AnswerJudgement;
 use crate::managers::converse_context::{
     compose, neutralize, note_command, note_delivery_failed, note_failed, note_incomplete,
     note_interrupted, note_paste, note_paste_failed, CommandNote,
@@ -337,6 +338,13 @@ pub trait Brain: Send + Sync {
     ) -> BoxFuture<'a, Result<TurnPlan, PlanError>> {
         let _ = on_text;
         self.plan(input)
+    }
+
+    /// Model judgement of one heard answer to a forced confirmation (DESIGN A4). The default
+    /// is `Unavailable` and never touches `plan`, so brains without a judge fail closed.
+    fn judge_answer<'a>(&'a self, answer: &'a str) -> BoxFuture<'a, AnswerJudgement> {
+        let _ = answer;
+        Box::pin(async { AnswerJudgement::Unavailable })
     }
 }
 
@@ -897,7 +905,8 @@ const MSG_DONE: &str = "Done.";
 /// Spoken instead of any model-proposed paste or command while vault context is on (DESIGN 3.6).
 /// Spoken when a gated job's settings changed between approval and dispatch (DESIGN R3-2).
 const MSG_SETTINGS_CHANGED: &str = "Settings changed, so I didn't start it.";
-/// Spoken when a forced confirmation is not an exact yes (DESIGN 2.5, C6).
+/// Spoken when a forced confirmation is refused, cut short or not heard (DESIGN 2.5, C6). The
+/// unclear-after-re-ask case speaks its own line (`decline_message`).
 const MSG_FORCED_DECLINED: &str = "Okay, I won't.";
 const MSG_ANSWER_ONLY: &str =
     "Vault context is on, so I can only answer questions. Turn it off to dictate text or open things.";
@@ -2219,7 +2228,7 @@ async fn run_final_plan(
     };
     match ask_forced(deps, cfg, cancel, carry, &question).await {
         Decision::Approved => gate_and_run(deps, cfg, cancel, confirmed, carry).await,
-        Decision::Declined(_) => decline_forced(deps, cfg, cancel, carry).await,
+        Decision::Declined(reason) => decline_forced(deps, cfg, cancel, carry, &reason).await,
     }
 }
 
@@ -2253,8 +2262,8 @@ async fn forced_agent(
     let Some(question) = forced_prompt(&plan) else {
         return Ok(Some(failed_summary()));
     };
-    if let Decision::Declined(_) = ask_forced(deps, cfg, cancel, carry, &question).await {
-        return decline_forced(deps, cfg, cancel, carry).await;
+    if let Decision::Declined(reason) = ask_forced(deps, cfg, cancel, carry, &question).await {
+        return decline_forced(deps, cfg, cancel, carry, &reason).await;
     }
     if !deps.hands.agent_launch_still_valid(&launch) {
         carry.journal.set(TurnOutcome::Blocked, None);
@@ -2288,11 +2297,14 @@ async fn ask_forced(
     let fallback = Announcer::new(Arc::new(NoAnnounce));
     let announcer = deps.announcer.unwrap_or(&fallback);
     let config = confirm_config_for(cfg);
-    let asked = confirm_forced(
+    let reask = reask_for_question(question);
+    let asked = confirm_forced_natural(
         deps.ears,
         deps.mouth,
         announcer,
+        deps.brain,
         question,
+        reask.as_deref(),
         &config,
         Some(deps.reporter),
     );
@@ -2304,22 +2316,28 @@ async fn ask_forced(
     decision
 }
 
-/// Declines a forced question: nothing runs and the decline line is spoken. A cancelled
-/// session ends without speaking.
+/// Declines a forced question: nothing runs and the decline line is spoken. An unclear answer
+/// (after the re-ask) speaks the Unclear line; every other reason speaks the fixed decline line.
+/// A cancelled session ends without speaking.
 async fn decline_forced(
     deps: &Deps<'_>,
     cfg: &SessionConfig,
     cancel: &mut CancelToken,
     carry: &mut Carry,
+    reason: &DeclineReason,
 ) -> Result<Option<String>, SessionEnd> {
     if is_cancelled(cancel) {
         return Err(SessionEnd::Cancelled);
     }
+    let line = match reason {
+        DeclineReason::Unclear => decline_message(DeclineReason::Unclear),
+        _ => MSG_FORCED_DECLINED,
+    };
     carry
         .journal
         .set(TurnOutcome::Blocked, Some("declined".to_string()));
-    into_result(speak_or_end(deps, cfg, cancel, MSG_FORCED_DECLINED, Emotion::Neutral).await)?;
-    Ok(Some(compose(MSG_FORCED_DECLINED, "")))
+    into_result(speak_or_end(deps, cfg, cancel, line, Emotion::Neutral).await)?;
+    Ok(Some(compose(line, "")))
 }
 
 /// Announcer stand-in used when the session has none: it never speaks queued text, so a
@@ -4425,6 +4443,14 @@ mod converse_agent_taint_tests;
 #[cfg(test)]
 #[path = "converse_memory_session_tests.rs"]
 mod memory_session_tests;
+
+#[cfg(test)]
+#[path = "converse_confirm_forced_tests.rs"]
+mod converse_confirm_forced_tests;
+
+#[cfg(test)]
+#[path = "converse_forced_plan_tests.rs"]
+mod converse_forced_plan_tests;
 
 #[cfg(test)]
 #[path = "converse_agent_fix_tests.rs"]

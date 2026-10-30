@@ -9,6 +9,7 @@ use crate::managers::converse_agent::{
     plan_confirmation_prompt, resolve_step_agent, AgentSource, AgentStartError,
     PreparedAgentLaunch, ResolvedAgent, StepInput,
 };
+use crate::managers::converse_confirm::FORCED_PROMPT_TAIL;
 use crate::managers::converse_context::neutralize;
 use crate::managers::converse_plan::{PlanStep, StepKind};
 use crate::settings::{
@@ -306,7 +307,7 @@ fn short_plan_confirmation_lists_each_step_whole() {
     ];
     assert_eq!(
         plan_confirmation_prompt(&steps),
-        "I am about to run a plan of 2 steps. Step 1, research: find news. Step 2, files: save it. Say yes to go ahead."
+        format!("I am about to run a plan of 2 steps. Step 1, research: find news. Step 2, files: save it. {FORCED_PROMPT_TAIL}")
     );
 }
 
@@ -322,7 +323,7 @@ fn maximum_plan_confirmation_stays_within_700_chars_and_keeps_every_label() {
         prompt.starts_with("I am about to run a plan of 5 steps. "),
         "{prompt}"
     );
-    assert!(prompt.ends_with("Say yes to go ahead."), "{prompt}");
+    assert!(prompt.ends_with(FORCED_PROMPT_TAIL), "{prompt}");
     for k in 1..=5 {
         assert!(
             prompt.contains(&format!("Step {k}, general work: ")),

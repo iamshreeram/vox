@@ -592,6 +592,134 @@ async fn complete_command(
     run_command(&argv, deadline).await
 }
 
+/// Completion token cap for the answer judge: one short verdict word.
+pub const PLAIN_MAX_TOKENS: u32 = 8;
+
+/// Why a plain judgement completion produced no text. Carries no content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlainError {
+    /// The route cannot send a plain request (Off, Command, ACP/agent, unknown or incomplete
+    /// model config, or a direct endpoint that cannot be prepared). No external call and no
+    /// process was started. A correctly configured DirectAnthropic endpoint is supported (A4b).
+    Unsupported,
+    /// The overall deadline elapsed (connect and read included).
+    Timeout,
+    /// Transport, HTTP status, envelope or size failure.
+    Backend,
+}
+
+/// Plain text completion for the answer judge (DESIGN A4).
+///
+/// Sends exactly two messages (`system`, `user`), no tools, no history, JSON /
+/// `response_format` mode OFF, `temperature` 0 and `max_tokens` <= [`PLAIN_MAX_TOKENS`].
+/// Two routes are supported: the DirectAnthropic realtime endpoint (A4b, see
+/// `complete_plain_direct`) and the composer's OpenAI-compatible model route (its streaming and
+/// legacy settings alike, sent as one non-streaming request). Every other route returns
+/// `Unsupported` before any network or process activity, with no fallback to another
+/// provider and never an ACP/agent launch. The reply is returned trimmed and otherwise
+/// unparsed. `deadline` bounds connect and read together.
+/// Cancellation: dropping the returned future drops the in-flight request.
+/// Logs only static outcome words.
+pub async fn complete_plain(
+    settings: &AppSettings,
+    system: &str,
+    user: &str,
+    deadline: Duration,
+) -> Result<String, PlainError> {
+    let result = complete_plain_inner(settings, system, user, deadline).await;
+    match &result {
+        Ok(_) => log::debug!("answer judge outcome: ok"),
+        Err(PlainError::Unsupported) => log::debug!("answer judge outcome: unsupported"),
+        Err(PlainError::Timeout) => log::debug!("answer judge outcome: timeout"),
+        Err(PlainError::Backend) => log::debug!("answer judge outcome: backend"),
+    }
+    result
+}
+
+/// DirectAnthropic plain route (A4b): the realtime route's endpoint, auth, headers and proxy
+/// rules (`realtime_complete::prepare`) with the streaming reader and JSON mode off. Temperature
+/// is omitted by the llm_stream invariant on this route. Stop reason `max_tokens` is an error
+/// there, so an over-long reply fails closed. A misconfigured direct endpoint never falls back
+/// to the composer.
+async fn complete_plain_direct(
+    settings: &AppSettings,
+    system: &str,
+    user: &str,
+    deadline: Duration,
+) -> Result<String, PlainError> {
+    let prepared = match crate::managers::realtime_complete::prepare(settings) {
+        Ok(Some(prepared)) => prepared,
+        Ok(None) | Err(_) => return Err(PlainError::Unsupported),
+    };
+    crate::managers::realtime_complete::summary_stream(
+        settings,
+        &prepared,
+        system,
+        user,
+        PLAIN_MAX_TOKENS,
+        deadline,
+    )
+    .await
+    .map(|text| text.trim().to_string())
+    .map_err(|err| match err {
+        ComposeError::Timeout => PlainError::Timeout,
+        _ => PlainError::Backend,
+    })
+}
+
+async fn complete_plain_inner(
+    settings: &AppSettings,
+    system: &str,
+    user: &str,
+    deadline: Duration,
+) -> Result<String, PlainError> {
+    if crate::managers::realtime_config::RealtimeConfig::from_settings(settings).direct_endpoint {
+        return complete_plain_direct(settings, system, user, deadline).await;
+    }
+    if settings_from_app(settings).mode != TtsComposerMode::Model {
+        return Err(PlainError::Unsupported);
+    }
+    let effective = brain::effective_provider(settings, BrainFeature::Composer)
+        .map_err(|_| PlainError::Unsupported)?;
+    if !composer_provider_supported(&effective.provider) || effective.model.trim().is_empty() {
+        return Err(PlainError::Unsupported);
+    }
+    let headers = crate::llm_client::build_headers(&effective.provider, &effective.api_key)
+        .map_err(|_| PlainError::Backend)?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| PlainError::Backend)?;
+    let url = format!(
+        "{}/chat/completions",
+        effective.provider.base_url.trim().trim_end_matches('/')
+    );
+    let body = plain_request_body(&effective.model, system, user);
+    match tokio::time::timeout(deadline, exchange(&client, &url, headers, &body)).await {
+        Ok(Ok(text)) => Ok(text.trim().to_string()),
+        Ok(Err(ComposeError::Timeout)) | Err(_) => Err(PlainError::Timeout),
+        Ok(Err(_)) => Err(PlainError::Backend),
+    }
+}
+
+/// The fixed plain request body: two messages, no response_format, no tools.
+fn plain_request_body(model: &str, system: &str, user: &str) -> serde_json::Value {
+    serde_json::json!({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "temperature": 0,
+        "max_tokens": PLAIN_MAX_TOKENS,
+        "stream": false,
+    })
+}
+
+#[cfg(test)]
+#[path = "speech_backends_plain_tests.rs"]
+mod plain_tests;
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;

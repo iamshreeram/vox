@@ -6,6 +6,7 @@
 
 use std::time::Duration;
 
+use crate::managers::converse_confirm::FORCED_PROMPT_TAIL;
 use crate::managers::converse_context::neutralize;
 use crate::managers::converse_plan::{PlanStep, StepKind, MAX_ROLE_CHARS};
 use crate::settings::{
@@ -314,15 +315,21 @@ fn render_inputs(inputs: &[StepInput]) -> Option<String> {
 /// Stage 4: the forced confirmation spoken before a plan runs. It lists every step, each
 /// preview cut so the whole text stays within `PLAN_CONFIRM_MAX_CHARS`.
 pub fn plan_confirmation_prompt(steps: &[PlanStep]) -> String {
+    let mut out = plan_confirmation_body(steps);
+    out.push_str(FORCED_PROMPT_TAIL);
+    out
+}
+
+/// The plan confirmation without its tail: the head and every step segment, each segment ending
+/// with ". ". `forced_body` trims the trailing space; the tail follows it unchanged.
+pub(crate) fn plan_confirmation_body(steps: &[PlanStep]) -> String {
     let head = format!("I am about to run a plan of {} steps. ", steps.len());
-    let tail = "Say yes to go ahead.";
-    let fixed = head.chars().count() + tail.chars().count();
+    let fixed = head.chars().count() + FORCED_PROMPT_TAIL.chars().count();
     let per_step = PLAN_CONFIRM_MAX_CHARS.saturating_sub(fixed) / steps.len().max(1);
     let mut out = head;
     for step in steps {
         out.push_str(&plan_step_segment(step, per_step));
     }
-    out.push_str(tail);
     out
 }
 
