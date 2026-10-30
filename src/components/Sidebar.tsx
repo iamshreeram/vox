@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   Bot,
   Brain,
+  Palette,
   Cog,
   FlaskConical,
   History,
@@ -13,8 +14,14 @@ import {
 } from "lucide-react";
 import VoxTextLogo from "./icons/VoxTextLogo";
 import { useSettings } from "../hooks/useSettings";
-import { SECTION_ICON_CLASS, sidebarItemClass } from "./sidebarTheme";
 import {
+  SECTION_ICON_CLASS,
+  sidebarIconClass,
+  sidebarItemClass,
+  type SidebarStyle,
+} from "./sidebarTheme";
+import {
+  AppearanceSettings,
   GeneralSettings,
   AdvancedSettings,
   HistorySettings,
@@ -56,6 +63,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.general",
     icon: Mic,
     component: GeneralSettings,
+    enabled: () => true,
+  },
+  appearance: {
+    labelKey: "sidebar.appearance",
+    icon: Palette,
+    component: AppearanceSettings,
     enabled: () => true,
   },
   history: {
@@ -119,6 +132,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { t } = useTranslation();
   const { settings } = useSettings();
+  const style: SidebarStyle =
+    settings?.visual_style === "restrained" ? "restrained" : "vibrant";
 
   const availableSections = Object.entries(SECTIONS_CONFIG)
     .filter(([_, config]) => config.enabled(settings))
@@ -144,7 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           return (
             <div
               key={section.id}
-              className={sidebarItemClass(isActive)}
+              className={sidebarItemClass(isActive, style)}
               onClick={() => {
                 // Normal sidebar navigation cancels any pending search reveal.
                 cancelReveal();
@@ -154,9 +169,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <Icon
                 width={24}
                 height={24}
-                className={`shrink-0 ${
-                  isActive ? "text-on-accent" : SECTION_ICON_CLASS[section.id]
-                }`}
+                className={`shrink-0 ${sidebarIconClass(
+                  section.id,
+                  isActive,
+                  style,
+                )}`}
               />
               <p
                 className="text-sm font-medium truncate"

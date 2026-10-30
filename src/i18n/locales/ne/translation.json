@@ -31,7 +31,8 @@
     "debug": "डिबग",
     "about": "बारेमा",
     "experimental": "Experimental",
-    "agents": "Agents"
+    "agents": "Agents",
+    "appearance": "Appearance"
   },
   "onboarding": {
     "subtitle": "सुरु गर्न, एउटा ट्रान्सक्रिप्सन मोडेल छान्नुहोस्",
@@ -199,6 +200,7 @@
         "description": "स्पिच-टु-टेक्स्ट रेकर्डिङ सुरु गर्न किबोर्ड सर्टकटहरू सेट अप गर्नुहोस्",
         "loading": "सर्टकटहरू लोड गरिँदैछन्...",
         "none": "कुनै सर्टकट सेट गरिएको छैन",
+        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
         "notFound": "सर्टकट भेटिएन",
         "pressKeys": "किहरू थिच्नुहोस्...",
         "bindings": {
@@ -300,7 +302,57 @@
       }
     },
     "appearance": {
-      "title": "Appearance"
+      "title": "Appearance",
+      "accent": {
+        "title": "Accent colour",
+        "description": "The highlight colour of buttons, selection and the preview under the System, Light and Dark themes.",
+        "locked": "Aurora and Custom set their own colours, so the accent is off. Choose System, Light or Dark to change it.",
+        "swatch": {
+          "amber": "Amber",
+          "blue": "Blue",
+          "violet": "Violet",
+          "emerald": "Emerald",
+          "rose": "Rose",
+          "slate": "Slate"
+        }
+      },
+      "style": {
+        "title": "Visual style",
+        "description": "How much colour the interface uses.",
+        "vibrant": "Vibrant",
+        "vibrantHint": "Coloured sidebar icons, accent cards and a warm page background.",
+        "restrained": "Restrained",
+        "restrainedHint": "Neutral cards and borders. The accent appears only on selection and primary actions."
+      },
+      "chatTheme": {
+        "title": "Conversation window theme",
+        "description": "Colours of the conversation window. Follow app uses the theme chosen above.",
+        "followApp": "Follow app",
+        "dark": "Dark",
+        "light": "Light",
+        "nativeNote": "The window title bar follows the app theme; a Light chat can keep a dark title bar."
+      },
+      "chatWindow": {
+        "title": "Conversation window"
+      },
+      "preview": {
+        "title": "Preview",
+        "description": "Shows your choices as they will look. It updates as you change them.",
+        "orb": "Orb",
+        "assistant": "Vox replies in this style.",
+        "user": "Your message",
+        "action": "Primary action",
+        "chat": "Conversation window: {{palette}}"
+      },
+      "reset": {
+        "title": "Reset appearance to defaults",
+        "description": "Returns the theme, accent, visual style, conversation theme and transparency to Vox's defaults.",
+        "confirm": "Reset all five appearance settings to their defaults?",
+        "confirmAction": "Confirm reset",
+        "cancel": "Cancel",
+        "done": "Appearance reset to defaults.",
+        "failed": "Some appearance settings could not be reset. Try again."
+      }
     },
     "sound": {
       "title": "साउन्ड",
@@ -1361,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "सेटिङहरू खोज्नुहोस्",
+      "placeholder": "खोज",
       "label": "सेटिङहरू खोज्नुहोस्",
       "clear": "खोज हटाउनुहोस्",
       "noResults": "“{{query}}” का लागि कुनै सेटिङ फेला परेन",
@@ -1576,7 +1628,9 @@
     "open": "खोल्नुहोस्",
     "copy": "कपी गर्नुहोस्",
     "clear": "खाली गर्नुहोस्",
-    "noOptionsFound": "कुनै विकल्प भेटिएन"
+    "noOptionsFound": "कुनै विकल्प भेटिएन",
+    "reset": "रिसेट गर्नुहोस्",
+    "seek": "खोज्नुहोस्"
   },
   "accessibility": {
     "permissionsDescription": "ट्रान्सक्राइब गरिएको टेक्स्ट टाइप गर्न Vox लाई एक्सेसिबिलिटी अनुमति चाहिन्छ।",
@@ -1894,9 +1948,23 @@
         "speech_stuck": "Speech output got stuck, so the conversation stopped.",
         "turn_limit": "Stopped at the turn limit."
       }
-    }
+    },
+    "clearConfirm": "Confirm clear",
+    "clearCancel": "Cancel",
+    "clearPrompt": "Clear the conversation log? This cannot be undone."
   },
   "orb": {
-    "label": "Vox orb. Press Enter to open the conversation."
+    "label": "Vox orb. Press Enter to open the conversation.",
+    "assistantName": "Vox assistant",
+    "stateAnnounce": "{{name}}: {{state}}",
+    "face": {
+      "idle": "Idle",
+      "listening": "Listening",
+      "thinking": "Thinking",
+      "acting": "Acting",
+      "speaking": "Speaking",
+      "sleep": "Asleep",
+      "concerned": "Concerned"
+    }
   }
 }

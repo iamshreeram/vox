@@ -35,6 +35,11 @@ export interface TauriMockOptions {
    * Use `setMockCommand` to change one at runtime.
    */
   commands?: Record<string, unknown>;
+  /**
+   * Window label reported by the runtime (`getCurrentWindow().label`). Defaults to "main".
+   * Use "chat", "orb" or "orb-bubbles" for the listen-only consumer pages (UI quality gate).
+   */
+  label?: string;
 }
 
 interface MockInitArg {
@@ -43,7 +48,32 @@ interface MockInitArg {
   settings: MockSettings;
   storageThrows: boolean;
   commands: Record<string, unknown>;
+  label: string;
 }
+
+/** One `appearance` delivery the mock recorded (the window label it was addressed to). */
+export interface MockEmit {
+  label: string;
+  event: string;
+  payload: unknown;
+}
+
+/** The committed appearance snapshot (`AppearanceSnapshot` wire shape). */
+export interface MockAppearance {
+  rev: number;
+  theme: unknown;
+  custom_colors: unknown;
+  accent: unknown;
+  chat_theme: unknown;
+  visual_style: unknown;
+}
+
+/** Consumer window labels the Rust side addresses with `emit_to` (appearance.rs CONSUMER_LABELS). */
+export const APPEARANCE_CONSUMER_LABELS = [
+  "chat",
+  "orb",
+  "orb-bubbles",
+] as const;
 
 export const DEFAULT_MOCK_SETTINGS: Readonly<MockSettings> = {
   settings_schema_version: 1,
@@ -86,12 +116,16 @@ function installTauriMockInPage(arg: MockInitArg): void {
   }
   interface VoxMockWindow {
     __TAURI_INTERNALS__: unknown;
+    __TAURI_EVENT_PLUGIN_INTERNALS__: unknown;
     __TAURI_OS_PLUGIN_INTERNALS__: unknown;
     __voxMock: {
       setSetting: (key: string, value: unknown) => void;
       setCommand: (command: string, value: unknown) => void;
       emit: (eventName: string, payload: unknown) => void;
       calls: RecordedCall[];
+      label: string;
+      appearance: () => unknown;
+      emitted: Array<{ label: string; event: string; payload: unknown }>;
     };
   }
 
@@ -105,6 +139,59 @@ function installTauriMockInPage(arg: MockInitArg): void {
   const calls: RecordedCall[] = [];
   let nextId = 1;
 
+  // Committed appearance (additive): the five appearance writers persist into `settings`, bump a
+  // monotonic rev and publish the full snapshot to every consumer label through `emitted`. The
+  // delivery to THIS page happens locally when its own label is a consumer label; other labels
+  // are delivered by the test harness through emitMockEvent (one page per window).
+  const APPEARANCE_ARG: Record<string, [keyof MockSettings, string]> = {
+    change_theme_setting: ["theme", "theme"],
+    update_custom_theme_colors: ["custom_theme_colors", "colors"],
+    change_accent_setting: ["accent", "accent"],
+    change_chat_theme_setting: ["chat_theme", "chatTheme"],
+    change_visual_style_setting: ["visual_style", "visualStyle"],
+  };
+  const CONSUMER_LABELS = ["chat", "orb", "orb-bubbles"];
+  const emitted: Array<{ label: string; event: string; payload: unknown }> = [];
+  let appearanceRev = 1;
+  const committedAppearance = (): Record<string, unknown> => ({
+    rev: appearanceRev,
+    theme: settings.theme ?? "system",
+    custom_colors:
+      settings.theme === "custom"
+        ? (settings.custom_theme_colors ?? null)
+        : null,
+    accent: settings.accent ?? "amber",
+    chat_theme: settings.chat_theme ?? "dark",
+    visual_style: settings.visual_style ?? "vibrant",
+  });
+  const commitAppearance = (
+    command: string,
+    args: Record<string, unknown>,
+  ): void => {
+    const mapping = APPEARANCE_ARG[command];
+    if (mapping === undefined) return;
+    const [key, argName] = mapping;
+    settings[key] = clone(args[argName]);
+    appearanceRev += 1;
+    const snapshot = committedAppearance();
+    for (const label of CONSUMER_LABELS) {
+      emitted.push({ label, event: "appearance", payload: clone(snapshot) });
+    }
+    if (CONSUMER_LABELS.includes(arg.label)) {
+      for (const listener of listeners) {
+        if (listener.eventName === "appearance") {
+          callbacks.get(listener.handlerId)?.({
+            event: "appearance",
+            id: 0,
+            payload: clone(snapshot),
+          });
+        }
+      }
+    }
+  };
+
+  const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
   if (arg.storageThrows) {
     const blocked = (): never => {
       throw new Error("storage blocked by test");
@@ -112,8 +199,6 @@ function installTauriMockInPage(arg: MockInitArg): void {
     Storage.prototype.getItem = blocked;
     Storage.prototype.setItem = blocked;
   }
-
-  const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
   const handlers: Handlers = {
     get_app_settings: () => clone(settings),
@@ -236,6 +321,10 @@ function installTauriMockInPage(arg: MockInitArg): void {
     args: Record<string, unknown> = {},
   ): Promise<unknown> => {
     calls.push({ command, args: clone(args) });
+    if (command in APPEARANCE_ARG) {
+      commitAppearance(command, args);
+      return Promise.resolve(null);
+    }
     if (command.startsWith("change_") && command.endsWith("_setting")) {
       return Promise.resolve(null);
     }
@@ -272,10 +361,16 @@ function installTauriMockInPage(arg: MockInitArg): void {
     },
     convertFileSrc: (filePath: string) => filePath,
     metadata: {
-      currentWindow: { label: "main" },
-      currentWebview: { windowLabel: "main", label: "main" },
+      currentWindow: { label: arg.label },
+      currentWebview: { windowLabel: arg.label, label: arg.label },
     },
     plugins: {},
+  };
+
+  // @tauri-apps/api 2.11 unlistens through this object on unmount; the real runtime injects it.
+  // Without it, a StrictMode unlisten throws and the whole settings window goes blank.
+  win.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+    unregisterListener: () => {},
   };
 
   win.__TAURI_OS_PLUGIN_INTERNALS__ = {
@@ -286,6 +381,17 @@ function installTauriMockInPage(arg: MockInitArg): void {
     version: "0.0.0",
     eol: "\n",
   };
+
+  // The Vite dev server serves no favicon; without an icon link Chrome requests /favicon.ico and
+  // logs a 404 that the real Tauri webview never produces. An empty data: icon removes that artifact.
+  document.addEventListener("DOMContentLoaded", () => {
+    if (document.querySelector('link[rel="icon"]') === null) {
+      const icon = document.createElement("link");
+      icon.rel = "icon";
+      icon.href = "data:,";
+      document.head.appendChild(icon);
+    }
+  });
 
   win.__voxMock = {
     setSetting: (key: string, value: unknown) => {
@@ -313,6 +419,9 @@ function installTauriMockInPage(arg: MockInitArg): void {
       }
     },
     calls,
+    label: arg.label,
+    appearance: () => committedAppearance(),
+    emitted,
   };
 }
 
@@ -329,6 +438,7 @@ export async function installTauriMock(
     settings: { ...DEFAULT_MOCK_SETTINGS, ...options.settings },
     storageThrows: options.storageThrows ?? false,
     commands: { ...options.commands },
+    label: options.label ?? "main",
   };
   await page.addInitScript(installTauriMockInPage, arg);
 }
@@ -417,4 +527,26 @@ export async function getMockCalls(
       .filter((call) => call.command === name)
       .map((call) => call.args);
   }, command);
+}
+
+/** The committed appearance snapshot the mock would publish now (rev starts at 1). */
+export async function getMockAppearance(page: Page): Promise<MockAppearance> {
+  return page.evaluate(
+    () =>
+      (
+        window as unknown as { __voxMock: { appearance: () => unknown } }
+      ).__voxMock.appearance() as MockAppearance,
+  );
+}
+
+/**
+ * Every `appearance` delivery the page recorded from the appearance writers, in commit order.
+ * The harness forwards each entry to the page whose window label matches (`emitMockEvent`).
+ */
+export async function getMockEmits(page: Page): Promise<MockEmit[]> {
+  return page.evaluate(() =>
+    (
+      window as unknown as { __voxMock: { emitted: MockEmit[] } }
+    ).__voxMock.emitted.map((entry) => ({ ...entry })),
+  );
 }

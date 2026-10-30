@@ -213,11 +213,11 @@ export const SpeakerEnrollWizard: React.FC<SpeakerEnrollWizardProps> = ({
 
       {(phase === "idle" || phase === "done") && (
         <div className="flex flex-col gap-2">
-          <p className="text-xs text-mid-gray">
+          <p className="text-xs text-muted">
             {t("converse.voice.speaker.enroll.intro")}
           </p>
           {!modelReady && (
-            <p className="text-xs text-mid-gray">
+            <p className="text-xs text-muted">
               {t("converse.voice.speaker.enroll.needModel")}
             </p>
           )}
@@ -235,7 +235,7 @@ export const SpeakerEnrollWizard: React.FC<SpeakerEnrollWizardProps> = ({
 
       {phase === "starting" && (
         <div className="flex items-center gap-2">
-          <span className="text-sm text-mid-gray">
+          <span className="text-sm text-muted">
             {t("converse.voice.speaker.enroll.starting")}
           </span>
           <Button variant="secondary" size="md" onClick={cancel}>
@@ -260,7 +260,7 @@ export const SpeakerEnrollWizard: React.FC<SpeakerEnrollWizardProps> = ({
                   total: ENROLL_STEPS,
                 })}
               </span>
-              <span className="text-xs text-mid-gray">
+              <span className="text-xs text-muted">
                 {t("converse.voice.speaker.enroll.readThese")}
               </span>
               <ul className="list-disc ps-5 text-sm">
@@ -286,7 +286,7 @@ export const SpeakerEnrollWizard: React.FC<SpeakerEnrollWizardProps> = ({
             </div>
           )}
           {okSteps === ENROLL_STEPS && phase === "ready" && (
-            <p className="text-xs text-mid-gray">
+            <p className="text-xs text-muted">
               {t("converse.voice.speaker.enroll.allRecorded")}
             </p>
           )}
@@ -312,7 +312,7 @@ export const SpeakerEnrollWizard: React.FC<SpeakerEnrollWizardProps> = ({
       )}
 
       {message !== null && (
-        <p role="alert" className="text-xs text-red-400">
+        <p role="alert" className="text-xs text-danger">
           {messageText(message)}
         </p>
       )}

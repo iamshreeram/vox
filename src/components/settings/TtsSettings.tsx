@@ -181,7 +181,7 @@ export const NaturalVoiceBody: React.FC<NaturalVoiceBodyProps> = ({
             </div>
           )}
           {row === "working" && (
-            <span className="text-sm text-mid-gray">
+            <span className="text-sm text-muted">
               {t("settings.advanced.tts.natural.model.working")}
             </span>
           )}
@@ -205,7 +205,7 @@ export const NaturalVoiceBody: React.FC<NaturalVoiceBodyProps> = ({
               <p className="text-sm">
                 {t("settings.advanced.tts.natural.failure.banner")}
               </p>
-              <p className="text-xs text-mid-gray">
+              <p className="text-xs text-muted">
                 {t(failureI18nKey(status.failure))}
               </p>
               <div className="flex items-center gap-2">
@@ -232,12 +232,12 @@ export const NaturalVoiceBody: React.FC<NaturalVoiceBodyProps> = ({
             engine === "natural" ? "natural" : "system",
             status,
           ) && (
-            <p className="text-xs text-mid-gray">
+            <p className="text-xs text-muted">
               {t("settings.advanced.tts.natural.model.needed")}
             </p>
           )}
           {error !== null && (
-            <p className="text-xs text-red-400">
+            <p className="text-xs text-danger">
               {status.model === "not_installed"
                 ? t("settings.advanced.tts.natural.model.downloadFailed", {
                     message: error,
@@ -245,7 +245,7 @@ export const NaturalVoiceBody: React.FC<NaturalVoiceBodyProps> = ({
                 : error}
             </p>
           )}
-          <p className="text-xs text-mid-gray">
+          <p className="text-xs text-muted">
             {t("settings.advanced.tts.natural.notice.limitations")}
           </p>
         </div>
@@ -448,7 +448,7 @@ export const TtsSettings: React.FC<TtsSettingsProps> = React.memo(
                 )}
               </TtsEngineCard>
             ))}
-            <p className="text-xs text-mid-gray">
+            <p className="text-xs text-muted">
               {t("settings.advanced.tts.engines.fixedNote")}
             </p>
           </div>

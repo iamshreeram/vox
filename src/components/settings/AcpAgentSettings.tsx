@@ -212,7 +212,7 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
     return (
       <>
         <div className="px-3 pt-2">
-          <p className="text-xs text-mid-gray">
+          <p className="text-xs text-muted">
             {t("settings.advanced.acpAgent.description")}
           </p>
         </div>
@@ -255,10 +255,7 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
               className="w-72 font-mono"
             />
             {commandError !== null && (
-              <p
-                role="alert"
-                className="max-w-xs text-end text-xs text-red-500"
-              >
+              <p role="alert" className="max-w-xs text-end text-xs text-danger">
                 {errorText(commandError)}
               </p>
             )}
@@ -287,10 +284,7 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
               className="w-48 font-mono"
             />
             {argsError !== null && (
-              <p
-                role="alert"
-                className="max-w-xs text-end text-xs text-red-500"
-              >
+              <p role="alert" className="max-w-xs text-end text-xs text-danger">
                 {errorText(argsError)}
               </p>
             )}
@@ -322,10 +316,7 @@ export const AcpAgentSettings: React.FC<AcpAgentSettingsProps> = React.memo(
               className="w-28"
             />
             {timeoutError !== null && (
-              <p
-                role="alert"
-                className="max-w-xs text-end text-xs text-red-500"
-              >
+              <p role="alert" className="max-w-xs text-end text-xs text-danger">
                 {errorText(timeoutError)}
               </p>
             )}

@@ -138,13 +138,13 @@ const SourceUpdateChecker: React.FC<SourceUpdateCheckerProps> = ({
               {blocker !== null && (
                 <p
                   role="alert"
-                  className="rounded border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-300"
+                  className="rounded border border-warning bg-warning-soft px-3 py-2 text-xs text-warning dark:text-warning"
                 >
                   {blocker}
                 </p>
               )}
               {showInstallError && state.error && (
-                <p role="alert" className="text-xs text-red-500">
+                <p role="alert" className="text-xs text-danger">
                   {state.error}
                 </p>
               )}
@@ -183,7 +183,7 @@ const SourceUpdateChecker: React.FC<SourceUpdateCheckerProps> = ({
             className={`transition-colors disabled:opacity-50 tabular-nums ${
               isAvailable
                 ? "text-logo-primary hover:text-logo-primary/80 font-medium"
-                : "text-text/60 hover:text-text/80"
+                : "text-muted hover:text-text/80"
             }`}
           >
             {label}
@@ -192,7 +192,7 @@ const SourceUpdateChecker: React.FC<SourceUpdateCheckerProps> = ({
           <span
             title={footerTitle}
             className={`tabular-nums ${
-              isAvailable ? "text-logo-primary font-medium" : "text-text/60"
+              isAvailable ? "text-logo-primary font-medium" : "text-muted"
             }`}
           >
             {label}

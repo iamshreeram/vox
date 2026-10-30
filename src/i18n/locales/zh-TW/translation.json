@@ -31,7 +31,8 @@
     "debug": "偵錯",
     "about": "關於",
     "experimental": "Experimental",
-    "agents": "Agents"
+    "agents": "Agents",
+    "appearance": "Appearance"
   },
   "onboarding": {
     "subtitle": "首先，請選擇一種模型",
@@ -199,6 +200,7 @@
         "description": "設定啟動語音轉文字錄製的鍵盤快捷鍵",
         "loading": "載入快捷鍵中...",
         "none": "未設定快捷鍵",
+        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
         "notFound": "未找到快捷鍵",
         "pressKeys": "請按鍵...",
         "bindings": {
@@ -300,7 +302,57 @@
       }
     },
     "appearance": {
-      "title": "Appearance"
+      "title": "Appearance",
+      "accent": {
+        "title": "Accent colour",
+        "description": "The highlight colour of buttons, selection and the preview under the System, Light and Dark themes.",
+        "locked": "Aurora and Custom set their own colours, so the accent is off. Choose System, Light or Dark to change it.",
+        "swatch": {
+          "amber": "Amber",
+          "blue": "Blue",
+          "violet": "Violet",
+          "emerald": "Emerald",
+          "rose": "Rose",
+          "slate": "Slate"
+        }
+      },
+      "style": {
+        "title": "Visual style",
+        "description": "How much colour the interface uses.",
+        "vibrant": "Vibrant",
+        "vibrantHint": "Coloured sidebar icons, accent cards and a warm page background.",
+        "restrained": "Restrained",
+        "restrainedHint": "Neutral cards and borders. The accent appears only on selection and primary actions."
+      },
+      "chatTheme": {
+        "title": "Conversation window theme",
+        "description": "Colours of the conversation window. Follow app uses the theme chosen above.",
+        "followApp": "Follow app",
+        "dark": "Dark",
+        "light": "Light",
+        "nativeNote": "The window title bar follows the app theme; a Light chat can keep a dark title bar."
+      },
+      "chatWindow": {
+        "title": "Conversation window"
+      },
+      "preview": {
+        "title": "Preview",
+        "description": "Shows your choices as they will look. It updates as you change them.",
+        "orb": "Orb",
+        "assistant": "Vox replies in this style.",
+        "user": "Your message",
+        "action": "Primary action",
+        "chat": "Conversation window: {{palette}}"
+      },
+      "reset": {
+        "title": "Reset appearance to defaults",
+        "description": "Returns the theme, accent, visual style, conversation theme and transparency to Vox's defaults.",
+        "confirm": "Reset all five appearance settings to their defaults?",
+        "confirmAction": "Confirm reset",
+        "cancel": "Cancel",
+        "done": "Appearance reset to defaults.",
+        "failed": "Some appearance settings could not be reset. Try again."
+      }
     },
     "sound": {
       "title": "聲音",
@@ -1361,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "搜尋設定",
+      "placeholder": "搜尋",
       "label": "搜尋設定",
       "clear": "清除搜尋",
       "noResults": "找不到與「{{query}}」相關的設定",
@@ -1573,7 +1625,9 @@
     "open": "開啟",
     "copy": "複製",
     "clear": "清除",
-    "noOptionsFound": "未找到選項"
+    "noOptionsFound": "未找到選項",
+    "reset": "重設",
+    "seek": "拖曳進度"
   },
   "accessibility": {
     "permissionsDescription": "Vox 需要輔助使用權限才能輸入轉錄的文字",
@@ -1894,9 +1948,23 @@
         "speech_stuck": "Speech output got stuck, so the conversation stopped.",
         "turn_limit": "Stopped at the turn limit."
       }
-    }
+    },
+    "clearConfirm": "Confirm clear",
+    "clearCancel": "Cancel",
+    "clearPrompt": "Clear the conversation log? This cannot be undone."
   },
   "orb": {
-    "label": "Vox orb. Press Enter to open the conversation."
+    "label": "Vox orb. Press Enter to open the conversation.",
+    "assistantName": "Vox assistant",
+    "stateAnnounce": "{{name}}: {{state}}",
+    "face": {
+      "idle": "Idle",
+      "listening": "Listening",
+      "thinking": "Thinking",
+      "acting": "Acting",
+      "speaking": "Speaking",
+      "sleep": "Asleep",
+      "concerned": "Concerned"
+    }
   }
 }

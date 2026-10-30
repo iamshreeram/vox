@@ -119,10 +119,11 @@ export const FillerWordRemoval: React.FC<FillerWordRemovalProps> = React.memo(
             {choiceOptions.map((option) => (
               <label
                 key={option.value}
-                className="flex items-center gap-2 text-sm cursor-pointer"
+                className="radio-focus-label flex min-h-[24px] items-center gap-2 text-sm cursor-pointer"
               >
                 <input
                   type="radio"
+                  aria-label={option.label}
                   name="custom-filler-words-mode"
                   value={option.value}
                   checked={choice === option.value}
@@ -148,31 +149,31 @@ export const FillerWordRemoval: React.FC<FillerWordRemovalProps> = React.memo(
                   "settings.advanced.fillerWordRemoval.customLabel",
                 )}
               />
-              <p className="text-xs text-mid-gray">
+              <p className="text-xs text-muted">
                 {t("settings.advanced.fillerWordRemoval.customHelp")}
               </p>
-              <p className="text-xs text-mid-gray">
+              <p className="text-xs text-muted">
                 {t("settings.advanced.fillerWordRemoval.customCount", {
                   count: parsed.length,
                   max: MAX_WORDS,
                 })}
               </p>
               {tooManyWords && (
-                <p className="text-xs text-red-500">
+                <p className="text-xs text-danger">
                   {t("settings.advanced.fillerWordRemoval.customTooMany", {
                     max: MAX_WORDS,
                   })}
                 </p>
               )}
               {wordTooLong && (
-                <p className="text-xs text-red-500">
+                <p className="text-xs text-danger">
                   {t("settings.advanced.fillerWordRemoval.customTooLong", {
                     max: MAX_WORD_CHARS,
                   })}
                 </p>
               )}
               {parsed.length === 0 && (
-                <p className="text-xs text-mid-gray">
+                <p className="text-xs text-muted">
                   {t("settings.advanced.fillerWordRemoval.customEmpty")}
                 </p>
               )}

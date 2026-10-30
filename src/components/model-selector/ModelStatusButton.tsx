@@ -28,21 +28,21 @@ const ModelStatusButton: React.FC<ModelStatusButtonProps> = ({
   const getStatusColor = (status: ModelStatus): string => {
     switch (status) {
       case "ready":
-        return "bg-green-400";
+        return "bg-success";
       case "loading":
-        return "bg-yellow-400 animate-pulse";
+        return "bg-warning animate-pulse";
       case "downloading":
         return "bg-logo-primary animate-pulse";
       case "verifying":
-        return "bg-orange-400 animate-pulse";
+        return "bg-warning animate-pulse";
       case "extracting":
-        return "bg-orange-400 animate-pulse";
+        return "bg-warning animate-pulse";
       case "error":
-        return "bg-red-400";
+        return "bg-danger";
       case "unloaded":
         return "bg-mid-gray/60";
       case "none":
-        return "bg-red-400";
+        return "bg-danger";
       default:
         return "bg-mid-gray/60";
     }
@@ -51,11 +51,13 @@ const ModelStatusButton: React.FC<ModelStatusButtonProps> = ({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 hover:text-text/80 transition-colors ${className}`}
+      className={`flex min-h-[24px] items-center gap-2 hover:text-text/80 transition-colors ${className}`}
       title={`Model status: ${displayText}`}
     >
       <div className={`w-2 h-2 rounded-full ${getStatusColor(status)}`} />
-      <span className="max-w-28 truncate">{displayText}</span>
+      <span className="max-w-56 truncate" title={displayText}>
+        {displayText}
+      </span>
       <svg
         className={`w-3 h-3 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
         fill="none"

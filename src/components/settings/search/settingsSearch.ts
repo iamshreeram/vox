@@ -1,4 +1,5 @@
 import { SECTION_LABEL_KEY } from "./settingsSearchIndex";
+import { resolveSearchEntryId } from "../appearance/appearanceModel";
 import type {
   MatchRange,
   Resolve,
@@ -242,7 +243,19 @@ export function resolveTarget(
   void ctx;
   if (!hit.locked) return hit.entry;
   const enablerId = hit.unlockChain[hit.unlockChain.length - 1];
-  return entries.find((entry) => entry.id === enablerId) ?? hit.entry;
+  return entryForId(entries, enablerId) ?? hit.entry;
+}
+
+/**
+ * The index entry for an id, following the alias table: an old id (a saved query or deep link
+ * from before the Appearance page existed) resolves to the row that now holds the control.
+ */
+export function entryForId(
+  entries: readonly SearchEntry[],
+  id: string,
+): SearchEntry | undefined {
+  const resolved = resolveSearchEntryId(id);
+  return entries.find((entry) => entry.id === resolved);
 }
 
 interface OffsetText {

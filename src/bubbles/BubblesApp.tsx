@@ -146,6 +146,7 @@ export default function BubblesApp(): React.ReactElement {
       ref={logRef}
       role="log"
       aria-live="polite"
+      aria-relevant="additions"
       aria-atomic="false"
       className="bubble-stack"
       data-anchor={state.anchor}

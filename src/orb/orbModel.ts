@@ -194,15 +194,16 @@ export function faceFromEvent(prev: FaceView, event: unknown): FaceView {
 }
 
 /**
- * Ring accent per face for the floating orb. The orb body is gold, so every ring colour stays in
- * the warm gold-to-coral family instead of the chat window's cyan, violet and blue accents.
+ * Ring accent per face for the floating orb (UI S2, A3/A4). The orb follows the accent tokens, so
+ * it takes the accent the user chose in the same palette. `concerned` keeps its alarm colour: it is
+ * a state colour, not an accent. The tokens are set on the document root by the appearance consumer.
  */
 export const ORB_ACCENT: Record<string, string> = {
-  idle: "#F5B921",
-  listening: "#FFD23F",
-  thinking: "#FF9F1C",
-  acting: "#FF7A18",
-  speaking: "#FFC53D",
+  idle: "var(--color-accent-a)",
+  listening: "var(--color-accent-b)",
+  thinking: "var(--color-accent-a)",
+  acting: "var(--color-accent-b)",
+  speaking: "var(--color-accent-a)",
   concerned: "#FF6B6B",
 };
 

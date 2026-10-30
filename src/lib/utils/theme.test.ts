@@ -1,3 +1,4 @@
+import type { AppearanceSnapshot } from "@/bindings";
 import assert from "node:assert/strict";
 import {
   relativeLuminance,
@@ -5,6 +6,8 @@ import {
   onAccentFor,
   derivedAccentProperties,
   DEFAULT_CUSTOM_THEME_COLORS,
+  applyResolvedAppearance,
+  resolveAppearance,
 } from "./theme";
 
 // Same hand-computed test matrix as settings.rs's relative_luminance tests --
@@ -86,5 +89,160 @@ assert.deepEqual(props, {
   "--color-on-accent": "#ffffff",
   "--color-background-ui": "#0f766e",
 });
+
+// ---- UI enterprise S2: resolveAppearance table and DOM application (A1-A5) ----
+
+const snap = (over: Partial<AppearanceSnapshot> = {}): AppearanceSnapshot => ({
+  rev: 1,
+  theme: "system",
+  custom_colors: null,
+  accent: "amber",
+  chat_theme: "dark",
+  visual_style: "vibrant",
+  ...over,
+});
+
+const LIGHT_CUSTOM = { ...DEFAULT_CUSTOM_THEME_COLORS, background: "#ffffff" };
+
+const THEMES = ["system", "light", "dark", "aurora", "custom"] as const;
+const CHAT_THEMES = ["dark", "follow_app", "light"] as const;
+
+function fakeRoot() {
+  const props = new Map<string, string>();
+  const dataset: Record<string, string | undefined> = {};
+  return {
+    props,
+    dataset,
+    style: {
+      setProperty: (name: string, value: string) => {
+        props.set(name, value);
+      },
+      removeProperty: (name: string) => {
+        props.delete(name);
+        return "";
+      },
+    },
+  };
+}
+
+for (const theme of THEMES) {
+  for (const prefersDark of [false, true]) {
+    for (const chatTheme of CHAT_THEMES) {
+      const label = `${theme} prefersDark=${prefersDark} chat=${chatTheme}`;
+      const custom = theme === "custom";
+      const resolved = resolveAppearance(
+        snap({
+          theme,
+          chat_theme: chatTheme,
+          accent: "blue",
+          visual_style: "restrained",
+          custom_colors: custom ? LIGHT_CUSTOM : null,
+        }),
+        prefersDark,
+      );
+      const bucket =
+        theme === "dark" || theme === "aurora"
+          ? "dark"
+          : theme === "light" || custom
+            ? "light"
+            : prefersDark
+              ? "dark"
+              : "light";
+      const chatPalette = chatTheme === "follow_app" ? bucket : chatTheme;
+      assert.equal(resolved.theme, theme, `${label}: theme`);
+      assert.equal(resolved.bucket, bucket, `${label}: bucket`);
+      assert.equal(resolved.chatPalette, chatPalette, `${label}: chatPalette`);
+      assert.equal(
+        resolved.accent,
+        custom || theme === "aurora" ? null : "blue",
+        `${label}: accent applies only under system/light/dark`,
+      );
+      assert.equal(resolved.style, "restrained", `${label}: style`);
+      assert.deepEqual(
+        resolved.customColors,
+        custom ? LIGHT_CUSTOM : null,
+        `${label}: customColors`,
+      );
+    }
+  }
+}
+
+{
+  const root = fakeRoot();
+  applyResolvedAppearance(
+    root,
+    resolveAppearance(snap({ accent: "blue" }), false),
+  );
+  assert.equal(root.dataset.accent, "blue", "system sets data-accent");
+  assert.equal(root.dataset.theme, undefined, "system removes data-theme");
+
+  applyResolvedAppearance(
+    root,
+    resolveAppearance(snap({ accent: "amber" }), false),
+  );
+  assert.equal(
+    root.dataset.accent,
+    undefined,
+    "amber is the default, no attribute",
+  );
+
+  applyResolvedAppearance(
+    root,
+    resolveAppearance(snap({ theme: "aurora", accent: "rose" }), false),
+  );
+  assert.equal(root.dataset.accent, undefined, "aurora ignores the accent");
+  assert.equal(root.dataset.theme, "aurora");
+
+  applyResolvedAppearance(
+    root,
+    resolveAppearance(
+      snap({ theme: "custom", accent: "rose", custom_colors: LIGHT_CUSTOM }),
+      false,
+    ),
+  );
+  assert.equal(root.dataset.accent, undefined, "custom ignores the accent");
+}
+
+{
+  const root = fakeRoot();
+  applyResolvedAppearance(
+    root,
+    resolveAppearance(
+      snap({ theme: "custom", custom_colors: DEFAULT_CUSTOM_THEME_COLORS }),
+      false,
+    ),
+  );
+  assert.ok(root.props.has("--color-text"), "custom sets inline text");
+  assert.ok(root.props.has("--color-accent-a"), "custom sets inline accent");
+  assert.ok(root.props.has("--s-muted"), "custom sets inline overlay neutrals");
+  applyResolvedAppearance(
+    root,
+    resolveAppearance(snap({ theme: "dark" }), false),
+  );
+  for (const residue of [
+    "--color-text",
+    "--color-background",
+    "--color-logo-primary",
+    "--color-accent-a",
+    "--color-accent-b",
+    "--color-on-accent",
+    "--color-background-ui",
+    "--s-muted",
+  ]) {
+    assert.ok(!root.props.has(residue), `Custom -> Dark leaves ${residue}`);
+  }
+  assert.equal(root.dataset.theme, "dark");
+}
+
+{
+  const root = fakeRoot();
+  applyResolvedAppearance(
+    root,
+    resolveAppearance(snap({ visual_style: "restrained" }), false),
+  );
+  assert.equal(root.dataset.style, "restrained", "restrained sets data-style");
+  applyResolvedAppearance(root, resolveAppearance(snap(), false));
+  assert.equal(root.dataset.style, undefined, "vibrant removes data-style");
+}
 
 console.log("theme luminance and accent tokens: all assertions passed");

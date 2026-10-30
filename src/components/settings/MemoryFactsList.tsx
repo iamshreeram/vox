@@ -62,7 +62,8 @@ export const MemoryFactsList: React.FC = () => {
             if (e.key === "Enter") handleAdd();
           }}
           placeholder={t("settings.advanced.memory.addPlaceholder")}
-          className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-mid-gray/20 bg-background focus:outline-none focus:ring-1 focus:ring-logo-primary"
+          aria-label={t("settings.advanced.memory.addPlaceholder")}
+          className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-mid-gray/20 bg-background"
         />
         <Button
           variant="secondary"
@@ -75,7 +76,7 @@ export const MemoryFactsList: React.FC = () => {
       </div>
 
       {facts.length === 0 ? (
-        <p className="text-xs text-mid-gray">
+        <p className="text-xs text-muted">
           {t("settings.advanced.memory.empty")}
         </p>
       ) : (

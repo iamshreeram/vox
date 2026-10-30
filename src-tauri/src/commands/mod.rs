@@ -4,6 +4,7 @@ mod acp_permission_settings_tests;
 pub mod agent_jobs;
 pub mod agent_tools;
 pub mod ambient;
+pub mod appearance;
 pub mod audio;
 pub mod aux_model;
 pub mod brain;

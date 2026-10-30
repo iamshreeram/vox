@@ -2,8 +2,10 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { listen } from "@tauri-apps/api/event";
 import type {
+  Accent,
   AppSettings as Settings,
   AudioDevice,
+  ChatTheme,
   ChineseScript,
   ConverseBargeIn,
   CustomThemeColors,
@@ -15,6 +17,7 @@ import type {
   SpeakerSensitivity,
   TtsEngine,
   VadBackend,
+  VisualStyle,
   WakeWordAction,
 } from "@/bindings";
 import { commands } from "@/bindings";
@@ -39,7 +42,7 @@ interface SettingsStore {
   updateSetting: <K extends keyof Settings>(
     key: K,
     value: Settings[K],
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   resetSetting: (key: keyof Settings) => Promise<void>;
   refreshSettings: () => Promise<void>;
   refreshAudioDevices: () => Promise<void>;
@@ -246,6 +249,10 @@ const settingUpdaters: {
   theme: (value) => commands.changeThemeSetting(value as string),
   custom_theme_colors: (value) =>
     commands.updateCustomThemeColors(value as CustomThemeColors),
+  accent: (value) => commands.changeAccentSetting(value as Accent),
+  chat_theme: (value) => commands.changeChatThemeSetting(value as ChatTheme),
+  visual_style: (value) =>
+    commands.changeVisualStyleSetting(value as VisualStyle),
   experimental_enabled: (value) =>
     commands.changeExperimentalEnabledSetting(value as boolean),
   voice_commands_enabled: (value) =>
@@ -617,7 +624,7 @@ export const useSettingsStore = create<SettingsStore>()(
     updateSetting: async <K extends keyof Settings>(
       key: K,
       value: Settings[K],
-    ) => {
+    ): Promise<boolean> => {
       const { settings, setUpdating } = get();
       const updateKey = String(key);
       const originalValue = settings?.[key];
@@ -635,11 +642,13 @@ export const useSettingsStore = create<SettingsStore>()(
         } else if (key !== "bindings" && key !== "selected_model") {
           console.warn(`No handler for setting: ${String(key)}`);
         }
+        return true;
       } catch (error) {
         console.error(`Failed to update setting ${String(key)}:`, error);
         if (settings) {
           set({ settings: { ...settings, [key]: originalValue } });
         }
+        return false;
       } finally {
         setUpdating(updateKey, false);
       }

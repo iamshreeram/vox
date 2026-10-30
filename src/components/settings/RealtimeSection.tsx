@@ -146,7 +146,7 @@ const RtTextField: React.FC<RtTextFieldProps> = ({
         </div>
         {footer}
         {error !== null && (
-          <p role="alert" className="text-xs text-red-400">
+          <p role="alert" className="text-xs text-danger">
             {error}
           </p>
         )}
@@ -208,7 +208,7 @@ export const RealtimeSection: React.FC<RealtimeSectionProps> = React.memo(
 
     return (
       <div className="space-y-4">
-        <p className="text-xs text-mid-gray px-3">{t(`${K}.intro`)}</p>
+        <p className="text-xs text-muted px-3">{t(`${K}.intro`)}</p>
 
         {boolToggle(
           "enabled",
@@ -267,18 +267,14 @@ export const RealtimeSection: React.FC<RealtimeSectionProps> = React.memo(
           descriptionMode={descriptionMode}
           grouped={grouped}
           footer={
-            <span className="text-xs text-mid-gray">
+            <span className="text-xs text-muted">
               {summary.hasToken
                 ? t(`${K}.token.set`, { count: token.length })
                 : t(`${K}.token.none`)}
             </span>
           }
         />
-        <p
-          role="status"
-          aria-live="polite"
-          className="text-xs text-mid-gray px-3"
-        >
+        <p role="status" aria-live="polite" className="text-xs text-muted px-3">
           {t(`${K}.status.${status}`)}
         </p>
 

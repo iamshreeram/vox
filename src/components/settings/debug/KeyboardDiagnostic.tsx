@@ -77,7 +77,7 @@ export const KeyboardDiagnostic: React.FC = () => {
           <p className="text-sm font-medium">
             {t("settings.debug.keyboardDiagnostic.title")}
           </p>
-          <p className="text-xs text-mid-gray">
+          <p className="text-xs text-muted">
             {t("settings.debug.keyboardDiagnostic.description")}
           </p>
         </div>
@@ -95,7 +95,7 @@ export const KeyboardDiagnostic: React.FC = () => {
         </p>
       )}
       {error !== null && (
-        <p className="text-sm text-red-500">
+        <p className="text-sm text-danger">
           {t("settings.debug.keyboardDiagnostic.failed", { error })}
         </p>
       )}

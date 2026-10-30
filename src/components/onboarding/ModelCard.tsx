@@ -169,7 +169,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
     <>
       {capabilityLanguages.length > 0 && (
         <div
-          className="flex items-center gap-1 text-xs text-text/50"
+          className="flex items-center gap-1 text-xs text-muted"
           title={
             capabilityLanguages.length === 1
               ? t("modelSelector.capabilities.singleLanguage")
@@ -182,7 +182,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
       )}
       {model.supports_translation && (
         <div
-          className="flex items-center gap-1 text-xs text-text/50"
+          className="flex items-center gap-1 text-xs text-muted"
           title={t("modelSelector.capabilities.translation")}
         >
           <Languages className="w-3.5 h-3.5" />
@@ -191,7 +191,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
       )}
       {model.supports_streaming && (
         <div
-          className="flex items-center gap-1 text-xs text-text/50"
+          className="flex items-center gap-1 text-xs text-muted"
           title={t("modelSelector.capabilities.streaming")}
         >
           <AudioLines className="w-3.5 h-3.5" />
@@ -210,7 +210,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
       )}
       <span>{formattedModelSize}</span>
       {debugMode && quantLabel && (
-        <span className="text-text/40">{quantLabel}</span>
+        <span className="text-muted">{quantLabel}</span>
       )}
     </>
   ) : undefined;
@@ -220,7 +220,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
       <div className="hidden sm:flex items-center ms-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <p className="text-xs text-text/60 w-24 text-end">
+            <p className="text-xs text-muted w-24 text-end">
               {t("onboarding.modelCard.accuracy")}
             </p>
             <div className="w-16 h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
@@ -231,7 +231,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <p className="text-xs text-text/60 w-24 text-end">
+            <p className="text-xs text-muted w-24 text-end">
               {t("onboarding.modelCard.speed")}
             </p>
             <div className="w-16 h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">

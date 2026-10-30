@@ -31,7 +31,8 @@
     "debug": "디버그",
     "about": "정보",
     "experimental": "Experimental",
-    "agents": "Agents"
+    "agents": "Agents",
+    "appearance": "Appearance"
   },
   "onboarding": {
     "subtitle": "시작하려면 음성 인식 모델을 선택하세요",
@@ -199,6 +200,7 @@
         "description": "음성-텍스트 녹음을 시작하는 키보드 단축키를 설정하세요",
         "loading": "단축키 로딩 중...",
         "none": "설정된 단축키 없음",
+        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
         "notFound": "단축키를 찾을 수 없음",
         "pressKeys": "키를 눌러주세요...",
         "bindings": {
@@ -329,7 +331,57 @@
       }
     },
     "appearance": {
-      "title": "Appearance"
+      "title": "Appearance",
+      "accent": {
+        "title": "Accent colour",
+        "description": "The highlight colour of buttons, selection and the preview under the System, Light and Dark themes.",
+        "locked": "Aurora and Custom set their own colours, so the accent is off. Choose System, Light or Dark to change it.",
+        "swatch": {
+          "amber": "Amber",
+          "blue": "Blue",
+          "violet": "Violet",
+          "emerald": "Emerald",
+          "rose": "Rose",
+          "slate": "Slate"
+        }
+      },
+      "style": {
+        "title": "Visual style",
+        "description": "How much colour the interface uses.",
+        "vibrant": "Vibrant",
+        "vibrantHint": "Coloured sidebar icons, accent cards and a warm page background.",
+        "restrained": "Restrained",
+        "restrainedHint": "Neutral cards and borders. The accent appears only on selection and primary actions."
+      },
+      "chatTheme": {
+        "title": "Conversation window theme",
+        "description": "Colours of the conversation window. Follow app uses the theme chosen above.",
+        "followApp": "Follow app",
+        "dark": "Dark",
+        "light": "Light",
+        "nativeNote": "The window title bar follows the app theme; a Light chat can keep a dark title bar."
+      },
+      "chatWindow": {
+        "title": "Conversation window"
+      },
+      "preview": {
+        "title": "Preview",
+        "description": "Shows your choices as they will look. It updates as you change them.",
+        "orb": "Orb",
+        "assistant": "Vox replies in this style.",
+        "user": "Your message",
+        "action": "Primary action",
+        "chat": "Conversation window: {{palette}}"
+      },
+      "reset": {
+        "title": "Reset appearance to defaults",
+        "description": "Returns the theme, accent, visual style, conversation theme and transparency to Vox's defaults.",
+        "confirm": "Reset all five appearance settings to their defaults?",
+        "confirmAction": "Confirm reset",
+        "cancel": "Cancel",
+        "done": "Appearance reset to defaults.",
+        "failed": "Some appearance settings could not be reset. Try again."
+      }
     },
     "advanced": {
       "groups": {
@@ -1361,7 +1413,7 @@
       }
     },
     "search": {
-      "placeholder": "설정 검색",
+      "placeholder": "검색",
       "label": "설정 검색",
       "clear": "검색 지우기",
       "noResults": "“{{query}}”에 대한 설정을 찾을 수 없습니다",
@@ -1573,7 +1625,9 @@
     "open": "열기",
     "copy": "복사",
     "clear": "지우기",
-    "noOptionsFound": "옵션을 찾을 수 없습니다"
+    "noOptionsFound": "옵션을 찾을 수 없습니다",
+    "reset": "재설정",
+    "seek": "탐색"
   },
   "accessibility": {
     "permissionsDescription": "Vox는 녹음된 텍스트를 입력하기 위해 접근성 권한이 필요합니다.",
@@ -1894,9 +1948,23 @@
         "speech_stuck": "Speech output got stuck, so the conversation stopped.",
         "turn_limit": "Stopped at the turn limit."
       }
-    }
+    },
+    "clearConfirm": "Confirm clear",
+    "clearCancel": "Cancel",
+    "clearPrompt": "Clear the conversation log? This cannot be undone."
   },
   "orb": {
-    "label": "Vox orb. Press Enter to open the conversation."
+    "label": "Vox orb. Press Enter to open the conversation.",
+    "assistantName": "Vox assistant",
+    "stateAnnounce": "{{name}}: {{state}}",
+    "face": {
+      "idle": "Idle",
+      "listening": "Listening",
+      "thinking": "Thinking",
+      "acting": "Acting",
+      "speaking": "Speaking",
+      "sleep": "Asleep",
+      "concerned": "Concerned"
+    }
   }
 }

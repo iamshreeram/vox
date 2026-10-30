@@ -370,6 +370,112 @@ pub enum Theme {
     Custom,
 }
 
+/// Accent colour family of the Light and Dark themes (UI enterprise, DESIGN Revision 3, A3).
+/// Wire values are snake_case. Only the field-local deserializer below reads stored values.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Accent {
+    #[default]
+    Amber,
+    Blue,
+    Violet,
+    Emerald,
+    Rose,
+    Slate,
+}
+
+impl Accent {
+    /// The stored wire value of a known accent. Matching is exact.
+    pub fn from_wire(value: &str) -> Option<Self> {
+        match value {
+            "amber" => Some(Accent::Amber),
+            "blue" => Some(Accent::Blue),
+            "violet" => Some(Accent::Violet),
+            "emerald" => Some(Accent::Emerald),
+            "rose" => Some(Accent::Rose),
+            "slate" => Some(Accent::Slate),
+            _ => None,
+        }
+    }
+}
+
+/// Conversation window theme (UI enterprise, DESIGN Revision 3, A4). `Dark` is today's look.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatTheme {
+    #[default]
+    Dark,
+    FollowApp,
+    Light,
+}
+
+impl ChatTheme {
+    /// The stored wire value of a known chat theme. Matching is exact.
+    pub fn from_wire(value: &str) -> Option<Self> {
+        match value {
+            "dark" => Some(ChatTheme::Dark),
+            "follow_app" => Some(ChatTheme::FollowApp),
+            "light" => Some(ChatTheme::Light),
+            _ => None,
+        }
+    }
+}
+
+/// Visual style (UI enterprise, DESIGN Revision 3, A5). `Vibrant` is today's look.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum VisualStyle {
+    #[default]
+    Vibrant,
+    Restrained,
+}
+
+impl VisualStyle {
+    /// The stored wire value of a known visual style. Matching is exact.
+    pub fn from_wire(value: &str) -> Option<Self> {
+        match value {
+            "vibrant" => Some(VisualStyle::Vibrant),
+            "restrained" => Some(VisualStyle::Restrained),
+            _ => None,
+        }
+    }
+}
+
+/// Reads a stored appearance value. Any string that is not a known wire value, and any other
+/// JSON type (number, null, object, array, boolean), reads as the default.
+fn lenient_wire<'de, D, T>(deserializer: D, parse: fn(&str) -> Option<T>) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default,
+{
+    let raw = serde_json::Value::deserialize(deserializer)?;
+    Ok(raw.as_str().and_then(parse).unwrap_or_default())
+}
+
+/// Field-local deserializer for `accent`. Garbage reads as `Amber`.
+pub fn deserialize_accent<'de, D>(deserializer: D) -> Result<Accent, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    lenient_wire(deserializer, Accent::from_wire)
+}
+
+/// Field-local deserializer for `chat_theme`. Garbage reads as `Dark`.
+pub fn deserialize_chat_theme<'de, D>(deserializer: D) -> Result<ChatTheme, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    lenient_wire(deserializer, ChatTheme::from_wire)
+}
+
+/// Field-local deserializer for `visual_style`. Garbage reads as `Vibrant`.
+pub fn deserialize_visual_style<'de, D>(deserializer: D) -> Result<VisualStyle, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    lenient_wire(deserializer, VisualStyle::from_wire)
+}
+
 /// Exactly `#` followed by 6 ASCII hex digits, case-insensitive. No 3-digit
 /// shorthand, no whitespace, no named colors ("red") -- deliberately strict
 /// so a CSS custom property never silently receives garbage.
@@ -1127,6 +1233,16 @@ pub struct AppSettings {
         deserialize_with = "crate::chat_opacity::deserialize_chat_opacity"
     )]
     pub chat_opacity_pct: u8,
+    /// Accent colour of the Light and Dark themes. Set through `change_accent_setting` (or the
+    /// appearance commit). Garbage reads as the default.
+    #[serde(default, deserialize_with = "deserialize_accent")]
+    pub accent: Accent,
+    /// Theme of the conversation window. Set through `change_chat_theme_setting`.
+    #[serde(default, deserialize_with = "deserialize_chat_theme")]
+    pub chat_theme: ChatTheme,
+    /// Visual style (vibrant or restrained). Set through `change_visual_style_setting`.
+    #[serde(default, deserialize_with = "deserialize_visual_style")]
+    pub visual_style: VisualStyle,
 }
 
 /// Default vault folders for the RAG index (DESIGN Rev 5, 3.1).
@@ -1465,8 +1581,10 @@ pub fn dictation_agent_enabled(s: &AppSettings) -> bool {
 /// Stage 4 (A8): the launch fields of `committed`, which only `write_settings_gated` may change:
 /// the hand-off and planner flags, the main agent's enablement, the dictation hand-off switch,
 /// command, arguments, turn timeout and approval mode, the specialist agents, the Brain fields,
-/// the first-run fields, and the orb and chat presentation fields (`chat_presentation`,
-/// `orb_visible`, `orb_size`, `orb_size_px`, `orb_position`, `chat_opacity_pct`). Returns `incoming` with those fields replaced by the
+/// the first-run fields, the orb and chat presentation fields (`chat_presentation`,
+/// `orb_visible`, `orb_size`, `orb_size_px`, `orb_position`, `chat_opacity_pct`) and the
+/// appearance fields (`theme`, `custom_theme_colors`, `accent`, `chat_theme`, `visual_style`,
+/// changed only by `appearance::commit_appearance`). Returns `incoming` with those fields replaced by the
 /// committed values, and every other field as incoming.
 pub fn preserve_launch_fields(mut incoming: AppSettings, committed: &AppSettings) -> AppSettings {
     incoming.acp_agent_enabled = committed.acp_agent_enabled;
@@ -1481,7 +1599,19 @@ pub fn preserve_launch_fields(mut incoming: AppSettings, committed: &AppSettings
     copy_brain_fields(&mut incoming, committed);
     copy_first_run_fields(&mut incoming, committed);
     copy_orb_fields(&mut incoming, committed);
+    copy_appearance_fields(&mut incoming, committed);
     incoming
+}
+
+/// Copies the appearance fields from `source`, so a stale whole-object write cannot undo a
+/// committed theme, palette, accent, conversation theme or visual style. Only
+/// `appearance::commit_appearance` changes them.
+fn copy_appearance_fields(target: &mut AppSettings, source: &AppSettings) {
+    target.theme = source.theme;
+    target.custom_theme_colors = source.custom_theme_colors.clone();
+    target.accent = source.accent;
+    target.chat_theme = source.chat_theme;
+    target.visual_style = source.visual_style;
 }
 
 /// Copies the orb and chat presentation fields from `source`, so a stale whole-object write
@@ -2443,6 +2573,9 @@ pub fn get_default_settings() -> AppSettings {
         orb_size_px: None,
         orb_position: None,
         chat_opacity_pct: crate::chat_opacity::CHAT_OPACITY_DEFAULT,
+        accent: Accent::default(),
+        chat_theme: ChatTheme::default(),
+        visual_style: VisualStyle::default(),
     }
 }
 

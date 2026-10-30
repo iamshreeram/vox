@@ -6,6 +6,7 @@
 // deliberately absent: it must not be reachable from an external event.
 export const SETTINGS_SECTION_IDS = [
   "general",
+  "appearance",
   "history",
   "models",
   "advanced",

@@ -31,7 +31,8 @@
     "experimental": "Experimental",
     "agents": "Agents",
     "models": "النماذج",
-    "brain": "Brain"
+    "brain": "Brain",
+    "appearance": "Appearance"
   },
   "onboarding": {
     "subtitle": "للبدء، اختر نموذج التفريغ الصوتي",
@@ -196,6 +197,7 @@
         "description": "إعداد اختصارات لوحة المفاتيح لبدء تسجيل التفريغ الصوتي",
         "loading": "...جاري تحميل الاختصارات",
         "none": "لا توجد اختصارات مجهزة",
+        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
         "notFound": "الاختصار غير موجود",
         "pressKeys": "...اضغط على المفاتيح",
         "bindings": {
@@ -1358,10 +1360,60 @@
       }
     },
     "appearance": {
-      "title": "Appearance"
+      "title": "Appearance",
+      "accent": {
+        "title": "Accent colour",
+        "description": "The highlight colour of buttons, selection and the preview under the System, Light and Dark themes.",
+        "locked": "Aurora and Custom set their own colours, so the accent is off. Choose System, Light or Dark to change it.",
+        "swatch": {
+          "amber": "Amber",
+          "blue": "Blue",
+          "violet": "Violet",
+          "emerald": "Emerald",
+          "rose": "Rose",
+          "slate": "Slate"
+        }
+      },
+      "style": {
+        "title": "Visual style",
+        "description": "How much colour the interface uses.",
+        "vibrant": "Vibrant",
+        "vibrantHint": "Coloured sidebar icons, accent cards and a warm page background.",
+        "restrained": "Restrained",
+        "restrainedHint": "Neutral cards and borders. The accent appears only on selection and primary actions."
+      },
+      "chatTheme": {
+        "title": "Conversation window theme",
+        "description": "Colours of the conversation window. Follow app uses the theme chosen above.",
+        "followApp": "Follow app",
+        "dark": "Dark",
+        "light": "Light",
+        "nativeNote": "The window title bar follows the app theme; a Light chat can keep a dark title bar."
+      },
+      "chatWindow": {
+        "title": "Conversation window"
+      },
+      "preview": {
+        "title": "Preview",
+        "description": "Shows your choices as they will look. It updates as you change them.",
+        "orb": "Orb",
+        "assistant": "Vox replies in this style.",
+        "user": "Your message",
+        "action": "Primary action",
+        "chat": "Conversation window: {{palette}}"
+      },
+      "reset": {
+        "title": "Reset appearance to defaults",
+        "description": "Returns the theme, accent, visual style, conversation theme and transparency to Vox's defaults.",
+        "confirm": "Reset all five appearance settings to their defaults?",
+        "confirmAction": "Confirm reset",
+        "cancel": "Cancel",
+        "done": "Appearance reset to defaults.",
+        "failed": "Some appearance settings could not be reset. Try again."
+      }
     },
     "search": {
-      "placeholder": "ابحث في الإعدادات",
+      "placeholder": "بحث",
       "label": "ابحث في الإعدادات",
       "clear": "مسح البحث",
       "noResults": "لم يتم العثور على إعدادات لـ «{{query}}»",
@@ -1573,7 +1625,9 @@
     "open": "فتح",
     "copy": "نسخ",
     "clear": "مسح",
-    "noOptionsFound": "لم يتم العثور على خيارات"
+    "noOptionsFound": "لم يتم العثور على خيارات",
+    "reset": "إعادة تعيين",
+    "seek": "بحث"
   },
   "accessibility": {
     "permissionsDescription": ".يحتاج Vox إلى أذونات إمكانية الوصول لكتابة النص المفرغ",
@@ -1894,9 +1948,23 @@
         "speech_stuck": "Speech output got stuck, so the conversation stopped.",
         "turn_limit": "Stopped at the turn limit."
       }
-    }
+    },
+    "clearConfirm": "Confirm clear",
+    "clearCancel": "Cancel",
+    "clearPrompt": "Clear the conversation log? This cannot be undone."
   },
   "orb": {
-    "label": "Vox orb. Press Enter to open the conversation."
+    "label": "Vox orb. Press Enter to open the conversation.",
+    "assistantName": "Vox assistant",
+    "stateAnnounce": "{{name}}: {{state}}",
+    "face": {
+      "idle": "Idle",
+      "listening": "Listening",
+      "thinking": "Thinking",
+      "acting": "Acting",
+      "speaking": "Speaking",
+      "sleep": "Asleep",
+      "concerned": "Concerned"
+    }
   }
 }

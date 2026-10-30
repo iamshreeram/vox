@@ -51,7 +51,7 @@ export const PlacedGroupsView: React.FC<PlacedGroupsViewProps> = ({
             return (
               <React.Fragment key={id}>
                 {subTitleKey ? (
-                  <div className="px-3 pt-3 pb-1 text-xs font-medium uppercase tracking-wide text-mid-gray">
+                  <div className="px-3 pt-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted">
                     {t(subTitleKey)}
                   </div>
                 ) : null}

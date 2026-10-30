@@ -380,7 +380,11 @@ test.describe("Conversation window: Clear and command allow-list", () => {
       clearFails: false,
     });
     await expect(bubbles(page)).toHaveText(["gone soon"]);
+    // Re-pointed (UI enterprise U15a): Clear now asks first; old: one click cleared.
     await clearButton(page).click();
+    await page
+      .getByRole("button", { name: "Confirm clear", exact: true })
+      .click();
     await expect(
       page.getByText(
         "No conversation yet. Type a message below, or say your wake phrase.",
@@ -400,7 +404,11 @@ test.describe("Conversation window: Clear and command allow-list", () => {
       clearFails: true,
     });
     await expect(bubbles(page)).toHaveText(["still here"]);
+    // Re-pointed (UI enterprise U15a): Clear now asks first; old: one click cleared.
     await clearButton(page).click();
+    await page
+      .getByRole("button", { name: "Confirm clear", exact: true })
+      .click();
     await expect(
       page.getByText("Could not clear the conversation. Try again.", {
         exact: true,
@@ -414,6 +422,10 @@ test.describe("Conversation window: Clear and command allow-list", () => {
   }) => {
     await openChat(page, { snapshots: [snapshot(0, [])], clearFails: false });
     await clearButton(page).click();
+    // Re-pointed (UI enterprise U15a): Clear asks first; old: one click called clear_chat_log.
+    await page
+      .getByRole("button", { name: "Confirm clear", exact: true })
+      .click();
     await expect.poll(() => clearCalls(page)).toBe(1);
     const names = await invokes(page);
     for (const name of names) {

@@ -22,7 +22,7 @@ import { PlacedGroups } from "../PlacedGroups";
 import { CollapsibleSettingsGroup } from "../../ui/CollapsibleSettingsGroup";
 import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
 import { ModelSettingsCard } from "./ModelSettingsCard";
-import { FinishSetupCallout } from "./FinishSetupCallout";
+import { SetupStatusBanner } from "../setup/SetupStatusBanner";
 
 // check if model supports a language based on its supported_languages list
 const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
@@ -234,16 +234,7 @@ export const ModelsSettings: React.FC = () => {
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-4">
-      <div className="mb-4">
-        <h1 className="text-xl font-semibold mb-2">
-          {t("settings.models.title")}
-        </h1>
-        <p className="text-sm text-text/60">
-          {t("settings.models.description")}
-        </p>
-      </div>
-
-      <FinishSetupCallout />
+      <SetupStatusBanner page="models" />
 
       <CollapsibleSettingsGroup
         id="sttModels"
@@ -254,19 +245,20 @@ export const ModelsSettings: React.FC = () => {
 
         <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />
 
-        <h2 className="px-3 pt-3 pb-1 text-xs font-medium text-mid-gray uppercase tracking-wide">
+        <h2 className="px-3 pt-3 pb-1 text-xs font-medium text-muted uppercase tracking-wide">
           {t("settings.models.transcriptionHeading")}
         </h2>
 
         {/* Search bar — filter the catalog by name or description */}
         <div className="relative mx-3 my-2">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text/40 pointer-events-none" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t("settings.models.searchPlaceholder")}
-            className="w-full pl-9 pr-3 py-2 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded-lg focus:outline-none focus:ring-1 focus:ring-logo-primary placeholder:text-text/40"
+            aria-label={t("settings.models.searchPlaceholder")}
+            className="w-full pl-9 pr-3 py-2 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded-lg placeholder:text-muted"
           />
         </div>
 
@@ -274,7 +266,7 @@ export const ModelsSettings: React.FC = () => {
           {/* Downloaded Models Section — header always visible so filter stays accessible */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-medium text-text/60">
+              <h2 className="text-sm font-medium text-muted">
                 {t("settings.models.yourModels")}
               </h2>
               <div className="flex items-center gap-2">
@@ -285,7 +277,7 @@ export const ModelsSettings: React.FC = () => {
                   disabled={isRescanning}
                   title={t("settings.models.rescan.tooltip")}
                   aria-label={t("settings.models.rescan.tooltip")}
-                  className="flex items-center justify-center w-8 h-8 text-sm font-medium rounded-lg bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center justify-center w-8 h-8 text-sm font-medium rounded-lg bg-mid-gray/10 text-muted hover:bg-mid-gray/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <RefreshCw
                     className={`w-3.5 h-3.5 ${isRescanning ? "animate-spin" : ""}`}
@@ -303,7 +295,7 @@ export const ModelsSettings: React.FC = () => {
                   className={`flex items-center justify-center w-8 h-8 text-sm font-medium rounded-lg transition-colors ${
                     filterStreaming
                       ? "bg-logo-primary/20 text-logo-primary hover:bg-logo-primary/30"
-                      : "bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20"
+                      : "bg-mid-gray/10 text-muted hover:bg-mid-gray/20"
                   }`}
                 >
                   <AudioLines className="w-3.5 h-3.5" />
@@ -317,7 +309,7 @@ export const ModelsSettings: React.FC = () => {
                   className={`flex items-center justify-center w-8 h-8 text-sm font-medium rounded-lg transition-colors ${
                     filterTranslation
                       ? "bg-logo-primary/20 text-logo-primary hover:bg-logo-primary/30"
-                      : "bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20"
+                      : "bg-mid-gray/10 text-muted hover:bg-mid-gray/20"
                   }`}
                 >
                   <Languages className="w-3.5 h-3.5" />
@@ -332,7 +324,7 @@ export const ModelsSettings: React.FC = () => {
                     className={`flex items-center gap-1.5 h-8 px-3 text-sm font-medium rounded-lg transition-colors ${
                       languageFilter !== "all"
                         ? "bg-logo-primary/20 text-logo-primary"
-                        : "bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20"
+                        : "bg-mid-gray/10 text-muted hover:bg-mid-gray/20"
                     }`}
                   >
                     <Globe className="w-3.5 h-3.5" />
@@ -370,7 +362,10 @@ export const ModelsSettings: React.FC = () => {
                           placeholder={t(
                             "settings.general.language.searchPlaceholder",
                           )}
-                          className="w-full px-2 py-1 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded-md focus:outline-none focus:ring-1 focus:ring-logo-primary"
+                          aria-label={t(
+                            "settings.general.language.searchPlaceholder",
+                          )}
+                          className="w-full px-2 py-1 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded-md"
                         />
                       </div>
                       <div className="max-h-48 overflow-y-auto">
@@ -408,7 +403,7 @@ export const ModelsSettings: React.FC = () => {
                           </button>
                         ))}
                         {filteredLanguages.length === 0 && (
-                          <div className="px-3 py-2 text-sm text-text/50 text-center">
+                          <div className="px-3 py-2 text-sm text-muted text-center">
                             {t("settings.general.language.noResults")}
                           </div>
                         )}
@@ -443,7 +438,7 @@ export const ModelsSettings: React.FC = () => {
           {/* Available Models Section */}
           {!loading && availableModels.length > 0 && (
             <div className="space-y-3">
-              <h2 className="text-sm font-medium text-text/60">
+              <h2 className="text-sm font-medium text-muted">
                 {t("settings.models.availableModels")}
               </h2>
               {availableModels.map((model: ModelInfo) => (
@@ -463,7 +458,7 @@ export const ModelsSettings: React.FC = () => {
             </div>
           )}
           {!loading && filteredModels.length === 0 && (
-            <div className="text-center py-8 text-text/50">
+            <div className="text-center py-8 text-muted">
               {t("settings.models.noModelsMatch")}
             </div>
           )}

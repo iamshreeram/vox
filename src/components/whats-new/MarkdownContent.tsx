@@ -73,9 +73,7 @@ const components: Components = {
       {children}
     </ul>
   ),
-  li: ({ children }) => (
-    <li className="pl-1 marker:text-text/50">{children}</li>
-  ),
+  li: ({ children }) => <li className="pl-1 marker:text-muted">{children}</li>,
   ol: ({ children }) => (
     <ol className="list-decimal space-y-1 ps-5 text-sm leading-relaxed text-text/80">
       {children}

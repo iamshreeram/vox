@@ -1,8 +1,9 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { SettingContainer } from "../ui/SettingContainer";
+import { SettingContainer } from "../../ui/SettingContainer";
 import { useSettings } from "@/hooks/useSettings";
 import { applyTheme, DEFAULT_CUSTOM_THEME_COLORS } from "@/lib/utils/theme";
+import { effectiveAppearance } from "./appearanceModel";
 import type { CustomThemeColors } from "@/bindings";
 
 /**
@@ -31,14 +32,15 @@ const FIELDS: { key: keyof CustomThemeColors; labelKey: string }[] = [
 
 export const CustomThemeEditor: React.FC = () => {
   const { t } = useTranslation();
-  const { getSetting, updateSetting } = useSettings();
+  const { settings, getSetting, updateSetting } = useSettings();
 
   const colors: CustomThemeColors =
     getSetting("custom_theme_colors") ?? DEFAULT_CUSTOM_THEME_COLORS;
 
   const handleFieldChange = (field: keyof CustomThemeColors, value: string) => {
     const merged: CustomThemeColors = { ...colors, [field]: value };
-    applyTheme("custom", merged);
+    const { accent, visualStyle } = effectiveAppearance(settings ?? {});
+    applyTheme("custom", merged, accent, visualStyle);
     updateSetting("custom_theme_colors", merged);
   };
 
@@ -60,9 +62,7 @@ export const CustomThemeEditor: React.FC = () => {
               className="h-8 w-12 cursor-pointer rounded border border-mid-gray/20 bg-transparent p-0"
               aria-label={t(labelKey)}
             />
-            <span className="text-sm font-mono text-mid-gray">
-              {colors[key]}
-            </span>
+            <span className="text-sm font-mono text-muted">{colors[key]}</span>
           </div>
         </SettingContainer>
       ))}

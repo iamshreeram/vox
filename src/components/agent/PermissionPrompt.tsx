@@ -121,14 +121,14 @@ export default function PermissionPrompt() {
             {t(view.kindLabelKey)}
           </span>
         </div>
-        <p id={descriptionId} className="text-sm text-mid-gray">
+        <p id={descriptionId} className="text-sm text-muted">
           {t(`${KEY_PREFIX}.untrustedNote`)}
         </p>
         <p className="break-words text-sm text-text">{view.title}</p>
         {view.showUnavailableWarning ? (
           <p
             role="note"
-            className="rounded-md border border-amber-500/70 bg-amber-500/10 p-2 text-sm font-medium text-text"
+            className="rounded-md border border-warning bg-warning-soft p-2 text-sm font-medium text-text"
           >
             {t(`${KEY_PREFIX}.detailsUnavailable`)}
           </p>
@@ -137,7 +137,7 @@ export default function PermissionPrompt() {
             {view.detailsText}
           </pre>
         )}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-mid-gray">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
           <span>{t(`${KEY_PREFIX}.countdown`, { seconds })}</span>
           {queued > 0 && (
             <span>{t(`${KEY_PREFIX}.queued`, { count: queued })}</span>

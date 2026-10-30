@@ -34,32 +34,79 @@
   --aurora-color-error: #f87171;
   /* Accent FILL for toggles, sliders and primary buttons. Kept deeper than the logo teal so white thumbs and white button text stay readable. */
   --aurora-color-background-ui: #0d9488;
+  /* Aurora selected surface (dark tint, not the light cream default), its accent text on that
+     surface, and its solid accent fill for solid primary buttons (white text on it >= 4.5:1). */
+  --aurora-color-accent-soft: #1f2d3d;
+  --aurora-color-accent-text: #5eead4;
+  --aurora-color-accent-ui: #0f766e;
 
   /* Vibrant accent gradient (a -> b) used by toggles, sliders, the active
      sidebar item and primary buttons. on-accent is the text color placed on
-     top of the gradient; each palette keeps >= 4.5:1 contrast at both ends. */
+     top of the gradient; each palette keeps >= 4.5:1 contrast at both ends.
+     The amber row below is the default. The other accents are set by the
+     `:root[data-accent=...]` blocks further down, from the canonical table in
+     src/styles/accents.ts (accents.test.ts pins the mirror). */
   --light-color-accent-a: #f59e0b;
   --light-color-accent-b: #f97316;
   --light-color-on-accent: #1a1204;
+  --light-color-accent-text: #7a4f00;
+  --light-color-accent-soft: #fef3c7;
+  --light-bubble-user-fill: rgba(245, 158, 11, 0.95);
+  --light-bubble-assistant-fill: rgba(254, 243, 199, 0.95);
+  --light-color-accent-ui: #c9971e;
   --dark-color-accent-a: #fbbf24;
   --dark-color-accent-b: #fb923c;
   --dark-color-on-accent: #1a1204;
+  --dark-color-accent-text: #f4c430;
+  --dark-color-accent-soft: #3d3418;
+  --dark-bubble-user-fill: rgba(251, 191, 36, 0.95);
+  --dark-bubble-assistant-fill: rgba(61, 52, 24, 0.95);
+  --dark-color-accent-ui: #c9971e;
   --aurora-color-accent-a: #0f766e;
   --aurora-color-accent-b: #7c3aed;
   --aurora-color-on-accent: #ffffff;
 
-  /* Semantic status colors. First used by SecureInputWarning; intended to
-     replace the ad-hoc yellow-500/red-500 usages (e.g. ui/Alert.tsx) over
-     time so status styling is themeable from one place. */
+  /* Semantic status colors. Components use the `--color-danger`,
+     `--color-success` and `--color-warning` tokens (registered in App.css), so
+     status styling is themeable from one place. `danger` follows the error
+     colour (and so the custom palette's error colour), `warning` the warning
+     colour. */
   --light-color-warning: #d97706;
   --light-color-error: #dc2626;
+  --light-color-success: #15803d;
+  --light-color-warning-soft: #fef3c7;
+  --light-color-danger-soft: #fee2e2;
+  --light-color-success-soft: #dcfce7;
   --dark-color-warning: #fbbf24;
   --dark-color-error: #f87171;
+  --dark-color-success: #4ade80;
+  --dark-color-warning-soft: #3d3418;
+  --dark-color-danger-soft: #3b1518;
+  --dark-color-success-soft: #163a25;
+  --aurora-color-success: #34d399;
+  --aurora-color-warning-soft: #3a3016;
+  --aurora-color-danger-soft: #3b1d24;
+  --aurora-color-success-soft: #15352b;
 
   /* Tokens that do not change between light and dark */
-  --color-background-ui: #c9971e;
   --color-text-stroke: #f6f6f6;
   --color-mid-gray: #808080;
+
+  /* Muted text (secondary labels, placeholders, empty states, hints). The text colour blended 78%
+     over the page background: >= 4.5:1 on the page, the restrained card, every mid-gray surface, the
+     worst stop of every Vibrant gradient and the selected accent tint, in every palette
+     (a11yTokens.test.ts). 68% measured 4.28:1 on the footer (R2-9/10). Replaces the former
+     `text-mid-gray` text usage, which measured 3.9:1 on the light page. */
+  --color-muted: color-mix(
+    in srgb,
+    var(--color-text) 78%,
+    var(--color-background)
+  );
+
+  /* ONE focus ring for every control (UI enterprise U10). It is the text colour, so it is 3:1 or
+     better on the page in every palette. Filled accent controls add an inner on-accent ring
+     (see the .btn-primary rule below), so the ring also reads against the fill. */
+  --focus-ring: var(--color-text);
 
   /* Active palette — defaults to light, follows the OS via the media query
      below, or is forced by `data-theme` (see the overrides below). */
@@ -72,6 +119,84 @@
   --color-accent-a: var(--light-color-accent-a);
   --color-accent-b: var(--light-color-accent-b);
   --color-on-accent: var(--light-color-on-accent);
+  --color-accent-text: var(--light-color-accent-text);
+  --color-accent-soft: var(--light-color-accent-soft);
+  --bubble-user-fill: var(--light-bubble-user-fill);
+  --bubble-assistant-fill: var(--light-bubble-assistant-fill);
+  /* The accent fill of toggles and sliders. Its value is the bucket's ui role. */
+  --color-accent-ui: var(--light-color-accent-ui);
+  --color-background-ui: var(--color-accent-ui);
+  --color-danger: var(--color-error);
+  --color-danger-soft: var(--light-color-danger-soft);
+  --color-success: var(--light-color-success);
+  --color-success-soft: var(--light-color-success-soft);
+  --color-warning-soft: var(--light-color-warning-soft);
+}
+
+/* Shared focus ring (UI enterprise U10): 2px outline, 2px offset, :focus-visible only, so the ring
+   shows for keyboard focus and not for mouse clicks. Components must not remove outlines without
+   this replacement (a11yStatic.test.ts). */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Accent-filled controls: a 2px inner ring in the on-accent text colour, so the focus indicator also
+   contrasts with the fill it sits on (a11yTokens.test.ts pins the 4.5:1 pair). */
+.btn-primary:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--color-on-accent);
+}
+
+/* Range sliders (UI enterprise R3-3): the thumb and track share one container, so the focus ring is
+   drawn on that container with the global --focus-ring (3:1 on the card). The input drops its own
+   outline so there is one ring, not two (a11yStatic.test.ts pins both rules). */
+.range-focus-ring:has(input[type="range"]:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+.range-focus-ring input[type="range"]:focus-visible {
+  outline: none;
+}
+
+/* Native radios in a label (UI enterprise R4-d): the ring is drawn on the LABEL (the visible row,
+   at least 24px tall) when its radio has keyboard focus. The radio drops its own outline so there is
+   one ring. focusRings.test.ts pins both rules. */
+.radio-focus-label:has(input[type="radio"]:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+.radio-focus-label input[type="radio"]:focus-visible {
+  outline: none;
+}
+
+/* Disabled accent-filled controls (R2-1..3). Opacity over the accent fill blends the on-accent label
+   toward the page and drops it to ~2.5:1, so a disabled primary keeps full opacity and takes a neutral
+   fill instead; the label stays --color-text on it (a11yTokens.test.ts pins 4.5:1). */
+.btn-primary:disabled {
+  opacity: 1;
+  background-image: none;
+  background-color: color-mix(
+    in srgb,
+    var(--color-text) 20%,
+    var(--color-background)
+  );
+  color: var(--color-text);
+}
+
+/* Reduced motion (UI enterprise U12): every transition and animation in every window that imports
+   this sheet (settings, chat, orb, bubbles, overlay) is shortened to an instant change. Stylesheets
+   without their own override are covered by this one (a11yStatic.test.ts). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -85,6 +210,15 @@
     --color-accent-a: var(--dark-color-accent-a);
     --color-accent-b: var(--dark-color-accent-b);
     --color-on-accent: var(--dark-color-on-accent);
+    --color-accent-text: var(--dark-color-accent-text);
+    --color-accent-soft: var(--dark-color-accent-soft);
+    --bubble-user-fill: var(--dark-bubble-user-fill);
+    --bubble-assistant-fill: var(--dark-bubble-assistant-fill);
+    --color-accent-ui: var(--dark-color-accent-ui);
+    --color-danger-soft: var(--dark-color-danger-soft);
+    --color-success: var(--dark-color-success);
+    --color-success-soft: var(--dark-color-success-soft);
+    --color-warning-soft: var(--dark-color-warning-soft);
   }
 }
 
@@ -108,6 +242,15 @@
   --color-accent-a: var(--light-color-accent-a);
   --color-accent-b: var(--light-color-accent-b);
   --color-on-accent: var(--light-color-on-accent);
+  --color-accent-text: var(--light-color-accent-text);
+  --color-accent-soft: var(--light-color-accent-soft);
+  --bubble-user-fill: var(--light-bubble-user-fill);
+  --bubble-assistant-fill: var(--light-bubble-assistant-fill);
+  --color-accent-ui: var(--light-color-accent-ui);
+  --color-danger-soft: var(--light-color-danger-soft);
+  --color-success: var(--light-color-success);
+  --color-success-soft: var(--light-color-success-soft);
+  --color-warning-soft: var(--light-color-warning-soft);
 }
 
 :root[data-theme="dark"] {
@@ -120,6 +263,15 @@
   --color-accent-a: var(--dark-color-accent-a);
   --color-accent-b: var(--dark-color-accent-b);
   --color-on-accent: var(--dark-color-on-accent);
+  --color-accent-text: var(--dark-color-accent-text);
+  --color-accent-soft: var(--dark-color-accent-soft);
+  --bubble-user-fill: var(--dark-bubble-user-fill);
+  --bubble-assistant-fill: var(--dark-bubble-assistant-fill);
+  --color-accent-ui: var(--dark-color-accent-ui);
+  --color-danger-soft: var(--dark-color-danger-soft);
+  --color-success: var(--dark-color-success);
+  --color-success-soft: var(--dark-color-success-soft);
+  --color-warning-soft: var(--dark-color-warning-soft);
 }
 
 :root[data-theme="aurora"] {
@@ -133,6 +285,16 @@
   --color-accent-a: var(--aurora-color-accent-a);
   --color-accent-b: var(--aurora-color-accent-b);
   --color-on-accent: var(--aurora-color-on-accent);
+  --color-accent-soft: var(--aurora-color-accent-soft);
+  --bubble-user-fill: rgba(15, 118, 110, 0.95);
+  --bubble-assistant-fill: rgba(31, 45, 61, 0.95);
+  --color-accent-text: var(--aurora-color-accent-text);
+  --color-accent-ui: var(--aurora-color-accent-ui);
+  --color-danger: var(--color-error);
+  --color-danger-soft: var(--aurora-color-danger-soft);
+  --color-success: var(--aurora-color-success);
+  --color-success-soft: var(--aurora-color-success-soft);
+  --color-warning-soft: var(--aurora-color-warning-soft);
 }
 
 /* "Custom": placeholder values only, matching the Rust defaults in
@@ -152,5 +314,146 @@
   --color-accent-a: #2dd4bf;
   --color-accent-b: #a78bfa;
   --color-on-accent: #111111;
+  --color-accent-soft: #1f2d3d;
+  --bubble-user-fill: rgba(45, 212, 191, 0.95);
+  --bubble-assistant-fill: rgba(31, 45, 61, 0.95);
+  --color-accent-text: #5eead4;
+  --color-accent-ui: #0f766e;
+  --color-danger: var(--color-error);
   --color-background-ui: var(--aurora-color-background-ui);
+  --color-success: #34d399;
+  --color-danger-soft: #3b1d24;
+  --color-success-soft: #15352b;
+  --color-warning-soft: #3a3016;
+}
+
+/* Accent selectors (UI S2, A3). The accent applies ONLY under Theme System, Light or Dark:
+   theme.ts sets data-accent for those and never under Aurora or Custom (their palettes win).
+   Each block sets the bucket sources for BOTH light and dark, mirroring the canonical table in
+   src/styles/accents.ts. Amber has no block: it is the :root default above. */
+:root[data-accent="blue"] {
+  --light-color-accent-a: #1d4ed8;
+  --light-color-accent-b: #1e40af;
+  --light-color-on-accent: #ffffff;
+  --light-color-accent-text: #1d4ed8;
+  --light-color-accent-soft: #dbeafe;
+  --light-bubble-user-fill: rgba(29, 78, 216, 0.95);
+  --light-bubble-assistant-fill: rgba(219, 234, 254, 0.95);
+  --light-color-logo-primary: #1d4ed8;
+  --light-color-accent-ui: #1d4ed8;
+  --dark-color-accent-a: #60a5fa;
+  --dark-color-accent-b: #3b82f6;
+  --dark-color-on-accent: #0b1220;
+  --dark-color-accent-text: #93c5fd;
+  --dark-color-accent-soft: #1e3a5f;
+  --dark-bubble-user-fill: rgba(96, 165, 250, 0.95);
+  --dark-bubble-assistant-fill: rgba(30, 58, 95, 0.95);
+  --dark-color-logo-primary: #60a5fa;
+  --dark-color-accent-ui: #60a5fa;
+}
+
+:root[data-accent="violet"] {
+  --light-color-accent-a: #6d28d9;
+  --light-color-accent-b: #7c3aed;
+  --light-color-on-accent: #ffffff;
+  --light-color-accent-text: #6d28d9;
+  --light-color-accent-soft: #ede9fe;
+  --light-bubble-user-fill: rgba(109, 40, 217, 0.95);
+  --light-bubble-assistant-fill: rgba(237, 233, 254, 0.95);
+  --light-color-logo-primary: #6d28d9;
+  --light-color-accent-ui: #6d28d9;
+  --dark-color-accent-a: #a78bfa;
+  --dark-color-accent-b: #8b5cf6;
+  --dark-color-on-accent: #100a1f;
+  --dark-color-accent-text: #c4b5fd;
+  --dark-color-accent-soft: #2e2650;
+  --dark-bubble-user-fill: rgba(167, 139, 250, 0.95);
+  --dark-bubble-assistant-fill: rgba(46, 38, 80, 0.95);
+  --dark-color-logo-primary: #a78bfa;
+  --dark-color-accent-ui: #a78bfa;
+}
+
+:root[data-accent="emerald"] {
+  --light-color-accent-a: #047857;
+  --light-color-accent-b: #065f46;
+  --light-color-on-accent: #ffffff;
+  --light-color-accent-text: #065f46;
+  --light-color-accent-soft: #d1fae5;
+  --light-bubble-user-fill: rgba(4, 120, 87, 0.95);
+  --light-bubble-assistant-fill: rgba(209, 250, 229, 0.95);
+  --light-color-logo-primary: #047857;
+  --light-color-accent-ui: #047857;
+  --dark-color-accent-a: #34d399;
+  --dark-color-accent-b: #10b981;
+  --dark-color-on-accent: #04120c;
+  --dark-color-accent-text: #6ee7b7;
+  --dark-color-accent-soft: #173d32;
+  --dark-bubble-user-fill: rgba(52, 211, 153, 0.95);
+  --dark-bubble-assistant-fill: rgba(23, 61, 50, 0.95);
+  --dark-color-logo-primary: #34d399;
+  --dark-color-accent-ui: #34d399;
+}
+
+:root[data-accent="rose"] {
+  --light-color-accent-a: #be123c;
+  --light-color-accent-b: #9f1239;
+  --light-color-on-accent: #ffffff;
+  --light-color-accent-text: #9f1239;
+  --light-color-accent-soft: #ffe4e6;
+  --light-bubble-user-fill: rgba(190, 18, 60, 0.95);
+  --light-bubble-assistant-fill: rgba(255, 228, 230, 0.95);
+  --light-color-logo-primary: #be123c;
+  --light-color-accent-ui: #be123c;
+  --dark-color-accent-a: #fb7185;
+  --dark-color-accent-b: #f43f5e;
+  --dark-color-on-accent: #1f0508;
+  --dark-color-accent-text: #fda4af;
+  --dark-color-accent-soft: #4c1d28;
+  --dark-bubble-user-fill: rgba(251, 113, 133, 0.95);
+  --dark-bubble-assistant-fill: rgba(76, 29, 40, 0.95);
+  --dark-color-logo-primary: #fb7185;
+  --dark-color-accent-ui: #fb7185;
+}
+
+:root[data-accent="slate"] {
+  --light-color-accent-a: #334155;
+  --light-color-accent-b: #1e293b;
+  --light-color-on-accent: #ffffff;
+  --light-color-accent-text: #334155;
+  --light-color-accent-soft: #e2e8f0;
+  --light-bubble-user-fill: rgba(51, 65, 85, 0.95);
+  --light-bubble-assistant-fill: rgba(226, 232, 240, 0.95);
+  --light-color-logo-primary: #334155;
+  --light-color-accent-ui: #334155;
+  --dark-color-accent-a: #cbd5e1;
+  --dark-color-accent-b: #94a3b8;
+  --dark-color-on-accent: #0f172a;
+  --dark-color-accent-text: #e2e8f0;
+  --dark-color-accent-soft: #334155;
+  --dark-bubble-user-fill: rgba(203, 213, 225, 0.95);
+  --dark-bubble-assistant-fill: rgba(51, 65, 85, 0.95);
+  --dark-color-logo-primary: #cbd5e1;
+  --dark-color-accent-ui: #cbd5e1;
+}
+
+/* Restrained visual style (UI enterprise S4a, DESIGN A5 / U5). Selected by data-style="restrained"
+   on <html>; vibrant (no attribute) is the default look and is untouched. These are neutral,
+   bucket-agnostic mixes of the active text and background, so light, dark, custom and the OS
+   scheme all follow. The component-level rules live in App.css under the same attribute.
+   Mirrored in src/styles/restrained.ts (restrained.test.ts pins the values). */
+/* Values are pinned (whitespace-insensitively) by restrained.test.ts. */
+:root[data-style="restrained"] {
+  --style-card-bg: color-mix(
+    in srgb,
+    var(--color-text) 3%,
+    var(--color-background)
+  );
+  --style-card-border: color-mix(
+    in srgb,
+    var(--color-text) 14%,
+    var(--color-background)
+  );
+  --style-card-shadow: 0 1px 2px
+    color-mix(in srgb, var(--color-text) 8%, transparent);
+  --style-radius: 0.5rem;
 }

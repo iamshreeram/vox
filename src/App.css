@@ -1,6 +1,15 @@
 @import "tailwindcss";
 @import "./styles/theme.css";
 
+/* Type floor (policy: no rendered text below 12px). The root font-size is 15px
+   (see :root below), so Tailwind's default text-xs (0.75rem) resolves to 11.25px.
+   Only the xs step is raised; the other steps keep their proportions. Guarded by
+   src/styles/typeFloor.test.ts. */
+@theme {
+  --text-xs: 0.8rem;
+  --text-xs--line-height: calc(1 / 0.8);
+}
+
 /* Register the shared color tokens (src/styles/theme.css) as Tailwind
    utilities */
 @theme inline {
@@ -11,11 +20,20 @@
   --color-logo-stroke: var(--color-logo-stroke);
   --color-text-stroke: var(--color-text-stroke);
   --color-mid-gray: var(--color-mid-gray);
+  --color-muted: var(--color-muted);
   --color-warning: var(--color-warning);
   --color-error: var(--color-error);
   --color-accent-a: var(--color-accent-a);
   --color-accent-b: var(--color-accent-b);
   --color-on-accent: var(--color-on-accent);
+  --color-accent-text: var(--color-accent-text);
+  --color-accent-soft: var(--color-accent-soft);
+  --color-accent-ui: var(--color-accent-ui);
+  --color-danger: var(--color-danger);
+  --color-danger-soft: var(--color-danger-soft);
+  --color-success: var(--color-success);
+  --color-success-soft: var(--color-success-soft);
+  --color-warning-soft: var(--color-warning-soft);
 }
 
 :root {
@@ -109,6 +127,52 @@
     var(--color-accent-a),
     var(--color-accent-b)
   );
+}
+
+/* Restrained visual style (UI enterprise S4a, DESIGN A5 / U5). Only applies under
+   data-style="restrained"; the vibrant default rules above are unchanged. Neutral cards with one
+   radius and a subtle elevation, no accent bar, a flat page, solid accent buttons and neutral
+   badges. Tokens come from theme.css (--style-*). */
+:root[data-style="restrained"] {
+  background-image: none;
+}
+
+:root[data-style="restrained"] .settings-card {
+  background: var(--style-card-bg);
+  border: 1px solid var(--style-card-border);
+  border-radius: var(--style-radius);
+  box-shadow: var(--style-card-shadow);
+}
+
+:root[data-style="restrained"] .settings-card::before {
+  content: none;
+}
+
+:root[data-style="restrained"] .settings-card-title::before {
+  background: var(--color-mid-gray);
+}
+
+/* Solid accent fill instead of the vibrant gradient (primary buttons, toggles, sliders). The label is
+   --color-on-accent, the text colour the table pins at >= 4.5:1 on this fill (a11yTokens.test.ts). */
+:root[data-style="restrained"] .btn-primary {
+  background-image: none;
+  background-color: var(--color-accent-ui);
+}
+
+/* Disabled restrained primary: the neutral disabled fill from theme.css, not the accent fill (R2-1..3). */
+:root[data-style="restrained"] .btn-primary:disabled {
+  background-color: color-mix(
+    in srgb,
+    var(--color-text) 20%,
+    var(--color-background)
+  );
+  color: var(--color-text);
+}
+
+/* Neutral badge: no accent fill. */
+:root[data-style="restrained"] .badge-primary {
+  background-color: var(--style-card-border);
+  color: var(--color-text);
 }
 
 .container {

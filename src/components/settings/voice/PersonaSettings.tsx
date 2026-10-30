@@ -202,7 +202,7 @@ export const PersonaSettings: React.FC<PersonaSettingsProps> = ({
   };
 
   const issueList = issues.length > 0 && (
-    <ul role="alert" className="flex flex-col gap-1 text-xs text-red-400">
+    <ul role="alert" className="flex flex-col gap-1 text-xs text-danger">
       {issues.map((issue, index) => (
         <li key={`${issue}-${index}`}>{issueText(issue)}</li>
       ))}
@@ -244,11 +244,11 @@ export const PersonaSettings: React.FC<PersonaSettingsProps> = ({
             </Button>
           </div>
           <div className="flex flex-col gap-1">
-            <span className="text-xs text-mid-gray">
+            <span className="text-xs text-muted">
               {t("converse.voice.persona.customHeading")}
             </span>
             {customCount === 0 && (
-              <span className="text-xs text-mid-gray">
+              <span className="text-xs text-muted">
                 {t("converse.voice.persona.customEmpty")}
               </span>
             )}
@@ -285,7 +285,7 @@ export const PersonaSettings: React.FC<PersonaSettingsProps> = ({
               .map((view) => (
                 <div
                   key={view.persona.id}
-                  className="flex items-center gap-2 text-sm text-mid-gray"
+                  className="flex items-center gap-2 text-sm text-muted"
                 >
                   <Lock aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
                   <span>{view.persona.name}</span>
@@ -294,12 +294,12 @@ export const PersonaSettings: React.FC<PersonaSettingsProps> = ({
                   </span>
                 </div>
               ))}
-            <p className="text-xs text-mid-gray">
+            <p className="text-xs text-muted">
               {t("converse.voice.persona.builtinLocked")}
             </p>
           </div>
           {limitReached ? (
-            <p className="text-xs text-mid-gray">
+            <p className="text-xs text-muted">
               {t("converse.voice.persona.error.limit_reached", {
                 max: PERSONA_LIMITS.maxCustom,
               })}
@@ -328,7 +328,7 @@ export const PersonaSettings: React.FC<PersonaSettingsProps> = ({
                   }
                   disabled={busy}
                 />
-                <span className="text-xs text-mid-gray">
+                <span className="text-xs text-muted">
                   {t("converse.voice.persona.charCount", {
                     count: [...editor.name.trim()].length,
                     max: PERSONA_LIMITS.nameMaxChars,
@@ -345,7 +345,7 @@ export const PersonaSettings: React.FC<PersonaSettingsProps> = ({
                   disabled={busy}
                   variant="compact"
                 />
-                <span className="text-xs text-mid-gray">
+                <span className="text-xs text-muted">
                   {t("converse.voice.persona.charCount", {
                     count: [...editor.style.trim()].length,
                     max: PERSONA_LIMITS.styleMaxChars,

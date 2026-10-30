@@ -230,7 +230,7 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
 
     return (
       <div data-testid="floating-orb-group" className="flex flex-col">
-        <p className="text-xs text-mid-gray px-3">
+        <p className="text-xs text-muted px-3">
           {t("settings.floatingOrb.description")}
         </p>
 
@@ -242,24 +242,25 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
           disabled={controlsDisabled}
         >
           <label
-            className={`relative inline-flex h-6 w-11 ${controlsDisabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+            className={`relative inline-flex h-[24px] min-h-[24px] w-[44px] ${controlsDisabled ? "cursor-not-allowed" : "cursor-pointer"}`}
           >
             <input
               type="checkbox"
               data-testid="floating-orb-show"
+              aria-label={t("settings.floatingOrb.show.title")}
               className="peer absolute inset-0 z-10 m-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
               checked={toggle.checked}
               disabled={controlsDisabled}
               onChange={(event) => void setVisible(event.target.checked)}
             />
-            <div className="relative pointer-events-none h-6 w-11 rounded-full bg-mid-gray/20 peer-focus:ring-4 peer-focus:ring-logo-primary peer-checked:bg-logo-primary after:absolute after:start-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full" />
+            <div className="relative pointer-events-none h-[24px] min-h-[24px] w-[44px] rounded-full bg-mid-gray/20 peer-focus-visible:ring-4 peer-focus-visible:ring-(--focus-ring) peer-checked:bg-logo-primary after:absolute after:start-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-mid-gray/40 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full" />
           </label>
         </SettingContainer>
 
         {toggle.reasonKey !== null && (
           <p
             data-testid="floating-orb-reason"
-            className="text-xs text-mid-gray px-3"
+            className="text-xs text-muted px-3"
           >
             {t(toggle.reasonKey)}
           </p>
@@ -299,7 +300,7 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
             {hints.chatLogOff && (
               <p
                 data-testid="floating-orb-surface-hint-chatlog"
-                className="text-xs text-mid-gray text-end"
+                className="text-xs text-muted text-end"
               >
                 {t("settings.floatingOrb.hints.chatLogOff")}
               </p>
@@ -321,7 +322,7 @@ export const FloatingOrbSettings: React.FC<FloatingOrbSettingsProps> =
                 data-testid="floating-orb-size-slider"
                 aria-label={t("settings.floatingOrb.size.title")}
                 aria-valuetext={sizeLabel}
-                className="w-40 cursor-pointer disabled:cursor-not-allowed"
+                className="w-40 min-h-[24px] cursor-pointer disabled:cursor-not-allowed"
                 min={ORB_PX_MIN}
                 max={ORB_PX_MAX}
                 step={ORB_PX_STEP}

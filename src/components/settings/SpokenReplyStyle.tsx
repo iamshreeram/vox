@@ -314,7 +314,7 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
       const message = errors[field];
       if (!message) return null;
       return (
-        <p role="alert" className="text-xs text-red-400 mt-1">
+        <p role="alert" className="text-xs text-danger mt-1">
           {message}
         </p>
       );
@@ -328,7 +328,7 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
     return (
       <>
         <div className="px-3 pt-3 pb-1">
-          <p className="text-xs text-mid-gray">
+          <p className="text-xs text-muted">
             {t("settings.advanced.tts.composer.description")}
           </p>
         </div>
@@ -370,7 +370,7 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
                   className="min-w-[220px]"
                 />
                 {providersFailed && (
-                  <p role="alert" className="text-xs text-red-400 mt-1">
+                  <p role="alert" className="text-xs text-danger mt-1">
                     {t("settings.advanced.tts.composer.providersLoadFailed")}
                   </p>
                 )}
@@ -402,14 +402,14 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
             </SettingContainer>
 
             {providerInfo && (
-              <p className="text-xs text-mid-gray px-3">
+              <p className="text-xs text-muted px-3">
                 {t("settings.advanced.tts.composer.dataFlowModel", {
                   provider: providerInfo.label,
                   baseUrl: providerInfo.base_url,
                 })}
               </p>
             )}
-            <p className="text-xs text-mid-gray px-3">
+            <p className="text-xs text-muted px-3">
               {t("settings.advanced.tts.composer.latencyModel")}
             </p>
           </>
@@ -513,7 +513,7 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
                 >
                   {t("settings.advanced.tts.composer.saveCommand")}
                 </Button>
-                <span className="text-xs text-mid-gray">
+                <span className="text-xs text-muted">
                   {t("settings.advanced.tts.composer.readinessLabel")}{" "}
                   {t(`settings.advanced.tts.composer.readiness.${readiness}`)}
                 </span>
@@ -522,20 +522,20 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
             </div>
 
             {saved.command_path !== "" && (
-              <p className="text-xs text-mid-gray px-3">
+              <p className="text-xs text-muted px-3">
                 {t("settings.advanced.tts.composer.dataFlowCommand", {
                   path: saved.command_path,
                 })}
               </p>
             )}
-            <p className="text-xs text-mid-gray px-3">
+            <p className="text-xs text-muted px-3">
               {t("settings.advanced.tts.composer.latencyCommand")}
             </p>
           </>
         )}
 
         {saved.mode !== "off" && saved.send_user_utterance && (
-          <p className="text-xs text-mid-gray px-3">
+          <p className="text-xs text-muted px-3">
             {t("settings.advanced.tts.composer.dataFlowUtterance")}
           </p>
         )}
@@ -581,7 +581,7 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
                 disabled={busy}
                 className="w-24"
               />
-              <span className="text-xs text-mid-gray">
+              <span className="text-xs text-muted">
                 {t("settings.advanced.tts.composer.timeoutHint")}
               </span>
             </div>
@@ -639,13 +639,13 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
             {preview && (
               <div className="text-sm">
                 <p>
-                  <span className="text-mid-gray">
+                  <span className="text-muted">
                     {t("settings.advanced.tts.composer.previewSpeech")}
                   </span>{" "}
                   <span>{preview.speech}</span>
                 </p>
                 <p>
-                  <span className="text-mid-gray">
+                  <span className="text-muted">
                     {t("settings.advanced.tts.composer.previewEmotion")}
                   </span>{" "}
                   <span>
@@ -657,7 +657,7 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
               </div>
             )}
             {previewError && (
-              <p role="alert" className="text-xs text-red-400">
+              <p role="alert" className="text-xs text-danger">
                 {previewError}
               </p>
             )}
@@ -665,7 +665,7 @@ export const SpokenReplyStyle: React.FC<SpokenReplyStyleProps> = React.memo(
         </SettingContainer>
 
         <p aria-live="polite" className="text-sm px-3">
-          <span className="text-mid-gray">
+          <span className="text-muted">
             {t("settings.advanced.tts.composer.statusLabel")}
           </span>{" "}
           <span>

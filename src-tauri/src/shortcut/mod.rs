@@ -634,20 +634,13 @@ pub fn change_sound_theme_setting(app: AppHandle, theme: String) -> Result<(), S
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_theme_setting(app: AppHandle, theme: String) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
+pub async fn change_theme_setting(app: AppHandle, theme: String) -> Result<(), String> {
     let parsed = parse_theme_setting(&theme);
-    settings.theme = parsed;
-    settings::write_settings(&app, settings.clone());
+    // One gated commit: persists the theme, bumps the appearance rev and publishes the snapshot
+    // to the consumer windows and the legacy `theme-changed` event (appearance.rs).
+    crate::appearance::commit_appearance(&app, |fields| fields.theme = parsed);
     #[cfg(any(target_os = "windows", target_os = "macos"))]
-    apply_window_theme(&app, parsed, &settings.custom_theme_colors.background);
-    // Notify other webviews (the recording overlay) so they re-apply the palette
-    // live — they set `data-theme` on their own document and can't see this one.
-    // The overlay treats this as a "something changed, go re-fetch full settings"
-    // signal rather than trusting this payload directly (see theme.ts), so it
-    // always ends up with the single current source of truth regardless of
-    // delivery order.
-    let _ = app.emit("theme-changed", parsed);
+    apply_native_theme_on_main(&app, parsed);
     Ok(())
 }
 
@@ -659,24 +652,30 @@ pub fn change_theme_setting(app: AppHandle, theme: String) -> Result<(), String>
 /// nothing left to re-validate here.
 #[tauri::command]
 #[specta::specta]
-pub fn update_custom_theme_colors(
+pub async fn update_custom_theme_colors(
     app: AppHandle,
     colors: settings::CustomThemeColors,
 ) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    settings.custom_theme_colors = colors;
-    settings::write_settings(&app, settings.clone());
-    if settings.theme == Theme::Custom {
-        #[cfg(any(target_os = "windows", target_os = "macos"))]
-        apply_window_theme(
-            &app,
-            settings.theme,
-            &settings.custom_theme_colors.background,
-        );
+    // One gated commit, as for `change_theme_setting`; the snapshot carries the colours only
+    // while the theme is `Custom`.
+    crate::appearance::commit_appearance(&app, |fields| fields.custom_theme_colors = colors);
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    if settings::get_settings(&app).theme == Theme::Custom {
+        apply_native_theme_on_main(&app, Theme::Custom);
     }
-    // Same re-fetch-driven overlay sync as change_theme_setting above.
-    let _ = app.emit("theme-changed", settings.theme);
     Ok(())
+}
+
+/// Applies the native window chrome for `theme` on the main thread, where the window calls
+/// run. The custom background is read from the store.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn apply_native_theme_on_main(app: &AppHandle, theme: Theme) {
+    let background = settings::get_settings(app).custom_theme_colors.background;
+    let handle = app.clone();
+    if let Err(e) = app.run_on_main_thread(move || apply_window_theme(&handle, theme, &background))
+    {
+        log::warn!("native window theme could not be scheduled: {e}");
+    }
 }
 
 /// Pure parser for the `theme` setting string -> `Theme`. Extracted from

@@ -186,8 +186,8 @@ const scenarios: Record<string, () => void> = {
   "returning users get a dismissible Finish voice setup callout on Models":
     () => {
       const models = read("../settings/models/ModelsSettings.tsx");
-      assert.match(models, /FinishSetupCallout/);
-      const callout = "../settings/models/FinishSetupCallout.tsx";
+      assert.match(models, /SetupStatusBanner/);
+      const callout = "../settings/setup/SetupStatusBanner.tsx";
       assert.ok(existsSync(new URL(callout, import.meta.url)));
       const source = read(callout);
       assert.match(source, /localStorage/);

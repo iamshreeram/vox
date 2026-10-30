@@ -46,6 +46,7 @@ const hasText = (key: string): boolean => typeof en(key) === "string";
 
 const CORE_SECTIONS: SearchSection[] = [
   "general",
+  "appearance",
   "history",
   "models",
   "brain",
@@ -58,6 +59,7 @@ const ALL_SECTIONS: SearchSection[] = [...CORE_SECTIONS, "agents"];
 const GATED: SearchSection[] = ["postprocessing", "agents"];
 const ENABLED_BY_DEFAULT: SearchSection[] = [
   "general",
+  "appearance",
   "history",
   "models",
   "brain",
@@ -67,6 +69,7 @@ const ENABLED_BY_DEFAULT: SearchSection[] = [
 // "sttModels" is the Models page's Speech-to-text card: a known group, not a placed group.
 const VALID_GROUP_IDS = new Set([
   "sttModels",
+  "chatWindow",
   "engine",
   "vadEngine",
   "voiceCommands",

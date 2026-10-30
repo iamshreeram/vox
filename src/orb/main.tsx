@@ -1,33 +1,32 @@
-// Entry for the orb page. Like the conversation window it never reads settings: appearance
-// comes from the last-applied copy in localStorage and follows `theme-changed` and `storage`.
-// It reuses the chat i18n bootstrap (the lightest one that does not call app commands).
+// Entry for the orb page. Listen-only (like the conversation window): it never reads settings or
+// calls no Tauri command. Appearance comes from the seed in the page URL and from `appearance` events,
+// through the shared consumer (UI enterprise S2, A1/A2). The orb takes its face accent from the
+// accent tokens the consumer sets on the document root.
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
-import {
-  THEME_STORAGE_KEY,
-  applyTheme,
-  getStoredAppearance,
-} from "@/lib/utils/theme";
+import "../styles/theme.css";
 import "../chat/i18n";
 import "../chat/avatar.css";
 import "./orb.css";
 import OrbApp from "./OrbApp";
+import {
+  APPEARANCE_EVENT,
+  createAppearanceConsumer,
+  parseSeed,
+} from "../lib/appearance/consumer";
 
-function applyStoredAppearance(): void {
-  const stored = getStoredAppearance();
-  applyTheme(stored.theme, stored.customThemeColors);
-}
-
-applyStoredAppearance();
-window.addEventListener("storage", (event) => {
-  if (event.key === THEME_STORAGE_KEY) applyStoredAppearance();
+const consumer = createAppearanceConsumer({
+  root: document.documentElement,
+  matchMedia: (query) => window.matchMedia(query),
 });
-listen("theme-changed", () => applyStoredAppearance()).catch(
-  (error: unknown) => {
-    console.warn("orb: failed to subscribe to theme-changed", error);
-  },
-);
+const seed = parseSeed(window.location.search);
+if (seed !== null) consumer.accept(seed);
+listen(APPEARANCE_EVENT, (event) => {
+  consumer.accept(event.payload);
+}).catch((error: unknown) => {
+  console.warn("orb: failed to subscribe to appearance", error);
+});
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

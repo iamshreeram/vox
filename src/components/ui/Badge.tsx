@@ -12,8 +12,10 @@ const Badge: React.FC<BadgeProps> = ({
   className = "",
 }) => {
   const variantClasses = {
-    primary: "bg-logo-primary",
-    success: "bg-green-500/20 text-green-400",
+    // The solid accent fill with its on-accent text (>= 4.5:1 in every palette), not the logo colour
+    // with body text, which measured 1.6:1 on the dark theme.
+    primary: "badge-primary bg-accent-ui text-on-accent",
+    success: "bg-success-soft text-success",
     secondary: "bg-mid-gray/20 text-text/70",
   };
 

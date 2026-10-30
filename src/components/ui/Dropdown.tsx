@@ -67,7 +67,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
         type="button"
         className={`px-2 py-[5px] text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 rounded-md min-w-[200px] w-full text-start grid grid-cols-[1fr_auto] gap-2 items-center transition-all duration-150 ${
           disabled
-            ? "opacity-50 cursor-not-allowed"
+            ? "text-muted cursor-not-allowed"
             : "hover:bg-logo-primary/10 cursor-pointer hover:border-logo-primary"
         }`}
         onClick={handleToggle}
@@ -95,7 +95,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
           }`}
         >
           {options.length === 0 ? (
-            <div className="px-2 py-1 text-sm text-mid-gray">
+            <div className="px-2 py-1 text-sm text-muted">
               {t("common.noOptionsFound")}
             </div>
           ) : (
@@ -121,7 +121,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
                   {option.label}
                 </span>
                 {option.description && (
-                  <span className="mt-0.5 block whitespace-normal text-xs font-normal leading-snug text-mid-gray">
+                  <span className="mt-0.5 block whitespace-normal text-xs font-normal leading-snug text-muted">
                     {option.description}
                   </span>
                 )}

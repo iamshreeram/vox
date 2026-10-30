@@ -180,13 +180,14 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
                   onChange={handleSearchChange}
                   onKeyDown={handleKeyDown}
                   placeholder={t("settings.general.language.searchPlaceholder")}
-                  className="w-full px-2 py-1 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded focus:outline-none focus:ring-1 focus:ring-logo-primary focus:border-logo-primary"
+                  aria-label={t("settings.general.language.searchPlaceholder")}
+                  className="w-full px-2 py-1 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded focus-visible:border-logo-primary"
                 />
               </div>
 
               <div className="max-h-48 overflow-y-auto">
                 {filteredLanguages.length === 0 ? (
-                  <div className="px-2 py-2 text-sm text-mid-gray text-center">
+                  <div className="px-2 py-2 text-sm text-muted text-center">
                     {t("settings.general.language.noResults")}
                   </div>
                 ) : (

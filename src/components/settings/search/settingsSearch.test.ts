@@ -48,6 +48,7 @@ const TEXT: Record<string, TextPair> = {
   "l.cycB": pair("Cycle B"),
   "l.orphan": pair("Orphan Row"),
   "sidebar.general": pair("General"),
+  "sidebar.appearance": pair("Appearance"),
   "sidebar.history": pair("History"),
   "sidebar.models": pair("Models"),
   "sidebar.brain": pair("Brain"),

@@ -214,18 +214,18 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
                 : t("converse.section.startButton")}
             </Button>
             <p aria-live="polite" className="text-sm">
-              <span className="text-mid-gray">
+              <span className="text-muted">
                 {t("converse.section.stateLabel")}
               </span>{" "}
               <span>{t(stateKey)}</span>
             </p>
             {!active && endKey !== null && (
-              <p className="text-xs text-mid-gray">
+              <p className="text-xs text-muted">
                 {t("converse.section.endLabel")} {t(endKey)}
               </p>
             )}
             {error !== null && (
-              <p role="alert" className="text-xs text-red-400">
+              <p role="alert" className="text-xs text-danger">
                 {error}
               </p>
             )}
@@ -309,7 +309,7 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
               {t("settings.conversation.openChatWindow")}
             </Button>
             {chatWindowError !== null && (
-              <p role="alert" className="text-xs text-red-400">
+              <p role="alert" className="text-xs text-danger">
                 {chatWindowError}
               </p>
             )}
@@ -342,10 +342,10 @@ export const ConversationSection: React.FC<ConversationSectionProps> =
           grouped={grouped}
         />
 
-        <p className="text-xs text-mid-gray px-3">
+        <p className="text-xs text-muted px-3">
           {t("converse.section.privacyNote")}
         </p>
-        <p className="text-xs text-mid-gray px-3">
+        <p className="text-xs text-muted px-3">
           {t("converse.section.wakeWordNote")}
         </p>
       </>

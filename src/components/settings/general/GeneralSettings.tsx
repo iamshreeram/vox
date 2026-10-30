@@ -11,27 +11,21 @@ import { AudioFeedback } from "../AudioFeedback";
 import { useSettings } from "../../../hooks/useSettings";
 import { VolumeSlider } from "../VolumeSlider";
 import { MuteWhileRecording } from "../MuteWhileRecording";
-import { ThemeSelector } from "../ThemeSelector";
 import { PlacedGroups } from "../PlacedGroups";
-import { BrainNotice } from "../brain/BrainNotice";
+import { SetupStatusBanner } from "../setup/SetupStatusBanner";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
-  const { audioFeedbackEnabled, getSetting } = useSettings();
-  const experimentalEnabled = getSetting("experimental_enabled") === true;
+  const { audioFeedbackEnabled } = useSettings();
   const isLinux = type() === "linux";
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
-      <BrainNotice feature="composer" />
-      {experimentalEnabled && <BrainNotice feature="realtime_stream" />}
+      <SetupStatusBanner page="general" />
       <SettingsGroup title={t("settings.general.title")}>
         <ShortcutInput shortcutId="transcribe" grouped={true} />
         <ShortcutActivationSetting descriptionMode="tooltip" grouped={true} />
         {/* Cancel shortcut remains hidden on Linux because of dynamic shortcut instability. */}
         {!isLinux && <ShortcutInput shortcutId="cancel" grouped={true} />}
-      </SettingsGroup>
-      <SettingsGroup title={t("settings.appearance.title")}>
-        <ThemeSelector descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
       <SettingsGroup title={t("settings.sound.title")}>
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />

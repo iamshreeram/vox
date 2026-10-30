@@ -52,7 +52,7 @@ const ALL_CONTROLS: ControlId[] = [
 
 // Group ids that existed before the split. They are persisted verbatim in
 // localStorage open-state keys, so every one of them must survive unchanged.
-const NEW_GROUP_IDS = ["vadEngine", "conversation"];
+const NEW_GROUP_IDS = ["vadEngine", "conversation", "chatWindow"];
 const LEGACY_GROUP_IDS = [
   "engine",
   "voiceCommands",
@@ -66,7 +66,13 @@ const LEGACY_GROUP_IDS = [
   "codingJobs",
 ];
 
-const SECTIONS: PlacedSection[] = ["general", "models", "advanced", "agents"];
+const SECTIONS: PlacedSection[] = [
+  "general",
+  "appearance",
+  "models",
+  "advanced",
+  "agents",
+];
 const allFlags = { memoryEnabled: true, agentBridgeEnabled: true };
 const noFlags = { memoryEnabled: false, agentBridgeEnabled: false };
 
@@ -102,7 +108,7 @@ const scenarios: Record<string, () => void> = {
     assert.equal(new Set(ids).size, ids.length);
     assert.equal(ALL_CONTROLS.length, 29);
   },
-  "only the four destination sections are used, never experimental": () => {
+  "only the five destination sections are used, never experimental": () => {
     assert.deepEqual(
       [...new Set(PLACED_GROUPS.map((g) => g.section))].sort(),
       [...SECTIONS].sort(),
@@ -115,6 +121,7 @@ const scenarios: Record<string, () => void> = {
       "listening",
       "conversation",
     ]);
+    assert.deepEqual(ids("appearance"), ["chatWindow"]);
     assert.deepEqual(ids("models"), ["spokenReplies", "vadEngine"]);
     assert.deepEqual(ids("advanced"), ["engine"]);
     assert.deepEqual(ids("agents"), [
@@ -182,6 +189,9 @@ const scenarios: Record<string, () => void> = {
     assert.equal(placementOf("smartTurn").groupId, "vadEngine");
     assert.equal(placementOf("speakerFilter").groupId, "vadEngine");
     assert.equal(placementOf("replyStyle").groupId, "conversation");
+    // The transparency slider moved from Conversation to the Appearance page.
+    assert.equal(placementOf("chatOpacity").groupId, "chatWindow");
+    assert.equal(placementOf("chatOpacity").section, "appearance");
   },
   "the wake word is ungated in Conversation; ambient listening stays experimental":
     () => {
@@ -210,12 +220,13 @@ const scenarios: Record<string, () => void> = {
     );
     for (const id of NEW_GROUP_IDS) assert.ok(ids.includes(id), id);
   },
-  "only the Text-to-speech and engine groups are open by default": () => {
-    assert.deepEqual(
-      PLACED_GROUPS.filter((g) => g.defaultOpen).map((g) => g.id),
-      ["spokenReplies", "engine"],
-    );
-  },
+  "only the Text-to-speech, engine and chat window groups are open by default":
+    () => {
+      assert.deepEqual(
+        PLACED_GROUPS.filter((g) => g.defaultOpen).map((g) => g.id),
+        ["chatWindow", "spokenReplies", "engine"],
+      );
+    },
   "every group has a non-empty translation title key": () => {
     for (const g of PLACED_GROUPS) {
       assert.match(g.titleKey, /^settings\.[A-Za-z.]+$/, g.id);

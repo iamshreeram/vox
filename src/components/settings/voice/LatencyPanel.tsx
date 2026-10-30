@@ -73,7 +73,7 @@ const LatencyBody: React.FC<{ view: LatencyView }> = ({ view }) => {
 
   if (view.kind === "placeholder") {
     return (
-      <p className="px-3 text-xs text-mid-gray">
+      <p className="px-3 text-xs text-muted">
         {t("converse.voice.latency.placeholder")}
       </p>
     );
@@ -101,12 +101,12 @@ const LatencyBody: React.FC<{ view: LatencyView }> = ({ view }) => {
 
   return (
     <div className="mx-3 flex flex-col gap-2 rounded-lg border border-mid-gray/30 p-3">
-      <p className="text-xs text-mid-gray">
+      <p className="text-xs text-muted">
         {t("converse.voice.latency.turn", { turn: view.turn })}
       </p>
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-xs text-mid-gray">
+          <tr className="text-xs text-muted">
             <th className="text-start font-normal">
               {t("converse.voice.latency.header.stage")}
             </th>
@@ -137,7 +137,7 @@ const LatencyBody: React.FC<{ view: LatencyView }> = ({ view }) => {
           })}
         </tbody>
       </table>
-      <p className="text-xs text-mid-gray">
+      <p className="text-xs text-muted">
         {t("converse.voice.latency.samples", { count: view.samples })}
       </p>
     </div>

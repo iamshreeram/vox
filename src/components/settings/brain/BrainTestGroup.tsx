@@ -81,7 +81,7 @@ export const BrainTestGroup: React.FC<BrainTestGroupProps> = ({
 
   return (
     <div className="px-4 py-3 space-y-3">
-      <p className="text-sm text-mid-gray">
+      <p className="text-sm text-muted">
         {t("settings.brain.test.description")}
       </p>
       {label !== "" && (
@@ -94,7 +94,7 @@ export const BrainTestGroup: React.FC<BrainTestGroupProps> = ({
             disabled={state === "unconfigured"}
             onChange={(event) => void handleAcknowledge(event.target.checked)}
           />
-          <label htmlFor="brain-ack-checkbox" className="text-sm">
+          <label htmlFor="brain-ack-checkbox" className="min-h-[24px] text-sm">
             {t("settings.brain.test.ack", {
               prompt: BRAIN_TEST_PROMPT,
               destination: label,

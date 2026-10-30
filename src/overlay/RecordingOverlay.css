@@ -23,12 +23,28 @@
     var(--color-logo-primary) 20%,
     transparent
   );
-  /* Neutrals. muted/faint are overlay-specific secondary/tertiary text grays
-     (no theme equivalent). */
-  --light-s-muted: #6e6e6e;
-  --dark-s-muted: #a3a09a;
-  --light-s-faint: #9a9a9a;
-  --dark-s-faint: #6f6c66;
+  /* Neutrals. muted/faint are overlay-specific secondary/tertiary text tints, now mixed from the
+     shared palette (theme.css light/dark text and background), so they follow the app palette. */
+  --light-s-muted: color-mix(
+    in srgb,
+    var(--light-color-text) 58%,
+    var(--light-color-background)
+  );
+  --dark-s-muted: color-mix(
+    in srgb,
+    var(--dark-color-text) 64%,
+    var(--dark-color-background)
+  );
+  --light-s-faint: color-mix(
+    in srgb,
+    var(--light-color-text) 42%,
+    var(--light-color-background)
+  );
+  --dark-s-faint: color-mix(
+    in srgb,
+    var(--dark-color-text) 46%,
+    var(--dark-color-background)
+  );
   /* Hairlines reuse the app's mid-gray at low opacity in light — same vocabulary
      as the app's border-mid-gray/* utilities — and flip to the near-white text
      token for contrast on dark. */
@@ -368,7 +384,7 @@
   /* Equal side columns (min 22px to hold the cancel button) keep the center item
      — waveform or label — centered whether the pill is at min width or content-
      sized. */
-  grid-template-columns: minmax(22px, 1fr) auto minmax(22px, 1fr);
+  grid-template-columns: minmax(24px, 1fr) auto minmax(24px, 1fr);
   align-items: center;
 }
 .sbase-l {
@@ -543,8 +559,8 @@
   }
 }
 .sx {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   flex: none;
   padding: 0;
@@ -593,7 +609,9 @@
 }
 .swork-label {
   font-size: 12px;
-  color: var(--s-muted);
+  /* Text colour blended 78% over the background, the same mix as --color-muted (UI enterprise R4-2:
+     the former --s-muted measured 4.45:1 on the light work chip). overlayTokens.test.ts pins 4.5:1. */
+  color: color-mix(in srgb, var(--color-text) 78%, var(--color-background));
   white-space: nowrap;
   padding: 0 8px; /* breathing room from the spinner / cancel when content-sized */
   /* Safety net: ellipsize rather than clip if a label exceeds the max pill width. */

@@ -1,11 +1,12 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Dropdown } from "../ui/Dropdown";
-import { SettingContainer } from "../ui/SettingContainer";
+import { Dropdown } from "../../ui/Dropdown";
+import { SettingContainer } from "../../ui/SettingContainer";
 import { useSettings } from "@/hooks/useSettings";
 import { applyTheme, THEME_OPTIONS } from "@/lib/utils/theme";
 import type { Theme } from "@/bindings";
 import { CustomThemeEditor } from "./CustomThemeEditor";
+import { effectiveAppearance } from "./appearanceModel";
 
 interface ThemeSelectorProps {
   descriptionMode?: "inline" | "tooltip";
@@ -26,7 +27,9 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = React.memo(
 
     const handleThemeChange = (value: string) => {
       const theme = value as Theme;
-      applyTheme(theme, settings?.custom_theme_colors);
+      // Pass the stored accent and style explicitly so this window never falls back to a stale cache.
+      const { accent, visualStyle } = effectiveAppearance(settings ?? {});
+      applyTheme(theme, settings?.custom_theme_colors, accent, visualStyle);
       updateSetting("theme", theme);
     };
 

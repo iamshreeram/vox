@@ -40,7 +40,7 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
               }}
               tabIndex={0}
               role="button"
-              className={`w-full px-3 py-2 text-start hover:bg-mid-gray/10 transition-colors cursor-pointer focus:outline-none ${
+              className={`w-full px-3 py-2 text-start hover:bg-mid-gray/10 transition-colors cursor-pointer ${
                 currentModelId === model.id
                   ? "bg-logo-primary/10 text-logo-primary"
                   : ""
@@ -51,17 +51,17 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
                   <div className="text-sm text-text/80">
                     {getTranslatedModelName(model, t)}
                     {model.is_custom && (
-                      <span className="ms-1.5 text-[10px] font-medium text-text/40 uppercase">
+                      <span className="ms-1.5 text-xs font-medium text-muted uppercase">
                         {t("modelSelector.custom")}
                       </span>
                     )}
                     {model.supports_streaming && (
-                      <span className="ms-1.5 text-[10px] font-medium text-logo-primary/70 uppercase">
+                      <span className="ms-1.5 text-xs font-medium text-logo-primary/70 uppercase">
                         {t("modelSelector.streaming")}
                       </span>
                     )}
                   </div>
-                  <div className="text-xs text-text/40 italic pe-4">
+                  <div className="text-xs text-muted italic pe-4">
                     {getTranslatedModelDescription(model, t)}
                   </div>
                 </div>
@@ -75,7 +75,7 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
           ))}
         </div>
       ) : (
-        <div className="px-3 py-2 text-sm text-text/60">
+        <div className="px-3 py-2 text-sm text-muted">
           {t("modelSelector.noModelsAvailable")}
         </div>
       )}

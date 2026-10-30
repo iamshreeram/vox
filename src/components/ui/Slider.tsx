@@ -49,18 +49,21 @@ export const Slider: React.FC<SliderProps> = ({
       disabled={disabled}
     >
       <div className="w-full">
-        <div className="flex items-center space-x-1 h-6">
+        <div className="range-focus-ring flex items-center space-x-1 min-h-[24px]">
           <input
             type="range"
+            aria-label={label}
             min={min}
             max={max}
             step={step}
             value={value}
             onChange={handleChange}
             disabled={disabled}
-            className="flex-grow h-2 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-logo-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            // min-h-[24px] is the 24px hit box (rem utilities are smaller at the 15px root); py-2 +
+            // bg-clip-content keep the paint at the old 8px track.
+            className="flex-grow min-h-[24px] py-2 bg-clip-content rounded-lg appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             style={{
-              background: `linear-gradient(to right, var(--color-accent-a), var(--color-accent-b) ${
+              backgroundImage: `linear-gradient(to right, var(--color-accent-a), var(--color-accent-b) ${
                 ((value - min) / (max - min)) * 100
               }%, rgba(128, 128, 128, 0.2) ${
                 ((value - min) / (max - min)) * 100

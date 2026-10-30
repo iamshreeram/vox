@@ -169,8 +169,9 @@ impl Default for ReplayGate {
 /// The worker gate of the conversation window.
 pub static CHAT_OPACITY_REPLAY: ReplayGate = ReplayGate::new();
 
-/// The replay loop. While `alive` holds, it reads the snapshot fresh, emits it, then sleeps one
-/// replay interval. Returns the number of emits. The clock, liveness and emitter are injected.
+/// The replay loop of the opacity alone. The production worker is `chat_window::start_replay_worker`,
+/// which runs `appearance::run_consumer_replay`; this stays as the tested opacity-only form.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn run_replay(
     mut snapshot: impl FnMut() -> OpacitySnapshot,
     mut alive: impl FnMut() -> bool,

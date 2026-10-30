@@ -1,19 +1,22 @@
-// Entry for the standalone conversation window. Mirrors the overlay entry, except that it never
-// reads settings or invokes commands: appearance comes from the last-applied copy in localStorage
-// and follows `theme-changed` and cross-window `storage` events (DESIGN-CHAT A8, A14). The window
-// opacity comes from the page URL and from `chat-opacity` events (Track T, DESIGN Revision 3).
+// Entry for the standalone conversation window. It never reads settings or invokes commands
+// (listen-only, DESIGN-CHAT A8). Appearance comes from the seed in the page URL (`ap`) and from
+// `appearance` events, through the shared consumer, which applies only strictly newer revisions
+// (UI enterprise S2, A1/A2). The window opacity comes from the URL (?opacity=&rev=) and from
+// `chat-opacity` events (Track T). The two revisions are independent counters.
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
 import {
-  THEME_STORAGE_KEY,
-  applyTheme,
-  getStoredAppearance,
-} from "@/lib/utils/theme";
+  APPEARANCE_EVENT,
+  createAppearanceConsumer,
+  parseSeed,
+} from "../lib/appearance/consumer";
+import { DEFAULT_ACCENT, type AccentId } from "../styles/accents";
+import "../styles/theme.css";
 import "./i18n";
 import "./chat.css";
 import ChatWindow from "./ChatWindow";
-import { CHAT_RGB } from "./chatTheme";
+import { chatPaletteVariables, type ChatPaletteName } from "./chatTheme";
 import {
   alphaForPct,
   applyOpacityEvent,
@@ -21,16 +24,14 @@ import {
   type OpacityState,
 } from "./chatOpacity";
 
-function applyStoredAppearance(): void {
-  const stored = getStoredAppearance();
-  applyTheme(stored.theme, stored.customThemeColors);
-}
-
-/** The palette triplets chat.css paints from (single source: chatTheme.ts). */
-function applyPaletteVariables(): void {
+/** Sets every palette variable on the document root (the one place chat.css reads colours from). */
+function applyPalette(palette: ChatPaletteName, accent: AccentId): void {
   const style = document.documentElement.style;
-  style.setProperty("--chat-bg-rgb", CHAT_RGB.bg);
-  style.setProperty("--chat-surface-rgb", CHAT_RGB.surface);
+  for (const [name, value] of Object.entries(
+    chatPaletteVariables(palette, accent),
+  )) {
+    style.setProperty(name, value);
+  }
 }
 
 function applyOpacity(state: OpacityState): void {
@@ -40,8 +41,22 @@ function applyOpacity(state: OpacityState): void {
   );
 }
 
-applyStoredAppearance();
-applyPaletteVariables();
+// The dark palette until a snapshot says otherwise, so the first paint is never unstyled.
+applyPalette("dark", DEFAULT_ACCENT);
+
+const consumer = createAppearanceConsumer({
+  root: document.documentElement,
+  matchMedia: (query) => window.matchMedia(query),
+  onApplied: (resolved) =>
+    applyPalette(resolved.chatPalette, resolved.accent ?? DEFAULT_ACCENT),
+});
+const seed = parseSeed(window.location.search);
+if (seed !== null) consumer.accept(seed);
+listen(APPEARANCE_EVENT, (event) => {
+  consumer.accept(event.payload);
+}).catch((error: unknown) => {
+  console.warn("chat: failed to subscribe to appearance", error);
+});
 
 // The first value is the one the window was built with (?opacity=&rev=). Later values apply only
 // when their rev is strictly higher, so a late subscriber converges on the latest commit.
@@ -56,15 +71,6 @@ listen("chat-opacity", (event) => {
 }).catch((error: unknown) => {
   console.warn("chat: failed to subscribe to chat-opacity", error);
 });
-
-window.addEventListener("storage", (event) => {
-  if (event.key === THEME_STORAGE_KEY) applyStoredAppearance();
-});
-listen("theme-changed", () => applyStoredAppearance()).catch(
-  (error: unknown) => {
-    console.warn("chat: failed to subscribe to theme-changed", error);
-  },
-);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

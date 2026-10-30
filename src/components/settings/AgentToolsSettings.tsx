@@ -65,7 +65,7 @@ const ProjectRootsEditor: React.FC<ProjectRootsEditorProps> = ({
     >
       <div className="space-y-2">
         {storedRoots.length === 0 ? (
-          <p className="text-xs text-mid-gray">
+          <p className="text-xs text-muted">
             {t("settings.experimental.agentTools.noProjectRoots")}
           </p>
         ) : (
@@ -112,7 +112,7 @@ const ProjectRootsEditor: React.FC<ProjectRootsEditorProps> = ({
           </Button>
         </div>
         {atLimit && (
-          <p className="text-xs text-mid-gray">
+          <p className="text-xs text-muted">
             {t("settings.experimental.agentTools.projectRootsLimit", {
               max: MAX_PROJECT_ROOTS,
             })}
@@ -165,7 +165,7 @@ export const AgentToolsSettings: React.FC<AgentToolsSettingsProps> = React.memo(
           </>
         )}
         <div className="px-3 py-2">
-          <p className="text-xs text-mid-gray">
+          <p className="text-xs text-muted">
             {t("settings.experimental.agentTools.privacyText")}
           </p>
         </div>

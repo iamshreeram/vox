@@ -60,15 +60,19 @@ body {
   animation: bubble-enter 180ms ease-out;
 }
 
+/* Fills are per-theme rgba tokens (theme.css --bubble-user-fill / --bubble-assistant-fill: the accent
+   fill and the accent soft tint at 95% alpha). Translucent, no blur or filter. Text contrast over the
+   composite on white and black is checked in a11yTokens.test.ts. */
 .bubble-user {
   align-self: flex-end;
-  background: rgba(255, 138, 0, 0.9);
-  color: #2a1500;
+  background: var(--bubble-user-fill);
+  color: var(--color-on-accent);
 }
 
 .bubble-assistant {
   align-self: flex-start;
-  background: rgba(124, 58, 237, 0.88);
+  background: var(--bubble-assistant-fill);
+  color: var(--color-accent-text);
 }
 
 @keyframes bubble-enter {
