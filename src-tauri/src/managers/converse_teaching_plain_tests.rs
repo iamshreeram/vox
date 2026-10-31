@@ -297,10 +297,8 @@ fn l7_the_rule_tells_the_model_to_flag_a_story_and_how_long_it_may_be() {
         TEACHING_RULE.contains("1000 characters"),
         "the rule must give the model the length that fits the cap"
     );
-    assert!(
-        1000 < MAX_ROLE_SPEECH_CHARS,
-        "the advertised length fits the cap"
-    );
+    // The advertised length must fit under the cap; checked at compile time.
+    const _ADVERTISED_LENGTH_FITS_THE_CAP: () = assert!(1000 < MAX_ROLE_SPEECH_CHARS);
 }
 
 #[test]
@@ -339,4 +337,29 @@ fn l10_the_rule_puts_the_long_flag_before_the_speech() {
         TEACHING_RULE.contains("before speech") || TEACHING_RULE.contains("before the speech"),
         "the model decides before it writes the story, not after"
     );
+}
+
+#[test]
+fn l11_an_ellipsis_counts_as_a_sentence_end_like_the_early_speech_streamer() {
+    // The streamer releases a sentence ending in an ellipsis followed by a space. If the trim
+    // ignored it, the trimmed speech could be shorter than the text already spoken early, and
+    // the reconcile step would abort the turn.
+    let reply = format!(
+        "{} Then Pip waited for the rain\u{2026} And later he flew all the way home again. {}",
+        sentences(13).trim_end(),
+        sentences(10).trim_end()
+    );
+    let ellipsis_end = reply.find('\u{2026}').unwrap() + '\u{2026}'.len_utf8();
+    let ellipsis_chars = reply[..ellipsis_end].chars().count();
+    assert!(
+        ellipsis_chars < MAX_SPEECH_CHARS && reply.chars().count() > MAX_SPEECH_CHARS,
+        "premise: the ellipsis sentence is inside the cap and the reply is over it"
+    );
+    let plan = parse_plain(&answer_json(&reply, ""));
+    assert!(
+        plan.speech.chars().count() >= ellipsis_chars,
+        "never shorter than the early-spoken text, {} < {ellipsis_chars}",
+        plan.speech.chars().count()
+    );
+    assert!(plan.speech.chars().count() <= MAX_SPEECH_CHARS);
 }

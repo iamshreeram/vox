@@ -626,7 +626,7 @@ fn cap_speech(speech: &str, cap: usize) -> String {
 }
 
 /// Stage 1 roles: the speech cap for a role-active Answer. Above `MAX_SPEECH_CHARS` (the role
-/// cap) a truncated speech is trimmed back to its last sentence end (`.`, `!` or `?` followed by
+/// cap) a truncated speech is trimmed back to its last sentence end (`.`, `!`, `?` or an ellipsis, as the early-speech streamer counts them, followed by
 /// whitespace or the end of the text) inside the cap. With no sentence end inside the cap it is
 /// cut at the cap, as before. At or under the cap the text is kept. The 400 path is `cap_speech`.
 fn cap_speech_at_sentence(speech: &str, cap: usize) -> String {
@@ -639,7 +639,7 @@ fn cap_speech_at_sentence(speech: &str, cap: usize) -> String {
         .take(cap)
         .enumerate()
         .filter(|(at, c)| {
-            matches!(**c, '.' | '!' | '?')
+            matches!(**c, '.' | '!' | '?' | '\u{2026}')
                 && chars.get(at + 1).is_none_or(|next| next.is_whitespace())
         })
         .map(|(at, _)| at + 1)
