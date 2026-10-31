@@ -286,3 +286,19 @@ pub mod voice_shortcuts;
 mod wake_conversation_tests;
 pub mod wakeword;
 pub mod wakeword_listener;
+
+// Tamil speech recognition (IndicConformer, CTC greedy) -- see docs/tts-engines.md.
+pub mod indic_stt_core;
+#[cfg(test)]
+mod indic_stt_core_tests;
+pub mod indic_stt_mel;
+#[cfg(test)]
+mod indic_stt_mel_tests;
+pub mod indic_stt_ort;
+#[cfg(test)]
+mod indic_stt_ort_tests;
+pub mod indic_stt_slot;
+#[cfg(test)]
+mod indic_stt_slot_tests;
+#[cfg(test)]
+mod indic_stt_text_tests;
