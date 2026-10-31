@@ -77,6 +77,7 @@ fn nonunix_start_is_unsupported_and_manager_stays_idle() {
     let spec = JobSpec {
         launch: launch(),
         progress_interval: Duration::from_secs(1),
+        summary: Default::default(),
     };
     let result = mgr.start(spec, Arc::new(NullObserver));
     assert_nonunix_contract(&mgr, result);

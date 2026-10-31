@@ -269,6 +269,7 @@ async fn run(r: &Rig, cfg: &SessionConfig) -> SessionEnd {
 fn answer(speech: &str) -> Result<TurnPlan, PlanError> {
     Ok(TurnPlan {
         plan: None,
+        state: None,
         job: None,
         role: None,
         kind: PlanKind::Answer,

@@ -133,6 +133,7 @@ impl Brain for ABrain {
 fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         job: None,
         role: None,
         kind,

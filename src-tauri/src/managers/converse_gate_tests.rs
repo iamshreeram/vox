@@ -265,6 +265,7 @@ impl LowPriorityMouth for RecordingLowMouth {
 fn job_plan(project: &str, task: &str) -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         kind: PlanKind::Job,
         speech: "On it.".to_string(),
         emotion: Emotion::Neutral,
@@ -284,6 +285,7 @@ fn job_plan(project: &str, task: &str) -> TurnPlan {
 fn paste_plan(text: &str) -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         kind: PlanKind::Paste,
         speech: "Typing.".to_string(),
         emotion: Emotion::Neutral,
@@ -298,6 +300,7 @@ fn paste_plan(text: &str) -> TurnPlan {
 fn command_plan(cmd: &str) -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         kind: PlanKind::Command,
         speech: "Opening.".to_string(),
         emotion: Emotion::Neutral,
@@ -312,6 +315,7 @@ fn command_plan(cmd: &str) -> TurnPlan {
 fn answer_plan(speech: &str) -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         kind: PlanKind::Answer,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,

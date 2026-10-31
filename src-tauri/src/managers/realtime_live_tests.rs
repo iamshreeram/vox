@@ -93,6 +93,7 @@ async fn planner_call(
         roles_enabled: false,
         agent_enabled: false,
         planner_enabled: false,
+        role_state: None,
     });
     let start = Instant::now();
     let mut streamer = PlanStreamer::new();
@@ -302,6 +303,7 @@ async fn context_call(
         roles_enabled: false,
         agent_enabled: false,
         planner_enabled: false,
+        role_state: None,
     });
     let start = Instant::now();
     let mut streamer = PlanStreamer::new();

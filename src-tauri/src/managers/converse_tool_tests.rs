@@ -451,6 +451,7 @@ fn input_with<'a>(utterance: &'a str, vault: Option<&'a str>) -> PlanInput<'a> {
         roles_enabled: false,
         agent_enabled: false,
         planner_enabled: false,
+        role_state: None,
     }
 }
 
@@ -468,6 +469,7 @@ fn plan_json(kind: &str, speech: &str) -> String {
 fn command_plan() -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         job: None,
         role: None,
         kind: PlanKind::Command,
@@ -482,6 +484,7 @@ fn command_plan() -> TurnPlan {
 fn paste_plan() -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         job: None,
         role: None,
         kind: PlanKind::Paste,
@@ -496,6 +499,7 @@ fn paste_plan() -> TurnPlan {
 fn answer_plan_value() -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         job: None,
         role: None,
         kind: PlanKind::Answer,
@@ -837,6 +841,7 @@ fn guard_plan_tainted_with_guard_on_refuses_paste_and_command_only() {
 
     let clarify = TurnPlan {
         plan: None,
+        state: None,
         job: None,
         role: None,
         kind: PlanKind::Clarify,
@@ -848,6 +853,7 @@ fn guard_plan_tainted_with_guard_on_refuses_paste_and_command_only() {
     };
     let end = TurnPlan {
         plan: None,
+        state: None,
         job: None,
         role: None,
         kind: PlanKind::End,

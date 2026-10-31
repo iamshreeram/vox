@@ -101,6 +101,7 @@ fn plan_input<'a>(agent: bool, planner: bool) -> PlanInput<'a> {
         roles_enabled: false,
         agent_enabled: agent,
         planner_enabled: planner,
+        role_state: None,
     }
 }
 

@@ -173,6 +173,7 @@ fn plan_input<'a>() -> PlanInput<'a> {
         roles_enabled: false,
         agent_enabled: false,
         planner_enabled: false,
+        role_state: None,
     }
 }
 
@@ -278,6 +279,7 @@ fn parse_with_jobs_off_for_a_plain_answer_is_unchanged() {
 fn job_plan() -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         kind: PlanKind::Job,
         speech: "Starting.".to_string(),
         emotion: Emotion::Neutral,

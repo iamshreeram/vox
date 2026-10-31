@@ -424,6 +424,7 @@ fn start_live_job(tmp: &Path) -> (Arc<JobManager>, Arc<FakeSink>, Arc<FakeMouth>
     let spec = JobSpec {
         launch,
         progress_interval: Duration::from_secs(90),
+        summary: Default::default(),
     };
     let (sp, mouth, sink, _ann) = speaker("proj", true);
     let manager = JobManager::new();

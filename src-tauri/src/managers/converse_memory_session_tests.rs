@@ -915,6 +915,7 @@ async fn t_g4_panicking_session_writes_no_row() {
 
 // ---- V1: notes reach a plan on either route, so the session is not remembered -----------------
 
+use crate::managers::converse_platform::core_contaminated;
 use crate::managers::converse_platform::{same_summary_route, summary_allowed};
 use crate::managers::converse_rag_tests::{plan_once, rag_settings, request_text};
 
@@ -1213,5 +1214,64 @@ fn t_v4_allowed_needs_memory_on_the_http_route_and_the_same_route() {
     assert!(
         !summary_allowed(&moved, &on),
         "a route switch stops the summary"
+    );
+}
+
+// ---- T1: core_contaminated reads the taint and notes flags (PR-A, role-state eligibility) ------
+
+/// `core_contaminated` is the seam `RealBrain::state_contaminated` delegates to.
+#[test]
+fn t1_core_contaminated_reads_the_taint_and_the_notes_flags() {
+    let core = core_for(None, false);
+    assert!(
+        !core_contaminated(&core),
+        "a clean core is not contaminated"
+    );
+    core.taint.mark();
+    assert!(core_contaminated(&core), "a tainted core is contaminated");
+    let core = core_for(None, false);
+    core.notes_used.store(true, AtomicOrdering::SeqCst);
+    assert!(
+        core_contaminated(&core),
+        "a core with notes_used is contaminated"
+    );
+}
+
+/// A plan that places a notes block sets `notes_used` (through `plan_turn_core`), so the core is
+/// contaminated after the call, while the taint stays clear. An empty slot is the control.
+#[tokio::test]
+async fn t1_a_plan_with_notes_makes_the_core_contaminated() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (base, _seen) = serve_sequence(vec![text_reply(&plan_json("answer", "Friday."))]);
+    let settings = rag_settings(tmp.path(), false, &base);
+    let clean = core_with_notes(None);
+    plan_once(
+        &clean,
+        &settings,
+        "when is launch",
+        Arc::new(AtomicUsize::new(0)),
+    )
+    .await
+    .expect("plan with an empty slot");
+    assert!(
+        !core_contaminated(&clean),
+        "control: an empty notes slot leaves the core clean"
+    );
+
+    let (base, _seen) = serve_sequence(vec![text_reply(&plan_json("answer", "Friday."))]);
+    let settings = rag_settings(tmp.path(), false, &base);
+    let core = core_with_notes(Some(NOTES));
+    plan_once(
+        &core,
+        &settings,
+        "when is launch",
+        Arc::new(AtomicUsize::new(0)),
+    )
+    .await
+    .expect("plan with notes");
+    assert!(!core.taint.is_tainted(), "the taint is not set by notes");
+    assert!(
+        core_contaminated(&core),
+        "a plan with a notes block makes the core contaminated"
     );
 }

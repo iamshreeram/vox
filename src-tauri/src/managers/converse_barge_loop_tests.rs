@@ -72,6 +72,7 @@ fn heard(text: &str) -> ListenOutcome {
 fn answer(speech: &str) -> Result<TurnPlan, PlanError> {
     Ok(TurnPlan {
         plan: None,
+        state: None,
         job: None,
         role: None,
         kind: PlanKind::Answer,

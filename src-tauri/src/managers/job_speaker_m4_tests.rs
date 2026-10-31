@@ -16,8 +16,8 @@ use crate::managers::agent_jobs::{JobManager, JobObserver, JobResult, JobSnapsho
 use crate::managers::job_announcer::{AnnounceKind, Announcer, LowPriorityMouth};
 use crate::managers::job_speaker::{cancel, JobEventSink, JobSpeaker};
 use crate::managers::job_summary::{
-    ResultStore, ResultSummarizer, SpeechGuard, SummaryError, SummaryHandle, SummaryPolicy,
-    SummaryTokens, Ticket, FALLBACK_SPEECH, SPEECH_PREFIX,
+    JobSummaryContext, ResultStore, ResultSummarizer, SpeechGuard, SummaryError, SummaryHandle,
+    SummaryPolicy, SummaryTokens, Ticket, FALLBACK_SPEECH, SPEECH_PREFIX,
 };
 
 /// Fixed finish text for project "proj" on success (today's exact wording).
@@ -86,6 +86,8 @@ enum Reply {
 struct FakeSummarizer {
     reply: Mutex<Reply>,
     submitted: Mutex<Vec<String>>,
+    /// PR-A: the context each submit received, in the same order as `submitted`.
+    contexts: Mutex<Vec<JobSummaryContext>>,
     held: Mutex<Vec<Sender<Result<String, SummaryError>>>>,
 }
 
@@ -95,10 +97,17 @@ impl FakeSummarizer {
             reply: Mutex::new(reply),
             submitted: Mutex::new(Vec::new()),
             held: Mutex::new(Vec::new()),
+            contexts: Mutex::new(Vec::new()),
         })
     }
     fn submitted(&self) -> Vec<String> {
         self.submitted.lock().map(|g| g.clone()).unwrap_or_default()
+    }
+    /// PR-A: every (text, context) pair submit received, in order.
+    fn submitted_with_context(&self) -> Vec<(String, JobSummaryContext)> {
+        let texts = self.submitted();
+        let contexts = self.contexts.lock().map(|g| g.clone()).unwrap_or_default();
+        texts.into_iter().zip(contexts).collect()
     }
     fn submit_count(&self) -> usize {
         self.submitted().len()
@@ -114,9 +123,12 @@ impl FakeSummarizer {
 }
 
 impl ResultSummarizer for FakeSummarizer {
-    fn submit(&self, text: &str) -> SummaryHandle {
+    fn submit(&self, text: &str, ctx: &JobSummaryContext) -> SummaryHandle {
         if let Ok(mut g) = self.submitted.lock() {
             g.push(text.to_string());
+        }
+        if let Ok(mut g) = self.contexts.lock() {
+            g.push(ctx.clone());
         }
         let reply = self.reply.lock().map(|g| g.clone()).unwrap_or(Reply::Hold);
         let (tx, rx) = mpsc::channel();
@@ -956,4 +968,18 @@ fn f8_lock_order_admit_waits_for_a_slow_guarded_mouth_call_and_does_not_deadlock
     );
     speaker_thread.join().expect("speaker thread");
     admitter.join().expect("admit thread");
+}
+
+// ---- PR-A (A7, J3): the fake records the context of every submit ----------------------------
+
+#[test]
+fn pr_a_j3_fake_summarizer_records_text_and_context_per_submit() {
+    let fake = FakeSummarizer::new(Reply::Now(Ok("ok".to_string())));
+    let ctx = JobSummaryContext::new(Some("what changed?"), "warm");
+    let _first = fake.submit("first", &ctx);
+    let _second = fake.submit("second", &JobSummaryContext::default());
+    let got = fake.submitted_with_context();
+    assert_eq!(got.len(), 2, "one record per submit");
+    assert_eq!(got[0], ("first".to_string(), ctx));
+    assert_eq!(got[1], ("second".to_string(), JobSummaryContext::default()));
 }

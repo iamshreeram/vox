@@ -212,6 +212,7 @@ async fn run_turn(
 fn answer(speech: &str) -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         job: None,
         role: None,
         kind: PlanKind::Answer,

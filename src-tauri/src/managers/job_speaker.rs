@@ -13,6 +13,7 @@ use std::time::Duration;
 use crate::commands::agent_jobs::AgentJobStatusDto;
 use crate::managers::agent_jobs::{JobManager, JobObserver, JobResult, JobSnapshot, JobState};
 use crate::managers::job_announcer::{AnnounceKind, Announcer};
+use crate::managers::job_summary::JobSummaryContext;
 use crate::managers::job_summary::{
     clean_summary_text, spoken_summary, ResultStore, ResultSummarizer, SpeechGuard, SummaryError,
     SummaryPolicy, SummaryTokens, Ticket, FALLBACK_SPEECH, SUMMARY_DEADLINE,
@@ -170,7 +171,12 @@ impl JobSpeaker {
     }
 
     /// Runs the summary attempt for one successful ask result.
-    fn attempt_summary(&self, parts: &SummaryParts, r: &JobResult) -> SummaryOutcome {
+    fn attempt_summary(
+        &self,
+        parts: &SummaryParts,
+        r: &JobResult,
+        ctx: &JobSummaryContext,
+    ) -> SummaryOutcome {
         let enabled = (parts.policy.ask_enabled)() && (parts.policy.tts_enabled)();
         if !enabled {
             return SummaryOutcome::NotAttempted;
@@ -179,7 +185,7 @@ impl JobSpeaker {
             return SummaryOutcome::NotAttempted;
         };
         let submitted = parts.tokens.run_if_valid(&ticket, |valid| {
-            valid.then(|| catch_unwind(AssertUnwindSafe(|| parts.summarizer.submit(&r.text))))
+            valid.then(|| catch_unwind(AssertUnwindSafe(|| parts.summarizer.submit(&r.text, ctx))))
         });
         let handle = match submitted {
             None => return SummaryOutcome::Invalidated,
@@ -245,11 +251,15 @@ impl JobObserver for JobSpeaker {
     }
 
     fn on_result(&self, r: &JobResult) {
+        self.on_result_for(r, &JobSummaryContext::default());
+    }
+
+    fn on_result_for(&self, r: &JobResult, ctx: &JobSummaryContext) {
         let Some(parts) = self.summary.as_ref() else {
             return;
         };
         parts.results.set(r.id, r.text.clone());
-        let outcome = self.attempt_summary(parts, r);
+        let outcome = self.attempt_summary(parts, r, ctx);
         *lock_slot(&self.outcome) = Some((r.id, outcome));
     }
 

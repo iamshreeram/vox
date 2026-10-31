@@ -1118,6 +1118,7 @@ mod tests {
             Box::pin(async {
                 Ok(TurnPlan {
                     plan: None,
+                    state: None,
                     job: None,
                     role: None,
                     kind: PlanKind::Answer,

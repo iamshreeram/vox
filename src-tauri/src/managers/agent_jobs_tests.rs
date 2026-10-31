@@ -187,6 +187,7 @@ fn spec(dir: &Path, binary: &Path, task: &str) -> JobSpec {
     JobSpec {
         launch: launch(dir, binary, task, Duration::from_secs(20)),
         progress_interval: Duration::from_secs(90),
+        summary: Default::default(),
     }
 }
 

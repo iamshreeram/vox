@@ -362,6 +362,7 @@ fn prompt_for(history: Vec<(String, String)>) -> crate::managers::converse_plan:
         roles_enabled: false,
         agent_enabled: false,
         planner_enabled: false,
+        role_state: None,
     })
 }
 

@@ -48,6 +48,7 @@ fn plan_input<'a>(
         roles_enabled: false,
         agent_enabled: false,
         planner_enabled: false,
+        role_state: None,
     }
 }
 

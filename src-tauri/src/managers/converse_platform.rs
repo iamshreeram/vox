@@ -747,7 +747,8 @@ impl Hands for RealHands {
         match (&self.jobs, &self.job_observer) {
             (Some(_), Some(factory)) => {
                 let observer = factory(&launch.project);
-                start_job_on(self.jobs.as_ref(), launch, observer)
+                let style = job_style_from_settings(&get_settings(&self.app));
+                start_job_styled(self.jobs.as_ref(), launch, observer, &style)
             }
             _ => JobStartOutcome::Unsupported,
         }
@@ -1110,6 +1111,7 @@ pub(crate) async fn plan_with_tools(
         roles_enabled: input.roles_enabled,
         agent_enabled: input.agent_enabled,
         planner_enabled: input.planner_enabled,
+        role_state: input.role_state,
     };
     let policy = JobParsePolicy {
         role_active: input.role.is_some(),
@@ -1181,7 +1183,17 @@ where
     judgement
 }
 
+/// Stage 1 roles (PR-A): the session has seen untrusted input (tool taint) or a notes block was
+/// placed in a plan. Read only; the flags are not changed here. `RealBrain` reports this.
+pub(crate) fn core_contaminated(core: &BrainCore) -> bool {
+    core.taint.is_tainted() || core.notes_used.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 impl Brain for RealBrain {
+    fn state_contaminated(&self) -> bool {
+        core_contaminated(&self.core)
+    }
+
     fn judge_answer<'a>(&'a self, answer: &'a str) -> BoxFuture<'a, AnswerJudgement> {
         Box::pin(async move {
             let settings = get_settings(&self.app);
@@ -2168,6 +2180,7 @@ pub(crate) fn guard_plan(plan: TurnPlan, taint: &TaintState, guard_actions: bool
     }
     TurnPlan {
         plan: None,
+        state: None,
         job: None,
         kind: PlanKind::Answer,
         speech: REFUSAL_SPEECH.to_string(),
@@ -2218,7 +2231,7 @@ fn neutralize_reference_tags(text: &str) -> String {
 }
 
 /// Replaces the leading `<` of every case-insensitive `<{tag}` or `</{tag}` with U+2039.
-fn neutralize_wrapper_tags(text: &str, tag: &str) -> String {
+pub(crate) fn neutralize_wrapper_tags(text: &str, tag: &str) -> String {
     let open = format!("<{tag}");
     let close = format!("</{tag}");
     let mut out = String::with_capacity(text.len());
@@ -2340,19 +2353,41 @@ impl crate::managers::converse_confirm::PolicySource for SettingsPolicy {
 }
 
 /// M3 (D8, M3-10): what `RealHands::start_job` does with the shared manager. `None` manager
-/// => Unsupported; otherwise the start result is mapped by `map_job_error`.
+/// => Unsupported; otherwise the start result is mapped by `map_job_error`. Without a reply
+/// style, the summary context carries only the launch's ask.
+#[cfg(test)]
 pub(crate) fn start_job_on(
     manager: Option<&Arc<crate::managers::agent_jobs::JobManager>>,
     launch: crate::managers::converse_confirm::JobLaunch,
     observer: Arc<dyn crate::managers::agent_jobs::JobObserver>,
 ) -> crate::managers::converse_confirm::JobStartOutcome {
+    start_job_styled(manager, launch, observer, "")
+}
+
+/// PR-A: the reply style a job carries into its summary: the `tts_composer_style` setting.
+/// `JobSummaryContext::new` bounds it when the context is built.
+pub(crate) fn job_style_from_settings(settings: &AppSettings) -> String {
+    settings.tts_composer_style.clone()
+}
+
+/// PR-A: `start_job_on` with the reply style in effect at launch. The summary context is built
+/// from the launch's task (the user's request) and this style, and travels with this job only.
+pub(crate) fn start_job_styled(
+    manager: Option<&Arc<crate::managers::agent_jobs::JobManager>>,
+    launch: crate::managers::converse_confirm::JobLaunch,
+    observer: Arc<dyn crate::managers::agent_jobs::JobObserver>,
+    style: &str,
+) -> crate::managers::converse_confirm::JobStartOutcome {
     use crate::managers::converse_confirm::JobStartOutcome;
     let Some(manager) = manager else {
         return JobStartOutcome::Unsupported;
     };
+    let summary =
+        crate::managers::job_summary::JobSummaryContext::new(Some(launch.task.as_str()), style);
     let spec = crate::managers::agent_jobs::JobSpec {
         launch,
         progress_interval: JOB_PROGRESS_INTERVAL,
+        summary,
     };
     map_job_error(manager.start(spec, observer))
 }

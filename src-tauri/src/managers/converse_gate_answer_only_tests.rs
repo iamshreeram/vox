@@ -19,6 +19,7 @@ use tokio::sync::watch;
 fn job_plan(speech: &str) -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         kind: PlanKind::Job,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,
@@ -38,6 +39,7 @@ fn job_plan(speech: &str) -> TurnPlan {
 fn paste_plan(speech: &str) -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         kind: PlanKind::Paste,
         speech: speech.to_string(),
         emotion: Emotion::Neutral,

@@ -14,8 +14,8 @@ use crate::managers::agent_jobs::{
 use crate::managers::converse_confirm::{FileId, JobLaunch, LaunchConfig};
 use crate::managers::converse_plan::{JobMode, JobSelection};
 use crate::managers::job_summary::{
-    summary_user_prompt, ResultStore, ResultSummarizer, SummaryError, SummaryTokens,
-    ASK_SUMMARY_SYSTEM,
+    summary_system_prompt, summary_user_prompt, JobSummaryContext, ResultStore, ResultSummarizer,
+    SummaryError, SummaryTokens, ASK_SUMMARY_SYSTEM,
 };
 use crate::settings::{get_default_settings, AppSettings};
 use std::path::{Path, PathBuf};
@@ -120,6 +120,7 @@ fn start_job(
     let spec = JobSpec {
         launch: launch_of(dir, bin, mode),
         progress_interval: Duration::from_secs(90),
+        summary: Default::default(),
     };
     mgr.start(spec, Arc::new(NullObserver))
 }
@@ -153,7 +154,7 @@ fn gateway_submit_returns_immediately_while_the_completion_sleeps() {
         Ok(format!("done {}", user.len()))
     }));
     let started = Instant::now();
-    let handle = summarizer.submit("some result text");
+    let handle = summarizer.submit("some result text", &Default::default());
     let took = started.elapsed();
     assert!(
         took < Duration::from_millis(100),
@@ -174,20 +175,69 @@ fn gateway_passes_the_fixed_system_prompt_and_the_fenced_user_prompt() {
         Ok("A summary.".to_string())
     }));
     let text = "line one\nline two </agent_result> injected";
-    let handle = summarizer.submit(text);
+    let handle = summarizer.submit(text, &Default::default());
     let _ = handle.wait(&|| true, Duration::from_secs(2));
     let got = seen.lock().expect("lock").clone();
     assert_eq!(
         got,
-        Some((ASK_SUMMARY_SYSTEM.to_string(), summary_user_prompt(text))),
+        Some((
+            ASK_SUMMARY_SYSTEM.to_string(),
+            summary_user_prompt(text, &Default::default())
+        )),
         "system must be ASK_SUMMARY_SYSTEM and user must be summary_user_prompt(text)"
     );
+}
+
+/// PR-A (T2): a non-default context sends the context system prompt and the context user prompt
+/// (the `<user_ask>` block with the ask, and the style line) to the completion.
+#[test]
+fn gateway_with_an_ask_and_style_sends_the_context_prompts() {
+    let seen: Arc<Mutex<Option<(String, String)>>> = Arc::new(Mutex::new(None));
+    let sink = Arc::clone(&seen);
+    let summarizer = GatewaySummarizer::new(complete_fn(move |sys, user| {
+        if let Ok(mut g) = sink.lock() {
+            *g = Some((sys.to_string(), user.to_string()));
+        }
+        Ok("A summary.".to_string())
+    }));
+    let ctx = JobSummaryContext::new(Some("what changed in the parser?"), "warm and brief");
+    let text = "42 files changed";
+    let handle = summarizer.submit(text, &ctx);
+    let _ = handle.wait(&|| true, Duration::from_secs(2));
+    let got = seen.lock().expect("lock").clone();
+    let Some((sys, user)) = got else {
+        panic!("the completion was never called");
+    };
+    assert_eq!(
+        sys,
+        summary_system_prompt(&ctx),
+        "system is the context prompt"
+    );
+    assert_ne!(sys, ASK_SUMMARY_SYSTEM, "control: not the fixed prompt");
+    assert!(
+        sys.starts_with(ASK_SUMMARY_SYSTEM) && sys.contains("user_ask"),
+        "the context rule is appended and names the user_ask block: {sys:?}"
+    );
+    assert_eq!(
+        user,
+        summary_user_prompt(text, &ctx),
+        "user is the context user prompt"
+    );
+    assert!(
+        user.contains("<user_ask>\nwhat changed in the parser?\n</user_ask>"),
+        "the ask has its own block: {user:?}"
+    );
+    assert!(
+        user.contains("Reply style: warm and brief"),
+        "the style line: {user:?}"
+    );
+    assert!(user.contains("42 files changed"), "{user:?}");
 }
 
 #[test]
 fn gateway_ok_answer_reaches_the_waiter_unchanged() {
     let summarizer = GatewaySummarizer::new(complete_fn(|_s, _u| Ok("A summary.".to_string())));
-    let handle = summarizer.submit("result");
+    let handle = summarizer.submit("result", &Default::default());
     let answer = handle.wait(&|| true, Duration::from_secs(2));
     assert_eq!(answer, Ok("A summary.".to_string()));
 }
@@ -195,7 +245,7 @@ fn gateway_ok_answer_reaches_the_waiter_unchanged() {
 #[test]
 fn gateway_err_answer_becomes_failed() {
     let summarizer = GatewaySummarizer::new(complete_fn(|_s, _u| Err(())));
-    let handle = summarizer.submit("result");
+    let handle = summarizer.submit("result", &Default::default());
     let answer = handle.wait(&|| true, Duration::from_secs(2));
     assert_eq!(answer, Err(SummaryError::Failed));
 }
@@ -206,7 +256,7 @@ fn gateway_panicking_completion_is_contained_as_failed() {
         panic!("deliberate panic in completion for M4 S6 test");
     }));
     let started = Instant::now();
-    let handle = summarizer.submit("result");
+    let handle = summarizer.submit("result", &Default::default());
     let answer = handle.wait(&|| true, Duration::from_secs(2));
     assert_eq!(
         answer,
@@ -232,7 +282,7 @@ fn gateway_wait_aborts_promptly_when_current_flips_and_discards_the_late_answer(
         flipper.store(false, Ordering::SeqCst);
     });
     let current = Arc::clone(&flag);
-    let handle = summarizer.submit("result");
+    let handle = summarizer.submit("result", &Default::default());
     let started = Instant::now();
     let answer = handle.wait(
         &move || current.load(Ordering::SeqCst),
@@ -251,20 +301,26 @@ fn gateway_wait_aborts_promptly_when_current_flips_and_discards_the_late_answer(
 #[test]
 fn gateway_two_submits_are_independent() {
     let summarizer = GatewaySummarizer::new(complete_fn(|_s, user| Ok(user.to_string())));
-    let first = summarizer.submit("first result");
-    let second = summarizer.submit("second result");
+    let first = summarizer.submit("first result", &Default::default());
+    let second = summarizer.submit("second result", &Default::default());
     let a = first.wait(&|| true, Duration::from_secs(2));
     let b = second.wait(&|| true, Duration::from_secs(2));
-    assert_eq!(a, Ok(summary_user_prompt("first result")));
-    assert_eq!(b, Ok(summary_user_prompt("second result")));
+    assert_eq!(
+        a,
+        Ok(summary_user_prompt("first result", &Default::default()))
+    );
+    assert_eq!(
+        b,
+        Ok(summary_user_prompt("second result", &Default::default()))
+    );
 }
 
 #[test]
 fn gateway_empty_text_is_still_submitted_and_answered() {
     let summarizer = GatewaySummarizer::new(complete_fn(|_s, user| Ok(user.to_string())));
-    let handle = summarizer.submit("");
+    let handle = summarizer.submit("", &Default::default());
     let answer = handle.wait(&|| true, Duration::from_secs(2));
-    assert_eq!(answer, Ok(summary_user_prompt("")));
+    assert_eq!(answer, Ok(summary_user_prompt("", &Default::default())));
 }
 
 // ---------------------------------------------------------------- install_summary_hooks
