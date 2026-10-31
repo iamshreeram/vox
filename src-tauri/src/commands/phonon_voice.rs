@@ -11,11 +11,13 @@ use crate::commands::natural_voice::{
     build_status, error_message, phonon_failure_message, NaturalVoiceDownloadFinished,
     NaturalVoiceDownloadProgress, NaturalVoiceStatus,
 };
+use crate::managers::indic_stt_core::{indic_pack_status, pack_dir, IndicPackStatus};
 use crate::managers::natural_engine::{FailureReason, HealthState, NaturalHealth};
 use crate::managers::natural_model::{DownloadProgress, ModelCoordinator, ModelError, ModelState};
 use crate::managers::natural_tamil::{
     tamil_failure_message, tamil_voice_status_for, TamilVoiceStatus,
 };
+use crate::managers::transcription::TranscriptionManager;
 use crate::managers::tts::TtsManager;
 use crate::settings::get_settings;
 use serde_json::Value;
@@ -263,6 +265,65 @@ pub fn tamil_voice_status(app: AppHandle) -> TamilVoiceStatus {
     tamil_voice_status_for(&dir, enabled, engine_error)
 }
 
+/// Status of the Tamil speech recognition pack for the settings row (the `tamil_stt_status`
+/// command). `ready` is the pack verified and no engine failure; `enabled` is the
+/// `stt_tamil_enabled` setting. The UI combines the two.
+#[derive(serde::Serialize, Debug, Clone, PartialEq, Eq, specta::Type)]
+pub struct TamilSttStatus {
+    /// The four pack files are present with their exact sizes.
+    pub installed: bool,
+    /// Installed and the Tamil speech engine has not failed.
+    pub ready: bool,
+    /// The `stt_tamil_enabled` setting.
+    pub enabled: bool,
+    /// The pack folder.
+    pub dir: String,
+    /// File names absent from the pack (empty when installed).
+    pub missing: Vec<String>,
+    /// The first file present with the wrong size, or none.
+    pub wrong_size: Option<String>,
+    /// User-safe message of the last engine failure, or none.
+    pub engine_error: Option<String>,
+}
+
+/// Pure status of the Tamil speech pack under `app_data_dir` (stat only), the live `enabled`
+/// setting and the engine failure message, if any.
+pub fn tamil_stt_status_for(
+    app_data_dir: &Path,
+    enabled: bool,
+    engine_error: Option<String>,
+) -> TamilSttStatus {
+    let dir = pack_dir(app_data_dir);
+    let (installed, missing, wrong_size) = match indic_pack_status(&dir) {
+        IndicPackStatus::Ready => (true, Vec::new(), None),
+        IndicPackStatus::Missing(names) => (false, names, None),
+        IndicPackStatus::WrongSize { file, .. } => (false, Vec::new(), Some(file)),
+    };
+    TamilSttStatus {
+        installed,
+        ready: installed && engine_error.is_none(),
+        enabled,
+        dir: dir.display().to_string(),
+        missing,
+        wrong_size,
+        engine_error,
+    }
+}
+
+/// Status of the Tamil speech recognition pack for the settings row. The pack is checked by
+/// stat only; the engine failure comes from the transcription manager and `enabled` is the live
+/// setting.
+#[tauri::command]
+#[specta::specta]
+pub fn tamil_stt_status(app: AppHandle) -> TamilSttStatus {
+    let app_data = crate::portable::app_data_dir(&app).unwrap_or_default();
+    let engine_error = app
+        .try_state::<Arc<TranscriptionManager>>()
+        .and_then(|manager| manager.tamil_stt_engine_error());
+    let enabled = get_settings(&app).stt_tamil_enabled;
+    tamil_stt_status_for(&app_data, enabled, engine_error)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn phonon_voice_cancel(app: AppHandle) -> Result<(), String> {
@@ -282,4 +343,105 @@ pub fn phonon_voice_delete(app: AppHandle) -> Result<(), String> {
         }
     };
     phonon_voice_delete_core(&coordinator, &health, &stop_speech)
+}
+
+#[cfg(test)]
+mod stt_status_tests {
+    use super::{tamil_stt_status_for, TamilSttStatus};
+    use crate::managers::indic_stt_core::pack_dir;
+    use std::fs::{self, File};
+    use std::path::Path;
+    use tempfile::TempDir;
+
+    /// Pinned pack files and sizes (the same values `indic_stt_core` checks).
+    const PACK: [(&str, u64); 4] = [
+        ("encoder.onnx", 652_623_111),
+        ("ctc_decoder.onnx", 23_095_918),
+        ("vocab.json", 96_743),
+        ("language_masks.json", 862_011),
+    ];
+
+    fn write_pack(dir: &Path) {
+        fs::create_dir_all(dir).expect("create pack dir");
+        for (name, size) in PACK {
+            let file = File::create(dir.join(name)).expect("create pack file");
+            file.set_len(size).expect("set size");
+        }
+    }
+
+    fn all_names() -> Vec<String> {
+        PACK.iter().map(|(name, _)| name.to_string()).collect()
+    }
+
+    #[test]
+    fn ready_pack_with_no_engine_error_is_ready() {
+        let tmp = TempDir::new().expect("temp dir");
+        let dir = pack_dir(tmp.path());
+        write_pack(&dir);
+        let status = tamil_stt_status_for(tmp.path(), true, None);
+        assert!(status.installed);
+        assert!(status.ready);
+        assert!(status.enabled);
+        assert!(status.missing.is_empty());
+        assert_eq!(status.wrong_size, None);
+        assert_eq!(status.engine_error, None);
+    }
+
+    #[test]
+    fn empty_folder_reports_every_file_missing() {
+        let tmp = TempDir::new().expect("temp dir");
+        let status = tamil_stt_status_for(tmp.path(), true, None);
+        assert!(!status.installed);
+        assert!(!status.ready);
+        assert_eq!(status.missing, all_names());
+        assert_eq!(status.wrong_size, None);
+    }
+
+    #[test]
+    fn wrong_size_file_is_named_and_not_installed() {
+        let tmp = TempDir::new().expect("temp dir");
+        let dir = pack_dir(tmp.path());
+        write_pack(&dir);
+        let encoder = File::create(dir.join("encoder.onnx")).expect("truncate encoder");
+        encoder.set_len(10).expect("set short size");
+        let status = tamil_stt_status_for(tmp.path(), true, None);
+        assert!(!status.installed);
+        assert!(!status.ready);
+        assert!(status.missing.is_empty());
+        assert_eq!(status.wrong_size.as_deref(), Some("encoder.onnx"));
+    }
+
+    #[test]
+    fn disabled_setting_is_reported_and_does_not_change_ready() {
+        let tmp = TempDir::new().expect("temp dir");
+        let dir = pack_dir(tmp.path());
+        write_pack(&dir);
+        let status = tamil_stt_status_for(tmp.path(), false, None);
+        assert!(!status.enabled);
+        assert!(status.ready);
+        assert!(status.installed);
+    }
+
+    #[test]
+    fn engine_error_makes_an_installed_pack_not_ready() {
+        let tmp = TempDir::new().expect("temp dir");
+        let dir = pack_dir(tmp.path());
+        write_pack(&dir);
+        let status =
+            tamil_stt_status_for(tmp.path(), true, Some("Tamil speech pack failed".into()));
+        assert!(status.installed);
+        assert!(!status.ready);
+        assert_eq!(
+            status.engine_error.as_deref(),
+            Some("Tamil speech pack failed")
+        );
+    }
+
+    #[test]
+    fn status_reports_the_pack_folder() {
+        let tmp = TempDir::new().expect("temp dir");
+        let dir = pack_dir(tmp.path());
+        let status: TamilSttStatus = tamil_stt_status_for(tmp.path(), true, None);
+        assert_eq!(status.dir, dir.display().to_string());
+    }
 }
