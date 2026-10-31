@@ -207,3 +207,12 @@ fn grapheme_cuts_never_separate_a_vowel_sign_or_a_pulli() {
 fn leading_orphan_marks_are_dropped() {
     assert_eq!(split_tamil_for_synthesis("ா வணக்கம்", 600), vec!["வணக்கம்"]);
 }
+
+#[test]
+fn leading_aytham_is_a_letter_and_is_kept() {
+    // U+0B83 (aytham) is a Tamil letter, not a combining mark: a piece may start with it.
+    assert_eq!(
+        split_tamil_for_synthesis("எனக்கு. ஃபோன் வேண்டும்", 600),
+        vec!["எனக்கு.", "ஃபோன் வேண்டும்"]
+    );
+}

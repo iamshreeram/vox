@@ -463,7 +463,7 @@ test.describe("Tamil voice row", () => {
     await openExperimental(page);
 
     await expect(page.locator('[data-testid="tamil-voice-status"]')).toHaveText(
-      "Tamil voice failed to load: model file could not be read",
+      "Tamil voice problem: model file could not be read",
     );
   });
 });

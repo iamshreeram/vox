@@ -386,13 +386,10 @@ pub fn is_tamil_letter(c: char) -> bool {
     matches!(c, '\u{0B85}'..='\u{0BB9}' | '\u{0BD0}')
 }
 
-/// True for Tamil combining marks: anusvara, visarga, vowel signs, pulli and the AU length
-/// mark (U+0B82 U+0B83 U+0BBE..=U+0BCD U+0BD7).
+/// True for Tamil combining marks: anusvara, vowel signs, pulli and the AU length mark
+/// (U+0B82 U+0BBE..=U+0BCD U+0BD7). Aytham (U+0B83) is a letter, not a mark, so it is excluded.
 fn is_tamil_mark(c: char) -> bool {
-    matches!(
-        c,
-        '\u{0B82}' | '\u{0B83}' | '\u{0BBE}'..='\u{0BCD}' | '\u{0BD7}'
-    )
+    matches!(c, '\u{0B82}' | '\u{0BBE}'..='\u{0BCD}' | '\u{0BD7}')
 }
 
 /// Language gate for Tamil: at least 60% of the alphabetic chars (Tamil combining marks

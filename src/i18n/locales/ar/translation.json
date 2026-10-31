@@ -620,7 +620,7 @@
           "statusInstalled": "Installed",
           "statusMissing": "Not installed (missing files: {{count}}). Run scripts/download_tamil_tts.sh",
           "statusIncomplete": "Incomplete download, run the script again",
-          "statusError": "Tamil voice failed to load: {{message}}",
+          "statusError": "Tamil voice problem: {{message}}",
           "credit": "Voice: Pocket TTS Tamil by Prasad Vittaldev, based on Kyutai (CC BY 4.0)"
         },
         "natural": {

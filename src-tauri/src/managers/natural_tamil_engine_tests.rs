@@ -365,3 +365,37 @@ fn latin_engine_still_gets_normalized_text_and_the_48_char_first_chunk_cap() {
         texts[0]
     );
 }
+
+#[test]
+fn tamil_chunks_without_a_tamil_letter_are_dropped_one_by_one() {
+    // "..." and "2024." carry no Tamil letter, so only the two Tamil sentences reach the engine.
+    let mut r = rig(quick(), TextMode::Tamil);
+    r.say("வணக்கம். ... 2024. நன்றி");
+    assert!(r.wait_idle(5));
+    assert_eq!(r.texts(), vec!["வணக்கம்.".to_string(), "நன்றி".to_string()]);
+    assert_eq!(r.health.state(), HealthState::Ready);
+}
+
+#[test]
+fn tamil_digits_only_or_dots_only_text_is_a_no_op() {
+    for text in ["2024 2025.", "...", "— 10, 20!"] {
+        let mut r = rig(quick(), TextMode::Tamil);
+        r.say(text);
+        assert!(r.wait_idle(3), "nothing submitted for {text:?}");
+        std::thread::sleep(ms(50));
+        assert!(
+            r.texts().is_empty(),
+            "engine must not be called for {text:?}"
+        );
+        assert_eq!(r.health.state(), HealthState::Ready);
+        assert!(r.events().is_empty());
+    }
+}
+
+#[test]
+fn tamil_digits_inside_a_chunk_with_letters_stay_in_one_chunk() {
+    let mut r = rig(quick(), TextMode::Tamil);
+    r.say("ஆண்டு 2024 ஆகும்");
+    assert!(r.wait_idle(5));
+    assert_eq!(r.texts(), vec!["ஆண்டு 2024 ஆகும்".to_string()]);
+}

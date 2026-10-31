@@ -6,8 +6,8 @@
 
 use crate::managers::natural_audio::{resample_mono, trim_silence, wpm_to_speed};
 use crate::managers::natural_chunk::{
-    split_for_synthesis, split_tamil_for_synthesis, synth_with_overflow_retry, RetryOutcome,
-    NATURAL_MAX_CHARS,
+    is_tamil_letter, split_for_synthesis, split_tamil_for_synthesis, synth_with_overflow_retry,
+    RetryOutcome, NATURAL_MAX_CHARS,
 };
 use crate::managers::natural_sink::{AudioSink, CommitResult, FlushOutcome};
 use crate::managers::natural_text::{
@@ -189,13 +189,17 @@ impl Default for NaturalConfig {
 }
 
 /// Tamil chunks for `speak`: Tamil text policy, then sentence-sized pieces of at most
-/// `TAMIL_MAX_CHARS`. Text with nothing speakable yields no chunks (a clean no-op).
+/// `TAMIL_MAX_CHARS`. A chunk without a Tamil letter (digits only, dots, dashes) is dropped,
+/// so it never reaches the engine. Text with nothing speakable yields no chunks (a clean no-op).
 fn tamil_chunks(text: &str) -> Vec<String> {
     let prepared = prepare_tamil_for_speech(text);
     if !has_speakable_tamil(&prepared) {
         return Vec::new();
     }
     split_tamil_for_synthesis(&prepared, TAMIL_MAX_CHARS)
+        .into_iter()
+        .filter(|chunk| chunk.chars().any(is_tamil_letter))
+        .collect()
 }
 
 /// Tamil synthesis of one chunk (DESIGN R2-C): exactly one engine call, no overflow or

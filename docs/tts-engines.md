@@ -114,7 +114,7 @@ a status line:
 - **Installed**: the files are present and the voice is ready.
 - **Not installed (missing files: N)**: run the download script.
 - **Incomplete download, run the script again**: a file has the wrong size.
-- **Tamil voice failed to load**, with the error: the voice could not start.
+- **Tamil voice problem**, with the error: the voice could not start.
 
 The switch is on by default. Turning it off makes Tamil text use the system
 voice or the chosen engine, as before. The change applies without a restart.
