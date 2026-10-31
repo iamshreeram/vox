@@ -57,6 +57,8 @@ mod orb_converse;
 #[cfg(test)]
 mod orb_converse_tests;
 #[cfg(test)]
+mod orb_dismiss_tests;
+#[cfg(test)]
 mod orb_engine_tests;
 mod orb_gaze;
 mod orb_geometry;
@@ -1441,6 +1443,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::orb::orb_pointer_down,
             commands::orb::orb_activate,
             commands::orb::orb_menu,
+            commands::orb::orb_dismiss,
             commands::orb::orb_get_state,
             commands::orb::orb_set_reduced_motion,
             commands::bubbles::bubbles_ready,

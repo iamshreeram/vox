@@ -361,6 +361,7 @@ fn the_new_commands_are_registered_and_gated_by_the_window_matrix() {
         "orb_pointer_down",
         "orb_activate",
         "orb_menu",
+        "orb_dismiss",
         "orb_get_state",
         "orb_set_reduced_motion",
         "change_orb_visible_setting",

@@ -606,6 +606,7 @@ fn the_orb_window_command_matrix_is_unchanged() {
             "orb_pointer_down",
             "orb_activate",
             "orb_menu",
+            "orb_dismiss",
             "orb_get_state",
             "orb_set_reduced_motion",
         ]

@@ -8,7 +8,7 @@ import {
 /*
  * G3b-A spec (DESIGN.md Rev 5): the orb page (src/orb/index.html) against the Vite dev server
  * with the Tauri mock. The orb window may invoke ONLY orb_get_state, orb_pointer_down,
- * orb_activate, orb_menu and orb_set_reduced_motion (plus the event plugin). It receives
+ * orb_activate, orb_menu, orb_dismiss (T3) and orb_set_reduced_motion (plus the event plugin). It receives
  * `orb-gaze {x,y}`, `orb-gesture {id,result}` and the `converse-chat` state events.
  * Authoritative: do not weaken an assertion; if a test is wrong, report it.
  */
@@ -19,6 +19,7 @@ const ALLOWED = new Set([
   "orb_pointer_down",
   "orb_activate",
   "orb_menu",
+  "orb_dismiss",
   "orb_set_reduced_motion",
 ]);
 
@@ -226,7 +227,7 @@ test.describe("Orb page", () => {
     expect(animations).toBe(0);
   });
 
-  test("the page only ever calls the five orb commands", async ({ page }) => {
+  test("the page only ever calls the six orb commands", async ({ page }) => {
     await open(page);
     await orb(page).hover();
     await page.mouse.down();
