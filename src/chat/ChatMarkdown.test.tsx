@@ -42,6 +42,25 @@ describe("ChatMarkdown static markup", () => {
     expect(html(5, "   \n  ")).not.toMatch(/<(p|ul|ol|pre)\b/);
   });
 
+  it("strips bidi overrides and zero-width characters before parsing, keeping ZWJ emoji", () => {
+    const out = html(
+      6,
+      "pay\u202Eevil\u202C \u2066x\u2069 zero\u200Bwidth \u{1F468}\u200D\u{1F469}",
+    );
+    expect(out).not.toMatch(/[\u202A-\u202E\u2066-\u2069\u200B]/);
+    expect(out).toContain("payevil");
+    expect(out).toContain("\u{1F468}\u200D\u{1F469}");
+  });
+
+  it("renders inline bold, italic and code in a single-line reply without inventing a list or fence", () => {
+    // The Rust log collapses a spoken reply to one line, so this is the common real shape.
+    const out = html(7, "Run `npm test` for **all** tests, then *check* it.");
+    expect(out).toContain('<code class="chat-code-inline">npm test</code>');
+    expect(out).toContain("<strong>all</strong>");
+    expect(out).toContain("<em>check</em>");
+    expect(out).not.toMatch(/<(ul|ol|li|pre)\b/);
+  });
+
   it("parses and renders 1000 messages under the budget", () => {
     const messages = Array.from(
       { length: 1000 },

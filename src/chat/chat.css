@@ -541,6 +541,11 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* Plain (user) text keeps its line breaks, since it is not parsed as markdown. */
+.chat-plain {
+  white-space: pre-wrap;
+}
+
 /* Empty state (UI enterprise T2): a calm full-width panel, centred and muted. Not a bubble: no speech
    tail, no pill shape. It sits on the chip surface so its text is measured against a solid chip. */
 .chat-empty {

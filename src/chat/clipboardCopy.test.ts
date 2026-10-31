@@ -4,12 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 import { copyText } from "./clipboardCopy";
 
 describe("copyText", () => {
-  it("writes the exact raw text and reports success", async () => {
+  // Log: old expectation was "writes the exact raw text". New: the Copy button passes
+  // stripBidiAndInvisible(raw) (see ChatWindow), so copyText writes exactly what it is given.
+  it("writes the cleaned text it is given verbatim and reports success", async () => {
     const writeText = vi.fn(async (_value: string) => undefined);
-    const raw = "**raw** `markdown`\n- kept";
-    await expect(copyText({ writeText }, raw)).resolves.toBe(true);
+    const cleaned = "**cleaned** `markdown`\n- kept";
+    await expect(copyText({ writeText }, cleaned)).resolves.toBe(true);
     expect(writeText).toHaveBeenCalledTimes(1);
-    expect(writeText).toHaveBeenCalledWith(raw);
+    expect(writeText).toHaveBeenCalledWith(cleaned);
   });
 
   it("reports failure when the write is rejected (permission denied)", async () => {

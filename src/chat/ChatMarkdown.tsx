@@ -3,6 +3,7 @@
 // parse is memoised per message (renderedBlocksFor), so a re-render never parses the same text again.
 import { Fragment, type ReactNode } from "react";
 import { renderedBlocksFor, type BlockNode, type InlineNode } from "./markdown";
+import { stripBidiAndInvisible } from "./textSafety";
 
 function renderInline(nodes: InlineNode[]): ReactNode[] {
   return nodes.map((node, index) => {
@@ -60,6 +61,10 @@ function renderBlock(block: BlockNode, index: number): ReactNode {
   );
 }
 
+// Honesty note: the Rust chat log stores each spoken reply as ONE line (tts::sanitize_speech_text turns
+// newlines into spaces). So in practice inline **bold**, *italic* and `code` render, but list and fence
+// blocks only appear when the text itself contains newlines. The parser is not changed for this.
+// Bidi and invisible characters are stripped BEFORE parsing, so what renders is what Copy copies.
 export default function ChatMarkdown({
   id,
   text,
@@ -67,6 +72,6 @@ export default function ChatMarkdown({
   id: number;
   text: string;
 }) {
-  const blocks = renderedBlocksFor(id, text);
+  const blocks = renderedBlocksFor(id, stripBidiAndInvisible(text));
   return <div className="chat-md">{blocks.map(renderBlock)}</div>;
 }

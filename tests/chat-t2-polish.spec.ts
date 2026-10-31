@@ -453,7 +453,9 @@ test.describe("Conversation window polish round 2 (T2): safe markdown", () => {
 });
 
 test.describe("Conversation window polish round 2 (T2): copy", () => {
-  test("copy writes the raw reply, shows Copied for 1.5 s and never throws", async ({
+  // Renamed from "copy writes the raw reply": the copied text is now the cleaned reply
+  // (stripBidiAndInvisible); this fixture has no bidi characters, so the expectation is unchanged.
+  test("copy writes the cleaned reply, shows Copied for 1.5 s and never throws", async ({
     page,
   }) => {
     await page.addInitScript(() => {
@@ -541,6 +543,107 @@ test.describe("Conversation window polish round 2 (T2): copy", () => {
       );
     }
     expect(reached).toBe(true);
+  });
+});
+
+test.describe("Conversation window polish round 2 (T2): safety and announcements", () => {
+  const BIDI_REPLY = "pay\u202Eevil\u202C now \u2066iso\u2069 zero\u200Bwidth";
+  const CLEAN_REPLY = "payevil now iso zerowidth";
+
+  test("a reply with RLO, LRI and ZWSP renders and copies without them", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      (window as unknown as { __pwCopied: string[] }).__pwCopied = [];
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async (value: string) => {
+            (window as unknown as { __pwCopied: string[] }).__pwCopied.push(
+              value,
+            );
+          },
+        },
+      });
+    });
+    await openChat(page, {
+      snapshots: [snapshot(1, [entry(1, BIDI_REPLY, "assistant")])],
+    });
+    await expect(assistantText(page)).toHaveText(CLEAN_REPLY);
+    await assistantText(page).hover();
+    await copyButton(page).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Copied" }),
+    ).toHaveText("Copied");
+    const copied = await page.evaluate(
+      () => (window as unknown as { __pwCopied: string[] }).__pwCopied,
+    );
+    expect(copied).toEqual([CLEAN_REPLY]);
+  });
+
+  test("a typed user message is plain text: 2*3*4 is not italicised", async ({
+    page,
+  }) => {
+    await openChat(page, {
+      snapshots: [snapshot(1, [entry(1, "2*3*4 and **x**", "user")])],
+    });
+    const userText = page.locator(
+      '[data-role="user"] [data-testid="chat-text"]',
+    );
+    await expect(userText).toHaveText("2*3*4 and **x**");
+    expect(await userText.locator("em, strong").count()).toBe(0);
+  });
+
+  test("fifty assistant replies carry no per-message live region; one shared region announces Copied", async ({
+    page,
+  }) => {
+    const entries = Array.from({ length: 50 }, (_, i) =>
+      entry(i + 1, `reply ${i}`, "assistant"),
+    );
+    await openChat(page, { snapshots: [snapshot(1, entries)] });
+    await expect(copyButton(page)).toHaveCount(50);
+    const perMessageLive = await log(page)
+      .locator("[aria-live], [role=status], [role=alert]")
+      .count();
+    expect(perMessageLive).toBe(0);
+    expect(await page.getByTestId("chat-copy-announce").count()).toBe(1);
+  });
+
+  test("Copied and Could not copy show next to the button for 1.5 s and are announced", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: async () => undefined },
+      });
+    });
+    await openChat(page, { snapshots: [snapshot(1, TRANSCRIPT)] });
+    await assistantText(page).hover();
+    await copyButton(page).click();
+    const note = page
+      .locator(".chat-bubble.chat-assistant")
+      .first()
+      .getByTestId("chat-copy-note");
+    await expect(note).toHaveText("Copied");
+    await expect(note).toBeVisible();
+    await expect(page.getByTestId("chat-copy-announce")).toHaveText("Copied");
+    await expect(note).toHaveText("", { timeout: 4000 });
+    await expect(page.getByTestId("chat-copy-announce")).toHaveText("");
+  });
+
+  test("a single-line reply renders inline bold, italic and code and invents no list or fence", async ({
+    page,
+  }) => {
+    const line = "Run `npm test` for **all** tests, then *check* it.";
+    await openChat(page, {
+      snapshots: [snapshot(1, [entry(1, line, "assistant")])],
+    });
+    const reply = assistantText(page);
+    await expect(reply.locator("code.chat-code-inline")).toHaveText("npm test");
+    await expect(reply.locator("strong")).toHaveText("all");
+    await expect(reply.locator("em")).toHaveText("check");
+    expect(await reply.locator("ul, ol, li, pre").count()).toBe(0);
   });
 });
 

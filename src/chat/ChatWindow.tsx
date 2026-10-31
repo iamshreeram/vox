@@ -27,6 +27,7 @@ import type {
 import VoxAvatar from "./VoxAvatar";
 import ChatMarkdown from "./ChatMarkdown";
 import { copyText } from "./clipboardCopy";
+import { stripBidiAndInvisible } from "./textSafety";
 import { avatarStyle } from "./avatarStyle";
 import { getChatOrbLook, subscribeChatOrbLook } from "./chatOrbLook";
 import {
@@ -71,7 +72,15 @@ type TFn = ReturnType<typeof useTranslation>["t"];
  * Copy one assistant reply: writes the ORIGINAL raw text. The clipboard is read only on click, never
  * on render. A failure shows an inline notice and never throws (copyText catches everything).
  */
-function CopyButton({ text, t }: { text: string; t: TFn }) {
+function CopyButton({
+  text,
+  t,
+  onResult,
+}: {
+  text: string;
+  t: TFn;
+  onResult: (ok: boolean) => void;
+}) {
   const [notice, setNotice] = useState<"copied" | "failed" | null>(null);
   const timerRef = useRef<number | undefined>(undefined);
 
@@ -88,6 +97,7 @@ function CopyButton({ text, t }: { text: string; t: TFn }) {
     const ok = await copyText(clipboard, text);
     if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
     setNotice(ok ? "copied" : "failed");
+    onResult(ok);
     timerRef.current = window.setTimeout(() => {
       timerRef.current = undefined;
       setNotice(null);
@@ -128,7 +138,13 @@ function CopyButton({ text, t }: { text: string; t: TFn }) {
           />
         </svg>
       </button>
-      <span className="chat-copy-note" role="status" aria-live="polite">
+      {/* Visible only. The announcement is made once by the shared live region in ChatWindow, so a
+          long transcript does not carry one live region per message. */}
+      <span
+        className="chat-copy-note"
+        data-testid="chat-copy-note"
+        aria-hidden="true"
+      >
         {notice === "copied"
           ? t("chat.copied")
           : notice === "failed"
@@ -157,7 +173,15 @@ function captionFor(
   return { key: "chat.status.idle" };
 }
 
-function Bubble({ entry, t }: { entry: ChatEntry; t: TFn }) {
+function Bubble({
+  entry,
+  t,
+  onCopyResult,
+}: {
+  entry: ChatEntry;
+  t: TFn;
+  onCopyResult: (ok: boolean) => void;
+}) {
   if (entry.role === "system") {
     const note = describeSystem(entry.text);
     const label =
@@ -186,12 +210,23 @@ function Bubble({ entry, t }: { entry: ChatEntry; t: TFn }) {
           {valid ? date.toLocaleTimeString() : ""}
         </time>
         {entry.role === "assistant" ? (
-          <CopyButton text={entry.text} t={t} />
+          <CopyButton
+            text={stripBidiAndInvisible(entry.text)}
+            t={t}
+            onResult={onCopyResult}
+          />
         ) : null}
       </div>
-      <div className="chat-text" data-testid="chat-text">
-        <ChatMarkdown id={entry.id} text={entry.text} />
-      </div>
+      {entry.role === "assistant" ? (
+        <div className="chat-text" data-testid="chat-text">
+          <ChatMarkdown id={entry.id} text={entry.text} />
+        </div>
+      ) : (
+        // User text is plain: no markdown, so typed 2*3*4 stays as typed. Bidi controls are stripped.
+        <div className="chat-text chat-plain" data-testid="chat-text">
+          {stripBidiAndInvisible(entry.text)}
+        </div>
+      )}
     </li>
   );
 }
@@ -209,6 +244,27 @@ export default function ChatWindow() {
   // Inline two-step Clear (U15a): idle shows Clear; confirming shows a bar below the header with
   // Cancel (focused) and Confirm clear, and auto-cancels after CLEAR_CONFIRM_MS (T1b countdown).
   const [clearStep, setClearStep] = useState<ClearStep>("idle");
+  // One shared polite announcement for Copy results (all messages share it), cleared after 1.5 s.
+  const [copyResult, setCopyResult] = useState<"copied" | "failed" | null>(
+    null,
+  );
+  const copyResultTimerRef = useRef<number | undefined>(undefined);
+  useEffect(
+    () => () => {
+      if (copyResultTimerRef.current !== undefined)
+        window.clearTimeout(copyResultTimerRef.current);
+    },
+    [],
+  );
+  const onCopyResult = useCallback((ok: boolean) => {
+    if (copyResultTimerRef.current !== undefined)
+      window.clearTimeout(copyResultTimerRef.current);
+    setCopyResult(ok ? "copied" : "failed");
+    copyResultTimerRef.current = window.setTimeout(() => {
+      copyResultTimerRef.current = undefined;
+      setCopyResult(null);
+    }, COPY_NOTICE_MS);
+  }, []);
   const [clearFailed, setClearFailed] = useState(false);
   const [clearSeconds, setClearSeconds] = useState(
     clearSecondsLeft(CLEAR_CONFIRM_MS),
@@ -619,6 +675,18 @@ export default function ChatWindow() {
       >
         {clearStep === "confirming" ? t("chat.clearPrompt") : ""}
       </div>
+      <div
+        className="chat-sr-only"
+        role="status"
+        aria-live="polite"
+        data-testid="chat-copy-announce"
+      >
+        {copyResult === "copied"
+          ? t("chat.copied")
+          : copyResult === "failed"
+            ? t("chat.copyFailed")
+            : ""}
+      </div>
       {clearStep === "confirming" ? (
         <div
           className="chat-clear-bar"
@@ -732,7 +800,12 @@ export default function ChatWindow() {
             </li>
           ) : (
             view.entries.map((entry) => (
-              <Bubble key={entry.id} entry={entry} t={t} />
+              <Bubble
+                key={entry.id}
+                entry={entry}
+                t={t}
+                onCopyResult={onCopyResult}
+              />
             ))
           )}
         </ol>
