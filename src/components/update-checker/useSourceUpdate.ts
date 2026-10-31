@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { commands, type SourceUpdateInfo } from "../../bindings";
+import {
+  commands,
+  type SourceUpdateInfo,
+  type UpdateProgress,
+} from "../../bindings";
 import {
   canConfirmInstall,
   initialState,
@@ -11,6 +15,8 @@ import {
 
 /** How long the transient "up to date" / "untracked" notices stay visible. */
 const NOTICE_TIMEOUT_MS = 3000;
+/** How long the "updated to <sha>" label stays before it reverts to up to date. */
+export const UPDATED_LABEL_MS = 30000;
 
 export interface UseSourceUpdateOptions {
   checksEnabled: boolean;
@@ -137,7 +143,7 @@ export function useSourceUpdate({
       const res = await commands.startSourceUpdate();
       if (!isCurrent()) return;
       if (res.status === "ok") {
-        dispatch({ type: "installLaunched" });
+        // Progress arrives as events; the footer shows it from here on.
         closeDialog();
       } else {
         dispatch({ type: "installFailed", message: res.error });
@@ -155,13 +161,26 @@ export function useSourceUpdate({
 
   // Transient notices fall back to idle after a short delay. Changing phase
   // (or unmounting) clears the pending timer.
+  const noticeIsTransient = state.run === null;
   useEffect(() => {
     if (state.phase !== "upToDate" && state.phase !== "untracked") return;
+    if (!noticeIsTransient) return;
     const timer = setTimeout(() => {
       if (mountedRef.current) dispatch({ type: "notificationExpired" });
     }, NOTICE_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [state.phase]);
+  }, [state.phase, noticeIsTransient]);
+
+  // The "updated" label reverts to up to date after a while. A new run or a
+  // change of phase clears the pending timer, and so does unmounting.
+  const updatedRunId = state.run?.runId ?? null;
+  useEffect(() => {
+    if (state.phase !== "updated") return;
+    const timer = setTimeout(() => {
+      if (mountedRef.current) dispatch({ type: "updatedExpired" });
+    }, UPDATED_LABEL_MS);
+    return () => clearTimeout(timer);
+  }, [state.phase, updatedRunId]);
 
   useEffect(() => {
     activeRef.current = checksEnabled;
@@ -197,6 +216,13 @@ export function useSourceUpdate({
           }),
         );
         await keep(
+          listen<UpdateProgress>("source-update-progress", (event) => {
+            if (!disposed) {
+              dispatch({ type: "progress", progress: event.payload });
+            }
+          }),
+        );
+        await keep(
           listen("check-for-updates", () => {
             if (!disposed) void runCheck(true);
           }),
@@ -206,7 +232,19 @@ export function useSourceUpdate({
       }
       if (disposed) return;
 
-      // 2. Hydrate from the backend's cached status.
+      // 2. Adopt a background run that is already going (or finished) when
+      //    this window opened, before the cached status is applied.
+      try {
+        const progress = await commands.getSourceUpdateProgress();
+        if (!disposed && progress !== null) {
+          dispatch({ type: "progress", progress });
+        }
+      } catch (error) {
+        console.error("Failed to read source update progress:", error);
+      }
+      if (disposed) return;
+
+      // 3. Hydrate from the backend's cached status.
       try {
         const cached = await commands.getCachedSourceUpdate();
         if (!disposed) dispatch({ type: "hydrated", info: cached });
@@ -215,7 +253,7 @@ export function useSourceUpdate({
       }
       if (disposed) return;
 
-      // 3. One automatic check.
+      // 4. One automatic check.
       void runCheck(false);
     })();
 

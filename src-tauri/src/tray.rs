@@ -22,6 +22,7 @@
 
 use crate::managers::history::{HistoryEntry, HistoryManager};
 use crate::managers::model::ModelManager;
+use crate::managers::source_update_runner::{RunPhase, UpdateProgress};
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings;
 use crate::tray_i18n::get_tray_translations;
@@ -51,6 +52,15 @@ impl TrayIconState {
     }
 }
 
+/// Background update progress as the tray shows it (DESIGN D4, R2-7).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrayUpdateProgress {
+    /// Progress, 0..=100.
+    pub percent: u8,
+    /// True when the update failed; the item then only opens the window.
+    pub failed: bool,
+}
+
 /// Everything the tray *menu* (and tooltip) depends on. When two snapshots
 /// compare equal the menu is not rebuilt.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -65,6 +75,8 @@ struct MenuInputs {
     update_checks_enabled: bool,
     /// A source-build check found a newer `main` (see `source_update`).
     update_available: bool,
+    /// Background update progress, if one is running or has just failed.
+    update_progress: Option<TrayUpdateProgress>,
     wake_word_enabled: bool,
     ambient_mode_enabled: bool,
     experimental_enabled: bool,
@@ -398,6 +410,9 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             locale: settings.app_language,
             update_checks_enabled: settings.update_checks_enabled,
             update_available: crate::managers::source_update::update_available(app),
+            update_progress: crate::managers::source_update::progress(app)
+                .as_ref()
+                .and_then(tray_progress_from),
             wake_word_enabled: settings.wake_word_enabled,
             ambient_mode_enabled: settings.ambient_mode_enabled,
             experimental_enabled: settings.experimental_enabled,
@@ -647,8 +662,9 @@ fn build_menu(
     // "Update available" sits directly above "Check for Updates..." and is only
     // present while a source-build check found a newer commit. It never starts
     // an install; clicking it just opens the window.
-    let update_available_i =
-        if show_update_available_item(inputs, settings::update_checks_forced_disabled()) {
+    let update_item = match update_slot(inputs, settings::update_checks_forced_disabled()) {
+        UpdateSlot::Hidden => None,
+        UpdateSlot::Available => {
             let label =
                 localized_or_english(&strings.update_available, &english_update_available());
             Some(MenuItem::with_id(
@@ -658,9 +674,36 @@ fn build_menu(
                 true,
                 None::<&str>,
             )?)
-        } else {
-            None
-        };
+        }
+        UpdateSlot::Progress(percent) => {
+            let base = label_or(
+                &strings.updating_vox,
+                &english_updating_vox(),
+                "Updating Vox…",
+            );
+            Some(MenuItem::with_id(
+                app,
+                "update_progress",
+                progress_label(&base, percent),
+                false,
+                None::<&str>,
+            )?)
+        }
+        UpdateSlot::Failed => {
+            let label = label_or(
+                &strings.update_failed,
+                &english_update_failed(),
+                "Update failed",
+            );
+            Some(MenuItem::with_id(
+                app,
+                "update_failed",
+                &label,
+                true,
+                None::<&str>,
+            )?)
+        }
+    };
 
     let menu = if inputs.busy {
         let cancel_i = MenuItem::with_id(app, "cancel", &strings.cancel, true, None::<&str>)?;
@@ -749,7 +792,7 @@ fn build_menu(
     // still shifts every entry below it by one position. A manually-disabled
     // toggle in Debug Settings keeps the old greyed-out behavior via the
     // enabled flag.
-    if let Some(update_item) = &update_available_i {
+    if let Some(update_item) = &update_item {
         let items = menu.items()?;
         if let Some(index) = items
             .iter()
@@ -791,17 +834,65 @@ fn show_update_available_item(inputs: &MenuInputs, forced_disabled: bool) -> boo
     inputs.update_available && inputs.update_checks_enabled && !forced_disabled
 }
 
+/// Which item fills the update slot above "Check for Updates...". A running or
+/// failed background update takes the slot before "Update available" would.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum UpdateSlot {
+    /// No item.
+    Hidden,
+    /// "Update available" (clickable; opens the window).
+    Available,
+    /// "Updating Vox… N%" (disabled) at this percent.
+    Progress(u8),
+    /// "Update failed" (clickable; opens the window).
+    Failed,
+}
+
+fn update_slot(inputs: &MenuInputs, forced_disabled: bool) -> UpdateSlot {
+    match &inputs.update_progress {
+        Some(progress) if progress.failed => UpdateSlot::Failed,
+        Some(progress) => UpdateSlot::Progress(progress.percent),
+        None if show_update_available_item(inputs, forced_disabled) => UpdateSlot::Available,
+        None => UpdateSlot::Hidden,
+    }
+}
+
+/// Tray view of a progress: none once done, failed or progress otherwise.
+pub fn tray_progress_from(progress: &UpdateProgress) -> Option<TrayUpdateProgress> {
+    match progress.phase {
+        RunPhase::Done => None,
+        RunPhase::Failed => Some(TrayUpdateProgress {
+            percent: progress.percent,
+            failed: true,
+        }),
+        _ => Some(TrayUpdateProgress {
+            percent: progress.percent,
+            failed: false,
+        }),
+    }
+}
+
+/// The progress item text: the base label followed by the percent.
+fn progress_label(base: &str, percent: u8) -> String {
+    format!("{base} {percent}%")
+}
+
+/// The label to use: `localized` when present, else `english`, else `literal`.
+fn label_or(localized: &str, english: &str, literal: &str) -> String {
+    if !localized.is_empty() {
+        localized.to_string()
+    } else if !english.is_empty() {
+        english.to_string()
+    } else {
+        literal.to_string()
+    }
+}
+
 /// The label to use: the localized string when present, else the English one
 /// (build.rs emits an empty string for locales missing the key), else a fixed
 /// literal so the item is never blank.
 fn localized_or_english(localized: &str, english_fallback: &str) -> String {
-    if !localized.is_empty() {
-        localized.to_string()
-    } else if !english_fallback.is_empty() {
-        english_fallback.to_string()
-    } else {
-        "Update available".to_string()
-    }
+    label_or(localized, english_fallback, "Update available")
 }
 
 /// English conversation label from the generated translations.
@@ -833,6 +924,22 @@ fn english_update_available() -> String {
     crate::tray_i18n::TRANSLATIONS
         .get("en")
         .map(|strings| strings.update_available.clone())
+        .unwrap_or_default()
+}
+
+/// English "Updating Vox…" label from the generated translations.
+fn english_updating_vox() -> String {
+    crate::tray_i18n::TRANSLATIONS
+        .get("en")
+        .map(|strings| strings.updating_vox.clone())
+        .unwrap_or_default()
+}
+
+/// English "Update failed" label from the generated translations.
+fn english_update_failed() -> String {
+    crate::tray_i18n::TRANSLATIONS
+        .get("en")
+        .map(|strings| strings.update_failed.clone())
         .unwrap_or_default()
 }
 
@@ -950,6 +1057,7 @@ mod tests {
             locale: "en".to_string(),
             update_checks_enabled: true,
             update_available: false,
+            update_progress: None,
             wake_word_enabled: false,
             ambient_mode_enabled: false,
             experimental_enabled: true,
@@ -1086,6 +1194,7 @@ mod update_available_item_tests {
             locale: "en".to_string(),
             update_checks_enabled,
             update_available,
+            update_progress: None,
             wake_word_enabled: false,
             ambient_mode_enabled: false,
             experimental_enabled: false,
@@ -1133,6 +1242,125 @@ mod update_available_item_tests {
     #[test]
     fn missing_everything_falls_back_to_literal() {
         assert_eq!(localized_or_english("", ""), "Update available");
+    }
+}
+
+/// Tests for the background-update slot: progress label, the hidden "Update available"
+/// during a run, the failed item, and the done state.
+#[cfg(test)]
+mod update_progress_item_tests {
+    use super::{
+        label_or, progress_label, tray_progress_from, update_slot, MenuInputs, TrayUpdateProgress,
+        UpdateSlot,
+    };
+    use crate::managers::source_update_runner::{RunPhase, UpdateProgress};
+
+    fn inputs(update_available: bool, update_progress: Option<TrayUpdateProgress>) -> MenuInputs {
+        MenuInputs {
+            busy: false,
+            warning: false,
+            model_loaded: false,
+            selected_model: String::new(),
+            downloaded_models: Vec::new(),
+            locale: "en".to_string(),
+            update_checks_enabled: true,
+            update_available,
+            update_progress,
+            wake_word_enabled: false,
+            ambient_mode_enabled: false,
+            experimental_enabled: false,
+            orb_offered: true,
+        }
+    }
+
+    fn progress(phase: RunPhase, percent: u8) -> UpdateProgress {
+        UpdateProgress {
+            run_id: "0123456789abcdef".to_string(),
+            phase,
+            percent,
+            target: "0123456".to_string(),
+            message: String::new(),
+            estimated: false,
+        }
+    }
+
+    #[test]
+    fn progress_label_shows_the_percent_for_each_boundary() {
+        assert_eq!(progress_label("Updating Vox…", 0), "Updating Vox… 0%");
+        assert_eq!(progress_label("Updating Vox…", 7), "Updating Vox… 7%");
+        assert_eq!(progress_label("Updating Vox…", 100), "Updating Vox… 100%");
+    }
+
+    #[test]
+    fn progress_label_uses_the_localized_base_when_present() {
+        assert_eq!(label_or("Mise à jour", "Updating Vox…", "x"), "Mise à jour");
+        assert_eq!(label_or("", "Updating Vox…", "x"), "Updating Vox…");
+        assert_eq!(label_or("", "", "Updating Vox…"), "Updating Vox…");
+    }
+
+    #[test]
+    fn update_available_is_replaced_while_an_update_runs() {
+        let running = Some(TrayUpdateProgress {
+            percent: 42,
+            failed: false,
+        });
+        assert_eq!(
+            update_slot(&inputs(true, running), false),
+            UpdateSlot::Progress(42)
+        );
+        assert_eq!(
+            update_slot(&inputs(true, None), false),
+            UpdateSlot::Available
+        );
+    }
+
+    #[test]
+    fn failed_update_shows_the_failed_item_and_only_that() {
+        let failed = Some(TrayUpdateProgress {
+            percent: 37,
+            failed: true,
+        });
+        assert_eq!(
+            update_slot(&inputs(true, failed.clone()), false),
+            UpdateSlot::Failed
+        );
+        assert_eq!(
+            update_slot(&inputs(false, failed), false),
+            UpdateSlot::Failed
+        );
+    }
+
+    #[test]
+    fn no_progress_and_no_update_hides_the_slot() {
+        assert_eq!(update_slot(&inputs(false, None), false), UpdateSlot::Hidden);
+        assert_eq!(update_slot(&inputs(true, None), true), UpdateSlot::Hidden);
+    }
+
+    #[test]
+    fn running_progress_maps_to_a_tray_progress() {
+        assert_eq!(
+            tray_progress_from(&progress(RunPhase::Compiling, 42)),
+            Some(TrayUpdateProgress {
+                percent: 42,
+                failed: false
+            })
+        );
+    }
+
+    #[test]
+    fn done_has_no_tray_item() {
+        assert_eq!(tray_progress_from(&progress(RunPhase::Done, 100)), None);
+    }
+
+    #[test]
+    fn failed_maps_to_a_failed_tray_progress() {
+        assert_eq!(
+            tray_progress_from(&progress(RunPhase::Failed, 37)),
+            Some(TrayUpdateProgress {
+                percent: 37,
+                failed: true
+            })
+        );
     }
 }
 

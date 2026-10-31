@@ -1,0 +1,126 @@
+$ tauri build --bundles app --config src-tauri/tauri.ci-unsigned.conf.json
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `bun run build`
+$ tsc && vite build
+vite v6.4.1 building for production...
+transforming...
+✓ 2279 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/src/bubbles/index.html            0.71 kB │ gzip:   0.34 kB
+dist/src/overlay/index.html            0.86 kB │ gzip:   0.40 kB
+dist/index.html                        0.94 kB │ gzip:   0.38 kB
+dist/src/orb/index.html                1.01 kB │ gzip:   0.39 kB
+dist/src/chat/index.html               1.03 kB │ gzip:   0.40 kB
+dist/assets/vox-icon-BVOwvYJ6.png     11.07 kB
+dist/assets/bubbles-BdiVShiZ.css       1.26 kB │ gzip:   0.60 kB
+dist/assets/orb-BBariCwh.css           2.11 kB │ gzip:   0.75 kB
+dist/assets/avatar-CxQZL9L5.css        2.49 kB │ gzip:   0.71 kB
+dist/assets/i18n-B_PjZN8Q.css         12.01 kB │ gzip:   2.13 kB
+dist/assets/chat-5V_J-h2T.css         14.62 kB │ gzip:   3.23 kB
+dist/assets/overlay-C4CCiKdP.css      20.71 kB │ gzip:   4.30 kB
+dist/assets/main-FvFmSzfr.css         70.58 kB │ gzip:  11.92 kB
+dist/assets/chatModel-DVolsLtK.js      1.61 kB │ gzip:   0.74 kB
+dist/assets/consumer-AtSnWsmG.js       1.82 kB │ gzip:   0.94 kB
+dist/assets/i18n-BnV12gRm.js           2.31 kB │ gzip:   0.95 kB
+dist/assets/chatTheme-ga8a5eS4.js      2.92 kB │ gzip:   1.30 kB
+dist/assets/bubbles-CdWoEg8B.js        3.79 kB │ gzip:   1.84 kB
+dist/assets/overlay-Yo2QXgAW.js        5.03 kB │ gzip:   2.11 kB
+dist/assets/orb-B1aIAUaN.js            5.49 kB │ gzip:   2.42 kB
+dist/assets/VoxAvatar-Cld7289U.js      5.52 kB │ gzip:   2.16 kB
+dist/assets/index-DxYFsdFE.js          6.86 kB │ gzip:   2.71 kB
+dist/assets/chat-cPxKGIgL.js          18.69 kB │ gzip:   6.55 kB
+dist/assets/bindings-U0fWdHt1.js      42.74 kB │ gzip:   5.43 kB
+dist/assets/main-DObt8M7m.js         717.97 kB │ gzip: 197.20 kB
+dist/assets/rtl-CtwmtMfZ.js        2,516.03 kB │ gzip: 821.72 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 6.82s
+warning: vox@0.1.0: Command Line Tools-only toolchain detected; Apple Intelligence (FoundationModels) needs full Xcode. Falling back to stubs. Install Xcode and run `sudo xcode-select -s /Applications/Xcode.app`, or set HANDY_FORCE_AI_STUB=1 to silence this message.
+warning: vox@0.1.0: Building Apple Intelligence with stubs.
+warning: vox@0.1.0: Generated tray translations: 26 languages, 20 fields
+   Compiling vox v0.1.0 (/Users/s0v06yb/ram/projects/rust/vox/.worktrees/bg-update/src-tauri)
+    Building [=====================> ] 1048/1050: vox                                             warning: value assigned to `model_takes_initial_prompt` is never read
+    --> src/managers/transcription.rs:1249:46
+     |
+1249 |         let mut model_takes_initial_prompt = false;
+     |                                              ^^^^^ this value is reassigned later and never used
+...
+1295 |                 model_takes_initial_prompt = model.supports(Feature::InitialPrompt);
+     |                 ------------------------------------------------------------------- `model_takes_initial_prompt` is overwritten here before the previous value is read
+     |
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `CHAT_ALLOWED_COMMANDS` is never used
+  --> src/chat_window.rs:24:7
+   |
+24 | const CHAT_ALLOWED_COMMANDS: [&str; 3] =
+   |       ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `chat_command_allowed` is never used
+  --> src/chat_window.rs:51:8
+   |
+51 | pub fn chat_command_allowed(window_label: &str, command: &str) -> bool {
+   |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: variant `Cancelled` is never constructed
+   --> src/managers/acp_permission.rs:437:5
+    |
+431 | pub enum UserChoice {
+    |          ---------- variant in this enum
+...
+437 |     Cancelled,
+    |     ^^^^^^^^^
+    |
+    = note: `UserChoice` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `pending_len` and `invalidate_conn` are never used
+   --> src/managers/acp_permission_broker.rs:304:12
+    |
+229 | impl PermissionBroker {
+    | --------------------- methods in this implementation
+...
+304 |     pub fn pending_len(&self) -> usize {
+    |            ^^^^^^^^^^^
+...
+319 |     pub fn invalidate_conn(&self, conn_gen: u64) -> usize {
+    |            ^^^^^^^^^^^^^^^
+
+warning: function `try_complete` is never used
+   --> src/managers/realtime_complete.rs:147:14
+    |
+147 | pub async fn try_complete(
+    |              ^^^^^^^^^^^^
+
+warning: methods `pending` and `take_start_failures` are never used
+   --> src/managers/tts_queue.rs:158:12
+    |
+ 68 | impl<S: Synth> SpeakerCore<S> {
+    | ----------------------------- methods in this implementation
+...
+158 |     pub fn pending(&self) -> usize {
+    |            ^^^^^^^
+...
+163 |     pub fn take_start_failures(&mut self) -> usize {
+    |            ^^^^^^^^^^^^^^^^^^^
+
+warning: `vox` (lib) generated 7 warnings
+    Building [=====================> ] 1049/1050: vox(bin)                                            Finished `release` profile [optimized] target(s) in 7m 15s
+       Built application at: /Users/s0v06yb/ram/projects/rust/vox/.worktrees/bg-update/src-tauri/target/release/vox
+    Bundling Vox.app (/Users/s0v06yb/ram/projects/rust/vox/.worktrees/bg-update/src-tauri/target/release/bundle/macos/Vox.app)
+     Signing with identity "-"
+Signing with identity "-"
+Signing /Users/s0v06yb/ram/projects/rust/vox/.worktrees/bg-update/src-tauri/target/release/bundle/macos/Vox.app/Contents/MacOS/vox
+/Users/s0v06yb/ram/projects/rust/vox/.worktrees/bg-update/src-tauri/target/release/bundle/macos/Vox.app/Contents/MacOS/vox: replacing existing signature
+Signing with identity "-"
+Signing /Users/s0v06yb/ram/projects/rust/vox/.worktrees/bg-update/src-tauri/target/release/bundle/macos/Vox.app
+/Users/s0v06yb/ram/projects/rust/vox/.worktrees/bg-update/src-tauri/target/release/bundle/macos/Vox.app: replacing existing signature
+        Warn skipping app notarization, no APPLE_ID & APPLE_PASSWORD & APPLE_TEAM_ID or APPLE_API_KEY & APPLE_API_ISSUER & APPLE_API_KEY_PATH environment variables found
+    Finished 1 bundle at:
+        /Users/s0v06yb/ram/projects/rust/vox/.worktrees/bg-update/src-tauri/target/release/bundle/macos/Vox.app
+

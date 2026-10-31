@@ -1,15 +1,13 @@
 //! "New version available" for builds installed from a local checkout.
 //!
-//! SCAFFOLD (test-first): every function body below is `todo!()` until the
-//! implementation step replaces it. The `tests` module at the bottom is the
-//! authoritative specification and must not be weakened.
-//!
 //! Design in one paragraph: a build made through `scripts/update-macos.sh`
 //! embeds the git commit it was built from (plus an explicit opt-in flag).
 //! Vox asks GitHub for the newest commits on `main`, compares, and tells the
-//! UI whether the running build is behind. Installing means opening a
-//! Terminal window that runs the same update script, so the build runs
-//! outside Vox's own process tree (the installer stops and restarts Vox).
+//! UI whether the running build is behind. Installing starts a detached,
+//! one-shot launchd job that runs the same update script (see
+//! `source_update_runner`), outside Vox's own process tree, because the
+//! installer stops and restarts Vox. Progress comes back through the status
+//! file and is published as `source-update-progress`.
 
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
@@ -18,8 +16,18 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
+
+use super::source_update_runner::{
+    self as runner, file_age_secs, now_unix, plist_path, proxy_env_from, read_status_bounded,
+    run_id_in_status, status_path, update_state_dir, JobControl, ReconcileInput, RunPhase,
+    UpdateProgress, INTERRUPTED_AFTER_SECS,
+};
+use super::source_update_runner_poller::{self as poller, PollerConfig};
+use super::source_update_runner_run::{
+    adopt_plan, cleanup_run, launch, start_gate, AdoptPlan, LaunchInputs, StartGate,
+};
 
 /// `owner/repo` this build tracks.
 pub const REPO_SLUG: &str = "iamshreeram/vox";
@@ -57,6 +65,9 @@ pub struct SourceUpdateInfo {
     pub current_commit: String,
     /// First 7 hex characters of the newest `main` commit.
     pub latest_commit: String,
+    /// Full 40-hex SHA of the newest `main` commit, or empty when unknown.
+    /// The update builds exactly this commit (see `pinned_target`).
+    pub latest_full: String,
     /// Number of commits `main` is ahead of this build.
     pub behind_by: u32,
     /// Up to [`MAX_CHANGES`] newest-first commit subjects.
@@ -286,6 +297,7 @@ pub fn evaluate_window(
             state: SourceUpdateState::UpToDate,
             current_commit: short_sha(build_sha),
             latest_commit: short_sha(&latest.sha),
+            latest_full: latest.sha.clone(),
             behind_by: 0,
             changes: Vec::new(),
             compare_url,
@@ -298,6 +310,7 @@ pub fn evaluate_window(
         state: SourceUpdateState::Available,
         current_commit: short_sha(build_sha),
         latest_commit: short_sha(&latest.sha),
+        latest_full: latest.sha.clone(),
         behind_by: u32::try_from(index).unwrap_or(u32::MAX),
         changes: subjects(&remote[..index]),
         compare_url,
@@ -326,11 +339,17 @@ pub fn resolve_compare(
 ) -> Result<SourceUpdateInfo, UpdateCheckError> {
     let current_commit = short_sha(build_sha);
     let latest_commit = short_sha(latest_sha);
+    let latest_full = if is_full_sha(latest_sha) {
+        latest_sha.to_string()
+    } else {
+        String::new()
+    };
     let compare_url = compare_page_url(build_sha, latest_sha).unwrap_or_default();
     let untracked = |note: &str| SourceUpdateInfo {
         state: SourceUpdateState::Untracked,
         current_commit: current_commit.clone(),
         latest_commit: latest_commit.clone(),
+        latest_full: latest_full.clone(),
         behind_by: 0,
         changes: Vec::new(),
         compare_url: compare_url.clone(),
@@ -342,7 +361,7 @@ pub fn resolve_compare(
         Ok(CompareStatus::Ahead { ahead_by }) => Ok(SourceUpdateInfo {
             state: SourceUpdateState::Available,
             current_commit: current_commit.clone(),
-            latest_commit: latest_commit.clone(),
+            latest_commit: latest_commit.clone(), latest_full: latest_full.clone(),
             behind_by: ahead_by,
             changes,
             compare_url: compare_url.clone(),
@@ -353,7 +372,7 @@ pub fn resolve_compare(
         Ok(CompareStatus::Identical | CompareStatus::Behind) => Ok(SourceUpdateInfo {
             state: SourceUpdateState::UpToDate,
             current_commit: current_commit.clone(),
-            latest_commit: latest_commit.clone(),
+            latest_commit: latest_commit.clone(), latest_full: latest_full.clone(),
             behind_by: 0,
             changes: Vec::new(),
             compare_url: compare_url.clone(),
@@ -501,44 +520,6 @@ pub fn git_tracked_changes(dir: &Path) -> Option<bool> {
         .map(|out| !out.stdout.is_empty())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ScriptError {
-    UnsafePath,
-}
-
-/// POSIX single-quote escaping (`'` becomes `'\''`). Rejects NUL, CR and LF.
-pub fn shell_single_quote(s: &str) -> Result<String, ScriptError> {
-    if s.contains(['\0', '\n', '\r']) {
-        return Err(ScriptError::UnsafePath);
-    }
-    Ok(format!("'{}'", s.replace('\'', "'\\''")))
-}
-
-/// Bash text opened in Terminal to run the update.
-pub fn build_update_script(source_dir: &str) -> Result<String, ScriptError> {
-    const PLACEHOLDER: &str = "__VOX_SOURCE_DIR__";
-    const TEMPLATE: &str = r#"#!/bin/bash
-# Generated by Vox: runs the local update script in this Terminal window.
-export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
-rm -f -- "$0"
-cd __VOX_SOURCE_DIR__ || { echo "Cannot enter the Vox checkout directory."; read -r -p "Press Enter to close..." _; exit 1; }
-echo "== Updating Vox =="
-VOX_SOURCE_UPDATE=1 ./scripts/update-macos.sh
-status=$?
-echo
-if [ "$status" -eq 0 ]; then
-  echo "Vox update finished."
-else
-  echo "Vox update failed (exit $status)."
-  echo "Recovery: re-run ./scripts/update-macos.sh from the checkout. If Vox is missing from /Applications, run ./scripts/install-macos.sh <path to the built Vox.app>."
-fi
-read -r -p "Press Enter to close this window..." _
-exit "$status"
-"#;
-    let quoted = shell_single_quote(source_dir)?;
-    Ok(TEMPLATE.replacen(PLACEHOLDER, &quoted, 1))
-}
-
 /// `${TMPDIR:-/tmp}/vox-update.lock`, the directory `update-macos.sh` holds
 /// while an update runs.
 pub fn update_lock_path() -> String {
@@ -583,7 +564,7 @@ impl LaunchGuard {
         true
     }
 
-    /// Drop the reservation (e.g. opening Terminal failed).
+    /// Drop the reservation (e.g. starting the update job failed).
     pub fn release(&self) {
         let mut last = self.last.lock().unwrap_or_else(|e| e.into_inner());
         *last = None;
@@ -617,8 +598,12 @@ const STATUS_EVENT: &str = "source-update-status";
 const NOT_AVAILABLE: &str = "Rebuild updates are not available for this build.";
 const CHECKS_DISABLED: &str = "Update checks are disabled.";
 const NOT_READY: &str = "Update checks are not ready yet.";
-const LAUNCH_BUSY: &str = "An update was just started; check the Terminal window.";
-const LAUNCH_FAILED: &str = "Could not open Terminal.";
+const LAUNCH_BUSY: &str = "An update was just started; wait a moment before trying again.";
+const LAUNCH_FAILED: &str = "Could not start the update.";
+const ALREADY_RUNNING: &str = "An update is already running.";
+const NOT_PINNED: &str = "Check for updates again before updating.";
+/// Tauri event carrying the latest [`UpdateProgress`] of the running update.
+const PROGRESS_EVENT: &str = "source-update-progress";
 
 /// Which update flow the footer should use for this running build.
 pub fn current_mode() -> SourceUpdateMode {
@@ -727,6 +712,21 @@ pub struct SourceUpdateRuntime {
     /// Bumped by [`clear`]; an in-flight check started before a bump is discarded.
     generation: AtomicU64,
     guard: LaunchGuard,
+    /// Latest progress of the running (or last finished) update.
+    progress: Mutex<Option<UpdateProgress>>,
+    /// The run this process is watching, if any.
+    active: Mutex<Option<ActiveRun>>,
+}
+
+/// A run this process started or adopted and is watching.
+#[derive(Debug, Clone)]
+pub struct ActiveRun {
+    /// Run identifier (16 lowercase hex).
+    pub run_id: String,
+    /// Launchd label of the run's job.
+    pub label: String,
+    /// When this process started watching the run.
+    pub started: Instant,
 }
 
 impl SourceUpdateRuntime {
@@ -738,6 +738,8 @@ impl SourceUpdateRuntime {
             check_lock: tokio::sync::Mutex::new(()),
             generation: AtomicU64::new(0),
             guard: LaunchGuard::new(LAUNCH_WINDOW),
+            progress: Mutex::new(None),
+            active: Mutex::new(None),
         }
     }
 }
@@ -820,6 +822,7 @@ pub async fn check_and_publish(
 
     *lock_state(&runtime.cached) = Some(info.clone());
     *lock_state(&runtime.last_ok) = Some(Instant::now());
+    clear_failed_progress(&runtime);
     let _ = app.emit(STATUS_EVENT, Some(info.clone()));
     crate::tray::update_tray_menu(app);
     Ok(info)
@@ -859,7 +862,10 @@ pub async fn install_blocker_now(app: &AppHandle) -> Option<String> {
     }
 }
 
-/// Open Terminal running the update script. Returns once Terminal accepted the file.
+/// Starts an update in the background; nothing opens a window. An update this
+/// process already watches is attached to (its progress is shown). Another
+/// update holding the lock is refused. Otherwise the detached runner builds and
+/// installs the commit the last check published (`latest_full`, pinned).
 pub async fn start_update(app: &AppHandle) -> Result<(), String> {
     if current_mode() != SourceUpdateMode::Source {
         return Err(NOT_AVAILABLE.to_string());
@@ -867,89 +873,272 @@ pub async fn start_update(app: &AppHandle) -> Result<(), String> {
     if !effective_checks_enabled(app) {
         return Err(CHECKS_DISABLED.to_string());
     }
-    if let Some(blocker) = install_blocker_now(app).await {
-        return Err(blocker);
-    }
     let Some(runtime) = app.try_state::<SourceUpdateRuntime>() else {
         return Err(NOT_READY.to_string());
     };
+    let lock_dir = PathBuf::from(update_lock_path());
+    // A run whose outcome is already published is not attached to: a new start
+    // then goes through the lock like any other start.
+    let attach_to = attachable_run(lock_state(&runtime.active).as_ref(), progress(app).as_ref());
+    match start_gate(
+        attach_to.is_some(),
+        runner::lock_state(&lock_dir, &runner::process_alive),
+    ) {
+        StartGate::Attach => {
+            if let Some(run) = attach_to {
+                info!(
+                    "attaching to update job {} (run {}, {}s in)",
+                    run.label,
+                    run.run_id,
+                    run.started.elapsed().as_secs()
+                );
+                // Re-publish the cached progress so a footer that missed it converges.
+                if let Some(current) = progress(app).filter(|p| p.run_id == run.run_id) {
+                    let _ = app.emit(PROGRESS_EVENT, current);
+                }
+            }
+            return Ok(());
+        }
+        StartGate::Refuse => return Err(ALREADY_RUNNING.to_string()),
+        StartGate::Proceed => {}
+    }
+    if let Some(blocker) = install_blocker_now(app).await {
+        return Err(blocker);
+    }
+    let target = pinned_target(cached(app).as_ref()).ok_or_else(|| NOT_PINNED.to_string())?;
     if !runtime.guard.try_acquire(Instant::now()) {
         return Err(LAUNCH_BUSY.to_string());
     }
-
-    let script = match build_update_script(SOURCE_DIR) {
-        Ok(script) => script,
-        Err(_) => {
+    let config = match launch_run(app, &lock_dir, &target) {
+        Ok(config) => config,
+        Err(message) => {
             runtime.guard.release();
-            return Err("The checkout path cannot be used safely.".to_string());
+            return Err(message);
         }
     };
-    let path = match create_script_file(&std::env::temp_dir(), &script) {
-        Ok(path) => path,
-        Err(err) => {
-            warn!("could not write the update script: {err}");
-            runtime.guard.release();
-            return Err(LAUNCH_FAILED.to_string());
-        }
-    };
-
-    let opened = tokio::process::Command::new("/usr/bin/open")
-        .arg("-a")
-        .arg("Terminal")
-        .arg(&path)
-        .status()
-        .await;
-    if matches!(opened, Ok(status) if status.success()) {
-        info!("Source update launched in Terminal");
-        Ok(())
-    } else {
-        let _ = std::fs::remove_file(&path);
-        runtime.guard.release();
-        Err(LAUNCH_FAILED.to_string())
-    }
-}
-
-static SCRIPT_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-/// Write `contents` to a new, unpredictably named `.command` file in `dir`
-/// (owner-only on unix) and return its path. Never overwrites an existing file.
-pub fn create_script_file(dir: &Path, contents: &str) -> std::io::Result<PathBuf> {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let counter = SCRIPT_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let name = format!(
-        "vox-update-{}-{nanos}-{counter}.command",
-        std::process::id()
+    cache_progress(
+        app,
+        UpdateProgress {
+            run_id: config.run_id.clone(),
+            phase: RunPhase::Preparing,
+            percent: 0,
+            target: short_sha(&target),
+            message: "Starting the update.".to_string(),
+            estimated: false,
+        },
     );
-    let path = dir.join(name);
-    create_new_file(&path, contents)?;
-    Ok(path)
+    crate::tray::update_tray_menu(app);
+    start_watching(app, &runtime, config);
+    info!("Source update started in the background");
+    Ok(())
 }
 
-/// Create `path` exclusively (fails with `AlreadyExists` if it is present),
-/// write `contents`, and remove the file again if the write fails.
-pub fn create_new_file(path: &Path, contents: &str) -> std::io::Result<()> {
-    use std::io::Write;
+/// Writes and bootstraps the detached job for a new run. Errors are logged in
+/// full (they never contain secrets) and reported to the user as one short line.
+fn launch_run(app: &AppHandle, lock_dir: &Path, target: &str) -> Result<PollerConfig, String> {
+    let fail = |reason: String| {
+        warn!("update launch failed: {reason}");
+        LAUNCH_FAILED.to_string()
+    };
+    let app_data = crate::portable::app_data_dir(app).map_err(|e| fail(e.to_string()))?;
+    let home = std::env::var("HOME")
+        .map(PathBuf::from)
+        .map_err(|_| fail("HOME is not set".to_string()))?;
+    let run_id = runner::new_run_id();
+    if !runner::is_valid_run_id(&run_id) {
+        return Err(fail("no randomness for the run id".to_string()));
+    }
+    let proxies = proxy_env_from(&|name| std::env::var(name).ok());
+    let source = PathBuf::from(SOURCE_DIR);
+    let tmpdir = std::env::temp_dir();
+    let launched = launch(
+        &runner::LaunchctlJobControl::current(),
+        &LaunchInputs {
+            run_id: &run_id,
+            app_data: &app_data,
+            source_dir: &source,
+            target_full: target,
+            home: &home,
+            tmpdir: &tmpdir,
+            lock_dir,
+            proxy_env: &proxies,
+        },
+    )
+    .map_err(|e| fail(e.to_string()))?;
+    Ok(PollerConfig {
+        run_id,
+        label: launched.label,
+        state_dir: launched.state_dir,
+        status_file: launched.status_file,
+        plist: launched.plist,
+        lock_dir: lock_dir.to_path_buf(),
+        running_build_sha: running_build_sha(),
+    })
+}
 
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
+/// Records `config` as this process's active run and starts watching it.
+fn start_watching(app: &AppHandle, runtime: &SourceUpdateRuntime, config: PollerConfig) {
+    info!("watching update job {}", config.label);
+    *lock_state(&runtime.active) = Some(ActiveRun {
+        run_id: config.run_id.clone(),
+        label: config.label.clone(),
+        started: Instant::now(),
+    });
+    poller::spawn(app.clone(), config);
+}
+
+/// The full SHA a new update must build: the latest `main` commit from the last
+/// check, only when that check says an update is available and the SHA is a
+/// lowercase 40-hex value. `None` otherwise.
+pub fn pinned_target(info: Option<&SourceUpdateInfo>) -> Option<String> {
+    let info = info?;
+    let full = &info.latest_full;
+    (info.state == SourceUpdateState::Available
+        && is_full_sha(full)
+        && full.bytes().all(|b| !b.is_ascii_uppercase()))
+    .then(|| full.clone())
+}
+
+/// Full SHA of the running build, or empty when it is unknown.
+pub fn running_build_sha() -> String {
+    if is_full_sha(BUILD_COMMIT) {
+        BUILD_COMMIT.to_string()
+    } else {
+        String::new()
+    }
+}
+
+/// The latest progress of the running (or last finished) update, if any.
+pub fn progress(app: &AppHandle) -> Option<UpdateProgress> {
+    app.try_state::<SourceUpdateRuntime>()
+        .and_then(|runtime| lock_state(&runtime.progress).clone())
+}
+
+/// Caches `progress` and emits it as `source-update-progress`. The tray is not
+/// refreshed here: the poller coalesces those refreshes.
+pub fn cache_progress(app: &AppHandle, progress: UpdateProgress) {
+    if let Some(runtime) = app.try_state::<SourceUpdateRuntime>() {
+        *lock_state(&runtime.progress) = Some(progress.clone());
+    }
+    let _ = app.emit(PROGRESS_EVENT, progress);
+}
+
+/// The run this process should attach to: the active run, unless its outcome
+/// is already published (`done` or `failed` for that run).
+pub fn attachable_run(
+    active: Option<&ActiveRun>,
+    progress: Option<&UpdateProgress>,
+) -> Option<ActiveRun> {
+    let run = active?;
+    let settled = progress.is_some_and(|p| p.run_id == run.run_id && p.phase.is_terminal());
+    (!settled).then(|| run.clone())
+}
+
+/// Clears the active run and frees the launch guard once `run_id` has ended.
+/// Another run's end changes nothing.
+fn finish_run(runtime: &SourceUpdateRuntime, run_id: &str) {
+    let mut active = lock_state(&runtime.active);
+    if active.as_ref().is_some_and(|run| run.run_id == run_id) {
+        *active = None;
+        runtime.guard.release();
+    }
+}
+
+/// Frees the launch guard when a run reaches its outcome, so a retry right after a
+/// failure is not refused for the rest of the launch window.
+pub fn release_launch_guard(app: &AppHandle) {
+    if let Some(runtime) = app.try_state::<SourceUpdateRuntime>() {
+        runtime.guard.release();
+    }
+}
+
+/// Forgets the active run once its poller has stopped.
+pub fn run_finished(app: &AppHandle, run_id: &str) {
+    if let Some(runtime) = app.try_state::<SourceUpdateRuntime>() {
+        finish_run(&runtime, run_id);
+    }
+}
+
+/// After a successful update, re-check so the footer shows the new state.
+pub fn recheck_after_done(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = check_and_publish(&app, true).await {
+            warn!("post-update check failed: {error}");
+        }
+    });
+}
+
+/// Drops a failed progress once a fresh check has run, so the tray offers the
+/// update again (the next check decides whether it is still available).
+fn clear_failed_progress(runtime: &SourceUpdateRuntime) {
+    let mut progress = lock_state(&runtime.progress);
+    if progress
+        .as_ref()
+        .is_some_and(|p| p.phase == RunPhase::Failed)
     {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o700);
+        *progress = None;
     }
-    let mut file = options.open(path)?;
-    let written = file
-        .write_all(contents.as_bytes())
-        .and_then(|()| file.sync_all());
-    if let Err(err) = written {
-        drop(file);
-        let _ = std::fs::remove_file(path);
-        return Err(err);
+}
+
+/// Startup adoption (R2-2, R3-1). A run started by an earlier Vox may still be
+/// running, or may have finished while Vox restarted. Watch it when something is
+/// left to watch, clean it up when only leftovers remain, and do nothing else.
+/// A live job is never booted out and the lock is never touched.
+pub fn adopt_existing_run(app: &AppHandle) {
+    if current_mode() != SourceUpdateMode::Source {
+        return;
     }
-    Ok(())
+    let Some(runtime) = app.try_state::<SourceUpdateRuntime>() else {
+        return;
+    };
+    let Ok(app_data) = crate::portable::app_data_dir(app) else {
+        return;
+    };
+    let state_dir = update_state_dir(&app_data);
+    let status_file = status_path(&state_dir);
+    let Ok(Some(bytes)) = read_status_bounded(&status_file) else {
+        return;
+    };
+    let Some(run_id) = run_id_in_status(&bytes) else {
+        return;
+    };
+    let control = runner::LaunchctlJobControl::current();
+    let lock_dir = PathBuf::from(update_lock_path());
+    let plist = plist_path(&state_dir, &run_id);
+    let running = running_build_sha();
+    let input = ReconcileInput {
+        status: runner::parse_status(&bytes, &run_id, None, now_unix()).ok(),
+        status_age_secs: file_age_secs(&status_file)
+            .or_else(|| file_age_secs(&plist))
+            .unwrap_or(0),
+        job: control.state(&runner::job_label(&run_id)),
+        lock: runner::lock_state(&lock_dir, &runner::process_alive),
+        running_build_sha: &running,
+        published: false,
+        interrupted_after_secs: INTERRUPTED_AFTER_SECS,
+    };
+    match adopt_plan(&input, plist.exists()) {
+        AdoptPlan::Nothing => {}
+        AdoptPlan::CleanupNow => {
+            if let Err(error) = cleanup_run(&control, &state_dir, &run_id) {
+                warn!("could not clean up a finished update: {error}");
+            }
+        }
+        AdoptPlan::Watch => {
+            info!("adopting an update run that is still known to Vox");
+            let config = PollerConfig {
+                label: runner::job_label(&run_id),
+                run_id,
+                state_dir,
+                status_file,
+                plist,
+                lock_dir,
+                running_build_sha: running,
+            };
+            start_watching(app, &runtime, config);
+        }
+    }
 }
 
 /// Background checker: first run after a short delay, then every six hours,
@@ -1656,144 +1845,6 @@ mod tests {
         assert_eq!(git_tracked_changes(plain.path()), None);
     }
 
-    // ---- shell quoting & the generated Terminal script ----------------------
-
-    #[test]
-    fn shell_single_quote_escapes_everything_literally() {
-        assert_eq!(
-            shell_single_quote("/Users/a b/vox").unwrap(),
-            "'/Users/a b/vox'"
-        );
-        assert_eq!(shell_single_quote("it's").unwrap(), "'it'\\''s'");
-        assert_eq!(shell_single_quote("$(rm -rf /)").unwrap(), "'$(rm -rf /)'");
-        assert_eq!(shell_single_quote("`id`").unwrap(), "'`id`'");
-        assert_eq!(shell_single_quote("").unwrap(), "''");
-        assert_eq!(shell_single_quote("''").unwrap(), "''\\'''\\'''");
-    }
-
-    #[test]
-    fn shell_single_quote_rejects_control_characters() {
-        for bad in ["a\nb", "a\rb", "a\0b", "\n"] {
-            assert_eq!(
-                shell_single_quote(bad),
-                Err(ScriptError::UnsafePath),
-                "{bad:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn update_script_has_the_expected_structure() {
-        let script = build_update_script("/Users/me/vox").unwrap();
-        assert!(script.starts_with("#!/bin/bash\n"), "{script}");
-        assert!(script.contains("cd '/Users/me/vox' ||"));
-        assert!(script.contains("VOX_SOURCE_UPDATE=1 ./scripts/update-macos.sh"));
-        assert!(script.contains(".cargo/bin"));
-        assert!(script.contains(".bun/bin"));
-        assert!(script.contains(".local/bin"));
-        assert!(script.contains("rm -f -- \"$0\""));
-        assert!(script.contains("read -r"));
-        assert!(
-            script.contains("./scripts/update-macos.sh; if Vox is missing")
-                || script.contains("scripts/install-macos.sh"),
-            "recovery hint must be present: {script}"
-        );
-    }
-
-    #[test]
-    fn update_script_rejects_unsafe_paths() {
-        assert_eq!(
-            build_update_script("/tmp/a\nb"),
-            Err(ScriptError::UnsafePath)
-        );
-        assert_eq!(
-            build_update_script("/tmp/a\0b"),
-            Err(ScriptError::UnsafePath)
-        );
-    }
-
-    #[cfg(unix)]
-    mod execution {
-        use super::*;
-        use std::os::unix::fs::PermissionsExt;
-
-        /// A fake checkout whose directory name contains a space, a single
-        /// quote and a dollar sign, with a stub update script recording what it
-        /// saw and exiting with the code stored in `exit_code`.
-        fn fake_checkout(exit_code: i32) -> (tempfile::TempDir, std::path::PathBuf) {
-            let root = tempfile::tempdir().unwrap();
-            let dir = root.path().join("my vox's $HOME dir");
-            std::fs::create_dir_all(dir.join("scripts")).unwrap();
-            let stub = dir.join("scripts/update-macos.sh");
-            std::fs::write(
-                &stub,
-                format!(
-                    "#!/bin/bash\n\
-                     echo \"cwd=$PWD\" > \"$PWD/marker\"\n\
-                     echo \"flag=$VOX_SOURCE_UPDATE\" >> \"$PWD/marker\"\n\
-                     exit {exit_code}\n"
-                ),
-            )
-            .unwrap();
-            std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
-            (root, dir)
-        }
-
-        fn run_script(script_text: &str) -> (std::process::ExitStatus, std::path::PathBuf) {
-            let tmp = tempfile::tempdir().unwrap();
-            let path = tmp.path().join("run.command");
-            std::fs::write(&path, script_text).unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-            let status = std::process::Command::new("bash")
-                .arg(&path)
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .unwrap();
-            // Keep the temp dir alive until after the run, then hand the path
-            // back so the caller can assert the script deleted itself.
-            let p = path.clone();
-            std::mem::forget(tmp);
-            (status, p)
-        }
-
-        #[test]
-        fn runs_the_update_script_inside_a_hostile_directory_name() {
-            let (_root, dir) = fake_checkout(0);
-            let script = build_update_script(dir.to_str().unwrap()).unwrap();
-            let (status, script_path) = run_script(&script);
-            assert!(status.success());
-            let marker = std::fs::read_to_string(dir.join("marker")).unwrap();
-            assert!(marker.contains("flag=1"), "{marker}");
-            let canonical = std::fs::canonicalize(&dir).unwrap();
-            assert!(
-                marker.contains(&format!("cwd={}", canonical.display()))
-                    || marker.contains(&format!("cwd={}", dir.display())),
-                "{marker}"
-            );
-            assert!(
-                !script_path.exists(),
-                "the .command file must delete itself"
-            );
-        }
-
-        #[test]
-        fn propagates_the_update_scripts_exit_status() {
-            let (_root, dir) = fake_checkout(3);
-            let script = build_update_script(dir.to_str().unwrap()).unwrap();
-            let (status, _) = run_script(&script);
-            assert_eq!(status.code(), Some(3));
-        }
-
-        #[test]
-        fn a_missing_checkout_exits_one_without_running_anything() {
-            let script = build_update_script("/definitely/not/here/vox").unwrap();
-            let (status, _) = run_script(&script);
-            assert_eq!(status.code(), Some(1));
-        }
-    }
-
     // ---- update_lock_path & LaunchGuard -------------------------------------
 
     #[test]
@@ -2083,48 +2134,6 @@ mod io_tests {
     }
 
     #[test]
-    fn create_script_file_writes_exact_contents() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = create_script_file(dir.path(), "#!/bin/bash\necho hi\n").expect("create");
-        assert!(path.is_file());
-        assert_eq!(
-            std::fs::read_to_string(&path).expect("read"),
-            "#!/bin/bash\necho hi\n"
-        );
-        assert_eq!(path.extension().and_then(|e| e.to_str()), Some("command"));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn create_script_file_is_owner_only() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = create_script_file(dir.path(), "x").expect("create");
-        let mode = std::fs::metadata(&path).expect("meta").permissions().mode();
-        assert_eq!(mode & 0o777, 0o700);
-    }
-
-    #[test]
-    fn create_script_file_returns_a_fresh_path_each_call() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let first = create_script_file(dir.path(), "a").expect("first");
-        let second = create_script_file(dir.path(), "b").expect("second");
-        assert_ne!(first, second);
-        assert_eq!(std::fs::read_to_string(&first).expect("read"), "a");
-        assert_eq!(std::fs::read_to_string(&second).expect("read"), "b");
-    }
-
-    #[test]
-    fn create_new_file_never_overwrites_an_existing_file() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("taken.command");
-        std::fs::write(&path, "keep me").expect("seed");
-        let err = create_new_file(&path, "replacement").expect_err("must not overwrite");
-        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
-        assert_eq!(std::fs::read_to_string(&path).expect("read"), "keep me");
-    }
-
-    #[test]
     fn should_commit_truth_table() {
         for enabled in [false, true] {
             for started in [0u64, 1] {
@@ -2204,3 +2213,7 @@ mod live_github {
         assert!(info.note.is_some());
     }
 }
+
+#[cfg(test)]
+#[path = "source_update_wiring_tests.rs"]
+mod wiring_tests;

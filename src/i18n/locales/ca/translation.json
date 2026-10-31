@@ -3,6 +3,8 @@
     "settings": "Configuració...",
     "checkUpdates": "Comprova si hi ha actualitzacions...",
     "updateAvailable": "Update available",
+    "updatingVox": "Updating Vox…",
+    "updateFailed": "Update failed",
     "copyLastTranscript": "Copia l'última transcripció",
     "converse": "Start or stop conversation",
     "chat": "Conversation window",
@@ -1632,7 +1634,6 @@
     "sourceUpdate": {
       "untracked": "Not tracking main",
       "starting": "Starting update...",
-      "started": "Updating... (click to check)",
       "error": "Update check failed",
       "dialog": {
         "title": "Update Vox",
@@ -1641,12 +1642,31 @@
         "versions": "Installed {{current}}, latest {{latest}}",
         "more": "...and {{count}} more",
         "viewChanges": "View changes on GitHub",
-        "explanation": "Updating builds the latest code from GitHub main in your local checkout using the repository's own update script. A Terminal window opens, the build takes several minutes, and Vox restarts when it finishes.",
+        "explanation": "Vox will download and install the update in the background and restart itself when it is ready. You can keep using Vox while it works.",
         "blockerUnknown": "Could not verify that the checkout is ready to update.",
         "updateNow": "Update now",
-        "updating": "Starting...",
+        "updating": "Starting…",
         "notNow": "Not now"
-      }
+      },
+      "updating": "Updating… {{percent}}%",
+      "updatingEstimated": "Updating… ~{{percent}}%",
+      "progressValueText": "{{percent}}%, {{stage}}",
+      "stage": {
+        "preparing": "Preparing",
+        "dependencies": "Installing dependencies",
+        "compiling": "Compiling",
+        "bundling": "Bundling",
+        "installing": "Installing",
+        "restarting": "Restarting"
+      },
+      "updated": "Up to date · {{version}} ({{sha}})",
+      "failed": "Update failed",
+      "retry": "Retry",
+      "a11y": {
+        "progress": "Vox update progress"
+      },
+      "announce": "Update {{percent}}%, {{stage}}",
+      "announceDone": "Update complete: {{sha}}"
     }
   },
   "whatsNew": {
