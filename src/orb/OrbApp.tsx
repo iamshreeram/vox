@@ -121,6 +121,11 @@ function HideBadge() {
       title={label}
       onPointerDown={stop}
       onMouseDown={stop}
+      onContextMenu={(event) => {
+        // Same menu as the globe: the native menu is suppressed and orb_menu opens ours.
+        event.preventDefault();
+        send("orb_menu");
+      }}
       onClick={(event) => {
         event.stopPropagation();
         dismissOrb();

@@ -107,6 +107,8 @@ test.describe("Orb Hide badge", () => {
     page,
   }) => {
     await open(page);
+    // The badge takes no pointer until the orb is hovered, so hover first (as a user does).
+    await hoverCentre(page);
     await badge(page).click();
     await expect
       .poll(async () => (await getMockCalls(page, "orb_dismiss")).length)
@@ -157,6 +159,86 @@ test.describe("Orb Hide badge", () => {
     await expect(orb(page)).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(badge(page)).toBeFocused();
+  });
+
+  test("while hidden the badge takes no pointer: a press over it lands on the globe", async ({
+    page,
+  }) => {
+    await open(page, 48);
+    const found = await box(page, '[data-testid="orb-hide"]');
+    const point = {
+      x: found.x + found.width / 2,
+      y: found.y + found.height / 2,
+    };
+    await expect(badge(page)).toHaveCSS("opacity", "0");
+    await expect(badge(page)).toHaveCSS("pointer-events", "none");
+    const hitIsGlobe = await page.evaluate(({ x, y }) => {
+      const hit = document.elementFromPoint(x, y);
+      return (
+        hit !== null &&
+        hit.closest('[data-testid="orb-hide"]') === null &&
+        hit.closest('[data-testid="orb"]') !== null
+      );
+    }, point);
+    expect(hitIsGlobe).toBe(true);
+    // A press at the badge position reaches the globe handler, not the badge.
+    await page.evaluate(({ x, y }) => {
+      const hit = document.elementFromPoint(x, y) as HTMLElement;
+      hit.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 1,
+          isPrimary: true,
+          button: 0,
+          buttons: 1,
+          clientX: x,
+          clientY: y,
+        }),
+      );
+    }, point);
+    await expect
+      .poll(async () => (await getMockCalls(page, "orb_pointer_down")).length)
+      .toBe(1);
+    expect(await getMockCalls(page, "orb_dismiss")).toHaveLength(0);
+  });
+
+  test("after hover the badge takes pointer and a click dismisses once", async ({
+    page,
+  }) => {
+    await open(page, 48);
+    await hoverCentre(page);
+    await expect(badge(page)).toHaveCSS("pointer-events", "auto");
+    await badge(page).click();
+    await expect
+      .poll(async () => (await getMockCalls(page, "orb_dismiss")).length)
+      .toBe(1);
+    expect(await getMockCalls(page, "orb_pointer_down")).toHaveLength(0);
+  });
+
+  test("right-click on the badge prevents the native menu and opens the orb menu", async ({
+    page,
+  }) => {
+    await open(page, 48);
+    await hoverCentre(page);
+    await page.evaluate(() => {
+      (window as unknown as { __ctxPrevented: boolean }).__ctxPrevented = false;
+      window.addEventListener("contextmenu", (event) => {
+        (window as unknown as { __ctxPrevented: boolean }).__ctxPrevented =
+          event.defaultPrevented;
+      });
+    });
+    await badge(page).click({ button: "right" });
+    await expect
+      .poll(async () => (await getMockCalls(page, "orb_menu")).length)
+      .toBe(1);
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { __ctxPrevented: boolean }).__ctxPrevented,
+      ),
+    ).toBe(true);
+    expect(await getMockCalls(page, "orb_dismiss")).toHaveLength(0);
+    expect(await getMockCalls(page, "orb_activate")).toHaveLength(0);
   });
 
   for (const size of SIZES) {
