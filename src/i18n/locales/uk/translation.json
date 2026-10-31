@@ -1994,7 +1994,6 @@
     "emptyHint": "Replies can be copied with the Copy button on each message."
   },
   "orb": {
-    "hide": "Hide Vox orb",
     "label": "Vox orb. Press Enter to open the conversation.",
     "assistantName": "Vox assistant",
     "stateAnnounce": "{{name}}: {{state}}",

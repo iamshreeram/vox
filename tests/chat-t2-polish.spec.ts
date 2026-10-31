@@ -1,5 +1,5 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { installTauriMock } from "./fixtures/tauriMock";
 import { CHAT_PALETTES } from "../src/chat/chatTheme";
 import { contrastRatio } from "../src/styles/wcag";
@@ -46,6 +46,7 @@ interface ChatPageLike {
 const CHAT_PAGE = "/src/chat/index.html";
 const SNAPSHOT_COMMAND = "get_chat_snapshot";
 const SHOTS = "/tmp/voxux/t2-shots";
+const TW_SHOTS = "/tmp/voxux/tw-shots";
 
 const entry = (id: number, text: string, role: WireEntry["role"] = "user") => ({
   id,
@@ -187,7 +188,7 @@ function sameRgb(
 }
 
 test.describe("Conversation window polish round 2 (T2): layout", () => {
-  test("the transcript keeps at least 55% of the height at 480x720 and 40% at 360x560", async ({
+  test("the transcript keeps at least 53% of the height at 480x720 and 46% at 360x560 (stacked layout)", async ({
     page,
   }) => {
     await openChat(
@@ -201,11 +202,11 @@ test.describe("Conversation window polish round 2 (T2): layout", () => {
     expect(
       big.height / 720,
       "transcript share at 480x720",
-    ).toBeGreaterThanOrEqual(0.55);
+    ).toBeGreaterThanOrEqual(0.53);
     await page.setViewportSize({ width: 360, height: 560 });
     await expect
       .poll(async () => (await box(log(page))).height / 560)
-      .toBeGreaterThanOrEqual(0.4);
+      .toBeGreaterThanOrEqual(0.46);
   });
 
   test("the avatar is about 96 px at 480x720 and collapses to about 64 px at 360x560", async ({
@@ -228,6 +229,97 @@ test.describe("Conversation window polish round 2 (T2): layout", () => {
       .toBeLessThanOrEqual(72);
     const short = await box(avatar);
     expect(short.width).toBeGreaterThanOrEqual(56);
+  });
+
+  test("stacked layout screenshots: idle and acting with Stop at 360x600 and 480x720", async ({
+    page,
+  }) => {
+    mkdirSync(TW_SHOTS, { recursive: true });
+    const cases = [
+      { name: "idle", state: "idle", activeSession: null },
+      { name: "acting", state: "acting", activeSession: 7 },
+    ] as const;
+    for (const size of [
+      { width: 360, height: 600 },
+      { width: 480, height: 720 },
+    ]) {
+      for (const c of cases) {
+        // A fresh page load for every capture (openChat navigates), never a live resize.
+        await openChat(
+          page,
+          {
+            snapshots: [
+              snapshot(1, TRANSCRIPT, {
+                state: c.state,
+                activeSession: c.activeSession,
+              }),
+            ],
+          },
+          { size },
+        );
+        await page.screenshot({
+          path: `${TW_SHOTS}/chat-${c.name}-${size.width}x${size.height}.png`,
+        });
+      }
+    }
+  });
+
+  for (const size of [
+    { width: 360, height: 600 },
+    { width: 480, height: 720 },
+  ]) {
+    test(`the orb is stacked above the status pill at ${size.width}x${size.height}`, async ({
+      page,
+    }) => {
+      await openChat(page, { snapshots: [snapshot(1, TRANSCRIPT)] }, { size });
+      const orbBox = await box(page.locator(".chat-root svg.vox-avatar"));
+      const pillBox = await box(pill(page));
+      expect(orbBox.y + orbBox.height).toBeLessThanOrEqual(pillBox.y);
+      const rowCentre = pillBox.x + pillBox.width / 2;
+      const orbCentre = orbBox.x + orbBox.width / 2;
+      expect(Math.abs(orbCentre - rowCentre)).toBeLessThanOrEqual(2);
+    });
+  }
+
+  test("in the acting state the pill and Stop sit below the orb, do not overlap, and fit the viewport", async ({
+    page,
+  }) => {
+    const size = { width: 360, height: 600 };
+    await openChat(
+      page,
+      {
+        snapshots: [
+          snapshot(1, TRANSCRIPT, { state: "acting", activeSession: 7 }),
+        ],
+      },
+      { size },
+    );
+    await expect(stopButton(page)).toBeVisible();
+    const orbBox = await box(page.locator(".chat-root svg.vox-avatar"));
+    const pillBox = await box(pill(page));
+    const stopBox = await box(stopButton(page));
+    expect(orbBox.y + orbBox.height).toBeLessThanOrEqual(pillBox.y);
+    expect(orbBox.y + orbBox.height).toBeLessThanOrEqual(stopBox.y);
+    const overlap =
+      pillBox.x < stopBox.x + stopBox.width &&
+      stopBox.x < pillBox.x + pillBox.width &&
+      pillBox.y < stopBox.y + stopBox.height &&
+      stopBox.y < pillBox.y + pillBox.height;
+    expect(overlap).toBe(false);
+    for (const b of [pillBox, stopBox]) {
+      expect(b.x).toBeGreaterThanOrEqual(0);
+      expect(b.y).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.width).toBeLessThanOrEqual(size.width);
+      expect(b.y + b.height).toBeLessThanOrEqual(size.height);
+    }
+    // Pill and Stop share one row at 360 px: the Stop row is centred under the orb as well.
+    expect(Math.abs(stopBox.y - pillBox.y)).toBeLessThanOrEqual(2);
+    const rowCentre =
+      (Math.min(pillBox.x, stopBox.x) +
+        Math.max(pillBox.x + pillBox.width, stopBox.x + stopBox.width)) /
+      2;
+    const orbCentre = orbBox.x + orbBox.width / 2;
+    expect(Math.abs(orbCentre - rowCentre)).toBeLessThanOrEqual(2);
   });
 
   test("the transcript has a soft top fade (gradient overlay, no mask) and chat.css has no backdrop-filter or blur", async ({

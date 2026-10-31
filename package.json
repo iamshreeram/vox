@@ -50,7 +50,7 @@
     "test:orb:behavior": "bun src/orb/orbBehavior.test.ts",
     "test:orb:face": "bun src/orb/orbFace.test.ts",
     "test:orb:dismiss": "bun src/orb/orbDismiss.test.ts",
-    "test:orb:hide:e2e": "playwright test tests/orb-hide-badge.spec.ts --reporter=line",
+    "test:orb:esc:e2e": "playwright test tests/orb-esc.spec.ts --reporter=line",
     "test:orb:face:e2e": "playwright test tests/orb-face.spec.ts --reporter=line",
     "test:first-run:e2e": "playwright test tests/first-run.spec.ts --reporter=line",
     "test:permission-prompt:e2e": "playwright test tests/permission-prompt.spec.ts --reporter=line",
