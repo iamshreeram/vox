@@ -197,7 +197,7 @@
         "description": "إعداد اختصارات لوحة المفاتيح لبدء تسجيل التفريغ الصوتي",
         "loading": "...جاري تحميل الاختصارات",
         "none": "لا توجد اختصارات مجهزة",
-        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
+        "noneHint": "Shortcuts appear here once Vox has loaded your settings.",
         "notFound": "الاختصار غير موجود",
         "pressKeys": "...اضغط على المفاتيح",
         "bindings": {
@@ -226,7 +226,10 @@
           "restore": "فشل استعادة الاختصار الأصلي",
           "set": "فشل تعيين الاختصار: {{error}}",
           "reset": "فشل إعادة تعيين الاختصار إلى قيمته الأصلية"
-        }
+        },
+        "loadFailed": "Vox could not load your shortcut list. Retry, or restart Vox if it keeps failing.",
+        "retry": "Retry",
+        "retrying": "Retrying…"
       },
       "language": {
         "title": "اللغة",
@@ -1369,6 +1372,12 @@
         "description": "Spoken replies and the Brain are not set up yet. Choose a voice and connect a language model to finish.",
         "action": "Open Brain",
         "dismiss": "Dismiss"
+      },
+      "empty": {
+        "noneTitle": "No models downloaded yet",
+        "noneHelp": "Download a model from the list below to start transcribing.",
+        "noneCta": "Show models to download",
+        "clearFilters": "Clear filters"
       }
     },
     "appearance": {

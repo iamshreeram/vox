@@ -232,6 +232,12 @@
         "description": "Spoken replies and the Brain are not set up yet. Choose a voice and connect a language model to finish.",
         "action": "Open Brain",
         "dismiss": "Dismiss"
+      },
+      "empty": {
+        "noneTitle": "No models downloaded yet",
+        "noneHelp": "Download a model from the list below to start transcribing.",
+        "noneCta": "Show models to download",
+        "clearFilters": "Clear filters"
       }
     },
     "appearance": {
@@ -302,7 +308,7 @@
         "description": "Nastavte klávesové zkratky pro spuštění nahrávání řeči na text",
         "loading": "Načítám zkratky...",
         "none": "Žádné zkratky nejsou nastavené",
-        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
+        "noneHint": "Shortcuts appear here once Vox has loaded your settings.",
         "notFound": "Zkratka nenalezena",
         "pressKeys": "Stiskněte klávesy...",
         "bindings": {
@@ -331,7 +337,10 @@
           "restore": "Nepodařilo se obnovit původní zkratku",
           "set": "Nepodařilo se nastavit zkratku: {{error}}",
           "reset": "Nepodařilo se vrátit zkratku na původní hodnotu"
-        }
+        },
+        "loadFailed": "Vox could not load your shortcut list. Retry, or restart Vox if it keeps failing.",
+        "retry": "Retry",
+        "retrying": "Retrying…"
       },
       "language": {
         "title": "Jazyk",

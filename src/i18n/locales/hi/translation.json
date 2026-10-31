@@ -200,7 +200,7 @@
         "description": "स्पीच-टू-टेक्स्ट रिकॉर्डिंग शुरू करने के लिए कीबोर्ड शॉर्टकट सेट करें",
         "loading": "शॉर्टकट लोड हो रहे हैं...",
         "none": "कोई शॉर्टकट सेट नहीं है",
-        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
+        "noneHint": "Shortcuts appear here once Vox has loaded your settings.",
         "notFound": "शॉर्टकट नहीं मिला",
         "pressKeys": "बटन दबाएं...",
         "bindings": {
@@ -229,7 +229,10 @@
           "restore": "पहले वाला शॉर्टकट वापस नहीं लाया जा सका",
           "set": "शॉर्टकट सेट नहीं हो सका: {{error}}",
           "reset": "शॉर्टकट को पहले जैसा रीसेट नहीं किया जा सका"
-        }
+        },
+        "loadFailed": "Vox could not load your shortcut list. Retry, or restart Vox if it keeps failing.",
+        "retry": "Retry",
+        "retrying": "Retrying…"
       },
       "language": {
         "title": "भाषा",
@@ -299,6 +302,12 @@
         "description": "Spoken replies and the Brain are not set up yet. Choose a voice and connect a language model to finish.",
         "action": "Open Brain",
         "dismiss": "Dismiss"
+      },
+      "empty": {
+        "noneTitle": "No models downloaded yet",
+        "noneHelp": "Download a model from the list below to start transcribing.",
+        "noneCta": "Show models to download",
+        "clearFilters": "Clear filters"
       }
     },
     "appearance": {

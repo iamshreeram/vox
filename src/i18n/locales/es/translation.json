@@ -232,6 +232,12 @@
         "description": "Spoken replies and the Brain are not set up yet. Choose a voice and connect a language model to finish.",
         "action": "Open Brain",
         "dismiss": "Dismiss"
+      },
+      "empty": {
+        "noneTitle": "No models downloaded yet",
+        "noneHelp": "Download a model from the list below to start transcribing.",
+        "noneCta": "Show models to download",
+        "clearFilters": "Clear filters"
       }
     },
     "appearance": {
@@ -302,7 +308,7 @@
         "description": "Configura atajos de teclado para activar la grabación de voz a texto",
         "loading": "Cargando atajos...",
         "none": "No hay atajos configurados",
-        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
+        "noneHint": "Shortcuts appear here once Vox has loaded your settings.",
         "notFound": "Atajo no encontrado",
         "pressKeys": "Presiona teclas...",
         "bindings": {
@@ -331,7 +337,10 @@
           "restore": "Error al restaurar el atajo original",
           "set": "Error al configurar el atajo: {{error}}",
           "reset": "Error al restablecer el atajo al valor original"
-        }
+        },
+        "loadFailed": "Vox could not load your shortcut list. Retry, or restart Vox if it keeps failing.",
+        "retry": "Retry",
+        "retrying": "Retrying…"
       },
       "language": {
         "title": "Idioma",

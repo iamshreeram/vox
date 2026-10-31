@@ -200,7 +200,7 @@
         "description": "設定啟動語音轉文字錄製的鍵盤快捷鍵",
         "loading": "載入快捷鍵中...",
         "none": "未設定快捷鍵",
-        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
+        "noneHint": "Shortcuts appear here once Vox has loaded your settings.",
         "notFound": "未找到快捷鍵",
         "pressKeys": "請按鍵...",
         "bindings": {
@@ -229,7 +229,10 @@
           "restore": "無法還原原始快捷鍵",
           "set": "無法設定快捷鍵: {{error}}",
           "reset": "無法將快捷鍵重設為原始值"
-        }
+        },
+        "loadFailed": "Vox could not load your shortcut list. Retry, or restart Vox if it keeps failing.",
+        "retry": "Retry",
+        "retrying": "Retrying…"
       },
       "language": {
         "title": "語言",
@@ -299,6 +302,12 @@
         "description": "Spoken replies and the Brain are not set up yet. Choose a voice and connect a language model to finish.",
         "action": "Open Brain",
         "dismiss": "Dismiss"
+      },
+      "empty": {
+        "noneTitle": "No models downloaded yet",
+        "noneHelp": "Download a model from the list below to start transcribing.",
+        "noneCta": "Show models to download",
+        "clearFilters": "Clear filters"
       }
     },
     "appearance": {

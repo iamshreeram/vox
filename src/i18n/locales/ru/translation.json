@@ -232,6 +232,12 @@
         "description": "Spoken replies and the Brain are not set up yet. Choose a voice and connect a language model to finish.",
         "action": "Open Brain",
         "dismiss": "Dismiss"
+      },
+      "empty": {
+        "noneTitle": "No models downloaded yet",
+        "noneHelp": "Download a model from the list below to start transcribing.",
+        "noneCta": "Show models to download",
+        "clearFilters": "Clear filters"
       }
     },
     "appearance": {
@@ -302,7 +308,7 @@
         "description": "Настройте сочетания клавиш для запуска записи речи в текст",
         "loading": "Загрузка ярлыков...",
         "none": "Ярлыки не настроены",
-        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
+        "noneHint": "Shortcuts appear here once Vox has loaded your settings.",
         "notFound": "Ярлык не найден",
         "pressKeys": "Нажимайте клавиши...",
         "bindings": {
@@ -331,7 +337,10 @@
           "restore": "Не удалось восстановить исходный ярлык",
           "set": "Не удалось установить ярлык: {{error}}",
           "reset": "Не удалось сбросить ярлык до исходного значения"
-        }
+        },
+        "loadFailed": "Vox could not load your shortcut list. Retry, or restart Vox if it keeps failing.",
+        "retry": "Retry",
+        "retrying": "Retrying…"
       },
       "language": {
         "title": "Язык",

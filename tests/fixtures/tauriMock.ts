@@ -332,6 +332,25 @@ function installTauriMockInPage(arg: MockInitArg): void {
       return Promise.resolve(null);
     }
     if (command in overrides) {
+      // `{ "__error__": "msg", "__count__": n }` rejects the next n calls (every call when
+      // __count__ is omitted), then the command answers normally (T5 Retry tests).
+      const failure = overrides[command] as {
+        __error__?: string;
+        __count__?: number;
+      } | null;
+      if (failure !== null && typeof failure?.__error__ === "string") {
+        const remaining = failure.__count__;
+        if (remaining === undefined) {
+          return Promise.reject(new Error(failure.__error__));
+        }
+        if (remaining > 0) {
+          overrides[command] = { ...failure, __count__: remaining - 1 };
+          return Promise.reject(new Error(failure.__error__));
+        }
+        delete overrides[command];
+        const handlerAfter = handlers[command];
+        return Promise.resolve(handlerAfter ? handlerAfter(args) : null);
+      }
       // `{ "__pending__": true }` makes the command never answer (a stalled request).
       const override = overrides[command] as { __pending__?: boolean } | null;
       if (override !== null && override?.__pending__ === true) {

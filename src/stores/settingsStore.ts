@@ -35,8 +35,13 @@ interface SettingsStore {
   postProcessModelOptions: Record<string, string[]>;
   // null until loadUpdateChecksLocked() resolves
   updateChecksLocked: boolean | null;
+  // True when the last settings load failed (T5). Cleared by the next successful load.
+  loadFailed: boolean;
+  // True while a Retry of the failed load is in flight (disables the Retry buttons).
+  loadRetrying: boolean;
 
   // Actions
+  retryLoad: () => Promise<void>;
   initialize: () => Promise<void>;
   loadDefaultSettings: () => Promise<void>;
   loadUpdateChecksLocked: () => Promise<void>;
@@ -528,6 +533,8 @@ export const useSettingsStore = create<SettingsStore>()(
     customSounds: { start: false, stop: false },
     postProcessModelOptions: {},
     updateChecksLocked: null,
+    loadFailed: false,
+    loadRetrying: false,
 
     // Internal setters
     setSettings: (settings) => set({ settings }),
@@ -559,14 +566,29 @@ export const useSettingsStore = create<SettingsStore>()(
             selected_output_device:
               settings.selected_output_device ?? "Default",
           };
-          set({ settings: normalizedSettings, isLoading: false });
+          set({
+            settings: normalizedSettings,
+            isLoading: false,
+            loadFailed: false,
+          });
         } else {
           console.error("Failed to load settings:", result.error);
-          set({ isLoading: false });
+          set({ isLoading: false, loadFailed: true });
         }
       } catch (error) {
         console.error("Failed to load settings:", error);
-        set({ isLoading: false });
+        set({ isLoading: false, loadFailed: true });
+      }
+    },
+
+    // Retry the failed settings load. A press while one is in flight is ignored.
+    retryLoad: async () => {
+      if (get().loadRetrying) return;
+      set({ loadRetrying: true });
+      try {
+        await get().refreshSettings();
+      } finally {
+        set({ loadRetrying: false });
       }
     },
 

@@ -12,8 +12,11 @@ interface UseSettingsReturn {
   audioFeedbackEnabled: boolean;
   postProcessModelOptions: Record<string, string[]>;
   updateChecksLocked: boolean | null;
+  loadFailed: boolean;
+  loadRetrying: boolean;
 
   // Actions
+  retryLoad: () => Promise<void>;
   updateSetting: <K extends keyof Settings>(
     key: K,
     value: Settings[K],
@@ -63,6 +66,9 @@ export const useSettings = (): UseSettingsReturn => {
     audioFeedbackEnabled: store.settings?.audio_feedback || false,
     postProcessModelOptions: store.postProcessModelOptions,
     updateChecksLocked: store.updateChecksLocked,
+    loadFailed: store.loadFailed,
+    loadRetrying: store.loadRetrying,
+    retryLoad: store.retryLoad,
     updateSetting: <K extends keyof Settings>(key: K, value: Settings[K]) =>
       store.updateSetting(key, value).then(() => undefined),
     resetSetting: store.resetSetting,
