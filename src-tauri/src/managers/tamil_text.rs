@@ -1,6 +1,6 @@
 //! Text preparation and sentence/token chunking for the Tamil Pocket TTS engine.
 //!
-//! Adapted from the reference runtime `pocket_tts_onnx.py` by KevinAHM (MIT License):
+//! Adapted from the reference runtime `pocket_tts_onnx.py` by KevinAHM (Apache License 2.0):
 //! `_prepare_text_prompt`, `_find_boundary_indices`, `_segments_from_boundaries`,
 //! `_split_into_best_sentences` and `_estimate_max_gen_len`. The Python `str` semantics that
 //! matter here are reproduced exactly: `strip`/`split` use `str.isspace`, `isalnum` is true

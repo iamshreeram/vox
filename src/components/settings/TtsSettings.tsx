@@ -24,6 +24,7 @@ import {
 } from "./naturalVoiceState";
 import { buildEngineCards } from "./ttsEngineState";
 import { PhononEngineBody, TtsEngineCard } from "./TtsEngineCard";
+import { TamilVoiceRow } from "./TamilVoiceRow";
 import {
   buildVoiceOptions,
   voiceValueToSetting,
@@ -453,6 +454,7 @@ export const TtsSettings: React.FC<TtsSettingsProps> = React.memo(
             </p>
           </div>
         </SettingContainer>
+        <TamilVoiceRow descriptionMode={descriptionMode} grouped={grouped} />
         {showSystemVoice && (
           <SettingContainer
             title={t("settings.advanced.tts.voiceLabel")}

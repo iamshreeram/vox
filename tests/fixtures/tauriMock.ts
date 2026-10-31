@@ -219,6 +219,16 @@ function installTauriMockInPage(arg: MockInitArg): void {
     list_personas: () => [],
     list_tts_voices: () => [],
     list_natural_voices: () => [],
+    // Tamil voice row (TamilVoiceRow) reads this on mount; shape follows src/bindings.ts.
+    tamil_voice_status: () => ({
+      installed: false,
+      ready: false,
+      enabled: true,
+      dir: "",
+      missing: [],
+      wrong_size: [],
+      engine_error: null,
+    }),
     // Typed idle/empty answers for commands whose result the Experimental,
     // Advanced, Post Process and Debug pages dereference. Shapes follow
     // src/bindings.ts. Do NOT fall back to null for these.

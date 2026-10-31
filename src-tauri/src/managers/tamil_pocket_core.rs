@@ -1,7 +1,7 @@
 //! ONNX-independent core of the Pocket TTS (Tamil) engine (DESIGN.md Rev 5, S3).
 //!
 //! The generation loop is a port of `_run_flow_lm_chunk` and friends in
-//! KevinAHM's `pocket_tts_onnx.py` (MIT License). This module holds the pure
+//! KevinAHM's `pocket_tts_onnx.py` (Apache License 2.0). This module holds the pure
 //! Rust parts only: bundle parsing, flow/mimi state tensors, the
 //! [`PocketBackend`] trait that the ONNX session wrapper implements, and the
 //! latent generation and decoding loops. No `ort`, no tokenizer.

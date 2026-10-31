@@ -3,7 +3,7 @@
 
 Run this only when the Tamil engine's expected behaviour is meant to change. It is NOT run in CI.
 
-It drives the published reference runtime (MIT, by KevinAHM, https://huggingface.co/KevinAHM/pocket-tts-onnx,
+It drives the published reference runtime (Apache-2.0, by KevinAHM, https://huggingface.co/KevinAHM/pocket-tts-onnx,
 file pocket_tts_onnx.py) against the Tamil pack and records numbers only: token ids, chunk texts, frame
 counts, a few latent values and an audio RMS. No audio and no model weights are written.
 

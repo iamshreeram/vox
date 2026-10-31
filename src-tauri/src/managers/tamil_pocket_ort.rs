@@ -7,7 +7,7 @@
 //! outputs are looked up by `output_name`, never by position.
 //!
 //! The session handling and tensor wiring follow KevinAHM's
-//! `pocket_tts_onnx.py` (MIT License). The Rust code is an independent port.
+//! `pocket_tts_onnx.py` (Apache License 2.0). The Rust code is an independent port.
 //!
 //! Known deviation: `bos_before_voice.npy` is read by its fixed file name,
 //! because [`Bundle`] does not carry the `bos_before_voice_file` entry.

@@ -725,6 +725,15 @@
             "unknown": "Unknown outcome."
           }
         },
+        "tamil": {
+          "title": "Tamil voice",
+          "description": "Speak Tamil text with a local neural voice. English is not affected. Works offline once installed.",
+          "statusInstalled": "Installed",
+          "statusMissing": "Not installed (missing files: {{count}}). Run scripts/download_tamil_tts.sh",
+          "statusIncomplete": "Incomplete download, run the script again",
+          "statusError": "Tamil voice failed to load: {{message}}",
+          "credit": "Voice: Pocket TTS Tamil by Prasad Vittaldev, based on Kyutai (CC BY 4.0)"
+        },
         "natural": {
           "engine": {
             "label": "Hlasový modul",

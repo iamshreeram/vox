@@ -20,11 +20,16 @@ fn fixture(name: &str) -> Value {
 
 fn real_tokenizer() -> TamilTokenizer {
     let dir = std::env::var("VOX_TAMIL_DIR").expect("set VOX_TAMIL_DIR to the Tamil pack folder");
-    TamilTokenizer::load(&PathBuf::from(dir).join("tokenizer.model")).expect("tokenizer.model loads")
+    TamilTokenizer::load(&PathBuf::from(dir).join("tokenizer.model"))
+        .expect("tokenizer.model loads")
 }
 
 fn ids(v: &Value) -> Vec<u32> {
-    v.as_array().unwrap().iter().map(|x| x.as_u64().unwrap() as u32).collect()
+    v.as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_u64().unwrap() as u32)
+        .collect()
 }
 
 #[test]
@@ -32,7 +37,10 @@ fn ids(v: &Value) -> Vec<u32> {
 fn tamil_parity_text_prep_and_chunks_match_the_reference() {
     let tok = real_tokenizer();
     let fx = fixture("tamil_text_parity.json");
-    assert_eq!(fx["max_token_per_chunk"].as_u64().unwrap() as usize, MAX_TOKENS_PER_CHUNK);
+    assert_eq!(
+        fx["max_token_per_chunk"].as_u64().unwrap() as usize,
+        MAX_TOKENS_PER_CHUNK
+    );
     let cases = fx["cases"].as_array().unwrap();
     assert!(cases.len() >= 25, "corpus too small: {}", cases.len());
     let mut errors_seen = 0;
@@ -43,21 +51,44 @@ fn tamil_parity_text_prep_and_chunks_match_the_reference() {
         let label: String = text.chars().take(24).collect();
         if case["error"].as_bool().unwrap() {
             errors_seen += 1;
-            assert!(prepare_text_prompt(text).is_err(), "{label:?} must be an error");
+            assert!(
+                prepare_text_prompt(text).is_err(),
+                "{label:?} must be an error"
+            );
             continue;
         }
-        let (prepared, guess) = prepare_text_prompt(text).unwrap_or_else(|e| panic!("{label:?}: {e}"));
-        assert_eq!(prepared, case["prepared"].as_str().unwrap(), "prepared {label:?}");
-        assert_eq!(guess as u64, case["frames_after_eos_guess"].as_u64().unwrap(), "guess {label:?}");
+        let (prepared, guess) =
+            prepare_text_prompt(text).unwrap_or_else(|e| panic!("{label:?}: {e}"));
+        assert_eq!(
+            prepared,
+            case["prepared"].as_str().unwrap(),
+            "prepared {label:?}"
+        );
+        assert_eq!(
+            guess as u64,
+            case["frames_after_eos_guess"].as_u64().unwrap(),
+            "guess {label:?}"
+        );
         let chunks = split_into_chunks(&tok, text, MAX_TOKENS_PER_CHUNK).unwrap();
-        let want_chunks: Vec<&str> = case["chunks"].as_array().unwrap().iter().map(|c| c.as_str().unwrap()).collect();
+        let want_chunks: Vec<&str> = case["chunks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c.as_str().unwrap())
+            .collect();
         if case["reference_overflow"].as_bool().unwrap() {
             // Documented deviation: the reference would overflow the 50-token budget, Rust splits further.
             overflow_seen += 1;
-            assert!(chunks.len() > want_chunks.len(), "{label:?} must be split further");
+            assert!(
+                chunks.len() > want_chunks.len(),
+                "{label:?} must be split further"
+            );
             for chunk in &chunks {
                 let (p, _) = prepare_text_prompt(chunk).unwrap();
-                assert!(tok.encode(&p).len() <= MAX_TOKENS_PER_CHUNK, "chunk over budget in {label:?}");
+                assert!(
+                    tok.encode(&p).len() <= MAX_TOKENS_PER_CHUNK,
+                    "chunk over budget in {label:?}"
+                );
             }
             continue;
         }
@@ -68,11 +99,28 @@ fn tamil_parity_text_prep_and_chunks_match_the_reference() {
         for (i, chunk) in chunks.iter().enumerate() {
             let (p, _) = prepare_text_prompt(chunk).unwrap();
             let got_ids = tok.encode(&p);
-            assert_eq!(got_ids, ids(&case["chunk_ids"][i]), "chunk ids {label:?}#{i}");
-            assert_eq!(estimate_max_frames(got_ids.len()) as u64, case["max_frames"][i].as_u64().unwrap(), "max frames {label:?}#{i}");
+            assert_eq!(
+                got_ids,
+                ids(&case["chunk_ids"][i]),
+                "chunk ids {label:?}#{i}"
+            );
+            assert_eq!(
+                estimate_max_frames(got_ids.len()) as u64,
+                case["max_frames"][i].as_u64().unwrap(),
+                "max frames {label:?}#{i}"
+            );
         }
     }
-    assert!(errors_seen >= 2, "the corpus must cover empty and whitespace-only input");
-    assert!(multi_chunk_seen >= 2, "the corpus must cover multi-chunk texts");
-    assert!(overflow_seen >= 1, "the corpus must cover an over-budget text");
+    assert!(
+        errors_seen >= 2,
+        "the corpus must cover empty and whitespace-only input"
+    );
+    assert!(
+        multi_chunk_seen >= 2,
+        "the corpus must cover multi-chunk texts"
+    );
+    assert!(
+        overflow_seen >= 1,
+        "the corpus must cover an over-budget text"
+    );
 }

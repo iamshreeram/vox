@@ -3,6 +3,7 @@ import path from "node:path";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import {
   emitMockEvent,
+  getMockCalls,
   installTauriMock,
   setMockCommand,
   setMockSetting,
@@ -391,5 +392,78 @@ test.describe("Engine picker: screenshots", () => {
       card(page, "phonon").getByText("Available on macOS only."),
     ).toBeVisible();
     await shoot(page, "04-unsupported.png");
+  });
+});
+
+test.describe("Tamil voice row", () => {
+  const tamilRow = (page: Page): Locator =>
+    page.getByRole("checkbox", { name: "Tamil voice" });
+
+  test("shows the toggle, the not-installed status and the credit", async ({
+    page,
+  }) => {
+    await installTauriMock(page, {
+      settings: { experimental_enabled: true },
+      commands: {
+        phonon_voice_status: NOT_INSTALLED,
+        natural_voice_status: NATURAL_NOT_INSTALLED,
+      },
+    });
+    await openExperimental(page);
+
+    await expect(tamilRow(page)).toBeChecked();
+    await expect(
+      page.locator('[data-testid="tamil-voice-status"]'),
+    ).toContainText("Not installed");
+    await expect(
+      page.getByText(
+        "Voice: Pocket TTS Tamil by Prasad Vittaldev, based on Kyutai (CC BY 4.0)",
+      ),
+    ).toBeVisible();
+  });
+
+  test("toggling calls the Tamil setting command", async ({ page }) => {
+    await installTauriMock(page, {
+      settings: { experimental_enabled: true },
+      commands: {
+        phonon_voice_status: NOT_INSTALLED,
+        natural_voice_status: NATURAL_NOT_INSTALLED,
+      },
+    });
+    await openExperimental(page);
+
+    // The checkbox is visually hidden; click its visible label (the switch track).
+    await page.locator("label", { has: tamilRow(page) }).click();
+    await expect
+      .poll(async () =>
+        (await getMockCalls(page, "change_tts_tamil_enabled_setting")).map(
+          (call) => call.enabled,
+        ),
+      )
+      .toEqual([false]);
+  });
+
+  test("an engine failure shows the error message", async ({ page }) => {
+    await installTauriMock(page, {
+      settings: { experimental_enabled: true },
+      commands: {
+        phonon_voice_status: NOT_INSTALLED,
+        natural_voice_status: NATURAL_NOT_INSTALLED,
+        tamil_voice_status: {
+          installed: true,
+          ready: false,
+          enabled: true,
+          dir: "/tmp/vox-test/tts_models/pocket-tts-tamil-int4",
+          missing: [],
+          wrong_size: [],
+          engine_error: "model file could not be read",
+        },
+      },
+    });
+    await openExperimental(page);
+
+    await expect(page.locator('[data-testid="tamil-voice-status"]')).toHaveText(
+      "Tamil voice failed to load: model file could not be read",
+    );
   });
 });

@@ -5,7 +5,7 @@
 //! generate the latents of every chunk from the cached voice state, concatenate them in order,
 //! decode once, then validate and clamp the audio.
 //!
-//! Mirrors the reference runtime `pocket_tts_onnx.py` (KevinAHM, MIT License): `generate_latents`
+//! Mirrors the reference runtime `pocket_tts_onnx.py` (KevinAHM, Apache License 2.0): `generate_latents`
 //! concatenates the latents of all chunks, and `decode_latents` decodes that concatenation with
 //! one mimi state carried across the whole pass. The reference `generate()` (used for sentence
 //! playback) instead resets the mimi state per sentence. This pipeline follows the

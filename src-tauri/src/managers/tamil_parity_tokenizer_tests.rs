@@ -17,11 +17,16 @@ fn fixture(name: &str) -> Value {
 
 fn real_tokenizer() -> TamilTokenizer {
     let dir = std::env::var("VOX_TAMIL_DIR").expect("set VOX_TAMIL_DIR to the Tamil pack folder");
-    TamilTokenizer::load(&PathBuf::from(dir).join("tokenizer.model")).expect("tokenizer.model loads")
+    TamilTokenizer::load(&PathBuf::from(dir).join("tokenizer.model"))
+        .expect("tokenizer.model loads")
 }
 
 fn ids(v: &Value) -> Vec<u32> {
-    v.as_array().unwrap().iter().map(|x| x.as_u64().unwrap() as u32).collect()
+    v.as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_u64().unwrap() as u32)
+        .collect()
 }
 
 #[test]
@@ -40,7 +45,12 @@ fn tamil_parity_tokenizer_encode_matches_the_reference_for_every_case() {
             bad.push(format!("{text:?}: want {want:?} got {got:?}"));
         }
     }
-    assert!(bad.is_empty(), "{} mismatches:\n{}", bad.len(), bad.join("\n"));
+    assert!(
+        bad.is_empty(),
+        "{} mismatches:\n{}",
+        bad.len(),
+        bad.join("\n")
+    );
 }
 
 #[test]
@@ -60,9 +70,11 @@ fn tamil_parity_tokenizer_decode_matches_the_reference() {
     }
     // Round trip text from the encode corpus too (the reference decode of its own ids).
     for case in fx["encode"].as_array().unwrap() {
-        assert_eq!(tok.decode(&ids(&case["ids"])), case["decoded"].as_str().unwrap());
+        assert_eq!(
+            tok.decode(&ids(&case["ids"])),
+            case["decoded"].as_str().unwrap()
+        );
         checked += 1;
     }
     assert!(checked >= 30);
 }
-

@@ -13,7 +13,11 @@ use crate::commands::natural_voice::{
 };
 use crate::managers::natural_engine::{FailureReason, HealthState, NaturalHealth};
 use crate::managers::natural_model::{DownloadProgress, ModelCoordinator, ModelError, ModelState};
+use crate::managers::natural_tamil::{
+    tamil_failure_message, tamil_voice_status_for, TamilVoiceStatus,
+};
 use crate::managers::tts::TtsManager;
+use crate::settings::get_settings;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -35,6 +39,13 @@ pub struct PhononCoordinator(pub Arc<ModelCoordinator>);
 /// Tauri state: the Phonon engine health. Its own type, because `Arc<NaturalHealth>` is
 /// already managed for Kokoro and Tauri state is keyed by type.
 pub struct PhononHealth(pub Arc<NaturalHealth>);
+
+/// Tauri state: the Tamil engine health. Its own type, like `PhononHealth`: the router's Tamil
+/// route holds the same handle.
+pub struct TamilHealth(pub Arc<NaturalHealth>);
+
+/// Tauri state: the folder of the Tamil pack (`tts_models/pocket-tts-tamil-int4`).
+pub struct TamilModelDir(pub PathBuf);
 
 fn is_busy(state: ModelState) -> bool {
     !matches!(state, ModelState::NotInstalled | ModelState::Ready)
@@ -230,6 +241,26 @@ pub fn phonon_voice_import_folder(app: AppHandle, path: String) -> Result<(), St
         let _ = phonon_voice_import_core(coordinator, health, &source, emit);
     });
     Ok(())
+}
+
+/// Status of the Tamil voice for the settings row. The pack is checked by stat only, the engine
+/// health comes from managed state, and `enabled` is the live setting. Without managed state the
+/// status reports the pack as not installed.
+#[tauri::command]
+#[specta::specta]
+pub fn tamil_voice_status(app: AppHandle) -> TamilVoiceStatus {
+    let dir = app
+        .try_state::<TamilModelDir>()
+        .map(|state| state.inner().0.clone())
+        .unwrap_or_default();
+    let engine_error =
+        app.try_state::<TamilHealth>()
+            .and_then(|state| match state.inner().0.state() {
+                HealthState::Ready => None,
+                HealthState::Failed(reason) => Some(tamil_failure_message(reason)),
+            });
+    let enabled = get_settings(&app).tts_tamil_enabled;
+    tamil_voice_status_for(&dir, enabled, engine_error)
 }
 
 #[tauri::command]
