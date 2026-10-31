@@ -3,6 +3,8 @@
     "settings": "Налаштування...",
     "checkUpdates": "Перевірити оновлення...",
     "updateAvailable": "Update available",
+    "updatingVox": "Updating Vox…",
+    "updateFailed": "Update failed",
     "copyLastTranscript": "Скопіювати останню транскрипцію",
     "converse": "Start or stop conversation",
     "chat": "Conversation window",

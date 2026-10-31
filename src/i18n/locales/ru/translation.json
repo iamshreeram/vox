@@ -3,6 +3,8 @@
     "settings": "Настройки...",
     "checkUpdates": "Проверить обновления...",
     "updateAvailable": "Update available",
+    "updatingVox": "Updating Vox…",
+    "updateFailed": "Update failed",
     "copyLastTranscript": "Скопировать последнюю транскрипцию",
     "converse": "Start or stop conversation",
     "chat": "Conversation window",

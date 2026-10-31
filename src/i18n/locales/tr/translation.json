@@ -3,6 +3,8 @@
     "settings": "Ayarlar...",
     "checkUpdates": "Güncellemeleri Kontrol Et...",
     "updateAvailable": "Update available",
+    "updatingVox": "Updating Vox…",
+    "updateFailed": "Update failed",
     "copyLastTranscript": "Son Transkripti Kopyala",
     "converse": "Start or stop conversation",
     "chat": "Conversation window",

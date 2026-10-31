@@ -3,6 +3,8 @@
     "settings": "Pengaturan...",
     "checkUpdates": "Periksa Pembaruan...",
     "updateAvailable": "Update available",
+    "updatingVox": "Updating Vox…",
+    "updateFailed": "Update failed",
     "copyLastTranscript": "Salin Transkripsi Terakhir",
     "converse": "Start or stop conversation",
     "chat": "Conversation window",

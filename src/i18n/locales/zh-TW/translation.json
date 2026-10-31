@@ -3,6 +3,8 @@
     "settings": "設定...",
     "checkUpdates": "檢查更新...",
     "updateAvailable": "Update available",
+    "updatingVox": "Updating Vox…",
+    "updateFailed": "Update failed",
     "copyLastTranscript": "複製最新轉錄",
     "converse": "Start or stop conversation",
     "chat": "Conversation window",

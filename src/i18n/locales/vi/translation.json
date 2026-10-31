@@ -3,6 +3,8 @@
     "settings": "Cài đặt...",
     "checkUpdates": "Kiểm tra cập nhật...",
     "updateAvailable": "Update available",
+    "updatingVox": "Updating Vox…",
+    "updateFailed": "Update failed",
     "copyLastTranscript": "Sao chép bản chép lời mới nhất",
     "converse": "Start or stop conversation",
     "chat": "Conversation window",

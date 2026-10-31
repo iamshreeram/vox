@@ -1071,13 +1071,20 @@ async getCachedSourceUpdate() : Promise<SourceUpdateInfo | null> {
     return await TAURI_INVOKE("get_cached_source_update");
 },
 /**
+ * The latest progress of the running (or last finished) background update.
+ */
+async getSourceUpdateProgress() : Promise<UpdateProgress | null> {
+    return await TAURI_INVOKE("get_source_update_progress");
+},
+/**
  * Why an install cannot start right now, or `None` when it can.
  */
 async getSourceUpdateInstallBlocker() : Promise<string | null> {
     return await TAURI_INVOKE("get_source_update_install_blocker");
 },
 /**
- * Open Terminal running the update script.
+ * Starts the update in the background, with no window. Attaches to a run that is
+ * already in progress.
  */
 async startSourceUpdate() : Promise<Result<null, string>> {
     try {
@@ -3377,6 +3384,42 @@ export type Presentation =
  */
 "window"
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
+/**
+ * Phase of an update run, as written by `scripts/lib/update-status.sh`.
+ */
+export type RunPhase = 
+/**
+ * Fast-forward to the pinned target.
+ */
+"preparing" | 
+/**
+ * `bun install`.
+ */
+"dependencies" | 
+/**
+ * Frontend build and cargo compile.
+ */
+"compiling" | 
+/**
+ * Bundling the `.app`.
+ */
+"bundling" | 
+/**
+ * Installer staging and swap.
+ */
+"installing" | 
+/**
+ * Installer restarting Vox.
+ */
+"restarting" | 
+/**
+ * Finished successfully.
+ */
+"done" | 
+/**
+ * Finished unsuccessfully.
+ */
+"failed"
 export type SecretMap = Partial<{ [key in string]: string }>
 /**
  * A single secret value (API token). Serialized as a plain string so it persists,
@@ -3444,6 +3487,11 @@ current_commit: string;
  * First 7 hex characters of the newest `main` commit.
  */
 latest_commit: string; 
+/**
+ * Full 40-hex SHA of the newest `main` commit, or empty when unknown.
+ * The update builds exactly this commit (see `pinned_target`).
+ */
+latest_full: string; 
 /**
  * Number of commits `main` is ahead of this build.
  */
@@ -3657,6 +3705,34 @@ name: string;
  * Locale code such as `en_US` or `es_419`.
  */
 locale: string }
+/**
+ * What the UI and tray receive for a run.
+ */
+export type UpdateProgress = { 
+/**
+ * Run identifier.
+ */
+run_id: string; 
+/**
+ * Current phase.
+ */
+phase: RunPhase; 
+/**
+ * Progress, 0..=100.
+ */
+percent: number; 
+/**
+ * Short target (7 hex characters).
+ */
+target: string; 
+/**
+ * Message from the status file.
+ */
+message: string; 
+/**
+ * True when the percent is an estimate.
+ */
+estimated: boolean }
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
 /**

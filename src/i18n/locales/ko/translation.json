@@ -3,6 +3,8 @@
     "settings": "설정...",
     "checkUpdates": "업데이트 확인...",
     "updateAvailable": "Update available",
+    "updatingVox": "Updating Vox…",
+    "updateFailed": "Update failed",
     "copyLastTranscript": "마지막 녹음 내용 복사",
     "converse": "Start or stop conversation",
     "chat": "Conversation window",

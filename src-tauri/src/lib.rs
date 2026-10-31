@@ -733,6 +733,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Background "new version available" checks. Only this normal startup path
     // reaches here; the headless CLI path returns earlier in `setup`.
     managers::source_update::spawn_scheduler(app_handle.clone());
+    // A background update started by an earlier Vox may still be running (or may have
+    // finished while Vox restarted): adopt it, never boot it out.
+    managers::source_update::adopt_existing_run(app_handle);
     app_handle.manage(tray::TrayState::new());
 
     // Note: Shortcuts are NOT initialized here.
@@ -831,7 +834,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 // Full explanation lives in the settings-window banner
                 show_main_window(app);
             }
-            "update_available" => {
+            "update_available" | "update_failed" => {
                 // Only opens the window; installing is an explicit action there.
                 show_main_window(app);
             }
@@ -1316,6 +1319,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::source_update::get_cached_source_update,
             commands::source_update::get_source_update_install_blocker,
             commands::source_update::start_source_update,
+            commands::source_update::get_source_update_progress,
             commands::get_app_dir_path,
             commands::get_app_settings,
             commands::get_default_settings,

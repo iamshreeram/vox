@@ -3,6 +3,8 @@
     "settings": "Nastavení...",
     "checkUpdates": "Zkontrolovat aktualizace...",
     "updateAvailable": "Update available",
+    "updatingVox": "Updating Vox…",
+    "updateFailed": "Update failed",
     "copyLastTranscript": "Zkopírovat poslední přepis",
     "converse": "Start or stop conversation",
     "chat": "Conversation window",

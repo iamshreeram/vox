@@ -3,6 +3,8 @@
     "settings": "सेटिंग...",
     "checkUpdates": "अपडेट जांचें...",
     "updateAvailable": "Update available",
+    "updatingVox": "Updating Vox…",
+    "updateFailed": "Update failed",
     "copyLastTranscript": "पिछला ट्रांसक्रिप्ट कॉपी करें",
     "converse": "Start or stop conversation",
     "chat": "Conversation window",
