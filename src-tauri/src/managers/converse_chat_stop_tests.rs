@@ -12,7 +12,6 @@ use crate::managers::converse_hooks;
 use crate::managers::converse_plan::{PlanError, PlanInput, TurnPlan};
 use crate::managers::converse_text::PendingEars;
 use crate::managers::emotion::Emotion;
-use crate::managers::ownership::{Owner, OwnershipGate};
 use std::time::{Duration, Instant};
 
 struct SilentPort;
@@ -249,23 +248,27 @@ fn voice_and_text_sessions_are_both_stoppable() {
     reset_hooks();
 }
 
+/// The displayed id covers Starting, Running and Draining (`active_session_id`). Compare-and-stop
+/// acts only on Running, so a press while Starting is a silent no-op and a press while Draining
+/// is a no-op too. The UI can show Stop from the moment the id is reported, so this pins that.
 #[test]
-fn stop_leaves_an_unrelated_active_dictation_untouched() {
+fn active_session_id_covers_starting_running_and_draining_but_stops_only_running() {
     let _g = lock();
     reset_hooks();
-    let gate = OwnershipGate::new();
-    let lease = gate
-        .try_acquire(Owner::Dictation)
-        .expect("dictation owns the gate");
     let p = StopPlatform::new();
     let c = controller(&p);
-    let a = start_running_text(&c);
-    assert!(c.stop_if(a));
-    wait_until("idle", || c.status() == ConverseStatus::Idle);
+    let (id, _cancel) = c.registry.try_begin().expect("occupy the registry");
+    assert_eq!(c.active_session_id(), Some(id.0), "Starting is reported");
     assert!(
-        matches!(gate.current(), Some(Owner::Dictation)),
-        "dictation ownership unchanged by the conversation stop"
+        !c.stop_if(id),
+        "Starting is not stopped by compare-and-stop"
     );
-    drop(lease);
+    assert!(c.registry.mark_running(id), "Starting becomes Running");
+    assert_eq!(c.active_session_id(), Some(id.0), "Running is reported");
+    assert!(c.stop_if(id), "Running is stopped by id");
+    assert_eq!(c.active_session_id(), Some(id.0), "Draining is reported");
+    assert!(!c.stop_if(id), "Draining is not stopped twice");
+    assert!(c.registry.finish(id), "the occupied session finishes");
+    assert_eq!(c.active_session_id(), None, "idle reports no session");
     reset_hooks();
 }

@@ -76,8 +76,9 @@ async function installHarness(
         if (name === "get_chat_snapshot") {
           return Promise.resolve(JSON.parse(JSON.stringify(s)));
         }
-        if (name === "chat_hide_window" || name === "clear_chat_log") {
-          return Promise.resolve(null);
+        if (name === "chat_hide_window") return Promise.resolve(null);
+        if (name === "clear_chat_log") {
+          return Promise.resolve({ status: "ok", data: null });
         }
         if (name === "send_chat_message") return Promise.resolve(null);
         // Literal name: this function runs in the page, where module constants do not exist.
@@ -201,11 +202,13 @@ test.describe("Conversation window: Hide control and drag region (U1, U4)", () =
     await expect(
       page.locator("header.chat-header[data-tauri-drag-region]"),
     ).toHaveCount(1);
+    // The brand uses "deep" so a press on the logo or name (its children) starts a drag too.
     await expect(
-      page.locator(".chat-brand[data-tauri-drag-region]"),
+      page.locator('.chat-brand[data-tauri-drag-region="deep"]'),
     ).toHaveCount(1);
-    // Tauri starts a drag only when the mousedown target itself carries the attribute, so the
-    // buttons (which do not) stay clickable. No button and no header-end group may carry it.
+    await expect(page.locator(".chat-brand button")).toHaveCount(0);
+    // Tauri starts a drag when the mousedown target carries the attribute ("deep" also covers its
+    // descendants). The buttons carry none, so they stay clickable; no button may carry it.
     await expect(page.locator("button[data-tauri-drag-region]")).toHaveCount(0);
     await expect(
       page.locator(".chat-header-end[data-tauri-drag-region]"),
@@ -298,6 +301,63 @@ test.describe("Conversation window: Clear confirmation bar (U3)", () => {
     await expect(clearBar(page)).toHaveCount(0, { timeout: 6000 });
     await expect(clearButton(page)).toBeVisible();
     expect(await countInvokes(page, CLEAR_COMMAND)).toBe(0);
+  });
+
+  test("focus returns to Clear after Cancel", async ({ page }) => {
+    await openChat(page, snap());
+    await clearButton(page).click();
+    await cancelButton(page).click();
+    await expect(clearBar(page)).toHaveCount(0);
+    await expect(clearButton(page)).toBeFocused();
+  });
+
+  test("focus returns to Clear after Escape", async ({ page }) => {
+    await openChat(page, snap());
+    await clearButton(page).click();
+    await page.keyboard.press("Escape");
+    await expect(clearBar(page)).toHaveCount(0);
+    await expect(clearButton(page)).toBeFocused();
+  });
+
+  test("focus returns to Clear after the automatic cancel", async ({
+    page,
+  }) => {
+    await openChat(page, snap());
+    await clearButton(page).click();
+    await expect(clearBar(page)).toHaveCount(0, { timeout: 6000 });
+    await expect(clearButton(page)).toBeFocused();
+  });
+
+  test("focus returns to an enabled Clear after Confirm clear", async ({
+    page,
+  }) => {
+    await openChat(page, snap({ entries: [] }));
+    await clearButton(page).click();
+    await confirmButton(page).click();
+    await expect.poll(() => countInvokes(page, CLEAR_COMMAND)).toBe(1);
+    await expect(clearBar(page)).toHaveCount(0);
+    await expect(clearButton(page)).toBeEnabled();
+    await expect(clearButton(page)).toBeFocused();
+  });
+
+  test("a persistent live region exists before the bar opens and carries the question while it is open", async ({
+    page,
+  }) => {
+    await openChat(page, snap());
+    const announce = page.getByTestId("chat-clear-announce");
+    await expect(announce).toHaveCount(1);
+    await expect(announce).toHaveAttribute("role", "status");
+    await expect(announce).toHaveAttribute("aria-live", "polite");
+    await expect(announce).toHaveText("");
+    await clearButton(page).click();
+    await expect(announce).toHaveText(
+      "Clear the conversation log? This cannot be undone.",
+    );
+    // The visible question is not a live region of its own, so it is read once, not twice.
+    await expect(page.locator("#chat-clear-question")).not.toHaveAttribute(
+      "role",
+      "status",
+    );
   });
 });
 

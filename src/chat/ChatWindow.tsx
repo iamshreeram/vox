@@ -310,21 +310,23 @@ export default function ChatWindow() {
     return () => window.clearInterval(interval);
   }, [clearStep]);
 
-  // Focus: Cancel (the safe default) takes focus when the bar opens; when the bar closes with focus
-  // lost (Cancel or Confirm was removed), focus returns to the Clear button.
+  // Focus: Cancel (the safe default) takes focus when the bar opens. When the bar closes with focus
+  // lost (Cancel, Escape, the timeout or Confirm removed the focused button), focus returns to the
+  // Clear button, but only once Clear is enabled again: it is disabled while a clear is in flight,
+  // and a disabled button cannot take focus. Until then the close is remembered.
   useEffect(() => {
     if (clearStep === "confirming") {
       wasConfirmingRef.current = true;
       cancelBtnRef.current?.focus();
       return;
     }
-    if (!wasConfirmingRef.current) return;
+    if (!wasConfirmingRef.current || clearing) return;
     wasConfirmingRef.current = false;
     const active = document.activeElement;
     if (active === null || active === document.body) {
       clearBtnRef.current?.focus();
     }
-  }, [clearStep]);
+  }, [clearStep, clearing]);
 
   const onRequestClear = () => {
     if (clearStep === "confirming") return;
@@ -464,7 +466,7 @@ export default function ChatWindow() {
       }
     >
       <header className="chat-header" data-tauri-drag-region>
-        <div className="chat-brand" data-tauri-drag-region>
+        <div className="chat-brand" data-tauri-drag-region="deep">
           <img
             data-testid="chat-brand-icon"
             src={voxIcon}
@@ -522,6 +524,16 @@ export default function ChatWindow() {
           </button>
         </div>
       </header>
+      {/* Always present: the Clear question is written into this region when the bar opens, so the
+          announcement is made by a live region that already exists (not one inserted with its text). */}
+      <div
+        className="chat-sr-only"
+        role="status"
+        aria-live="polite"
+        data-testid="chat-clear-announce"
+      >
+        {clearStep === "confirming" ? t("chat.clearPrompt") : ""}
+      </div>
       {clearStep === "confirming" ? (
         <div
           className="chat-clear-bar"
@@ -529,11 +541,7 @@ export default function ChatWindow() {
           aria-labelledby="chat-clear-question"
         >
           <div className="chat-clear-copy">
-            <p
-              id="chat-clear-question"
-              role="status"
-              className="chat-clear-question"
-            >
+            <p id="chat-clear-question" className="chat-clear-question">
               {t("chat.clearPrompt")}
             </p>
             <span className="chat-clear-countdown" aria-hidden="true">
