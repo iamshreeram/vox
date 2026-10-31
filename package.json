@@ -74,7 +74,7 @@
     "test:tts-voices": "bun src/lib/ttsVoices.test.ts",
     "test:voice-features": "vitest run src/components/settings/voice",
     "test:chat": "vitest run src/chat",
-    "test:scripts": "bash scripts/test-update-lock.sh && bash scripts/test-update-macos.sh && bash scripts/test-install-macos.sh",
+    "test:scripts": "bash scripts/test-update-lock.sh && bash scripts/test-update-macos.sh && bash scripts/test-install-macos.sh && bash scripts/test-update-status.sh",
     "test:workflow-permissions": "bun scripts/check-workflow-permissions.test.ts",
     "test:playwright": "playwright test",
     "test:playwright:ui": "playwright test --ui",

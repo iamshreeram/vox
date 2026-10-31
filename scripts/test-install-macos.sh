@@ -126,8 +126,10 @@ log_line "$@"
 maybe_fail "${1:-}"
 case "${1:-}" in
   find-identity)
-    echo '  1) 0123456789ABCDEF0123456789ABCDEF01234567 "Vox Local Dev Codesign"'
-    echo '     1 valid identities found' ;;
+    if [ "${STUB_NO_IDENTITY:-0}" != 1 ]; then
+      echo '  1) 0123456789ABCDEF0123456789ABCDEF01234567 "Vox Local Dev Codesign"'
+      echo '     1 valid identities found'
+    fi ;;
 esac
 exit 0
 SEC_EOF
@@ -232,6 +234,7 @@ run_installer() {
     VOX_INSTALL_DEST_APP="$DEST" \
     STUB_LOG="$LOG" STUB_STATE="$STATE" \
     FAIL_AT="$FAIL_AT_V" FAIL_CODE="$FAIL_CODE_V" FAIL_AT_ALWAYS="$FAIL_ALWAYS_V" \
+    STUB_NO_IDENTITY="${NO_IDENTITY_V:-0}" VOX_UPDATE_NONINTERACTIVE="${NONINTERACTIVE_V:-}" \
     /bin/bash "$INSTALLER" "$1" > "$OUT_FILE" 2>&1
   RC=$?
   OUT="$(cat "$OUT_FILE")"
@@ -276,6 +279,8 @@ begin() {
   FAIL_AT_V=""
   FAIL_CODE_V=7
   FAIL_ALWAYS_V=0
+  NO_IDENTITY_V=0
+  NONINTERACTIVE_V=
   RC=0
   mkdir -p "$SB/home" "$SB/tmp" "$STATE" "$SB/Applications" "$SB/stubs"
   : > "$LOG"
@@ -623,6 +628,44 @@ s12j_lib_paths_with_spaces() {
   end_scenario
 }
 
+# Unattended mode (VOX_UPDATE_NONINTERACTIVE=1): with the stable identity
+# present the install runs exactly like the interactive one.
+s13_noninteractive_identity_present() {
+  begin "13 non-interactive with the identity present: installs"
+  require_installer || { end_scenario; return; }
+  make_previous
+  set_state 1 1
+  NONINTERACTIVE_V=1
+  run_installer "$SRC"
+  chk "exit 0 (got $RC; $OUT)" [ "$RC" -eq 0 ]
+  chk "DEST has marker-new" [ -f "$DEST/Contents/Resources/marker-new" ]
+  chk "no staging/backup dirs remain" no_leftovers
+  end_scenario
+}
+
+# Unattended mode without the stable identity: fail fast in phase A. No
+# identity is created, no ad-hoc signing (which would reset Accessibility and
+# Microphone grants), the live app and the LaunchAgent are not touched.
+s14_noninteractive_identity_missing() {
+  begin "14 non-interactive, identity missing: fails fast, live app untouched"
+  require_installer || { end_scenario; return; }
+  make_previous
+  set_state 1 1
+  NO_IDENTITY_V=1
+  NONINTERACTIVE_V=1
+  run_installer "$SRC"
+  chk "exit non-zero (got $RC)" [ "$RC" -ne 0 ]
+  chk "message says nothing was changed" bash -c 'printf "%s" "$1" | grep -q "Nothing was changed"' _ "$OUT"
+  chk "no identity creation attempted" bash -c 'printf "%s" "$1" | grep -q "creating one now" && exit 1; exit 0' _ "$OUT"
+  chk "no codesign call" not log_has "^codesign"
+  chk "no launchctl bootout (live agent untouched)" not log_has "^launchctl bootout"
+  chk "no pkill (live app untouched)" not log_has "^pkill"
+  chk "DEST still the old app" dest_is_old
+  chk "old plist untouched" same_plist
+  chk "staging removed" [ ! -e "$STAGING" ]
+  end_scenario
+}
+
 # ------------------------------------------------------------------- main ---
 
 s01_success_previous_running
@@ -647,6 +690,8 @@ s12g_lib_rollback_first_install_idempotent
 s12h_lib_rollback_nothing_present
 s12i_lib_discard_backup
 s12j_lib_paths_with_spaces
+s13_noninteractive_identity_present
+s14_noninteractive_identity_missing
 
 if [ "$SKIP_N" -gt 0 ]; then echo "($SKIP_N skipped)"; fi
 echo "$PASS_N passed, $FAIL_N failed"

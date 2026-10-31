@@ -65,6 +65,11 @@
 #   VOX_INSTALL_DEST_APP  Override the destination bundle path (used by the
 #                         test harness, scripts/test-install-macos.sh). The
 #                         default is /Applications/Vox.app.
+#   VOX_UPDATE_NONINTERACTIVE=1
+#                         Unattended mode (set by Vox for its own updates): never
+#                         creates a signing identity, never falls back to ad-hoc
+#                         signing, fails fast before any change to the live app
+#                         when the stable identity is missing.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/.."
@@ -234,6 +239,16 @@ chmod +x "$STAGED_WRAPPER"
 # logged receiving it) -- permission dialogs never had a chance to show
 # at all. Not needed for a local, non-sandboxed dev build regardless.
 echo "Re-signing..."
+# Unattended runs (VOX_UPDATE_NONINTERACTIVE=1, launched by Vox) never create an
+# identity, never open a dialog and never fall back to ad-hoc signing: an ad-hoc
+# signature resets the Accessibility/Microphone grants. They fail here, in phase
+# A, so the staging copy is removed and the live app is not touched.
+if [ "${VOX_UPDATE_NONINTERACTIVE:-0}" = "1" ] && ! security find-identity -v -p codesigning 2>/dev/null | grep -q "Vox Local Dev Codesign"; then
+  echo "ERROR: the stable 'Vox Local Dev Codesign' identity is not available, and an unattended" >&2
+  echo "update will not create it or sign ad-hoc. Nothing was changed. Run" >&2
+  echo "./scripts/setup-codesign-identity.sh once by hand, then retry the update." >&2
+  exit 1
+fi
 if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "Vox Local Dev Codesign"; then
   echo "  No stable 'Vox Local Dev Codesign' identity found yet -- creating one now (one-time setup)"
   echo "  so Accessibility/Microphone grants survive future rebuilds. See"
@@ -248,6 +263,10 @@ if security find-identity -v -p codesigning 2>/dev/null | grep -q "Vox Local Dev
   SIGN_IDENTITY="Vox Local Dev Codesign"
 else
   SIGN_IDENTITY="-"
+fi
+if [ "${VOX_UPDATE_NONINTERACTIVE:-0}" = "1" ] && [ "$SIGN_IDENTITY" = "-" ]; then
+  echo "ERROR: no stable signing identity; refusing ad-hoc signing in an unattended update. Nothing was changed." >&2
+  exit 1
 fi
 codesign --force --deep -s "$SIGN_IDENTITY" "$STAGING"
 
