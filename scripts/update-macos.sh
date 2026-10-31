@@ -35,6 +35,8 @@
 # Usage:
 #   ./scripts/update-macos.sh
 set -euo pipefail
+# The HOME this script was started with. Captured before anything can change it.
+REAL_HOME="${HOME:-}"
 cd "$(dirname "$0")/.."
 
 # Interactive shells can have an older package-manager rustc (e.g. Homebrew)
@@ -57,6 +59,40 @@ fi
 . "scripts/lib/origin-check.sh"
 # shellcheck source=lib/update-status.sh
 . "scripts/lib/update-status.sh"
+
+# run_bun <args...>: every bun call goes through here.
+# Unattended runs (launched by Vox from launchd) use a private HOME: a detached
+# job cannot read ~/.npmrc when it is a symlink into a cloud-synced folder, and
+# bun then hangs forever. Only bun sees the private HOME; git, install-macos.sh
+# and codesign keep the real one. The caches stay at their real locations.
+# Interactive runs call bun exactly as before.
+run_bun() {
+  local base home
+  if [ "${VOX_UPDATE_NONINTERACTIVE:-0}" != "1" ]; then
+    bun "$@"
+    return
+  fi
+  base="${VOX_UPDATE_STATE_DIR:-}"
+  if [ -z "$base" ] && [ -n "${VOX_UPDATE_STATUS_FILE:-}" ]; then
+    base="$(dirname "$VOX_UPDATE_STATUS_FILE")"
+  fi
+  home=""
+  case "$base" in
+    /*) home="$base/home" ;;
+  esac
+  if [ -z "$home" ] || ! { mkdir -p "$home" && chmod 700 "$home"; } 2>/dev/null; then
+    home="$TMP_BASE/vox-update-home-$(id -u)"
+    if ! { mkdir -p "$home" && chmod 700 "$home"; }; then
+      echo "Cannot create a private home for bun under $TMP_BASE -- not building." >&2
+      return 1
+    fi
+  fi
+  env HOME="$home" \
+    CARGO_HOME="${CARGO_HOME:-$REAL_HOME/.cargo}" \
+    RUSTUP_HOME="${RUSTUP_HOME:-$REAL_HOME/.rustup}" \
+    BUN_INSTALL_CACHE_DIR="${BUN_INSTALL_CACHE_DIR:-$REAL_HOME/.bun/install/cache}" \
+    bun "$@"
+}
 
 # ---- 0. Single-instance lock (taken first, released on every exit) ---------
 TMP_BASE="${TMPDIR:-/tmp}"
@@ -212,7 +248,7 @@ main() {
 
   status_step dependencies 4 "Installing JavaScript dependencies" "Installing JavaScript dependencies failed"
   echo "Installing JS dependencies (no-op if nothing changed)..."
-  bun install
+  run_bun install
   status_step dependencies 10 "Dependencies are ready" "Installing JavaScript dependencies failed"
 
   APP_BUNDLE="src-tauri/target/release/bundle/macos/Vox.app"
@@ -228,7 +264,7 @@ main() {
     BUILD_LOG="$TMP_BASE/vox-update-build.log"
     status_step compiling 10 "Compiling" "Build failed"
     BUILD_RC=0
-    bun run tauri build --bundles app --config src-tauri/tauri.ci-unsigned.conf.json 2>&1 \
+    run_bun run tauri build --bundles app --config src-tauri/tauri.ci-unsigned.conf.json 2>&1 \
       | tee "$BUILD_LOG" | status_progress_consume || BUILD_RC=$?
     status_reload_percent
     if [ "$BUILD_RC" -ne 0 ]; then
@@ -237,7 +273,7 @@ main() {
       exit "$BUILD_RC"
     fi
   else
-    bun run tauri build --bundles app --config src-tauri/tauri.ci-unsigned.conf.json
+    run_bun run tauri build --bundles app --config src-tauri/tauri.ci-unsigned.conf.json
   fi
 
   status_step bundling 88 "Checking the app bundle" "Build did not produce the app bundle"
