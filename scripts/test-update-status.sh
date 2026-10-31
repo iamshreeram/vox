@@ -23,6 +23,7 @@ unset VOX_UPDATE_ALLOW_ORIGIN VOX_SOURCE_UPDATE VOX_SOURCE_UPDATES
 unset VOX_BUILD_COMMIT VOX_BUILD_BRANCH FAKE_INSTALL_FAIL FAKE_BUILD_RC FAKE_PROGRESS FAKE_INSTALLER_RC
 unset VOX_UPDATE_STATUS_FILE VOX_UPDATE_RUN_ID VOX_UPDATE_STATE_DIR VOX_UPDATE_STATUS_HISTORY
 unset VOX_UPDATE_TARGET_SHA VOX_UPDATE_LOCK_DIR VOX_UPDATE_NONINTERACTIVE VOX_UPDATE_ESTIMATE_AFTER
+unset CARGO_HOME RUSTUP_HOME BUN_INSTALL_CACHE_DIR
 
 BUNDLE_REL="src-tauri/target/release/bundle/macos/Vox.app"
 CONFIG_REL="src-tauri/tauri.ci-unsigned.conf.json"
@@ -84,6 +85,11 @@ status_phase() {
 
 status_percent() {
   sed -n 's/.*"percent":\([0-9]*\).*/\1/p' "$STATUS" 2>/dev/null | head -1
+}
+
+# dir_mode <dir>: octal permission bits of a directory (BSD and GNU stat).
+dir_mode() {
+  stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1"
 }
 
 # history_ok <history> [--partial]: the python checker finds no problems.
@@ -212,6 +218,7 @@ setup_env() {
 #!/bin/bash
 # STUB install-macos.sh: records the status phase it sees and its own exit.
 echo "install-ran $1" >>"$STUB_LOG"
+echo "install-home $HOME" >>"$STUB_LOG"
 phase="$(sed -n 's/.*"phase":"\([a-z]*\)".*/\1/p' "$VOX_UPDATE_STATUS_FILE" 2>/dev/null | head -1)"
 echo "install-sees ${phase:-none}" >>"$STUB_LOG"
 if [ "${FAKE_INSTALLER_RC:-0}" != 0 ]; then exit "$FAKE_INSTALLER_RC"; fi
@@ -229,6 +236,7 @@ EOF
 #!/bin/bash
 # STUB bun: records calls; `tauri build` can emit cargo-style progress with CR.
 echo "bun $*" >>"$STUB_LOG"
+echo "bun-env HOME=$HOME CARGO_HOME=${CARGO_HOME:-unset} RUSTUP_HOME=${RUSTUP_HOME:-unset} BUN_INSTALL_CACHE_DIR=${BUN_INSTALL_CACHE_DIR:-unset}" >>"$STUB_LOG"
 if [ "$1" = "install" ]; then
   if [ "${FAKE_INSTALL_FAIL:-0}" = "1" ]; then exit 1; fi
   exit 0
@@ -618,6 +626,91 @@ scenario_unset_variables_no_status_file() {
   check "GIT_TERMINAL_PROMPT not forced" log_has "GIT_TERMINAL_PROMPT=unset"
 }
 
+# ---- scenarios: private HOME for bun in non-interactive runs (R5-1) ----------
+
+scenario_private_home_noninteractive() {
+  setup_env "$1" || fail "sandbox setup failed"
+  local real="$SB/realhome" priv="$SB/status/home"
+  mkdir -p "$real"
+  export HOME="$real"
+  export_status
+  export VOX_UPDATE_NONINTERACTIVE=1
+  advance_origin
+  run_update
+  check "exit 0 (got $RUN_RC; $(tr '\n' ' ' <"$RUN_OUT"))" [ "$RUN_RC" -eq 0 ]
+  check "bun saw the private HOME under the state dir with the real caches" \
+    log_has "bun-env HOME=$priv CARGO_HOME=$real/.cargo RUSTUP_HOME=$real/.rustup BUN_INSTALL_CACHE_DIR=$real/.bun/install/cache"
+  check "private home directory exists" [ -d "$priv" ]
+  check "private home mode is 700 (got $(dir_mode "$priv"))" [ "$(dir_mode "$priv")" = "700" ]
+  check "installer still sees the REAL HOME" log_has "install-home $real"
+  check "done written" [ "$(status_phase)" = "done" ]
+}
+
+scenario_private_home_keeps_caller_caches() {
+  setup_env "$1" || fail "sandbox setup failed"
+  local real="$SB/realhome" priv="$SB/status/home"
+  mkdir -p "$real"
+  export HOME="$real"
+  export_status
+  export VOX_UPDATE_NONINTERACTIVE=1
+  export CARGO_HOME="$SB/mycargo" RUSTUP_HOME="$SB/myrustup" BUN_INSTALL_CACHE_DIR="$SB/mycache"
+  advance_origin
+  run_update
+  check "exit 0 (got $RUN_RC)" [ "$RUN_RC" -eq 0 ]
+  check "caller-provided CARGO_HOME, RUSTUP_HOME and cache are preserved" \
+    log_has "bun-env HOME=$priv CARGO_HOME=$SB/mycargo RUSTUP_HOME=$SB/myrustup BUN_INSTALL_CACHE_DIR=$SB/mycache"
+  check "installer still sees the REAL HOME" log_has "install-home $real"
+}
+
+scenario_interactive_uses_real_home() {
+  setup_env "$1" || fail "sandbox setup failed"
+  local real="$SB/realhome" priv="$SB/status/home"
+  mkdir -p "$real"
+  export HOME="$real"
+  export_status
+  unset VOX_UPDATE_NONINTERACTIVE
+  advance_origin
+  run_update
+  check "exit 0 (got $RUN_RC)" [ "$RUN_RC" -eq 0 ]
+  check "bun saw the real HOME unchanged" log_has "bun-env HOME=$real "
+  check "bun never saw a private HOME" no_log "bun-env HOME=$priv "
+  check "no private home directory created" [ ! -e "$priv" ]
+}
+
+scenario_private_home_fallback_build_failure() {
+  setup_env "$1" || fail "sandbox setup failed"
+  local real="$SB/realhome" fb="$SB/tmp/vox-update-home-$(id -u)"
+  mkdir -p "$real"
+  export HOME="$real"
+  export VOX_UPDATE_ALLOW_ORIGIN="$ORIGIN"
+  export VOX_UPDATE_NONINTERACTIVE=1
+  export FAKE_BUILD_RC=3
+  advance_origin
+  run_update
+  check "exit non-zero on build failure (got $RUN_RC)" [ "$RUN_RC" -ne 0 ]
+  check "installer NOT run after build failure" no_log "install-ran"
+  check "no status file: fallback private home under TMPDIR, not the real HOME" \
+    log_has "bun-env HOME=$fb CARGO_HOME=$real/.cargo RUSTUP_HOME=$real/.rustup BUN_INSTALL_CACHE_DIR=$real/.bun/install/cache"
+  check "fallback private home mode is 700 (got $(dir_mode "$fb"))" [ "$(dir_mode "$fb")" = "700" ]
+}
+
+scenario_private_home_status_build_failure() {
+  setup_env "$1" || fail "sandbox setup failed"
+  local real="$SB/realhome" priv="$SB/status/home"
+  mkdir -p "$real"
+  export HOME="$real"
+  export_status
+  export VOX_UPDATE_NONINTERACTIVE=1
+  export FAKE_PROGRESS=1 FAKE_BUILD_RC=3
+  advance_origin
+  run_update
+  check "exit non-zero through the run_bun pipeline (got $RUN_RC)" [ "$RUN_RC" -ne 0 ]
+  check "status phase is failed" [ "$(status_phase)" = "failed" ]
+  check "failed reason names the build" grep -q "Build failed (exit status 3)" "$STATUS"
+  check "installer NOT run after build failure" no_log "install-ran"
+  check "build ran with the private HOME" log_has "bun-env HOME=$priv "
+}
+
 # ---- runner ------------------------------------------------------------------
 
 run_scenario() {
@@ -671,6 +764,11 @@ run_scenario "(L2) lock override with a stale lock: untouched and refused" scena
 run_scenario "(L3) lock override must be absolute" scenario_lock_override_relative_refused
 run_scenario "(N1) non-interactive full run, GIT_TERMINAL_PROMPT=0, done" scenario_noninteractive_full_run
 run_scenario "(U1) variables unset: no status file, plain build command" scenario_unset_variables_no_status_file
+run_scenario "(H1) non-interactive: bun gets a private HOME, caches and installer keep the real one" scenario_private_home_noninteractive
+run_scenario "(H2) non-interactive: caller-provided cargo, rustup and bun cache preserved" scenario_private_home_keeps_caller_caches
+run_scenario "(H3) interactive: bun gets the real HOME, no private dir created" scenario_interactive_uses_real_home
+run_scenario "(H4) non-interactive, no status file: fallback home under TMPDIR, build failure stops install" scenario_private_home_fallback_build_failure
+run_scenario "(H5) non-interactive with status: build failure through run_bun is failed, no install" scenario_private_home_status_build_failure
 
 echo "$PASSED passed, $FAILED failed"
 [ "$FAILED" -eq 0 ]
