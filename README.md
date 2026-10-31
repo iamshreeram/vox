@@ -101,7 +101,7 @@ In short: you talk, Vox types what you said. With the optional features below it
 - **Start options.** Launch at login, start hidden in the tray, or run without a tray icon.
 - **Command line.** Flags such as `--toggle-transcription`, `--toggle-post-process`, `--cancel`, `--start-hidden`, `--no-tray`, and `--debug` control a running copy, and `--transcribe-file` transcribes a WAV file without opening the window.
 - **Many languages.** The interface is translated into more than twenty languages.
-- **Updates.** Check for updates from the app; builds installed from this repository's update script can rebuild from source.
+- **Updates.** Check for updates from the app. Builds installed from this repository's update script can rebuild and reinstall themselves from source: the update runs in the background, the footer and tray show its progress as a percentage, and when it finishes Vox restarts on the new version. No Terminal window is opened.
 
 ### Not built yet
 
