@@ -864,14 +864,24 @@ fn fix_role_cap_without_a_sentence_end_still_cuts_and_never_empties() {
     assert!(plan.speech.chars().count() > 1190);
 }
 
+// Superseded behaviour: the 400 path used to cut at the cap mid-word. A live replay of a story
+// the model did not flag as long was spoken up to "One evening, a cold wind swept" and stopped,
+// so the 400 path now also ends on a whole sentence. The cap itself (<= 400) is unchanged, and a
+// reply with no sentence end inside it is still hard-cut (see the run-on test above).
 #[test]
-fn fix_the_400_path_still_cuts_at_the_cap_without_sentence_trim() {
+fn fix_the_400_path_cuts_back_to_a_sentence_end_inside_the_cap() {
     let full = multi_sentence_answer(20);
     assert!(full.chars().count() > MAX_SPEECH_CHARS, "premise: over 400");
     let raw = format!("{{\"kind\":\"answer\",\"speech\":\"{full}\"}}");
     let plan = parse_plan_with_job_policy(&raw, "SENT", &JobParsePolicy::default()).unwrap();
-    let expected: String = full.chars().take(MAX_SPEECH_CHARS).collect();
-    assert_eq!(plan.speech, expected.trim_end());
+    let n = plan.speech.chars().count();
+    assert!(n <= MAX_SPEECH_CHARS && n > 200, "{n} chars");
+    assert!(plan.speech.ends_with('.'), "ends at a sentence end");
+    assert!(
+        full.starts_with(&plan.speech),
+        "an exact prefix of the reply"
+    );
+    assert_eq!(full[plan.speech.len()..].chars().next(), Some(' '));
 }
 
 fn plan_input(role: Option<&str>) -> PlanInput<'_> {

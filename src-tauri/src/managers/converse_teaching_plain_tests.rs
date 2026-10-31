@@ -15,6 +15,9 @@
 //! `str::contains("")` is always true.
 
 use super::*;
+use crate::managers::converse_plan::{
+    parse_plan_with_job_policy, JobParsePolicy, MAX_ROLE_SPEECH_CHARS, MAX_SPEECH_CHARS,
+};
 
 fn input(
     roles_enabled: bool,
@@ -150,7 +153,7 @@ fn t7_an_active_role_does_not_steer_unrelated_chat_back_into_itself() {
 #[test]
 fn t8_the_rule_is_one_short_paragraph_and_cannot_break_the_data_fences() {
     defined();
-    assert!(TEACHING_RULE.chars().count() <= 900, "rule stays short");
+    assert!(TEACHING_RULE.chars().count() <= 1000, "rule stays short");
     assert!(!TEACHING_RULE.contains("<<<") && !TEACHING_RULE.contains(">>>"));
     assert!(!TEACHING_RULE.contains('\n'), "one paragraph");
 }
@@ -163,4 +166,177 @@ fn t9_the_rule_sits_before_the_role_addendum_and_after_the_live_facts_rule() {
     let rule_at = system.find(TEACHING_RULE).expect("teaching rule");
     let roles_at = system.find("Roles: when the user asks").expect("addendum");
     assert!(live_at < rule_at && rule_at < roles_at);
+}
+
+// ---- long-form speech: a requested story or lesson is spoken whole -----------------------------
+//
+// A plain answer is capped at MAX_SPEECH_CHARS (400) as a safety net against a runaway reply, and
+// the cap cut a story mid-word. The model opts in with `"long": true` for a requested story or
+// lesson, which allows MAX_ROLE_SPEECH_CHARS and trims back to a sentence end. The default cap
+// is untouched.
+
+fn parse_plain(raw: &str) -> TurnPlan {
+    parse_plan_with_job_policy(raw, "THE SENT PROMPT", &JobParsePolicy::default())
+        .expect("a valid plan")
+}
+
+/// `n` whole sentences, each 26 chars incl. the trailing space ("Pip flew to the oak tree. ").
+fn sentences(n: usize) -> String {
+    "Pip flew to the oak tree. ".repeat(n)
+}
+
+fn answer_json(speech: &str, extra: &str) -> String {
+    format!(r#"{{"kind":"answer",{extra}"speech":"{speech}"}}"#)
+}
+
+#[test]
+fn l1_a_long_flagged_plain_answer_of_a_thousand_chars_arrives_whole() {
+    let story = sentences(38).trim_end().to_string(); // 987 chars
+    assert!(
+        story.chars().count() > MAX_SPEECH_CHARS,
+        "control: over 400"
+    );
+    assert!(
+        story.chars().count() <= MAX_ROLE_SPEECH_CHARS,
+        "control: under 1200"
+    );
+    let plan = parse_plain(&answer_json(&story, r#""long":true,"#));
+    assert_eq!(
+        plan.speech, story,
+        "the whole story, ending on its last sentence"
+    );
+    assert!(plan.speech.ends_with('.'));
+}
+
+#[test]
+fn l2_without_the_long_flag_a_plain_answer_is_still_capped_at_400() {
+    let story = sentences(38).trim_end().to_string();
+    let plan = parse_plain(&answer_json(&story, ""));
+    assert!(plan.speech.chars().count() <= MAX_SPEECH_CHARS);
+    assert!(
+        plan.speech.chars().count() > 300,
+        "control: it was cut, not dropped"
+    );
+}
+
+#[test]
+fn l3_a_long_flagged_answer_over_1200_is_trimmed_back_to_a_sentence_end() {
+    let story = sentences(60); // 1560 chars
+    let plan = parse_plain(&answer_json(story.trim_end(), r#""long":true,"#));
+    let n = plan.speech.chars().count();
+    assert!(n <= MAX_ROLE_SPEECH_CHARS, "{n} chars");
+    assert!(n > MAX_SPEECH_CHARS, "long-form is not cut at 400");
+    assert!(plan.speech.ends_with("tree."), "ends on a whole sentence");
+    assert!(
+        story.starts_with(&plan.speech),
+        "an exact prefix of the reply"
+    );
+    assert_eq!(
+        story.chars().nth(n),
+        Some(' '),
+        "the cut is at a sentence boundary, never mid-word"
+    );
+}
+
+#[test]
+fn l4_long_must_be_a_json_boolean_true() {
+    let story = sentences(38).trim_end().to_string();
+    for extra in [
+        r#""long":"true","#,
+        r#""long":1,"#,
+        r#""long":false,"#,
+        r#""long":null,"#,
+        r#""long":[true],"#,
+    ] {
+        let plan = parse_plain(&answer_json(&story, extra));
+        assert!(
+            plan.speech.chars().count() <= MAX_SPEECH_CHARS,
+            "{extra} must not lift the cap"
+        );
+    }
+}
+
+#[test]
+fn l5_the_long_flag_does_not_lift_the_clarify_cap() {
+    let story = sentences(38).trim_end().to_string();
+    let raw = format!(r#"{{"kind":"clarify","long":true,"speech":"{story}"}}"#);
+    let plan = parse_plain(&raw);
+    assert!(plan.speech.chars().count() <= MAX_SPEECH_CHARS);
+}
+
+#[test]
+fn l6_with_a_role_active_the_long_flag_changes_nothing() {
+    let story = sentences(60);
+    let policy = JobParsePolicy {
+        role_active: true,
+        ..JobParsePolicy::default()
+    };
+    let with = parse_plan_with_job_policy(
+        &answer_json(story.trim_end(), r#""long":true,"#),
+        "THE SENT PROMPT",
+        &policy,
+    )
+    .unwrap();
+    let without = parse_plan_with_job_policy(
+        &answer_json(story.trim_end(), ""),
+        "THE SENT PROMPT",
+        &policy,
+    )
+    .unwrap();
+    assert_eq!(with.speech, without.speech);
+}
+
+#[test]
+fn l7_the_rule_tells_the_model_to_flag_a_story_and_how_long_it_may_be() {
+    defined();
+    assert!(
+        TEACHING_RULE.contains(r#""long": true"#),
+        "the rule must name the flag"
+    );
+    assert!(
+        TEACHING_RULE.contains("1000 characters"),
+        "the rule must give the model the length that fits the cap"
+    );
+    assert!(
+        1000 < MAX_ROLE_SPEECH_CHARS,
+        "the advertised length fits the cap"
+    );
+}
+
+#[test]
+fn l8_the_default_400_cut_lands_on_a_sentence_end_never_mid_word() {
+    // The live replay of a long bedtime story the model forgot to flag was spoken up to
+    // "One evening, a cold wind swept" and then stopped.
+    let story = sentences(38);
+    let plan = parse_plain(&answer_json(story.trim_end(), ""));
+    let n = plan.speech.chars().count();
+    assert!(n <= MAX_SPEECH_CHARS && n > 300, "{n} chars");
+    assert!(plan.speech.ends_with("tree."), "ends on a whole sentence");
+    assert!(
+        story.starts_with(&plan.speech),
+        "an exact prefix of the reply"
+    );
+    assert_eq!(
+        story.chars().nth(n),
+        Some(' '),
+        "cut at a sentence boundary"
+    );
+}
+
+#[test]
+fn l9_a_reply_with_no_sentence_end_inside_the_cap_is_still_hard_cut() {
+    // Nothing to trim back to: the safety cap still holds. (Existing behaviour.)
+    let run_on = "word ".repeat(200);
+    let plan = parse_plain(&answer_json(run_on.trim_end(), ""));
+    assert!(plan.speech.chars().count() <= MAX_SPEECH_CHARS);
+    assert!(!plan.speech.is_empty());
+}
+
+#[test]
+fn l10_the_rule_puts_the_long_flag_before_the_speech() {
+    defined();
+    assert!(
+        TEACHING_RULE.contains("before speech") || TEACHING_RULE.contains("before the speech"),
+        "the model decides before it writes the story, not after"
+    );
 }
