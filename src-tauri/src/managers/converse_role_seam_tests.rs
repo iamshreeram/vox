@@ -97,6 +97,7 @@ fn plain_input<'a>(role: Option<&'a str>, roles_enabled: bool) -> PlanInput<'a> 
         roles_enabled,
         agent_enabled: false,
         planner_enabled: false,
+        role_state: None,
     }
 }
 

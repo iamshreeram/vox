@@ -266,6 +266,7 @@ struct Seen {
     utterance: String,
     role: Option<String>,
     lesson_paused: bool,
+    role_state: Option<String>,
 }
 
 struct LBrain {
@@ -285,6 +286,7 @@ impl LBrain {
             utterance: input.utterance.to_string(),
             role: input.role.map(str::to_string),
             lesson_paused: input.lesson_paused,
+            role_state: input.role_state.map(str::to_string),
         });
         let turn = self.script.lock().unwrap().pop_front();
         let hit = {
@@ -304,6 +306,12 @@ impl LBrain {
 }
 
 impl Brain for LBrain {
+    /// This fake reports a clean session, so role state is eligible (the trait default is the
+    /// conservative `true`, which would clear any state before the barge).
+    fn state_contaminated(&self) -> bool {
+        false
+    }
+
     fn plan<'a>(&'a self, input: PlanInput<'a>) -> BoxFuture<'a, Result<TurnPlan, PlanError>> {
         let (turn, hang) = self.start(&input);
         Box::pin(async move {
@@ -453,6 +461,7 @@ fn lesson_text() -> String {
 fn tp(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         job: None,
         role: None,
         kind,
@@ -657,4 +666,44 @@ fn script(r: &Rig, outcomes: &[SayOutcome]) {
         .lock()
         .unwrap()
         .extend(outcomes.iter().copied());
+}
+
+/// PR-A (T5): a real barge cuts the lesson's in-flight chunk. The role state committed when the
+/// lesson started (before any speech) is still in the next planner call that carries the barge
+/// utterance. Control: the state is absent on the lesson-start call itself.
+#[tokio::test]
+async fn role_t5_a_barge_cut_lesson_keeps_the_state_committed_at_its_start() {
+    let lesson = Ok(TurnPlan {
+        state: Some("score 2/5".to_string()),
+        ..tp(PlanKind::Answer, &lesson_text())
+    });
+    let mut r = rig(
+        &["act like a teacher", "continue"],
+        vec![compound(false), lesson, answer("Simpler."), resume_plan("")],
+    );
+    r.ears.barge_on = true;
+    r.barge
+        .captures
+        .lock()
+        .unwrap()
+        .push_back("make it simpler".to_string());
+    *r.mouth.fire_in_flight.lock().unwrap() = Some((LESSON_PARTS[1].to_string(), 1));
+
+    let _ = run(&r).await;
+
+    let calls = seen(&r);
+    assert!(calls.len() >= 3, "the barge turn was planned: {calls:?}");
+    assert_eq!(
+        calls[1].role_state, None,
+        "control: no state before the lesson start"
+    );
+    assert_eq!(
+        calls[2].utterance, "make it simpler",
+        "the barge is the next turn"
+    );
+    assert_eq!(
+        calls[2].role_state.as_deref(),
+        Some("score 2/5"),
+        "the state committed at lesson start survives the barge cut"
+    );
 }

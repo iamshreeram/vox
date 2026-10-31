@@ -356,6 +356,14 @@ pub trait Brain: Send + Sync {
         let _ = answer;
         Box::pin(async { AnswerJudgement::Unavailable })
     }
+
+    /// Stage 1 roles (PR-A): true when this session's brain has seen untrusted input (tool, agent
+    /// or notes taint). Conservative default: brains that cannot tell are treated as contaminated.
+    // `RealBrain` overrides this with the real flags; other implementors keep the conservative
+    // default `true`.
+    fn state_contaminated(&self) -> bool {
+        true
+    }
 }
 
 /// How one accepted user utterance ended (DESIGN Rev 3, 8.2). Compile-only stub.
@@ -1291,6 +1299,12 @@ struct Carry {
     /// Stage 2: set when an agent result was recorded. Lasts the rest of the session and makes
     /// `run_final_plan` ask a forced yes/no question before each planner-derived effect.
     tainted: bool,
+    /// Stage 1 roles (PR-A): the role-state note kept from earlier turns of the active role.
+    /// Cleared wherever the role is cleared or replaced. Never reaches memory or logs.
+    role_state: Option<String>,
+    /// Stage 1 roles (PR-A): sticky eligibility latch for role state (see `role_state_eligible`).
+    /// Once set it stays set for the rest of the session.
+    state_contaminated: bool,
 }
 
 /// Consecutive `Ignored` listens that count as one idle turn (T9b).
@@ -1638,6 +1652,7 @@ async fn brain_turn(
     let deps = &timed_deps;
     let start = history.len().saturating_sub(cfg.context_turns);
     expire_lesson(carry);
+    let role_state = reinjected_role_state(carry, deps.brain);
     let input = PlanInput {
         utterance,
         history: history.get(start..).unwrap_or_default(),
@@ -1650,6 +1665,7 @@ async fn brain_turn(
         roles_enabled: true,
         agent_enabled: converse_agent_loop::handoff_effective(cfg),
         planner_enabled: cfg.agent_planner,
+        role_state: role_state.as_deref(),
     };
     // Answer-only (DESIGN 8.1): no streamed model text may reach the mouth before a complete
     // plan is parsed, so the streaming path is never used. Role-active turns (Stage 1 roles,
@@ -1846,6 +1862,50 @@ fn lesson_chunks_left(carry: &Carry) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Stage 1 roles (PR-A): the sticky eligibility check for role state. Once the session is
+/// contaminated (an agent result or notes taint, or the brain reports it) the latch is set for the
+/// rest of the session: the stored state is cleared and never committed or reinjected again. The
+/// latch is separate from `Carry.tainted` and from the brain's own flags, which are not changed.
+/// Returns true only while the session is still eligible.
+fn role_state_eligible(carry: &mut Carry, brain: &dyn Brain) -> bool {
+    if carry.tainted || brain.state_contaminated() {
+        carry.state_contaminated = true;
+    }
+    if carry.state_contaminated {
+        carry.role_state = None;
+    }
+    !carry.state_contaminated
+}
+
+/// Stage 1 roles (PR-A): the role state to reinject into the next planner call. Only while a role
+/// is active and the session is eligible. The text is never logged and never sent to memory.
+fn reinjected_role_state(carry: &mut Carry, brain: &dyn Brain) -> Option<String> {
+    let eligible = role_state_eligible(carry, brain);
+    if eligible && carry.role.is_some() {
+        carry.role_state.clone()
+    } else {
+        None
+    }
+}
+
+/// Stage 1 roles (PR-A): commits the state of an accepted Answer or Clarify plan. Called at the
+/// seam where the plan is about to be spoken, while a role is active. An absent key keeps the
+/// stored state, an empty string clears it, and any other text replaces it. Other kinds, failed
+/// plans and turns with no active role never change it.
+fn commit_role_state(carry: &mut Carry, brain: &dyn Brain, plan: &TurnPlan) {
+    if carry.role.is_none() || !matches!(plan.kind, PlanKind::Answer | PlanKind::Clarify) {
+        return;
+    }
+    if !role_state_eligible(carry, brain) {
+        return;
+    }
+    match plan.state.as_deref() {
+        None => {}
+        Some(text) if text.trim().is_empty() => carry.role_state = None,
+        Some(text) => carry.role_state = Some(text.to_string()),
+    }
+}
+
 /// An Answer plan. With a role active the speech is spoken as chunks from a turn-local queue: an
 /// interrupted answer drops its remainder and never touches the paused lesson. Without a role the
 /// speech is one `say`, as before.
@@ -1884,6 +1944,7 @@ async fn set_role_turn(
         return Ok(failed_summary());
     };
     carry.role = Some(directive.role.clone());
+    carry.role_state = None;
     carry.lesson = None;
     let outcome = speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?;
     let summary = answer_summary(&plan.speech, outcome);
@@ -1909,6 +1970,7 @@ async fn lesson_start_turn(
     resume_auto: bool,
     carry: &mut Carry,
 ) -> Result<(), SessionEnd> {
+    let role_state = reinjected_role_state(carry, deps.brain);
     let input = PlanInput {
         utterance: task,
         history: &[],
@@ -1921,6 +1983,7 @@ async fn lesson_start_turn(
         roles_enabled: true,
         agent_enabled: converse_agent_loop::handoff_effective(cfg),
         planner_enabled: cfg.agent_planner,
+        role_state: role_state.as_deref(),
     };
     deps.reporter.state(SessionState::Thinking);
     let Some(planned) = race(cancel, deps.brain.plan(input)).await else {
@@ -1928,6 +1991,7 @@ async fn lesson_start_turn(
     };
     match planned {
         Ok(plan) if plan.kind == PlanKind::Answer => {
+            commit_role_state(carry, deps.brain, &plan);
             let chunks = split_chunks(&plan.speech);
             carry.lesson =
                 (!chunks.is_empty()).then(|| Lesson::new(chunks, resume_auto, lesson_now()));
@@ -2039,6 +2103,7 @@ async fn execute_plan(
         // is treated as answer text here.
         PlanKind::Answer => {
             carry.journal.set(speech_outcome(&plan.kind), None);
+            commit_role_state(carry, deps.brain, &plan);
             answer_turn(deps, cfg, cancel, &plan, carry).await?
         }
         // Stage 2: the hand-off is effective only when enabled and not answer-only. Otherwise the
@@ -2071,6 +2136,7 @@ async fn execute_plan(
         }
         PlanKind::Clarify | PlanKind::Job => {
             carry.journal.set(speech_outcome(&plan.kind), None);
+            commit_role_state(carry, deps.brain, &plan);
             let outcome = speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?;
             answer_summary(&plan.speech, outcome)
         }
@@ -2081,6 +2147,7 @@ async fn execute_plan(
         PlanKind::ClearRole => {
             carry.journal.set(speech_outcome(&plan.kind), None);
             carry.role = None;
+            carry.role_state = None;
             carry.lesson = None;
             let outcome = speak_outcome(deps, cfg, cancel, &plan.speech, plan.emotion).await?;
             answer_summary(&plan.speech, outcome)
@@ -2801,6 +2868,7 @@ async fn dispatch_utterance(
     ) {
         LocalIntent::ClearRole => {
             carry.role = None;
+            carry.role_state = None;
             carry.lesson = None;
             carry.journal.set(TurnOutcome::Acted, None);
             return match speak_or_end(deps, cfg, cancel, CLEARED_SPOKEN, Emotion::Neutral).await {
@@ -3373,6 +3441,7 @@ mod tests {
     fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
         TurnPlan {
             plan: None,
+            state: None,
             job: None,
             role: None,
             agent: None,
@@ -4474,6 +4543,10 @@ mod converse_agent_loop;
 #[cfg(test)]
 #[path = "converse_agent_taint_tests.rs"]
 mod converse_agent_taint_tests;
+
+#[cfg(test)]
+#[path = "converse_role_state_tests.rs"]
+mod converse_role_state_tests;
 
 #[cfg(test)]
 #[path = "converse_memory_session_tests.rs"]

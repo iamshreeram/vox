@@ -28,6 +28,7 @@ fn plan(kind: PlanKind) -> TurnPlan {
         role: None,
         agent: None,
         plan: None,
+        state: None,
     }
 }
 

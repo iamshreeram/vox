@@ -718,6 +718,7 @@ fn chain(items: &[(StepKind, &str)]) -> Vec<PlanStep> {
 fn base_plan() -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         job: None,
         role: None,
         kind: PlanKind::Answer,

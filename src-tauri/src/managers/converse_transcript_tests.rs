@@ -115,6 +115,7 @@ fn cfg(context_turns: usize) -> SessionConfig {
 fn plan(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         job: None,
         role: None,
         kind,

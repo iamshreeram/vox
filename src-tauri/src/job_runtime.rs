@@ -16,8 +16,8 @@ use crate::managers::converse_platform::{JobObserverFactory, JobRuntime};
 use crate::managers::job_announcer::{Announcer, TtsLowPriorityMouth};
 use crate::managers::job_speaker::{idle_dto, snapshot_to_dto, JobEventSink, JobSpeaker};
 use crate::managers::job_summary::{
-    summary_user_prompt, ResultStore, ResultSummarizer, SummaryError, SummaryHandle, SummaryPolicy,
-    SummaryTokens, ASK_SUMMARY_SYSTEM, SUMMARY_DEADLINE,
+    summary_system_prompt, summary_user_prompt, JobSummaryContext, ResultStore, ResultSummarizer,
+    SummaryError, SummaryHandle, SummaryPolicy, SummaryTokens, SUMMARY_DEADLINE,
 };
 use crate::managers::speech_backends;
 use crate::managers::tts::TtsManager;
@@ -166,11 +166,11 @@ impl GatewaySummarizer {
 }
 
 impl ResultSummarizer for GatewaySummarizer {
-    fn submit(&self, text: &str) -> SummaryHandle {
+    fn submit(&self, text: &str, ctx: &JobSummaryContext) -> SummaryHandle {
         let (tx, rx) = mpsc::channel();
         let complete = Arc::clone(&self.complete);
-        let system = ASK_SUMMARY_SYSTEM.to_string();
-        let user = summary_user_prompt(text);
+        let system = summary_system_prompt(ctx);
+        let user = summary_user_prompt(text, ctx);
         // If the thread cannot start, the closure (and `tx`) is dropped, so the waiter sees a
         // disconnected channel and reports `Failed`.
         let _ = std::thread::Builder::new()

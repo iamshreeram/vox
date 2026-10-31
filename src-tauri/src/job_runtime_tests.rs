@@ -175,6 +175,7 @@ mod process_tests {
         let spec = JobSpec {
             launch: launch(dir.path(), &bin, Duration::from_secs(12)),
             progress_interval: Duration::from_secs(90),
+            summary: Default::default(),
         };
         let id = mgr
             .start(spec, Arc::new(NoopObserver))

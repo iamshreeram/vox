@@ -759,6 +759,7 @@ pub(super) async fn run(r: &Rig, cfg: &SessionConfig) -> SessionEnd {
 pub(super) fn tp(kind: PlanKind, speech: &str) -> TurnPlan {
     TurnPlan {
         plan: None,
+        state: None,
         job: None,
         role: None,
         kind,

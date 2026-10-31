@@ -50,6 +50,7 @@ fn input<'a>(role: Option<&'a str>, roles: bool, agent: bool) -> PlanInput<'a> {
         roles_enabled: roles,
         agent_enabled: agent,
         planner_enabled: false,
+        role_state: None,
     }
 }
 

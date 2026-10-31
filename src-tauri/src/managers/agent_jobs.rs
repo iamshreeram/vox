@@ -13,6 +13,7 @@ use crate::managers::agent_jobs_output::TailRing;
 use crate::managers::converse_confirm::JobLaunch;
 #[cfg(unix)]
 use crate::managers::converse_plan::JobMode;
+use crate::managers::job_summary::JobSummaryContext;
 
 #[path = "agent_jobs_delivery.rs"]
 mod agent_jobs_delivery;
@@ -47,6 +48,8 @@ pub struct JobSpec {
     pub launch: JobLaunch,
     /// Minimum time between progress announcements.
     pub progress_interval: Duration,
+    /// PR-A: the user ask and reply style for this job's summary, bound to this job id.
+    pub summary: JobSummaryContext,
 }
 
 /// Lifecycle state of a job.
@@ -111,6 +114,38 @@ pub trait JobObserver: Send + Sync {
     /// M4: called once with the captured result of an ask job that succeeded.
     /// Scaffolding default: ignored, so existing observers are unaffected.
     fn on_result(&self, _r: &JobResult) {}
+    /// PR-A: like `on_result`, with the summary context bound to the job that produced `r`.
+    /// Default: forwards to `on_result`, so observers that ignore the context are unaffected.
+    fn on_result_for(&self, r: &JobResult, _ctx: &JobSummaryContext) {
+        self.on_result(r);
+    }
+}
+
+/// PR-A: wraps the observer of one job together with that job's id and summary context, both
+/// fixed in `start_unix` before the owner thread starts. Results of any other id get the default
+/// context, so a context never reaches a summary of a different job.
+struct BoundObserver {
+    inner: Arc<dyn JobObserver>,
+    id: u64,
+    summary: JobSummaryContext,
+}
+
+impl JobObserver for BoundObserver {
+    fn on_progress(&self, snap: &JobSnapshot) {
+        self.inner.on_progress(snap);
+    }
+
+    fn on_finish(&self, snap: &JobSnapshot) {
+        self.inner.on_finish(snap);
+    }
+
+    fn on_result(&self, r: &JobResult) {
+        if r.id == self.id {
+            self.inner.on_result_for(r, &self.summary);
+        } else {
+            self.inner.on_result_for(r, &JobSummaryContext::default());
+        }
+    }
 }
 
 /// M4: the captured result text of an ask job, delivered before its finish.
@@ -259,6 +294,12 @@ impl JobManager {
         let id = st.next_id;
         st.next_id += 1;
         self.call_on_admit(id);
+        // PR-A: bind this job's summary context to its id before the owner thread exists.
+        let observer: Arc<dyn JobObserver> = Arc::new(BoundObserver {
+            inner: observer,
+            id,
+            summary: spec.summary.clone(),
+        });
         let pgid = child.id() as i32;
         let (tx, rx) = mpsc::channel();
         let tail = Arc::new(Mutex::new(TailRing::new()));

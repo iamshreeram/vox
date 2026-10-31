@@ -180,6 +180,7 @@ fn spec_of(launch: JobLaunch) -> JobSpec {
     JobSpec {
         launch,
         progress_interval: Duration::from_secs(90),
+        summary: Default::default(),
     }
 }
 
