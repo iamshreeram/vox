@@ -71,7 +71,7 @@ export const TamilVoiceRow: React.FC<TamilVoiceRowProps> = ({
         tooltipPosition="bottom"
       />
       <div
-        className="flex flex-col gap-1 px-4 pb-2"
+        className="flex flex-col gap-1 px-3 pb-2"
         data-testid="tamil-voice-status-block"
       >
         {statusLine !== null && (
