@@ -2199,6 +2199,13 @@ async orbMenu() : Promise<void> {
     await TAURI_INVOKE("orb_menu");
 },
 /**
+ * Hides the orb for the user (the Hide badge and Esc). The same path as the native menu's Hide
+ * item: the bubbles clear and the stored setting becomes hidden.
+ */
+async orbDismiss() : Promise<void> {
+    await TAURI_INVOKE("orb_dismiss");
+},
+/**
  * The face for the live conversation snapshot.
  */
 async orbGetState() : Promise<OrbState> {

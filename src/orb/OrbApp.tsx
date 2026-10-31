@@ -14,10 +14,12 @@ import type {
   KeyboardEvent,
   MouseEvent,
   PointerEvent,
+  SyntheticEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { commands } from "../bindings";
 import VoxAvatar from "../chat/VoxAvatar";
 import { avatarFace, type AvatarFace } from "../chat/chatModel";
 import {
@@ -37,6 +39,7 @@ import {
   type FaceView,
 } from "./orbModel";
 import { getOrbLook, subscribeOrbLook } from "./orbAppearance";
+import { createSingleFlight, isDismissKey } from "./orbDismiss";
 import {
   initialRefusal,
   refusalReducer,
@@ -61,6 +64,12 @@ const FACES: readonly AvatarFace[] = [
 function send(command: string, args?: Record<string, unknown>): void {
   invoke(command, args).catch(() => undefined);
 }
+
+/**
+ * Hides the orb (Hide badge, Esc). One press issues one `orb_dismiss`: a call made while one is
+ * pending is ignored.
+ */
+const dismissOrb = createSingleFlight(() => commands.orbDismiss());
 
 /** Unknown or missing faces fall back to idle. */
 function toFace(value: unknown): AvatarFace {
@@ -90,6 +99,58 @@ function toGesture(payload: unknown): { id: number; result: string } | null {
   return typeof id === "number" && typeof result === "string"
     ? { id, result }
     : null;
+}
+
+/**
+ * The Hide badge (T3): a small X, a sibling of the globe button and never inside it. It shows on
+ * hover and on keyboard focus of the orb. Its own events stop here, so no press, activation or drag
+ * starts from it. Enter and Space click it natively; Esc dismisses it too.
+ */
+function HideBadge() {
+  const { t } = useTranslation();
+  const label = t("orb.hide");
+  const stop = (event: SyntheticEvent): void => {
+    event.stopPropagation();
+  };
+  return (
+    <button
+      type="button"
+      data-testid="orb-hide"
+      className="orb-hide"
+      aria-label={label}
+      title={label}
+      onPointerDown={stop}
+      onMouseDown={stop}
+      onClick={(event) => {
+        event.stopPropagation();
+        dismissOrb();
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (isDismissKey(event)) {
+          event.preventDefault();
+          dismissOrb();
+        }
+      }}
+    >
+      <svg
+        className="orb-hide-glyph"
+        width="10"
+        height="10"
+        viewBox="0 0 12 12"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <path
+          d="M2.5 2.5l7 7M9.5 2.5l-7 7"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          fill="none"
+        />
+      </svg>
+    </button>
+  );
 }
 
 export default function OrbApp() {
@@ -266,6 +327,11 @@ export default function OrbApp() {
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (isDismissKey(event)) {
+      event.preventDefault();
+      dismissOrb();
+      return;
+    }
     const command = keyCommand(event);
     if (command === null) return;
     event.preventDefault();
@@ -282,27 +348,30 @@ export default function OrbApp() {
 
   return (
     <>
-      <div
-        data-testid="orb"
-        role="button"
-        tabIndex={0}
-        aria-label={t("orb.label")}
-        className={classes}
-        style={style}
-        onPointerDown={onPointerDown}
-        onPointerEnter={() => dispatch({ type: "hover", on: true })}
-        onPointerLeave={() => dispatch({ type: "hover", on: false })}
-        onContextMenu={onContextMenu}
-        onKeyDown={onKeyDown}
-      >
-        <VoxAvatar
-          face={state.face}
-          look={{
-            orbColor: look.orbColor,
-            appAccent: look.accent,
-            bucket: look.bucket,
-          }}
-        />
+      <div className={`orb-shell${reducedMotion ? " is-reduced" : ""}`}>
+        <div
+          data-testid="orb"
+          role="button"
+          tabIndex={0}
+          aria-label={t("orb.label")}
+          className={classes}
+          style={style}
+          onPointerDown={onPointerDown}
+          onPointerEnter={() => dispatch({ type: "hover", on: true })}
+          onPointerLeave={() => dispatch({ type: "hover", on: false })}
+          onContextMenu={onContextMenu}
+          onKeyDown={onKeyDown}
+        >
+          <VoxAvatar
+            face={state.face}
+            look={{
+              orbColor: look.orbColor,
+              appAccent: look.accent,
+              bucket: look.bucket,
+            }}
+          />
+        </div>
+        <HideBadge />
       </div>
       {/* The face is announced as text, not only as colour and motion (U13). */}
       <span role="status" className="orb-sr-only">

@@ -1120,14 +1120,25 @@ fn handle_menu(app: &AppHandle, id: &str) {
         "orb_size_small" => set_orb_size(app, Some(72)),
         "orb_size_medium" => set_orb_size(app, Some(96)),
         "orb_size_large" => set_orb_size(app, Some(128)),
-        "orb_hide" => {
-            crate::bubble_native::user_hid_orb(app);
-            write_settings_gated(app, |settings| settings.orb_visible = Some(false));
-            apply_visibility(app);
-        }
+        "orb_hide" => dismiss_orb(app),
         "orb_settings" => show_main_window(app),
         _ => {}
     }
+}
+
+/// The stored setting a user dismissal writes: the orb stays hidden until the user shows it.
+pub fn hide_orb_setting(settings: &mut AppSettings) {
+    settings.orb_visible = Some(false);
+}
+
+/// Hides the orb for the user. The one path shared by the native menu's Hide item and the
+/// `orb_dismiss` command (Hide badge, Esc): tells the bubble shell (which clears the bubbles),
+/// stores `orb_visible = false`, then applies the visibility on the main thread. Safe from any
+/// thread.
+pub fn dismiss_orb(app: &AppHandle) {
+    crate::bubble_native::user_hid_orb(app);
+    write_settings_gated(app, hide_orb_setting);
+    apply_visibility(app);
 }
 
 /// The one writer of the orb size. Clamps a free size to 48..=192 (`None` returns to the preset),

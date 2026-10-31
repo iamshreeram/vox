@@ -311,8 +311,8 @@ fn orb_tray_hide_and_show_report_to_the_shell() {
     // A9-2: tray Hide sets user_hidden; tray Show clears it through user_showed_orb.
     let orb = src("src/orb_native.rs");
     assert!(
-        fn_body(&orb, "fn handle_menu(").contains("user_hid_orb("),
-        "the menu Hide reports user_hid_orb"
+        fn_body(&orb, "pub fn dismiss_orb(").contains("user_hid_orb("),
+        "the menu Hide reports user_hid_orb through dismiss_orb"
     );
     let toggle = fn_body(&orb, "pub fn toggle_visibility(");
     assert!(

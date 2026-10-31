@@ -6,7 +6,7 @@
 //!   crate::activation_policy::{Policy {Regular, Accessory}, Inputs {main_visible, classic_chat_visible,
 //!     panel_needs_focus, tray_present: bool}, OpenKind {User, Auto, Peek}, desired(&Inputs) -> Policy,
 //!     open_may_focus(OpenKind) -> bool, open_may_change_policy(OpenKind) -> bool}
-//!   crate::window_commands::{ORB_LABEL: &str = "orb", ORB_COMMANDS: [&str; 5], CHAT_COMMANDS: [&str; 11],
+//!   crate::window_commands::{ORB_LABEL: &str = "orb", ORB_COMMANDS: [&str; 6], CHAT_COMMANDS: [&str; 11],
 //!     window_command_allowed(window_label: &str, command: &str) -> bool}
 //!   The existing crate::chat_window::chat_command_allowed stays UNCHANGED in G1 and is still the gate in
 //!   lib.rs (the new function replaces it in G3 when the commands exist).
@@ -66,10 +66,11 @@ const NEW_CHAT: [&str; 7] = [
 const HIDE_CHAT: [&str; 1] = ["chat_hide_window"];
 /// T1a (DESIGN Rev 4, B1/B2b): the chat window's session-id Stop, chat-only by the live gate.
 const STOP_CHAT: [&str; 1] = ["chat_stop_conversation"];
-const ORB: [&str; 5] = [
+const ORB: [&str; 6] = [
     "orb_pointer_down",
     "orb_activate",
     "orb_menu",
+    "orb_dismiss",
     "orb_get_state",
     "orb_set_reduced_motion",
 ];

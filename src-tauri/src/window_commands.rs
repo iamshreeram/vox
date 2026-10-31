@@ -21,10 +21,11 @@ pub const BUBBLES_WINDOW_LABEL: &str = "orb-bubbles";
 pub const BUBBLES_COMMANDS: [&str; 1] = ["bubbles_ready"];
 
 /// Commands the orb window may invoke.
-pub const ORB_COMMANDS: [&str; 5] = [
+pub const ORB_COMMANDS: [&str; 6] = [
     "orb_pointer_down",
     "orb_activate",
     "orb_menu",
+    "orb_dismiss",
     "orb_get_state",
     "orb_set_reduced_motion",
 ];

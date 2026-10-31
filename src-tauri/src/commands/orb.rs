@@ -69,6 +69,14 @@ pub async fn orb_menu(app: AppHandle) {
     orb_native::show_menu(&app);
 }
 
+/// Hides the orb for the user (the Hide badge and Esc). The same path as the native menu's Hide
+/// item: the bubbles clear and the stored setting becomes hidden.
+#[tauri::command]
+#[specta::specta]
+pub async fn orb_dismiss(app: AppHandle) {
+    orb_native::dismiss_orb(&app);
+}
+
 /// The face for the live conversation snapshot.
 #[tauri::command]
 #[specta::specta]
