@@ -85,7 +85,12 @@ export const BrainTestGroup: React.FC<BrainTestGroupProps> = ({
         {t("settings.brain.test.description")}
       </p>
       {label !== "" && (
-        <div data-testid="brain-ack" className="flex items-start gap-2">
+        /* The native checkbox is 13px; the label row is the 24px hit area (WCAG 2.5.8).
+           The look is unchanged: the box keeps its size, only the clickable row grows. */
+        <label
+          data-testid="brain-ack"
+          className={`flex min-h-[24px] min-w-[24px] items-start gap-2 ${state === "unconfigured" ? "cursor-not-allowed" : "cursor-pointer"}`}
+        >
           <input
             id="brain-ack-checkbox"
             type="checkbox"
@@ -94,13 +99,13 @@ export const BrainTestGroup: React.FC<BrainTestGroupProps> = ({
             disabled={state === "unconfigured"}
             onChange={(event) => void handleAcknowledge(event.target.checked)}
           />
-          <label htmlFor="brain-ack-checkbox" className="min-h-[24px] text-sm">
+          <span className="text-sm">
             {t("settings.brain.test.ack", {
               prompt: BRAIN_TEST_PROMPT,
               destination: label,
             })}
-          </label>
-        </div>
+          </span>
+        </label>
       )}
       <div className="flex items-center gap-3">
         <Button

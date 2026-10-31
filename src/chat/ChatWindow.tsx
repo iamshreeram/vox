@@ -12,6 +12,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
@@ -23,6 +24,7 @@ import type {
   KeyboardEvent,
 } from "react";
 import VoxAvatar from "./VoxAvatar";
+import { getChatOrbLook, subscribeChatOrbLook } from "./chatOrbLook";
 import {
   CLEAR_CONFIRM_MS,
   nextClearStep,
@@ -379,6 +381,12 @@ export default function ChatWindow() {
 
   const face = avatarFace(view.state, view.end);
   const caption = captionFor(view.state, view.end);
+  // The globe's look: orb colour, app accent and the chat surface bucket (A3).
+  const orbLook = useSyncExternalStore(
+    subscribeChatOrbLook,
+    getChatOrbLook,
+    getChatOrbLook,
+  );
 
   return (
     <div
@@ -446,7 +454,7 @@ export default function ChatWindow() {
         </div>
       </header>
       <section className="chat-stage">
-        <VoxAvatar face={face} />
+        <VoxAvatar face={face} look={orbLook} />
         <div className="chat-eq" aria-hidden="true">
           <span />
           <span />

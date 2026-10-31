@@ -114,7 +114,7 @@ export const applyTheme = (
       accent: nextAccent,
       chat_theme: "dark",
       visual_style: nextStyle,
-      orb_accent: null,
+      orb_accent: "auto",
     },
     false,
   );

@@ -1284,6 +1284,33 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
     ],
   ),
   row(
+    "rememberConversations",
+    "conversationMemory",
+    "settings.experimental.rememberConversations.label",
+    "settings.experimental.rememberConversations.description",
+    [
+      "remember conversations",
+      "remember",
+      "memory",
+      "past conversations",
+      "recall",
+      "conversation memory",
+    ],
+  ),
+  row(
+    "rememberConversationsClear",
+    "conversationMemory",
+    "settings.experimental.rememberConversations.clearTitle",
+    "settings.experimental.rememberConversations.clearDescription",
+    [
+      "clear conversations",
+      "forget conversations",
+      "delete remembered conversations",
+      "erase memory",
+      "remembered",
+    ],
+  ),
+  row(
     "vaultRagEnable",
     "conversationMemory",
     "settings.experimental.vaultRag.enable.label",

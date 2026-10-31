@@ -3,6 +3,7 @@ import { subscribeWithSelector } from "zustand/middleware";
 import { listen } from "@tauri-apps/api/event";
 import type {
   Accent,
+  OrbColor,
   AppSettings as Settings,
   AudioDevice,
   ChatTheme,
@@ -43,7 +44,7 @@ interface SettingsStore {
     key: K,
     value: Settings[K],
   ) => Promise<boolean>;
-  changeOrbAccent: (accent: Accent | null) => Promise<boolean>;
+  changeOrbAccent: (color: OrbColor) => Promise<boolean>;
   resetSetting: (key: keyof Settings) => Promise<void>;
   refreshSettings: () => Promise<void>;
   refreshAudioDevices: () => Promise<void>;
@@ -254,9 +255,9 @@ const settingUpdaters: {
   custom_theme_colors: (value) =>
     commands.updateCustomThemeColors(value as CustomThemeColors),
   accent: (value) => commands.changeAccentSetting(value as Accent),
-  // null = follow the app accent (the default).
+  // The orb colour is always a string: 'auto' (the default), 'app' or an accent (A5, D2).
   orb_accent: (value) =>
-    commands.changeOrbAccentSetting((value as Accent | null) ?? null),
+    commands.changeOrbAccentSetting((value as OrbColor) ?? "auto"),
   chat_theme: (value) => commands.changeChatThemeSetting(value as ChatTheme),
   visual_style: (value) =>
     commands.changeVisualStyleSetting(value as VisualStyle),
@@ -663,19 +664,19 @@ export const useSettingsStore = create<SettingsStore>()(
       }
     },
 
-    // Orb colour (DESIGN D3): optimistic, with a rollback only for the newest write. Resolves to
+    // Orb colour (DESIGN D3, A5): optimistic, with a rollback only for the newest write. Resolves to
     // whether the backend saved it, so the page can show an error.
-    changeOrbAccent: async (accent) => {
-      const previous = get().settings?.orb_accent ?? null;
+    changeOrbAccent: async (color) => {
+      const previous = get().settings?.orb_accent ?? "auto";
       orbAccentWrites += 1;
       const write = orbAccentWrites;
       set((state) => ({
         settings: state.settings
-          ? { ...state.settings, orb_accent: accent }
+          ? { ...state.settings, orb_accent: color }
           : null,
       }));
       try {
-        await commands.changeOrbAccentSetting(accent);
+        await commands.changeOrbAccentSetting(color);
         return true;
       } catch (error) {
         console.error("Failed to update orb colour:", error);

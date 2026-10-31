@@ -2258,10 +2258,10 @@ async changeVisualStyleSetting(visualStyle: VisualStyle) : Promise<void> {
     await TAURI_INVOKE("change_visual_style_setting", { visualStyle });
 },
 /**
- * Saves the orb accent (`None` follows the app accent) and publishes the committed snapshot.
+ * Saves the orb colour (`auto`, `app` or an accent) and publishes the committed snapshot.
  */
-async changeOrbAccentSetting(accent: Accent | null) : Promise<void> {
-    await TAURI_INVOKE("change_orb_accent_setting", { accent });
+async changeOrbAccentSetting(color: OrbColor) : Promise<void> {
+    await TAURI_INVOKE("change_orb_accent_setting", { color });
 },
 /**
  * Stores the chat presentation choice. `None` returns to the platform default.
@@ -2761,10 +2761,10 @@ chat_theme?: ChatTheme;
  */
 visual_style?: VisualStyle; 
 /**
- * Accent of the floating orb (DESIGN Revision 3, D3). `None` follows the app accent.
- * Set through `change_orb_accent_setting`. Garbage reads as `None`.
+ * Colour of the floating orb's globe and rings (DESIGN Revision 3, D2). `Auto` by default.
+ * Set through `change_orb_accent_setting`. Garbage reads as `Auto`.
  */
-orb_accent?: Accent | null }
+orb_accent?: OrbColor }
 /**
  * A committed appearance. `rev` grows on every commit and is independent of the opacity rev.
  * `custom_colors` is present only while the theme is `Custom`, so no other window receives the
@@ -2796,9 +2796,9 @@ chat_theme: ChatTheme;
  */
 visual_style: VisualStyle; 
 /**
- * The orb accent. `None` follows the app accent. Always present on the wire (`null`).
+ * The orb colour (`auto`, `app` or an accent). Always present on the wire as a string.
  */
-orb_accent: Accent | null }
+orb_accent: OrbColor }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AuxError = "busy" | "cancelled" | "not_installed" | "corrupt" | "url_not_allowed" | "download" | "io"
@@ -3207,6 +3207,12 @@ export type NoticeCode =
  * Any code this build does not know.
  */
 "unknown"
+/**
+ * Colour of the floating orb's globe and rings (feat/orb-globe-colours, DESIGN Revision 3, D2).
+ * `Auto` changes with what Vox is doing, `App` follows the app accent, and the six accents are
+ * fixed. Wire values are lowercase. Only the field-local deserializer below reads stored values.
+ */
+export type OrbColor = "auto" | "app" | "amber" | "blue" | "violet" | "emerald" | "rose" | "slate"
 /**
  * The saved orb position: the monitor it was on plus its centre as a fraction of that monitor's
  * work area. Fractions survive resolution and scale changes; the name and key identify the

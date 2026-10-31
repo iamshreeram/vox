@@ -59,7 +59,7 @@ const BASE = {
   chat_theme: "dark",
   visual_style: "vibrant",
   theme: "system",
-  orb_accent: null,
+  orb_accent: "auto",
 } as const;
 
 beforeEach(() => {
@@ -133,14 +133,32 @@ describe("orb colour (D3)", () => {
     expect(useSettingsStore.getState().settings?.orb_accent).toBe("violet");
   });
 
-  it("changeOrbAccent(null) writes follow-the-app and never sends an accent", async () => {
+  it("changeOrbAccent('auto') writes the string auto and never sends null", async () => {
+    // RE-POINTED (A5): was changeOrbAccent(null) -> null (follow the app accent).
     useSettingsStore.setState({
       settings: { ...BASE, orb_accent: "rose" } as never,
     });
-    const ok = await useSettingsStore.getState().changeOrbAccent(null);
+    const ok = await useSettingsStore.getState().changeOrbAccent("auto");
     expect(ok).toBe(true);
-    expect(calls.orbAccent).toEqual([null]);
-    expect(useSettingsStore.getState().settings?.orb_accent).toBeNull();
+    expect(calls.orbAccent).toEqual(["auto"]);
+    expect(useSettingsStore.getState().settings?.orb_accent).toBe("auto");
+  });
+
+  it("changeOrbAccent('app') writes the string app", async () => {
+    const ok = await useSettingsStore.getState().changeOrbAccent("app");
+    expect(ok).toBe(true);
+    expect(calls.orbAccent).toEqual(["app"]);
+    expect(useSettingsStore.getState().settings?.orb_accent).toBe("app");
+  });
+
+  it("reset returns the orb colour to auto (default) through the setting's default", async () => {
+    useSettingsStore.setState({
+      settings: { ...BASE, orb_accent: "slate" } as never,
+      defaultSettings: { orb_accent: "auto" } as never,
+    });
+    await useSettingsStore.getState().resetSetting("orb_accent");
+    expect(calls.orbAccent).toEqual(["auto"]);
+    expect(useSettingsStore.getState().settings?.orb_accent).toBe("auto");
   });
 
   it("a rejected write rolls back to the previous value and reports failure", async () => {

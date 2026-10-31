@@ -10,8 +10,8 @@
   color: var(--chat-accent);
 }
 
+/* The glow's gradient is set inline per instance (VoxAvatar.tsx), so this file has no fixed id. */
 .vox-glow {
-  fill: url(#vox-glow-fill);
   opacity: 0.9;
 }
 
@@ -59,11 +59,6 @@
   filter: drop-shadow(
     0 0 10px color-mix(in srgb, var(--chat-accent) 35%, transparent)
   );
-}
-
-.vox-shine {
-  fill: #fff8dc;
-  opacity: 0.55;
 }
 
 /* Per-face motion (transform/opacity only; reduced motion disables all of it) */

@@ -5,12 +5,13 @@
  *
  * Covered:
  *   - the appearance event with orb_accent changes the ring colour (computed stroke) in light and dark
- *   - orb_accent null follows the app accent again
+ *   - orb_accent "app" (Follow app colour) follows the app accent again
  *   - orb-refusal {code} shows the localised sr-only status text and the concerned face, then clears
  *   - a garbage orb-refusal payload shows the generic text, never a raw code
  */
 import { test, expect, type Page } from "@playwright/test";
 import { emitMockEvent, installTauriMock } from "./fixtures/tauriMock";
+import { mixHex } from "../src/orb/globePalette";
 
 const ORB_PAGE = "/src/orb/index.html";
 const ORB = '[data-testid="orb"]';
@@ -27,7 +28,7 @@ function snapshot(over: Record<string, unknown>) {
     accent: "amber",
     chat_theme: "dark",
     visual_style: "vibrant",
-    orb_accent: null,
+    orb_accent: "auto",
     ...over,
   };
 }
@@ -41,11 +42,28 @@ async function open(page: Page): Promise<void> {
 }
 
 async function ringStroke(page: Page): Promise<string> {
-  return page.evaluate(
+  const css = await page.evaluate(
     (selector) =>
       getComputedStyle(document.querySelector(selector) as Element).stroke,
     RING,
   );
+  return toRgbString(css);
+}
+
+/** Chrome reports color-mix() as color(srgb 0-1 floats); the spec compares rgb() strings. */
+function toRgbString(css: string): string {
+  if (!css.startsWith("color(srgb")) return css;
+  const [r, g, b] = (css.match(/[\d.]+/g) ?? []).map((v) =>
+    Math.round(Number(v) * 255),
+  );
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/** True when a computed rgb() ring is within one 8-bit step of an expected #RRGGBB. */
+function withinOne(css: string, expectedHex: string): boolean {
+  const got = (css.match(/\d+/g) ?? []).map(Number);
+  const want = [1, 3, 5].map((i) => parseInt(expectedHex.slice(i, i + 2), 16));
+  return want.every((v, i) => Math.abs((got[i] ?? -99) - v) <= 1);
 }
 
 const rgb = (hex: string): string => {
@@ -75,7 +93,7 @@ test.describe("orb accent", () => {
     await expect.poll(() => ringStroke(page)).toBe(rgb("#6d28d9"));
   });
 
-  test("a null orb accent follows the app accent again", async ({ page }) => {
+  test("the app orb accent follows the app accent again", async ({ page }) => {
     await open(page);
     await emitMockEvent(
       page,
@@ -86,10 +104,19 @@ test.describe("orb accent", () => {
     await emitMockEvent(
       page,
       "appearance",
-      snapshot({ rev: 3, theme: "dark", accent: "blue", orb_accent: null }),
+      snapshot({
+        rev: 3,
+        theme: "dark",
+        accent: "blue",
+        orb_accent: "app",
+      }),
     );
-    // Blue's dark fillA (#60a5fa): the app accent, not the orb accent.
-    await expect.poll(() => ringStroke(page)).toBe(rgb("#60a5fa"));
+    // Blue's dark fillA (#60a5fa) mixed into white (A7): the app ring, not the orb accent.
+    await expect
+      .poll(async () =>
+        withinOne(await ringStroke(page), mixHex("#60a5fa", "dark")),
+      )
+      .toBe(true);
   });
 });
 

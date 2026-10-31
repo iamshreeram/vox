@@ -55,8 +55,8 @@ export const ResetAppearance: React.FC = () => {
         await refreshSettings();
       }
     }
-    // The orb colour is not in the plan (its pinned order is unchanged): it returns to Follow app.
-    allSaved = (await changeOrbAccent(null)) && allSaved;
+    // The orb colour is not in the plan (its pinned order is unchanged): it returns to Auto.
+    allSaved = (await changeOrbAccent("auto")) && allSaved;
     setConfirming(false);
     setFailed(!allSaved);
     setMessage(allSaved ? t("settings.appearance.reset.done") : "");

@@ -1,7 +1,8 @@
 // Pure rules of the Appearance settings page (UI enterprise S3, DESIGN Revision 3 A3, A5, D3).
 // No React and no commands here: the components apply these results.
-import type { Theme } from "@/bindings";
+import type { OrbColor, Theme } from "@/bindings";
 import { ACCENT_IDS, DEFAULT_ACCENT, type AccentId } from "@/styles/accents";
+import { ORB_COLOR_IDS } from "@/lib/appearance/consumer";
 
 /** The settings the page owns, with the values Reset to defaults restores. */
 export const APPEARANCE_DEFAULTS = {
@@ -49,37 +50,37 @@ export const ACCENT_NAME_KEYS: Readonly<Record<AccentId, string>> = {
 };
 
 /**
- * The orb colour (DESIGN D3). `null` means follow the app accent and is the default; the six accents
- * pick the orb's own colour. The first option is always Follow app.
+ * The orb colour (DESIGN D3, A5): 'auto' (the default, changes with what Vox is doing), 'app'
+ * (Follow app colour), or one of the six accents. Stored as a string.
  */
-export type OrbChoice = AccentId | null;
+export type OrbChoice = OrbColor;
 
-/** The id of the Follow app option. No accent is called "follow", so ids stay unique. */
-export const ORB_FOLLOW_ID = "follow";
+/** The id of the Follow app option. No accent is called "app", so ids stay unique. */
+export const ORB_FOLLOW_ID = "app";
 
-/** Follow app first, then the six accents in accent order. */
-export const ORB_CHOICES: readonly OrbChoice[] = [null, ...ACCENT_IDS];
+/** Auto first (the default), then Follow app, then the six accents in accent order. */
+export const ORB_CHOICES: readonly OrbChoice[] = ORB_COLOR_IDS;
 
-/** A stable id for one orb option: the accent id, or the follow id for null. */
+/** A stable id for one orb option: the stored orb colour string itself. */
 export function orbChoiceId(choice: OrbChoice): string {
-  return choice ?? ORB_FOLLOW_ID;
+  return choice;
 }
 
-/** Translation key of an orb option's name: Follow app, or the accent's swatch name. */
+/** Translation key of an orb option's name: Auto, Follow app, or the accent's swatch name. */
 export function orbChoiceNameKey(choice: OrbChoice): string {
-  return choice === null
-    ? "settings.appearance.orb.followApp"
-    : ACCENT_NAME_KEYS[choice];
+  if (choice === "auto") return "settings.appearance.orb.auto";
+  if (choice === "app") return "settings.appearance.orb.followApp";
+  return ACCENT_NAME_KEYS[choice];
 }
 
 /**
- * The stored orb accent as the page shows it. Absent or unknown values read as null (follow the app
- * accent), so an older or garbled setting never leaves the group without a selection.
+ * The stored orb colour as the page shows it. Absent or unknown values read as 'auto', so an older
+ * or garbled setting never leaves the group without a selection.
  */
 export function effectiveOrbAccent(value: unknown): OrbChoice {
-  return (ACCENT_IDS as readonly string[]).includes(value as string)
-    ? (value as AccentId)
-    : null;
+  return (ORB_COLOR_IDS as readonly string[]).includes(value as string)
+    ? (value as OrbChoice)
+    : "auto";
 }
 
 /** The index of an orb option in ORB_CHOICES (Follow app is 0). */
