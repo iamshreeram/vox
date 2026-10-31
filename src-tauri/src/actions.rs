@@ -1153,7 +1153,10 @@ impl ShortcutAction for TranscribeAction {
         } else {
             VadPolicy::Offline
         };
-        if model_supports_streaming {
+        // Tamil speech with the Tamil speech pack is transcribed by `transcribe()` only, so no
+        // transcribe-cpp stream starts for that turn (the finalize then returns nothing and the
+        // batch path runs). See `TranscriptionManager::tamil_stt_active`.
+        if model_supports_streaming && !tm.tamil_stt_active() {
             tm.start_stream();
         }
         let plan_elapsed = plan_started.elapsed();

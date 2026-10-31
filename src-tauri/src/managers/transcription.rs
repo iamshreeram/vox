@@ -4,6 +4,11 @@ use crate::audio_toolkit::{
 };
 use crate::chinese_script::{convert_chinese_script, ChineseVariety};
 use crate::managers::audio::AudioRecordingManager;
+use crate::managers::indic_stt_core::{indic_pack_status, pack_dir, IndicPackStatus};
+use crate::managers::indic_stt_ort::load_engine;
+use crate::managers::indic_stt_slot::{
+    spawn_watcher, IndicSession, IndicSlot, SlotOutcome, SystemClock, UnloadPolicy,
+};
 use crate::managers::model::{EngineType, ModelManager};
 use crate::settings::{
     get_settings, AppSettings, ChineseScript, ModelUnloadTimeout, OrtAcceleratorSetting,
@@ -14,6 +19,7 @@ use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::thread;
@@ -278,10 +284,27 @@ pub struct TranscriptionManager {
     /// `is_model_loaded()` consults this so the model still reports "loaded"
     /// while the worker holds it.
     active_engine_lease: Arc<AtomicU64>,
+    /// Tamil speech recognition with the Tamil speech pack (`indic_stt_slot`). Built here, cheap:
+    /// nothing is loaded and no thread starts until the first Tamil call.
+    indic_slot: Arc<IndicSlot>,
+    /// Folder of the Tamil speech pack, stat-checked on each Tamil-language call.
+    indic_pack_dir: PathBuf,
 }
 
 impl TranscriptionManager {
     pub fn new(app_handle: &AppHandle, model_manager: Arc<ModelManager>) -> Result<Self> {
+        let indic_pack_dir = crate::portable::app_data_dir(app_handle)
+            .map(|dir| pack_dir(&dir))
+            .unwrap_or_default();
+        let loader_dir = indic_pack_dir.clone();
+        let indic_slot = Arc::new(IndicSlot::new(
+            Box::new(move || {
+                load_engine(&loader_dir, "ta")
+                    .map(|engine| Box::new(engine) as Box<dyn IndicSession>)
+            }),
+            Arc::new(SystemClock::new()),
+        ));
+
         let manager = Self {
             engine: Arc::new(Mutex::new(None)),
             model_manager,
@@ -298,6 +321,8 @@ impl TranscriptionManager {
             next_stream_worker_id: Arc::new(AtomicU64::new(1)),
             active_stream_worker: Arc::new(AtomicU64::new(0)),
             active_engine_lease: Arc::new(AtomicU64::new(0)),
+            indic_slot,
+            indic_pack_dir,
         };
 
         // Start the idle watcher
@@ -454,6 +479,62 @@ impl TranscriptionManager {
     /// Reset the idle timer to now.
     fn touch_activity(&self) {
         self.last_activity.store(Self::now_ms(), Ordering::Relaxed);
+    }
+
+    /// True when the Tamil speech pack is installed (four stats, no file is read).
+    fn indic_pack_ready(&self) -> bool {
+        indic_pack_status(&self.indic_pack_dir) == IndicPackStatus::Ready
+    }
+
+    /// True when the next transcription with the current settings goes to the Tamil speech pack.
+    /// The push-to-talk stream gate uses this so no transcribe-cpp stream starts for that turn.
+    pub fn tamil_stt_active(&self) -> bool {
+        let settings = get_settings(&self.app_handle);
+        let pack_ready = settings.selected_language == TAMIL_LANGUAGE && self.indic_pack_ready();
+        tamil_stt_route_decision(
+            &settings.selected_language,
+            settings.stt_tamil_enabled,
+            settings.translate_to_english,
+            pack_ready,
+        )
+    }
+
+    /// Message of the last Tamil speech engine failure, for the status command. `None` after a
+    /// successful run or when nothing failed.
+    pub fn tamil_stt_engine_error(&self) -> Option<String> {
+        self.indic_slot.last_error()
+    }
+
+    /// Starts the single Tamil speech watcher on the first Tamil call. It applies the model
+    /// unload setting every 10 s; later calls do nothing.
+    fn ensure_indic_watcher(&self) {
+        if self.indic_slot.watcher_started() {
+            return;
+        }
+        let handle = self.app_handle.clone();
+        let policy_fn: Arc<dyn Fn() -> UnloadPolicy + Send + Sync> =
+            Arc::new(move || indic_unload_policy(get_settings(&handle).model_unload_timeout));
+        spawn_watcher(&self.indic_slot, policy_fn, Duration::from_secs(10));
+    }
+
+    /// Finalization for text from the Tamil speech pack. It runs the same post-processing as
+    /// engine results with `UserSelected("ta")` language evidence and supported language "ta",
+    /// then the same logging and immediate-unload step as the model path.
+    fn finish_tamil_text(&self, raw: String, settings: &AppSettings) -> String {
+        let supported = vec![TAMIL_LANGUAGE.to_string()];
+        let evidence = with_model_detected_language(
+            resolve_output_language_evidence(settings, Some(TAMIL_LANGUAGE), &supported, false),
+            None,
+        );
+        let text = post_process_transcription_text(raw, settings, false, &evidence, &supported);
+        debug!("Transcribed with the Tamil speech pack");
+        if text.is_empty() {
+            info!("Transcription result is empty");
+        } else {
+            info!("Transcription result: {}", crate::utils::redact_text(&text));
+        }
+        self.maybe_unload_immediately("tamil transcription");
+        text
     }
 
     /// Unloads the model immediately if the setting is enabled and the model is loaded
@@ -1202,6 +1283,25 @@ impl TranscriptionManager {
             return Ok(String::new());
         }
 
+        // Tamil speech with the Tamil speech pack takes the Tamil route before any model wait or
+        // load. An unavailable pack falls through to the model path below, unchanged.
+        let stt_settings = get_settings(&self.app_handle);
+        let pack_ready =
+            stt_settings.selected_language == TAMIL_LANGUAGE && self.indic_pack_ready();
+        if tamil_stt_route_decision(
+            &stt_settings.selected_language,
+            stt_settings.stt_tamil_enabled,
+            stt_settings.translate_to_english,
+            pack_ready,
+        ) {
+            self.ensure_indic_watcher();
+            let policy = indic_unload_policy(stt_settings.model_unload_timeout);
+            let finish = |text: String| self.finish_tamil_text(text, &stt_settings);
+            if let Some(result) = run_tamil_route(&self.indic_slot, &audio, policy, finish) {
+                return result;
+            }
+        }
+
         // Check if model is loaded, if not try to load it
         {
             // If the model is loading, wait for it to complete.
@@ -1763,6 +1863,56 @@ fn transcribe_cpp_run_plan(
         task,
         language,
         target_language,
+    }
+}
+
+/// Language code of the Tamil speech pack.
+const TAMIL_LANGUAGE: &str = "ta";
+
+/// True when a call goes to the Tamil speech pack: Tamil selected, the setting on, no
+/// translate-to-English (the pack cannot translate, so that turn keeps today's path) and the
+/// pack installed.
+fn tamil_stt_route_decision(
+    selected_language: &str,
+    stt_tamil_enabled: bool,
+    translate_to_english: bool,
+    pack_ready: bool,
+) -> bool {
+    selected_language == TAMIL_LANGUAGE && stt_tamil_enabled && !translate_to_english && pack_ready
+}
+
+/// Maps the model unload setting to the Tamil speech session policy. Unknown or unset timeouts
+/// use the five-minute default.
+fn indic_unload_policy(timeout: ModelUnloadTimeout) -> UnloadPolicy {
+    match timeout {
+        ModelUnloadTimeout::Never => UnloadPolicy::Never,
+        ModelUnloadTimeout::Immediately => UnloadPolicy::Immediately,
+        other => match other.to_seconds() {
+            Some(seconds) => UnloadPolicy::After(Duration::from_secs(seconds)),
+            None => UnloadPolicy::default_idle(),
+        },
+    }
+}
+
+/// The Tamil route for one call. Runs the slot and hands its text to `finish`, the finalization
+/// engine results go through. `None` means the route is unavailable and the caller continues on
+/// the model path. A busy slot is an error and never falls through.
+fn run_tamil_route(
+    slot: &IndicSlot,
+    samples: &[f32],
+    policy: UnloadPolicy,
+    finish: impl FnOnce(String) -> String,
+) -> Option<Result<String>> {
+    match slot.transcribe(samples, policy) {
+        SlotOutcome::Text(text) => Some(Ok(finish(text))),
+        SlotOutcome::Busy => Some(Err(anyhow::anyhow!("Tamil speech recognition is busy"))),
+        SlotOutcome::Unavailable(message) => {
+            warn!(
+                "Tamil speech recognition unavailable, using the active model instead: {}",
+                message
+            );
+            None
+        }
     }
 }
 
@@ -2632,5 +2782,271 @@ impl Drop for TranscriptionManager {
                 debug!("Idle watcher thread joined successfully");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tamil_stt_route_tests {
+    use super::*;
+    use crate::managers::indic_stt_slot::{Clock, IndicSession, IndicSlot, UnloadPolicy};
+    use std::sync::atomic::{AtomicU64, AtomicUsize};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// Clock the tests move by hand (milliseconds).
+    struct FakeClock(AtomicU64);
+
+    impl Clock for FakeClock {
+        fn now_ms(&self) -> u64 {
+            self.0.load(Ordering::SeqCst)
+        }
+    }
+
+    /// Session that returns a fixed text. When `gate` is set, the first call announces itself on
+    /// `entered` and waits for `gate` to be dropped or sent to.
+    struct FakeSession {
+        reply: String,
+        gate: Option<mpsc::Receiver<()>>,
+        entered: Option<mpsc::Sender<()>>,
+    }
+
+    impl IndicSession for FakeSession {
+        fn transcribe(&mut self, _samples: &[f32]) -> Result<String, String> {
+            if let Some(entered) = self.entered.take() {
+                let _ = entered.send(());
+            }
+            if let Some(gate) = self.gate.take() {
+                let _ = gate.recv();
+            }
+            Ok(self.reply.clone())
+        }
+    }
+
+    fn ready_slot(reply: &str, now: Arc<FakeClock>, loads: Arc<AtomicUsize>) -> IndicSlot {
+        let reply = reply.to_string();
+        IndicSlot::new(
+            Box::new(move || {
+                loads.fetch_add(1, Ordering::SeqCst);
+                Ok(Box::new(FakeSession {
+                    reply: reply.clone(),
+                    gate: None,
+                    entered: None,
+                }) as Box<dyn IndicSession>)
+            }),
+            now,
+        )
+    }
+
+    fn failing_slot(now: Arc<FakeClock>, loads: Arc<AtomicUsize>) -> IndicSlot {
+        IndicSlot::new(
+            Box::new(move || {
+                loads.fetch_add(1, Ordering::SeqCst);
+                Err("missing Tamil speech model file: encoder.onnx".to_string())
+            }),
+            now,
+        )
+    }
+
+    fn clock_at(ms: u64) -> Arc<FakeClock> {
+        Arc::new(FakeClock(AtomicU64::new(ms)))
+    }
+
+    fn tamil_words() -> Vec<String> {
+        vec!["ta".to_string()]
+    }
+
+    // ---- decision (all 16 combinations) ----
+
+    #[test]
+    fn decision_is_true_only_for_tamil_enabled_untranslated_and_ready() {
+        for bits in 0u8..16 {
+            let is_tamil = bits & 1 != 0;
+            let enabled = bits & 2 != 0;
+            let translate = bits & 4 != 0;
+            let ready = bits & 8 != 0;
+            let language = if is_tamil { "ta" } else { "en" };
+            let expected = is_tamil && enabled && !translate && ready;
+            assert_eq!(
+                tamil_stt_route_decision(language, enabled, translate, ready),
+                expected,
+                "lang={language} enabled={enabled} translate={translate} ready={ready}"
+            );
+        }
+    }
+
+    #[test]
+    fn decision_matches_the_named_cases() {
+        assert!(tamil_stt_route_decision("ta", true, false, true));
+        assert!(!tamil_stt_route_decision("ta", false, false, true));
+        assert!(!tamil_stt_route_decision("ta", true, true, true));
+        assert!(!tamil_stt_route_decision("ta", true, false, false));
+        assert!(!tamil_stt_route_decision("en", true, false, true));
+        assert!(!tamil_stt_route_decision("auto", true, false, true));
+        assert!(!tamil_stt_route_decision("", true, false, true));
+    }
+
+    // ---- unload policy mapping ----
+
+    #[test]
+    fn unload_policy_follows_the_model_timeout_setting() {
+        assert_eq!(
+            indic_unload_policy(ModelUnloadTimeout::Never),
+            UnloadPolicy::Never
+        );
+        assert_eq!(
+            indic_unload_policy(ModelUnloadTimeout::Immediately),
+            UnloadPolicy::Immediately
+        );
+        assert_eq!(
+            indic_unload_policy(ModelUnloadTimeout::Min5),
+            UnloadPolicy::After(Duration::from_secs(300))
+        );
+        assert_eq!(
+            indic_unload_policy(ModelUnloadTimeout::Min2),
+            UnloadPolicy::After(Duration::from_secs(120))
+        );
+        assert_eq!(
+            indic_unload_policy(ModelUnloadTimeout::Hour1),
+            UnloadPolicy::After(Duration::from_secs(3600))
+        );
+        assert_eq!(
+            indic_unload_policy(ModelUnloadTimeout::Sec15),
+            UnloadPolicy::After(Duration::from_secs(15))
+        );
+    }
+
+    // ---- route through the slot ----
+
+    #[test]
+    fn ready_pack_returns_the_text_through_the_shared_finish_and_loads_once() {
+        let loads = Arc::new(AtomicUsize::new(0));
+        let slot = ready_slot("வணக்கம்", clock_at(0), loads.clone());
+        let mut finished = Vec::new();
+        let result = run_tamil_route(&slot, &[0.0; 16], UnloadPolicy::Never, |text| {
+            finished.push(text.clone());
+            format!("{text}!")
+        });
+        let text = result.expect("route taken").expect("text");
+        assert_eq!(text, "வணக்கம்!");
+        assert_eq!(finished, vec!["வணக்கம்".to_string()]);
+        let _second = run_tamil_route(&slot, &[0.0; 16], UnloadPolicy::Never, |t| t);
+        assert_eq!(loads.load(Ordering::SeqCst), 1, "session is reused");
+    }
+
+    #[test]
+    fn busy_slot_returns_an_error_at_once_and_does_not_finish() {
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (gate_tx, gate_rx) = mpsc::channel::<()>();
+        let gate_slot = Mutex::new(Some(gate_rx));
+        let entered_slot = Mutex::new(Some(entered_tx));
+        let slot = Arc::new(IndicSlot::new(
+            Box::new(move || {
+                Ok(Box::new(FakeSession {
+                    reply: "பதில்".to_string(),
+                    gate: gate_slot.lock().ok().and_then(|mut g| g.take()),
+                    entered: entered_slot.lock().ok().and_then(|mut g| g.take()),
+                }) as Box<dyn IndicSession>)
+            }),
+            clock_at(0),
+        ));
+        let first_slot = slot.clone();
+        let first = std::thread::spawn(move || {
+            run_tamil_route(&first_slot, &[0.0; 16], UnloadPolicy::Never, |t| t)
+        });
+        entered_rx.recv().expect("first call entered the session");
+
+        let started = Instant::now();
+        let mut finished = false;
+        let busy = run_tamil_route(&slot, &[0.0; 16], UnloadPolicy::Never, |t| {
+            finished = true;
+            t
+        });
+        assert!(started.elapsed() < Duration::from_millis(100));
+        let busy_error = busy.expect("route taken").expect_err("busy is an error");
+        assert_eq!(busy_error.to_string(), "Tamil speech recognition is busy");
+        assert!(!finished);
+        assert_eq!(slot.state_name(), "ready", "busy does not mark backoff");
+
+        drop(gate_tx);
+        let first_result = first.join().expect("first thread");
+        assert_eq!(first_result.expect("route taken").expect("text"), "பதில்");
+        let third = run_tamil_route(&slot, &[0.0; 16], UnloadPolicy::Never, |t| t);
+        assert!(third.expect("route taken").is_ok());
+    }
+
+    #[test]
+    fn load_failure_falls_through_and_waits_for_the_backoff() {
+        let clock = clock_at(0);
+        let loads = Arc::new(AtomicUsize::new(0));
+        let slot = failing_slot(clock.clone(), loads.clone());
+        let mut finished = false;
+        let first = run_tamil_route(&slot, &[0.0; 16], UnloadPolicy::Never, |t| {
+            finished = true;
+            t
+        });
+        assert!(first.is_none(), "unavailable falls through to the model");
+        assert!(!finished);
+        assert_eq!(loads.load(Ordering::SeqCst), 1);
+        assert!(slot
+            .last_error()
+            .is_some_and(|e| e.contains("encoder.onnx")));
+
+        clock.0.store(29_999, Ordering::SeqCst);
+        assert!(run_tamil_route(&slot, &[0.0; 16], UnloadPolicy::Never, |t| t).is_none());
+        assert_eq!(loads.load(Ordering::SeqCst), 1, "no retry during backoff");
+
+        clock.0.store(30_000, Ordering::SeqCst);
+        assert!(run_tamil_route(&slot, &[0.0; 16], UnloadPolicy::Never, |t| t).is_none());
+        assert_eq!(loads.load(Ordering::SeqCst), 2, "retry after backoff");
+    }
+
+    // ---- shared finalization applied to Tamil text ----
+
+    fn tamil_settings(custom_words: Vec<String>) -> AppSettings {
+        let mut settings = crate::settings::get_default_settings();
+        settings.selected_language = "ta".to_string();
+        settings.custom_words = custom_words;
+        settings
+    }
+
+    fn tamil_evidence(settings: &AppSettings) -> OutputLanguageEvidence {
+        resolve_output_language_evidence(settings, Some("ta"), &tamil_words(), false)
+    }
+
+    #[test]
+    fn tamil_evidence_is_user_selected_tamil() {
+        let settings = tamil_settings(Vec::new());
+        assert_eq!(
+            tamil_evidence(&settings),
+            OutputLanguageEvidence::UserSelected("ta".to_string())
+        );
+    }
+
+    #[test]
+    fn tamil_text_keeps_vowel_signs_and_virama_through_finalization() {
+        let settings = tamil_settings(Vec::new());
+        let text = "வணக்கம் தமிழ்நாடு, நீங்கள் எப்படி இருக்கிறீர்கள்?";
+        let out = post_process_transcription_text(
+            text.to_string(),
+            &settings,
+            false,
+            &tamil_evidence(&settings),
+            &tamil_words(),
+        );
+        assert_eq!(out, text);
+    }
+
+    #[test]
+    fn custom_word_is_applied_to_tamil_text_as_for_other_engines() {
+        let settings = tamil_settings(vec!["சென்னை".to_string()]);
+        let text = "நான் சென்னை போகிறேன்";
+        let out = post_process_transcription_text(
+            text.to_string(),
+            &settings,
+            false,
+            &tamil_evidence(&settings),
+            &tamil_words(),
+        );
+        assert_eq!(out, text, "an exact custom word stays intact");
     }
 }

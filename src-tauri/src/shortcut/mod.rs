@@ -1345,6 +1345,22 @@ pub fn change_tts_tamil_enabled_setting(app: AppHandle, enabled: bool) -> Result
     Ok(())
 }
 
+/// Sets whether Tamil speech is recognised with the Tamil speech pack on `settings`. Pure, so
+/// the stored value can be tested without Tauri. The route reads the live value on every call.
+pub fn apply_stt_tamil_enabled(settings: &mut crate::settings::AppSettings, enabled: bool) {
+    settings.stt_tamil_enabled = enabled;
+}
+
+/// Stores whether Tamil speech is recognised with the Tamil speech pack when it is installed.
+#[tauri::command]
+#[specta::specta]
+pub fn change_stt_tamil_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    apply_stt_tamil_enabled(&mut settings, enabled);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// Speaks a short test phrase with the saved voice and rate. Works even when
 /// spoken replies are disabled so the user can audition a voice first. The
 /// text is never logged.
@@ -2323,6 +2339,21 @@ mod tests {
             normalize_agent_bridge_binary_path(Some(multibyte)).is_ok(),
             "counted in chars, not bytes"
         );
+    }
+}
+
+#[cfg(test)]
+mod stt_tamil_switch_tests {
+    use super::apply_stt_tamil_enabled;
+
+    #[test]
+    fn stt_tamil_switch_stores_false_and_true() {
+        let mut settings = crate::settings::get_default_settings();
+        assert!(settings.stt_tamil_enabled);
+        apply_stt_tamil_enabled(&mut settings, false);
+        assert!(!settings.stt_tamil_enabled);
+        apply_stt_tamil_enabled(&mut settings, true);
+        assert!(settings.stt_tamil_enabled);
     }
 }
 
