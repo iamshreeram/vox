@@ -101,7 +101,7 @@ export const SetupStatusBanner: React.FC<{ page: BannerPage }> = ({ page }) => {
             </li>
           ) : (
             <li key="brain_unset" data-testid="brain-unset">
-              <span className="font-medium">
+              <span className="font-semibold">
                 {t("settings.models.finishSetup.title")}
               </span>{" "}
               {t("settings.models.finishSetup.description")}
@@ -110,13 +110,19 @@ export const SetupStatusBanner: React.FC<{ page: BannerPage }> = ({ page }) => {
         )}
       </ul>
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="primary" size="sm" onClick={openBrainPage}>
+        <Button
+          variant="primary"
+          size="sm"
+          className="min-h-[36px]"
+          onClick={openBrainPage}
+        >
           {t("settings.brain.notice.open")}
         </Button>
         {model.secondary === "use_own" && (
           <Button
             variant="secondary"
             size="sm"
+            className="min-h-[36px]"
             onClick={() =>
               model.items.forEach((item) => {
                 if (item.kind === "feature")
@@ -128,7 +134,12 @@ export const SetupStatusBanner: React.FC<{ page: BannerPage }> = ({ page }) => {
           </Button>
         )}
         {model.secondary === "dismiss" && (
-          <Button variant="secondary" size="sm" onClick={handleDismiss}>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="min-h-[36px]"
+            onClick={handleDismiss}
+          >
             {t("settings.models.finishSetup.dismiss")}
           </Button>
         )}

@@ -200,7 +200,7 @@
         "description": "הגדר קיצורי מקשים כדי להפעיל הקלטה ותמלול דיבור",
         "loading": "טוען קיצורי מקשים...",
         "none": "לא הוגדרו קיצורי מקשים",
-        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
+        "noneHint": "Shortcuts appear here once Vox has loaded your settings.",
         "notFound": "קיצור הדרך לא נמצא",
         "pressKeys": "לחץ על המקשים...",
         "bindings": {
@@ -229,7 +229,10 @@
           "restore": "שחזור קיצור הדרך המקורי נכשל",
           "set": "הגדרת קיצור הדרך נכשלה: {{error}}",
           "reset": "איפוס קיצור הדרך לערך המקורי נכשל"
-        }
+        },
+        "loadFailed": "Vox could not load your shortcut list. Retry, or restart Vox if it keeps failing.",
+        "retry": "Retry",
+        "retrying": "Retrying…"
       },
       "language": {
         "title": "שפה",
@@ -299,6 +302,12 @@
         "description": "Spoken replies and the Brain are not set up yet. Choose a voice and connect a language model to finish.",
         "action": "Open Brain",
         "dismiss": "Dismiss"
+      },
+      "empty": {
+        "noneTitle": "No models downloaded yet",
+        "noneHelp": "Download a model from the list below to start transcribing.",
+        "noneCta": "Show models to download",
+        "clearFilters": "Clear filters"
       }
     },
     "appearance": {

@@ -200,7 +200,7 @@
         "description": "Configureer sneltoetsen om spraak-naar-tekst-opnames te starten",
         "loading": "Sneltoetsen laden...",
         "none": "Geen sneltoetsen geconfigureerd",
-        "noneHint": "Vox could not load your shortcut list. Reopen Settings to try again.",
+        "noneHint": "Shortcuts appear here once Vox has loaded your settings.",
         "notFound": "Sneltoets niet gevonden",
         "pressKeys": "Druk op toetsen...",
         "bindings": {
@@ -229,7 +229,10 @@
           "restore": "Herstellen van originele sneltoets mislukt",
           "set": "Instellen van sneltoets mislukt: {{error}}",
           "reset": "Sneltoets terugzetten naar standaardwaarde mislukt"
-        }
+        },
+        "loadFailed": "Vox could not load your shortcut list. Retry, or restart Vox if it keeps failing.",
+        "retry": "Retry",
+        "retrying": "Retrying…"
       },
       "language": {
         "title": "Taal",
@@ -299,6 +302,12 @@
         "description": "Spoken replies and the Brain are not set up yet. Choose a voice and connect a language model to finish.",
         "action": "Open Brain",
         "dismiss": "Dismiss"
+      },
+      "empty": {
+        "noneTitle": "No models downloaded yet",
+        "noneHelp": "Download a model from the list below to start transcribing.",
+        "noneCta": "Show models to download",
+        "clearFilters": "Clear filters"
       }
     },
     "appearance": {

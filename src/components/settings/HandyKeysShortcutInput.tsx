@@ -11,12 +11,15 @@ import { toast } from "sonner";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { SECURE_INPUT_HELP_URL } from "../SecureInputWarning";
 import { shortcutEmptyModel } from "./shortcutEmptyState";
+import { ShortcutLoadError } from "./ShortcutLoadError";
 
 interface HandyKeysShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
   shortcutId: string;
   disabled?: boolean;
+  /** Page decides whether this row announces a load failure (see shortcutLoadState). */
+  announceLoadFailure?: boolean;
 }
 
 interface HandyKeysEvent {
@@ -31,10 +34,17 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
   grouped = false,
   shortcutId,
   disabled = false,
+  announceLoadFailure,
 }) => {
   const { t } = useTranslation();
-  const { getSetting, updateBinding, resetBinding, isUpdating, isLoading } =
-    useSettings();
+  const {
+    getSetting,
+    updateBinding,
+    resetBinding,
+    isUpdating,
+    isLoading,
+    loadFailed,
+  } = useSettings();
   const [isRecording, setIsRecording] = useState(false);
   const [currentKeys, setCurrentKeys] = useState<string>("");
   const [originalBinding, setOriginalBinding] = useState<string>("");
@@ -273,7 +283,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
     );
   }
 
-  // If no bindings are loaded, show empty state
+  // If no bindings are loaded, show empty state (or the load failure with Retry, T5)
   if (Object.keys(bindings).length === 0) {
     return (
       <SettingContainer
@@ -282,12 +292,21 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
         descriptionMode={descriptionMode}
         grouped={grouped}
       >
-        <div className="text-sm text-muted">
-          {t("settings.general.shortcut.none")}
-        </div>
-        <div className="text-xs text-muted">
-          {t(shortcutEmptyModel(shortcutId).bodyKey)}
-        </div>
+        {loadFailed ? (
+          <ShortcutLoadError
+            shortcutId={shortcutId}
+            announces={announceLoadFailure}
+          />
+        ) : (
+          <>
+            <div className="text-sm text-muted">
+              {t("settings.general.shortcut.none")}
+            </div>
+            <div className="text-xs text-muted">
+              {t(shortcutEmptyModel(shortcutId).bodyKey)}
+            </div>
+          </>
+        )}
       </SettingContainer>
     );
   }

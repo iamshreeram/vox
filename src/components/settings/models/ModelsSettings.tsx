@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { ModelCardStatus } from "@/components/onboarding";
 import { ModelCard } from "@/components/onboarding";
+import { Button } from "../../ui/Button";
 import { useModelStore } from "@/stores/modelStore";
 import {
   getLanguageLabel,
@@ -23,6 +24,11 @@ import { CollapsibleSettingsGroup } from "../../ui/CollapsibleSettingsGroup";
 import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
 import { ModelSettingsCard } from "./ModelSettingsCard";
 import { SetupStatusBanner } from "../setup/SetupStatusBanner";
+import {
+  isDownloadedForEmptyState,
+  modelsEmptyState,
+  modelsFilterActive,
+} from "./modelsEmptyState";
 
 // check if model supports a language based on its supported_languages list
 const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
@@ -46,6 +52,7 @@ export const ModelsSettings: React.FC = () => {
   const [languageSearch, setLanguageSearch] = useState("");
   const languageDropdownRef = useRef<HTMLDivElement>(null);
   const languageSearchInputRef = useRef<HTMLInputElement>(null);
+  const availableSectionRef = useRef<HTMLDivElement>(null);
   const {
     models,
     currentModel,
@@ -200,6 +207,50 @@ export const ModelsSettings: React.FC = () => {
     });
   }, [models, languageFilter, filterStreaming, filterTranslation, searchQuery]);
 
+  // Empty states (T5, U9): decided by the pure model so the two messages never swap.
+  const downloadedCount = useMemo(
+    () => models.filter(isDownloadedForEmptyState).length,
+    [models],
+  );
+  const downloadingCount = useMemo(
+    () =>
+      models.filter(
+        (model: ModelInfo) =>
+          model.id in downloadingModels || model.id in extractingModels,
+      ).length,
+    [models, downloadingModels, extractingModels],
+  );
+  const filterActive = modelsFilterActive({
+    searchQuery,
+    filterStreaming,
+    filterTranslation,
+    languageFilter,
+  });
+  const emptyState = modelsEmptyState({
+    loading,
+    downloadedCount,
+    downloadingCount,
+    filteredCount: filteredModels.length,
+    filterActive,
+  });
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setFilterStreaming(false);
+    setFilterTranslation(false);
+    setLanguageFilter("all");
+    setLanguageDropdownOpen(false);
+    setLanguageSearch("");
+  };
+
+  // Scroll to the downloadable list and focus its section container (tabIndex -1). No backend call.
+  const focusAvailableModels = () => {
+    const section = availableSectionRef.current;
+    if (!section) return;
+    section.scrollIntoView({ block: "nearest" });
+    section.focus({ preventScroll: true });
+  };
+
   // Split filtered models into downloaded (including custom) and available sections
   const { downloadedModels, availableModels } = useMemo(() => {
     const downloaded: ModelInfo[] = [];
@@ -266,7 +317,7 @@ export const ModelsSettings: React.FC = () => {
           {/* Downloaded Models Section — header always visible so filter stays accessible */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-medium text-muted">
+              <h2 className="text-sm font-semibold text-muted">
                 {t("settings.models.yourModels")}
               </h2>
               <div className="flex items-center gap-2">
@@ -433,12 +484,38 @@ export const ModelsSettings: React.FC = () => {
                 />
               ))
             )}
+            {emptyState === "noneDownloaded" && (
+              <div
+                data-testid="models-empty-none"
+                className="flex flex-col items-start gap-2 rounded-lg border border-mid-gray/30 px-4 py-4"
+              >
+                <p className="text-sm font-semibold">
+                  {t("settings.models.empty.noneTitle")}
+                </p>
+                {/* With no catalog (load failed or empty) there is no list below to point at. */}
+                {availableModels.length > 0 && (
+                  <>
+                    <p className="text-sm text-muted">
+                      {t("settings.models.empty.noneHelp")}
+                    </p>
+                    <Button
+                      variant="primary"
+                      size="md"
+                      className="min-h-[36px]"
+                      onClick={focusAvailableModels}
+                    >
+                      {t("settings.models.empty.noneCta")}
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Available Models Section */}
           {!loading && availableModels.length > 0 && (
-            <div className="space-y-3">
-              <h2 className="text-sm font-medium text-muted">
+            <div className="space-y-3" ref={availableSectionRef} tabIndex={-1}>
+              <h2 className="text-sm font-semibold text-muted">
                 {t("settings.models.availableModels")}
               </h2>
               {availableModels.map((model: ModelInfo) => (
@@ -457,9 +534,20 @@ export const ModelsSettings: React.FC = () => {
               ))}
             </div>
           )}
-          {!loading && filteredModels.length === 0 && (
-            <div className="text-center py-8 text-muted">
-              {t("settings.models.noModelsMatch")}
+          {emptyState === "noMatch" && (
+            <div
+              data-testid="models-empty-nomatch"
+              className="flex flex-col items-center gap-2 text-center py-8 text-muted"
+            >
+              <p>{t("settings.models.noModelsMatch")}</p>
+              <Button
+                variant="secondary"
+                size="md"
+                className="min-h-[36px]"
+                onClick={clearFilters}
+              >
+                {t("settings.models.empty.clearFilters")}
+              </Button>
             </div>
           )}
         </div>

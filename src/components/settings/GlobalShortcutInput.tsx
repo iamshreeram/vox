@@ -12,12 +12,15 @@ import { useOsType } from "../../hooks/useOsType";
 import { commands } from "@/bindings";
 import { toast } from "sonner";
 import { shortcutEmptyModel } from "./shortcutEmptyState";
+import { ShortcutLoadError } from "./ShortcutLoadError";
 
 interface GlobalShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
   shortcutId: string;
   disabled?: boolean;
+  /** Page decides whether this row announces a load failure (see shortcutLoadState). */
+  announceLoadFailure?: boolean;
 }
 
 export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
@@ -25,10 +28,17 @@ export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
   grouped = false,
   shortcutId,
   disabled = false,
+  announceLoadFailure,
 }) => {
   const { t } = useTranslation();
-  const { getSetting, updateBinding, resetBinding, isUpdating, isLoading } =
-    useSettings();
+  const {
+    getSetting,
+    updateBinding,
+    resetBinding,
+    isUpdating,
+    isLoading,
+    loadFailed,
+  } = useSettings();
   const [keyPressed, setKeyPressed] = useState<string[]>([]);
   const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
   const [editingShortcutId, setEditingShortcutId] = useState<string | null>(
@@ -225,7 +235,7 @@ export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
     );
   }
 
-  // If no bindings are loaded, show empty state
+  // If no bindings are loaded, show empty state (or the load failure with Retry, T5)
   if (Object.keys(bindings).length === 0) {
     return (
       <SettingContainer
@@ -234,12 +244,21 @@ export const GlobalShortcutInput: React.FC<GlobalShortcutInputProps> = ({
         descriptionMode={descriptionMode}
         grouped={grouped}
       >
-        <div className="text-sm text-muted">
-          {t("settings.general.shortcut.none")}
-        </div>
-        <div className="text-xs text-muted">
-          {t(shortcutEmptyModel(shortcutId).bodyKey)}
-        </div>
+        {loadFailed ? (
+          <ShortcutLoadError
+            shortcutId={shortcutId}
+            announces={announceLoadFailure}
+          />
+        ) : (
+          <>
+            <div className="text-sm text-muted">
+              {t("settings.general.shortcut.none")}
+            </div>
+            <div className="text-xs text-muted">
+              {t(shortcutEmptyModel(shortcutId).bodyKey)}
+            </div>
+          </>
+        )}
       </SettingContainer>
     );
   }
