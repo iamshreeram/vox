@@ -322,6 +322,120 @@ test.describe("shortcut load failure Retry (T5)", () => {
   });
 });
 
+test.describe("models empty state edge cases (T5b)", () => {
+  test("a model downloading never shows the none-downloaded text", async ({
+    page,
+  }) => {
+    await openApp(page, SIZES.wide, {
+      get_available_models: [
+        { ...REMOTE_MODELS[0], is_downloading: true },
+        REMOTE_MODELS[1],
+      ],
+    });
+    await openModels(page);
+    await expect(page.getByText("Remote Alpha").first()).toBeVisible();
+    await expect(tid(page, "models-empty-none")).toHaveCount(0);
+    await expect(page.getByText(NONE_DOWNLOADED)).toHaveCount(0);
+  });
+
+  test("while the catalog is still loading there is no empty flash", async ({
+    page,
+  }) => {
+    await openApp(page, SIZES.wide, {
+      get_available_models: { __pending__: true },
+    });
+    await openModels(page);
+    await expect(page.getByText(NONE_DOWNLOADED)).toHaveCount(0);
+    await expect(tid(page, "models-empty-none")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Show models to download" }),
+    ).toHaveCount(0);
+  });
+
+  test("a failed catalog load shows the none text without the list-below sentence or CTA", async ({
+    page,
+  }) => {
+    await openApp(page, SIZES.wide, {
+      get_available_models: { __error__: "catalog unavailable" },
+    });
+    await openModels(page);
+    const block = tid(page, "models-empty-none");
+    await expect(block).toBeVisible();
+    await expect(block.getByText(NONE_DOWNLOADED)).toBeVisible();
+    await expect(
+      page.getByText(
+        "Download a model from the list below to start transcribing.",
+      ),
+    ).toHaveCount(0);
+    await expect(
+      block.getByRole("button", { name: "Show models to download" }),
+    ).toHaveCount(0);
+    await expect(page.getByText(NO_MATCH)).toHaveCount(0);
+  });
+
+  test("a language filter with no matching model shows the no-match state", async ({
+    page,
+  }) => {
+    await openApp(page, SIZES.wide, { get_available_models: REMOTE_MODELS });
+    await openModels(page);
+    await page.getByRole("button", { name: "All Languages" }).click();
+    await page.getByPlaceholder("Search languages...").fill("German");
+    await page
+      .getByRole("button", { name: /^German/ })
+      .first()
+      .click();
+
+    await expect(page.getByText(NO_MATCH)).toBeVisible();
+    await expect(page.getByText(NONE_DOWNLOADED)).toHaveCount(0);
+    await expect(tid(page, "models-empty-none")).toHaveCount(0);
+  });
+});
+
+test.describe("shortcut load failure on the other pages (T5b)", () => {
+  const FAILING = { __error__: "settings unavailable" };
+
+  test("a failed Retry on the same page announces again (a fresh alert node)", async ({
+    page,
+  }) => {
+    await openApp(page, SIZES.wide, {}, { bindings: {} });
+    await setMockCommand(page, "get_app_settings", FAILING);
+    await emitMockEvent(page, "settings-changed", { setting: "debug_mode" });
+    const alert = page.getByRole("alert").filter({ hasText: SHORTCUT_ERROR });
+    await expect(alert).toHaveCount(1);
+    await alert.evaluate((el) => {
+      (el as HTMLElement).dataset.firstFailure = "yes";
+    });
+
+    await page.getByRole("button", { name: "Retry" }).first().click();
+    await expect(page.getByText(SHORTCUT_ERROR).first()).toBeVisible();
+    await expect(alert).toHaveCount(1);
+    const reannounced = await alert.evaluate(
+      (el) => (el as HTMLElement).dataset.firstFailure !== "yes",
+    );
+    expect(reannounced).toBe(true);
+  });
+
+  test("the Post Processing row, shown alone, announces exactly once", async ({
+    page,
+  }) => {
+    await openApp(
+      page,
+      SIZES.wide,
+      {},
+      { bindings: {}, post_process_enabled: true },
+    );
+    await setMockCommand(page, "get_app_settings", FAILING);
+    await emitMockEvent(page, "settings-changed", { setting: "debug_mode" });
+    await expect(page.getByText(SHORTCUT_ERROR).first()).toBeVisible();
+
+    await page.locator("p", { hasText: /^Post Process$/ }).click();
+    await expect(page.getByText(SHORTCUT_ERROR).first()).toBeVisible();
+    await expect(
+      page.getByRole("alert").filter({ hasText: SHORTCUT_ERROR }),
+    ).toHaveCount(1);
+  });
+});
+
 test("setup banner actions are at least 36 px high and nothing is clipped at 480 px", async ({
   page,
 }) => {

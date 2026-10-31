@@ -95,6 +95,51 @@ const scenarios: Record<string, () => void> = {
     assert.equal(modelsEmptyState({ ...base, loading: true }), "none");
   },
 
+  "a model downloading or extracting never shows the none-downloaded text":
+    () => {
+      assert.equal(
+        modelsEmptyState({
+          ...base,
+          downloadingCount: 1,
+          filteredCount: 1,
+        }),
+        "downloading",
+      );
+      assert.equal(
+        modelsEmptyState({
+          ...base,
+          downloadingCount: 2,
+          filteredCount: 2,
+          filterActive: true,
+        }),
+        "downloading",
+      );
+    },
+
+  "downloading with no active filter and no downloaded model is not none-downloaded":
+    () => {
+      const state = modelsEmptyState({
+        ...base,
+        downloadedCount: 0,
+        downloadingCount: 1,
+        filteredCount: 1,
+      });
+      assert.notEqual(state, "noneDownloaded");
+    },
+
+  "a filter with zero matches still shows no-match while a model downloads":
+    () => {
+      assert.equal(
+        modelsEmptyState({
+          ...base,
+          downloadingCount: 1,
+          filteredCount: 0,
+          filterActive: true,
+        }),
+        "noMatch",
+      );
+    },
+
   "no-match is only ever produced when a filter is active": () => {
     for (const downloadedCount of [0, 1, 4]) {
       for (const filterActive of [false, true]) {

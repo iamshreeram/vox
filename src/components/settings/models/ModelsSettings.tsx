@@ -212,6 +212,14 @@ export const ModelsSettings: React.FC = () => {
     () => models.filter(isDownloadedForEmptyState).length,
     [models],
   );
+  const downloadingCount = useMemo(
+    () =>
+      models.filter(
+        (model: ModelInfo) =>
+          model.id in downloadingModels || model.id in extractingModels,
+      ).length,
+    [models, downloadingModels, extractingModels],
+  );
   const filterActive = modelsFilterActive({
     searchQuery,
     filterStreaming,
@@ -221,6 +229,7 @@ export const ModelsSettings: React.FC = () => {
   const emptyState = modelsEmptyState({
     loading,
     downloadedCount,
+    downloadingCount,
     filteredCount: filteredModels.length,
     filterActive,
   });
@@ -234,7 +243,7 @@ export const ModelsSettings: React.FC = () => {
     setLanguageSearch("");
   };
 
-  // Scroll to the downloadable list and focus its first action (no new backend command).
+  // Scroll to the downloadable list and focus its section container (tabIndex -1). No backend call.
   const focusAvailableModels = () => {
     const section = availableSectionRef.current;
     if (!section) return;
@@ -483,18 +492,21 @@ export const ModelsSettings: React.FC = () => {
                 <p className="text-sm font-semibold">
                   {t("settings.models.empty.noneTitle")}
                 </p>
-                <p className="text-sm text-muted">
-                  {t("settings.models.empty.noneHelp")}
-                </p>
+                {/* With no catalog (load failed or empty) there is no list below to point at. */}
                 {availableModels.length > 0 && (
-                  <Button
-                    variant="primary"
-                    size="md"
-                    className="min-h-[36px]"
-                    onClick={focusAvailableModels}
-                  >
-                    {t("settings.models.empty.noneCta")}
-                  </Button>
+                  <>
+                    <p className="text-sm text-muted">
+                      {t("settings.models.empty.noneHelp")}
+                    </p>
+                    <Button
+                      variant="primary"
+                      size="md"
+                      className="min-h-[36px]"
+                      onClick={focusAvailableModels}
+                    >
+                      {t("settings.models.empty.noneCta")}
+                    </Button>
+                  </>
                 )}
               </div>
             )}

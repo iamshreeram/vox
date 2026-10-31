@@ -2,13 +2,22 @@
 // the matching copy. "No models downloaded yet" and "No models match this filter" are decided
 // here so they can never be shown for the wrong situation.
 
-export type ModelsEmptyState = "none" | "noneDownloaded" | "noMatch";
+export type ModelsEmptyState =
+  | "none"
+  | "downloading"
+  | "noneDownloaded"
+  | "noMatch";
 
 export interface ModelsEmptyInput {
   /** Catalog still loading: nothing is decided yet. */
   loading: boolean;
   /** Models on disk or user-added, before any filter (the Downloaded section's population). */
   downloadedCount: number;
+  /**
+   * Models being downloaded or extracted. The Your models list shows them while they run, so the
+   * "No models downloaded yet" text must not appear beside them.
+   */
+  downloadingCount?: number;
   /** Models left after every filter and the search. */
   filteredCount: number;
   /** A search, toggle or language filter is narrowing the list. */
@@ -18,6 +27,7 @@ export interface ModelsEmptyInput {
 export function modelsEmptyState(input: ModelsEmptyInput): ModelsEmptyState {
   if (input.loading) return "none";
   if (input.filterActive && input.filteredCount === 0) return "noMatch";
+  if ((input.downloadingCount ?? 0) > 0) return "downloading";
   if (input.downloadedCount === 0) return "noneDownloaded";
   return "none";
 }

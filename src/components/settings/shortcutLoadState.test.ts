@@ -94,6 +94,36 @@ const scenarios: Record<string, () => void> = {
     assert.equal(view(announcing[0]).role, "alert");
   },
 
+  "a page that shows the post-process row alone announces from that row":
+    () => {
+      const alone = shortcutLoadView({
+        loadFailed: true,
+        retrying: false,
+        shortcutId: "transcribe_with_post_process",
+        announces: true,
+      });
+      assert.equal(alone.showError, true);
+      assert.equal(alone.role, "alert");
+      const defaulted = shortcutLoadView({
+        loadFailed: true,
+        retrying: false,
+        shortcutId: "transcribe_with_post_process",
+      });
+      assert.equal(defaulted.role, undefined);
+    },
+
+  "an explicit non-announcing row never takes the alert, even on the announcer id":
+    () => {
+      const silent = shortcutLoadView({
+        loadFailed: true,
+        retrying: false,
+        shortcutId: "transcribe",
+        announces: false,
+      });
+      assert.equal(silent.showError, true);
+      assert.equal(silent.role, undefined);
+    },
+
   "every row still shows the error and Retry, only the announcer is live":
     () => {
       for (const id of SHORTCUT_IDS) {

@@ -18,6 +18,8 @@ interface HandyKeysShortcutInputProps {
   grouped?: boolean;
   shortcutId: string;
   disabled?: boolean;
+  /** Page decides whether this row announces a load failure (see shortcutLoadState). */
+  announceLoadFailure?: boolean;
 }
 
 interface HandyKeysEvent {
@@ -32,6 +34,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
   grouped = false,
   shortcutId,
   disabled = false,
+  announceLoadFailure,
 }) => {
   const { t } = useTranslation();
   const {
@@ -290,7 +293,10 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
         grouped={grouped}
       >
         {loadFailed ? (
-          <ShortcutLoadError shortcutId={shortcutId} />
+          <ShortcutLoadError
+            shortcutId={shortcutId}
+            announces={announceLoadFailure}
+          />
         ) : (
           <>
             <div className="text-sm text-muted">

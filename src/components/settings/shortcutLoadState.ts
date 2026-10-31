@@ -20,6 +20,12 @@ export interface ShortcutLoadInput {
   loadFailed: boolean;
   retrying: boolean;
   shortcutId: string;
+  /**
+   * Whether this row announces. The page decides: the General page announces from its first row
+   * (transcribe); the Post Processing page shows its one row alone and passes true. Undefined falls
+   * back to the General page rule (shortcutAnnouncesLoadFailure).
+   */
+  announces?: boolean;
 }
 
 export interface ShortcutLoadView {
@@ -35,7 +41,8 @@ export function shortcutLoadView(input: ShortcutLoadInput): ShortcutLoadView {
   return {
     showError: input.loadFailed,
     role:
-      input.loadFailed && shortcutAnnouncesLoadFailure(input.shortcutId)
+      input.loadFailed &&
+      (input.announces ?? shortcutAnnouncesLoadFailure(input.shortcutId))
         ? "alert"
         : undefined,
     retryDisabled: input.retrying,
