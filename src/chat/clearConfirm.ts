@@ -14,3 +14,8 @@ export function nextClearStep(step: ClearStep, event: ClearEvent): ClearStep {
   // Confirming: a repeated request keeps the pair up; every other event closes it.
   return event === "request" ? "confirming" : "idle";
 }
+
+/** Whole seconds left on the confirm bar, rounded up and never negative (T1b countdown text). */
+export function clearSecondsLeft(msLeft: number): number {
+  return Math.max(0, Math.ceil(msLeft / 1000));
+}

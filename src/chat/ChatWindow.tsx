@@ -1,8 +1,9 @@
 // Conversation window body. Protocol (DESIGN-CHAT A4): subscribe to `converse-chat` first,
 // buffer until the first snapshot is applied, then apply live events; a gap refetches once,
 // a stale snapshot is discarded and refetched at most once more, window focus refetches once.
-// The only commands used are get_chat_snapshot, clear_chat_log, send_chat_message (DESIGN-TYPE)
-// and chat_hide_window (Escape hides the window, DESIGN D1b).
+// The only commands used are get_chat_snapshot, clear_chat_log, send_chat_message (DESIGN-TYPE),
+// chat_hide_window (Escape and the Hide button hide the window, DESIGN D1b) and chat_stop_conversation
+// (the Stop control, DESIGN Revision 4 B2b; it passes the session id the control was rendered with).
 // The typing box sends a message and clears itself only on success; the transcript line arrives
 // through the same converse-chat events as a spoken one (no local echo).
 import {
@@ -27,9 +28,11 @@ import VoxAvatar from "./VoxAvatar";
 import { getChatOrbLook, subscribeChatOrbLook } from "./chatOrbLook";
 import {
   CLEAR_CONFIRM_MS,
+  clearSecondsLeft,
   nextClearStep,
   type ClearStep,
 } from "./clearConfirm";
+import { stopVisible } from "./stopControl";
 import { createOnceGuard, escAction } from "./escHide";
 import voxIcon from "./assets/vox-icon.png";
 import { accentStyle, accentTextStyle } from "./chatTheme";
@@ -123,9 +126,21 @@ export default function ChatWindow() {
   const lastEntryIdRef = useRef<number | undefined>(undefined);
   const [unseen, setUnseen] = useState(false);
   const [clearing, setClearing] = useState(false);
-  // Inline two-step Clear (U15a): idle shows Clear; confirming shows Confirm clear / Cancel for 4 s.
+  // Inline two-step Clear (U15a): idle shows Clear; confirming shows a bar below the header with
+  // Cancel (focused) and Confirm clear, and auto-cancels after CLEAR_CONFIRM_MS (T1b countdown).
   const [clearStep, setClearStep] = useState<ClearStep>("idle");
   const [clearFailed, setClearFailed] = useState(false);
+  const [clearSeconds, setClearSeconds] = useState(
+    clearSecondsLeft(CLEAR_CONFIRM_MS),
+  );
+  const clearDeadlineRef = useRef(0);
+  const clearBtnRef = useRef<HTMLButtonElement>(null);
+  const cancelBtnRef = useRef<HTMLButtonElement>(null);
+  const wasConfirmingRef = useRef(false);
+  // Stop (T1b): one call in flight at a time; a failed call shows one notice line.
+  const [stopping, setStopping] = useState(false);
+  const stoppingRef = useRef(false);
+  const [stopFailed, setStopFailed] = useState(false);
   // Typing box. draftRef mirrors draft so handlers always see the latest text; sendingRef is the
   // synchronous in-flight guard (a same-tick second submit must not wait for a React render).
   const [draft, setDraft] = useState("");
@@ -146,6 +161,10 @@ export default function ChatWindow() {
     () => createOnceGuard(() => commands.chatHideWindow()),
     [],
   );
+
+  const onHide = () => {
+    hideGuard.trigger();
+  };
 
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
@@ -282,8 +301,56 @@ export default function ChatWindow() {
     return () => window.clearTimeout(timer);
   }, [clearStep]);
 
+  // Countdown text on the bar (4 s to 1 s). Reduced motion keeps this text and drops the track.
+  useEffect(() => {
+    if (clearStep !== "confirming") return;
+    const tick = () =>
+      setClearSeconds(clearSecondsLeft(clearDeadlineRef.current - Date.now()));
+    const interval = window.setInterval(tick, 250);
+    return () => window.clearInterval(interval);
+  }, [clearStep]);
+
+  // Focus: Cancel (the safe default) takes focus when the bar opens. When the bar closes with focus
+  // lost (Cancel, Escape, the timeout or Confirm removed the focused button), focus returns to the
+  // Clear button, but only once Clear is enabled again: it is disabled while a clear is in flight,
+  // and a disabled button cannot take focus. Until then the close is remembered.
+  useEffect(() => {
+    if (clearStep === "confirming") {
+      wasConfirmingRef.current = true;
+      cancelBtnRef.current?.focus();
+      return;
+    }
+    if (!wasConfirmingRef.current || clearing) return;
+    wasConfirmingRef.current = false;
+    const active = document.activeElement;
+    if (active === null || active === document.body) {
+      clearBtnRef.current?.focus();
+    }
+  }, [clearStep, clearing]);
+
   const onRequestClear = () => {
+    if (clearStep === "confirming") return;
+    clearDeadlineRef.current = Date.now() + CLEAR_CONFIRM_MS;
+    setClearSeconds(clearSecondsLeft(CLEAR_CONFIRM_MS));
     setClearStep((step) => nextClearStep(step, "request"));
+  };
+
+  const onStop = async (sessionId: number) => {
+    if (stoppingRef.current) return;
+    stoppingRef.current = true;
+    setStopping(true);
+    setStopFailed(false);
+    let failed = false;
+    try {
+      // A false result means the session already ended: silent. The end-of-session state event
+      // updates the face and status; nothing is changed locally.
+      await commands.chatStopConversation(sessionId);
+    } catch {
+      failed = true;
+    }
+    stoppingRef.current = false;
+    setStopping(false);
+    if (failed) setStopFailed(true);
   };
 
   const onCancelClear = () => {
@@ -381,6 +448,8 @@ export default function ChatWindow() {
 
   const face = avatarFace(view.state, view.end);
   const caption = captionFor(view.state, view.end);
+  const stopId = view.activeSession;
+  const showStop = stopVisible(face, stopId);
   // The globe's look: orb colour, app accent and the chat surface bucket (A3).
   const orbLook = useSyncExternalStore(
     subscribeChatOrbLook,
@@ -396,8 +465,8 @@ export default function ChatWindow() {
         { ...accentStyle(face), ...accentTextStyle(face) } as CSSProperties
       }
     >
-      <header className="chat-header">
-        <div className="chat-brand">
+      <header className="chat-header" data-tauri-drag-region>
+        <div className="chat-brand" data-tauri-drag-region="deep">
           <img
             data-testid="chat-brand-icon"
             src={voxIcon}
@@ -420,39 +489,88 @@ export default function ChatWindow() {
           {view.recording ? null : (
             <span className="chat-rec-off">{t("chat.recordingOff")}</span>
           )}
-          <span role="status" className="chat-clear-status">
-            {clearStep === "confirming" ? t("chat.clearPrompt") : ""}
-          </span>
-          {clearStep === "idle" ? (
-            <button
-              type="button"
-              className="chat-clear"
-              onClick={onRequestClear}
-              disabled={clearing}
+          <button
+            type="button"
+            ref={clearBtnRef}
+            className="chat-clear"
+            onClick={onRequestClear}
+            disabled={clearing}
+          >
+            {t("chat.clear")}
+          </button>
+          <button
+            type="button"
+            className="chat-hide"
+            data-testid="chat-hide"
+            aria-label={t("chat.hide")}
+            title={t("chat.hide")}
+            onClick={onHide}
+          >
+            <svg
+              aria-hidden="true"
+              focusable="false"
+              width="14"
+              height="14"
+              viewBox="0 0 14 14"
             >
-              {t("chat.clear")}
-            </button>
-          ) : (
-            <div className="chat-clear-confirm">
-              <button
-                type="button"
-                className="chat-clear chat-clear-danger"
-                onClick={onClear}
-                disabled={clearing}
-              >
-                {t("chat.clearConfirm")}
-              </button>
-              <button
-                type="button"
-                className="chat-clear"
-                onClick={onCancelClear}
-              >
-                {t("chat.clearCancel")}
-              </button>
-            </div>
-          )}
+              <path
+                d="M3 3l8 8M11 3l-8 8"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                fill="none"
+              />
+            </svg>
+          </button>
         </div>
       </header>
+      {/* Always present: the Clear question is written into this region when the bar opens, so the
+          announcement is made by a live region that already exists (not one inserted with its text). */}
+      <div
+        className="chat-sr-only"
+        role="status"
+        aria-live="polite"
+        data-testid="chat-clear-announce"
+      >
+        {clearStep === "confirming" ? t("chat.clearPrompt") : ""}
+      </div>
+      {clearStep === "confirming" ? (
+        <div
+          className="chat-clear-bar"
+          role="group"
+          aria-labelledby="chat-clear-question"
+        >
+          <div className="chat-clear-copy">
+            <p id="chat-clear-question" className="chat-clear-question">
+              {t("chat.clearPrompt")}
+            </p>
+            <span className="chat-clear-countdown" aria-hidden="true">
+              {t("chat.clearCountdown", { count: clearSeconds })}
+            </span>
+            <span className="chat-clear-track" aria-hidden="true">
+              <span className="chat-clear-fill" />
+            </span>
+          </div>
+          <div className="chat-clear-actions">
+            <button
+              type="button"
+              ref={cancelBtnRef}
+              className="chat-clear"
+              onClick={onCancelClear}
+            >
+              {t("chat.clearCancel")}
+            </button>
+            <button
+              type="button"
+              className="chat-clear chat-clear-danger"
+              onClick={onClear}
+              disabled={clearing}
+            >
+              {t("chat.clearConfirm")}
+            </button>
+          </div>
+        </div>
+      ) : null}
       <section className="chat-stage">
         <VoxAvatar face={face} look={orbLook} />
         <div className="chat-eq" aria-hidden="true">
@@ -462,17 +580,53 @@ export default function ChatWindow() {
           <span />
           <span />
         </div>
-        <p className="chat-pill" role="status">
-          <span className="chat-pill-dot" aria-hidden="true" />
-          <span className="chat-pill-text">{t(caption.key)}</span>
-          {caption.reasonKey ? (
-            <span className="chat-reason">{t(caption.reasonKey)}</span>
+        <div className="chat-status-row">
+          <p className="chat-pill" role="status">
+            <span className="chat-pill-dot" aria-hidden="true" />
+            <span className="chat-pill-text">{t(caption.key)}</span>
+            {caption.reasonKey ? (
+              <span className="chat-reason">{t(caption.reasonKey)}</span>
+            ) : null}
+          </p>
+          {showStop && stopId !== null ? (
+            <button
+              type="button"
+              className="chat-stop"
+              data-testid="chat-stop"
+              aria-label={t("chat.stopAria")}
+              title={t("chat.stopAria")}
+              disabled={stopping}
+              onClick={() => void onStop(stopId)}
+            >
+              <svg
+                aria-hidden="true"
+                focusable="false"
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+              >
+                <rect
+                  x="1"
+                  y="1"
+                  width="10"
+                  height="10"
+                  rx="1.5"
+                  fill="currentColor"
+                />
+              </svg>
+              <span>{t("chat.stop")}</span>
+            </button>
           ) : null}
-        </p>
+        </div>
       </section>
       {clearFailed ? (
         <p className="chat-error" role="alert">
           {t("chat.clearFailed")}
+        </p>
+      ) : null}
+      {stopFailed ? (
+        <p className="chat-error" role="alert">
+          {t("chat.stopFailed")}
         </p>
       ) : null}
       <div className="chat-body">

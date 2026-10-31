@@ -2093,7 +2093,8 @@ async changeConverseLatencyPanelSetting(enabled: boolean) : Promise<void> {
     await TAURI_INVOKE("change_converse_latency_panel_setting", { enabled });
 },
 /**
- * Authoritative snapshot of the transcript, state and recording flag (brief lock, no wait).
+ * Authoritative snapshot of the transcript, state, recording flag and the session id the window
+ * displays (`activeSession`, None when idle). Brief locks only, no wait.
  */
 async getChatSnapshot() : Promise<ChatSnapshot> {
     return await TAURI_INVOKE("get_chat_snapshot");
@@ -2161,6 +2162,23 @@ async chatHideWindow() : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Stops the conversation session `session_id`, but only while it is still the running one
+ * (compare-and-stop). This is the same primitive an orb click uses on an active session
+ * (`ActivationDecision::RequestStopIf` -> `ConverseController::stop_if`).
+ *  
+ * Effect: a Running session moves to Draining and its cancel signal is sent. The session task
+ * then runs its normal finalizer and ends as `cancelled` (the state goes to idle and the
+ * existing system end line is appended). An agent action in flight is ended with the session:
+ * the loop releases its agent slot, and the slot's Drop cancels the live agent run once.
+ *  
+ * Returns false and changes nothing when the id is stale or was never the current session, the
+ * session is idle, still starting, or already draining. No dictation fallback and no tray path.
+ * `converse_stop` is untouched. Only the chat window may call it (live gate `CHAT_COMMANDS`).
+ */
+async chatStopConversation(sessionId: number) : Promise<boolean> {
+    return await TAURI_INVOKE("chat_stop_conversation", { sessionId });
 },
 /**
  * The orb pressed: starts the gesture with id `id` (the page counts its presses).
@@ -2965,7 +2983,12 @@ end: string | null;
 /**
  * Whether new lines are currently recorded.
  */
-recording: boolean }
+recording: boolean; 
+/**
+ * Id of the session the window displays (None when idle). The log has no access to the
+ * session registry, so `get_chat_snapshot` fills it in; `snapshot()` leaves it None.
+ */
+activeSession: number | null }
 /**
  * Conversation window theme (UI enterprise, DESIGN Revision 3, A4). `Dark` is today's look.
  */

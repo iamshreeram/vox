@@ -37,6 +37,8 @@ mod chat_opacity;
 mod chat_presentation;
 #[cfg(test)]
 mod chat_presentation_tests;
+#[cfg(test)]
+mod chat_stop_gate_tests;
 mod chat_surface;
 #[cfg(test)]
 mod chat_surface_tests;
@@ -1435,6 +1437,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::chat::change_converse_chat_open_on_start_setting,
             commands::chat::toggle_chat_window_command,
             commands::chat::chat_hide_window,
+            commands::chat::chat_stop_conversation,
             commands::orb::orb_pointer_down,
             commands::orb::orb_activate,
             commands::orb::orb_menu,

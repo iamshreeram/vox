@@ -418,7 +418,7 @@ test.describe("Conversation window: Clear and command allow-list", () => {
     await expect(bubbles(page)).toHaveText(["still here"]);
   });
 
-  test("the page calls no command other than get_chat_snapshot, clear_chat_log, send_chat_message and chat_hide_window", async ({
+  test("the page calls no command other than get_chat_snapshot, clear_chat_log, send_chat_message, chat_hide_window and chat_stop_conversation", async ({
     page,
   }) => {
     await openChat(page, { snapshots: [snapshot(0, [])], clearFails: false });
@@ -435,6 +435,7 @@ test.describe("Conversation window: Clear and command allow-list", () => {
         name === CLEAR_COMMAND ||
         name === SEND_COMMAND ||
         name === HIDE_COMMAND ||
+        name === "chat_stop_conversation" ||
         name.startsWith(ALLOWED_PREFIX);
       expect(allowed, `unexpected command ${name}`).toBe(true);
     }
@@ -552,12 +553,17 @@ test.describe("Conversation window: enterprise look and state colours", () => {
     const icon = page.getByTestId("chat-brand-icon");
     await expect(icon).toBeVisible();
     await expect(icon).toHaveAttribute("alt", "");
-    const loaded = await icon.evaluate(
-      (el) =>
-        (el as HTMLImageElement).complete &&
-        (el as HTMLImageElement).naturalWidth > 0,
-    );
-    expect(loaded).toBe(true);
+    // Re-pointed (T1b): polls until the image has decoded instead of reading it once, which raced
+    // the load under parallel workers. Same assertion (complete and naturalWidth > 0).
+    await expect
+      .poll(() =>
+        icon.evaluate(
+          (el) =>
+            (el as HTMLImageElement).complete &&
+            (el as HTMLImageElement).naturalWidth > 0,
+        ),
+      )
+      .toBe(true);
     await expect(page.getByTestId("chat-brand-name")).toHaveText("Vox");
     await expect(page.getByTestId("chat-brand-sub")).toHaveText("Conversation");
   });

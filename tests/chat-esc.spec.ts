@@ -3,7 +3,8 @@ import { installTauriMock } from "./fixtures/tauriMock";
 
 /*
  * Escape hides the standalone conversation window (DESIGN D1b). The page calls only
- * get_chat_snapshot, clear_chat_log, send_chat_message, chat_hide_window (plus the event plugin).
+ * get_chat_snapshot, clear_chat_log, send_chat_message, chat_hide_window, chat_stop_conversation
+ * (plus the event plugin).
  * Same mock-harness pattern as chat-window.spec.ts; no clock.pauseAt (real timers, real Esc).
  */
 
@@ -119,6 +120,7 @@ test.describe("Conversation window: Escape hides the window", () => {
         name === CLEAR_COMMAND ||
         name === SEND_COMMAND ||
         name === HIDE_COMMAND ||
+        name === "chat_stop_conversation" ||
         name.startsWith(ALLOWED_PREFIX);
       expect(allowed, `unexpected command ${name}`).toBe(true);
     }

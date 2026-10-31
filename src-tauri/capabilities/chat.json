@@ -3,5 +3,9 @@
   "identifier": "chat",
   "description": "Conversation window: event listening only (DESIGN-CHAT A3). Its app commands are limited by the invoke allow-list in lib.rs (A8).",
   "windows": ["chat"],
-  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging"
+  ]
 }

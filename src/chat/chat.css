@@ -126,9 +126,13 @@ body {
   border-radius: 999px;
 }
 
+/* Header and confirm-bar buttons: 36 px minimum target (T1b). */
 .chat-clear {
   flex: none;
-  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 4px 14px;
   font: inherit;
   font-size: 13px;
   font-weight: 500;
@@ -137,6 +141,26 @@ body {
   border: 1px solid var(--chat-border);
   border-radius: 999px;
   cursor: pointer;
+}
+
+/* Hide: icon-only close button, 36 x 36 px. Title and aria-label carry the name. */
+.chat-hide {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--chat-text);
+  background-color: var(--chat-chip);
+  border: 1px solid var(--chat-border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.chat-hide:hover {
+  border-color: var(--chat-accent);
 }
 
 .chat-clear:hover:not(:disabled) {
@@ -154,30 +178,76 @@ body {
   outline-offset: 2px;
 }
 
-/* Clear confirmation (U15a): Confirm clear is destructive, Cancel is the quiet default. */
-.chat-clear-confirm {
+/* Clear confirmation bar (T1b, U3): its own row directly below the header, never over the brand.
+   Wraps at the 360 px minimum so the question, the countdown and both buttons stay inside the window.
+   Confirm clear is destructive; Cancel is the quiet default and takes focus when the bar opens. */
+.chat-clear-bar {
+  flex: none;
   display: flex;
-  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  min-width: 0;
+  padding: 8px 14px;
+  background-color: var(--chat-chip-bg);
+  border-bottom: 1px solid var(--chat-border);
+}
+
+.chat-clear-copy {
+  flex: 1 1 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.chat-clear-question {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--chat-text);
+  overflow-wrap: anywhere;
+}
+
+.chat-clear-countdown {
+  font-size: 12px;
+  color: var(--chat-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Thin progress track for the 4 s window. Reduced motion drops it (text countdown stays). */
+.chat-clear-track {
+  display: block;
+  height: 3px;
+  margin-top: 4px;
+  overflow: hidden;
+  background-color: var(--chat-border);
+  border-radius: 2px;
+}
+
+.chat-clear-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-color: var(--chat-accent);
+  transform-origin: left center;
+  /* Matches CLEAR_CONFIRM_MS (4000 ms in src/chat/clearConfirm.ts). */
+  animation: chat-clear-drain 4s linear forwards;
+}
+
+.chat-clear-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .chat-clear-danger {
   color: var(--chat-error-text);
   border-color: var(--chat-error-border);
-}
-
-.chat-clear-status {
-  font-size: 12px;
-  color: var(--chat-muted);
-}
-
-/* Empty live region: kept in the accessibility tree, invisible and not taking space. */
-.chat-clear-status:empty {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
 }
 
 /* Stage: orb, equaliser, status pill ------------------------------------ */
@@ -207,6 +277,40 @@ body {
   background-color: var(--chat-accent);
   opacity: 0.25;
   transform: scaleY(0.25);
+}
+
+/* Status pill and the Stop control share one row under the equaliser. */
+.chat-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* Stop: square icon plus label, 36 px minimum target, shown only while a session is busy (T1b). */
+.chat-stop {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 4px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--chat-text);
+  background-color: var(--chat-chip);
+  border: 1px solid var(--chat-accent);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.chat-stop:disabled {
+  color: var(--chat-muted);
+  cursor: default;
 }
 
 .chat-pill {
@@ -433,6 +537,7 @@ body {
   flex: none;
   padding: 8px 14px;
   font-size: 12px;
+  line-height: 1.4;
   text-align: center;
   color: var(--chat-muted);
   background-color: var(--chat-chip-bg);
@@ -509,7 +614,7 @@ body {
   color: var(--chat-muted);
   background-color: var(--chat-disabled-bg);
   border-color: var(--chat-muted);
-  border-style: dashed;
+  border-style: solid;
   cursor: default;
 }
 
@@ -554,6 +659,20 @@ body {
     transition: none !important;
     scroll-behavior: auto !important;
   }
+
+  /* No drain track under reduced motion: the countdown text alone shows the time left. */
+  .chat-clear-track {
+    display: none;
+  }
+}
+
+@keyframes chat-clear-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
 }
 
 @keyframes chat-eq {
@@ -564,4 +683,14 @@ body {
   50% {
     transform: scaleY(1);
   }
+}
+
+/* Screen-reader-only live text (the Clear announcement): clipped, takes no space, stays in the tree. */
+.chat-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }

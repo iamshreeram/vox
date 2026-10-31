@@ -12,6 +12,7 @@ const ALLOWED_COMMANDS = new Set([
   "clearChatLog",
   "sendChatMessage",
   "chatHideWindow",
+  "chatStopConversation",
 ]);
 
 function sourceFiles(dir: string): string[] {
@@ -92,7 +93,7 @@ describe("src/chat static safety scan", () => {
     expect(offenders(/\bhref\s*:/)).toEqual([]);
   });
 
-  it("calls only the four allowed backend commands through bindings", () => {
+  it("calls only the five allowed backend commands through bindings", () => {
     const called = new Set<string>();
     for (const file of TEXT) {
       for (const match of file.src.matchAll(/\bcommands\.(\w+)\s*\(/g)) {

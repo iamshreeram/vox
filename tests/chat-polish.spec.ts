@@ -176,13 +176,13 @@ test.describe("Conversation window: inline Clear confirmation (U15a)", () => {
 });
 
 test.describe("Conversation window: legibility and layout (U10, U13, U15, U16)", () => {
-  test("the disabled Send button is still legible and shows a dashed outline, not only a faded fill", async ({
+  test("the disabled Send button is still legible and shows a solid muted outline, not a dashed one", async ({
     page,
   }) => {
     await openChat(page, { snapshots: [snapshot(0, [])] });
     await expect(sendButton(page)).toBeDisabled();
     const send = await colours(sendButton(page));
-    expect(send.borderStyle).toBe("dashed");
+    expect(send.borderStyle).toBe("solid");
     const ratio = contrastRatio(toHex(send.color), toHex(send.background));
     expect(ratio, "disabled Send label contrast").toBeGreaterThanOrEqual(3);
   });
