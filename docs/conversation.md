@@ -86,6 +86,20 @@ See [ACP agent](acp-agent.md) for how the agent is set up.
 - **Settings > Agents > "Hand open-ended requests to the agent in conversations"** turned on.
 - A reply backend set up. Vox needs it to speak the answer.
 
+### Looking things up (news, weather, prices, scores)
+
+Vox does not search the web by itself. The model provider's built-in web
+search is not used, because some gateways refuse it.
+
+- **With the agent set up** (the items under "What you need" above), a request
+  for current information, such as news, weather, prices, scores or the latest
+  version of something, is handed to your agent.
+- **Without the agent**, Vox says it can't look that up right now. It may then
+  share what it already knows and says that this may be out of date. It does
+  not make up current facts or pretend it searched. The same happens in an
+  answer-only conversation, where the agent hand-off is switched off.
+- General knowledge questions are still answered directly in both cases.
+
 ### How it works
 
 1. You make a request. Vox says it is on it.
