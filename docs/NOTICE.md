@@ -51,3 +51,22 @@ Vox does not ship the models listed here. They are downloaded only when you choo
 - **Licence:** As stated in the published README: code under Apache 2.0, models under CC BY 4.0 (inherited from kyutai/pocket-tts). The Apache 2.0 licence text is at https://www.apache.org/licenses/LICENSE-2.0. The file itself has no licence header and no copyright line.
 - **Links:** https://huggingface.co/KevinAHM/pocket-tts-onnx
 - **Attribution:** Reference runtime `pocket_tts_onnx.py`, as published by KevinAHM. Vox used it to check its own Tamil inference output. The Rust code in Vox is an independent implementation of the published algorithm.
+
+## IndicConformer 600M multilingual (`ai4bharat/indic-conformer-600m-multilingual`)
+
+- **Project:** IndicConformer 600M multilingual speech recognition model, by AI4Bharat (https://huggingface.co/ai4bharat/indic-conformer-600m-multilingual)
+- **Licence:** MIT (https://opensource.org/license/mit)
+- **Links:** https://huggingface.co/ai4bharat/indic-conformer-600m-multilingual
+- **Attribution:** IndicConformer 600M multilingual, AI4Bharat. Licensed under the MIT licence. Vox uses its Tamil head for Tamil speech recognition; the other language heads are not used.
+
+## Community int8 ONNX repackage of IndicConformer 600M (`yashwork-byte/indic-conformer-600m-int8-onnx`)
+
+- **Project:** An int8 ONNX export of the AI4Bharat IndicConformer 600M multilingual weights, published by yashwork-byte (https://huggingface.co/yashwork-byte/indic-conformer-600m-int8-onnx), pinned to revision `9c590ef62f537c30de47df62e525539938549f13`
+- **Licence:** MIT (https://opensource.org/license/mit)
+- **Links:** https://huggingface.co/yashwork-byte/indic-conformer-600m-int8-onnx
+- **Attribution:** Community int8 ONNX repackage of IndicConformer 600M multilingual, by yashwork-byte. Licensed under the MIT licence. The four files are checked against pinned sizes and SHA-256 checksums by `scripts/download_indic_stt.sh`. The repackage is not an official AI4Bharat release.
+
+## 80-band mel filterbank for IndicConformer (`src-tauri/src/managers/indic_stt_mel.rs`)
+
+- **Source:** The 80-band mel filterbank table in `src-tauri/src/managers/indic_stt_mel.rs` is taken from the IndicConformer model's own preprocessor, so it carries the same MIT licence as the model above.
+- **Attribution:** Filterbank values from the IndicConformer 600M multilingual preprocessor, AI4Bharat. Licensed under the MIT licence.
