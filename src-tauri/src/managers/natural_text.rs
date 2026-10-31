@@ -294,3 +294,45 @@ fn ordinal(words: &str) -> String {
     };
     format!("{head}{last}")
 }
+
+/// Speech text policy for Tamil (DESIGN R2-B). Pure: no markup stripping beyond this rule set.
+///
+/// Keeps Tamil-block chars (letters, marks including the pulli, Tamil digits), ASCII digits,
+/// the punctuation `. , ! ? ; :` and the ellipsis and apostrophe. Every other char is removed,
+/// so Latin letters, emoji, markdown and symbols are dropped. Whitespace runs (including
+/// newlines, tabs and nbsp) become one space and the result is trimmed. Digits are never
+/// spelled out as words.
+pub fn prepare_tamil_for_speech(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut pending_space = false;
+    for c in text.chars() {
+        if c.is_whitespace() {
+            pending_space = true;
+        } else if keep_for_tamil(c) {
+            if pending_space && !out.is_empty() {
+                out.push(' ');
+            }
+            pending_space = false;
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Chars that `prepare_tamil_for_speech` keeps.
+#[allow(dead_code)] // used by prepare_tamil_for_speech only; kept out of the public API
+fn keep_for_tamil(c: char) -> bool {
+    crate::managers::natural_chunk::is_tamil_char(c)
+        || c.is_ascii_digit()
+        || matches!(c, '.' | ',' | '!' | '?' | ';' | ':' | '\u{2026}' | '\'')
+}
+
+/// True when `prepare_tamil_for_speech(text)` still holds a Tamil letter or any digit (ASCII
+/// or Tamil), i.e. something the Tamil voice can say.
+pub fn has_speakable_tamil(text: &str) -> bool {
+    prepare_tamil_for_speech(text).chars().any(|c| {
+        crate::managers::natural_chunk::is_tamil_letter(c)
+            || c.is_ascii_digit()
+            || ('\u{0BE6}'..='\u{0BEF}').contains(&c)
+    })
+}

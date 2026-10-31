@@ -83,6 +83,59 @@ source and result of every file. Proxy addresses and signed links are never logg
 After a run, quit Vox from the tray and open it again. The tests for the script are
 in `scripts/test-setup-voice-models.sh`.
 
+## Tamil voice
+
+Tamil text is spoken by a local neural voice (Pocket TTS Tamil). English is
+unchanged: English replies still use the engine you chose above. The Tamil voice
+is a separate switch and applies only when its files are installed.
+
+### Installing the Tamil voice
+
+Run the download script from the repository root:
+
+```sh
+./scripts/download_tamil_tts.sh
+```
+
+The script downloads nine files, about 111 MB, from Hugging Face. It checks each
+file against its published size and SHA-256 checksum, skips files that already
+verify, and can be run again if a download fails. It puts the files in
+`~/Library/Application Support/com.iamshreeram.vox/tts_models/pocket-tts-tamil-int4`.
+
+If your network uses a proxy that blocks large downloads, download the files in a
+browser from https://huggingface.co/prasadvittaldev/pocket-tts-tamil-onnx-int4 and
+place them in that folder. The file names must match.
+
+### The setting
+
+Open Settings > Models, Spoken replies. The row **Tamil voice** has a switch and
+a status line:
+
+- **Installed**: the files are present and the voice is ready.
+- **Not installed (missing files: N)**: run the download script.
+- **Incomplete download, run the script again**: a file has the wrong size.
+- **Tamil voice problem**, with the error: the voice could not start.
+
+The switch is on by default. Turning it off makes Tamil text use the system
+voice or the chosen engine, as before. The change applies without a restart.
+
+### Limits
+
+- **One voice.** Vox uses one Tamil voice (Geetha).
+- **Digits and English words inside Tamil text are not spoken.** A Tamil
+  sentence with a number in it is spoken without the number.
+- **Mixed replies.** A full English sentence inside a Tamil reply is skipped, not
+  spoken. Tamil sentences are spoken by the Tamil voice.
+- **Offline.** After the files are installed, the Tamil voice needs no network.
+- **Speed.** On CPU the real-time factor is about 0.25: generating a sentence takes
+  about a quarter of the length of its audio.
+
+### Credit
+
+The Tamil voice is Pocket TTS Tamil by Prasad Vittaldev, based on Kyutai, under
+CC BY 4.0. The credit and licence links are in
+[Third-party notices](NOTICE.md).
+
 ## Privacy
 
 - Phonon runs on this computer. The text that is spoken is not sent anywhere

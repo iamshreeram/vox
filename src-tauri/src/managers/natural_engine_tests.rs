@@ -184,6 +184,7 @@ fn test_config() -> NaturalConfig {
         tick: ms(20),
         max_pending_chunks: NATURAL_MAX_PENDING_CHUNKS,
         flush_budget: ms(180),
+        ..NaturalConfig::default()
     }
 }
 

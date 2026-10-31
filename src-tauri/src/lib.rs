@@ -661,6 +661,29 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         ));
         app_handle.manage(commands::phonon_voice::PhononHealth(phonon_health.clone()));
 
+        // Tamil voice: a peer of Phonon with its own health, under the same `tts_models` root.
+        // The engine loads lazily on the first Tamil burst (nothing is read here). Its sink reads
+        // the same output device; `enabled` reads the live setting on every call.
+        let tamil_root = phonon_app_data.join("tts_models");
+        let tamil_device_handle = app_handle.clone();
+        let tamil_factory = Arc::new(
+            managers::natural_sink::CpalStreamFactory::with_device_source(Arc::new(move || {
+                get_settings(&tamil_device_handle).selected_output_device
+            })),
+        );
+        let tamil_settings_handle = app_handle.clone();
+        let tamil_route = managers::natural_tamil::build_tamil_route(
+            &tamil_root,
+            tamil_factory,
+            Arc::new(move || get_settings(&tamil_settings_handle).tts_tamil_enabled),
+        );
+        app_handle.manage(commands::phonon_voice::TamilHealth(
+            tamil_route.health.clone(),
+        ));
+        app_handle.manage(commands::phonon_voice::TamilModelDir(
+            managers::natural_tamil::tamil_model_dir(&tamil_root),
+        ));
+
         let choice_handle = app_handle.clone();
         let ready_coordinator = natural_coordinator.clone();
         let phonon_ready_coordinator = phonon_coordinator.clone();
@@ -689,7 +712,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                     phonon_ready_coordinator.state() == managers::natural_model::ModelState::Ready
                 }),
             },
-        );
+        )
+        .with_tamil_route(tamil_route);
         Arc::new(managers::tts::TtsManager::new(Box::new(router)))
     };
     #[cfg(not(target_os = "macos"))]
@@ -1256,6 +1280,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_tts_rate_setting,
             shortcut::change_tts_engine_setting,
             shortcut::change_tts_natural_voice_setting,
+            shortcut::change_tts_tamil_enabled_setting,
             commands::natural_voice::natural_voice_status,
             commands::natural_voice::natural_voice_download,
             commands::natural_voice::natural_voice_cancel_download,
@@ -1263,6 +1288,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::natural_voice::natural_voice_retry,
             commands::natural_voice::list_natural_voices,
             commands::phonon_voice::phonon_voice_status,
+            commands::phonon_voice::tamil_voice_status,
             commands::phonon_voice::phonon_voice_install,
             commands::phonon_voice::phonon_voice_import_folder,
             commands::phonon_voice::phonon_voice_cancel,

@@ -575,6 +575,17 @@ async changeTtsNaturalVoiceSetting(voice: string) : Promise<Result<null, string>
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Stores whether Tamil text is spoken with the Tamil neural voice when its pack is installed.
+ */
+async changeTtsTamilEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_tamil_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async naturalVoiceStatus() : Promise<Result<NaturalVoiceStatus, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("natural_voice_status") };
@@ -640,6 +651,9 @@ async phononVoiceStatus() : Promise<Result<NaturalVoiceStatus, string>> {
  * Starts the Phonon download in the background and returns at once. Progress and the result
  * arrive as events.
  */
+async tamilVoiceStatus() : Promise<TamilVoiceStatus> {
+    return await TAURI_INVOKE("tamil_voice_status");
+},
 async phononVoiceInstall() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("phonon_voice_install") };
@@ -2511,6 +2525,11 @@ tts_engine?: TtsEngine;
  */
 tts_natural_voice?: string; 
 /**
+ * Speak Tamil text with the Tamil neural voice when its pack is installed. A missing key
+ * means on.
+ */
+tts_tamil_enabled?: boolean; 
+/**
  * Speech composer (spoken-reply summarizer). See docs/spoken-replies.md.
  */
 tts_composer_mode?: TtsComposerMode; tts_composer_provider_id?: string; tts_composer_model?: string; tts_composer_command_path?: string; tts_composer_command_args?: string; tts_composer_prompt_flag?: string; 
@@ -3557,6 +3576,38 @@ export type StreamTextEvent = { committed: string; tentative: string }
  * Semantic kind of "working" phase, used to localize the spinner label.
  */
 export type StreamWorkKind = "transcribing" | "polishing"
+/**
+ * Status of the Tamil voice for the settings row (the `tamil_voice_status` command).
+ */
+export type TamilVoiceStatus = { 
+/**
+ * The nine pack files are present with their exact sizes.
+ */
+installed: boolean; 
+/**
+ * Installed and the Tamil engine has not failed.
+ */
+ready: boolean; 
+/**
+ * The `tts_tamil_enabled` setting.
+ */
+enabled: boolean; 
+/**
+ * The pack folder.
+ */
+dir: string; 
+/**
+ * File names absent from the pack (empty when installed).
+ */
+missing: string[]; 
+/**
+ * File names present with the wrong size (empty when installed).
+ */
+wrong_size: string[]; 
+/**
+ * User-safe message of the last engine failure, or none.
+ */
+engine_error: string | null }
 /**
  * UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
  * and `Dark` force one of the two palettes Vox already ships. `Aurora` is a

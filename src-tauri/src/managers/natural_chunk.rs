@@ -366,3 +366,137 @@ fn halve(text: &str) -> Option<(&str, &str)> {
     let (left, right) = (left.trim(), right.trim());
     (!left.is_empty() && !right.is_empty()).then_some((left, right))
 }
+
+/// Smallest `max_chars` the Tamil splitter uses; smaller requests are raised to this value
+/// so that every cut makes progress.
+const TAMIL_MIN_CHUNK_CHARS: usize = 2;
+/// Tamil pulli (virama, U+0BCD): a cut directly after it would separate a consonant from the
+/// consonant it joins.
+const TAMIL_PULLI: char = '\u{0BCD}';
+
+/// True for any char of the Tamil Unicode block U+0B80..=U+0BFF (letters, marks, digits and
+/// signs).
+pub fn is_tamil_char(c: char) -> bool {
+    ('\u{0B80}'..='\u{0BFF}').contains(&c)
+}
+
+/// True for Tamil letters: independent vowels and consonants (U+0B85..=U+0BB9) and OM
+/// (U+0BD0). Marks, digits and signs are not letters.
+pub fn is_tamil_letter(c: char) -> bool {
+    matches!(c, '\u{0B85}'..='\u{0BB9}' | '\u{0BD0}')
+}
+
+/// True for Tamil combining marks: anusvara, vowel signs, pulli and the AU length mark
+/// (U+0B82 U+0BBE..=U+0BCD U+0BD7). Aytham (U+0B83) is a letter, not a mark, so it is excluded.
+fn is_tamil_mark(c: char) -> bool {
+    matches!(c, '\u{0B82}' | '\u{0BBE}'..='\u{0BCD}' | '\u{0BD7}')
+}
+
+/// Language gate for Tamil: at least 60% of the alphabetic chars (Tamil combining marks
+/// count too) are in the Tamil block. Text with no such char is `false`.
+pub fn is_mostly_tamil(text: &str) -> bool {
+    let (counted, tamil) = text
+        .chars()
+        .filter(|c| c.is_alphabetic() || is_tamil_mark(*c))
+        .fold((0usize, 0usize), |(n, t), c| {
+            (n + 1, t + usize::from(is_tamil_char(c)))
+        });
+    counted > 0 && tamil * 5 >= counted * 3
+}
+
+/// Splits Tamil text into synthesis chunks of at most `max_chars` chars (counted in chars).
+///
+/// Contract (DESIGN R2-C):
+/// * Whitespace is collapsed first; pieces are trimmed and empty pieces are dropped.
+/// * Sentences end after `.`, `!`, `?` or `\u{2026}` followed by whitespace or the end of the
+///   text, so `3.5` and an unspaced `\u{0BAE}\u{0BCD}.` do not split. There is no 48-char
+///   first-chunk cap.
+/// * A piece longer than `max_chars` is cut at the LAST whitespace within `max_chars`. Without
+///   whitespace the cut moves to the last grapheme-safe boundary: never directly before a
+///   Tamil combining mark and never directly after a pulli. If no such boundary is within
+///   `max_chars`, the cut moves to the next safe boundary (a cluster is never split), so a
+///   piece may exceed `max_chars` only in that case.
+/// * `max_chars` below 2 is treated as 2, so every cut makes progress.
+/// * Pieces never start with a Tamil combining mark; leading orphan marks are dropped.
+pub fn split_tamil_for_synthesis(text: &str, max_chars: usize) -> Vec<String> {
+    let max_chars = max_chars.max(TAMIL_MIN_CHUNK_CHARS);
+    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut pieces = Vec::new();
+    for sentence in tamil_sentences(&collapsed) {
+        let chars: Vec<char> = sentence.chars().collect();
+        split_long_tamil_piece(&chars, max_chars, &mut pieces);
+    }
+    pieces
+}
+
+/// Groups the single-spaced words of `collapsed` into sentences ending on `. ! ? ...`.
+fn tamil_sentences(collapsed: &str) -> Vec<String> {
+    let mut sentences = Vec::new();
+    let mut current: Vec<&str> = Vec::new();
+    for word in collapsed.split(' ').filter(|w| !w.is_empty()) {
+        current.push(word);
+        if word.ends_with(['.', '!', '?', '\u{2026}']) {
+            sentences.push(current.join(" "));
+            current.clear();
+        }
+    }
+    if !current.is_empty() {
+        sentences.push(current.join(" "));
+    }
+    sentences
+}
+
+/// Appends the pieces of one sentence (already single-spaced) to `out`, cutting as documented
+/// on `split_tamil_for_synthesis`. Each loop iteration removes at least one char.
+fn split_long_tamil_piece(piece: &[char], max_chars: usize, out: &mut Vec<String>) {
+    let mut rest = piece;
+    loop {
+        rest = skip_leading_tamil_noise(rest);
+        if rest.is_empty() {
+            return;
+        }
+        if rest.len() <= max_chars {
+            out.push(rest.iter().collect());
+            return;
+        }
+        let cut = tamil_space_cut(rest, max_chars)
+            .or_else(|| tamil_grapheme_cut(rest, max_chars))
+            .unwrap_or(rest.len());
+        let head: String = rest[..cut].iter().collect();
+        let head = head.trim_end();
+        if !head.is_empty() {
+            out.push(head.to_string());
+        }
+        rest = &rest[cut..];
+    }
+}
+
+/// Drops leading whitespace and combining marks (they cannot start a chunk).
+fn skip_leading_tamil_noise(mut rest: &[char]) -> &[char] {
+    while let Some((first, tail)) = rest.split_first() {
+        if first.is_whitespace() || is_tamil_mark(*first) {
+            rest = tail;
+        } else {
+            break;
+        }
+    }
+    rest
+}
+
+/// Index of the last whitespace in `rest[1..=max_chars]`, the cut point before it.
+fn tamil_space_cut(rest: &[char], max_chars: usize) -> Option<usize> {
+    (1..=max_chars.min(rest.len() - 1))
+        .rev()
+        .find(|&k| rest[k].is_whitespace())
+}
+
+/// Grapheme-safe cut index: the largest `p` in `1..=max_chars` that is safe, otherwise the
+/// smallest safe `p` above `max_chars`. A cut at `p` is safe when `rest[p]` is not a Tamil
+/// combining mark and `rest[p - 1]` is not a pulli.
+fn tamil_grapheme_cut(rest: &[char], max_chars: usize) -> Option<usize> {
+    let safe = |p: usize| !is_tamil_mark(rest[p]) && rest[p - 1] != TAMIL_PULLI;
+    (1..=max_chars)
+        .rev()
+        .find(|&p| safe(p))
+        .or_else(|| (max_chars + 1..rest.len()).find(|&p| safe(p)))
+}

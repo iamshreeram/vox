@@ -8293,6 +8293,7 @@ dependencies = [
  "tokio",
  "transcribe-cpp",
  "transcribe-rs",
+ "unicode_categories",
  "url",
  "vad-rs",
  "webview2-com",
