@@ -43,6 +43,13 @@ conversation ends. The role is kept apart from the recent exchanges, so it
 does not fall out of context after a few turns. Vox adds no topic or role
 filter of its own. The reply model's own rules still apply.
 
+- **Stories, quizzes and lessons are not roles.** "Tell me a story", "quiz me"
+  or "teach me about volcanoes" are ordinary answers. A story is told from
+  start to finish without questions. A quiz asks one question at a time, keeps
+  the score and does not repeat a question. Nothing stays switched on
+  afterwards, so the next thing you say gets a normal reply. Ask for a role
+  ("act like a quiz host") only when you want one that lasts.
+
 - **Start a task in the same breath.** "Act like a teacher teaching computers
   to a six year old, and start the lesson" confirms the role, then begins the
   lesson. A role with no task is only confirmed; Vox does not start talking.
