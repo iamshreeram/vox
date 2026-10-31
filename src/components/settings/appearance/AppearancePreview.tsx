@@ -67,7 +67,7 @@ export const AppearancePreview: React.FC = () => {
               aria-hidden="true"
               data-testid="appearance-preview-orb"
               data-ring={orbRing}
-              className="relative h-12 w-12 shrink-0 overflow-hidden"
+              className="relative h-12 w-12 shrink-0"
             >
               <span className="absolute left-1/2 top-1/2 block -translate-x-1/2 -translate-y-1/2 scale-[0.325]">
                 <VoxAvatar face="idle" look={avatarLook} />
