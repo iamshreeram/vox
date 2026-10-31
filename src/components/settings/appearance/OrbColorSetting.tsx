@@ -4,6 +4,7 @@ import { Check } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { SettingContainer } from "../../ui/SettingContainer";
+import { appearanceBucket, usePrefersDark } from "./appearanceBucket";
 import {
   effectiveOrbAccent,
   nextRadioIndex,
@@ -15,9 +16,9 @@ import {
   type OrbChoice,
 } from "./appearanceModel";
 import {
-  OUTLINE_ROLE,
   OUTLINE_STROKE,
   orbSwatchSpec,
+  outlineRole,
   sphereGradientId,
   type OrbSwatchSpec,
 } from "./orbSwatchModel";
@@ -32,7 +33,10 @@ interface OrbColorSettingProps {
  * state colours in quarters; Follow app is a ring in the app accent. Each instance has its own
  * gradient id (useId), because several swatches live in one document.
  */
-const OrbSwatch: React.FC<{ spec: OrbSwatchSpec }> = ({ spec }) => {
+const OrbSwatch: React.FC<{ spec: OrbSwatchSpec; ring: string }> = ({
+  spec,
+  ring,
+}) => {
   const gradientId = sphereGradientId(useId());
   const size = 28;
   const centre = size / 2;
@@ -47,7 +51,7 @@ const OrbSwatch: React.FC<{ spec: OrbSwatchSpec }> = ({ spec }) => {
       r={r}
       fill="none"
       strokeWidth={OUTLINE_STROKE}
-      style={{ stroke: OUTLINE_ROLE }}
+      style={{ stroke: ring }}
     />
   );
 
@@ -106,7 +110,7 @@ const OrbSwatch: React.FC<{ spec: OrbSwatchSpec }> = ({ spec }) => {
         r={radius - 2}
         fill="none"
         strokeWidth={3}
-        style={{ stroke: OUTLINE_ROLE }}
+        style={{ stroke: ring }}
       />
     </svg>
   );
@@ -124,6 +128,9 @@ export const OrbColorSetting: React.FC<OrbColorSettingProps> = ({
   const { t } = useTranslation();
   const { settings } = useSettings();
   const changeOrbAccent = useSettingsStore((state) => state.changeOrbAccent);
+  // The page's bucket decides the app ring colour (A7): the same rule the preview uses.
+  const bucket = appearanceBucket(settings, usePrefersDark());
+  const ring = outlineRole(bucket);
   const [failed, setFailed] = useState(false);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -164,7 +171,7 @@ export const OrbColorSetting: React.FC<OrbColorSettingProps> = ({
           {ORB_CHOICES.map((choice, index) => {
             const isSelected = index === selected;
             const name = t(orbChoiceNameKey(choice));
-            const spec = orbSwatchSpec(choice);
+            const spec = orbSwatchSpec(choice, bucket);
             return (
               <button
                 key={orbChoiceId(choice)}
@@ -180,18 +187,21 @@ export const OrbColorSetting: React.FC<OrbColorSettingProps> = ({
                 data-orb-id={orbChoiceId(choice)}
                 onClick={() => void choose(choice)}
                 onKeyDown={(event) => onKeyDown(event, index)}
+                style={
+                  isSelected
+                    ? ({ "--tw-ring-color": ring } as React.CSSProperties)
+                    : undefined
+                }
                 className={[
                   "relative flex h-10 w-10 items-center justify-center rounded-full cursor-pointer motion-reduce:transition-none",
                   // Two-tone focus ring, as the accent swatches: the outer ring is the global
                   // --focus-ring, the inner ring the on-accent colour.
                   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--focus-ring)",
                   "focus-visible:inset-ring-2 focus-visible:inset-ring-(--color-on-accent)",
-                  isSelected
-                    ? "ring-2 ring-offset-2 ring-(--color-accent-text)"
-                    : "",
+                  isSelected ? "ring-2 ring-offset-2" : "",
                 ].join(" ")}
               >
-                <OrbSwatch spec={spec} />
+                <OrbSwatch spec={spec} ring={ring} />
                 {isSelected ? (
                   <Check
                     data-orb-check=""

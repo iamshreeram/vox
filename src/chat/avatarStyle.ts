@@ -2,7 +2,7 @@
 // face and the look into the CSS custom properties the avatar's <svg> sets inline, so the orb page,
 // the conversation window and the Appearance preview paint the same globe. No DOM, no invoke.
 import type { OrbColor } from "../bindings";
-import { appModeStops, resolveGlobe } from "../orb/globePalette";
+import { appModeStops, appRingColour, resolveGlobe } from "../orb/globePalette";
 import { orbRingColour, resolveOrbAccent } from "../orb/orbAccentResolve";
 import {
   DEFAULT_ACCENT,
@@ -35,17 +35,13 @@ export function avatarStyle(
 ): Record<string, string> {
   const globe = resolveGlobe(face, look.orbColor, look.appAccent);
   if (globe.kind === "app") {
-    // Rings take the bucket text role on light: the accent fill is below 3:1 on the light surface (A6).
-    const ring =
-      look.bucket === "light"
-        ? "var(--color-accent-text)"
-        : "var(--vox-app-accent)";
+    // The ring is the accent mixed into the bucket's surface colour (A7), never the text role.
     return {
       "--vox-app-accent": "var(--color-accent-a)",
       "--vox-orb-hi": appModeStops.hi,
       "--vox-orb-mid": appModeStops.mid,
       "--vox-orb-lo": appModeStops.lo,
-      "--chat-accent": ring,
+      "--chat-accent": appRingColour(look.bucket),
     };
   }
   const pick = resolveOrbAccent(look.appAccent, look.orbColor, look.bucket);

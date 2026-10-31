@@ -11,6 +11,7 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 import { emitMockEvent, installTauriMock } from "./fixtures/tauriMock";
+import { mixHex } from "../src/orb/globePalette";
 
 const ORB_PAGE = "/src/orb/index.html";
 const ORB = '[data-testid="orb"]';
@@ -41,11 +42,28 @@ async function open(page: Page): Promise<void> {
 }
 
 async function ringStroke(page: Page): Promise<string> {
-  return page.evaluate(
+  const css = await page.evaluate(
     (selector) =>
       getComputedStyle(document.querySelector(selector) as Element).stroke,
     RING,
   );
+  return toRgbString(css);
+}
+
+/** Chrome reports color-mix() as color(srgb 0-1 floats); the spec compares rgb() strings. */
+function toRgbString(css: string): string {
+  if (!css.startsWith("color(srgb")) return css;
+  const [r, g, b] = (css.match(/[\d.]+/g) ?? []).map((v) =>
+    Math.round(Number(v) * 255),
+  );
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/** True when a computed rgb() ring is within one 8-bit step of an expected #RRGGBB. */
+function withinOne(css: string, expectedHex: string): boolean {
+  const got = (css.match(/\d+/g) ?? []).map(Number);
+  const want = [1, 3, 5].map((i) => parseInt(expectedHex.slice(i, i + 2), 16));
+  return want.every((v, i) => Math.abs((got[i] ?? -99) - v) <= 1);
 }
 
 const rgb = (hex: string): string => {
@@ -93,8 +111,12 @@ test.describe("orb accent", () => {
         orb_accent: "app",
       }),
     );
-    // Blue's dark fillA (#60a5fa): the app accent, not the orb accent.
-    await expect.poll(() => ringStroke(page)).toBe(rgb("#60a5fa"));
+    // Blue's dark fillA (#60a5fa) mixed into white (A7): the app ring, not the orb accent.
+    await expect
+      .poll(async () =>
+        withinOne(await ringStroke(page), mixHex("#60a5fa", "dark")),
+      )
+      .toBe(true);
   });
 });
 

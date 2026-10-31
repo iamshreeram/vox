@@ -1,17 +1,22 @@
 // Pure drawing rules for the orb colour swatches (UI enterprise S2c, DESIGN D4). No React.
 // The swatch of each option is a small sphere painted from the same GLOBE_STOPS table the globe
 // uses; Auto is four state colours in quarters; Follow app is a ring in the app accent.
-import { GLOBE_STOPS, type GlobeStops } from "@/orb/globePalette";
+import {
+  appRingColour,
+  GLOBE_STOPS,
+  type GlobeStops,
+} from "@/orb/globePalette";
 import { contrastRatio } from "@/styles/wcag";
-import type { AccentId } from "@/styles/accents";
+import type { AccentBucket, AccentId } from "@/styles/accents";
 import type { OrbChoice } from "./appearanceModel";
 
 /**
- * The outline every orb swatch draws (A6): the bucket TEXT role of the app accent, never the fill.
- * The text role is >= 4.5:1 on both bucket surfaces (asserted by the swatch test), so the outline
- * stays visible on light and dark, whatever the sphere or quarter colour under it.
+ * The outline every orb swatch draws, and the Follow-app ring and check (A6, A7): the app ring of
+ * the page's bucket (the accent mixed into black on light, white on dark). Never the text role.
  */
-export const OUTLINE_ROLE = "var(--color-accent-text)";
+export function outlineRole(bucket: AccentBucket): string {
+  return appRingColour(bucket);
+}
 /** Stroke width of the outline ring, in SVG units (the swatch is 28 units across). */
 export const OUTLINE_STROKE = 1.5;
 
@@ -43,12 +48,15 @@ export function checkColourFor(stops: GlobeStops): string {
 }
 
 /** The drawing spec of one orb option. `app` shows the app accent through its own token. */
-export function orbSwatchSpec(choice: OrbChoice): OrbSwatchSpec {
+export function orbSwatchSpec(
+  choice: OrbChoice,
+  bucket: AccentBucket,
+): OrbSwatchSpec {
   if (choice === "auto") {
     return { kind: "auto", quarters: AUTO_QUARTERS, check: CHECK_DARK };
   }
   if (choice === "app") {
-    return { kind: "app", check: OUTLINE_ROLE };
+    return { kind: "app", check: outlineRole(bucket) };
   }
   const stops: GlobeStops = GLOBE_STOPS[choice as AccentId];
   return { kind: "sphere", stops, check: checkColourFor(stops) };

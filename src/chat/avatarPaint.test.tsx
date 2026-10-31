@@ -7,6 +7,7 @@ import {
   GLOBE_STOPS,
   CONCERNED_STOPS,
   appModeStops,
+  appRingColour,
 } from "../orb/globePalette";
 import { orbRingColour, resolveOrbAccent } from "../orb/orbAccentResolve";
 import { ORB_COLOR_IDS } from "../lib/appearance/consumer";
@@ -52,7 +53,7 @@ describe("avatarStyle", () => {
       expect(style["--vox-orb-hi"]).toBe(appModeStops.hi);
       expect(style["--vox-orb-mid"]).toBe("var(--vox-app-accent)");
       expect(style["--vox-orb-lo"]).toBe(appModeStops.lo);
-      expect(style["--chat-accent"]).toBe("var(--vox-app-accent)");
+      expect(style["--chat-accent"]).toBe(appRingColour(look.bucket));
       return;
     }
     const pick = resolveOrbAccent("violet", mode, "dark");
@@ -62,6 +63,18 @@ describe("avatarStyle", () => {
       expect(style["--vox-orb-hi"]).toBe(GLOBE_STOPS[mode].hi);
       expect(style["--vox-orb-mid"]).toBe(GLOBE_STOPS[mode].mid);
       expect(style["--vox-orb-lo"]).toBe(GLOBE_STOPS[mode].lo);
+    }
+  });
+
+  it("app mode rings are the accent mixed into the bucket surface (A7), never the text role", () => {
+    for (const bucket of BUCKETS) {
+      const style = avatarStyle("idle", {
+        orbColor: "app",
+        appAccent: "amber",
+        bucket,
+      });
+      expect(style["--chat-accent"]).toBe(appRingColour(bucket));
+      expect(style["--chat-accent"]).not.toContain("color-accent-text");
     }
   });
 

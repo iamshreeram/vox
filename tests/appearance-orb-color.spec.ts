@@ -5,6 +5,7 @@ import {
   installTauriMock,
 } from "./fixtures/tauriMock";
 import { ACCENTS } from "../src/styles/accents";
+import { appRingColour, mixHex } from "../src/orb/globePalette";
 
 /*
  * Appearance > Orb colour (DESIGN Revision 3, D3, D4). The group is a radiogroup of "Auto" and
@@ -39,6 +40,20 @@ const orbGroup = (page: Page): Locator =>
   page.getByRole("radiogroup", { name: "Orb colour" });
 const orbRadio = (page: Page, name: string): Locator =>
   orbGroup(page).getByRole("radio", { name, exact: true });
+
+/** A drawn colour (rgb() or Chrome's color(srgb 0-1)) as #rrggbb, for an exact comparison. */
+const drawnHex = (css: string): string => {
+  const parts = (css.match(/[\d.]+/g) ?? []).map(Number);
+  const scale = css.startsWith("color(") ? 255 : 1;
+  return `#${parts
+    .slice(0, 3)
+    .map((v) =>
+      Math.round(v * scale)
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+};
 
 const hexToRgb = (hex: string): string => {
   const n = parseInt(hex.slice(1), 16);
@@ -207,6 +222,31 @@ test.describe("Orb colour: live preview", () => {
     }
   });
 
+  test("Custom light + Follow app: the preview ring and its drawn stroke are the same app ring (V3, A7)", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await openAppearance(page, {
+      theme: "custom",
+      custom_theme_colors: {
+        text: "#111111",
+        background: "#F7F8FA",
+        accent: "#7C3AED",
+        accent_secondary: "#6D28D9",
+        warning: "#B45309",
+        error: "#B91C1C",
+      },
+      accent: "amber",
+      orb_accent: "app",
+    });
+    const orb = page.getByTestId("appearance-preview-orb");
+    await expect(orb).toHaveAttribute("data-ring", appRingColour("light"));
+    const stroke = await orb
+      .locator(".vox-ring-1")
+      .evaluate((el) => getComputedStyle(el).stroke);
+    expect(drawnHex(stroke)).toBe(mixHex("#7C3AED", "light"));
+  });
+
   test("Follow app colour makes the preview ring use the app accent", async ({
     page,
   }) => {
@@ -215,13 +255,13 @@ test.describe("Orb colour: live preview", () => {
     const orb = page.getByTestId("appearance-preview-orb");
     await expect(orb).toHaveAttribute("data-ring", ACCENTS.blue.light.text);
     await orbRadio(page, FOLLOW_APP).click();
-    // Follow app draws the ring from the text role on light (A6): the reported ring is that token,
-    // and the drawn .vox-ring-1 stroke is the rose text role (V3).
-    await expect(orb).toHaveAttribute("data-ring", "var(--color-accent-text)");
-    await expect(orb.locator(".vox-ring-1")).toHaveCSS(
-      "stroke",
-      new RegExp(hexToRgb(ACCENTS.rose.light.text).replace(/[()]/g, "\\$&")),
-    );
+    // Follow app draws the app ring (A7): the reported ring is the color-mix token, and the drawn
+    // .vox-ring-1 stroke is the rose accent mixed into the light surface (V3).
+    await expect(orb).toHaveAttribute("data-ring", appRingColour("light"));
+    const stroke = await orb
+      .locator(".vox-ring-1")
+      .evaluate((el) => getComputedStyle(el).stroke);
+    expect(drawnHex(stroke)).toBe(mixHex(ACCENTS.rose.light.fillA, "light"));
   });
 });
 

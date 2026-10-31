@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { appRingColour, GLOBE_STOPS, mixHex } from "@/orb/globePalette";
 import {
   ACCENT_IDS,
   ACCENTS,
@@ -10,16 +11,15 @@ import {
   type AccentBucket,
 } from "@/styles/accents";
 import { contrastRatio } from "@/styles/wcag";
-import { GLOBE_STOPS } from "@/orb/globePalette";
 import { ORB_CHOICES, orbChoiceNameKey } from "./appearanceModel";
 import {
   AUTO_QUARTERS,
   CHECK_DARK,
   CHECK_LIGHT,
-  OUTLINE_ROLE,
   OUTLINE_STROKE,
   checkColourFor,
   orbSwatchSpec,
+  outlineRole,
   sphereGradientId,
 } from "./orbSwatchModel";
 
@@ -33,11 +33,13 @@ const scenarios: Record<string, () => void> = {
       [...ORB_CHOICES],
       ["auto", "app", "amber", "blue", "violet", "emerald", "rose", "slate"],
     );
-    for (const choice of ORB_CHOICES) {
-      const spec = orbSwatchSpec(choice);
-      if (choice === "auto") assert.equal(spec.kind, "auto");
-      else if (choice === "app") assert.equal(spec.kind, "app");
-      else assert.equal(spec.kind, "sphere");
+    for (const bucket of ["light", "dark"] as const) {
+      for (const choice of ORB_CHOICES) {
+        const spec = orbSwatchSpec(choice, bucket);
+        if (choice === "auto") assert.equal(spec.kind, "auto");
+        else if (choice === "app") assert.equal(spec.kind, "app");
+        else assert.equal(spec.kind, "sphere");
+      }
     }
   },
   "each option has a unique name key; Auto and Follow app keys exist": () => {
@@ -49,7 +51,7 @@ const scenarios: Record<string, () => void> = {
   "auto shows the four state colours as quarters": () => {
     assert.equal(AUTO_QUARTERS.length, 4);
     assert.equal(new Set(AUTO_QUARTERS).size, 4);
-    assert.deepEqual(orbSwatchSpec("auto"), {
+    assert.deepEqual(orbSwatchSpec("auto", "light"), {
       kind: "auto",
       quarters: AUTO_QUARTERS,
       check: CHECK_DARK,
@@ -57,7 +59,7 @@ const scenarios: Record<string, () => void> = {
   },
   "every sphere swatch uses its accent's globe stops": () => {
     for (const accent of ACCENT_IDS) {
-      const spec = orbSwatchSpec(accent);
+      const spec = orbSwatchSpec(accent, "light");
       assert.equal(spec.kind, "sphere");
       if (spec.kind === "sphere") {
         assert.deepEqual(spec.stops, GLOBE_STOPS[accent]);
@@ -90,18 +92,21 @@ const scenarios: Record<string, () => void> = {
     assert.equal(new Set(ids).size, ids.length);
     for (const id of ids) assert.match(id, /^[A-Za-z0-9_-]+$/);
   },
-  "every swatch outline is the bucket text role, >= 3:1 on both bucket surfaces":
+  "every swatch outline is the app ring of its bucket, >= 3:1 on both bucket surfaces":
     () => {
-      // A6: the outline is a text-role token (never the accent fill) and is drawn at a visible width.
-      assert.equal(OUTLINE_ROLE, `var(--${ACCENT_CSS_PROPERTIES.text})`);
-      assert.ok(OUTLINE_STROKE >= 1.5 && OUTLINE_STROKE <= 2);
-      const buckets: AccentBucket[] = ["light", "dark"];
-      for (const bucket of buckets) {
+      // A7: the outline is the accent mixed into the surface colour, never the text role.
+      for (const bucket of ["light", "dark"] as const) {
+        const role = outlineRole(bucket);
+        assert.equal(role, appRingColour(bucket));
+        assert.match(
+          role,
+          /^color-mix\(in srgb, var\(--color-accent-a\) 55%, (black|white)\)$/,
+        );
+        assert.doesNotMatch(role, new RegExp(ACCENT_CSS_PROPERTIES.text));
+        assert.ok(OUTLINE_STROKE >= 1.5 && OUTLINE_STROKE <= 2);
         for (const accent of ACCENT_IDS) {
-          const ratio = contrastRatio(
-            ACCENTS[accent][bucket].text,
-            ACCENT_SURFACE[bucket],
-          );
+          const ring = mixHex(ACCENTS[accent][bucket].fillA, bucket);
+          const ratio = contrastRatio(ring, ACCENT_SURFACE[bucket]);
           assert.ok(
             ratio >= 3,
             `${accent} outline on ${bucket} ${ratio.toFixed(2)}:1`,
@@ -109,10 +114,13 @@ const scenarios: Record<string, () => void> = {
         }
       }
     },
-  "the Follow app ring and the selected check use the text role, not the fill":
+  "the Follow app ring and the selected check use the app ring of the page bucket":
     () => {
-      assert.equal(orbSwatchSpec("app").check, OUTLINE_ROLE);
+      for (const bucket of ["light", "dark"] as const) {
+        assert.equal(orbSwatchSpec("app", bucket).check, outlineRole(bucket));
+      }
       const source = read("OrbColorSetting.tsx");
+      assert.doesNotMatch(source, /color-accent-text/);
       assert.doesNotMatch(source, /var\(--color-accent-a\)/);
       assert.match(source, /data-orb-outline/);
       assert.match(source, /data-orb-check/);

@@ -16,8 +16,9 @@ import {
   getMockCalls,
   installTauriMock,
 } from "./fixtures/tauriMock";
-import { GLOBE_STOPS } from "../src/orb/globePalette";
-import type { AccentId } from "../src/styles/accents";
+import { appRingColour, GLOBE_STOPS, mixHex } from "../src/orb/globePalette";
+import { ACCENTS, type AccentId } from "../src/styles/accents";
+import { contrastRatio } from "../src/styles/wcag";
 
 type Rgb = { r: number; g: number; b: number };
 type Snapshot = Record<string, unknown>;
@@ -233,9 +234,82 @@ async function ringStroke(page: Page, avatar: string): Promise<string> {
 }
 
 /** Parses a computed `rgb(r, g, b)` or `rgba(...)` string. */
+/** Asserts a drawn colour equals an expected #RRGGBB within a small rounding tolerance. */
+function expectNear(actual: Rgb, expectedHex: string, label: string): void {
+  const want = hex(expectedHex);
+  expect(
+    Math.max(
+      Math.abs(actual.r - want.r),
+      Math.abs(actual.g - want.g),
+      Math.abs(actual.b - want.b),
+    ),
+    `${label}: ${JSON.stringify(actual)} vs ${expectedHex}`,
+  ).toBeLessThanOrEqual(2);
+}
+
+/** Hue in degrees of a Rgb colour. */
+function hueOfRgb(c: Rgb): number {
+  const [r, g, b] = [c.r, c.g, c.b].map((v) => v / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  if (d === 0) return 0;
+  let h: number;
+  if (max === r) h = ((g - b) / d) % 6;
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return (h * 60 + 360) % 360;
+}
+
+const hueDelta = (a: number, b: number): number => {
+  const d = Math.abs(a - b) % 360;
+  return Math.min(d, 360 - d);
+};
+
+/** The conversation window's surface colour (--chat-bg-rgb) as #RRGGBB. */
+async function chatSurfaceHex(page: Page): Promise<string> {
+  const triplet = await page.evaluate(() =>
+    getComputedStyle(
+      document.querySelector(".chat-root") as Element,
+    ).getPropertyValue("--chat-bg-rgb"),
+  );
+  return toHex(parseCss(triplet));
+}
+
+/** True when a drawn colour is within the rounding tolerance of an expected #RRGGBB. */
+function closeTo(actual: Rgb, expectedHex: string): boolean {
+  const want = hex(expectedHex);
+  return (
+    Math.max(
+      Math.abs(actual.r - want.r),
+      Math.abs(actual.g - want.g),
+      Math.abs(actual.b - want.b),
+    ) <= 2
+  );
+}
+
+const toHex = (c: Rgb): string =>
+  `#${[c.r, c.g, c.b].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("")}`;
+
+/** The Custom light theme of (j): a violet accent on a near-white background. */
+const LIGHT_VIOLET = {
+  text: "#111111",
+  background: "#F7F8FA",
+  accent: "#7C3AED",
+  accent_secondary: "#6D28D9",
+  warning: "#B45309",
+  error: "#B91C1C",
+};
+
+/** Parses a computed colour: `rgb(r, g, b)`, or Chrome's `color(srgb r g b)` (0-1 floats). */
 function parseCss(value: string): Rgb {
   const parts = (value.match(/[\d.]+/g) ?? []).map(Number);
-  return { r: parts[0] ?? 0, g: parts[1] ?? 0, b: parts[2] ?? 0 };
+  const scale = value.startsWith("color(") ? 255 : 1;
+  return {
+    r: (parts[0] ?? 0) * scale,
+    g: (parts[1] ?? 0) * scale,
+    b: (parts[2] ?? 0) * scale,
+  };
 }
 
 const navItem = (page: Page, label: string): Locator =>
@@ -586,9 +660,7 @@ test.describe("orb globe colour", () => {
       "thinking globe is the app cyan",
     ).toBeLessThanOrEqual(TOLERANCE);
     const cyanRing = parseCss(await ringStroke(page, CHAT_AVATAR));
-    expect(cyanRing.g, "cyan ring has high green").toBeGreaterThan(180);
-    expect(cyanRing.b, "cyan ring has high blue").toBeGreaterThan(200);
-    expect(cyanRing.r, "cyan ring has low red").toBeLessThan(100);
+    expectNear(cyanRing, mixHex(CYAN.accent, "dark"), "cyan app ring (A7)");
     const pillText = (await pill.textContent())?.trim() ?? "";
     expect(pillText.length).toBeGreaterThan(0);
 
@@ -611,10 +683,7 @@ test.describe("orb globe colour", () => {
       })
       .toBe(true);
     const greenRing = parseCss(await ringStroke(page, CHAT_AVATAR));
-    expect(greenRing.g, "green ring follows the newer event").toBeGreaterThan(
-      150,
-    );
-    expect(greenRing.r, "green ring has low red").toBeLessThan(100);
+    expectNear(greenRing, mixHex(GREEN.accent, "dark"), "green app ring (A7)");
 
     // A stale blue event (rev 1) is ignored: globe, rings and pill keep the green state.
     await emitMockEvent(
@@ -639,6 +708,152 @@ test.describe("orb globe colour", () => {
     expect(parseCss(await ringStroke(page, CHAT_AVATAR))).toEqual(greenRing);
     expect((await pill.textContent())?.trim()).toBe(pillText);
     await expect(pill).toHaveAttribute("role", "status");
+  });
+
+  // ------------------------------------------------------------- (j) app ring on light and dark (A7)
+
+  test("(j) Custom light + app mode: the orb ring is the violet app ring, >= 3:1, and follows a live edit", async ({
+    page,
+  }) => {
+    await openOrb(
+      page,
+      snap({
+        theme: "custom",
+        custom_colors: LIGHT_VIOLET,
+        accent: "amber",
+        orb_accent: "app",
+      }),
+    );
+    const ring = parseCss(await ringStroke(page, ORB_AVATAR));
+    expectNear(
+      ring,
+      mixHex("#7C3AED", "light"),
+      "orb ring, Custom light violet",
+    );
+    expect(
+      hueDelta(hueOfRgb(ring), hueOfRgb(hex("#7C3AED"))),
+      "orb ring hue is the violet, not the placeholder teal",
+    ).toBeLessThanOrEqual(20);
+    expect(
+      contrastRatio(toHex(ring), LIGHT_VIOLET.background),
+      "orb ring vs the Custom light surface",
+    ).toBeGreaterThanOrEqual(3);
+
+    await emitMockEvent(
+      page,
+      "appearance",
+      snap({
+        rev: 2,
+        theme: "custom",
+        custom_colors: { ...LIGHT_VIOLET, accent: "#0000FF" },
+        accent: "amber",
+        orb_accent: "app",
+      }),
+    );
+    await expect
+      .poll(async () =>
+        closeTo(
+          parseCss(await ringStroke(page, ORB_AVATAR)),
+          mixHex("#0000FF", "light"),
+        ),
+      )
+      .toBe(true);
+  });
+
+  test("(j) Custom light + app mode: the Follow app outline and check are the violet app ring on the page surface", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await openAppearance(page, {
+      theme: "custom",
+      custom_theme_colors: LIGHT_VIOLET,
+      accent: "amber",
+      orb_accent: "app",
+    });
+    const drawn = await orbRadio(page, FOLLOW_APP).evaluate((el) => {
+      let surface = getComputedStyle(document.body).backgroundColor;
+      let node: HTMLElement | null = el.parentElement;
+      while (node) {
+        const css = getComputedStyle(node).backgroundColor;
+        if (css !== "rgba(0, 0, 0, 0)" && css !== "transparent") {
+          surface = css;
+          break;
+        }
+        node = node.parentElement;
+      }
+      return {
+        outline: getComputedStyle(
+          el.querySelector("[data-orb-outline]") as Element,
+        ).stroke,
+        check: getComputedStyle(el.querySelector("[data-orb-check]") as Element)
+          .color,
+        surface,
+      };
+    });
+    const surface = toHex(parseCss(drawn.surface));
+    for (const [label, css] of [
+      ["outline", drawn.outline],
+      ["check", drawn.check],
+    ] as const) {
+      const colour = parseCss(css);
+      expectNear(colour, mixHex("#7C3AED", "light"), `Follow app ${label}`);
+      expect(
+        contrastRatio(toHex(colour), surface),
+        `Follow app ${label} vs its surface`,
+      ).toBeGreaterThanOrEqual(3);
+      expect(
+        hueDelta(hueOfRgb(colour), hueOfRgb(hex("#7C3AED"))),
+        `Follow app ${label} hue`,
+      ).toBeLessThanOrEqual(20);
+    }
+  });
+
+  test("(j) chat app mode, app dark + chat light: the ring is the light-surface app ring and >= 3:1 on the chat surface", async ({
+    page,
+  }) => {
+    await openChat(
+      page,
+      snap({
+        theme: "dark",
+        chat_theme: "light",
+        accent: "amber",
+        orb_accent: "app",
+      }),
+    );
+    const ring = parseCss(await ringStroke(page, CHAT_AVATAR));
+    expectNear(
+      ring,
+      mixHex(ACCENTS.amber.dark.fillA, "light"),
+      "chat ring, app dark + chat light",
+    );
+    expect(
+      contrastRatio(toHex(ring), await chatSurfaceHex(page)),
+      "chat ring vs --chat-bg-rgb",
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  test("(j) chat app mode, dark + dark: the ring is the dark-surface app ring and >= 3:1 on the chat surface", async ({
+    page,
+  }) => {
+    await openChat(
+      page,
+      snap({
+        theme: "dark",
+        chat_theme: "dark",
+        accent: "amber",
+        orb_accent: "app",
+      }),
+    );
+    const ring = parseCss(await ringStroke(page, CHAT_AVATAR));
+    expectNear(
+      ring,
+      mixHex(ACCENTS.amber.dark.fillA, "dark"),
+      "chat ring, dark + dark",
+    );
+    expect(
+      contrastRatio(toHex(ring), await chatSurfaceHex(page)),
+      "chat ring vs --chat-bg-rgb",
+    ).toBeGreaterThanOrEqual(3);
   });
 
   // ------------------------------------------------------------- (f) appearance page

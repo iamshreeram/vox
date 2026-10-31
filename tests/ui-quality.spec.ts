@@ -1847,6 +1847,29 @@ test.describe("negative fixtures: the gate must detect each injected defect", ()
     ).toMatch(/Blue: no outline drawn/);
   });
 
+  test("NEG low-contrast selected check on a sphere is flagged (W3: the check branch fails)", async ({
+    page,
+  }) => {
+    const sphere = (checkColour: string): string =>
+      `<button role="radio" aria-label="Amber" aria-checked="true" style="width:40px;height:40px;background:transparent;border:0"><svg width="28" height="28" viewBox="0 0 28 28"><defs><radialGradient id="neg-g" cx="35%" cy="30%" r="75%"><stop offset="0%" stop-color="#FFE27A"/><stop offset="55%" stop-color="#F5B921"/><stop offset="100%" stop-color="#B97A00"/></radialGradient></defs><circle cx="14" cy="14" r="13" fill="url(#neg-g)"/><circle data-orb-outline="" cx="14" cy="14" r="13" fill="none" stroke-width="1.5" style="stroke:#1d4ed8"/></svg><svg data-orb-check="" width="18" height="18" viewBox="0 0 24 24" style="position:absolute;color:${checkColour}"><path d="M5 12l5 5L20 7" stroke="currentColor" fill="none" stroke-width="3"/></svg></button>`;
+    const group = (inner: string): string =>
+      `<body style="margin:0;background:#fbfbfb"><div role="radiogroup" aria-label="Orb colour">${inner}</div></body>`;
+    // Control: a dark check (>= 3:1 on the sphere's hi and mid stops) passes.
+    await page.setContent(group(sphere("#111111")));
+    expect(
+      await orbSwatchViolations(page, await collectOrbSwatches(page)),
+      "the control check must pass",
+    ).toEqual([]);
+    // A pale check over the amber hi stop (1:1) must be reported by the check branch.
+    await page.setContent(group(sphere("#FFE27A")));
+    expect(
+      (await orbSwatchViolations(page, await collectOrbSwatches(page))).join(
+        "\n",
+      ),
+      "the gate must report the low-contrast check",
+    ).toMatch(/Amber: check .* < 3:1/);
+  });
+
   test("NEG dropped appearance event is detected by the convergence check", async ({
     browser,
   }) => {

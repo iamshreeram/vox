@@ -3,7 +3,11 @@
 // page, the conversation window and the Appearance preview all paint the same globe.
 import type { OrbColor } from "../bindings";
 import type { AvatarFace } from "../chat/chatModel";
-import { ACCENT_IDS, type AccentId } from "../styles/accents";
+import {
+  ACCENT_IDS,
+  type AccentBucket,
+  type AccentId,
+} from "../styles/accents";
 
 /** The three gradient stops of the sphere, each a #RRGGBB hex (light, mid, deep). */
 export interface GlobeStops {
@@ -91,3 +95,35 @@ export const appModeStops: GlobeStops = {
   mid: "var(--vox-app-accent)",
   lo: "color-mix(in srgb, var(--vox-app-accent) 55%, black)",
 };
+
+/**
+ * The app-mode ring, outline and selected check (A7). The accent token is mixed into black on a
+ * light surface and into white on a dark one, so the ring keeps the accent's hue and has >= 3:1
+ * against its bucket surface whatever the custom accent (proved by src/orb/appRing.test.ts).
+ * Never --color-accent-text: a custom theme does not set that token.
+ */
+export const APP_RING_MIX_PERCENT = 55;
+
+/** The CSS colour of the app-mode ring for one surface bucket. */
+export function appRingColour(bucket: AccentBucket): string {
+  const target = bucket === "light" ? "black" : "white";
+  return `color-mix(in srgb, var(--color-accent-a) ${APP_RING_MIX_PERCENT}%, ${target})`;
+}
+
+/**
+ * JS replica of appRingColour for tests only: the accent (#RRGGBB) mixed as color-mix in srgb
+ * does (per channel, rounded to the nearest 8-bit value). Not used by any renderer.
+ */
+export function mixHex(
+  accent: string,
+  bucket: AccentBucket,
+  percent: number = APP_RING_MIX_PERCENT,
+): string {
+  const target = bucket === "light" ? 0 : 255;
+  const p = percent / 100;
+  const channels = [1, 3, 5].map((i) => {
+    const value = parseInt(accent.slice(i, i + 2), 16);
+    return Math.round(value * p + target * (1 - p));
+  });
+  return `#${channels.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
