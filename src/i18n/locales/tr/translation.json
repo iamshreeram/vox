@@ -193,7 +193,18 @@
   },
   "settings": {
     "modelSettings": {
-      "title": "{{model}} Ayarları"
+      "title": "{{model}} Ayarları",
+      "tamilStt": {
+        "title": "Tamil speech recognition",
+        "description": "Recognise Tamil speech with a local model. English stays on the model you selected. Used when the speech language is Tamil.",
+        "statusReady": "Installed and ready. Choose Tamil as the speech language to use it.",
+        "statusMissing": "Not installed (missing files: {{count}}). Run scripts/download_indic_stt.sh to install it in {{folder}}.",
+        "statusWrongSize": "Incomplete download (a file has the wrong size). Run scripts/download_indic_stt.sh again.",
+        "statusError": "Tamil speech recognition problem: {{message}}",
+        "statusOff": "Off. Tamil speech is recognised by the selected model.",
+        "memoryNote": "Needs about 1.1 GB of memory while loaded. It loads on the first Tamil use and unloads when idle.",
+        "credit": "Model: AI4Bharat IndicConformer 600M multilingual (MIT), int8 repackage by yashwork-byte (MIT)"
+      }
     },
     "models": {
       "title": "Transkripsiyon Modelleri",
@@ -349,7 +360,8 @@
         "description": "Konuşma tanıma dilini seçin. 'Otomatik' seçeneği dili kendisi belirler, ancak belirli bir dil seçmek o dildeki doğruluğu artırabilir.",
         "searchPlaceholder": "Dil ara...",
         "noResults": "Dil bulunamadı",
-        "auto": "Otomatik"
+        "auto": "Otomatik",
+        "tamilHelper": "Tamil is recognised by the Tamil speech pack, not by the selected model."
       },
       "groups": {
         "conversation": "Voice conversation",
@@ -1353,7 +1365,7 @@
       },
       "rememberConversations": {
         "label": "Remember recent conversations",
-        "description": "Off by default. Vox keeps short summaries of your recent voice conversations on this device, and it uses your configured model for two things. First, when a conversation ends, what you said by voice and the replies you got (not dictated text or commands handled on this device) are sent to that model to write a short summary. Second, the newest summaries are sent to the model at the start of your next voice conversation, so you can say 'let's continue where we left off'. Vox keeps at most the 20 newest short summaries on this device, with secrets removed on a best-effort basis. Conversations that used agents, tools or your notes are not remembered at all. Turning this off stops all of it at once, and Clear deletes everything.",
+        "description": "On by default for new installs. Vox keeps short notes about your recent voice conversations on this Mac, and it uses the conversation model you configured, which may be a remote service, for two things. First, when a conversation ends, what you said by voice and the replies you got (not dictated text or commands handled on this device) are sent to that model to write a short note, and the note can include a short excerpt of what you said. Second, the newest notes are sent to the model at the start of your next voice conversation, so you can say 'let's continue where we left off'. Vox keeps at most the 20 newest notes, with secrets removed on a best-effort basis. Conversations that used agents, tools or your notes are not remembered at all. Switch this setting off to stop all of it at once, and use Clear remembered conversations below to delete every stored note.",
         "countLabel": "Remembered conversations: {{count}}",
         "clearTitle": "Remembered conversations",
         "clearDescription": "Deletes every remembered conversation summary on this device. Nothing is sent when you clear.",
