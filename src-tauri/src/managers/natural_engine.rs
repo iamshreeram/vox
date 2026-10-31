@@ -6,10 +6,13 @@
 
 use crate::managers::natural_audio::{resample_mono, trim_silence, wpm_to_speed};
 use crate::managers::natural_chunk::{
-    split_for_synthesis, synth_with_overflow_retry, RetryOutcome, NATURAL_MAX_CHARS,
+    split_for_synthesis, split_tamil_for_synthesis, synth_with_overflow_retry, RetryOutcome,
+    NATURAL_MAX_CHARS,
 };
 use crate::managers::natural_sink::{AudioSink, CommitResult, FlushOutcome};
-use crate::managers::natural_text::normalize_for_speech;
+use crate::managers::natural_text::{
+    has_speakable_tamil, normalize_for_speech, prepare_tamil_for_speech,
+};
 use crate::managers::tts_queue::{StopOutcome, Synth};
 use std::collections::VecDeque;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -148,6 +151,19 @@ impl NaturalHealth {
     }
 }
 
+/// How the synth prepares text and chunks it (DESIGN R2-B, R2-C). `Latin` is the behaviour of
+/// every existing engine. `Tamil` is for the Tamil engine: it keeps Tamil letters, marks and
+/// digits, never spells digits, sends one engine call per sentence-sized chunk and never retries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TextMode {
+    #[default]
+    Latin,
+    Tamil,
+}
+
+/// Longest chunk the Tamil mode hands to the engine in one call (chars).
+pub const TAMIL_MAX_CHARS: usize = 600;
+
 #[derive(Debug, Clone)]
 pub struct NaturalConfig {
     pub idle_unload: Duration,
@@ -156,6 +172,8 @@ pub struct NaturalConfig {
     pub max_pending_chunks: usize,
     /// Budget handed to `AudioSink::flush` by `stop_immediate` (design: 180 ms).
     pub flush_budget: Duration,
+    /// Text policy and chunking of `speak`, and the synthesis policy of the worker.
+    pub text_mode: TextMode,
 }
 
 impl Default for NaturalConfig {
@@ -165,6 +183,45 @@ impl Default for NaturalConfig {
             tick: Duration::from_secs(1),
             max_pending_chunks: NATURAL_MAX_PENDING_CHUNKS,
             flush_budget: Duration::from_millis(180),
+            text_mode: TextMode::Latin,
+        }
+    }
+}
+
+/// Tamil chunks for `speak`: Tamil text policy, then sentence-sized pieces of at most
+/// `TAMIL_MAX_CHARS`. Text with nothing speakable yields no chunks (a clean no-op).
+fn tamil_chunks(text: &str) -> Vec<String> {
+    let prepared = prepare_tamil_for_speech(text);
+    if !has_speakable_tamil(&prepared) {
+        return Vec::new();
+    }
+    split_tamil_for_synthesis(&prepared, TAMIL_MAX_CHARS)
+}
+
+/// Tamil synthesis of one chunk (DESIGN R2-C): exactly one engine call, no overflow or
+/// duration heuristic and no retry. Only an engine `Err` is a failure (`Dropped`); an `Ok`
+/// with no samples is returned as empty audio, which the worker skips. Cancellation follows
+/// the Latin contract: `is_current` is checked before and after the call.
+fn synth_tamil_chunk(
+    synth: &mut dyn FnMut(&str) -> Result<Vec<f32>, String>,
+    text: &str,
+    is_current: &dyn Fn() -> bool,
+) -> RetryOutcome {
+    if !is_current() {
+        return RetryOutcome::Cancelled;
+    }
+    let result = synth(text);
+    if !is_current() {
+        return RetryOutcome::Cancelled;
+    }
+    match result {
+        Ok(samples) => RetryOutcome::Audio {
+            samples,
+            dropped_pieces: 0,
+        },
+        Err(e) => {
+            log::warn!("natural voice: Tamil chunk failed: {e}");
+            RetryOutcome::Dropped
         }
     }
 }
@@ -400,13 +457,18 @@ impl Worker {
             return;
         };
         let gen = chunk.gen;
-        let outcome = catch_unwind(AssertUnwindSafe(|| {
-            synth_with_overflow_retry(
+        let outcome = catch_unwind(AssertUnwindSafe(|| match inner.config.text_mode {
+            TextMode::Latin => synth_with_overflow_retry(
                 &mut |t: &str| engine.synth(t, &chunk.voice, chunk.speed),
                 &chunk.text,
                 NATURAL_SAMPLE_RATE,
                 &|| inner.is_current(gen),
-            )
+            ),
+            TextMode::Tamil => synth_tamil_chunk(
+                &mut |t: &str| engine.synth(t, &chunk.voice, chunk.speed),
+                &chunk.text,
+                &|| inner.is_current(gen),
+            ),
         }))
         .unwrap_or_else(|_| {
             log::warn!("natural voice: synthesis panicked");
@@ -420,6 +482,9 @@ impl Worker {
         match outcome {
             RetryOutcome::Cancelled => {}
             RetryOutcome::Dropped => self.on_dropped(&chunk, rev),
+            // Tamil skip: the engine answered Ok with no samples. Nothing to play, no failure,
+            // and the failure streak is left alone.
+            RetryOutcome::Audio { samples, .. } if samples.is_empty() => {}
             RetryOutcome::Audio {
                 samples,
                 dropped_pieces,
@@ -614,10 +679,15 @@ impl Synth for NaturalSynth {
         if self.inner.health.revision() != self.seen_revision {
             self.recover();
         }
-        // Spell out numbers and symbols first: the Kokoro crate mangles digits and logs
-        // unknown characters (spoken text) otherwise.
-        let text = normalize_for_speech(text);
-        let chunks = split_for_synthesis(&text, NATURAL_MAX_CHARS);
+        let chunks = match self.inner.config.text_mode {
+            TextMode::Latin => {
+                // Spell out numbers and symbols first: the Kokoro crate mangles digits and logs
+                // unknown characters (spoken text) otherwise.
+                let text = normalize_for_speech(text);
+                split_for_synthesis(&text, NATURAL_MAX_CHARS)
+            }
+            TextMode::Tamil => tamil_chunks(text),
+        };
         if chunks.is_empty() {
             return;
         }

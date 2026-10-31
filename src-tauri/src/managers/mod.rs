@@ -177,6 +177,12 @@ mod natural_sink_tests;
 pub mod natural_snapshot;
 #[cfg(test)]
 mod natural_test_support;
+#[cfg(test)]
+mod natural_tamil_chunk_tests;
+#[cfg(test)]
+mod natural_tamil_engine_tests;
+#[cfg(test)]
+mod natural_tamil_text_tests;
 pub mod natural_text;
 #[cfg(test)]
 mod natural_text_tests;
@@ -199,6 +205,18 @@ pub mod speaker_id;
 pub mod speech_backends;
 pub mod speech_compose;
 pub mod speech_pipeline;
+#[cfg_attr(not(test), allow(dead_code))]
+pub mod tamil_pocket_core;
+#[cfg(test)]
+mod tamil_pocket_core_tests;
+#[cfg_attr(not(test), allow(dead_code))]
+pub mod tamil_pocket_ort;
+#[cfg(test)]
+mod tamil_pocket_ort_tests;
+#[cfg_attr(not(test), allow(dead_code))]
+pub mod tamil_pocket_pipeline;
+#[cfg(test)]
+mod tamil_pocket_pipeline_tests;
 pub mod tool_loop;
 pub mod transcription;
 pub mod tts;
@@ -212,6 +230,18 @@ pub mod tts_serial;
 #[cfg(test)]
 mod tts_serial_tests;
 pub mod tts_voices;
+#[cfg_attr(not(test), allow(dead_code))]
+pub mod tamil_tokenizer;
+#[cfg(test)]
+mod tamil_tokenizer_tests;
+#[cfg(test)]
+mod tamil_parity_tokenizer_tests;
+#[cfg_attr(not(test), allow(dead_code))]
+pub mod tamil_text;
+#[cfg(test)]
+mod tamil_text_tests;
+#[cfg(test)]
+mod tamil_parity_text_tests;
 pub mod vault;
 pub mod vault_context;
 #[cfg(test)]
