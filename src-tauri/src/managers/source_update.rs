@@ -877,19 +877,25 @@ pub async fn start_update(app: &AppHandle) -> Result<(), String> {
         return Err(NOT_READY.to_string());
     };
     let lock_dir = PathBuf::from(update_lock_path());
-    let has_active = lock_state(&runtime.active).is_some();
+    // A run whose outcome is already published is not attached to: a new start
+    // then goes through the lock like any other start.
+    let attach_to = attachable_run(lock_state(&runtime.active).as_ref(), progress(app).as_ref());
     match start_gate(
-        has_active,
+        attach_to.is_some(),
         runner::lock_state(&lock_dir, &runner::process_alive),
     ) {
         StartGate::Attach => {
-            if let Some(run) = lock_state(&runtime.active).clone() {
+            if let Some(run) = attach_to {
                 info!(
                     "attaching to update job {} (run {}, {}s in)",
                     run.label,
                     run.run_id,
                     run.started.elapsed().as_secs()
                 );
+                // Re-publish the cached progress so a footer that missed it converges.
+                if let Some(current) = progress(app).filter(|p| p.run_id == run.run_id) {
+                    let _ = app.emit(PROGRESS_EVENT, current);
+                }
             }
             return Ok(());
         }
@@ -1017,13 +1023,39 @@ pub fn cache_progress(app: &AppHandle, progress: UpdateProgress) {
     let _ = app.emit(PROGRESS_EVENT, progress);
 }
 
+/// The run this process should attach to: the active run, unless its outcome
+/// is already published (`done` or `failed` for that run).
+pub fn attachable_run(
+    active: Option<&ActiveRun>,
+    progress: Option<&UpdateProgress>,
+) -> Option<ActiveRun> {
+    let run = active?;
+    let settled = progress.is_some_and(|p| p.run_id == run.run_id && p.phase.is_terminal());
+    (!settled).then(|| run.clone())
+}
+
+/// Clears the active run and frees the launch guard once `run_id` has ended.
+/// Another run's end changes nothing.
+fn finish_run(runtime: &SourceUpdateRuntime, run_id: &str) {
+    let mut active = lock_state(&runtime.active);
+    if active.as_ref().is_some_and(|run| run.run_id == run_id) {
+        *active = None;
+        runtime.guard.release();
+    }
+}
+
+/// Frees the launch guard when a run reaches its outcome, so a retry right after a
+/// failure is not refused for the rest of the launch window.
+pub fn release_launch_guard(app: &AppHandle) {
+    if let Some(runtime) = app.try_state::<SourceUpdateRuntime>() {
+        runtime.guard.release();
+    }
+}
+
 /// Forgets the active run once its poller has stopped.
 pub fn run_finished(app: &AppHandle, run_id: &str) {
     if let Some(runtime) = app.try_state::<SourceUpdateRuntime>() {
-        let mut active = lock_state(&runtime.active);
-        if active.as_ref().is_some_and(|run| run.run_id == run_id) {
-            *active = None;
-        }
+        finish_run(&runtime, run_id);
     }
 }
 

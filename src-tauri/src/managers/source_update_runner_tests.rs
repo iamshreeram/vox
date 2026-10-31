@@ -1303,6 +1303,7 @@ fn reconcile_no_status_and_registration_without_pid_is_cleaned_only_when_old() {
         Decision::None,
         "a job still being registered must not be declared dead"
     );
+    // Old and silent: the stop is published first (A5 fix 2), cleanup follows.
     assert_eq!(
         reconcile(&input(
             None,
@@ -1310,6 +1311,16 @@ fn reconcile_no_status_and_registration_without_pid_is_cleaned_only_when_old() {
             registered(None, None),
             LockState::Free,
             false
+        )),
+        Decision::PublishFailed("The update stopped unexpectedly.".to_string())
+    );
+    assert_eq!(
+        reconcile(&input(
+            None,
+            INTERRUPTED_AFTER_SECS,
+            registered(None, None),
+            LockState::Free,
+            true
         )),
         Decision::CleanupFinished
     );
@@ -1360,4 +1371,63 @@ fn reconcile_no_decision_removes_a_lock() {
         LockState::HeldDead,
         false,
     )));
+}
+
+#[test]
+fn reconcile_a_job_that_exited_without_a_status_publishes_the_stop_before_cleanup() {
+    let exited = registered(None, Some(1));
+    assert_eq!(
+        reconcile(&input(None, 0, exited, LockState::Free, false)),
+        Decision::PublishFailed("The update stopped unexpectedly (exit 1).".to_string()),
+        "the exit code is known, so no waiting for the threshold"
+    );
+    assert_eq!(
+        reconcile(&input(None, 0, exited, LockState::Free, true)),
+        Decision::CleanupFinished
+    );
+    assert_eq!(
+        reconcile(&input(None, 0, exited, LockState::HeldAlive, false)),
+        Decision::None,
+        "a live lock keeps everything in place"
+    );
+}
+
+#[test]
+fn reconcile_silent_exit_without_a_status_waits_for_the_threshold() {
+    let silent = registered(None, None);
+    assert_eq!(
+        reconcile(&input(None, 0, silent, LockState::Free, false)),
+        Decision::None,
+        "a fresh plist must not clean up before the job had time to start"
+    );
+    assert_eq!(
+        reconcile(&input(
+            None,
+            INTERRUPTED_AFTER_SECS - 1,
+            silent,
+            LockState::Free,
+            false
+        )),
+        Decision::None
+    );
+    assert_eq!(
+        reconcile(&input(
+            None,
+            INTERRUPTED_AFTER_SECS,
+            silent,
+            LockState::Free,
+            false
+        )),
+        Decision::PublishFailed("The update stopped unexpectedly.".to_string())
+    );
+    assert_eq!(
+        reconcile(&input(
+            None,
+            INTERRUPTED_AFTER_SECS,
+            silent,
+            LockState::Free,
+            true
+        )),
+        Decision::CleanupFinished
+    );
 }

@@ -100,8 +100,10 @@ function activePhaseOf(phase: RunPhase): ActiveRunPhase | null {
 }
 
 function applyProgress(state: UpdateState, p: UpdateProgress): UpdateState {
-  const percent = clampPercent(p.percent);
-  if (percent === null) return state;
+  const reported = clampPercent(p.percent);
+  if (reported === null) return state;
+  // Only done reaches 100; any other phase is held at 99.
+  const percent = p.phase === "done" ? reported : Math.min(reported, 99);
 
   const current = state.run;
   const sameRun = current !== null && current.runId === p.run_id;

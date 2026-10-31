@@ -415,13 +415,14 @@ fn adoption_table() {
         ),
         AdoptPlan::Nothing
     );
-    // No status, registered without a process, old: clean up now.
+    // No status, registered without a process, old: the stop is published first
+    // (A5 fix 2), so the run is watched until its cleanup.
     assert_eq!(
         adopt_plan(
             &reconcile_input(None, INTERRUPTED_AFTER_SECS, registered_dead(), Free, false),
             true
         ),
-        AdoptPlan::CleanupNow
+        AdoptPlan::Watch
     );
     // No status and nothing registered: nothing to do.
     assert_eq!(

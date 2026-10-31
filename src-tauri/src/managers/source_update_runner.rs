@@ -1177,10 +1177,21 @@ pub fn reconcile(input: &ReconcileInput<'_>) -> Decision {
             }
         }
         None => match input.job {
-            JobState::Registered { pid: None, .. }
-                if input.status_age_secs >= input.interrupted_after_secs && !lock_held =>
+            // The job exited without writing a status for this run: say so once,
+            // then clean up. A known exit code is final, so no waiting; otherwise
+            // the job must have been silent for the whole threshold.
+            JobState::Registered {
+                pid: None,
+                last_exit,
+            } if !lock_held
+                && (last_exit.is_some()
+                    || input.status_age_secs >= input.interrupted_after_secs) =>
             {
-                Decision::CleanupFinished
+                if input.published {
+                    Decision::CleanupFinished
+                } else {
+                    Decision::PublishFailed(stopped_message(input.job))
+                }
             }
             _ => Decision::None,
         },
@@ -1208,6 +1219,17 @@ fn failure_message(message: &str) -> String {
         return "update failed".to_string();
     }
     message.chars().take(MAX_FAILURE_MESSAGE_CHARS).collect()
+}
+
+/// Failure text for a job that stopped without writing a status.
+fn stopped_message(job: JobState) -> String {
+    match job {
+        JobState::Registered {
+            last_exit: Some(code),
+            ..
+        } => format!("The update stopped unexpectedly (exit {code})."),
+        _ => "The update stopped unexpectedly.".to_string(),
+    }
 }
 
 fn interrupted_message(job: JobState) -> String {

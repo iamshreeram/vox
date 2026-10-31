@@ -2,12 +2,14 @@
 //! the bounded status read and the launchd and lock probes (at most every 2 s),
 //! and it applies the effects `poll_step` returns. It decides nothing itself.
 
-use super::source_update::{cache_progress, recheck_after_done, run_finished};
+use super::source_update::{
+    cache_progress, recheck_after_done, release_launch_guard, run_finished,
+};
 use super::source_update_runner::{
     file_age_secs, lock_state, now_unix, process_alive, read_status_bounded, write_status_file,
     JobControl, JobState, LaunchctlJobControl, LockState,
 };
-use super::source_update_runner_poll::{poll_step, Effect, PollInput, PollState};
+use super::source_update_runner_poll::{poll_step, status_age_for, Effect, PollInput, PollState};
 use super::source_update_runner_run::cleanup_run;
 use log::warn;
 use std::path::PathBuf;
@@ -62,9 +64,12 @@ async fn run(app: AppHandle, config: PollerConfig) {
             |(_, job, lock)| (*job, *lock),
         );
         let bytes = read_status_bounded(&config.status_file).ok().flatten();
-        let age = file_age_secs(&config.status_file)
-            .or_else(|| file_age_secs(&config.plist))
-            .unwrap_or(0);
+        let age = status_age_for(
+            state.has_status(),
+            file_age_secs(&config.status_file),
+            file_age_secs(&config.plist),
+            started.elapsed().as_secs(),
+        );
         let input = PollInput {
             status_bytes: bytes.as_deref(),
             status_age_secs: age,
@@ -115,11 +120,13 @@ fn apply(
             Effect::RefreshTray => crate::tray::update_tray_menu(app),
             Effect::PublishDone(progress) => {
                 cache_progress(app, progress);
+                release_launch_guard(app);
                 crate::tray::update_tray_menu(app);
                 recheck_after_done(app);
             }
             Effect::PublishFailed(progress) => {
                 cache_progress(app, progress);
+                release_launch_guard(app);
                 crate::tray::update_tray_menu(app);
             }
             Effect::WriteStatus(status) => {

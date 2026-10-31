@@ -176,3 +176,92 @@ fn production_update_code_has_no_terminal_launcher_left() {
         }
     }
 }
+
+// ---- launch guard release and attach rules (A5 fixes 1 and 3) ---------------
+
+use crate::managers::source_update_runner::LockState;
+
+const GUARD_RUN: &str = "aaaaaaaaaaaaaaaa";
+const GUARD_OTHER: &str = "bbbbbbbbbbbbbbbb";
+
+fn active_run(run_id: &str) -> ActiveRun {
+    ActiveRun {
+        run_id: run_id.to_string(),
+        label: format!("com.iamshreeram.vox.update.{run_id}"),
+        started: Instant::now(),
+    }
+}
+
+fn progress_for(run_id: &str, phase: RunPhase) -> UpdateProgress {
+    UpdateProgress {
+        run_id: run_id.to_string(),
+        phase,
+        percent: 40,
+        target: "0123456".to_string(),
+        message: String::new(),
+        estimated: false,
+    }
+}
+
+#[test]
+fn a_run_that_ends_releases_the_launch_guard_for_a_retry() {
+    let runtime = SourceUpdateRuntime::new();
+    let t0 = Instant::now();
+    assert!(runtime.guard.try_acquire(t0));
+    *lock_state(&runtime.active) = Some(active_run(GUARD_RUN));
+    // A quick failure: the run ends well inside the five-minute window.
+    finish_run(&runtime, GUARD_RUN);
+    assert!(lock_state(&runtime.active).is_none());
+    assert!(
+        runtime.guard.try_acquire(t0 + Duration::from_secs(3)),
+        "a retry after a finished run must not be refused as busy"
+    );
+}
+
+#[test]
+fn ending_another_run_keeps_the_guard_and_the_active_run() {
+    let runtime = SourceUpdateRuntime::new();
+    let t0 = Instant::now();
+    assert!(runtime.guard.try_acquire(t0));
+    *lock_state(&runtime.active) = Some(active_run(GUARD_RUN));
+    finish_run(&runtime, GUARD_OTHER);
+    assert!(lock_state(&runtime.active).is_some());
+    assert!(!runtime.guard.try_acquire(t0 + Duration::from_secs(3)));
+}
+
+#[test]
+fn a_double_start_while_the_run_is_active_attaches_to_it() {
+    let run = active_run(GUARD_RUN);
+    let running = progress_for(GUARD_RUN, RunPhase::Compiling);
+    assert_eq!(
+        attachable_run(Some(&run), Some(&running)).map(|r| r.run_id),
+        Some(GUARD_RUN.to_string())
+    );
+    assert_eq!(
+        attachable_run(Some(&run), None).map(|r| r.run_id),
+        Some(GUARD_RUN.to_string()),
+        "no progress cached yet still attaches"
+    );
+    assert_eq!(
+        start_gate(
+            attachable_run(Some(&run), Some(&running)).is_some(),
+            LockState::Free
+        ),
+        StartGate::Attach
+    );
+}
+
+#[test]
+fn a_settled_run_is_not_attached_to_and_other_runs_do_not_settle_it() {
+    let run = active_run(GUARD_RUN);
+    for phase in [RunPhase::Done, RunPhase::Failed] {
+        let settled = progress_for(GUARD_RUN, phase);
+        assert!(
+            attachable_run(Some(&run), Some(&settled)).is_none(),
+            "{phase:?} must start a fresh run instead of attaching"
+        );
+    }
+    let foreign = progress_for(GUARD_OTHER, RunPhase::Failed);
+    assert!(attachable_run(Some(&run), Some(&foreign)).is_some());
+    assert!(attachable_run(None, None).is_none());
+}

@@ -267,7 +267,7 @@ const SourceUpdateChecker: React.FC<SourceUpdateCheckerProps> = ({
               className="block h-1 w-20 overflow-hidden rounded-full bg-mid-gray/20"
             >
               <span
-                className="block h-full rounded-full bg-logo-primary transition-[width] duration-300 ease-linear motion-reduce:transition-none motion-reduce:transition-none"
+                className="block h-full rounded-full bg-logo-primary transition-[width] duration-300 ease-linear motion-reduce:transition-none"
                 style={{ width: `${percent}%` }}
               />
             </span>

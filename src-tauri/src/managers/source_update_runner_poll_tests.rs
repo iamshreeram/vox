@@ -672,3 +672,82 @@ fn done_waits_for_restart_only_for_a_live_mismatched_done() {
     assert!(!done_waits_for_restart(&done, FULL, true));
     assert!(!done_waits_for_restart(&done, "", true));
 }
+
+// ---- status age for a run without its own status (A5 fix 2) ----------------
+
+fn exited_with(code: i32) -> JobState {
+    JobState::Registered {
+        pid: None,
+        last_exit: Some(code),
+    }
+}
+
+#[test]
+fn status_age_comes_from_the_status_only_once_this_run_has_one() {
+    // No valid status for this run yet: the old status.json of a previous run
+    // must not make the run look ancient; the plist age (or time since start) counts.
+    assert_eq!(status_age_for(false, Some(999_999), Some(5), 2), 5);
+    assert_eq!(status_age_for(false, Some(999_999), None, 2), 2);
+    assert_eq!(status_age_for(false, None, None, 0), 0);
+    // This run has a status: its own file age counts.
+    assert_eq!(status_age_for(true, Some(42), Some(5), 2), 42);
+    assert_eq!(status_age_for(true, None, Some(5), 2), 2);
+}
+
+#[test]
+fn foreign_old_status_with_a_fresh_plist_does_not_clean_up_silently() {
+    let mut state = PollState::new(RUN);
+    let text = String::from_utf8(status_bytes("done", 100, "ok")).unwrap();
+    let foreign = text.replace(RUN, "ffffffffffffffff").into_bytes();
+    let first = tick(
+        &mut state,
+        Some(&foreign),
+        dead(),
+        LockState::Free,
+        FULL,
+        0,
+        0,
+    );
+    assert!(!has(&first, &Effect::Cleanup));
+    assert!(!first.iter().any(|e| matches!(e, Effect::PublishDone(_))));
+}
+
+#[test]
+fn run_without_status_publishes_the_exit_then_cleans_up_once() {
+    let mut state = PollState::new(RUN);
+    let first = tick(
+        &mut state,
+        None,
+        exited_with(1),
+        LockState::Free,
+        FULL,
+        0,
+        0,
+    );
+    let failed: Vec<&UpdateProgress> = first
+        .iter()
+        .filter_map(|e| match e {
+            Effect::PublishFailed(p) => Some(p),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(failed.len(), 1, "{first:?}");
+    assert_eq!(
+        failed[0].message,
+        "The update stopped unexpectedly (exit 1)."
+    );
+    assert!(!has(&first, &Effect::Cleanup), "publish before cleanup");
+
+    let second = tick(
+        &mut state,
+        None,
+        exited_with(1),
+        LockState::Free,
+        FULL,
+        0,
+        500,
+    );
+    assert!(has(&second, &Effect::Cleanup));
+    assert!(has(&second, &Effect::Stop));
+    assert!(!second.iter().any(|e| matches!(e, Effect::PublishFailed(_))));
+}

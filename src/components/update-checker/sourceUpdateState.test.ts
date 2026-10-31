@@ -269,6 +269,32 @@ const scenarios: Record<string, () => void> = {
     }
   },
 
+  // A non-done phase never reports 100: 100 is reserved for done.
+  "a non-done phase at 100 is held at 99 and only done reaches 100"() {
+    const starting = run(
+      [{ type: "installStarted" }],
+      state({ phase: "available", info: available }),
+    );
+    const installing = run(
+      [{ type: "progress", progress: progress(RUN_A, "installing", 100) }],
+      starting,
+    );
+    assert.equal(installing.phase, "updating");
+    assert.equal(installing.run?.percent, 99);
+    assert.equal(installing.run?.terminal, false);
+    const restarting = run(
+      [{ type: "progress", progress: progress(RUN_A, "restarting", 100) }],
+      installing,
+    );
+    assert.equal(restarting.run?.percent, 99);
+    const finished = run(
+      [{ type: "progress", progress: progress(RUN_A, "done", 100) }],
+      installing,
+    );
+    assert.equal(finished.phase, "updated");
+    assert.equal(finished.run?.percent, 100);
+  },
+
   // ---- progress: happy path, monotonic, dedupe ------------------------------
   "available -> starting -> updating -> updated -> reverts to up to date"() {
     const steps: UpdateProgress[] = [
@@ -380,7 +406,8 @@ const scenarios: Record<string, () => void> = {
     const high = run([
       { type: "progress", progress: progress(RUN_A, "compiling", 150) },
     ]);
-    assert.equal(high.run?.percent, 100);
+    // A non-done phase is clamped to 99 (100 is reserved for done).
+    assert.equal(high.run?.percent, 99);
     const low = run([
       { type: "progress", progress: progress(RUN_A, "preparing", -5) },
     ]);

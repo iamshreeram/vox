@@ -137,7 +137,7 @@ test.describe("source update progress footer", () => {
       ["bundling", 60],
       ["bundling", 75],
       ["installing", 90],
-      ["installing", 100],
+      ["installing", 99],
     ];
     for (const [phase, percent] of steps) {
       await emitMockEvent(
@@ -154,12 +154,12 @@ test.describe("source update progress footer", () => {
     for (let i = 1; i < values.length; i += 1) {
       expect(values[i]).toBeGreaterThanOrEqual(values[i - 1]);
     }
-    expect(values[values.length - 1]).toBe(100);
+    expect(values[values.length - 1]).toBe(99);
 
-    await expect(page.getByText("Updating… 100%")).toBeVisible();
+    await expect(page.getByText("Updating… 99%")).toBeVisible();
     await expect(bar(page)).toHaveAttribute(
       "aria-valuetext",
-      "100%, Installing",
+      "99%, Installing",
     );
 
     expect(await announcements(page)).toEqual([
@@ -167,7 +167,6 @@ test.describe("source update progress footer", () => {
       "Update 25%, Compiling",
       "Update 50%, Bundling",
       "Update 75%, Bundling",
-      "Update 100%, Installing",
     ]);
 
     await emitMockEvent(
@@ -181,7 +180,6 @@ test.describe("source update progress footer", () => {
       "Update 25%, Compiling",
       "Update 50%, Bundling",
       "Update 75%, Bundling",
-      "Update 100%, Installing",
       "Update complete: abc1234",
     ]);
   });
@@ -333,9 +331,9 @@ test.describe("source update progress footer", () => {
     await emitMockEvent(
       page,
       "source-update-progress",
-      progress(RUN, "installing", 100),
+      progress(RUN, "installing", 99),
     );
-    await expect(bar(page)).toHaveAttribute("aria-valuenow", "100");
+    await expect(bar(page)).toHaveAttribute("aria-valuenow", "99");
     const atEnd = await row.boundingBox();
     expect(atStart).not.toBeNull();
     expect(atEnd).not.toBeNull();

@@ -87,6 +87,27 @@ impl PollState {
     pub fn published_progress(&self) -> Option<&UpdateProgress> {
         self.progress.as_ref()
     }
+
+    /// True once a valid status for this run has been read.
+    pub fn has_status(&self) -> bool {
+        self.last.is_some()
+    }
+}
+
+/// Age used for the reconcile rules. Only a status written for this run counts;
+/// before that, the run's plist age (or time since the poller started) is used so
+/// a previous run's `status.json` can never look like this run's silence.
+pub fn status_age_for(
+    has_status: bool,
+    status_file_age: Option<u64>,
+    plist_age: Option<u64>,
+    since_start_secs: u64,
+) -> u64 {
+    if has_status {
+        status_file_age.unwrap_or(since_start_secs)
+    } else {
+        plist_age.unwrap_or(since_start_secs)
+    }
 }
 
 /// One tick's observations, gathered by the shell.
@@ -289,7 +310,13 @@ fn decide_cleanup(state: &mut PollState, input: &PollInput<'_>, effects: &mut Ve
             effects.push(Effect::Cleanup);
             effects.push(Effect::Stop);
         }
-        Decision::None | Decision::Adopt | Decision::PublishDone | Decision::PublishFailed(_) => {}
+        Decision::PublishFailed(message) => {
+            if !state.outcome_published {
+                effects.push(Effect::PublishFailed(failed_progress(state, &message)));
+                state.outcome_published = true;
+            }
+        }
+        Decision::None | Decision::Adopt | Decision::PublishDone => {}
     }
 }
 
