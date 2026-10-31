@@ -35,7 +35,82 @@ describe("initialView", () => {
       end: null,
       recording: true,
       ready: false,
+      activeSession: null,
     });
+  });
+});
+
+describe("active session identity (T1b Stop)", () => {
+  const stateEv = (
+    seq: number,
+    state: string,
+    end: string | null,
+    activeSession?: number | null,
+  ): ChatEvent => ({
+    seq,
+    kind: { type: "state", state, end },
+    activeSession,
+  });
+
+  it("the snapshot's activeSession is kept in the view", () => {
+    const snap: ChatSnapshot = {
+      seq: 4,
+      entries: [],
+      state: "listening",
+      end: null,
+      recording: true,
+      activeSession: 7,
+    };
+    const { view } = applySnapshot(initialView(), snap, []);
+    expect(view.activeSession).toBe(7);
+  });
+
+  it("a snapshot without the field reads as no session", () => {
+    const snap = {
+      seq: 1,
+      entries: [],
+      state: "idle",
+      end: null,
+      recording: true,
+    } as ChatSnapshot;
+    expect(applySnapshot(initialView(), snap, []).view.activeSession).toBe(
+      null,
+    );
+  });
+
+  it("a state event sets the session it carries", () => {
+    const view = applyEvent(viewWith(1, []), stateEv(2, "speaking", null, 9));
+    expect(view.activeSession).toBe(9);
+    expect(view.state).toBe("speaking");
+  });
+
+  it("an idle state event with a null session drops it", () => {
+    const busy = applyEvent(viewWith(1, []), stateEv(2, "acting", null, 9));
+    const idle = applyEvent(busy, stateEv(3, "idle", "user_ended", null));
+    expect(idle.activeSession).toBeNull();
+    expect(idle.end).toBe("user_ended");
+  });
+
+  it("a state event without the field drops the session", () => {
+    const busy = applyEvent(viewWith(1, []), stateEv(2, "acting", null, 9));
+    const next = applyEvent(busy, stateEv(3, "listening", null));
+    expect(next.activeSession).toBeNull();
+  });
+
+  it("entry and config events keep the session they arrive under", () => {
+    const busy = applyEvent(viewWith(1, []), stateEv(2, "thinking", null, 5));
+    const withEntry = applyEvent(busy, entryEv(3, 1));
+    const withConfig = applyEvent(withEntry, {
+      seq: 4,
+      kind: { type: "config", recording: false },
+    });
+    expect(withConfig.activeSession).toBe(5);
+  });
+
+  it("a stale state event cannot change the session", () => {
+    const busy = applyEvent(viewWith(1, []), stateEv(5, "speaking", null, 8));
+    const stale = applyEvent(busy, stateEv(4, "idle", null, null));
+    expect(stale.activeSession).toBe(8);
   });
 });
 

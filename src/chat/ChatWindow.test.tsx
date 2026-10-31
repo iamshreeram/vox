@@ -44,4 +44,23 @@ describe("ChatWindow static markup", () => {
   it("does not render the Jump to latest button before any scrolling", () => {
     expect(render()).not.toContain("chat.jumpToLatest");
   });
+
+  // T1b (U1, U4, U2): Hide and the drag region in the header; Stop is absent while idle.
+  it("the header carries the drag region and no button does", () => {
+    const html = render();
+    expect(html).toMatch(/<header\b[^>]*\bdata-tauri-drag-region\b/);
+    expect(html).not.toMatch(/<button\b[^>]*\bdata-tauri-drag-region\b/);
+  });
+
+  it("offers a named Hide button in the header", () => {
+    expect(render()).toMatch(/<button\b[^>]*aria-label=\"Hide conversation\"/);
+  });
+
+  it("shows no Stop control while no session is active", () => {
+    expect(render()).not.toContain("chat-stop");
+  });
+
+  it("the footer hint names Esc", () => {
+    expect(translationEn.chat.footerHint).toContain("Esc");
+  });
 });

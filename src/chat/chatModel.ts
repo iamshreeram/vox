@@ -21,6 +21,8 @@ export type ChatEventKind =
 export interface ChatEvent {
   seq: number;
   kind: ChatEventKind;
+  /** Session the window displays. Carried by state events only (null when idle). */
+  activeSession?: number | null;
 }
 
 export interface ChatSnapshot {
@@ -29,6 +31,8 @@ export interface ChatSnapshot {
   state: string;
   end: string | null;
   recording: boolean;
+  /** Id of the session the window displays (null when idle). */
+  activeSession?: number | null;
 }
 
 export interface ChatView {
@@ -38,6 +42,7 @@ export interface ChatView {
   end: string | null;
   recording: boolean;
   ready: boolean;
+  activeSession: number | null;
 }
 
 export const VIEW_CAP = 500;
@@ -85,6 +90,7 @@ export function initialView(): ChatView {
     end: null,
     recording: true,
     ready: false,
+    activeSession: null,
   };
 }
 
@@ -108,7 +114,13 @@ export function applyEvent(view: ChatView, ev: ChatEvent): ChatView {
     case "clear":
       return { ...view, seq: ev.seq, entries: [] };
     case "state":
-      return { ...view, seq: ev.seq, state: kind.state, end: kind.end };
+      return {
+        ...view,
+        seq: ev.seq,
+        state: kind.state,
+        end: kind.end,
+        activeSession: ev.activeSession ?? null,
+      };
     case "config":
       return { ...view, seq: ev.seq, recording: kind.recording };
   }
@@ -127,6 +139,7 @@ export function applySnapshot(
     end: snap.end,
     recording: snap.recording,
     ready: true,
+    activeSession: snap.activeSession ?? null,
   };
   const ordered = buffered
     .filter((ev) => ev.seq > snap.seq)

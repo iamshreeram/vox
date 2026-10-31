@@ -1938,7 +1938,7 @@
       "ended": "Session ended"
     },
     "empty": "No conversation yet. Type a message below, or say your wake phrase.",
-    "footerHint": "Type a message, or say your wake phrase or press your conversation shortcut.",
+    "footerHint": "Type a message, say your wake phrase, or press your conversation shortcut. Esc hides this window.",
     "input": {
       "label": "Message to Vox",
       "placeholder": "Type a message to Vox…"
@@ -1973,7 +1973,12 @@
     },
     "clearConfirm": "Confirm clear",
     "clearCancel": "Cancel",
-    "clearPrompt": "Clear the conversation log? This cannot be undone."
+    "clearPrompt": "Clear the conversation log? This cannot be undone.",
+    "hide": "Hide conversation",
+    "stop": "Stop",
+    "stopAria": "Stop the conversation",
+    "stopFailed": "Could not stop the conversation.",
+    "clearCountdown": "Cancels in {{count}} s"
   },
   "orb": {
     "label": "Vox orb. Press Enter to open the conversation.",
