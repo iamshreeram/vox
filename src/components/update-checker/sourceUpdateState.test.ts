@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
-import type { SourceUpdateInfo } from "../../bindings";
+import type { SourceUpdateInfo, UpdateProgress } from "../../bindings";
 import {
   canConfirmInstall,
   footerAction,
   footerLabelKey,
   formatChangeList,
   initialState,
+  milestonesCrossed,
+  progressTextKey,
   reducer,
+  stageLabelKey,
   type Action,
   type UpdateState,
 } from "./sourceUpdateState";
@@ -16,6 +19,7 @@ function info(partial: Partial<SourceUpdateInfo> = {}): SourceUpdateInfo {
     state: "available",
     current_commit: "aaaaaaa",
     latest_commit: "bbbbbbb",
+    latest_full: "b".repeat(40),
     behind_by: 2,
     changes: ["one", "two"],
     compare_url: "https://github.com/iamshreeram/vox/compare/a...b",
@@ -40,6 +44,23 @@ const untracked = info({
   can_install: false,
 });
 
+function progress(
+  runId: string,
+  phase: UpdateProgress["phase"],
+  percent: number,
+  extra: Partial<UpdateProgress> = {},
+): UpdateProgress {
+  return {
+    run_id: runId,
+    phase,
+    percent,
+    target: "abc1234",
+    message: "",
+    estimated: false,
+    ...extra,
+  };
+}
+
 function run(actions: Action[], from: UpdateState = initialState): UpdateState {
   return actions.reduce(reducer, from);
 }
@@ -47,6 +68,9 @@ function run(actions: Action[], from: UpdateState = initialState): UpdateState {
 function state(partial: Partial<UpdateState>): UpdateState {
   return { ...initialState, ...partial };
 }
+
+const RUN_A = "a".repeat(16);
+const RUN_B = "b".repeat(16);
 
 const scenarios: Record<string, () => void> = {
   // ---- checking ---------------------------------------------------------
@@ -149,9 +173,26 @@ const scenarios: Record<string, () => void> = {
     assert.equal(s.info, null);
   },
 
-  "pushed status is ignored while checking, starting or started"() {
-    for (const phase of ["checking", "starting", "started"] as const) {
-      const before = state({ phase, info: available });
+  "pushed status is ignored while checking, starting, updating or updated"() {
+    const runState = state({
+      phase: "updating",
+      info: available,
+      run: {
+        runId: RUN_A,
+        percent: 40,
+        backendPhase: "compiling",
+        target: "abc1234",
+        estimated: false,
+        terminal: false,
+      },
+    });
+    for (const phase of [
+      "checking",
+      "starting",
+      "updating",
+      "updated",
+    ] as const) {
+      const before = state({ ...runState, phase });
       const after = run([{ type: "statusPushed", info: upToDate }], before);
       assert.deepEqual(after, before, phase);
     }
@@ -185,28 +226,36 @@ const scenarios: Record<string, () => void> = {
     assert.deepEqual(run([{ type: "installStarted" }], idle), idle);
   },
 
-  "launched moves starting to started; failure returns an error with info kept"() {
-    const started = run(
-      [{ type: "installLaunched" }],
-      state({ phase: "starting", info: available }),
-    );
-    assert.equal(started.phase, "started");
-
+  "a start error returns to error with info kept; stray failures change nothing"() {
     const failed = run(
-      [{ type: "installFailed", message: "Terminal would not open" }],
+      [{ type: "installFailed", message: "Could not start" }],
       state({ phase: "starting", info: available }),
     );
     assert.equal(failed.phase, "error");
-    assert.equal(failed.error, "Terminal would not open");
+    assert.equal(failed.error, "Could not start");
     assert.deepEqual(failed.info, available);
 
-    // Stray install events outside the starting phase change nothing.
     const stray = state({ phase: "idle" });
-    assert.deepEqual(run([{ type: "installLaunched" }], stray), stray);
     assert.deepEqual(
       run([{ type: "installFailed", message: "x" }], stray),
       stray,
     );
+  },
+
+  "after confirm the footer waits in starting until the first progress"() {
+    const starting = run(
+      [{ type: "installStarted" }],
+      state({ phase: "available", info: available }),
+    );
+    assert.equal(starting.phase, "starting");
+    const first = run(
+      [{ type: "progress", progress: progress(RUN_A, "preparing", 0) }],
+      starting,
+    );
+    assert.equal(first.phase, "updating");
+    assert.equal(first.run?.runId, RUN_A);
+    assert.equal(first.run?.percent, 0);
+    assert.equal(first.run?.backendPhase, "preparing");
   },
 
   "while starting, checks are ignored entirely"() {
@@ -220,25 +269,201 @@ const scenarios: Record<string, () => void> = {
     }
   },
 
-  "started is not terminal: a manual re-check is allowed and an automatic one is ignored"() {
-    const started = state({ phase: "started", info: available });
-    const auto = run(
-      [
-        { type: "checkStarted", manual: false },
-        { type: "checkSucceeded", info: upToDate },
-      ],
-      started,
+  // ---- progress: happy path, monotonic, dedupe ------------------------------
+  "available -> starting -> updating -> updated -> reverts to up to date"() {
+    const steps: UpdateProgress[] = [
+      progress(RUN_A, "preparing", 0),
+      progress(RUN_A, "dependencies", 10),
+      progress(RUN_A, "compiling", 25),
+      progress(RUN_A, "bundling", 75),
+      progress(RUN_A, "installing", 92),
+      progress(RUN_A, "restarting", 98),
+      progress(RUN_A, "done", 100),
+    ];
+    let s = run(
+      [{ type: "installStarted" }],
+      state({ phase: "available", info: available }),
     );
-    assert.deepEqual(auto, started);
+    for (const p of steps) {
+      s = run([{ type: "progress", progress: p }], s);
+    }
+    assert.equal(s.phase, "updated");
+    assert.equal(s.run?.target, "abc1234");
+    assert.equal(s.run?.percent, 100);
 
-    const manual = run(
-      [
-        { type: "checkStarted", manual: true },
-        { type: "checkSucceeded", info: available },
-      ],
-      started,
+    const reverted = run([{ type: "updatedExpired" }], s);
+    assert.equal(reverted.phase, "upToDate");
+    assert.equal(reverted.run?.terminal, true);
+  },
+
+  "percent never decreases within a run"() {
+    const at50 = run([
+      { type: "progress", progress: progress(RUN_A, "compiling", 50) },
+    ]);
+    const after = run(
+      [{ type: "progress", progress: progress(RUN_A, "compiling", 30) }],
+      at50,
     );
-    assert.equal(manual.phase, "available");
+    assert.deepEqual(after, at50);
+  },
+
+  "duplicate events change nothing"() {
+    const p = progress(RUN_A, "compiling", 50);
+    const once = run([{ type: "progress", progress: p }]);
+    const twice = run([{ type: "progress", progress: p }], once);
+    assert.deepEqual(twice, once);
+  },
+
+  "a new run_id resets the percent"() {
+    const first = run([
+      { type: "progress", progress: progress(RUN_A, "compiling", 80) },
+    ]);
+    const second = run(
+      [{ type: "progress", progress: progress(RUN_B, "preparing", 10) }],
+      first,
+    );
+    assert.equal(second.run?.runId, RUN_B);
+    assert.equal(second.run?.percent, 10);
+    assert.equal(second.phase, "updating");
+  },
+
+  "an older run_id is ignored even when it reports a higher percent"() {
+    const first = run([
+      { type: "progress", progress: progress(RUN_A, "compiling", 80) },
+    ]);
+    const second = run(
+      [{ type: "progress", progress: progress(RUN_B, "preparing", 10) }],
+      first,
+    );
+    const late = run(
+      [{ type: "progress", progress: progress(RUN_A, "compiling", 90) }],
+      second,
+    );
+    assert.deepEqual(late, second);
+  },
+
+  "non-terminal progress after updated of the same run is ignored"() {
+    const done = run([
+      { type: "progress", progress: progress(RUN_A, "done", 100) },
+    ]);
+    const late = run(
+      [{ type: "progress", progress: progress(RUN_A, "compiling", 50) }],
+      done,
+    );
+    assert.deepEqual(late, done);
+    const again = run(
+      [{ type: "progress", progress: progress(RUN_A, "done", 100) }],
+      done,
+    );
+    assert.deepEqual(again, done);
+  },
+
+  "a duplicate done after the revert does not show updated again"() {
+    const reverted = run([
+      { type: "progress", progress: progress(RUN_A, "done", 100) },
+      { type: "updatedExpired" },
+    ]);
+    const again = run(
+      [{ type: "progress", progress: progress(RUN_A, "done", 100) }],
+      reverted,
+    );
+    assert.equal(again.phase, "upToDate");
+  },
+
+  "invalid percentages are ignored or clamped"() {
+    const idle = state({ phase: "available", info: available });
+    const nan = run(
+      [{ type: "progress", progress: progress(RUN_A, "compiling", NaN) }],
+      idle,
+    );
+    assert.deepEqual(nan, idle);
+    const high = run([
+      { type: "progress", progress: progress(RUN_A, "compiling", 150) },
+    ]);
+    assert.equal(high.run?.percent, 100);
+    const low = run([
+      { type: "progress", progress: progress(RUN_A, "preparing", -5) },
+    ]);
+    assert.equal(low.run?.percent, 0);
+  },
+
+  "the estimated flag is carried into the run state"() {
+    const s = run([
+      {
+        type: "progress",
+        progress: progress(RUN_A, "compiling", 42, { estimated: true }),
+      },
+    ]);
+    assert.equal(s.run?.estimated, true);
+  },
+
+  // ---- adoption (window opened mid-run or after a restart) ----------------
+  "adoption: the first progress while idle shows updating"() {
+    const s = run([
+      { type: "progress", progress: progress(RUN_A, "compiling", 40) },
+    ]);
+    assert.equal(s.phase, "updating");
+    assert.equal(s.run?.percent, 40);
+  },
+
+  "adoption: a run that finished before mount shows updated"() {
+    const s = run([
+      { type: "progress", progress: progress(RUN_A, "done", 100) },
+    ]);
+    assert.equal(s.phase, "updated");
+  },
+
+  "adoption: a run that failed before mount shows failed with its message"() {
+    const s = run([
+      {
+        type: "progress",
+        progress: progress(RUN_A, "failed", 60, { message: "Build failed" }),
+      },
+    ]);
+    assert.equal(s.phase, "failed");
+    assert.equal(s.error, "Build failed");
+  },
+
+  "hydration does not overwrite an adopted run"() {
+    const s = run([
+      { type: "progress", progress: progress(RUN_A, "compiling", 40) },
+      { type: "hydrated", info: available },
+    ]);
+    assert.equal(s.phase, "updating");
+  },
+
+  // ---- failure and retry ---------------------------------------------------
+  "failed keeps the message verbatim and ignores later progress of that run"() {
+    const markup = "<img src=x onerror=alert(1)> <b>bold</b>";
+    const failed = run([
+      { type: "progress", progress: progress(RUN_A, "compiling", 60) },
+      {
+        type: "progress",
+        progress: progress(RUN_A, "failed", 60, { message: markup }),
+      },
+    ]);
+    assert.equal(failed.phase, "failed");
+    assert.equal(failed.error, markup);
+    const late = run(
+      [{ type: "progress", progress: progress(RUN_A, "compiling", 70) }],
+      failed,
+    );
+    assert.deepEqual(late, failed);
+  },
+
+  "failed -> retry -> available"() {
+    const failed = run([
+      {
+        type: "progress",
+        progress: progress(RUN_A, "failed", 60, { message: "x" }),
+      },
+    ]);
+    const retrying = run([{ type: "checkStarted", manual: true }], failed);
+    assert.equal(retrying.phase, "checking");
+    assert.equal(retrying.error, null);
+    const back = run([{ type: "checkSucceeded", info: available }], retrying);
+    assert.equal(back.phase, "available");
+    assert.deepEqual(back.info, available);
   },
 
   // ---- disable & expiry ------------------------------------------------------
@@ -247,7 +472,9 @@ const scenarios: Record<string, () => void> = {
       "checking",
       "available",
       "starting",
-      "started",
+      "updating",
+      "updated",
+      "failed",
       "error",
     ] as const) {
       const s = run(
@@ -256,6 +483,16 @@ const scenarios: Record<string, () => void> = {
       );
       assert.deepEqual(s, initialState, phase);
     }
+  },
+
+  "the updated state expires back to up to date only through updatedExpired"() {
+    const done = run([
+      { type: "progress", progress: progress(RUN_A, "done", 100) },
+    ]);
+    assert.equal(run([{ type: "notificationExpired" }], done).phase, "updated");
+    assert.equal(run([{ type: "updatedExpired" }], done).phase, "upToDate");
+    const other = state({ phase: "available", info: available });
+    assert.deepEqual(run([{ type: "updatedExpired" }], other), other);
   },
 
   "the transient up-to-date and untracked notices expire back to idle"() {
@@ -295,7 +532,9 @@ const scenarios: Record<string, () => void> = {
     assert.equal(key("upToDate"), "footer.upToDate");
     assert.equal(key("untracked"), "footer.sourceUpdate.untracked");
     assert.equal(key("starting"), "footer.sourceUpdate.starting");
-    assert.equal(key("started"), "footer.sourceUpdate.started");
+    assert.equal(key("updating"), "footer.sourceUpdate.updating");
+    assert.equal(key("updated"), "footer.sourceUpdate.updated");
+    assert.equal(key("failed"), "footer.sourceUpdate.failed");
     assert.equal(key("error"), "footer.sourceUpdate.error");
     assert.equal(key("available", false), "footer.updateCheckingDisabled");
     assert.equal(key("idle", false), "footer.updateCheckingDisabled");
@@ -309,12 +548,74 @@ const scenarios: Record<string, () => void> = {
     assert.equal(act("upToDate"), "none");
     assert.equal(act("checking"), "none");
     assert.equal(act("starting"), "none");
-    assert.equal(act("started"), "check");
+    assert.equal(act("updating"), "none");
+    assert.equal(act("updated"), "none");
+    // Retry is its own button inside the failed item, so the item is not one.
+    assert.equal(act("failed"), "none");
     assert.equal(act("error"), "check");
     assert.equal(act("untracked"), "check");
-    for (const phase of ["idle", "available", "started", "error"] as const) {
+    for (const phase of [
+      "idle",
+      "available",
+      "error",
+      "updating",
+      "failed",
+    ] as const) {
       assert.equal(act(phase, false), "none", `disabled ${phase}`);
     }
+  },
+
+  "stage labels exist for every backend phase"() {
+    assert.equal(
+      stageLabelKey("preparing"),
+      "footer.sourceUpdate.stage.preparing",
+    );
+    assert.equal(
+      stageLabelKey("dependencies"),
+      "footer.sourceUpdate.stage.dependencies",
+    );
+    assert.equal(
+      stageLabelKey("compiling"),
+      "footer.sourceUpdate.stage.compiling",
+    );
+    assert.equal(
+      stageLabelKey("bundling"),
+      "footer.sourceUpdate.stage.bundling",
+    );
+    assert.equal(
+      stageLabelKey("installing"),
+      "footer.sourceUpdate.stage.installing",
+    );
+    assert.equal(
+      stageLabelKey("restarting"),
+      "footer.sourceUpdate.stage.restarting",
+    );
+  },
+
+  "estimated progress uses the estimated text key"() {
+    const exact = run([
+      { type: "progress", progress: progress(RUN_A, "compiling", 42) },
+    ]);
+    assert.equal(progressTextKey(exact.run), "footer.sourceUpdate.updating");
+    const estimated = run([
+      {
+        type: "progress",
+        progress: progress(RUN_A, "compiling", 42, { estimated: true }),
+      },
+    ]);
+    assert.equal(
+      progressTextKey(estimated.run),
+      "footer.sourceUpdate.updatingEstimated",
+    );
+  },
+
+  "live region milestones fire once per 25 percent bucket"() {
+    assert.deepEqual(milestonesCrossed(-1, 0), [0]);
+    assert.deepEqual(milestonesCrossed(0, 0), []);
+    assert.deepEqual(milestonesCrossed(0, 30), [25]);
+    assert.deepEqual(milestonesCrossed(0, 60), [25, 50]);
+    assert.deepEqual(milestonesCrossed(-1, 100), [0, 25, 50, 75, 100]);
+    assert.deepEqual(milestonesCrossed(100, 100), []);
   },
 
   // ---- helpers ---------------------------------------------------------------

@@ -1,13 +1,18 @@
-import React, { useEffect, useId, useRef } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { getVersion } from "@tauri-apps/api/app";
 import { useSettings } from "../../hooks/useSettings";
+import { versionLabel } from "../footer/footerLabels";
 import { useSourceUpdate } from "./useSourceUpdate";
 import {
   canConfirmInstall,
   footerAction,
   footerLabelKey,
   formatChangeList,
+  milestonesCrossed,
+  progressTextKey,
+  stageLabelKey,
 } from "./sourceUpdateState";
 
 interface SourceUpdateCheckerProps {
@@ -45,6 +50,64 @@ const SourceUpdateChecker: React.FC<SourceUpdateCheckerProps> = ({
   const titleId = useId();
   const primaryButtonRef = useRef<HTMLButtonElement>(null);
 
+  // The app version is shown in the footer already; the "updated" label reuses it.
+  const [appVersion, setAppVersion] = useState("");
+  useEffect(() => {
+    let active = true;
+    getVersion()
+      .then((value) => {
+        if (active) setAppVersion(value);
+      })
+      .catch(() => {
+        // Without a version the label falls back to the commit alone.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Screen-reader announcements: only at 0/25/50/75/100 and at the end.
+  const [announcement, setAnnouncement] = useState("");
+  const announcedRef = useRef<{
+    runId: string | null;
+    percent: number;
+    outcome: string | null;
+  }>({ runId: null, percent: -1, outcome: null });
+  const runId = state.run?.runId ?? null;
+  const runPercent = state.run?.percent ?? -1;
+  useEffect(() => {
+    const last = announcedRef.current;
+    if (last.runId !== runId) {
+      last.runId = runId;
+      last.percent = -1;
+      last.outcome = null;
+    }
+    const run = state.run;
+    if (state.phase === "updating" && run !== null) {
+      const crossed = milestonesCrossed(last.percent, runPercent);
+      const top = crossed[crossed.length - 1];
+      if (top !== undefined) {
+        last.percent = top;
+        const stage = t(stageLabelKey(run.backendPhase ?? "preparing"));
+        setAnnouncement(
+          t("footer.sourceUpdate.announce", { percent: top, stage }),
+        );
+      }
+    } else if (
+      (state.phase === "updated" || state.phase === "failed") &&
+      last.outcome !== state.phase
+    ) {
+      last.outcome = state.phase;
+      setAnnouncement(
+        state.phase === "updated"
+          ? t("footer.sourceUpdate.announceDone", {
+              sha: run?.target ?? "",
+            })
+          : t("footer.sourceUpdate.failed"),
+      );
+    }
+  }, [state.phase, runId, runPercent, t]);
+
   useEffect(() => {
     if (!dialogOpen) return;
     primaryButtonRef.current?.focus();
@@ -74,6 +137,11 @@ const SourceUpdateChecker: React.FC<SourceUpdateCheckerProps> = ({
   const canOpenCompare =
     info !== null && info.compare_url.startsWith(TRUSTED_COMPARE_PREFIX);
   const isStarting = state.phase === "starting";
+  const run = state.run;
+  const isUpdating = state.phase === "updating" || isStarting;
+  const percent = run?.percent ?? 0;
+  const stageText = t(stageLabelKey(run?.backendPhase ?? "preparing"));
+  const updatedVersion = versionLabel(appVersion) ?? "Vox";
   const installDisabled =
     state.phase !== "available" ||
     !canConfirmInstall(info) ||
@@ -175,7 +243,70 @@ const SourceUpdateChecker: React.FC<SourceUpdateCheckerProps> = ({
         </div>
       )}
       <div className={`flex items-center gap-3 ${className}`}>
-        {action !== "none" ? (
+        {/* Always mounted so screen readers catch every announcement. */}
+        <span role="status" className="sr-only">
+          {announcement}
+        </span>
+        {isUpdating ? (
+          <span className="flex items-center gap-2 whitespace-nowrap text-muted">
+            <span className="tabular-nums min-w-[9.5rem]">
+              {isStarting
+                ? t("footer.sourceUpdate.starting")
+                : t(progressTextKey(run), { percent })}
+            </span>
+            <span
+              role="progressbar"
+              aria-label={t("footer.sourceUpdate.a11y.progress")}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={percent}
+              aria-valuetext={t("footer.sourceUpdate.progressValueText", {
+                percent,
+                stage: stageText,
+              })}
+              className="block h-1 w-20 overflow-hidden rounded-full bg-mid-gray/20"
+            >
+              <span
+                className="block h-full rounded-full bg-logo-primary transition-[width] duration-300 ease-linear motion-reduce:transition-none motion-reduce:transition-none"
+                style={{ width: `${percent}%` }}
+              />
+            </span>
+          </span>
+        ) : state.phase === "updated" ? (
+          <span
+            title={footerTitle}
+            className="tabular-nums whitespace-nowrap text-muted"
+          >
+            {t("footer.sourceUpdate.updated", {
+              version: updatedVersion,
+              sha: run?.target ?? "",
+            })}
+          </span>
+        ) : state.phase === "failed" ? (
+          <span className="flex min-w-0 items-center gap-2 whitespace-nowrap">
+            <span className="text-danger">
+              {t("footer.sourceUpdate.failed")}
+            </span>
+            {state.error !== null && (
+              <span
+                role="alert"
+                title={state.error}
+                className="inline-block max-w-[12rem] truncate align-bottom text-xs text-muted"
+              >
+                {state.error}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                void runCheck(true);
+              }}
+              className="underline text-logo-primary hover:text-logo-primary/80 transition-colors"
+            >
+              {t("footer.sourceUpdate.retry")}
+            </button>
+          </span>
+        ) : action !== "none" ? (
           <button
             type="button"
             onClick={handleFooterClick}
