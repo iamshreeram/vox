@@ -37,21 +37,30 @@ body {
   justify-content: flex-end;
 }
 
+/* Whole lines only: the line box is 1.4 x the font size (unitless, explicit), the text shows at
+   most 4 lines (-webkit-line-clamp adds the ellipsis on the last visible line when truncated) and
+   max-height is exactly 4 line boxes plus the 8 px vertical padding, so no partial line can show.
+   flex-shrink: 0 stops the column from squeezing a bubble below its own height. The full message
+   stays in the DOM; only the paint is clamped. */
 .bubble {
   box-sizing: border-box;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 4;
+  flex-shrink: 0;
   max-width: 85%;
+  max-height: calc(4 * 1.4em + 16px);
   padding: 8px 12px;
   border-radius: 14px;
   overflow: hidden;
   overflow-wrap: anywhere;
-  font:
-    13px/1.35 system-ui,
+  font-family:
+    system-ui,
     -apple-system,
     "Segoe UI",
     sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
   color: #ffffff;
   text-shadow: none;
   pointer-events: none;
