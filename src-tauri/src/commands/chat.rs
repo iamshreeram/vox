@@ -10,6 +10,7 @@ use crate::managers::chat_log::{
     CHAT_EVENT,
 };
 use crate::settings;
+use serde::Serialize;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -33,9 +34,43 @@ fn bubble_role(role: ChatRole) -> Option<BubbleRole> {
     }
 }
 
+/// The session id the chat window may stop: the registry's active id, but never while the
+/// conversation state is `idle` (an ended session is not stoppable). Pure, so the rule is testable.
+pub(crate) fn displayed_session(state: &str, active: Option<u64>) -> Option<u64> {
+    if state == "idle" {
+        None
+    } else {
+        active
+    }
+}
+
+/// The registry's active session id, read under the registry lock. None when no session runs.
+fn active_session_of(app: &AppHandle) -> Option<u64> {
+    app.try_state::<Arc<crate::managers::converse_runtime::ConverseController>>()
+        .and_then(|controller| controller.active_session_id())
+}
+
+/// Wire form of a `converse-chat` state event: the event fields plus the session it belongs to
+/// (`activeSession`, camelCase). Content-free: no transcript text is added.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StateWire<'a> {
+    #[serde(flatten)]
+    pub event: &'a ChatEvent,
+    pub active_session: Option<u64>,
+}
+
 impl ChatEmitter for TauriChatEmitter {
     fn emit(&self, event: &ChatEvent) {
-        let _ = self.app.emit_to(CHAT_WINDOW_LABEL, CHAT_EVENT, event);
+        if let ChatEventKind::State { state, .. } = &event.kind {
+            let wire = StateWire {
+                event,
+                active_session: displayed_session(state, active_session_of(&self.app)),
+            };
+            let _ = self.app.emit_to(CHAT_WINDOW_LABEL, CHAT_EVENT, &wire);
+        } else {
+            let _ = self.app.emit_to(CHAT_WINDOW_LABEL, CHAT_EVENT, event);
+        }
         match &event.kind {
             ChatEventKind::Entry { entry } => {
                 if let (Some(stamp), Some(role)) = (event.stamp, bubble_role(entry.role)) {
@@ -75,11 +110,17 @@ fn clear_error_text(err: ClearError) -> &'static str {
     }
 }
 
-/// Authoritative snapshot of the transcript, state and recording flag (brief lock, no wait).
+/// Authoritative snapshot of the transcript, state, recording flag and the session id the window
+/// displays (`activeSession`, None when idle). Brief locks only, no wait.
 #[tauri::command]
 #[specta::specta]
-pub fn get_chat_snapshot(chat: State<'_, Arc<ChatLog>>) -> ChatSnapshot {
-    chat.snapshot()
+pub fn get_chat_snapshot(
+    chat: State<'_, Arc<ChatLog>>,
+    controller: State<'_, Arc<crate::managers::converse_runtime::ConverseController>>,
+) -> ChatSnapshot {
+    let mut snapshot = chat.snapshot();
+    snapshot.active_session = displayed_session(&snapshot.state, controller.active_session_id());
+    snapshot
 }
 
 /// Empties the transcript. Runs on a blocking thread because the log waits up to two seconds
@@ -138,6 +179,27 @@ pub fn chat_hide_window(app: AppHandle, window: tauri::WebviewWindow) -> Result<
     }
     crate::chat_window::hide_existing(&app, &window);
     Ok(())
+}
+
+/// Stops the conversation session `session_id`, but only while it is still the running one
+/// (compare-and-stop). This is the same primitive an orb click uses on an active session
+/// (`ActivationDecision::RequestStopIf` -> `ConverseController::stop_if`).
+///
+/// Effect: a Running session moves to Draining and its cancel signal is sent. The session task
+/// then runs its normal finalizer and ends as `cancelled` (the state goes to idle and the
+/// existing system end line is appended). An agent action in flight is ended with the session:
+/// the loop releases its agent slot, and the slot's Drop cancels the live agent run once.
+///
+/// Returns false and changes nothing when the id is stale or was never the current session, the
+/// session is idle, still starting, or already draining. No dictation fallback and no tray path.
+/// `converse_stop` is untouched. Only the chat window may call it (live gate `CHAT_COMMANDS`).
+#[tauri::command]
+#[specta::specta]
+pub fn chat_stop_conversation(app: AppHandle, session_id: u64) -> bool {
+    let controller = app.state::<Arc<crate::managers::converse_runtime::ConverseController>>();
+    let stopped = controller.stop_if(crate::managers::converse::SessionId(session_id));
+    log::info!("chat stop requested: stopped={stopped}");
+    stopped
 }
 
 /// Sends one typed message to the conversation (DESIGN-TYPE Rev 4). The chat window is the only

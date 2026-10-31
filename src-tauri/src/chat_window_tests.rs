@@ -263,13 +263,17 @@ fn chat_capability_is_scoped_to_chat_window_with_exact_event_permissions() {
     assert_eq!(windows, vec!["chat".to_string()]);
 
     let actual: BTreeSet<String> = permission_ids(&chat).into_iter().collect();
-    let expected: BTreeSet<String> = ["core:event:allow-listen", "core:event:allow-unlisten"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let expected: BTreeSet<String> = [
+        "core:event:allow-listen",
+        "core:event:allow-unlisten",
+        "core:window:allow-start-dragging",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
     assert_eq!(
         actual, expected,
-        "chat.json permissions must be exactly the two event permissions"
+        "chat.json permissions must be exactly the two event permissions plus start-dragging"
     );
 }
 
@@ -1123,10 +1127,14 @@ fn the_snapshot_is_re_emitted_on_show_and_on_focus() {
 fn the_capability_file_is_unchanged_listen_only() {
     let chat = read_crate_json("capabilities/chat.json");
     let actual: BTreeSet<String> = permission_ids(&chat).into_iter().collect();
-    let expected: BTreeSet<String> = ["core:event:allow-listen", "core:event:allow-unlisten"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let expected: BTreeSet<String> = [
+        "core:event:allow-listen",
+        "core:event:allow-unlisten",
+        "core:window:allow-start-dragging",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
     assert_eq!(actual, expected);
 }
 
@@ -1260,7 +1268,11 @@ fn chat_hide_window_applies_only_to_the_chat_label() {
 #[test]
 fn chat_hide_window_is_listed_once_in_chat_commands_and_registered() {
     use crate::window_commands::CHAT_COMMANDS;
-    assert_eq!(CHAT_COMMANDS.len(), 11, "CHAT_COMMANDS grows 10 -> 11");
+    assert_eq!(
+        CHAT_COMMANDS.len(),
+        12,
+        "CHAT_COMMANDS grows 11 -> 12 (chat_stop_conversation)"
+    );
     assert_eq!(
         CHAT_COMMANDS
             .iter()

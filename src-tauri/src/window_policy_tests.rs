@@ -64,6 +64,8 @@ const NEW_CHAT: [&str; 7] = [
 ];
 /// Added by the orb-click chrome step (D1b): the chat window hides itself on Escape.
 const HIDE_CHAT: [&str; 1] = ["chat_hide_window"];
+/// T1a (DESIGN Rev 4, B1/B2b): the chat window's session-id Stop, chat-only by the live gate.
+const STOP_CHAT: [&str; 1] = ["chat_stop_conversation"];
 const ORB: [&str; 5] = [
     "orb_pointer_down",
     "orb_activate",
@@ -87,6 +89,7 @@ fn the_constants_list_exactly_the_documented_commands() {
         .iter()
         .chain(NEW_CHAT.iter())
         .chain(HIDE_CHAT.iter())
+        .chain(STOP_CHAT.iter())
         .copied()
         .collect();
     want.sort_unstable();

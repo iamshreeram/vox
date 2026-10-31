@@ -602,7 +602,11 @@ fn chat_capability_is_pinned_to_listen_and_unlisten() {
     assert_eq!(value["windows"], json!(["chat"]));
     assert_eq!(
         permissions(&value),
-        ["core:event:allow-listen", "core:event:allow-unlisten"]
+        [
+            "core:event:allow-listen",
+            "core:event:allow-unlisten",
+            "core:window:allow-start-dragging"
+        ]
     );
 }
 

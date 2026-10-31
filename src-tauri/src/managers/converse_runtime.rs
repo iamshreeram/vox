@@ -536,6 +536,17 @@ impl ConverseController {
         self.registry.request_stop_if(id)
     }
 
+    /// Id of the session that is active (Starting, Running or Draining), or None when idle.
+    /// Content-free: only the registry's identity, never transcript text.
+    pub fn active_session_id(&self) -> Option<u64> {
+        match self.registry.state() {
+            RegistryState::Idle => None,
+            RegistryState::Starting(id)
+            | RegistryState::Running(id)
+            | RegistryState::Draining(id) => Some(id.0),
+        }
+    }
+
     /// The decision for one activation (orb click, hotkey, tray), read under one registry lock.
     /// A Starting session is never cancelled by an activation.
     pub fn activation_decision(&self) -> ActivationDecision {
@@ -1471,6 +1482,10 @@ mod tests {
         reset_hooks();
     }
 }
+
+#[cfg(test)]
+#[path = "converse_chat_stop_tests.rs"]
+mod chat_stop_tests;
 
 #[cfg(test)]
 #[path = "converse_hooks_tests.rs"]

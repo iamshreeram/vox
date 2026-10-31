@@ -197,6 +197,9 @@ pub struct ChatSnapshot {
     pub end: Option<String>,
     /// Whether new lines are currently recorded.
     pub recording: bool,
+    /// Id of the session the window displays (None when idle). The log has no access to the
+    /// session registry, so `get_chat_snapshot` fills it in; `snapshot()` leaves it None.
+    pub active_session: Option<u64>,
 }
 
 /// Why a Clear request did not complete.
@@ -869,6 +872,7 @@ impl ChatLog {
             state: log.state.clone(),
             end: log.end.clone(),
             recording: log.recording,
+            active_session: None,
         }
     }
 

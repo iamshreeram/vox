@@ -30,7 +30,7 @@ pub const ORB_COMMANDS: [&str; 5] = [
 ];
 
 /// Commands the chat window (classic or panel) may invoke.
-pub const CHAT_COMMANDS: [&str; 11] = [
+pub const CHAT_COMMANDS: [&str; 12] = [
     "get_chat_snapshot",
     "clear_chat_log",
     "send_chat_message",
@@ -42,6 +42,7 @@ pub const CHAT_COMMANDS: [&str; 11] = [
     "chat_draft_clear",
     "chat_draft_flush_ack",
     "chat_hide_window",
+    "chat_stop_conversation",
 ];
 
 /// Commands only the main window may invoke: the conversation opacity setting (Track T) and the
