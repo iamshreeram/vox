@@ -25,6 +25,10 @@ import type {
   KeyboardEvent,
 } from "react";
 import VoxAvatar from "./VoxAvatar";
+import ChatMarkdown from "./ChatMarkdown";
+import { copyText } from "./clipboardCopy";
+import { stripBidiAndInvisible } from "./textSafety";
+import { avatarStyle } from "./avatarStyle";
 import { getChatOrbLook, subscribeChatOrbLook } from "./chatOrbLook";
 import {
   CLEAR_CONFIRM_MS,
@@ -59,8 +63,97 @@ import {
 
 /** Events that arrive before the first snapshot is applied; older ones are dropped beyond this. */
 const PRE_HYDRATE_BUFFER_CAP = 1000;
+/** How long the Copied / Could not copy notice stays on a message (UI enterprise T2). */
+const COPY_NOTICE_MS = 1500;
 
 type TFn = ReturnType<typeof useTranslation>["t"];
+
+/**
+ * Copy one assistant reply: writes the ORIGINAL raw text. The clipboard is read only on click, never
+ * on render. A failure shows an inline notice and never throws (copyText catches everything).
+ */
+function CopyButton({
+  text,
+  t,
+  onResult,
+}: {
+  text: string;
+  t: TFn;
+  onResult: (ok: boolean) => void;
+}) {
+  const [notice, setNotice] = useState<"copied" | "failed" | null>(null);
+  const timerRef = useRef<number | undefined>(undefined);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
+    },
+    [],
+  );
+
+  const onCopy = async () => {
+    const clipboard =
+      typeof navigator === "undefined" ? undefined : navigator.clipboard;
+    const ok = await copyText(clipboard, text);
+    if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
+    setNotice(ok ? "copied" : "failed");
+    onResult(ok);
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = undefined;
+      setNotice(null);
+    }, COPY_NOTICE_MS);
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        className="chat-copy"
+        aria-label={t("chat.copyMessage")}
+        title={t("chat.copyMessage")}
+        onClick={() => void onCopy()}
+      >
+        <svg
+          aria-hidden="true"
+          focusable="false"
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+        >
+          <rect
+            x="4.5"
+            y="4.5"
+            width="7.5"
+            height="7.5"
+            rx="1.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          />
+          <path
+            d="M9.5 4.5V2.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          />
+        </svg>
+      </button>
+      {/* Visible only. The announcement is made once by the shared live region in ChatWindow, so a
+          long transcript does not carry one live region per message. */}
+      <span
+        className="chat-copy-note"
+        data-testid="chat-copy-note"
+        aria-hidden="true"
+      >
+        {notice === "copied"
+          ? t("chat.copied")
+          : notice === "failed"
+            ? t("chat.copyFailed")
+            : ""}
+      </span>
+    </>
+  );
+}
 
 function captionFor(
   state: string,
@@ -80,7 +173,15 @@ function captionFor(
   return { key: "chat.status.idle" };
 }
 
-function Bubble({ entry, t }: { entry: ChatEntry; t: TFn }) {
+function Bubble({
+  entry,
+  t,
+  onCopyResult,
+}: {
+  entry: ChatEntry;
+  t: TFn;
+  onCopyResult: (ok: boolean) => void;
+}) {
   if (entry.role === "system") {
     const note = describeSystem(entry.text);
     const label =
@@ -108,10 +209,24 @@ function Bubble({ entry, t }: { entry: ChatEntry; t: TFn }) {
         >
           {valid ? date.toLocaleTimeString() : ""}
         </time>
+        {entry.role === "assistant" ? (
+          <CopyButton
+            text={stripBidiAndInvisible(entry.text)}
+            t={t}
+            onResult={onCopyResult}
+          />
+        ) : null}
       </div>
-      <div className="chat-text" data-testid="chat-text">
-        {entry.text}
-      </div>
+      {entry.role === "assistant" ? (
+        <div className="chat-text" data-testid="chat-text">
+          <ChatMarkdown id={entry.id} text={entry.text} />
+        </div>
+      ) : (
+        // User text is plain: no markdown, so typed 2*3*4 stays as typed. Bidi controls are stripped.
+        <div className="chat-text chat-plain" data-testid="chat-text">
+          {stripBidiAndInvisible(entry.text)}
+        </div>
+      )}
     </li>
   );
 }
@@ -129,6 +244,27 @@ export default function ChatWindow() {
   // Inline two-step Clear (U15a): idle shows Clear; confirming shows a bar below the header with
   // Cancel (focused) and Confirm clear, and auto-cancels after CLEAR_CONFIRM_MS (T1b countdown).
   const [clearStep, setClearStep] = useState<ClearStep>("idle");
+  // One shared polite announcement for Copy results (all messages share it), cleared after 1.5 s.
+  const [copyResult, setCopyResult] = useState<"copied" | "failed" | null>(
+    null,
+  );
+  const copyResultTimerRef = useRef<number | undefined>(undefined);
+  useEffect(
+    () => () => {
+      if (copyResultTimerRef.current !== undefined)
+        window.clearTimeout(copyResultTimerRef.current);
+    },
+    [],
+  );
+  const onCopyResult = useCallback((ok: boolean) => {
+    if (copyResultTimerRef.current !== undefined)
+      window.clearTimeout(copyResultTimerRef.current);
+    setCopyResult(ok ? "copied" : "failed");
+    copyResultTimerRef.current = window.setTimeout(() => {
+      copyResultTimerRef.current = undefined;
+      setCopyResult(null);
+    }, COPY_NOTICE_MS);
+  }, []);
   const [clearFailed, setClearFailed] = useState(false);
   const [clearSeconds, setClearSeconds] = useState(
     clearSecondsLeft(CLEAR_CONFIRM_MS),
@@ -456,6 +592,11 @@ export default function ChatWindow() {
     getChatOrbLook,
     getChatOrbLook,
   );
+  // The pill, its dot and the equaliser take the globe's own ring colour for this face (the same
+  // avatarStyle table the orb paints from), so the status and the globe tell one story.
+  const stageStyle = {
+    "--chat-pill-accent": avatarStyle(face, orbLook)["--chat-accent"],
+  } as CSSProperties;
 
   return (
     <div
@@ -534,6 +675,18 @@ export default function ChatWindow() {
       >
         {clearStep === "confirming" ? t("chat.clearPrompt") : ""}
       </div>
+      <div
+        className="chat-sr-only"
+        role="status"
+        aria-live="polite"
+        data-testid="chat-copy-announce"
+      >
+        {copyResult === "copied"
+          ? t("chat.copied")
+          : copyResult === "failed"
+            ? t("chat.copyFailed")
+            : ""}
+      </div>
       {clearStep === "confirming" ? (
         <div
           className="chat-clear-bar"
@@ -571,52 +724,54 @@ export default function ChatWindow() {
           </div>
         </div>
       ) : null}
-      <section className="chat-stage">
+      <section className="chat-stage" style={stageStyle}>
         <VoxAvatar face={face} look={orbLook} />
-        <div className="chat-eq" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-          <span />
-          <span />
-        </div>
-        <div className="chat-status-row">
-          <p className="chat-pill" role="status">
-            <span className="chat-pill-dot" aria-hidden="true" />
-            <span className="chat-pill-text">{t(caption.key)}</span>
-            {caption.reasonKey ? (
-              <span className="chat-reason">{t(caption.reasonKey)}</span>
-            ) : null}
-          </p>
-          {showStop && stopId !== null ? (
-            <button
-              type="button"
-              className="chat-stop"
-              data-testid="chat-stop"
-              aria-label={t("chat.stopAria")}
-              title={t("chat.stopAria")}
-              disabled={stopping}
-              onClick={() => void onStop(stopId)}
-            >
-              <svg
-                aria-hidden="true"
-                focusable="false"
-                width="12"
-                height="12"
-                viewBox="0 0 12 12"
+        <div className="chat-stage-side">
+          <div className="chat-eq" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="chat-status-row">
+            <p className="chat-pill" role="status">
+              <span className="chat-pill-dot" aria-hidden="true" />
+              <span className="chat-pill-text">{t(caption.key)}</span>
+              {caption.reasonKey ? (
+                <span className="chat-reason">{t(caption.reasonKey)}</span>
+              ) : null}
+            </p>
+            {showStop && stopId !== null ? (
+              <button
+                type="button"
+                className="chat-stop"
+                data-testid="chat-stop"
+                aria-label={t("chat.stopAria")}
+                title={t("chat.stopAria")}
+                disabled={stopping}
+                onClick={() => void onStop(stopId)}
               >
-                <rect
-                  x="1"
-                  y="1"
-                  width="10"
-                  height="10"
-                  rx="1.5"
-                  fill="currentColor"
-                />
-              </svg>
-              <span>{t("chat.stop")}</span>
-            </button>
-          ) : null}
+                <svg
+                  aria-hidden="true"
+                  focusable="false"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 12 12"
+                >
+                  <rect
+                    x="1"
+                    y="1"
+                    width="10"
+                    height="10"
+                    rx="1.5"
+                    fill="currentColor"
+                  />
+                </svg>
+                <span>{t("chat.stop")}</span>
+              </button>
+            ) : null}
+          </div>
         </div>
       </section>
       {clearFailed ? (
@@ -639,10 +794,18 @@ export default function ChatWindow() {
           onScroll={onLogScroll}
         >
           {view.entries.length === 0 ? (
-            <li className="chat-empty">{t("chat.empty")}</li>
+            <li className="chat-empty">
+              <p className="chat-empty-title">{t("chat.empty")}</p>
+              <p className="chat-empty-hint">{t("chat.emptyHint")}</p>
+            </li>
           ) : (
             view.entries.map((entry) => (
-              <Bubble key={entry.id} entry={entry} t={t} />
+              <Bubble
+                key={entry.id}
+                entry={entry}
+                t={t}
+                onCopyResult={onCopyResult}
+              />
             ))
           )}
         </ol>
