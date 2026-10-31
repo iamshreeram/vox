@@ -1987,7 +1987,11 @@
     "stop": "Stop",
     "stopAria": "Stop the conversation",
     "stopFailed": "Could not stop the conversation.",
-    "clearCountdown": "Cancels in {{count}} s"
+    "clearCountdown": "Cancels in {{count}} s",
+    "copyMessage": "Copy message",
+    "copied": "Copied",
+    "copyFailed": "Could not copy",
+    "emptyHint": "Replies can be copied with the Copy button on each message."
   },
   "orb": {
     "hide": "Hide Vox orb",
