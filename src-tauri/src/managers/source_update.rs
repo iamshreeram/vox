@@ -19,14 +19,17 @@ use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
+use super::source_update_auto::consent;
+use super::source_update_commit_env::{note_process_start, CommitStatus, UpdateAdmission};
+use super::source_update_driver as driver;
 use super::source_update_runner::{
     self as runner, file_age_secs, now_unix, plist_path, proxy_env_from, read_status_bounded,
     run_id_in_status, status_path, update_state_dir, JobControl, ReconcileInput, RunPhase,
     UpdateProgress, INTERRUPTED_AFTER_SECS,
 };
-use super::source_update_runner_poller::{self as poller, PollerConfig};
+use super::source_update_runner_poller::{self as poller, PollerConfig, PollerRegistry};
 use super::source_update_runner_run::{
-    adopt_plan, cleanup_run, launch, start_gate, AdoptPlan, LaunchInputs, StartGate,
+    adopt_plan, cleanup_run, launch, launch_build, start_gate, AdoptPlan, LaunchInputs, StartGate,
 };
 
 /// `owner/repo` this build tracks.
@@ -80,6 +83,10 @@ pub struct SourceUpdateInfo {
     /// `false`/`None`.
     pub can_install: bool,
     pub install_blocker: Option<String>,
+    /// True while an automatic attempt on `latest_full` is healthy (R7-7 b): the footer and tray
+    /// then treat an `Available` state as idle. Set by the publisher, never by the check itself.
+    #[serde(default)]
+    pub auto_pending: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -304,6 +311,7 @@ pub fn evaluate_window(
             note: None,
             can_install: false,
             install_blocker: None,
+            auto_pending: false,
         }));
     }
     Ok(WindowEvaluation::Resolved(SourceUpdateInfo {
@@ -317,6 +325,7 @@ pub fn evaluate_window(
         note: None,
         can_install: false,
         install_blocker: None,
+        auto_pending: false,
     }))
 }
 
@@ -356,6 +365,7 @@ pub fn resolve_compare(
         note: Some(note.to_string()),
         can_install: false,
         install_blocker: None,
+        auto_pending: false,
     };
     match compare {
         Ok(CompareStatus::Ahead { ahead_by }) => Ok(SourceUpdateInfo {
@@ -368,6 +378,7 @@ pub fn resolve_compare(
             note: None,
             can_install: false,
             install_blocker: None,
+            auto_pending: false,
         }),
         Ok(CompareStatus::Identical | CompareStatus::Behind) => Ok(SourceUpdateInfo {
             state: SourceUpdateState::UpToDate,
@@ -379,6 +390,7 @@ pub fn resolve_compare(
             note: None,
             can_install: false,
             install_blocker: None,
+            auto_pending: false,
         }),
         Ok(CompareStatus::Diverged) => Ok(untracked(
             "This build's history has diverged from main, so it cannot be updated automatically.",
@@ -716,6 +728,10 @@ pub struct SourceUpdateRuntime {
     progress: Mutex<Option<UpdateProgress>>,
     /// The run this process is watching, if any.
     active: Mutex<Option<ActiveRun>>,
+    /// The poller of the run being watched; stopped and joined before an install commit.
+    pub pollers: PollerRegistry,
+    /// Admission guards held while an install is in flight (B3b-2b releases them).
+    pub admission: UpdateAdmission,
 }
 
 /// A run this process started or adopted and is watching.
@@ -732,7 +748,10 @@ pub struct ActiveRun {
 impl SourceUpdateRuntime {
     /// Empty runtime with the standard launch window.
     pub fn new() -> Self {
+        note_process_start();
         Self {
+            pollers: PollerRegistry::new(),
+            admission: UpdateAdmission::new(),
             cached: Mutex::new(None),
             last_ok: Mutex::new(None),
             check_lock: tokio::sync::Mutex::new(()),
@@ -820,11 +839,13 @@ pub async fn check_and_publish(
         return Err("Update checks were disabled.".to_string());
     }
 
+    let info = consent::annotate_info(app, info);
     *lock_state(&runtime.cached) = Some(info.clone());
     *lock_state(&runtime.last_ok) = Some(Instant::now());
     clear_failed_progress(&runtime);
     let _ = app.emit(STATUS_EVENT, Some(info.clone()));
     crate::tray::update_tray_menu(app);
+    driver::kick();
     Ok(info)
 }
 
@@ -839,15 +860,17 @@ pub fn clear(app: &AppHandle) {
     crate::tray::update_tray_menu(app);
 }
 
-/// The last published result, if any.
+/// The cached result, if any. `auto_pending` is set from the disk at read time.
 pub fn cached(app: &AppHandle) -> Option<SourceUpdateInfo> {
     app.try_state::<SourceUpdateRuntime>()
         .and_then(|runtime| lock_state(&runtime.cached).clone())
+        .map(|info| consent::annotate_info(app, info))
 }
 
-/// `true` when the cached result says an update is available.
+/// `true` when the footer and tray should offer the update: the cached result says it is
+/// available and no automatic attempt is healthy for it (R7-7 b).
 pub fn update_available(app: &AppHandle) -> bool {
-    cached(app).is_some_and(|info| info.state == SourceUpdateState::Available)
+    cached(app).is_some_and(|info| info.state == SourceUpdateState::Available && !info.auto_pending)
 }
 
 /// Fresh install facts judged now; `None` means an install may start.
@@ -876,10 +899,23 @@ pub async fn start_update(app: &AppHandle) -> Result<(), String> {
     let Some(runtime) = app.try_state::<SourceUpdateRuntime>() else {
         return Err(NOT_READY.to_string());
     };
+    // A manual start converts an automatic run and requests the commit of a built one (R7-7 c).
+    let converted = consent::convert_to_manual_now(app, active_run_id(app).as_deref());
+    if converted.is_some_and(|plan| plan.remove_active_marker || plan.request_commit) {
+        if let Some(current) = progress(app) {
+            cache_progress(app, current);
+        }
+    }
     let lock_dir = PathBuf::from(update_lock_path());
     // A run whose outcome is already published is not attached to: a new start
     // then goes through the lock like any other start.
     let attach_to = attachable_run(lock_state(&runtime.active).as_ref(), progress(app).as_ref());
+    let outstanding = driver::outstanding_kind_on_disk(app);
+    match driver::manual_start_plan(attach_to.is_some(), outstanding) {
+        driver::ManualStart::CommitBuilt => return commit_built_now(app).await,
+        driver::ManualStart::InProgress => return Ok(()),
+        driver::ManualStart::Attach | driver::ManualStart::Launch => {}
+    }
     match start_gate(
         attach_to.is_some(),
         runner::lock_state(&lock_dir, &runner::process_alive),
@@ -909,7 +945,7 @@ pub async fn start_update(app: &AppHandle) -> Result<(), String> {
     if !runtime.guard.try_acquire(Instant::now()) {
         return Err(LAUNCH_BUSY.to_string());
     }
-    let config = match launch_run(app, &lock_dir, &target) {
+    let config = match launch_run(app, &lock_dir, &target, false) {
         Ok(config) => config,
         Err(message) => {
             runtime.guard.release();
@@ -925,6 +961,7 @@ pub async fn start_update(app: &AppHandle) -> Result<(), String> {
             target: short_sha(&target),
             message: "Starting the update.".to_string(),
             estimated: false,
+            silent: false,
         },
     );
     crate::tray::update_tray_menu(app);
@@ -933,9 +970,64 @@ pub async fn start_update(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Writes and bootstraps the detached job for a new run. Errors are logged in
-/// full (they never contain secrets) and reported to the user as one short line.
-fn launch_run(app: &AppHandle, lock_dir: &Path, target: &str) -> Result<PollerConfig, String> {
+/// A manual start with a built automatic update: commits it now (R7-7 c). Runs the commit on a
+/// blocking thread; the install poller then carries progress on from the install phase.
+async fn commit_built_now(app: &AppHandle) -> Result<(), String> {
+    let manual_app = app.clone();
+    let status = tokio::task::spawn_blocking(move || driver::commit_now(&manual_app, true))
+        .await
+        .map_err(|_| LAUNCH_FAILED.to_string())?;
+    if matches!(status, CommitStatus::Committed(_)) {
+        info!("manual start committed the built update");
+    }
+    driver::commit_built_outcome(&status, driver::committing_on_disk(app))
+        .map_err(|()| LAUNCH_FAILED.to_string())
+}
+
+/// Starts the automatic build of `target` (R6-5): the single-phase launch with the auto marker
+/// written before the job starts. It never attaches and never publishes a notice; progress is
+/// silent. Refused by the launch itself while a pending record, a registered run or the lock exists.
+pub fn start_auto_build(app: &AppHandle, target: &str) -> Result<(), String> {
+    let runtime = app
+        .try_state::<SourceUpdateRuntime>()
+        .ok_or_else(|| NOT_READY.to_string())?;
+    if !runtime.guard.try_acquire(Instant::now()) {
+        return Err(LAUNCH_BUSY.to_string());
+    }
+    let lock_dir = PathBuf::from(update_lock_path());
+    let config = match launch_run(app, &lock_dir, target, true) {
+        Ok(config) => config,
+        Err(message) => {
+            runtime.guard.release();
+            return Err(message);
+        }
+    };
+    cache_progress(
+        app,
+        UpdateProgress {
+            run_id: config.run_id.clone(),
+            phase: RunPhase::Preparing,
+            percent: 0,
+            target: short_sha(target),
+            message: "Starting the update.".to_string(),
+            estimated: false,
+            silent: true,
+        },
+    );
+    start_watching(app, &runtime, config);
+    info!("automatic update build started");
+    Ok(())
+}
+
+/// Writes and bootstraps the detached job for a new run. `auto` launches the build phase with
+/// its `run-<id>.auto` marker (R6-7). Errors are logged in full (they never contain secrets)
+/// and reported to the user as one short line.
+fn launch_run(
+    app: &AppHandle,
+    lock_dir: &Path,
+    target: &str,
+    auto: bool,
+) -> Result<PollerConfig, String> {
     let fail = |reason: String| {
         warn!("update launch failed: {reason}");
         LAUNCH_FAILED.to_string()
@@ -951,19 +1043,22 @@ fn launch_run(app: &AppHandle, lock_dir: &Path, target: &str) -> Result<PollerCo
     let proxies = proxy_env_from(&|name| std::env::var(name).ok());
     let source = PathBuf::from(SOURCE_DIR);
     let tmpdir = std::env::temp_dir();
-    let launched = launch(
-        &runner::LaunchctlJobControl::current(),
-        &LaunchInputs {
-            run_id: &run_id,
-            app_data: &app_data,
-            source_dir: &source,
-            target_full: target,
-            home: &home,
-            tmpdir: &tmpdir,
-            lock_dir,
-            proxy_env: &proxies,
-        },
-    )
+    let control = runner::LaunchctlJobControl::current();
+    let inputs = LaunchInputs {
+        run_id: &run_id,
+        app_data: &app_data,
+        source_dir: &source,
+        target_full: target,
+        home: &home,
+        tmpdir: &tmpdir,
+        lock_dir,
+        proxy_env: &proxies,
+    };
+    let launched = if auto {
+        launch_build(&control, &inputs, true)
+    } else {
+        launch(&control, &inputs)
+    }
     .map_err(|e| fail(e.to_string()))?;
     Ok(PollerConfig {
         run_id,
@@ -984,7 +1079,9 @@ fn start_watching(app: &AppHandle, runtime: &SourceUpdateRuntime, config: Poller
         label: config.label.clone(),
         started: Instant::now(),
     });
-    poller::spawn(app.clone(), config);
+    let run_id = config.run_id.clone();
+    let handle = poller::spawn(app.clone(), config);
+    runtime.pollers.replace(&run_id, handle);
 }
 
 /// The full SHA a new update must build: the latest `main` commit from the last
@@ -999,6 +1096,11 @@ pub fn pinned_target(info: Option<&SourceUpdateInfo>) -> Option<String> {
     .then(|| full.clone())
 }
 
+/// The checkout root the update scripts are read from.
+pub fn checkout_dir() -> PathBuf {
+    PathBuf::from(SOURCE_DIR)
+}
+
 /// Full SHA of the running build, or empty when it is unknown.
 pub fn running_build_sha() -> String {
     if is_full_sha(BUILD_COMMIT) {
@@ -1008,15 +1110,27 @@ pub fn running_build_sha() -> String {
     }
 }
 
-/// The latest progress of the running (or last finished) update, if any.
+/// The latest progress of the running (or last finished) update, if any. `silent` is read
+/// from the run's marker at read time.
 pub fn progress(app: &AppHandle) -> Option<UpdateProgress> {
     app.try_state::<SourceUpdateRuntime>()
         .and_then(|runtime| lock_state(&runtime.progress).clone())
+        .map(|current| consent::annotate_progress(app, current))
+}
+
+/// Id of the run this process is watching, if any (settled runs included until they end).
+pub fn active_run_id(app: &AppHandle) -> Option<String> {
+    app.try_state::<SourceUpdateRuntime>().and_then(|runtime| {
+        lock_state(&runtime.active)
+            .as_ref()
+            .map(|run| run.run_id.clone())
+    })
 }
 
 /// Caches `progress` and emits it as `source-update-progress`. The tray is not
 /// refreshed here: the poller coalesces those refreshes.
 pub fn cache_progress(app: &AppHandle, progress: UpdateProgress) {
+    let progress = consent::annotate_progress(app, progress);
     if let Some(runtime) = app.try_state::<SourceUpdateRuntime>() {
         *lock_state(&runtime.progress) = Some(progress.clone());
     }
@@ -1096,6 +1210,10 @@ pub fn adopt_existing_run(app: &AppHandle) {
         return;
     };
     let state_dir = update_state_dir(&app_data);
+    if driver::committing_on_disk(app) {
+        // The install admission restore owns this install (B3b-2b), not the build adoption.
+        return;
+    }
     let status_file = status_path(&state_dir);
     let Ok(Some(bytes)) = read_status_bounded(&status_file) else {
         return;
@@ -1112,11 +1230,12 @@ pub fn adopt_existing_run(app: &AppHandle) {
         status_age_secs: file_age_secs(&status_file)
             .or_else(|| file_age_secs(&plist))
             .unwrap_or(0),
-        job: control.state(&runner::job_label(&run_id)),
+        job: control.probe(&runner::job_label(&run_id)),
         lock: runner::lock_state(&lock_dir, &runner::process_alive),
         running_build_sha: &running,
         published: false,
         interrupted_after_secs: INTERRUPTED_AFTER_SECS,
+        pending_built: super::source_update_pending::pending_built_for(&state_dir, &run_id),
     };
     match adopt_plan(&input, plist.exists()) {
         AdoptPlan::Nothing => {}
@@ -1144,6 +1263,7 @@ pub fn adopt_existing_run(app: &AppHandle) {
 /// Background checker: first run after a short delay, then every six hours,
 /// only in Source mode with checks enabled.
 pub fn spawn_scheduler(app: AppHandle) {
+    driver::start(app.clone());
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(SCHEDULER_START_DELAY).await;
         loop {

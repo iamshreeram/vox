@@ -29,8 +29,13 @@
 # rewritten atomically through each phase, see scripts/lib/update-status.sh.
 # Without that variable the output and behaviour are exactly as before.
 #
+# Two-phase runs (VOX_UPDATE_PHASE=build|install, see scripts/lib/update-staging.sh):
+# `build` stops after the bundle check, stages a copy of the fresh app and writes
+# pending.json (status `waiting`); `install` installs exactly that staged copy.
+# The default `all` is the single-phase run described above.
+#
 # Libraries live in scripts/lib/ (update-lock.sh, origin-check.sh,
-# update-status.sh).
+# update-status.sh, update-staging.sh).
 #
 # Usage:
 #   ./scripts/update-macos.sh
@@ -59,6 +64,8 @@ fi
 . "scripts/lib/origin-check.sh"
 # shellcheck source=lib/update-status.sh
 . "scripts/lib/update-status.sh"
+# shellcheck source=lib/update-staging.sh
+. "scripts/lib/update-staging.sh"
 
 # run_bun <args...>: every bun call goes through here.
 # Unattended runs (launched by Vox from launchd) use a private HOME: a detached
@@ -118,6 +125,9 @@ fi
 if ! status_validate_setup; then
   exit 1
 fi
+if ! staging_validate_setup; then
+  exit 1
+fi
 
 if ! acquire_update_lock "$LOCK_DIR"; then
   exit 1
@@ -132,6 +142,7 @@ on_exit() {
   if [ "$rc" -ne 0 ]; then
     status_fail_if_open "Update failed (exit status $rc)"
   fi
+  staging_on_exit "$rc"
   release_update_lock
   exit "$rc"
 }
@@ -150,6 +161,13 @@ fi
 # function before running it, and the final call line is read in one piece.
 main() {
   echo "== Updating Vox =="
+  staging_begin_phase
+  if [ "$STAGING_PHASE" = install ]; then
+    # Install phase: no git, bun or cargo. Its own checks and cleanup live in
+    # the library; the status file ends with done, or failed from the EXIT trap.
+    staging_run_install || return $?
+    return 0
+  fi
 
   # ---- 0b. Target pin: validated before any git, bun or cargo command -------
   PIN_SHA=""
@@ -286,6 +304,17 @@ main() {
   fi
 
   # ---- 6. Install (handles stop/re-sign/restart) -----------------------------
+  if [ "$STAGING_PHASE" = build ]; then
+    # Build phase: stage the fresh app and stop at `waiting`. Nothing installs.
+    if ! staging_finish_build "$APP_BUNDLE" "$(git rev-parse HEAD)"; then
+      echo "Could not stage the built app -- not installing." >&2
+      return 1
+    fi
+    echo ""
+    echo "== Build staged for install: now on $AFTER_REV =="
+    return 0
+  fi
+
   status_step installing 92 "Installing Vox" "Install failed"
   ./scripts/install-macos.sh "$APP_BUNDLE"
 

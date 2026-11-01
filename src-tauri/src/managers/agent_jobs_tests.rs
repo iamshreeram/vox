@@ -11,7 +11,8 @@ use crate::managers::converse_confirm::{FileId, JobLaunch, LaunchConfig};
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Barrier, Condvar, Mutex};
+use std::thread;
 use std::time::{Duration, Instant};
 
 /// Kills recorded pids and process groups when dropped, so a failing test never
@@ -970,4 +971,134 @@ fn cancel_racing_natural_exit_yields_exactly_one_terminal_state() {
     ));
     assert!(wait_until(Duration::from_secs(5), || obs.finish_count() == 1));
     assert_eq!(obs.finish_count(), 1, "exactly one finish for one job");
+}
+
+// ---- update reservation (B2a) ----------------------------------------------
+
+#[test]
+fn b2a_reservation_then_start_is_update_in_progress_and_spawns_nothing() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let marker = tmp.path().join("spawned.marker");
+    let bin = write_script(tmp.path(), "cli", &format!("touch '{}'", marker.display()));
+    let mgr = JobManager::new();
+    let reservation = mgr.try_reserve_for_update().expect("idle manager reserves");
+    let err = refused(
+        &mgr,
+        spec(tmp.path(), &bin, "task"),
+        Arc::new(RecordingObserver::default()),
+    );
+    assert_eq!(err, JobError::UpdateInProgress);
+    assert!(!marker.exists(), "a refused start must not spawn the job");
+    drop(reservation);
+}
+
+#[test]
+fn b2a_start_then_reservation_is_busy() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let bin = write_script(tmp.path(), "sleeper", "sleep 30");
+    let mgr = JobManager::new();
+    must_start(
+        &mgr,
+        spec(tmp.path(), &bin, "task"),
+        Arc::new(RecordingObserver::default()),
+    );
+    assert_eq!(mgr.try_reserve_for_update().err(), Some(JobError::Busy));
+    assert!(mgr.shutdown(&quick_shutdown()));
+}
+
+#[test]
+fn b2a_dropping_the_reservation_readmits_a_start() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let bin = write_script(tmp.path(), "sleeper", "sleep 30");
+    let mgr = JobManager::new();
+    let reservation = mgr.try_reserve_for_update().expect("reserve");
+    drop(reservation);
+    must_start(
+        &mgr,
+        spec(tmp.path(), &bin, "task"),
+        Arc::new(RecordingObserver::default()),
+    );
+    assert!(mgr.shutdown(&quick_shutdown()));
+}
+
+#[test]
+fn b2a_panic_while_holding_the_reservation_still_readmits_a_start() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let bin = write_script(tmp.path(), "sleeper", "sleep 30");
+    let mgr = JobManager::new();
+    let worker_mgr = Arc::clone(&mgr);
+    let outcome = thread::spawn(move || {
+        let _reservation = worker_mgr.try_reserve_for_update().expect("reserve");
+        panic!("simulated install failure");
+    })
+    .join();
+    assert!(outcome.is_err(), "the worker must panic");
+    must_start(
+        &mgr,
+        spec(tmp.path(), &bin, "task"),
+        Arc::new(RecordingObserver::default()),
+    );
+    assert!(mgr.shutdown(&quick_shutdown()));
+}
+
+#[test]
+fn b2a_double_reservation_is_refused_until_the_first_is_dropped() {
+    let mgr = JobManager::new();
+    let first = mgr.try_reserve_for_update().expect("first reservation");
+    assert_eq!(mgr.try_reserve_for_update().err(), Some(JobError::Busy));
+    drop(first);
+    assert!(mgr.try_reserve_for_update().is_ok());
+}
+
+#[test]
+fn b2a_racing_start_and_reservation_yield_exactly_one_winner() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let bin = write_script(tmp.path(), "sleeper", "sleep 30");
+    for round in 0..300 {
+        let mgr = JobManager::new();
+        let barrier = Arc::new(Barrier::new(2));
+        let start_mgr = Arc::clone(&mgr);
+        let start_barrier = Arc::clone(&barrier);
+        let start_spec = spec(tmp.path(), &bin, "task");
+        let starter = thread::spawn(move || {
+            start_barrier.wait();
+            start_mgr.start(start_spec, Arc::new(RecordingObserver::default()))
+        });
+        let reserve_mgr = Arc::clone(&mgr);
+        let reserver = thread::spawn(move || {
+            barrier.wait();
+            reserve_mgr.try_reserve_for_update()
+        });
+        let started = starter.join().expect("starter thread");
+        let reserved = reserver.join().expect("reserver thread");
+        // Both results are held here, so the reservation and any job are both still alive.
+        match (&started, &reserved) {
+            (Ok(_), Err(e)) => assert_eq!(*e, JobError::Busy, "round {round}"),
+            (Err(e), Ok(_)) => assert_eq!(*e, JobError::UpdateInProgress, "round {round}"),
+            _ => panic!("round {round}: exactly one side must win"),
+        }
+        drop(reserved);
+        assert!(mgr.shutdown(&quick_shutdown()), "round {round}");
+    }
+}
+
+#[test]
+fn b2a_last_activity_bumps_on_admission_and_when_the_job_ends() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let bin = write_script(tmp.path(), "quick", "exit 0");
+    let mgr = JobManager::new();
+    let created = mgr.last_activity();
+    std::thread::sleep(Duration::from_millis(5));
+    must_start(
+        &mgr,
+        spec(tmp.path(), &bin, "task"),
+        Arc::new(RecordingObserver::default()),
+    );
+    let admitted = mgr.last_activity();
+    assert!(admitted > created, "admission must bump last_activity");
+    assert!(
+        wait_until(Duration::from_secs(10), || mgr.last_activity() > admitted),
+        "the job ending must bump last_activity"
+    );
+    assert!(mgr.shutdown(&quick_shutdown()));
 }

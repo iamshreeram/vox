@@ -289,6 +289,28 @@ fn map_shutting_down_is_the_fixed_closing_refusal() {
     }
 }
 
+// B2a: a start refused by the update reservation speaks the fixed update text.
+#[test]
+fn map_update_in_progress_is_the_fixed_update_refusal() {
+    match map_job_error(Err(JobError::UpdateInProgress)) {
+        JobStartOutcome::Refused(text) => assert_eq!(text, UPDATE_BUSY),
+        _ => panic!("update in progress must be Refused with the update text"),
+    }
+}
+
+// B2a: every gate holder maps to its own refusal text; the update holder maps to UPDATE_BUSY.
+#[test]
+fn admit_refusal_maps_each_holder_to_its_message() {
+    assert_eq!(admit_refusal(&Busy(Owner::Dictation)), DICTATION_BUSY);
+    assert_eq!(admit_refusal(&Busy(Owner::Conversation)), ALREADY_RUNNING);
+    assert_eq!(admit_refusal(&Busy(Owner::Enrollment)), ENROLLMENT_BUSY);
+    assert_eq!(admit_refusal(&Busy(Owner::Updater)), UPDATE_BUSY);
+    assert_eq!(
+        UPDATE_BUSY,
+        "Vox is installing an update. Try again in a minute."
+    );
+}
+
 struct NullObserver;
 
 impl JobObserver for NullObserver {

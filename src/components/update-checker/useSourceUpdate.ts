@@ -111,7 +111,11 @@ export function useSourceUpdate({
         if (!isCurrent()) return;
         if (res.status === "ok") {
           dispatch({ type: "checkSucceeded", info: res.data });
-          if (manual && res.data.state === "available") {
+          if (
+            manual &&
+            res.data.state === "available" &&
+            res.data.auto_pending !== true
+          ) {
             openDialog();
           }
         } else {

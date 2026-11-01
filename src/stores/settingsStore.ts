@@ -186,6 +186,14 @@ const settingUpdaters: {
   },
   update_checks_enabled: (value) =>
     commands.changeUpdateChecksSetting(value as boolean),
+  // Goes through the backend consent guard; the generic writer would skip it.
+  auto_update_enabled: async (value) => {
+    const result = await commands.changeAutoUpdateSetting(value as boolean);
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
   show_whats_new_on_update: (value) =>
     commands.changeShowWhatsNewOnUpdateSetting(value as boolean),
   whats_new_last_seen_version: (value) =>

@@ -10,7 +10,7 @@
 //! (no live process, lock not held alive); the lock is never an effect.
 
 use super::source_update_runner::{
-    parse_status, reconcile, running_matches, terminal_result, Decision, JobState, LockState,
+    parse_status, reconcile, running_matches, terminal_result, Decision, JobProbe, LockState,
     ReconcileInput, RunPhase, RunStatus, UpdateProgress, INTERRUPTED_AFTER_SECS,
 };
 
@@ -118,11 +118,13 @@ pub struct PollInput<'a> {
     /// Age of the status file (or of the plist when there is no status), seconds.
     pub status_age_secs: u64,
     /// Launchd state of the run's job (probed at most every 2 s).
-    pub job: JobState,
+    pub job: JobProbe,
     /// Lock directory state (probed at most every 2 s).
     pub lock: LockState,
     /// Full SHA of the running build, or empty when unknown.
     pub running_build_sha: &'a str,
+    /// True when a valid `pending.json` in state `built` exists for this run (R7-4).
+    pub pending_built: bool,
     /// Current Unix time in seconds.
     pub now_unix: u64,
     /// Monotonic milliseconds since the poller started.
@@ -139,12 +141,14 @@ pub fn done_waits_for_restart(status: &RunStatus, running_build_sha: &str, live:
 /// shell must apply them.
 pub fn poll_step(state: &mut PollState, input: &PollInput<'_>) -> Vec<Effect> {
     let live = input.job.is_live();
+    // Unknown counts as maybe alive: no cleanup, no interruption, no release (R9-2).
+    let maybe_alive = live || input.job.is_unknown();
     let mut effects = Vec::new();
     ingest(state, input);
-    publish_progress_change(state, input, live, &mut effects);
+    publish_progress_change(state, input, maybe_alive, &mut effects);
     flush_pending_tray(state, input.now_ms, &mut effects);
-    publish_outcome(state, input, live, &mut effects);
-    if !live {
+    publish_outcome(state, input, maybe_alive, &mut effects);
+    if !maybe_alive {
         decide_cleanup(state, input, &mut effects);
     }
     effects
@@ -288,6 +292,7 @@ fn decide_cleanup(state: &mut PollState, input: &PollInput<'_>, effects: &mut Ve
         running_build_sha: input.running_build_sha,
         published: state.outcome_published,
         interrupted_after_secs: INTERRUPTED_AFTER_SECS,
+        pending_built: input.pending_built,
     });
     match decision {
         Decision::MarkInterrupted(message) => {
@@ -316,6 +321,10 @@ fn decide_cleanup(state: &mut PollState, input: &PollInput<'_>, effects: &mut Ve
                 state.outcome_published = true;
             }
         }
+        Decision::Rest => {
+            // Resting: the watcher stops for good, with no cleanup and no outcome.
+            effects.push(Effect::Stop);
+        }
         Decision::None | Decision::Adopt | Decision::PublishDone => {}
     }
 }
@@ -334,6 +343,7 @@ fn failed_progress(state: &PollState, message: &str) -> UpdateProgress {
             target: String::new(),
             message: String::new(),
             estimated: false,
+            silent: false,
         });
     UpdateProgress {
         phase: RunPhase::Failed,

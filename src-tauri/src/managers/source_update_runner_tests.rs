@@ -844,7 +844,7 @@ fn parse_launchctl_print_running_with_pid() {
     let text = "gui/501/com.iamshreeram.vox.update.0123456789abcdef = {\n\tactive count = 1\n\tpath = /Users/dev/Library/LaunchAgents/x.plist\n\tstate = running\n\n\tprogram = /bin/bash\n\tpid = 1234\n\tlast exit code = 0\n}\n";
     assert_eq!(
         parse_launchctl_print(text),
-        JobState::Registered {
+        JobProbe::Registered {
             pid: Some(1234),
             last_exit: Some(0)
         }
@@ -858,7 +858,7 @@ fn parse_launchctl_print_not_running_has_no_pid() {
     let state = parse_launchctl_print(text);
     assert_eq!(
         state,
-        JobState::Registered {
+        JobProbe::Registered {
             pid: None,
             last_exit: Some(0)
         }
@@ -871,7 +871,7 @@ fn parse_launchctl_print_never_exited_and_negative_exit() {
     let never = "\tstate = waiting\n\tlast exit code = (never exited)\n";
     assert_eq!(
         parse_launchctl_print(never),
-        JobState::Registered {
+        JobProbe::Registered {
             pid: None,
             last_exit: None
         }
@@ -879,7 +879,7 @@ fn parse_launchctl_print_never_exited_and_negative_exit() {
     let killed = "\tstate = not running\n\tlast exit code = -9\n";
     assert_eq!(
         parse_launchctl_print(killed),
-        JobState::Registered {
+        JobProbe::Registered {
             pid: None,
             last_exit: Some(-9)
         }
@@ -887,9 +887,9 @@ fn parse_launchctl_print_never_exited_and_negative_exit() {
 }
 
 #[test]
-fn parse_launchctl_print_garbage_is_absent() {
-    assert_eq!(parse_launchctl_print("hello world"), JobState::Absent);
-    assert_eq!(parse_launchctl_print(""), JobState::Absent);
+fn parse_launchctl_print_unrecognised_output_is_unknown() {
+    assert_eq!(parse_launchctl_print("hello world"), JobProbe::Unknown);
+    assert_eq!(parse_launchctl_print(""), JobProbe::Unknown);
 }
 
 #[test]
@@ -928,17 +928,17 @@ fn validate_job_label_accepts_only_the_update_prefix_and_run_id() {
 #[test]
 fn launchctl_state_refuses_foreign_labels_without_running() {
     let control = LaunchctlJobControl::current();
-    assert_eq!(control.state("com.apple.Finder"), JobState::Absent);
+    assert_eq!(control.probe("com.apple.Finder"), JobProbe::Unknown);
 }
 
 /// In-memory job control used by the reconciliation and cleanup tests.
 pub(crate) struct FakeJobControl {
-    pub state: std::sync::Mutex<JobState>,
+    pub state: std::sync::Mutex<JobProbe>,
     pub bootouts: std::sync::Mutex<Vec<String>>,
 }
 
 impl FakeJobControl {
-    pub fn with_state(state: JobState) -> Self {
+    pub fn with_state(state: JobProbe) -> Self {
         Self {
             state: std::sync::Mutex::new(state),
             bootouts: std::sync::Mutex::new(Vec::new()),
@@ -947,16 +947,16 @@ impl FakeJobControl {
 }
 
 impl JobControl for FakeJobControl {
-    fn state(&self, _label: &str) -> JobState {
+    fn probe(&self, _label: &str) -> JobProbe {
         match self.state.lock() {
             Ok(guard) => *guard,
-            Err(_) => JobState::Absent,
+            Err(_) => JobProbe::Absent,
         }
     }
 
     fn bootstrap(&self, _plist: &Path) -> Result<(), RunnerError> {
         if let Ok(mut guard) = self.state.lock() {
-            *guard = JobState::Registered {
+            *guard = JobProbe::Registered {
                 pid: None,
                 last_exit: None,
             };
@@ -969,7 +969,7 @@ impl JobControl for FakeJobControl {
             log.push(label.to_string());
         }
         if let Ok(mut guard) = self.state.lock() {
-            *guard = JobState::Absent;
+            *guard = JobProbe::Absent;
         }
         Ok(())
     }
@@ -977,13 +977,13 @@ impl JobControl for FakeJobControl {
 
 #[test]
 fn fake_job_control_reflects_bootstrap_and_bootout() {
-    let fake = FakeJobControl::with_state(JobState::Absent);
-    assert_eq!(fake.state(RUN_LABEL), JobState::Absent);
+    let fake = FakeJobControl::with_state(JobProbe::Absent);
+    assert_eq!(fake.probe(RUN_LABEL), JobProbe::Absent);
     fake.bootstrap(Path::new("/tmp/x.plist"))
         .expect("bootstrap");
-    assert!(matches!(fake.state(RUN_LABEL), JobState::Registered { .. }));
+    assert!(matches!(fake.probe(RUN_LABEL), JobProbe::Registered { .. }));
     fake.bootout(RUN_LABEL).expect("bootout");
-    assert_eq!(fake.state(RUN_LABEL), JobState::Absent);
+    assert_eq!(fake.probe(RUN_LABEL), JobProbe::Absent);
 }
 
 // ---- lock_state -----------------------------------------------------------
@@ -1034,7 +1034,7 @@ const OTHER_SHA: &str = "fedcba9876543210fedcba9876543210fedcba98";
 fn input(
     status: Option<RunStatus>,
     age: u64,
-    job: JobState,
+    job: JobProbe,
     lock: LockState,
     published: bool,
 ) -> ReconcileInput<'static> {
@@ -1046,11 +1046,12 @@ fn input(
         running_build_sha: SHA,
         published,
         interrupted_after_secs: INTERRUPTED_AFTER_SECS,
+        pending_built: false,
     }
 }
 
-fn registered(pid: Option<u32>, last_exit: Option<i32>) -> JobState {
-    JobState::Registered { pid, last_exit }
+fn registered(pid: Option<u32>, last_exit: Option<i32>) -> JobProbe {
+    JobProbe::Registered { pid, last_exit }
 }
 
 fn done_status() -> RunStatus {
@@ -1112,7 +1113,7 @@ fn reconcile_done_matching_target_publishes_done() {
         reconcile(&input(
             Some(done_status()),
             0,
-            JobState::Absent,
+            JobProbe::Absent,
             LockState::Free,
             false
         )),
@@ -1122,7 +1123,7 @@ fn reconcile_done_matching_target_publishes_done() {
         reconcile(&input(
             Some(done_status()),
             0,
-            JobState::Absent,
+            JobProbe::Absent,
             LockState::HeldDead,
             false
         )),
@@ -1137,7 +1138,7 @@ fn reconcile_done_with_mismatched_running_build_publishes_failure() {
     match reconcile(&input(
         Some(status),
         0,
-        JobState::Absent,
+        JobProbe::Absent,
         LockState::Free,
         false,
     )) {
@@ -1152,7 +1153,7 @@ fn reconcile_done_with_mismatched_running_build_publishes_failure() {
 fn reconcile_done_mismatch_with_empty_running_sha_publishes_done() {
     let mut status = done_status();
     status.target_full = OTHER_SHA.to_string();
-    let mut inp = input(Some(status), 0, JobState::Absent, LockState::Free, false);
+    let mut inp = input(Some(status), 0, JobProbe::Absent, LockState::Free, false);
     inp.running_build_sha = "";
     assert_eq!(reconcile(&inp), Decision::PublishDone);
 }
@@ -1163,7 +1164,7 @@ fn reconcile_failed_unpublished_publishes_message() {
         reconcile(&input(
             Some(failed_status("compile error")),
             0,
-            JobState::Absent,
+            JobProbe::Absent,
             LockState::Free,
             false
         )),
@@ -1177,7 +1178,7 @@ fn reconcile_truncates_long_failure_message_to_120_chars() {
     match reconcile(&input(
         Some(failed_status(&long)),
         0,
-        JobState::Absent,
+        JobProbe::Absent,
         LockState::Free,
         false,
     )) {
@@ -1192,7 +1193,7 @@ fn reconcile_published_terminal_with_no_process_is_cleaned_up() {
         reconcile(&input(
             Some(done_status()),
             0,
-            JobState::Absent,
+            JobProbe::Absent,
             LockState::Free,
             true
         )),
@@ -1212,7 +1213,7 @@ fn reconcile_published_terminal_with_no_process_is_cleaned_up() {
         reconcile(&input(
             Some(failed_status("x")),
             0,
-            JobState::Absent,
+            JobProbe::Absent,
             LockState::Free,
             true
         )),
@@ -1240,7 +1241,7 @@ fn reconcile_compiling_recent_without_job_waits() {
         reconcile(&input(
             Some(compiling_status()),
             10,
-            JobState::Absent,
+            JobProbe::Absent,
             LockState::Free,
             false
         )),
@@ -1253,7 +1254,7 @@ fn reconcile_compiling_old_without_job_is_interrupted() {
     match reconcile(&input(
         Some(compiling_status()),
         INTERRUPTED_AFTER_SECS,
-        JobState::Absent,
+        JobProbe::Absent,
         LockState::Free,
         false,
     )) {
@@ -1282,7 +1283,7 @@ fn reconcile_old_status_with_dead_lock_is_interrupted_and_lock_untouched() {
         reconcile(&input(
             Some(compiling_status()),
             5000,
-            JobState::Absent,
+            JobProbe::Absent,
             LockState::HeldDead,
             false
         )),
@@ -1329,14 +1330,14 @@ fn reconcile_no_status_and_registration_without_pid_is_cleaned_only_when_old() {
 #[test]
 fn reconcile_nothing_known_is_none() {
     assert_eq!(
-        reconcile(&input(None, 0, JobState::Absent, LockState::Free, false)),
+        reconcile(&input(None, 0, JobProbe::Absent, LockState::Free, false)),
         Decision::None
     );
     assert_eq!(
         reconcile(&input(
             None,
             99_999,
-            JobState::Absent,
+            JobProbe::Absent,
             LockState::HeldDead,
             false
         )),
@@ -1354,20 +1355,21 @@ fn reconcile_no_decision_removes_a_lock() {
             | Decision::PublishDone
             | Decision::PublishFailed(_)
             | Decision::MarkInterrupted(_)
-            | Decision::CleanupFinished => {}
+            | Decision::CleanupFinished
+            | Decision::Rest => {}
         }
     }
     audit(reconcile(&input(
         Some(done_status()),
         0,
-        JobState::Absent,
+        JobProbe::Absent,
         LockState::HeldDead,
         true,
     )));
     audit(reconcile(&input(
         Some(compiling_status()),
         9999,
-        JobState::Absent,
+        JobProbe::Absent,
         LockState::HeldDead,
         false,
     )));
@@ -1430,4 +1432,43 @@ fn reconcile_silent_exit_without_a_status_waits_for_the_threshold() {
         )),
         Decision::CleanupFinished
     );
+}
+
+// B6 minor 7: launchctl calls are bounded. A hanging call is killed and reported as an error,
+// and a timed-out probe is Unknown, never Absent or Registered.
+#[test]
+fn b6_a_hanging_launchctl_call_is_bounded_and_killed() {
+    let started = Instant::now();
+    let result = run_bounded(
+        std::ffi::OsStr::new("/bin/sleep"),
+        &["5".to_string()],
+        Duration::from_millis(200),
+    );
+    let error = result.err().expect("a call past its limit is an error");
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "the wait is bounded, not the child's own 5 s"
+    );
+}
+
+#[test]
+fn b6_a_quick_launchctl_call_returns_its_output() {
+    let output = run_bounded(
+        std::ffi::OsStr::new("/bin/echo"),
+        &["hi".to_string()],
+        Duration::from_secs(5),
+    )
+    .expect("quick call");
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"hi\n".to_vec());
+}
+
+#[test]
+fn b6_a_timed_out_probe_is_unknown() {
+    let timed_out = Err(io::Error::new(
+        io::ErrorKind::TimedOut,
+        "launchctl timed out",
+    ));
+    assert_eq!(probe_from_run(timed_out), JobProbe::Unknown);
 }

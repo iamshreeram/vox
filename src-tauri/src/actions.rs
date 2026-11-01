@@ -12,6 +12,7 @@ use crate::managers::conversation::ConversationLog;
 use crate::managers::conversation::{build_agent_prompt, should_append_exchange, Ticket};
 use crate::managers::converse::PhraseOutcome;
 use crate::managers::converse_audio::restrict_model_action;
+use crate::managers::converse_platform::UPDATE_BUSY;
 use crate::managers::history::HistoryManager;
 use crate::managers::media_control::{
     run_media_hook, MediaHookResult, OsascriptRunner, ScriptRunner,
@@ -1074,6 +1075,16 @@ fn acquire_dictation_lease(gate: &Arc<OwnershipGate>) -> Result<Lease, Busy> {
     gate.try_acquire(Owner::Dictation)
 }
 
+/// The recording-error event for a dictation start that the gate refused. An update in
+/// progress carries its own type and message (B2a); other holders keep the old event.
+fn dictation_refusal(busy: &Busy) -> (&'static str, Option<&'static str>) {
+    if busy.0 == Owner::Updater {
+        ("update_in_progress", Some(UPDATE_BUSY))
+    } else {
+        ("conversation_active", None)
+    }
+}
+
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         // Gate first: no overlay or recorder effect happens unless the lease is
@@ -1083,11 +1094,12 @@ impl ShortcutAction for TranscribeAction {
             Ok(lease) => lease,
             Err(busy) => {
                 log::debug!("dictation start ignored: {busy:?} owns the microphone");
+                let (error_type, detail) = dictation_refusal(&busy);
                 let _ = app.emit(
                     "recording-error",
                     RecordingErrorEvent {
-                        error_type: "conversation_active".to_string(),
-                        detail: None,
+                        error_type: error_type.to_string(),
+                        detail: detail.map(str::to_string),
                     },
                 );
                 return;
@@ -2627,6 +2639,23 @@ mod phrase_tier_tests {
 mod dictation_guard_tests {
     use super::*;
     use crate::managers::ownership::{Busy, Owner, OwnershipGate};
+
+    // B2a: an update in progress refuses dictation with its own event type and message.
+    #[test]
+    fn dictation_refusal_names_the_update_and_keeps_the_conversation_event() {
+        assert_eq!(
+            dictation_refusal(&Busy(Owner::Updater)),
+            ("update_in_progress", Some(UPDATE_BUSY))
+        );
+        assert_eq!(
+            dictation_refusal(&Busy(Owner::Conversation)),
+            ("conversation_active", None)
+        );
+        assert_eq!(
+            dictation_refusal(&Busy(Owner::Enrollment)),
+            ("conversation_active", None)
+        );
+    }
 
     #[test]
     fn dictation_lease_is_refused_while_a_conversation_owns_the_gate() {

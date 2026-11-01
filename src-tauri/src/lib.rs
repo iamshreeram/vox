@@ -700,6 +700,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Background coding jobs: one manager, one announcer, one exit coordinator (M3 S3d).
     let (job_wiring, job_runtime) = job_runtime::build(app_handle, tts_manager.clone());
     app_handle.manage(job_wiring);
+    // Automatic-update admission restore (DESIGN R7-3, R8-2, R9-3). Placed here: the ownership
+    // gate and the agent-job manager are managed by now, and nothing below can start work yet.
+    // Listeners, wake word, ambient, conversation, the tray and the scheduler all come later.
+    managers::source_update_driver::restore_admission(app_handle);
 
     // Bubble shell state (G4b): one core, created before anything can report a session or a line.
     bubble_native::init(app_handle);
@@ -1320,6 +1324,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::source_update::get_source_update_install_blocker,
             commands::source_update::start_source_update,
             commands::source_update::get_source_update_progress,
+            commands::source_update::change_auto_update_setting,
+            commands::source_update::get_auto_update_status,
             commands::get_app_dir_path,
             commands::get_app_settings,
             commands::get_default_settings,

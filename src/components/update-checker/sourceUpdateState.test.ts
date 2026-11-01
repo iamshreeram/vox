@@ -645,6 +645,193 @@ const scenarios: Record<string, () => void> = {
     assert.deepEqual(milestonesCrossed(100, 100), []);
   },
 
+  // ---- silent (automatic) runs ----------------------------------------------
+  "a silent progress frame is ignored and leaves the footer idle"() {
+    const s = run([
+      {
+        type: "progress",
+        progress: progress(RUN_A, "compiling", 40, { silent: true }),
+      },
+    ]);
+    assert.equal(s.phase, "idle");
+    assert.equal(s.run, null);
+    assert.equal(footerAction(s, true), "check");
+  },
+
+  "a silent failed frame does not show a failure or change the link"() {
+    const from = state({ phase: "available", info: available });
+    const s = run(
+      [
+        {
+          type: "progress",
+          progress: progress(RUN_A, "failed", 0, {
+            silent: true,
+            message: "build broke",
+          }),
+        },
+      ],
+      from,
+    );
+    assert.equal(s, from);
+    assert.equal(s.error, null);
+    assert.equal(footerAction(s, true), "openDialog");
+  },
+
+  "a silent done frame does not mark the footer updated"() {
+    const s = run([
+      {
+        type: "progress",
+        progress: progress(RUN_A, "done", 100, { silent: true }),
+      },
+    ]);
+    assert.equal(s.phase, "idle");
+    assert.equal(s.run, null);
+  },
+
+  "a silent frame never replaces a visible manual run"() {
+    const from = state({
+      phase: "updating",
+      run: {
+        runId: RUN_A,
+        percent: 30,
+        backendPhase: "compiling",
+        target: "abc1234",
+        estimated: false,
+        terminal: false,
+      },
+      seenRuns: [RUN_A],
+    });
+    const s = run(
+      [
+        {
+          type: "progress",
+          progress: progress(RUN_B, "bundling", 80, { silent: true }),
+        },
+        {
+          type: "progress",
+          progress: progress(RUN_A, "failed", 0, { silent: true }),
+        },
+      ],
+      from,
+    );
+    assert.equal(s, from);
+  },
+
+  "a silent cached progress is ignored on hydration and the cached status wins"() {
+    const s = run([
+      {
+        type: "progress",
+        progress: progress(RUN_A, "installing", 95, { silent: true }),
+      },
+      { type: "hydrated", info: available },
+    ]);
+    assert.equal(s.phase, "available");
+    assert.equal(s.run, null);
+  },
+
+  "a non-silent cached progress is still adopted on hydration"() {
+    const s = run([
+      { type: "progress", progress: progress(RUN_A, "compiling", 40) },
+    ]);
+    assert.equal(s.phase, "updating");
+    assert.equal(s.run?.percent, 40);
+  },
+
+  // ---- auto_pending hides the available link -------------------------------
+  "auto_pending on a check result shows the footer as idle, not available"() {
+    const s = run([
+      { type: "checkStarted", manual: false },
+      {
+        type: "checkSucceeded",
+        info: info({ auto_pending: true }),
+      },
+    ]);
+    assert.equal(s.phase, "idle");
+    assert.equal(footerAction(s, true), "check");
+    assert.equal(footerLabelKey(s, true), "footer.checkForUpdates");
+    assert.equal(s.info?.state, "available");
+  },
+
+  "auto_pending on a manual check does not open the install dialog"() {
+    const s = run([
+      { type: "checkStarted", manual: true },
+      { type: "checkSucceeded", info: info({ auto_pending: true }) },
+    ]);
+    assert.equal(s.phase, "idle");
+    assert.equal(footerAction(s, true), "check");
+  },
+
+  "auto_pending on a pushed status hides the link"() {
+    const s = run([
+      { type: "statusPushed", info: info({ auto_pending: true }) },
+    ]);
+    assert.equal(s.phase, "idle");
+  },
+
+  "auto_pending on hydration hides the link"() {
+    const s = run([{ type: "hydrated", info: info({ auto_pending: true }) }]);
+    assert.equal(s.phase, "idle");
+    assert.equal(footerAction(s, true), "check");
+  },
+
+  "a failed check while auto_pending is set does not bring the link back"() {
+    const from = state({ phase: "idle", info: info({ auto_pending: true }) });
+    const s = run(
+      [
+        { type: "checkStarted", manual: false },
+        { type: "checkFailed", message: "offline" },
+      ],
+      from,
+    );
+    assert.equal(s.phase, "idle");
+  },
+
+  "clearing auto_pending after a failed automatic run returns the link"() {
+    const hidden = run([
+      { type: "statusPushed", info: info({ auto_pending: true }) },
+    ]);
+    assert.equal(footerAction(hidden, true), "check");
+    const s = run(
+      [{ type: "statusPushed", info: info({ auto_pending: false }) }],
+      hidden,
+    );
+    assert.equal(s.phase, "available");
+    assert.equal(footerAction(s, true), "openDialog");
+  },
+
+  "a check result without auto_pending keeps the update available"() {
+    const s = run([
+      { type: "checkStarted", manual: false },
+      { type: "checkSucceeded", info: info() },
+    ]);
+    assert.equal(s.phase, "available");
+  },
+
+  // ---- waiting phase (non-silent) ------------------------------------------
+  "a waiting frame shows the ready stage at its percent"() {
+    const s = run([
+      { type: "progress", progress: progress(RUN_A, "waiting", 91) },
+    ]);
+    assert.equal(s.phase, "updating");
+    assert.equal(s.run?.percent, 91);
+    assert.equal(s.run?.backendPhase, "waiting");
+    assert.equal(
+      stageLabelKey(s.run?.backendPhase ?? "preparing"),
+      "footer.sourceUpdate.stage.waiting",
+    );
+    assert.equal(progressTextKey(s.run), "footer.sourceUpdate.updating");
+  },
+
+  "a waiting run moves on to done without going backwards"() {
+    const s = run([
+      { type: "progress", progress: progress(RUN_A, "waiting", 91) },
+      { type: "progress", progress: progress(RUN_A, "waiting", 60) },
+      { type: "progress", progress: progress(RUN_A, "done", 100) },
+    ]);
+    assert.equal(s.phase, "updated");
+    assert.equal(s.run?.percent, 100);
+  },
+
   // ---- helpers ---------------------------------------------------------------
   "canConfirmInstall needs an available, installable, unblocked update"() {
     assert.equal(canConfirmInstall(available), true);

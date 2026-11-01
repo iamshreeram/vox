@@ -115,9 +115,21 @@ pub const COMPOSER_OFF_REFUSAL: &str = "Set up a reply backend in the speech set
 pub const AMBIENT_REFUSAL: &str = "Turn off ambient listening before starting a conversation.";
 /// Refusal when voice enrollment holds the microphone (design A3').
 pub const ENROLLMENT_BUSY: &str = "Finish voice enrollment before starting a conversation.";
+/// Refusal while the background update installs (B2a). Also used for agent-job starts.
+pub const UPDATE_BUSY: &str = "Vox is installing an update. Try again in a minute.";
 
 /// The lease is the admission guard the controller holds for a session.
 impl AdmissionGuard for Lease {}
+
+/// The refusal text for a conversation start that found the gate held by `busy.0`.
+pub(crate) fn admit_refusal(busy: &Busy) -> &'static str {
+    match busy.0 {
+        Owner::Dictation => DICTATION_BUSY,
+        Owner::Conversation => ALREADY_RUNNING,
+        Owner::Enrollment => ENROLLMENT_BUSY,
+        Owner::Updater => UPDATE_BUSY,
+    }
+}
 
 /// Process-wide readiness gate shared by the recorder port (arms a token per
 /// listen, invalidates on stop/cancel/start) and the ordered overlay path.
@@ -1561,9 +1573,7 @@ impl Platform for RealPlatform {
     fn admit(&self) -> Result<Box<dyn AdmissionGuard>, String> {
         match ownership::global().try_acquire(Owner::Conversation) {
             Ok(lease) => Ok(Box::new(lease)),
-            Err(Busy(Owner::Dictation)) => Err(DICTATION_BUSY.to_string()),
-            Err(Busy(Owner::Conversation)) => Err(ALREADY_RUNNING.to_string()),
-            Err(Busy(Owner::Enrollment)) => Err(ENROLLMENT_BUSY.to_string()),
+            Err(busy) => Err(admit_refusal(&busy).to_string()),
         }
     }
 
@@ -2308,6 +2318,7 @@ pub(crate) fn map_job_error(
         Err(JobError::ShuttingDown) => {
             JobStartOutcome::Refused("Vox is closing, so I didn't start it.".to_string())
         }
+        Err(JobError::UpdateInProgress) => JobStartOutcome::Refused(UPDATE_BUSY.to_string()),
     }
 }
 

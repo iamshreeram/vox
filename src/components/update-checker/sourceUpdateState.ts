@@ -72,6 +72,14 @@ export const initialState: UpdateState = {
   seenRuns: [],
 };
 
+/**
+ * True when the footer should offer the update. An automatic attempt that is
+ * healthy for the same target (`auto_pending`) keeps the footer idle.
+ */
+function isFooterAvailable(info: SourceUpdateInfo | null): boolean {
+  return info?.state === "available" && info.auto_pending !== true;
+}
+
 /** Settled state for a status that was pushed or hydrated (not user-driven). */
 function settledFromInfo(
   seenRuns: string[],
@@ -81,7 +89,7 @@ function settledFromInfo(
     return { ...initialState, seenRuns };
   }
   return {
-    phase: info.state === "available" ? "available" : "idle",
+    phase: isFooterAvailable(info) ? "available" : "idle",
     info,
     error: null,
     manual: false,
@@ -100,6 +108,8 @@ function activePhaseOf(phase: RunPhase): ActiveRunPhase | null {
 }
 
 function applyProgress(state: UpdateState, p: UpdateProgress): UpdateState {
+  // Automatic runs are silent: no footer, progress or failure UI for them.
+  if (p.silent === true) return state;
   const reported = clampPercent(p.percent);
   if (reported === null) return state;
   // Only done reaches 100; any other phase is held at 99.
@@ -188,7 +198,7 @@ export function reducer(state: UpdateState, action: Action): UpdateState {
       const { info } = action;
       let phase: Phase;
       if (info.state === "available") {
-        phase = "available";
+        phase = isFooterAvailable(info) ? "available" : "idle";
       } else if (info.state === "up_to_date") {
         phase = state.manual ? "upToDate" : "idle";
       } else {
@@ -223,7 +233,7 @@ export function reducer(state: UpdateState, action: Action): UpdateState {
       }
       return {
         ...state,
-        phase: state.info?.state === "available" ? "available" : "idle",
+        phase: isFooterAvailable(state.info) ? "available" : "idle",
         error: null,
         manual: false,
         run: null,

@@ -21,6 +21,7 @@ fn info(state: SourceUpdateState, latest_full: &str) -> SourceUpdateInfo {
         note: None,
         can_install: false,
         install_blocker: None,
+        auto_pending: false,
     }
 }
 
@@ -200,6 +201,7 @@ fn progress_for(run_id: &str, phase: RunPhase) -> UpdateProgress {
         target: "0123456".to_string(),
         message: String::new(),
         estimated: false,
+        silent: false,
     }
 }
 

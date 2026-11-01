@@ -85,6 +85,13 @@ impl Delivery {
         true
     }
 
+    /// True when every Finish reservation is free: no job is running or awaiting its
+    /// delivery. Used by the update reservation (B2a).
+    #[allow(dead_code)]
+    pub(super) fn is_idle(&self) -> bool {
+        lock(&self.shared.state).free_reservations == FINISH_RESERVATIONS
+    }
+
     /// Returns a reservation that was taken but never used (spawn failed).
     pub(super) fn cancel_reservation(&self) {
         let mut st = lock(&self.shared.state);

@@ -19,7 +19,10 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use super::source_update_pending::{PendingRun, PendingState, PENDING_FILE_NAME};
 
 /// Largest status file accepted, in bytes.
 pub const MAX_STATUS_BYTES: usize = 4096;
@@ -33,6 +36,10 @@ pub const MAX_FUTURE_SKEW_SECS: u64 = 86_400;
 pub const INTERRUPTED_AFTER_SECS: u64 = 900;
 /// Number of run logs and plists kept by `rotate_logs`.
 pub const KEEP_RUN_LOGS: usize = 3;
+/// Lowest percent a `waiting` status may report (R6-1 band, R7-1 percent 91).
+pub const WAITING_PERCENT_MIN: u64 = 88;
+/// Highest percent a `waiting` status may report. Never 100.
+pub const WAITING_PERCENT_MAX: u64 = 91;
 /// Prefix of every one-shot updater job label.
 pub const JOB_LABEL_PREFIX: &str = "com.iamshreeram.vox.update.";
 /// Status file name inside the state directory.
@@ -54,6 +61,8 @@ pub enum RunPhase {
     Compiling,
     /// Bundling the `.app`.
     Bundling,
+    /// Resting: the build is staged and waits for a commit (non-terminal, R7-1).
+    Waiting,
     /// Installer staging and swap.
     Installing,
     /// Installer restarting Vox.
@@ -77,9 +86,10 @@ impl RunPhase {
             RunPhase::Dependencies => 1,
             RunPhase::Compiling => 2,
             RunPhase::Bundling => 3,
-            RunPhase::Installing => 4,
-            RunPhase::Restarting => 5,
-            RunPhase::Done | RunPhase::Failed => 6,
+            RunPhase::Waiting => 4,
+            RunPhase::Installing => 5,
+            RunPhase::Restarting => 6,
+            RunPhase::Done | RunPhase::Failed => 7,
         }
     }
 }
@@ -130,6 +140,10 @@ pub struct UpdateProgress {
     pub message: String,
     /// True when the percent is an estimate.
     pub estimated: bool,
+    /// True for an automatic run (its `run-<id>.auto` marker exists). The footer and the tray
+    /// ignore silent progress; results appear only in the Settings status.
+    #[serde(default)]
+    pub silent: bool,
 }
 
 impl From<&RunStatus> for UpdateProgress {
@@ -141,6 +155,7 @@ impl From<&RunStatus> for UpdateProgress {
             target: status.target.clone(),
             message: status.message.clone(),
             estimated: status.method == StatusMethod::Estimated,
+            silent: false,
         }
     }
 }
@@ -280,6 +295,11 @@ pub fn parse_status(
     if phase != RunPhase::Done && phase != RunPhase::Failed && raw_percent == 100 {
         return Err(StatusError::PercentNotAllowed);
     }
+    if phase == RunPhase::Waiting
+        && !(WAITING_PERCENT_MIN..=WAITING_PERCENT_MAX).contains(&raw_percent)
+    {
+        return Err(StatusError::PercentNotAllowed);
+    }
     let percent = u8::try_from(raw_percent).map_err(|_| StatusError::PercentOutOfRange)?;
 
     let target = text_field(object, "target")?;
@@ -370,6 +390,7 @@ fn parse_phase_name(name: &str) -> Option<RunPhase> {
         "compiling" => Some(RunPhase::Compiling),
         "bundling" => Some(RunPhase::Bundling),
         "installing" => Some(RunPhase::Installing),
+        "waiting" => Some(RunPhase::Waiting),
         "restarting" => Some(RunPhase::Restarting),
         "done" => Some(RunPhase::Done),
         "failed" => Some(RunPhase::Failed),
@@ -378,7 +399,7 @@ fn parse_phase_name(name: &str) -> Option<RunPhase> {
 }
 
 /// True when `text` is exactly `len` lowercase hex characters.
-fn is_lower_hex(text: &str, len: usize) -> bool {
+pub(crate) fn is_lower_hex(text: &str, len: usize) -> bool {
     text.len() == len && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
@@ -572,7 +593,35 @@ const PLIST_HEADER: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYP
 /// validated first; all text is XML-escaped. The environment is an
 /// allow-list: nothing from Vox's own environment is inherited except the
 /// validated proxy variables and `USER`.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn build_job_plist(params: &JobParams) -> Result<String, RunnerError> {
+    build_job_plist_kind(params, RunKind::All)
+}
+
+/// Which phase of the update a job runs (DESIGN R7-1).
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(not(test), allow(dead_code))]
+pub enum RunKind<'a> {
+    /// Manual single-phase run (build and install in one job). Bytes unchanged from the first runner.
+    All,
+    /// Build phase: stages the app and exits without installing.
+    Build {
+        /// True when an automatic policy started the run.
+        origin_auto: bool,
+    },
+    /// Install phase for a record already moved to `committing`.
+    Install {
+        /// The committing record; its install run id must equal `JobParams::run_id`.
+        pending: &'a PendingRun,
+    },
+}
+
+/// Percent floor the install phase reports (the resting build percent).
+pub const INSTALL_PERCENT_FLOOR: u8 = 91;
+
+/// Builds the plist for one phase of the update. [`RunKind::All`] yields exactly
+/// the bytes of [`build_job_plist`]. Each phase adds only its own keys.
+pub fn build_job_plist_kind(params: &JobParams, kind: RunKind<'_>) -> Result<String, RunnerError> {
     if !is_valid_run_id(&params.run_id) {
         return Err(RunnerError::InvalidValue("run_id"));
     }
@@ -606,12 +655,14 @@ pub fn build_job_plist(params: &JobParams) -> Result<String, RunnerError> {
         ("VOX_UPDATE_RUN_ID".into(), params.run_id.clone()),
         ("VOX_UPDATE_STATUS_FILE".into(), status_file.clone()),
         ("VOX_UPDATE_STATE_DIR".into(), state_dir),
-        ("VOX_UPDATE_TARGET_SHA".into(), params.target_full.clone()),
-        ("VOX_UPDATE_NONINTERACTIVE".into(), "1".into()),
-        ("VOX_UPDATE_LOCK_DIR".into(), lock_dir),
-        ("CARGO_TERM_PROGRESS_WHEN".into(), "always".into()),
-        ("CARGO_TERM_PROGRESS_WIDTH".into(), "100".into()),
     ];
+    env.extend(kind_env(params, &kind)?);
+    env.extend([
+        ("VOX_UPDATE_NONINTERACTIVE".to_string(), "1".to_string()),
+        ("VOX_UPDATE_LOCK_DIR".to_string(), lock_dir),
+        ("CARGO_TERM_PROGRESS_WHEN".to_string(), "always".to_string()),
+        ("CARGO_TERM_PROGRESS_WIDTH".to_string(), "100".to_string()),
+    ]);
     env.extend(proxies);
 
     let mut xml = String::from(PLIST_HEADER);
@@ -637,6 +688,44 @@ pub fn build_job_plist(params: &JobParams) -> Result<String, RunnerError> {
     Ok(xml)
 }
 
+/// The phase-specific environment keys, placed where the target sha sits for `All`.
+fn kind_env(params: &JobParams, kind: &RunKind<'_>) -> Result<Vec<(String, String)>, RunnerError> {
+    match kind {
+        RunKind::All => Ok(vec![(
+            "VOX_UPDATE_TARGET_SHA".to_string(),
+            params.target_full.clone(),
+        )]),
+        RunKind::Build { origin_auto } => {
+            let origin = if *origin_auto { "auto" } else { "manual" };
+            Ok(vec![
+                (
+                    "VOX_UPDATE_TARGET_SHA".to_string(),
+                    params.target_full.clone(),
+                ),
+                ("VOX_UPDATE_PHASE".to_string(), "build".to_string()),
+                ("VOX_UPDATE_ORIGIN".to_string(), origin.to_string()),
+            ])
+        }
+        RunKind::Install { pending } => {
+            let PendingState::Committing(info) = &pending.state else {
+                return Err(RunnerError::InvalidValue("install state"));
+            };
+            if info.install_run_id != params.run_id {
+                return Err(RunnerError::InvalidValue("install run id"));
+            }
+            let pending_file = abs_text("pending_file", &params.state_dir.join(PENDING_FILE_NAME))?;
+            Ok(vec![
+                ("VOX_UPDATE_PHASE".to_string(), "install".to_string()),
+                ("VOX_UPDATE_PENDING_FILE".to_string(), pending_file),
+                (
+                    "VOX_UPDATE_PERCENT_FLOOR".to_string(),
+                    INSTALL_PERCENT_FLOOR.to_string(),
+                ),
+            ])
+        }
+    }
+}
+
 /// Checks that `source_dir` is absolute and contains a regular (non-symlink)
 /// `scripts/update-macos.sh`.
 pub fn validate_source_dir(source_dir: &Path) -> Result<(), RunnerError> {
@@ -657,7 +746,7 @@ pub fn write_plist_file(path: &Path, xml: &str) -> io::Result<()> {
 
 /// Writes `bytes` to a sibling temp file created with mode 0600, then renames it
 /// over `path`. A stale temp file from an earlier crash is replaced.
-fn write_private_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn write_private_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let parent = path.parent().ok_or_else(|| {
         io::Error::new(io::ErrorKind::InvalidInput, "path has no parent directory")
     })?;
@@ -838,6 +927,8 @@ pub enum RunnerError {
     },
     /// An I/O failure.
     Io(io::Error),
+    /// A run, lock, pending record or install plist already exists, so nothing new may start.
+    Busy(&'static str),
 }
 
 impl fmt::Display for RunnerError {
@@ -859,6 +950,7 @@ impl fmt::Display for RunnerError {
                 None => write!(f, "launchctl {operation} failed"),
             },
             RunnerError::Io(error) => write!(f, "I/O error: {error}"),
+            RunnerError::Busy(what) => write!(f, "an update is already in progress: {what}"),
         }
     }
 }
@@ -871,10 +963,14 @@ impl From<io::Error> for RunnerError {
     }
 }
 
-/// What launchd reports about a job label.
+/// What launchd reports about a job label (three-valued, R9-2).
+///
+/// `Unknown` means the state could not be determined (launchctl failed, timed
+/// out or printed something unparseable). It is never treated as `Absent`:
+/// callers treat it as maybe alive and never interrupt, clean up or release.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JobState {
-    /// Not registered with launchd.
+pub enum JobProbe {
+    /// Confirmed not registered with launchd.
     Absent,
     /// Registered. `pid` is set only while a process is running.
     Registered {
@@ -883,19 +979,29 @@ pub enum JobState {
         /// Last exit code, if the job has exited before.
         last_exit: Option<i32>,
     },
+    /// The state could not be determined. Maybe alive.
+    Unknown,
 }
 
-impl JobState {
+impl JobProbe {
     /// Live means registered AND a process is running.
     pub fn is_live(&self) -> bool {
-        matches!(self, JobState::Registered { pid: Some(_), .. })
+        matches!(self, JobProbe::Registered { pid: Some(_), .. })
+    }
+
+    /// True when the state could not be determined.
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, JobProbe::Unknown)
     }
 }
 
+/// Exit status `launchctl print` uses for "could not find service" (confirmed absence).
+pub const LAUNCHCTL_NOT_FOUND_CODE: i32 = 113;
+
 /// Parses the stdout of a successful `launchctl print gui/<uid>/<label>`.
 /// Output with no recognised `state`, `pid` or `last exit code` line is
-/// treated as absent.
-pub fn parse_launchctl_print(text: &str) -> JobState {
+/// unparseable and therefore `Unknown`, never `Absent`.
+pub fn parse_launchctl_print(text: &str) -> JobProbe {
     let mut state: Option<&str> = None;
     let mut pid: Option<u32> = None;
     let mut last_exit: Option<i32> = None;
@@ -922,21 +1028,21 @@ pub fn parse_launchctl_print(text: &str) -> JobState {
         }
     }
     if !seen {
-        return JobState::Absent;
+        return JobProbe::Unknown;
     }
     let pid = if state == Some("not running") {
         None
     } else {
         pid
     };
-    JobState::Registered { pid, last_exit }
+    JobProbe::Registered { pid, last_exit }
 }
 
 /// Launchd operations used by the runner. Implemented for real by
 /// `LaunchctlJobControl` and for tests by `FakeJobControl`.
 pub trait JobControl {
     /// Current state of `label`.
-    fn state(&self, label: &str) -> JobState;
+    fn probe(&self, label: &str) -> JobProbe;
     /// Registers the job described by `plist` (`launchctl bootstrap`).
     fn bootstrap(&self, plist: &Path) -> Result<(), RunnerError>;
     /// Removes the registration for `label` (`launchctl bootout`).
@@ -957,19 +1063,15 @@ impl LaunchctlJobControl {
 }
 
 impl JobControl for LaunchctlJobControl {
-    fn state(&self, label: &str) -> JobState {
+    fn probe(&self, label: &str) -> JobProbe {
         if validate_job_label(label).is_err() {
-            return JobState::Absent;
+            return JobProbe::Unknown;
         }
-        match Command::new(LAUNCHCTL_PATH)
-            .args(print_args(self.uid, label))
-            .output()
-        {
-            Ok(output) if output.status.success() => {
-                parse_launchctl_print(&String::from_utf8_lossy(&output.stdout))
-            }
-            _ => JobState::Absent,
-        }
+        probe_from_run(run_bounded(
+            std::ffi::OsStr::new(LAUNCHCTL_PATH),
+            &print_args(self.uid, label),
+            LAUNCHCTL_TIMEOUT,
+        ))
     }
 
     fn bootstrap(&self, plist: &Path) -> Result<(), RunnerError> {
@@ -983,7 +1085,7 @@ impl JobControl for LaunchctlJobControl {
             Ok(()) => Ok(()),
             // Already gone is success for an idempotent cleanup.
             Err(error) => {
-                if self.state(label) == JobState::Absent {
+                if self.probe(label) == JobProbe::Absent {
                     Ok(())
                 } else {
                     Err(error)
@@ -994,7 +1096,11 @@ impl JobControl for LaunchctlJobControl {
 }
 
 fn run_launchctl(operation: &'static str, args: &[String]) -> Result<(), RunnerError> {
-    let output = Command::new(LAUNCHCTL_PATH).args(args).output()?;
+    let output = run_bounded(
+        std::ffi::OsStr::new(LAUNCHCTL_PATH),
+        args,
+        LAUNCHCTL_TIMEOUT,
+    )?;
     if output.status.success() {
         Ok(())
     } else {
@@ -1002,6 +1108,76 @@ fn run_launchctl(operation: &'static str, args: &[String]) -> Result<(), RunnerE
             operation,
             code: output.status.code(),
         })
+    }
+}
+
+/// Longest a single launchctl call may run before it is killed (B6 minor 7). A hang must not
+/// block the driver thread for longer than this.
+pub const LAUNCHCTL_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How often a bounded call checks whether its child has exited.
+const LAUNCHCTL_POLL: Duration = Duration::from_millis(20);
+
+/// The finished output of a bounded call.
+#[derive(Debug)]
+pub struct BoundedOutput {
+    /// Exit status of the child.
+    pub status: std::process::ExitStatus,
+    /// Everything the child wrote to stdout.
+    pub stdout: Vec<u8>,
+}
+
+/// Runs `program` with `args` and waits at most `limit`. A child still running at the deadline
+/// is killed and reaped, and the call fails with `TimedOut`. Stdout is drained on its own thread
+/// so a chatty child cannot stall the wait.
+pub fn run_bounded(
+    program: &std::ffi::OsStr,
+    args: &[String],
+    limit: Duration,
+) -> io::Result<BoundedOutput> {
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    let stdout = child.stdout.take();
+    let reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        if let Some(mut pipe) = stdout {
+            // A read error only shortens the captured output; the exit status still decides.
+            let _ = pipe.read_to_end(&mut bytes);
+        }
+        bytes
+    });
+    let deadline = Instant::now() + limit;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            let stdout = reader.join().unwrap_or_default();
+            return Ok(BoundedOutput { status, stdout });
+        }
+        if Instant::now() >= deadline {
+            // Kill and reap; the reader thread ends with the closed pipe.
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "launchctl call timed out",
+            ));
+        }
+        thread::sleep(LAUNCHCTL_POLL);
+    }
+}
+
+/// Maps the result of a `launchctl print` call to a probe (B6 minor 7). A timed-out or failed
+/// call is `Unknown`: it never reads as Absent, which would let an install be treated as gone.
+pub fn probe_from_run(run: io::Result<BoundedOutput>) -> JobProbe {
+    match run {
+        Ok(output) if output.status.success() => {
+            parse_launchctl_print(&String::from_utf8_lossy(&output.stdout))
+        }
+        Ok(output) if output.status.code() == Some(LAUNCHCTL_NOT_FOUND_CODE) => JobProbe::Absent,
+        _ => JobProbe::Unknown,
     }
 }
 
@@ -1121,7 +1297,7 @@ pub struct ReconcileInput<'a> {
     /// Age of the status (or of the run's plist when no status exists), seconds.
     pub status_age_secs: u64,
     /// Launchd state of the run's job.
-    pub job: JobState,
+    pub job: JobProbe,
     /// Lock directory state.
     pub lock: LockState,
     /// Full SHA this running build was compiled from, or empty when unknown.
@@ -1130,6 +1306,8 @@ pub struct ReconcileInput<'a> {
     pub published: bool,
     /// Non-terminal runs without a live job for this long are interrupted.
     pub interrupted_after_secs: u64,
+    /// True when a valid `pending.json` in state `built` exists for this run (R7-4).
+    pub pending_built: bool,
 }
 
 /// What the runner should do next. No variant removes a lock.
@@ -1147,12 +1325,27 @@ pub enum Decision {
     MarkInterrupted(String),
     /// Boot out the job registration and remove its plist and old logs.
     CleanupFinished,
+    /// Resting (R7-4): a `waiting` run with a valid built pending and no process.
+    /// Nothing is interrupted, cleaned up or published; the watcher stops.
+    Rest,
 }
 
 /// Pure decision table (R3-1). Order matters: a live job always wins.
 pub fn reconcile(input: &ReconcileInput<'_>) -> Decision {
     if input.job.is_live() {
         return Decision::Adopt;
+    }
+    if input.job.is_unknown() {
+        // Maybe alive: never interrupt, never clean up. A finished outcome may still be shown.
+        return match &input.status {
+            Some(status) if status.phase.is_terminal() && !input.published => {
+                match terminal_result(status, input.running_build_sha) {
+                    Ok(()) => Decision::PublishDone,
+                    Err(message) => Decision::PublishFailed(message),
+                }
+            }
+            _ => Decision::None,
+        };
     }
     let lock_held = input.lock == LockState::HeldAlive;
     match &input.status {
@@ -1169,6 +1362,7 @@ pub fn reconcile(input: &ReconcileInput<'_>) -> Decision {
                 Decision::CleanupFinished
             }
         }
+        Some(status) if status.phase == RunPhase::Waiting && input.pending_built => Decision::Rest,
         Some(_) => {
             if input.status_age_secs < input.interrupted_after_secs {
                 Decision::None
@@ -1180,7 +1374,7 @@ pub fn reconcile(input: &ReconcileInput<'_>) -> Decision {
             // The job exited without writing a status for this run: say so once,
             // then clean up. A known exit code is final, so no waiting; otherwise
             // the job must have been silent for the whole threshold.
-            JobState::Registered {
+            JobProbe::Registered {
                 pid: None,
                 last_exit,
             } if !lock_held
@@ -1222,9 +1416,9 @@ fn failure_message(message: &str) -> String {
 }
 
 /// Failure text for a job that stopped without writing a status.
-fn stopped_message(job: JobState) -> String {
+fn stopped_message(job: JobProbe) -> String {
     match job {
-        JobState::Registered {
+        JobProbe::Registered {
             last_exit: Some(code),
             ..
         } => format!("The update stopped unexpectedly (exit {code})."),
@@ -1232,15 +1426,19 @@ fn stopped_message(job: JobState) -> String {
     }
 }
 
-fn interrupted_message(job: JobState) -> String {
+fn interrupted_message(job: JobProbe) -> String {
     match job {
-        JobState::Registered {
+        JobProbe::Registered {
             last_exit: Some(code),
             ..
         } => format!("update interrupted (last exit code {code})"),
         _ => "update interrupted".to_string(),
     }
 }
+
+#[cfg(test)]
+#[path = "source_update_waiting_tests.rs"]
+mod waiting_tests;
 
 #[cfg(test)]
 #[path = "source_update_runner_tests.rs"]

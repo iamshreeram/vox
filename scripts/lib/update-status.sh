@@ -15,13 +15,15 @@
 #    "message":"<<=120 chars, JSON-escaped>","method":"exact|estimated",
 #    "ts":<unix seconds>}
 # phase is one of: preparing dependencies compiling bundling installing
-#                  restarting done failed
+#                  restarting done failed waiting
+# waiting is a RESTING, non-terminal phase: a build-only run (VOX_UPDATE_PHASE
+# =build) has staged its app and stops there until an install is started.
 # percent is monotonic within a run, never 100 before `done`.
 #
 # Bands: preparing 0-4, dependencies 4-10, compiling 10-87 (cargo N/M is
 # primary; a time-based estimate takes over after VOX_UPDATE_ESTIMATE_AFTER
-# seconds, default 20, without a new N/M), bundling 88-92, installing 92-96,
-# restarting 97-99, done 100, failed keeps the last percent.
+# seconds, default 20, without a new N/M), bundling 88-92, waiting 91,
+# installing 92-96, restarting 97-99, done 100, failed keeps the last percent.
 #
 # Environment read here:
 #   VOX_UPDATE_STATUS_FILE   absolute path of the status file (enables it)
@@ -116,14 +118,27 @@ status_json_escape() {
   printf '%s' "$text" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
+# status_phase_valid <phase>: 0 iff the phase is one of the known phases.
+status_phase_valid() {
+  case "$1" in
+    preparing | dependencies | compiling | bundling | installing | restarting | done | failed | waiting) return 0 ;;
+  esac
+  return 1
+}
+
 # status_write <phase> <percent> <message> [exact|estimated]
 # Writes the status file atomically. Percent is clamped to the monotonic and
 # never-100-before-done rules. Failures are reported on stderr and never abort
-# the caller. Writes after a terminal phase are ignored.
+# the caller. Writes after a terminal phase are ignored. Unknown phases are
+# refused (nothing is written).
 status_write() {
   local phase="$1" pct="$2" msg="$3" method="${4:-exact}"
   local file dir tmp ts esc line
   if ! status_enabled || [ "$STATUS_TERMINAL" = 1 ]; then
+    return 0
+  fi
+  if ! status_phase_valid "$phase"; then
+    echo "Internal error: unknown status phase '$phase' -- not written." >&2
     return 0
   fi
   file="$VOX_UPDATE_STATUS_FILE"

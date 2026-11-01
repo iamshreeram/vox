@@ -5,7 +5,7 @@
 use super::*;
 use crate::managers::source_update_runner::{
     parse_status, proxy_env_from, read_status_bounded, run_id_in_status, write_status_file,
-    JobState, RunPhase, RunStatus, StatusMethod, INTERRUPTED_AFTER_SECS, MAX_STATUS_BYTES,
+    JobProbe, RunPhase, RunStatus, StatusMethod, INTERRUPTED_AFTER_SECS, MAX_STATUS_BYTES,
 };
 use std::fs;
 use std::sync::Mutex;
@@ -15,14 +15,14 @@ const FULL: &str = "0123456789abcdef0123456789abcdef01234567";
 const NOW: u64 = 1_800_000_000;
 
 struct FakeJobControl {
-    state: Mutex<JobState>,
+    state: Mutex<JobProbe>,
     bootstraps: Mutex<Vec<PathBuf>>,
     bootouts: Mutex<Vec<String>>,
     fail_bootstrap: bool,
 }
 
 impl FakeJobControl {
-    fn new(state: JobState) -> Self {
+    fn new(state: JobProbe) -> Self {
         Self {
             state: Mutex::new(state),
             bootstraps: Mutex::new(Vec::new()),
@@ -34,13 +34,13 @@ impl FakeJobControl {
     fn failing() -> Self {
         Self {
             fail_bootstrap: true,
-            ..Self::new(JobState::Absent)
+            ..Self::new(JobProbe::Absent)
         }
     }
 }
 
 impl JobControl for FakeJobControl {
-    fn state(&self, _label: &str) -> JobState {
+    fn probe(&self, _label: &str) -> JobProbe {
         *self.state.lock().unwrap()
     }
 
@@ -123,15 +123,15 @@ fn status(phase: RunPhase, pct: u8, message: &str) -> RunStatus {
     }
 }
 
-fn live() -> JobState {
-    JobState::Registered {
+fn live() -> JobProbe {
+    JobProbe::Registered {
         pid: Some(77),
         last_exit: None,
     }
 }
 
-fn registered_dead() -> JobState {
-    JobState::Registered {
+fn registered_dead() -> JobProbe {
+    JobProbe::Registered {
         pid: None,
         last_exit: None,
     }
@@ -140,7 +140,7 @@ fn registered_dead() -> JobState {
 fn reconcile_input(
     status: Option<RunStatus>,
     age: u64,
-    job: JobState,
+    job: JobProbe,
     lock: LockState,
     published: bool,
 ) -> ReconcileInput<'static> {
@@ -152,6 +152,7 @@ fn reconcile_input(
         running_build_sha: FULL,
         published,
         interrupted_after_secs: INTERRUPTED_AFTER_SECS,
+        pending_built: false,
     }
 }
 
@@ -173,7 +174,7 @@ fn start_gate_table() {
 #[test]
 fn launch_writes_the_exact_plist_and_bootstraps_exactly_once() {
     let fx = Fixture::new();
-    let control = FakeJobControl::new(JobState::Absent);
+    let control = FakeJobControl::new(JobProbe::Absent);
     let proxy: Vec<(String, String)> = Vec::new();
     let launched = launch(&control, &fx.inputs(RUN, &proxy)).unwrap();
 
@@ -209,7 +210,7 @@ fn launch_writes_the_exact_plist_and_bootstraps_exactly_once() {
 #[test]
 fn launch_refuses_a_bad_run_id_without_touching_launchd() {
     let fx = Fixture::new();
-    let control = FakeJobControl::new(JobState::Absent);
+    let control = FakeJobControl::new(JobProbe::Absent);
     let proxy: Vec<(String, String)> = Vec::new();
     let result = launch(&control, &fx.inputs("NOT-A-RUN-ID", &proxy));
     assert!(matches!(result, Err(RunnerError::InvalidValue("run_id"))));
@@ -220,7 +221,7 @@ fn launch_refuses_a_bad_run_id_without_touching_launchd() {
 fn launch_refuses_a_checkout_without_the_script() {
     let fx = Fixture::new();
     fs::remove_file(fx.checkout.join("scripts/update-macos.sh")).unwrap();
-    let control = FakeJobControl::new(JobState::Absent);
+    let control = FakeJobControl::new(JobProbe::Absent);
     let proxy: Vec<(String, String)> = Vec::new();
     let result = launch(&control, &fx.inputs(RUN, &proxy));
     assert!(matches!(result, Err(RunnerError::ScriptMissing)));
@@ -235,7 +236,7 @@ fn launch_refuses_a_group_writable_state_directory() {
     let fx = Fixture::new();
     fs::create_dir_all(fx.state_dir()).unwrap();
     fs::set_permissions(fx.state_dir(), fs::Permissions::from_mode(0o770)).unwrap();
-    let control = FakeJobControl::new(JobState::Absent);
+    let control = FakeJobControl::new(JobProbe::Absent);
     let proxy: Vec<(String, String)> = Vec::new();
     let result = launch(&control, &fx.inputs(RUN, &proxy));
     assert!(matches!(result, Err(RunnerError::Io(_))));
@@ -274,7 +275,7 @@ fn launch_rotates_old_runs_and_keeps_the_newest_three() {
     for id in old_ids {
         fs::write(log_path(&state, id), "old").unwrap();
     }
-    let control = FakeJobControl::new(JobState::Absent);
+    let control = FakeJobControl::new(JobProbe::Absent);
     let proxy: Vec<(String, String)> = Vec::new();
     launch(&control, &fx.inputs(RUN, &proxy)).unwrap();
     let remaining = old_ids
@@ -288,7 +289,7 @@ fn launch_rotates_old_runs_and_keeps_the_newest_three() {
 #[test]
 fn proxy_variables_are_forwarded_only_when_given() {
     let fx = Fixture::new();
-    let control = FakeJobControl::new(JobState::Absent);
+    let control = FakeJobControl::new(JobProbe::Absent);
     let proxy = vec![("HTTPS_PROXY".to_string(), "http://proxy:3128".to_string())];
     let launched = launch(&control, &fx.inputs(RUN, &proxy)).unwrap();
     let written = fs::read_to_string(&launched.plist).unwrap();
@@ -317,7 +318,7 @@ fn cleanup_boots_out_removes_the_plist_and_never_touches_the_lock() {
     let fx = Fixture::new();
     let state = fx.state_dir();
     let proxy: Vec<(String, String)> = Vec::new();
-    let control = FakeJobControl::new(JobState::Absent);
+    let control = FakeJobControl::new(JobProbe::Absent);
     launch(&control, &fx.inputs(RUN, &proxy)).unwrap();
     fs::create_dir_all(&fx.lock_dir).unwrap();
     fs::write(fx.lock_dir.join("owner"), "999999-1-abc").unwrap();
@@ -337,7 +338,7 @@ fn cleanup_is_idempotent_and_refuses_a_bad_run_id() {
     let fx = Fixture::new();
     let state = fx.state_dir();
     fs::create_dir_all(&state).unwrap();
-    let control = FakeJobControl::new(JobState::Absent);
+    let control = FakeJobControl::new(JobProbe::Absent);
     cleanup_run(&control, &state, RUN).unwrap();
     cleanup_run(&control, &state, RUN).unwrap();
     assert!(matches!(
@@ -380,7 +381,7 @@ fn adoption_table() {
     );
     assert_eq!(
         adopt_plan(
-            &reconcile_input(Some(failed()), 1, JobState::Absent, Free, false),
+            &reconcile_input(Some(failed()), 1, JobProbe::Absent, Free, false),
             true
         ),
         AdoptPlan::Watch
@@ -388,7 +389,7 @@ fn adoption_table() {
     // Finished and already cleaned up by an earlier instance: stay quiet.
     assert_eq!(
         adopt_plan(
-            &reconcile_input(Some(done()), 1, JobState::Absent, Free, false),
+            &reconcile_input(Some(done()), 1, JobProbe::Absent, Free, false),
             false
         ),
         AdoptPlan::Nothing
@@ -399,7 +400,7 @@ fn adoption_table() {
             &reconcile_input(
                 Some(compiling()),
                 INTERRUPTED_AFTER_SECS,
-                JobState::Absent,
+                JobProbe::Absent,
                 Free,
                 false
             ),
@@ -410,7 +411,7 @@ fn adoption_table() {
     // Fresh, dead, non-terminal: may still be starting, leave it.
     assert_eq!(
         adopt_plan(
-            &reconcile_input(Some(compiling()), 5, JobState::Absent, Free, false),
+            &reconcile_input(Some(compiling()), 5, JobProbe::Absent, Free, false),
             true
         ),
         AdoptPlan::Nothing
@@ -427,7 +428,7 @@ fn adoption_table() {
     // No status and nothing registered: nothing to do.
     assert_eq!(
         adopt_plan(
-            &reconcile_input(None, 0, JobState::Absent, Free, false),
+            &reconcile_input(None, 0, JobProbe::Absent, Free, false),
             false
         ),
         AdoptPlan::Nothing
