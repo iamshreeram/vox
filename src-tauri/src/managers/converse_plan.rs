@@ -417,6 +417,22 @@ pub fn plan_prompt_with_job_policy(input: &PlanInput, policy: &JobParsePolicy) -
     }
 }
 
+/// U8: the reply-language line appended to the planner system prompt when the user speaks
+/// Tamil, so the speech comes back in Tamil script (the Tamil voice speaks script only).
+pub const TAMIL_REPLY_DIRECTIVE: &str = "The user speaks Tamil. Write the speech value in Tamil script, short and conversational, and never write Tamil in Latin letters. Keep the JSON keys, the kind value and any command text in English exactly as specified above. If the user's message is clearly in another language, reply in that language instead.";
+
+/// U8: the reply-language directive for one turn, or `None` when the prompt stays as it is.
+/// `Some` when the speech language setting is `"ta"`, or when the utterance is mostly Tamil
+/// script (`is_mostly_tamil`). Pure: it reads nothing but its two arguments.
+pub fn reply_language_directive(selected_language: &str, utterance: &str) -> Option<&'static str> {
+    let tamil_setting = selected_language == "ta";
+    if tamil_setting || crate::managers::natural_chunk::is_mostly_tamil(utterance) {
+        Some(TAMIL_REPLY_DIRECTIVE)
+    } else {
+        None
+    }
+}
+
 /// M4 (D2): the extra planner block for agent choice and ask mode. `None` when there
 /// is nothing to explain (no agents and ask off). Names are already charset-checked.
 fn job_selection_block(agents: &[String], ask_allowed: bool) -> Option<String> {

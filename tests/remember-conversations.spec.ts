@@ -59,9 +59,10 @@ const countLine = (page: Page): Locator =>
 async function openRemember(
   page: Page,
   commands: Record<string, unknown>,
+  settings: Record<string, unknown> = {},
 ): Promise<void> {
   await installTauriMock(page, {
-    settings: { experimental_enabled: true },
+    settings: { experimental_enabled: true, ...settings },
     commands,
   });
   await page.goto("/");
@@ -81,9 +82,24 @@ async function invokedArgs(
 }
 
 test.describe("Remember recent conversations", () => {
-  test("the toggle is off by default", async ({ page }) => {
+  test("the toggle is on by default for a fresh install", async ({ page }) => {
     await openRemember(page, { conversation_memory_count: 0 });
-    await expect(toggle(page)).not.toBeChecked();
+    await expect(toggle(page)).toBeChecked();
+  });
+
+  test("the disclosure states that notes are stored on this Mac and may go to a remote service", async ({
+    page,
+  }) => {
+    await openRemember(page, { conversation_memory_count: 0 });
+    await row(page)
+      .getByRole("button", { name: "More information", exact: true })
+      .click();
+    await expect(page.getByText(/which may be a remote service/)).toBeVisible();
+    await expect(
+      page.getByText(
+        /short notes about your recent voice conversations on this Mac/,
+      ),
+    ).toBeVisible();
   });
 
   test("the disclosure says both uses send data to the configured model", async ({
@@ -95,19 +111,36 @@ test.describe("Remember recent conversations", () => {
       .click();
     const tooltip = page.getByText(DESCRIPTION, { exact: true });
     await expect(tooltip).toBeVisible();
-    // Use 1: a summary is written from the conversation when it ends.
-    expect(DESCRIPTION).toMatch(/sent to that model to write a short summary/);
-    // Use 2: the newest summaries go to the model at the start of the next conversation.
-    expect(DESCRIPTION).toMatch(/at the start of your next voice conversation/);
-    expect(DESCRIPTION).toMatch(/20 newest/);
-    expect(DESCRIPTION).toMatch(/agents, tools or your notes/);
-    expect(DESCRIPTION).toMatch(/Clear deletes everything/);
+    // Use 1: the conversation is sent to the configured model when it ends, and the note
+    // can carry an excerpt of what was said.
+    expect(DESCRIPTION).toMatch(
+      /when a conversation ends, what you said by voice and the replies you got .* are sent to that model to write a short note/,
+    );
+    expect(DESCRIPTION).toMatch(/which may be a remote service/);
+    expect(DESCRIPTION).toMatch(
+      /the note can include a short excerpt of what you said/,
+    );
+    // Use 2: the stored notes go to the model at the start of the next conversation.
+    expect(DESCRIPTION).toMatch(
+      /the newest notes are sent to the model at the start of your next voice conversation/,
+    );
+    expect(DESCRIPTION).toMatch(/on this Mac/);
+    // Limits that were already true and must stay disclosed.
+    expect(DESCRIPTION).toMatch(/at most the 20 newest notes/);
+    expect(DESCRIPTION).toMatch(/not remembered at all/);
+    expect(DESCRIPTION).toMatch(/use Clear remembered conversations below/);
   });
 
   test("turning it on calls change_conversation_memory_setting with enabled true", async ({
     page,
   }) => {
-    await openRemember(page, { conversation_memory_count: 0 });
+    // Start from OFF so the click turns it on.
+    await openRemember(
+      page,
+      { conversation_memory_count: 0 },
+      { conversation_memory_enabled: false },
+    );
+    await expect(toggle(page)).not.toBeChecked();
     await row(page).locator("label").first().click();
     await expect
       .poll(
