@@ -498,6 +498,15 @@ impl UpdateCoordinator {
     pub fn guard(&self) -> MutexGuard<'_, ()> {
         self.lock.lock().unwrap_or_else(PoisonError::into_inner)
     }
+
+    /// True while some caller holds the guard (test-only probe).
+    #[cfg(test)]
+    pub(super) fn is_held(&self) -> bool {
+        matches!(
+            self.lock.try_lock(),
+            Err(std::sync::TryLockError::WouldBlock)
+        )
+    }
 }
 
 #[cfg(test)]

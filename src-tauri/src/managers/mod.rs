@@ -194,6 +194,8 @@ pub mod safety_policy;
 pub mod smart_turn;
 pub mod source_update;
 pub mod source_update_auto;
+pub mod source_update_commit;
+pub mod source_update_commit_plan;
 pub mod source_update_pending;
 pub mod source_update_runner;
 pub mod source_update_runner_poll;
