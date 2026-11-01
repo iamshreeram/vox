@@ -11,7 +11,8 @@ detection".
 ## What it does
 
 1. The normal model transcribes the clip as usual.
-2. If the transcript looks suspicious (many sound units per word), Vox asks a multilingual Whisper model which language was spoken.
+2. If the transcript looks suspicious (many sound units per word) or is empty although the
+   audio clearly contains speech, Vox asks a multilingual Whisper model which language was spoken.
 3. If the answer is a non-Latin-script language, the clip is transcribed again:
    - Tamil goes to the Tamil speech pack when it is installed and ready.
    - Other languages use the Whisper model's own transcript.
@@ -24,7 +25,7 @@ that happens and the audio clearly contains speech (at least one second that Vox
 detector marks as speech), Vox asks the multilingual model anyway. It accepts the answer only
 if a language other than English is reported, the text has at least two words and six letters,
 and the letters match that language's script (Tamil letters for Tamil, non-Latin letters for
-the others). Silence, breathing, keyboard clicks, hum and constant noise do not reach the
+the others). Silence, keyboard clicks, hum, white, pink and brown noise and constant offsets do not reach the
 model.
 
 Background noise can occasionally be taken for speech and answered. In a synthetic test with
@@ -53,14 +54,16 @@ When the setting is off, none of this code runs.
 ## Cost
 
 - The first check after the Whisper model loads takes about 2 seconds; later checks
-  about 0.8 seconds. Only dictations that look non-English pay this cost.
+  about 0.8 seconds. Only dictations that look non-English, or that return nothing although they contain at least one second of speech, pay this cost.
 - The extra model stays in memory (roughly 0.6 GB for Whisper Large v3 Turbo Q5)
   according to your model unload setting. Turning the feature off releases it at the
   next idle check (within about 10 seconds).
 
 ## Limits
 
-- One- or two-word replies are not detected.
+- One- or two-word replies are not detected. On the empty-transcript path a result must also
+  have at least two whitespace-separated words, so genuine Japanese or Chinese speech, which
+  has no spaces, is usually rejected there.
 - Only non-Latin-script results replace the original. Spanish, French and other Latin
   script languages are not rerouted.
 - Clips longer than 29 seconds are never replaced by the Whisper model's text. Tamil
