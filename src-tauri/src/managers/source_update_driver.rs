@@ -697,9 +697,9 @@ pub fn restore_admission(app: &AppHandle) {
     heal_finished_jobs_on_disk(app);
 }
 
-/// The run ids a heal must keep (F4): the pending record's build and install runs, the active run,
-/// and the status file's run while it is not terminal. A status file that cannot be read fails
-/// closed (`Err`); an unparseable one keeps its run.
+/// The run ids a heal must keep (F4, F4c): the pending record's build and install runs, the active
+/// run, and the status file's run whatever its phase. A status file that cannot be read fails
+/// closed (`Err`).
 pub fn heal_live_ids(
     state_dir: &Path,
     pending: Option<&PendingRun>,
@@ -712,15 +712,9 @@ pub fn heal_live_ids(
     }
     live.extend(active);
     let bytes = read_status_bounded(&status_path(state_dir)).map_err(|_| ())?;
-    if let Some(run_id) = bytes.as_deref().and_then(run_id_in_status) {
-        let terminal = bytes
-            .as_deref()
-            .map(|bytes| parse_status(bytes, &run_id, None, now_unix()))
-            .is_some_and(|parsed| parsed.is_ok_and(|status| status.phase.is_terminal()));
-        if !terminal {
-            live.push(run_id);
-        }
-    }
+    // F4c: the status run is live whatever its phase, as in live_marker_ids. A terminal run still
+    // needs adoption to publish its result and remove its plist.
+    live.extend(bytes.as_deref().and_then(run_id_in_status));
     Ok(live)
 }
 

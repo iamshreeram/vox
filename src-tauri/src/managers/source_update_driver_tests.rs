@@ -1633,7 +1633,7 @@ fn three_busy_ticks_heal_once_and_the_fourth_launches() {
 // F4: the live set of a heal keeps the pending build and install, the active run and a
 // non-terminal status run; a finished status run does not protect its job.
 #[test]
-fn heal_live_ids_keep_pending_active_and_non_terminal_status_runs_only() {
+fn heal_live_ids_keep_pending_active_and_every_status_run() {
     let dir = tempfile::tempdir().expect("dir");
     let state = dir.path();
     let pending = committing_run(state);
@@ -1661,10 +1661,121 @@ fn heal_live_ids_keep_pending_active_and_non_terminal_status_runs_only() {
         ..status_run
     };
     write_status_file(&status_path(state), &done).expect("status");
+    // F4c: a terminal status run is live too (as in live_marker_ids): adoption still has to
+    // publish its result and remove its plist, so the heal must not boot it out first.
     let live = heal_live_ids(state, None, None).expect("live");
     assert!(
-        !live.iter().any(|kept| kept == "8888888888888888"),
-        "a finished status run is not live"
+        live.iter().any(|kept| kept == "8888888888888888"),
+        "a terminal status run is kept"
+    );
+}
+
+/// Fake launchd for the F4c scenario: one probe per label, and the bootouts it saw.
+#[derive(Default)]
+struct HealProbes {
+    probes: std::collections::HashMap<String, JobProbe>,
+    bootouts: RefCell<Vec<String>>,
+}
+
+impl JobControl for HealProbes {
+    fn probe(&self, label: &str) -> JobProbe {
+        self.probes.get(label).copied().unwrap_or(JobProbe::Absent)
+    }
+    fn bootstrap(&self, _plist: &Path) -> Result<(), RunnerError> {
+        Ok(())
+    }
+    fn bootout(&self, label: &str) -> Result<(), RunnerError> {
+        self.bootouts.borrow_mut().push(label.to_string());
+        Ok(())
+    }
+}
+
+// F4c (validator major): the startup heal runs before adoption. A run whose status is done and
+// whose job exited (plist 10 minutes old) must keep its job and plist, so adoption watches it and
+// the result is recorded; another old unreferenced run in the same pass is still healed.
+#[test]
+fn terminal_status_run_keeps_its_job_for_adoption_while_another_old_run_is_healed() {
+    use crate::managers::source_update_runner::{
+        LockState, ReconcileInput, INTERRUPTED_AFTER_SECS,
+    };
+    use crate::managers::source_update_runner_run::{adopt_plan, heal_finished_jobs, AdoptPlan};
+    let dir = tempfile::tempdir().expect("dir");
+    let state = dir.path();
+    let done_run = "9999999999999999";
+    let stale_run = "aaaaaaaaaaaaaaaa";
+    let status = RunStatus {
+        run_id: done_run.to_string(),
+        phase: RunPhase::Done,
+        percent: 100,
+        target: "0123456".to_string(),
+        target_full: SHA.to_string(),
+        message: String::new(),
+        method: StatusMethod::Exact,
+        ts: NOW,
+    };
+    write_status_file(&status_path(state), &status).expect("status");
+    let finished = JobProbe::Registered {
+        pid: None,
+        last_exit: Some(0),
+    };
+    let old = std::time::SystemTime::now() - Duration::from_secs(600);
+    for id in [done_run, stale_run] {
+        let path = plist_path(state, id);
+        write_private_atomic(&path, b"<plist/>").expect("plist");
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .expect("open")
+            .set_modified(old)
+            .expect("mtime");
+    }
+    let jobs = HealProbes {
+        probes: [(done_run, finished), (stale_run, finished)]
+            .into_iter()
+            .map(|(id, probe)| (job_label(id), probe))
+            .collect(),
+        ..HealProbes::default()
+    };
+
+    let live = heal_live_ids(state, None, None).expect("live");
+    assert_eq!(heal_finished_jobs(state, &live, &jobs, now_unix()), 1);
+    assert_eq!(*jobs.bootouts.borrow(), vec![job_label(stale_run)]);
+    assert!(
+        plist_path(state, done_run).exists(),
+        "the finished run keeps its plist"
+    );
+    assert!(!plist_path(state, stale_run).exists());
+
+    let input = ReconcileInput {
+        status: Some(status),
+        status_age_secs: 600,
+        job: finished,
+        lock: LockState::Free,
+        running_build_sha: "",
+        published: false,
+        interrupted_after_secs: INTERRUPTED_AFTER_SECS,
+        pending_built: false,
+    };
+    assert_eq!(adopt_plan(&input, true), AdoptPlan::Watch);
+
+    // The automatic install ending after its record is gone settles as recorded (updated).
+    assert_eq!(
+        terminal_action(None, done_run, RunPhase::Done, 100, true, None),
+        TerminalAction::FinishRecorded
+    );
+    let settle = FakeSettle {
+        previous: AutoState::default(),
+        calls: RefCell::new(Vec::new()),
+        saved: RefCell::new(None),
+    };
+    settle_recorded(&settle, done_run, Some(SHA), true, NOW);
+    assert_eq!(
+        settle
+            .saved
+            .borrow()
+            .as_ref()
+            .and_then(|state| state.last_result),
+        Some(AutoResult::Updated)
     );
 }
 
