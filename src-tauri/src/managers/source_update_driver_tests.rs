@@ -1,0 +1,752 @@
+//! Tests for the automatic-update driver: the start decision table, the tick over fakes,
+//! the startup restore table over real pending files, the manual start plan and the
+//! source-order guard for the startup placement in `lib.rs`.
+
+use std::cell::{Cell, RefCell};
+use std::collections::VecDeque;
+use std::fs;
+use std::path::Path;
+use std::time::Duration;
+
+use super::*;
+use crate::managers::source_update_auto::consent::{
+    cleanup_after_build_without_consent, CleanupPlan,
+};
+use crate::managers::source_update_auto::load_auto_state;
+use crate::managers::source_update_pending::{
+    encode_pending, staged_app_path, CommitInfo, PendingOrigin,
+};
+use crate::managers::source_update_runner::{
+    job_label, plist_path, write_private_atomic, JobProbe, RunPhase,
+};
+
+const RUN: &str = "0123456789abcdef";
+const INSTALL: &str = "fedcba9876543210";
+const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+const OTHER_SHA: &str = "89abcdef0123456789abcdef0123456789abcdef";
+const DIGEST: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const NOW: u64 = 1_700_000_000;
+
+/// One row of the no-start table: a name, a change to the facts and the code recorded, if any.
+type Case = (
+    &'static str,
+    Box<dyn Fn(&mut EnvFacts)>,
+    Option<&'static str>,
+);
+
+fn facts() -> EnvFacts {
+    EnvFacts {
+        source_mode: true,
+        checks_effective: true,
+        auto_enabled: true,
+        state_available: true,
+        install_blocker_none: true,
+        run_active: false,
+        target: Some(SHA.to_string()),
+        attempt: Ok(None),
+        gate_free: true,
+        jobs_idle: true,
+        idle_for: Duration::from_secs(120),
+        now: NOW,
+    }
+}
+
+fn built_run(state: &Path) -> PendingRun {
+    PendingRun {
+        run_id: RUN.to_string(),
+        target_full: SHA.to_string(),
+        staged_app: staged_app_path(state, RUN),
+        exe_name: "vox-bin".to_string(),
+        exe_sha256: DIGEST.to_string(),
+        info_plist_sha256: DIGEST.to_string(),
+        origin: PendingOrigin::Auto,
+        ts: NOW - 100,
+        state: PendingState::Built,
+    }
+}
+
+fn committing_run(state: &Path) -> PendingRun {
+    PendingRun {
+        state: PendingState::Committing(CommitInfo {
+            install_run_id: INSTALL.to_string(),
+            install_label: job_label(INSTALL),
+            install_plist: plist_path(state, INSTALL),
+            committing_ts: NOW - 10,
+        }),
+        ..built_run(state)
+    }
+}
+
+fn write_record(state: &Path, run: &PendingRun) {
+    let bytes = encode_pending(run, state).expect("encode");
+    write_private_atomic(&PendingStore::new(state).path(), &bytes).expect("write");
+}
+
+/// Fake of every effect the tick reads or performs.
+struct FakeEnv {
+    facts: RefCell<EnvFacts>,
+    pending: Option<PendingRun>,
+    verify_result: VerifiedState,
+    verify_calls: Cell<u32>,
+    launches: RefCell<Vec<String>>,
+    launch_fails: bool,
+    saves: RefCell<Vec<AutoState>>,
+    marker: bool,
+    manual_request: bool,
+    commit_script: RefCell<VecDeque<CommitStatus>>,
+    commits: RefCell<Vec<bool>>,
+    cleanups: Cell<u32>,
+    install_running: bool,
+    recovers: Cell<u32>,
+}
+
+impl FakeEnv {
+    fn new(facts: EnvFacts) -> Self {
+        Self {
+            facts: RefCell::new(facts),
+            pending: None,
+            verify_result: VerifiedState::Verified,
+            verify_calls: Cell::new(0),
+            launches: RefCell::new(Vec::new()),
+            launch_fails: false,
+            saves: RefCell::new(Vec::new()),
+            marker: true,
+            manual_request: false,
+            commit_script: RefCell::new(VecDeque::new()),
+            commits: RefCell::new(Vec::new()),
+            cleanups: Cell::new(0),
+            install_running: false,
+            recovers: Cell::new(0),
+        }
+    }
+}
+
+impl DriverEnv for FakeEnv {
+    fn auto_effective(&self) -> bool {
+        let f = self.facts.borrow();
+        f.auto_enabled && f.checks_effective && f.source_mode
+    }
+    fn checks_effective(&self) -> bool {
+        self.facts.borrow().checks_effective
+    }
+    fn auto_enabled(&self) -> bool {
+        self.facts.borrow().auto_enabled
+    }
+    fn pending(&self) -> Result<Option<PendingRun>, ()> {
+        Ok(self.pending.clone())
+    }
+    fn gather(&self) -> EnvFacts {
+        self.facts.borrow().clone()
+    }
+    fn verify(&self, _full_sha: &str) -> VerifiedState {
+        self.verify_calls.set(self.verify_calls.get() + 1);
+        self.verify_result
+    }
+    fn launch_build(&self, target: &str) -> Result<(), ()> {
+        self.launches.borrow_mut().push(target.to_string());
+        if self.launch_fails {
+            Err(())
+        } else {
+            self.facts.borrow_mut().run_active = true;
+            Ok(())
+        }
+    }
+    fn save_state(&self, state: &AutoState) {
+        self.saves.borrow_mut().push(state.clone());
+    }
+    fn run_active(&self) -> bool {
+        self.facts.borrow().run_active
+    }
+    fn take_manual_request(&self) -> bool {
+        self.manual_request
+    }
+    fn marker_exists(&self, _run_id: &str) -> bool {
+        self.marker
+    }
+    fn cleanup_built(&self) {
+        self.cleanups.set(self.cleanups.get() + 1);
+    }
+    fn commit(&self, manual: bool) -> CommitStatus {
+        self.commits.borrow_mut().push(manual);
+        self.commit_script
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or(CommitStatus::Deferred(DeferReason::NoBuiltRun))
+    }
+    fn install_running(&self, _committing: &PendingRun) -> bool {
+        self.install_running
+    }
+    fn recover(&self) -> RestoreOutcome {
+        self.recovers.set(self.recovers.get() + 1);
+        RestoreOutcome::Nothing
+    }
+}
+
+fn tick_once(env: &FakeEnv) -> Next {
+    tick(env, &mut DriverMemory::default())
+}
+
+#[test]
+fn start_decision_starts_for_the_pinned_target_after_verification_and_idle() {
+    let env = FakeEnv::new(facts());
+    tick_once(&env);
+    assert_eq!(*env.launches.borrow(), vec![SHA.to_string()]);
+    assert_eq!(env.verify_calls.get(), 1);
+    assert!(env.saves.borrow().is_empty(), "nothing recorded on a start");
+}
+
+#[test]
+fn no_start_combinations_never_verify_or_launch() {
+    // (name, facts change, expected reason code recorded, verify expected)
+    let cases: Vec<Case> = vec![
+        ("auto off", Box::new(|f| f.auto_enabled = false), None),
+        ("checks off", Box::new(|f| f.checks_effective = false), None),
+        ("not source", Box::new(|f| f.source_mode = false), None),
+        ("no update", Box::new(|f| f.state_available = false), None),
+        (
+            "blocked",
+            Box::new(|f| f.install_blocker_none = false),
+            Some("blocked"),
+        ),
+        ("busy gate", Box::new(|f| f.gate_free = false), Some("busy")),
+        (
+            "jobs busy",
+            Box::new(|f| f.jobs_idle = false),
+            Some("not_idle"),
+        ),
+        (
+            "idle 30 s",
+            Box::new(|f| f.idle_for = Duration::from_secs(30)),
+            Some("not_idle"),
+        ),
+        (
+            "idle 59 s",
+            Box::new(|f| f.idle_for = Duration::from_secs(59)),
+            Some("not_idle"),
+        ),
+        (
+            "active run",
+            Box::new(|f| f.run_active = true),
+            Some("active_run"),
+        ),
+        (
+            "backoff active",
+            Box::new(|f| {
+                f.attempt = Ok(Some(AutoState {
+                    failed_target: Some(SHA.to_string()),
+                    failed_ts: Some(NOW - 60),
+                    ..AutoState::default()
+                }))
+            }),
+            Some("backoff"),
+        ),
+        // Unreadable state: no start, and nothing can be recorded without the previous state.
+        (
+            "unreadable attempt state",
+            Box::new(|f| f.attempt = Err(())),
+            None,
+        ),
+    ];
+    for (name, change, code) in cases {
+        let mut f = facts();
+        change(&mut f);
+        let env = FakeEnv::new(f);
+        tick_once(&env);
+        assert!(env.launches.borrow().is_empty(), "{name}: must not launch");
+        assert_eq!(env.verify_calls.get(), 0, "{name}: must not verify");
+        match code {
+            Some(code) => {
+                let saved = env.saves.borrow();
+                assert_eq!(saved.len(), 1, "{name}: one record");
+                assert_eq!(saved[0].reason_code.as_deref(), Some(code), "{name}");
+                assert_eq!(saved[0].last_result, Some(AutoResult::Skipped), "{name}");
+            }
+            None => assert!(env.saves.borrow().is_empty(), "{name}: nothing recorded"),
+        }
+    }
+}
+
+#[test]
+fn unverified_and_verify_error_never_start_and_record_the_reason() {
+    let mut unverified = FakeEnv::new(facts());
+    unverified.verify_result = VerifiedState::Unverified;
+    tick_once(&unverified);
+    assert!(unverified.launches.borrow().is_empty());
+    assert_eq!(unverified.verify_calls.get(), 1);
+    assert_eq!(
+        unverified.saves.borrow()[0].reason_code.as_deref(),
+        Some("unverified")
+    );
+
+    let mut failed = FakeEnv::new(facts());
+    failed.verify_result = VerifiedState::Failed;
+    tick_once(&failed);
+    assert!(failed.launches.borrow().is_empty());
+    assert_eq!(
+        failed.saves.borrow()[0].reason_code.as_deref(),
+        Some("verify_failed")
+    );
+}
+
+#[test]
+fn tick_never_launches_two_builds() {
+    let env = FakeEnv::new(facts());
+    let mut memory = DriverMemory::default();
+    tick(&env, &mut memory);
+    tick(&env, &mut memory);
+    tick(&env, &mut memory);
+    assert_eq!(env.launches.borrow().len(), 1);
+}
+
+#[test]
+fn failed_launch_records_spawn_failure_and_does_not_retry_at_once() {
+    let mut env = FakeEnv::new(facts());
+    env.launch_fails = true;
+    let mut memory = DriverMemory::default();
+    tick(&env, &mut memory);
+    let recorded = env.saves.borrow()[0].clone();
+    assert_eq!(recorded.reason_code.as_deref(), Some("spawn_failed"));
+    assert_eq!(recorded.last_result, Some(AutoResult::Failed));
+    assert!(recorded.failed_target.is_some());
+    // The persisted failure now drives the backoff: the same target is not launched again.
+    env.facts.borrow_mut().attempt = Ok(Some(recorded));
+    tick(&env, &mut memory);
+    assert_eq!(env.launches.borrow().len(), 1);
+}
+
+#[test]
+fn skip_reason_is_recorded_once_per_change() {
+    let mut f = facts();
+    f.gate_free = false;
+    let env = FakeEnv::new(f.clone());
+    let mut memory = DriverMemory::default();
+    tick(&env, &mut memory);
+    tick(&env, &mut memory);
+    assert_eq!(env.saves.borrow().len(), 1);
+    env.facts.borrow_mut().gate_free = true;
+    env.facts.borrow_mut().idle_for = Duration::from_secs(10);
+    tick(&env, &mut memory);
+    assert_eq!(env.saves.borrow().len(), 2);
+    assert_eq!(
+        env.saves.borrow()[1].reason_code.as_deref(),
+        Some("not_idle")
+    );
+}
+
+#[test]
+fn skip_record_keeps_a_completed_update_and_ignores_start() {
+    let updated = AutoState::default().with_updated(SHA, NOW - 5);
+    assert_eq!(skip_record(&updated, SHA, "not_idle", NOW), None);
+    assert!(skip_record(&updated, OTHER_SHA, "not_idle", NOW).is_some());
+    assert_eq!(skip_record(&AutoState::default(), SHA, "start", NOW), None);
+    assert_eq!(
+        skip_record(&AutoState::default(), SHA, "no_update", NOW),
+        None
+    );
+}
+
+#[test]
+fn pending_built_with_consent_is_committed_automatically() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut env = FakeEnv::new(facts());
+    env.pending = Some(built_run(dir.path()));
+    env.commit_script
+        .borrow_mut()
+        .push_back(CommitStatus::Committed(built_run(dir.path())));
+    tick_once(&env);
+    assert_eq!(*env.commits.borrow(), vec![false]);
+    assert!(
+        env.launches.borrow().is_empty(),
+        "no new build while pending"
+    );
+}
+
+#[test]
+fn deferred_commit_is_retried_on_the_next_tick() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut env = FakeEnv::new(facts());
+    env.pending = Some(built_run(dir.path()));
+    env.commit_script
+        .borrow_mut()
+        .push_back(CommitStatus::Deferred(DeferReason::NotIdle));
+    env.commit_script
+        .borrow_mut()
+        .push_back(CommitStatus::Committed(built_run(dir.path())));
+    let mut memory = DriverMemory::default();
+    tick(&env, &mut memory);
+    tick(&env, &mut memory);
+    assert_eq!(env.commits.borrow().len(), 2, "retried next tick");
+}
+
+#[test]
+fn unresolved_commit_asks_for_a_fast_retry() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut env = FakeEnv::new(facts());
+    env.pending = Some(built_run(dir.path()));
+    env.commit_script
+        .borrow_mut()
+        .push_back(CommitStatus::Unresolved(committing_run(dir.path())));
+    assert!(tick_once(&env).fast);
+}
+
+#[test]
+fn opt_out_while_pending_built_removes_it_and_never_commits() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut f = facts();
+    f.auto_enabled = false;
+    let mut env = FakeEnv::new(f);
+    env.pending = Some(built_run(dir.path()));
+    tick_once(&env);
+    assert_eq!(env.cleanups.get(), 1);
+    assert!(env.commits.borrow().is_empty());
+}
+
+#[test]
+fn checks_off_while_pending_built_removes_it() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut f = facts();
+    f.checks_effective = false;
+    let mut env = FakeEnv::new(f);
+    env.pending = Some(built_run(dir.path()));
+    tick_once(&env);
+    assert_eq!(env.cleanups.get(), 1);
+    assert!(env.commits.borrow().is_empty());
+}
+
+#[test]
+fn consent_removal_on_real_files_deletes_the_built_record_and_records_disabled() {
+    let dir = tempfile::tempdir().expect("dir");
+    write_record(dir.path(), &built_run(dir.path()));
+    let plan = cleanup_after_build_without_consent(dir.path(), false, NOW).expect("cleanup");
+    assert_eq!(plan, CleanupPlan::RemoveBuilt);
+    assert!(!PendingStore::new(dir.path()).path().exists());
+    let state = load_auto_state(dir.path()).expect("state").expect("some");
+    assert_eq!(state.reason_code.as_deref(), Some("disabled"));
+}
+
+#[test]
+fn manual_conversion_without_marker_commits_manually() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut env = FakeEnv::new(facts());
+    env.marker = false;
+    env.pending = Some(built_run(dir.path()));
+    tick_once(&env);
+    assert_eq!(*env.commits.borrow(), vec![true]);
+}
+
+#[test]
+fn manual_request_commits_manually_even_with_the_marker() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut env = FakeEnv::new(facts());
+    env.manual_request = true;
+    env.pending = Some(built_run(dir.path()));
+    tick_once(&env);
+    assert_eq!(*env.commits.borrow(), vec![true]);
+}
+
+#[test]
+fn an_active_build_blocks_the_commit() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut f = facts();
+    f.run_active = true;
+    let mut env = FakeEnv::new(f);
+    env.pending = Some(built_run(dir.path()));
+    tick_once(&env);
+    assert!(env.commits.borrow().is_empty());
+}
+
+#[test]
+fn committing_record_with_a_running_poller_is_left_alone() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut env = FakeEnv::new(facts());
+    env.install_running = true;
+    env.pending = Some(committing_run(dir.path()));
+    tick_once(&env);
+    assert_eq!(env.recovers.get(), 0);
+    env.install_running = false;
+    tick_once(&env);
+    assert_eq!(
+        env.recovers.get(),
+        1,
+        "recovery runs when no poller is live"
+    );
+}
+
+#[test]
+fn manual_start_plan_table() {
+    assert_eq!(manual_start_plan(true, true), ManualStart::Attach);
+    assert_eq!(manual_start_plan(true, false), ManualStart::Attach);
+    assert_eq!(manual_start_plan(false, true), ManualStart::CommitBuilt);
+    assert_eq!(manual_start_plan(false, false), ManualStart::Launch);
+}
+
+/// Fake of the startup restore effects; records the order of the calls.
+struct FakeRestore {
+    calls: RefCell<Vec<&'static str>>,
+    probe: JobProbe,
+    phase: Option<RunPhase>,
+    hold_ok: bool,
+}
+
+impl FakeRestore {
+    fn new(probe: JobProbe, phase: Option<RunPhase>) -> Self {
+        Self {
+            calls: RefCell::new(Vec::new()),
+            probe,
+            phase,
+            hold_ok: true,
+        }
+    }
+    fn saw(&self, name: &str) -> bool {
+        self.calls.borrow().contains(&name)
+    }
+    fn position(&self, name: &str) -> Option<usize> {
+        self.calls.borrow().iter().position(|call| *call == name)
+    }
+}
+
+impl RestoreEnv for FakeRestore {
+    fn probe(&self, _label: &str) -> JobProbe {
+        self.calls.borrow_mut().push("probe");
+        self.probe
+    }
+    fn install_phase(&self, _install_run_id: &str) -> Option<RunPhase> {
+        self.calls.borrow_mut().push("phase");
+        self.phase
+    }
+    fn hold(&self) -> Result<(), ()> {
+        self.calls.borrow_mut().push("hold");
+        if self.hold_ok {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+    fn adopt(&self, _committing: &PendingRun) {
+        self.calls.borrow_mut().push("adopt");
+    }
+    fn revoke_in_background(&self, _committing: &PendingRun) {
+        self.calls.borrow_mut().push("revoke");
+    }
+    fn finish(&self, _committing: &PendingRun, done: bool) {
+        self.calls
+            .borrow_mut()
+            .push(if done { "finish:done" } else { "finish:failed" });
+    }
+    fn discard_invalid(&self) {
+        self.calls.borrow_mut().push("discard");
+    }
+    fn sweep(&self, _keep: Option<&str>) {
+        self.calls.borrow_mut().push("sweep");
+    }
+}
+
+fn live() -> JobProbe {
+    JobProbe::Registered {
+        pid: Some(4242),
+        last_exit: None,
+    }
+}
+
+fn registered_idle() -> JobProbe {
+    JobProbe::Registered {
+        pid: None,
+        last_exit: None,
+    }
+}
+
+#[test]
+fn restore_none_does_nothing_but_sweep() {
+    let dir = tempfile::tempdir().expect("dir");
+    let fake = FakeRestore::new(JobProbe::Absent, None);
+    let outcome = restore_with(&fake, &PendingStore::new(dir.path()));
+    assert_eq!(outcome, RestoreOutcome::Nothing);
+    assert_eq!(*fake.calls.borrow(), vec!["sweep"]);
+}
+
+#[test]
+fn restore_built_rests_without_holding() {
+    let dir = tempfile::tempdir().expect("dir");
+    write_record(dir.path(), &built_run(dir.path()));
+    let fake = FakeRestore::new(JobProbe::Absent, None);
+    let outcome = restore_with(&fake, &PendingStore::new(dir.path()));
+    assert_eq!(outcome, RestoreOutcome::Nothing);
+    assert!(!fake.saw("hold"));
+    assert!(PendingStore::new(dir.path()).path().exists(), "built kept");
+}
+
+#[test]
+fn restore_invalid_record_is_discarded() {
+    let dir = tempfile::tempdir().expect("dir");
+    fs::write(PendingStore::new(dir.path()).path(), b"not json").expect("write");
+    let fake = FakeRestore::new(JobProbe::Absent, None);
+    restore_with(&fake, &PendingStore::new(dir.path()));
+    assert!(fake.saw("discard"));
+    assert!(!fake.saw("hold"));
+}
+
+#[test]
+fn restore_committing_registered_without_status_adopts_under_hold() {
+    let dir = tempfile::tempdir().expect("dir");
+    write_record(dir.path(), &committing_run(dir.path()));
+    let fake = FakeRestore::new(registered_idle(), None);
+    let outcome = restore_with(&fake, &PendingStore::new(dir.path()));
+    assert_eq!(outcome, RestoreOutcome::Held);
+    assert!(fake.position("hold") < fake.position("adopt"));
+    assert!(!fake.saw("revoke"));
+    assert!(PendingStore::new(dir.path()).path().exists());
+}
+
+#[test]
+fn restore_committing_unknown_holds_and_never_deletes() {
+    let dir = tempfile::tempdir().expect("dir");
+    write_record(dir.path(), &committing_run(dir.path()));
+    let fake = FakeRestore::new(JobProbe::Unknown, None);
+    let outcome = restore_with(&fake, &PendingStore::new(dir.path()));
+    assert_eq!(outcome, RestoreOutcome::Held);
+    assert!(fake.saw("hold"));
+    assert!(!fake.saw("revoke"));
+    assert!(!fake.saw("finish:failed") && !fake.saw("finish:done"));
+    assert!(
+        PendingStore::new(dir.path()).path().exists(),
+        "unknown keeps the record"
+    );
+}
+
+#[test]
+fn restore_committing_absent_takes_hold_then_revokes() {
+    let dir = tempfile::tempdir().expect("dir");
+    write_record(dir.path(), &committing_run(dir.path()));
+    let fake = FakeRestore::new(JobProbe::Absent, None);
+    let outcome = restore_with(&fake, &PendingStore::new(dir.path()));
+    assert_eq!(outcome, RestoreOutcome::Held);
+    assert!(fake.position("hold").expect("hold") < fake.position("revoke").expect("revoke"));
+    assert!(!fake.saw("adopt"));
+}
+
+#[test]
+fn restore_retries_when_the_hold_cannot_be_taken() {
+    let dir = tempfile::tempdir().expect("dir");
+    write_record(dir.path(), &committing_run(dir.path()));
+    let mut fake = FakeRestore::new(JobProbe::Absent, None);
+    fake.hold_ok = false;
+    let outcome = restore_with(&fake, &PendingStore::new(dir.path()));
+    assert_eq!(outcome, RestoreOutcome::Retry);
+    assert!(!fake.saw("revoke"), "no revocation without the hold");
+}
+
+#[test]
+fn restore_committing_terminal_and_absent_finishes_with_the_outcome() {
+    let dir = tempfile::tempdir().expect("dir");
+    write_record(dir.path(), &committing_run(dir.path()));
+    let done = FakeRestore::new(JobProbe::Absent, Some(RunPhase::Done));
+    restore_with(&done, &PendingStore::new(dir.path()));
+    assert!(done.saw("finish:done"));
+
+    let failed = FakeRestore::new(JobProbe::Absent, Some(RunPhase::Failed));
+    restore_with(&failed, &PendingStore::new(dir.path()));
+    assert!(failed.saw("finish:failed"));
+    assert!(!failed.saw("hold"));
+}
+
+#[test]
+fn restore_terminal_with_live_process_adopts_instead_of_finishing() {
+    let dir = tempfile::tempdir().expect("dir");
+    write_record(dir.path(), &committing_run(dir.path()));
+    let fake = FakeRestore::new(live(), Some(RunPhase::Done));
+    restore_with(&fake, &PendingStore::new(dir.path()));
+    assert!(fake.saw("adopt"));
+    assert!(!fake.saw("finish:done"));
+}
+
+#[test]
+fn restore_adopts_an_install_from_pending_when_status_is_missing() {
+    let dir = tempfile::tempdir().expect("dir");
+    write_record(dir.path(), &committing_run(dir.path()));
+    // No status file for the install run: the record alone decides.
+    let fake = FakeRestore::new(registered_idle(), None);
+    assert_eq!(
+        restore_with(&fake, &PendingStore::new(dir.path())),
+        RestoreOutcome::Held
+    );
+}
+
+#[test]
+fn lib_rs_restores_admission_before_any_listener_starts() {
+    let source = fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))
+        .expect("read lib.rs");
+    let start = source
+        .find("fn initialize_core_logic(app_handle: &AppHandle) {")
+        .expect("initialize_core_logic");
+    let body_end = source[start..]
+        .find("\n}\n")
+        .map(|i| start + i)
+        .expect("end");
+    let body = &source[start..body_end];
+    let restore = body
+        .find("managers::source_update_driver::restore_admission(app_handle);")
+        .expect("restore call in initialize_core_logic");
+    let jobs = body
+        .find("app_handle.manage(job_wiring);")
+        .expect("job wiring managed");
+    assert!(jobs < restore, "restore follows the managed job manager");
+    // Listeners, shortcuts, wake word, ambient, conversation and tray starts that follow.
+    let listeners = [
+        "register_tts_listeners(app_handle",
+        "wakeword_listener.start()",
+        "ambient_listener.start()",
+        "ConverseController::new(",
+        "bubble_native::init(",
+        "vault_rag_runtime::start_for_app(",
+        "managers::source_update::spawn_scheduler(",
+        "managers::source_update::adopt_existing_run(",
+    ];
+    for name in listeners {
+        let at = body
+            .find(name)
+            .unwrap_or_else(|| panic!("{name} not in body"));
+        assert!(restore < at, "restore_admission must precede {name}");
+    }
+}
+
+#[test]
+fn driver_log_lines_never_name_a_secret() {
+    let source = include_str!("source_update_driver.rs");
+    for line in source.lines() {
+        let logs = ["info!(", "warn!(", "debug!(", "error!(", "trace!("]
+            .iter()
+            .any(|mac| line.contains(mac));
+        if logs {
+            let lower = line.to_ascii_lowercase();
+            for word in ["token", "secret", "password"] {
+                assert!(!lower.contains(word), "log line names a secret: {line}");
+            }
+        }
+    }
+}
+
+#[test]
+fn stable_reason_codes_cover_every_code_the_driver_records() {
+    for code in [
+        "interrupted",
+        "install_failed",
+        "build_failed",
+        "invalid_pending",
+        "spawn_failed",
+        "verify_failed",
+        "not_idle",
+        "busy",
+        "backoff",
+        "unverified",
+        "active_run",
+        "blocked",
+        "disabled",
+        "not_source",
+        "no_update",
+    ] {
+        assert!(
+            crate::managers::source_update_auto::status::stable_reason_code(code).is_some(),
+            "{code} must be a stable code"
+        );
+    }
+}

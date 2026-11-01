@@ -7,8 +7,6 @@
 //! unknown keys. Writes serialise typed fields with serde_json, so untrusted
 //! text is never spliced into JSON. Nothing in this file touches launchd.
 
-#![cfg_attr(not(test), allow(dead_code))]
-
 use std::fmt;
 use std::fs;
 use std::io::{self, Read};

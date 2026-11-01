@@ -9,8 +9,6 @@
 //! Attached to `source_update_auto` with a `#[path]` attribute (the module list in
 //! `managers/mod.rs` is not touched by this step).
 
-#![cfg_attr(not(test), allow(dead_code))]
-
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};

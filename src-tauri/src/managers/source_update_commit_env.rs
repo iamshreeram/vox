@@ -9,8 +9,6 @@
 //! it must NOT be called while the caller holds [`update_coordinator`], and it
 //! must not call `write_settings`.
 
-#![cfg_attr(not(test), allow(dead_code))]
-
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};

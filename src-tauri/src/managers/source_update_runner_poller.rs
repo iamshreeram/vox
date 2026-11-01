@@ -175,6 +175,13 @@ impl PollerRegistry {
     pub fn registered_run(&self) -> Option<String> {
         lock(&self.slot).as_ref().map(|(run_id, _)| run_id.clone())
     }
+
+    /// True while the poller registered for `run_id` has not finished (B3b-2b).
+    pub fn is_running(&self, run_id: &str) -> bool {
+        lock(&self.slot)
+            .as_ref()
+            .is_some_and(|(id, handle)| id == run_id && !handle.finished.wait_done(Duration::ZERO))
+    }
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -274,6 +281,8 @@ async fn run(app: AppHandle, config: PollerConfig, life: PollerLife) {
         tokio::time::sleep(TICK).await;
     }
     run_finished(&app, &config.run_id);
+    // The watcher ended (resting, terminal or stopped): the driver may act now (B3b-2b).
+    crate::managers::source_update_driver::kick();
 }
 
 /// One launchd, lock and pending probe, with the instant it was taken.
@@ -319,12 +328,14 @@ fn apply(
             Effect::PublishProgress(progress) => cache_progress(app, progress),
             Effect::RefreshTray => crate::tray::update_tray_menu(app),
             Effect::PublishDone(progress) => {
+                crate::managers::source_update_driver::on_terminal(app, &config.run_id, &progress);
                 cache_progress(app, progress);
                 release_launch_guard(app);
                 crate::tray::update_tray_menu(app);
                 recheck_after_done(app);
             }
             Effect::PublishFailed(progress) => {
+                crate::managers::source_update_driver::on_terminal(app, &config.run_id, &progress);
                 cache_progress(app, progress);
                 release_launch_guard(app);
                 crate::tray::update_tray_menu(app);

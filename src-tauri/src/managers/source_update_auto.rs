@@ -5,8 +5,6 @@
 //! caller gathers; the state is a small strict file; the coordinator is the one
 //! lock the commit sequence and consent changes take.
 
-#![cfg_attr(not(test), allow(dead_code))]
-
 use std::fmt;
 use std::fs;
 use std::io::{self, Read};
@@ -42,7 +40,8 @@ pub const AUTO_IDLE: Duration = Duration::from_secs(AUTO_IDLE_SECS);
 /// Result of the verified-commit gate for the target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerifiedState {
-    /// Not checked yet.
+    /// Not checked yet. Only the tests construct it: the driver checks before deciding.
+    #[cfg_attr(not(test), allow(dead_code))]
     Unknown,
     /// GitHub reports the commit as verified.
     Verified,

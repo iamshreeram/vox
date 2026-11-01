@@ -5,8 +5,6 @@
 //! or false field, a rate limit, a redirect, an oversize body, bad JSON or a
 //! transport error all mean "not verified". Nothing logs a body or a token.
 
-#![cfg_attr(not(test), allow(dead_code))]
-
 use std::io::Read;
 use std::time::Duration;
 
@@ -105,6 +103,7 @@ impl Default for GithubCommitVerifier {
 
 impl GithubCommitVerifier {
     /// Verifier against a custom API base (tests point this at a local server).
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn with_api_base(api_base: &str, timeout: Duration) -> Self {
         Self {
             api_base: api_base.to_string(),

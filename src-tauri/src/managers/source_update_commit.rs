@@ -10,8 +10,6 @@
 //! [`UpdateCoordinator`] guard, so consent cannot change between the check and
 //! the commit.
 
-#![cfg_attr(not(test), allow(dead_code))]
-
 use super::source_update_auto::UpdateCoordinator;
 use super::source_update_pending::{PendingRun, PendingState};
 use super::source_update_runner::JobProbe;

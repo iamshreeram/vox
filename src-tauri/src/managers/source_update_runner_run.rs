@@ -125,7 +125,6 @@ pub fn launch(
 /// `run-<id>.auto` marker is written BEFORE the job is bootstrapped, and removed
 /// again if the launch fails (fail closed). Refuses while a pending record, a
 /// registered run plist or an update lock exists.
-#[cfg_attr(not(test), allow(dead_code))]
 pub fn launch_build(
     control: &dyn JobControl,
     inputs: &LaunchInputs<'_>,

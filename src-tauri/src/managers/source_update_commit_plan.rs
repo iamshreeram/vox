@@ -4,8 +4,6 @@
 //! touches launchd. `Unknown` never leads to a release or a delete: it always
 //! means "maybe alive, keep admission closed".
 
-#![cfg_attr(not(test), allow(dead_code))]
-
 use super::source_update_runner::JobProbe;
 
 /// What is on disk for `pending.json`, as classified by the loader.

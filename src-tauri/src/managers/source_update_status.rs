@@ -4,8 +4,6 @@
 //! Attached to `source_update_auto` with a `#[path]` attribute. Nothing here starts or stops a
 //! run; it only reads the settings, the attempt state, the pending record and the active run.
 
-#![cfg_attr(not(test), allow(dead_code))]
-
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::{AppHandle, Emitter};
@@ -86,7 +84,7 @@ pub struct StatusFacts<'a> {
 
 /// Reason codes that may appear in the status. Every `code()` of the policy enums is here, and
 /// the failure codes of the commit sequence are listed as well.
-const STABLE_REASON_CODES: [&str; 15] = [
+const STABLE_REASON_CODES: [&str; 16] = [
     "disabled",
     "not_source",
     "no_update",
@@ -102,6 +100,7 @@ const STABLE_REASON_CODES: [&str; 15] = [
     "build_failed",
     "install_failed",
     "spawn_failed",
+    "invalid_pending",
 ];
 
 /// The stable code for `raw` when it is a known code, otherwise `None`. Free text never passes.
