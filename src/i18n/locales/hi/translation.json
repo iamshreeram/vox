@@ -1241,6 +1241,9 @@
     },
     "about": {
       "title": "के बारे में",
+      "updates": {
+        "title": "Updates"
+      },
       "version": {
         "title": "वर्शन",
         "description": "Vox का मौजूदा वर्शन"
@@ -1292,10 +1295,6 @@
         "enabled": {
           "label": "Enable realtime conversation",
           "description": "Turns on the realtime conversation behaviour. When off, the conversation works exactly as before."
-        },
-        "speakReplies": {
-          "label": "Speak replies aloud",
-          "description": "Speaks the conversation's replies out loud. This is the same setting as Spoken Replies."
         },
         "directEndpoint": {
           "label": "Use my own endpoint",

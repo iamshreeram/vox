@@ -30,7 +30,6 @@ const GROUP = {
  */
 const REALTIME_ROW_SLUGS = [
   "realtimeEnabled",
-  "realtimeSpeakReplies",
   "realtimeDirectEndpoint",
   "realtimeEndpointUrl",
   "realtimeModel",
@@ -102,7 +101,6 @@ const REALTIME_PREFIX = "settings.experimental.realtime.";
 /** Realtime rows: the label family is `${K}.<id>.label` in RealtimeSection.tsx. */
 const REALTIME_LABEL_IDS = [
   "enabled",
-  "speakReplies",
   "directEndpoint",
   "endpoint",
   "model",
@@ -669,6 +667,19 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
     ],
   ),
   row(
+    "ttsTamil",
+    "spokenReplies",
+    "settings.advanced.tts.tamil.title",
+    "settings.advanced.tts.tamil.description",
+    [
+      "tamil voice",
+      "tamil",
+      "tamil text to speech",
+      "tamil tts",
+      "offline voice",
+    ],
+  ),
+  row(
     "ttsVoice",
     "spokenReplies",
     "settings.advanced.tts.voiceLabel",
@@ -1109,13 +1120,6 @@ export const EXPERIMENTAL_ENTRIES: readonly SearchEntry[] = [
       "live voice",
       "speech to speech",
     ],
-  ),
-  row(
-    "realtimeSpeakReplies",
-    "conversation",
-    "settings.experimental.realtime.speakReplies.label",
-    "settings.experimental.realtime.speakReplies.description",
-    ["speak replies", "tts", "spoken replies", "read aloud", "voice output"],
   ),
   row(
     "realtimeDirectEndpoint",

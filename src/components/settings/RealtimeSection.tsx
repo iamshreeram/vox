@@ -168,7 +168,6 @@ export const RealtimeSection: React.FC<RealtimeSectionProps> = React.memo(
     const model = getSetting("exp_rt_model") ?? "";
     const token = getSetting("exp_rt_token") ?? "";
     const proxyUrl = getSetting("exp_rt_proxy_url") ?? "";
-    const ttsEnabled = getSetting("tts_enabled") ?? false;
 
     const summary = tokenSummary(token);
     const status = endpointStatus({
@@ -215,18 +214,6 @@ export const RealtimeSection: React.FC<RealtimeSectionProps> = React.memo(
           t(`${K}.enabled.label`),
           t(`${K}.enabled.description`),
         )}
-
-        <ToggleSwitch
-          checked={ttsEnabled}
-          onChange={(enabled) => updateSetting("tts_enabled", enabled)}
-          disabled={!master}
-          isUpdating={isUpdating("tts_enabled")}
-          label={t(`${K}.speakReplies.label`)}
-          description={t(`${K}.speakReplies.description`)}
-          descriptionMode={descriptionMode}
-          grouped={grouped}
-          tooltipPosition="bottom"
-        />
 
         {boolToggle(
           "direct_endpoint",

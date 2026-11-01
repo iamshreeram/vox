@@ -1111,6 +1111,9 @@
     },
     "about": {
       "title": "حول",
+      "updates": {
+        "title": "Updates"
+      },
       "version": {
         "title": "الإصدار",
         "description": "الإصدار الحالي من Vox"
@@ -1162,10 +1165,6 @@
         "enabled": {
           "label": "Enable realtime conversation",
           "description": "Turns on the realtime conversation behaviour. When off, the conversation works exactly as before."
-        },
-        "speakReplies": {
-          "label": "Speak replies aloud",
-          "description": "Speaks the conversation's replies out loud. This is the same setting as Spoken Replies."
         },
         "directEndpoint": {
           "label": "Use my own endpoint",

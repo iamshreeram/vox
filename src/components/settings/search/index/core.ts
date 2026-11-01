@@ -103,6 +103,31 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
     descriptionKey: "settings.advanced.translateToEnglish.description",
     keywords: ["translation", "english", "translate", "foreign language"],
   },
+  {
+    id: "models.autoLanguage",
+    section: "models",
+    groupId: "sttModels",
+    groupKey: "settings.models.groups.speechToText",
+    labelKey: "settings.modelSettings.autoLanguage.title",
+    descriptionKey: "settings.modelSettings.autoLanguage.description",
+    keywords: [
+      "automatic language",
+      "language detection",
+      "detect language",
+      "multilingual",
+      "second model",
+      "auto detect",
+    ],
+  },
+  {
+    id: "models.tamilStt",
+    section: "models",
+    groupId: "sttModels",
+    groupKey: "settings.models.groups.speechToText",
+    labelKey: "settings.modelSettings.tamilStt.title",
+    descriptionKey: "settings.modelSettings.tamilStt.description",
+    keywords: ["tamil", "tamil speech", "tamil recognition", "tamil model"],
+  },
   // ---------- Appearance ----------
   {
     id: "appearance.theme",
@@ -683,14 +708,6 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
     keywords: ["setup", "first run", "welcome", "tutorial", "wizard"],
   },
   {
-    id: "debug.updateChecks",
-    section: "debug",
-    groupKey: "settings.debug.title",
-    labelKey: "settings.debug.updateChecks.label",
-    descriptionKey: "settings.debug.updateChecks.description",
-    keywords: ["updates", "auto update", "version check", "upgrade"],
-  },
-  {
     // SoundPicker renders a SettingContainer titled with this label and a sound theme dropdown.
     id: "debug.soundTheme",
     section: "debug",
@@ -799,6 +816,28 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
 
   // ---------- About ----------
   {
+    id: "about.updateChecks",
+    section: "about",
+    groupKey: "settings.about.updates.title",
+    labelKey: "settings.debug.updateChecks.label",
+    descriptionKey: "settings.debug.updateChecks.description",
+    keywords: ["updates", "auto update", "version check", "upgrade"],
+  },
+  {
+    id: "about.autoUpdate",
+    section: "about",
+    groupKey: "settings.about.updates.title",
+    labelKey: "settings.debug.autoUpdate.label",
+    descriptionKey: "settings.debug.autoUpdate.description",
+    keywords: [
+      "automatic updates",
+      "auto update",
+      "install updates",
+      "silent update",
+      "background update",
+    ],
+  },
+  {
     id: "about.appLanguage",
     section: "about",
     groupKey: "settings.about.title",
@@ -871,7 +910,61 @@ export const CORE_ENTRIES: readonly SearchEntry[] = [
  * Translation keys rendered as title/label attributes that are not settings rows.
  * Each reason names the control kind so a reviewer can verify it.
  */
+// Live text of the automatic-update status line (AutoUpdateStatusLine.tsx). Its keys are
+// built at runtime (status.<phase or result>, reasons.<code>), so they are reviewed as
+// DynamicFamily entries below and excluded: they are status sentences, not settings rows.
+const AUTO_UPDATE_STATUS_PREFIX = "settings.debug.autoUpdate.status.";
+const AUTO_UPDATE_STATUS_IDS = [
+  "building",
+  "waiting",
+  "installing",
+  "updated",
+  "updatedAt",
+  "failed",
+  "skipped",
+] as const;
+const AUTO_UPDATE_REASON_PREFIX = "settings.debug.autoUpdate.reasons.";
+// Mirrors KNOWN_REASON_CODES in update-checker/autoUpdateFailure.ts; any other code
+// falls back to "unknown".
+const AUTO_UPDATE_REASON_IDS = [
+  "disabled",
+  "not_source",
+  "no_update",
+  "blocked",
+  "backoff",
+  "unverified",
+  "verify_failed",
+  "active_run",
+  "busy",
+  "not_idle",
+  "verifying",
+  "interrupted",
+  "build_failed",
+  "install_failed",
+  "spawn_failed",
+  "invalid_pending",
+  "unknown",
+] as const;
+const AUTO_UPDATE_STATUS_SOURCE =
+  "src/components/settings/AutoUpdateStatusLine.tsx";
+const autoUpdateTextExclusions = (
+  prefix: string,
+  ids: readonly string[],
+  reason: string,
+): Record<string, string> =>
+  Object.fromEntries(ids.map((id) => [`${prefix}${id}`, reason]));
+
 export const CORE_EXCLUDED: Readonly<Record<string, string>> = {
+  ...autoUpdateTextExclusions(
+    AUTO_UPDATE_STATUS_PREFIX,
+    AUTO_UPDATE_STATUS_IDS,
+    "status sentence of the automatic update line on About, written live by the backend state; not a setting row",
+  ),
+  ...autoUpdateTextExclusions(
+    AUTO_UPDATE_REASON_PREFIX,
+    AUTO_UPDATE_REASON_IDS,
+    "reason sentence inside the automatic update status line on About; not a setting row",
+  ),
   // Brain page rows: the page itself is the search target (brain.page), so its rows are not
   // indexed one by one.
   "settings.brain.endpoint.title":
@@ -925,6 +1018,18 @@ export const CORE_EXCLUDED: Readonly<Record<string, string>> = {
  * produce; `ids: []` requires a note explaining why nothing there is a row.
  */
 export const CORE_DYNAMIC: readonly DynamicFamily[] = [
+  {
+    source: AUTO_UPDATE_STATUS_SOURCE,
+    prefix: AUTO_UPDATE_STATUS_PREFIX,
+    ids: AUTO_UPDATE_STATUS_IDS,
+    note: "status line key chosen from the phase or last result; the line is live text, excluded from the index",
+  },
+  {
+    source: AUTO_UPDATE_STATUS_SOURCE,
+    prefix: AUTO_UPDATE_REASON_PREFIX,
+    ids: AUTO_UPDATE_REASON_IDS,
+    note: "reason text chosen from the backend reason code; the line is live text, excluded from the index",
+  },
   {
     source: "src/components/settings/appearance/OrbColorSetting.tsx",
     prefix: "settings.appearance.orb.",

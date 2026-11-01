@@ -71,8 +71,8 @@ async function openApp(page: Page, options: OpenOptions = {}): Promise<void> {
   await expect(page.locator("p", { hasText: /^General$/ })).toBeVisible();
 }
 
-async function openDebug(page: Page): Promise<void> {
-  await page.locator("p", { hasText: /^Debug$/ }).click();
+async function openAbout(page: Page): Promise<void> {
+  await page.locator("p", { hasText: /^About$/ }).click();
   await expect(switchInput(page)).toBeVisible();
 }
 
@@ -89,7 +89,7 @@ test.describe("automatic source update settings", () => {
     page,
   }) => {
     await openApp(page);
-    await openDebug(page);
+    await openAbout(page);
 
     const toggle = switchInput(page);
     await expect(toggle).not.toBeChecked();
@@ -114,7 +114,7 @@ test.describe("automatic source update settings", () => {
     page,
   }) => {
     await openApp(page, { settings: { update_checks_enabled: false } });
-    await openDebug(page);
+    await openAbout(page);
 
     await expect(switchInput(page)).toBeDisabled();
     await expect(switchInput(page)).not.toBeChecked();
@@ -124,7 +124,7 @@ test.describe("automatic source update settings", () => {
     page,
   }) => {
     await openApp(page, { commands: { is_update_checks_locked: true } });
-    await openDebug(page);
+    await openAbout(page);
 
     await expect(switchInput(page)).toBeDisabled();
   });
@@ -133,14 +133,14 @@ test.describe("automatic source update settings", () => {
     page,
   }) => {
     await openApp(page, { commands: { get_update_mode: "plugin" } });
-    await openDebug(page);
+    await openAbout(page);
 
     await expect(switchInput(page)).toBeDisabled();
   });
 
   test("the switch can be operated from the keyboard", async ({ page }) => {
     await openApp(page);
-    await openDebug(page);
+    await openAbout(page);
 
     const toggle = switchInput(page);
     await toggle.focus();
@@ -171,7 +171,7 @@ test.describe("automatic source update status line", () => {
         },
       },
     });
-    await openDebug(page);
+    await openAbout(page);
 
     await expect(
       statusLine(
@@ -196,7 +196,7 @@ test.describe("automatic source update status line", () => {
         },
       },
     });
-    await openDebug(page);
+    await openAbout(page);
 
     await expect(
       statusLine(page, "Last automatic update was skipped. Unknown reason."),
@@ -217,7 +217,7 @@ test.describe("automatic source update status line", () => {
         },
       },
     });
-    await openDebug(page);
+    await openAbout(page);
 
     await expect(
       statusLine(page, /^Last automatic update: abc12345 \(.+\)$/),
@@ -228,7 +228,7 @@ test.describe("automatic source update status line", () => {
     page,
   }) => {
     await openApp(page, { settings: { auto_update_enabled: true } });
-    await openDebug(page);
+    await openAbout(page);
 
     await emitMockEvent(page, "auto-update-state-changed", {
       ...AUTO_STATUS_IDLE,
@@ -255,7 +255,7 @@ test.describe("automatic source update status line", () => {
     page,
   }) => {
     await openApp(page);
-    await openDebug(page);
+    await openAbout(page);
 
     await expect(
       page.getByRole("status").filter({ hasText: /\S/ }),

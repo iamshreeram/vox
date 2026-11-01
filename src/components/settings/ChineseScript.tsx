@@ -30,8 +30,11 @@ export const ChineseScriptSetting: React.FC<ChineseScriptProps> = React.memo(
       },
     ];
 
-    const selectedScript = (getSetting("chinese_script") ||
-      "as_transcribed") as ChineseScript;
+    const storedScript = getSetting("chinese_script");
+    // The Rust default follows the OS locale, which the UI cannot reproduce, so show
+    // nothing until the backend value arrives rather than a guessed script.
+    if (storedScript === undefined) return null;
+    const selectedScript = storedScript as ChineseScript;
 
     return (
       <SettingContainer
