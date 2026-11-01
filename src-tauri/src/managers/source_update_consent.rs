@@ -99,6 +99,36 @@ impl AutoMarker {
     }
 }
 
+/// Removes every automatic marker whose run is not in `live_run_ids` (best effort; returns how
+/// many were removed). Only regular files named exactly `run-<16 lowercase hex>.auto` are
+/// considered; symlinks, other names and unreadable entries are left alone. Never follows links.
+pub fn sweep_stale_markers(state_dir: &Path, live_run_ids: &[&str]) -> usize {
+    let Ok(entries) = fs::read_dir(state_dir) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(run_id) = name
+            .to_str()
+            .and_then(|name| name.strip_prefix(AUTO_MARKER_PREFIX))
+            .and_then(|rest| rest.strip_suffix(AUTO_MARKER_SUFFIX))
+        else {
+            continue;
+        };
+        if !is_valid_run_id(run_id) || live_run_ids.contains(&run_id) {
+            continue;
+        }
+        let path = entry.path();
+        let is_regular = fs::symlink_metadata(&path)
+            .is_ok_and(|meta| meta.is_file() && !meta.file_type().is_symlink());
+        if is_regular && fs::remove_file(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
+}
+
 /// Silent flag of progress for one run (R7-7 a): true exactly when the run's marker exists.
 pub fn silent_for_run(state_dir: &Path, run_id: &str) -> bool {
     AutoMarker::new(state_dir).exists(run_id)
@@ -195,6 +225,10 @@ pub fn cleanup_after_build_without_consent(
         store
             .remove_all()
             .map_err(|_| "could not remove the built update".to_string())?;
+        // The build is gone with its record, so its marker goes too (best effort).
+        if let Err(error) = AutoMarker::new(state_dir).remove(&run.run_id) {
+            warn!("could not remove the build marker: {error}");
+        }
         let previous = match load_auto_state(state_dir) {
             Ok(state) => state.unwrap_or_default(),
             Err(_) => AutoState::default(),

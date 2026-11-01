@@ -997,38 +997,95 @@ fn stable_reason_codes_cover_every_code_the_driver_records() {
 fn terminal_action_table() {
     let dir = tempfile::tempdir().expect("dir");
     let install = committing_run(dir.path());
-    // The install's own terminal outcome settles it.
+    // pending.json still names this install: it settles from the record, whatever the phase.
     assert_eq!(
-        terminal_action(Some(&install), INSTALL, RunPhase::Done, false),
+        terminal_action(Some(&install), INSTALL, RunPhase::Done, 100, false, None),
         TerminalAction::FinishInstall
     );
     assert_eq!(
-        terminal_action(Some(&install), INSTALL, RunPhase::Failed, true),
+        terminal_action(Some(&install), INSTALL, RunPhase::Failed, 93, true, None),
         TerminalAction::FinishInstall
     );
     // A non-terminal phase never settles anything, so nothing is released.
     assert_eq!(
-        terminal_action(Some(&install), INSTALL, RunPhase::Installing, false),
+        terminal_action(
+            Some(&install),
+            INSTALL,
+            RunPhase::Installing,
+            92,
+            true,
+            None
+        ),
         TerminalAction::Ignore
     );
     // Another run's outcome does not settle the install.
     assert_eq!(
-        terminal_action(Some(&install), "aaaaaaaaaaaaaaaa", RunPhase::Failed, false),
+        terminal_action(
+            Some(&install),
+            "aaaaaaaaaaaaaaaa",
+            RunPhase::Failed,
+            93,
+            false,
+            None
+        ),
         TerminalAction::Ignore
     );
-    // A failed automatic build is recorded; a finished one is not.
+    // Native finding: the script removes pending.json before `done`. The install is still
+    // settled from its marker (after a restart) or from the in-memory memory of the commit.
     assert_eq!(
-        terminal_action(None, RUN, RunPhase::Failed, true),
+        terminal_action(None, INSTALL, RunPhase::Done, 100, true, None),
+        TerminalAction::FinishRecorded
+    );
+    assert_eq!(
+        terminal_action(None, INSTALL, RunPhase::Done, 100, false, Some(INSTALL)),
+        TerminalAction::FinishRecorded
+    );
+    assert_eq!(
+        terminal_action(None, INSTALL, RunPhase::Failed, 93, true, None),
+        TerminalAction::FinishRecorded
+    );
+    assert_eq!(
+        terminal_action(None, INSTALL, RunPhase::Failed, 93, false, Some(INSTALL)),
+        TerminalAction::FinishRecorded
+    );
+    // A manual install has neither a marker nor a memory: nothing is recorded.
+    assert_eq!(
+        terminal_action(None, INSTALL, RunPhase::Done, 100, false, None),
+        TerminalAction::Ignore
+    );
+    assert_eq!(
+        terminal_action(None, INSTALL, RunPhase::Failed, 93, false, None),
+        TerminalAction::Ignore
+    );
+    // The memory names another run: this run is not the install.
+    assert_eq!(
+        terminal_action(None, RUN, RunPhase::Failed, 40, false, Some(INSTALL)),
+        TerminalAction::Ignore
+    );
+    // A failed automatic build (marker, failed before the install band) is recorded as a build
+    // failure; without a marker nothing is recorded.
+    assert_eq!(
+        terminal_action(None, RUN, RunPhase::Failed, 40, true, None),
         TerminalAction::BuildFailed
     );
     assert_eq!(
-        terminal_action(None, RUN, RunPhase::Done, true),
+        terminal_action(None, RUN, RunPhase::Failed, 40, false, None),
         TerminalAction::Ignore
     );
-    assert_eq!(
-        terminal_action(None, RUN, RunPhase::Failed, false),
-        TerminalAction::Ignore
-    );
+}
+
+#[test]
+fn terminal_action_ignores_non_terminal_phases_even_with_marker_and_memory() {
+    for phase in [
+        RunPhase::Installing,
+        RunPhase::Restarting,
+        RunPhase::Waiting,
+    ] {
+        assert_eq!(
+            terminal_action(None, INSTALL, phase, 95, true, Some(INSTALL)),
+            TerminalAction::Ignore
+        );
+    }
 }
 
 /// Fake of the settle effects; records the order of the calls.
@@ -1194,4 +1251,53 @@ fn restore_unknown_probe_with_a_running_install_releases_nothing() {
     assert!(!fake.saw("finish:done") && !fake.saw("finish:failed"));
     assert!(!fake.saw("revoke"));
     assert!(PendingStore::new(dir.path()).path().exists());
+}
+
+fn count(env: &FakeSettle, entry: &str) -> usize {
+    env.calls
+        .borrow()
+        .iter()
+        .filter(|call| *call == entry)
+        .count()
+}
+
+#[test]
+fn recorded_install_done_without_pending_records_updated_and_releases_once() {
+    // pending.json already gone (the script removes it before `done`); marker or memory is set.
+    let env = FakeSettle::default();
+    settle_recorded(&env, INSTALL, Some(SHA), true, NOW);
+    let saved = env.saved.borrow().clone().expect("state saved");
+    assert_eq!(saved.last_result, Some(AutoResult::Updated));
+    assert_eq!(saved.last_target.as_deref(), Some(SHA));
+    assert_eq!(count(&env, &format!("marker:{INSTALL}")), 1);
+    assert_eq!(count(&env, "release"), 1);
+    assert_eq!(count(&env, "pending"), 0, "no pending record is touched");
+    assert_eq!(
+        env.calls.borrow().last().map(String::as_str),
+        Some("announce")
+    );
+}
+
+#[test]
+fn recorded_install_failed_without_pending_records_install_failed() {
+    let env = FakeSettle::default();
+    settle_recorded(&env, INSTALL, Some(SHA), false, NOW);
+    let saved = env.saved.borrow().clone().expect("state saved");
+    assert_eq!(saved.last_result, Some(AutoResult::Failed));
+    assert_eq!(saved.reason_code.as_deref(), Some("install_failed"));
+    assert_eq!(saved.last_target.as_deref(), Some(SHA));
+    assert_eq!(count(&env, &format!("marker:{INSTALL}")), 1);
+    assert_eq!(count(&env, "release"), 1);
+}
+
+#[test]
+fn recorded_install_without_a_known_target_settles_admission_but_records_nothing() {
+    let env = FakeSettle::default();
+    settle_recorded(&env, INSTALL, None, true, NOW);
+    assert!(
+        env.saved.borrow().is_none(),
+        "nothing recorded without a target"
+    );
+    assert_eq!(count(&env, &format!("marker:{INSTALL}")), 1);
+    assert_eq!(count(&env, "release"), 1);
 }

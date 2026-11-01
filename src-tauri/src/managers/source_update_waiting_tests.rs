@@ -248,15 +248,23 @@ fn poll_input<'a>(
 }
 
 #[test]
-fn poll_resting_build_stops_without_cleanup_or_outcome() {
+fn poll_resting_build_cleans_its_job_then_stops_without_outcome() {
     let bytes = waiting_bytes(90);
     let mut state = PollState::new(RUN16);
     let effects = poll_step(
         &mut state,
         &poll_input(Some(&bytes), 3, JobProbe::Absent, true, 0),
     );
-    assert!(effects.contains(&Effect::Stop));
-    assert!(!effects.contains(&Effect::Cleanup));
+    let cleanup = effects.iter().position(|e| *e == Effect::Cleanup);
+    let stop = effects.iter().position(|e| *e == Effect::Stop);
+    assert!(
+        cleanup.is_some(),
+        "the finished build job is booted out and its plist removed"
+    );
+    assert!(
+        stop.is_some() && cleanup < stop,
+        "cleanup comes before the stop"
+    );
     assert!(!effects.iter().any(|e| matches!(
         e,
         Effect::WriteStatus(_) | Effect::PublishFailed(_) | Effect::PublishDone(_)

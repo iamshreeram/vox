@@ -322,7 +322,10 @@ fn decide_cleanup(state: &mut PollState, input: &PollInput<'_>, effects: &mut Ve
             }
         }
         Decision::Rest => {
-            // Resting: the watcher stops for good, with no cleanup and no outcome.
+            // Resting: the build job has finished and its staged app waits for a commit. Its
+            // registration and plist are removed now (the run logs are kept by the cleanup
+            // itself); the pending record and its marker stay. The watcher stops for good.
+            effects.push(Effect::Cleanup);
             effects.push(Effect::Stop);
         }
         Decision::None | Decision::Adopt | Decision::PublishDone => {}
