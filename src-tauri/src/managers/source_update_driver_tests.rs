@@ -26,7 +26,8 @@ use crate::managers::source_update_pending::{
     encode_pending, staged_app_path, CommitInfo, PendingOrigin,
 };
 use crate::managers::source_update_runner::{
-    job_label, plist_path, write_private_atomic, JobProbe, RunPhase,
+    job_label, plist_path, status_path, write_private_atomic, write_status_file, JobProbe,
+    RunPhase, RunStatus, StatusMethod,
 };
 
 const RUN: &str = "0123456789abcdef";
@@ -99,7 +100,9 @@ struct FakeEnv {
     verify_calls: Cell<u32>,
     launches: RefCell<Vec<String>>,
     launch_fails: bool,
-    launch_busy: bool,
+    launch_busy: Cell<bool>,
+    heals: Cell<u32>,
+    heal_frees_launcher: Cell<bool>,
     saves: RefCell<Vec<AutoState>>,
     marker: bool,
     manual_request_run: Option<&'static str>,
@@ -119,7 +122,9 @@ impl FakeEnv {
             verify_calls: Cell::new(0),
             launches: RefCell::new(Vec::new()),
             launch_fails: false,
-            launch_busy: false,
+            launch_busy: Cell::new(false),
+            heals: Cell::new(0),
+            heal_frees_launcher: Cell::new(true),
             saves: RefCell::new(Vec::new()),
             marker: true,
             manual_request_run: None,
@@ -155,7 +160,7 @@ impl DriverEnv for FakeEnv {
     }
     fn launch_build(&self, target: &str) -> Result<(), LaunchRefusal> {
         self.launches.borrow_mut().push(target.to_string());
-        if self.launch_busy {
+        if self.launch_busy.get() {
             Err(LaunchRefusal::Busy)
         } else if self.launch_fails {
             Err(LaunchRefusal::Failed)
@@ -166,6 +171,14 @@ impl DriverEnv for FakeEnv {
     }
     fn save_state(&self, state: &AutoState) {
         self.saves.borrow_mut().push(state.clone());
+    }
+    fn heal_finished_jobs(&self) {
+        // F4: a heal frees the registration that made the launcher refuse.
+        self.heals.set(self.heals.get() + 1);
+        self.facts.borrow_mut().run_active = false;
+        if self.heal_frees_launcher.get() {
+            self.launch_busy.set(false);
+        }
     }
     fn run_active(&self) -> bool {
         self.facts.borrow().run_active
@@ -332,7 +345,7 @@ fn failed_launch_records_spawn_failure_and_does_not_retry_at_once() {
 #[test]
 fn busy_launch_refusal_is_a_wait_not_a_failure() {
     let mut env = FakeEnv::new(facts());
-    env.launch_busy = true;
+    env.launch_busy.set(true);
     let mut memory = DriverMemory::default();
     tick(&env, &mut memory);
     assert!(
@@ -347,7 +360,7 @@ fn busy_launch_refusal_is_a_wait_not_a_failure() {
         "no backoff: retried on the next tick"
     );
     assert!(env.saves.borrow().is_empty(), "still nothing recorded");
-    env.launch_busy = false;
+    env.launch_busy.set(false);
     tick(&env, &mut memory);
     assert_eq!(
         env.launches.borrow().len(),
@@ -1593,4 +1606,83 @@ fn f2_unremembered_terminal_without_marker_is_ignored() {
     };
     assert_eq!(settle_terminal(&env, &report), TerminalAction::Ignore);
     assert!(env.calls.borrow().is_empty());
+}
+
+// F4: three consecutive Busy refusals heal the finished leftovers once; the fourth tick launches.
+#[test]
+fn three_busy_ticks_heal_once_and_the_fourth_launches() {
+    let mut env = FakeEnv::new(facts());
+    env.launch_busy.set(true);
+    let mut memory = DriverMemory::default();
+    for _ in 0..3 {
+        tick(&env, &mut memory);
+    }
+    assert_eq!(
+        env.heals.get(),
+        1,
+        "healed on the third consecutive busy tick"
+    );
+    assert_eq!(env.launches.borrow().len(), 3);
+    tick(&env, &mut memory);
+    assert_eq!(env.launches.borrow().len(), 4, "the fourth tick launches");
+    assert_eq!(env.heals.get(), 1, "the heal runs once, not again");
+    tick(&env, &mut memory);
+    assert_eq!(env.heals.get(), 1);
+}
+
+// F4: the live set of a heal keeps the pending build and install, the active run and a
+// non-terminal status run; a finished status run does not protect its job.
+#[test]
+fn heal_live_ids_keep_pending_active_and_non_terminal_status_runs_only() {
+    let dir = tempfile::tempdir().expect("dir");
+    let state = dir.path();
+    let pending = committing_run(state);
+    let active = "7777777777777777".to_string();
+    let status_run = RunStatus {
+        run_id: "6666666666666666".to_string(),
+        phase: RunPhase::Compiling,
+        percent: 40,
+        target: "0123456".to_string(),
+        target_full: SHA.to_string(),
+        message: "building".to_string(),
+        method: StatusMethod::Exact,
+        ts: NOW,
+    };
+    write_status_file(&status_path(state), &status_run).expect("status");
+    let live = heal_live_ids(state, Some(&pending), Some(active.clone())).expect("live");
+    for id in [RUN, INSTALL, "6666666666666666", active.as_str()] {
+        assert!(live.iter().any(|kept| kept == id), "{id} is kept");
+    }
+
+    let done = RunStatus {
+        run_id: "8888888888888888".to_string(),
+        phase: RunPhase::Done,
+        percent: 100,
+        ..status_run
+    };
+    write_status_file(&status_path(state), &done).expect("status");
+    let live = heal_live_ids(state, None, None).expect("live");
+    assert!(
+        !live.iter().any(|kept| kept == "8888888888888888"),
+        "a finished status run is not live"
+    );
+}
+
+// F4b: the Busy trigger repeats every BUSY_HEAL_TICKS busy ticks, so a young plist that was
+// skipped is retried later; a streak that never ends does not heal on every tick.
+#[test]
+fn busy_streak_retries_the_heal_every_three_busy_ticks_not_on_every_tick() {
+    let mut env = FakeEnv::new(facts());
+    env.launch_busy.set(true);
+    env.heal_frees_launcher.set(false);
+    let mut memory = DriverMemory::default();
+    for _ in 0..6 {
+        tick(&env, &mut memory);
+    }
+    assert_eq!(
+        env.heals.get(),
+        2,
+        "healed at the third and the sixth busy tick"
+    );
+    assert_eq!(env.launches.borrow().len(), 6);
 }

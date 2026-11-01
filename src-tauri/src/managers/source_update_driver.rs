@@ -49,7 +49,7 @@ use crate::managers::source_update_runner::{
     status_path, update_state_dir, JobControl, JobProbe, LaunchctlJobControl, RunPhase,
     UpdateProgress, INSTALL_PERCENT_FLOOR,
 };
-use crate::managers::source_update_runner_run::{cleanup_run, RunSite};
+use crate::managers::source_update_runner_run::{cleanup_run, heal_finished_jobs, RunSite};
 use crate::managers::source_update_verify::{check_commit, GithubCommitVerifier};
 use crate::settings::{auto_update_effective, get_settings, update_checks_effectively_enabled};
 
@@ -102,7 +102,13 @@ pub struct DriverMemory {
     last_record: Option<(String, &'static str)>,
     last_defer: Option<DeferReason>,
     last_wait: Option<&'static str>,
+    /// Consecutive ticks whose launch was refused as Busy (F4).
+    busy_streak: u32,
 }
+
+/// Every this many consecutive Busy refusals, finished unreferenced update jobs are healed (F4,
+/// F4b: a young plist is skipped and retried at the next multiple).
+const BUSY_HEAL_TICKS: u32 = 3;
 
 /// Why the launcher refused to start a build (see [`DriverEnv::launch_build`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,6 +171,8 @@ pub trait DriverEnv {
     fn gather(&self) -> EnvFacts;
     /// Runs the verified-commit check for `full_sha`. Only called when everything else says Start.
     fn verify(&self, full_sha: &str) -> VerifiedState;
+    /// Removes finished, unreferenced update job registrations (F4). Never fails the tick.
+    fn heal_finished_jobs(&self);
     /// Starts the automatic build of `target`.
     fn launch_build(&self, target: &str) -> Result<(), LaunchRefusal>;
     /// Persists the attempt state and announces the change.
@@ -433,15 +441,18 @@ pub fn tick<E: DriverEnv>(env: &E, memory: &mut DriverMemory) -> Next {
         Err(()) => return slow(),
     };
     match pending {
-        Some(run) => match run.state {
-            PendingState::Committing(_) => {
-                if !env.install_running(&run) {
-                    env.recover();
+        Some(run) => {
+            memory.busy_streak = 0;
+            match run.state {
+                PendingState::Committing(_) => {
+                    if !env.install_running(&run) {
+                        env.recover();
+                    }
+                    fast()
                 }
-                fast()
+                PendingState::Built => tick_built(env, memory, &run),
             }
-            PendingState::Built => tick_built(env, memory, &run),
-        },
+        }
         None => tick_idle(env, memory),
     }
 }
@@ -485,6 +496,8 @@ fn tick_built<E: DriverEnv>(env: &E, memory: &mut DriverMemory, run: &PendingRun
 
 /// No pending record: the start decision for a new automatic build.
 fn tick_idle<E: DriverEnv>(env: &E, memory: &mut DriverMemory) -> Next {
+    // Only consecutive Busy refusals count: any other tick starts the streak again (F4).
+    let streak = std::mem::take(&mut memory.busy_streak);
     if !env.auto_effective() {
         return slow();
     }
@@ -511,6 +524,10 @@ fn tick_idle<E: DriverEnv>(env: &E, memory: &mut DriverMemory) -> Next {
             // Issue #160: a Busy refusal is a wait. Nothing is persisted and there is no backoff;
             // the next tick retries. The wait is logged once per change.
             Err(LaunchRefusal::Busy) => {
+                memory.busy_streak = streak.saturating_add(1);
+                if memory.busy_streak.is_multiple_of(BUSY_HEAL_TICKS) {
+                    env.heal_finished_jobs();
+                }
                 if memory.last_wait != Some(WaitReason::Busy.code()) {
                     memory.last_wait = Some(WaitReason::Busy.code());
                     info!("automatic update waits: the launcher is busy");
@@ -677,6 +694,58 @@ pub fn restore_admission(app: &AppHandle) {
     if outcome != RestoreOutcome::Nothing {
         info!("automatic update admission restored");
     }
+    heal_finished_jobs_on_disk(app);
+}
+
+/// The run ids a heal must keep (F4): the pending record's build and install runs, the active run,
+/// and the status file's run while it is not terminal. A status file that cannot be read fails
+/// closed (`Err`); an unparseable one keeps its run.
+pub fn heal_live_ids(
+    state_dir: &Path,
+    pending: Option<&PendingRun>,
+    active: Option<String>,
+) -> Result<Vec<String>, ()> {
+    let mut live: Vec<String> = Vec::new();
+    if let Some(run) = pending {
+        live.push(run.run_id.clone());
+        live.extend(install_run_of(run).map(str::to_string));
+    }
+    live.extend(active);
+    let bytes = read_status_bounded(&status_path(state_dir)).map_err(|_| ())?;
+    if let Some(run_id) = bytes.as_deref().and_then(run_id_in_status) {
+        let terminal = bytes
+            .as_deref()
+            .map(|bytes| parse_status(bytes, &run_id, None, now_unix()))
+            .is_some_and(|parsed| parsed.is_ok_and(|status| status.phase.is_terminal()));
+        if !terminal {
+            live.push(run_id);
+        }
+    }
+    Ok(live)
+}
+
+/// Heals finished, unreferenced update jobs on disk (F4) and sweeps the markers they leave.
+/// An unreadable pending record or status file heals nothing.
+pub fn heal_finished_jobs_on_disk(app: &AppHandle) {
+    let Some(state_dir) = state_dir_of(app) else {
+        return;
+    };
+    let Ok(pending) = PendingStore::new(&state_dir).load() else {
+        return;
+    };
+    let Ok(live) = heal_live_ids(&state_dir, pending.as_ref(), active_run_id(app)) else {
+        return;
+    };
+    let healed = heal_finished_jobs(
+        &state_dir,
+        &live,
+        &LaunchctlJobControl::current(),
+        now_unix(),
+    );
+    if healed > 0 {
+        info!("removed finished automatic update jobs");
+    }
+    sweep_markers(app);
 }
 
 /// The outstanding automatic record on disk, for a manual start. An unreadable record counts as
@@ -1329,6 +1398,10 @@ impl DriverEnv for AppDriverEnv<'_> {
 
     fn verify(&self, full_sha: &str) -> VerifiedState {
         check_commit(&GithubCommitVerifier::default(), full_sha)
+    }
+
+    fn heal_finished_jobs(&self) {
+        heal_finished_jobs_on_disk(self.app);
     }
 
     fn launch_build(&self, target: &str) -> Result<(), LaunchRefusal> {

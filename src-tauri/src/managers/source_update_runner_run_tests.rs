@@ -7,8 +7,12 @@ use crate::managers::source_update_runner::{
     parse_status, proxy_env_from, read_status_bounded, run_id_in_status, write_status_file,
     JobProbe, RunPhase, RunStatus, StatusMethod, INTERRUPTED_AFTER_SECS, MAX_STATUS_BYTES,
 };
+use std::collections::HashMap;
 use std::fs;
 use std::sync::Mutex;
+
+use crate::managers::source_update_auto::consent::sweep_stale_markers;
+use crate::managers::source_update_pending::PENDING_FILE_NAME;
 
 const RUN: &str = "0123456789abcdef";
 const FULL: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -507,4 +511,251 @@ fn resting_build_cleanup_boots_out_its_job_and_removes_its_plist_only() {
         marker.exists(),
         "the build marker is removed with the pending record, not here"
     );
+}
+
+// F4: startup self-heal of finished, unreferenced update jobs.
+const FINISHED: &str = "1111111111111111";
+const LIVE_PID: &str = "2222222222222222";
+const UNKNOWN: &str = "3333333333333333";
+const PENDING_ID: &str = "4444444444444444";
+const LINKED: &str = "5555555555555555";
+
+/// Fake launchd with one probe per label; every other label is absent.
+struct ProbeMap {
+    probes: HashMap<String, JobProbe>,
+    bootouts: Mutex<Vec<String>>,
+}
+
+impl ProbeMap {
+    fn with(probes: &[(&str, JobProbe)]) -> Self {
+        Self {
+            probes: probes
+                .iter()
+                .map(|(id, probe)| (job_label(id), *probe))
+                .collect(),
+            bootouts: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl JobControl for ProbeMap {
+    fn probe(&self, label: &str) -> JobProbe {
+        self.probes.get(label).copied().unwrap_or(JobProbe::Absent)
+    }
+
+    fn bootstrap(&self, _plist: &Path) -> Result<(), RunnerError> {
+        Ok(())
+    }
+
+    fn bootout(&self, label: &str) -> Result<(), RunnerError> {
+        self.bootouts.lock().unwrap().push(label.to_string());
+        Ok(())
+    }
+}
+
+fn finished_without_pid() -> JobProbe {
+    JobProbe::Registered {
+        pid: None,
+        last_exit: Some(0),
+    }
+}
+
+fn write_plist_for(state: &Path, run_id: &str) {
+    fs::write(plist_path(state, run_id), b"<plist/>").unwrap();
+}
+
+#[test]
+fn leftover_finished_job_is_booted_out_and_only_its_plist_is_removed() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path();
+    write_plist_for(state, FINISHED);
+    let log = log_path(state, FINISHED);
+    fs::write(&log, b"log").unwrap();
+    let marker = state.join(format!("run-{FINISHED}.auto"));
+    fs::write(&marker, b"auto\n").unwrap();
+    let status = status_path(state);
+    fs::write(&status, b"status").unwrap();
+    let pending = state.join(PENDING_FILE_NAME);
+    fs::write(&pending, b"pending").unwrap();
+    let jobs = ProbeMap::with(&[(FINISHED, finished_without_pid())]);
+
+    assert_eq!(
+        heal_finished_jobs(state, &[], &jobs, old_enough(state, FINISHED)),
+        1
+    );
+
+    assert_eq!(*jobs.bootouts.lock().unwrap(), vec![job_label(FINISHED)]);
+    assert!(!plist_path(state, FINISHED).exists());
+    assert_eq!(fs::read(&log).unwrap(), b"log");
+    assert_eq!(fs::read(&status).unwrap(), b"status");
+    assert_eq!(fs::read(&pending).unwrap(), b"pending");
+    assert!(marker.exists(), "the heal never removes markers itself");
+    assert_eq!(
+        sweep_stale_markers(state, &[]),
+        1,
+        "the sweep then removes it"
+    );
+    assert!(!marker.exists());
+}
+
+#[test]
+fn running_unknown_and_live_listed_jobs_are_never_healed() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path();
+    for id in [LIVE_PID, UNKNOWN, PENDING_ID] {
+        write_plist_for(state, id);
+    }
+    let jobs = ProbeMap::with(&[
+        (
+            LIVE_PID,
+            JobProbe::Registered {
+                pid: Some(4242),
+                last_exit: None,
+            },
+        ),
+        (UNKNOWN, JobProbe::Unknown),
+        (PENDING_ID, finished_without_pid()),
+    ]);
+
+    assert_eq!(
+        heal_finished_jobs(
+            state,
+            &[PENDING_ID.to_string()],
+            &jobs,
+            old_enough(state, PENDING_ID)
+        ),
+        0
+    );
+
+    assert!(jobs.bootouts.lock().unwrap().is_empty());
+    for id in [LIVE_PID, UNKNOWN, PENDING_ID] {
+        assert!(plist_path(state, id).exists(), "{id} keeps its plist");
+    }
+}
+
+#[test]
+fn symlinked_plist_is_never_followed_or_removed() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path();
+    let elsewhere = dir.path().join("elsewhere.plist");
+    fs::write(&elsewhere, b"x").unwrap();
+    std::os::unix::fs::symlink(&elsewhere, plist_path(state, LINKED)).unwrap();
+    let jobs = ProbeMap::with(&[(LINKED, finished_without_pid())]);
+
+    let now = old_enough(state, LINKED);
+    assert_eq!(heal_finished_jobs(state, &[], &jobs, now), 0);
+
+    assert!(fs::symlink_metadata(plist_path(state, LINKED))
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(fs::read(&elsewhere).unwrap(), b"x");
+    assert!(jobs.bootouts.lock().unwrap().is_empty());
+}
+
+#[test]
+fn only_regular_run_plists_with_a_valid_id_are_considered() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path();
+    let names = [
+        "run-XYZ.plist",
+        "run-0123456789abcdef.plist.bak",
+        "run-0123456789ABCDEF.plist",
+        "other.plist",
+        "run-0123456789abcdef.log",
+    ];
+    for name in names {
+        fs::write(state.join(name), b"x").unwrap();
+    }
+    // Every label would probe as Absent, so only the name rule keeps these files.
+    let jobs = ProbeMap::with(&[]);
+
+    assert_eq!(heal_finished_jobs(state, &[], &jobs, u64::MAX), 0);
+
+    assert!(jobs.bootouts.lock().unwrap().is_empty());
+    for name in names {
+        assert!(state.join(name).exists(), "{name} is not a run plist");
+    }
+}
+
+// F4b: a plist younger than HEAL_MIN_AGE_SECS is never healed, and an unreadable or future mtime
+// is never healed either. The clock is passed in, so the ages are exact.
+fn mtime_secs(path: &Path) -> u64 {
+    fs::metadata(path)
+        .unwrap()
+        .modified()
+        .unwrap()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+/// The clock that makes the plist of `run_id` exactly old enough to heal.
+fn old_enough(state: &Path, run_id: &str) -> u64 {
+    mtime_secs(&plist_path(state, run_id)) + HEAL_MIN_AGE_SECS
+}
+
+#[test]
+fn young_plist_is_not_healed_even_when_its_job_looks_finished() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path();
+    write_plist_for(state, FINISHED);
+    let jobs = ProbeMap::with(&[(FINISHED, finished_without_pid())]);
+    let young = mtime_secs(&plist_path(state, FINISHED)) + 30;
+
+    assert_eq!(heal_finished_jobs(state, &[], &jobs, young), 0);
+
+    assert!(jobs.bootouts.lock().unwrap().is_empty());
+    assert!(plist_path(state, FINISHED).exists());
+}
+
+#[test]
+fn plist_just_under_the_minimum_age_is_not_healed_and_at_the_minimum_it_is() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path();
+    write_plist_for(state, FINISHED);
+    let jobs = ProbeMap::with(&[(FINISHED, finished_without_pid())]);
+    let mtime = mtime_secs(&plist_path(state, FINISHED));
+
+    assert_eq!(
+        heal_finished_jobs(state, &[], &jobs, mtime + HEAL_MIN_AGE_SECS - 1),
+        0
+    );
+    assert!(plist_path(state, FINISHED).exists());
+    assert_eq!(
+        heal_finished_jobs(state, &[], &jobs, mtime + HEAL_MIN_AGE_SECS),
+        1
+    );
+    assert!(!plist_path(state, FINISHED).exists());
+}
+
+#[test]
+fn plist_with_a_future_mtime_is_not_healed() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path();
+    write_plist_for(state, FINISHED);
+    let jobs = ProbeMap::with(&[(FINISHED, finished_without_pid())]);
+    // The clock is behind the mtime: the age cannot be trusted, so nothing is healed.
+    let behind = mtime_secs(&plist_path(state, FINISHED)) - 10;
+
+    assert_eq!(heal_finished_jobs(state, &[], &jobs, behind), 0);
+
+    assert!(jobs.bootouts.lock().unwrap().is_empty());
+    assert!(plist_path(state, FINISHED).exists());
+}
+
+#[test]
+fn repeated_heals_of_a_young_plist_do_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path();
+    write_plist_for(state, FINISHED);
+    let jobs = ProbeMap::with(&[(FINISHED, finished_without_pid())]);
+    let young = mtime_secs(&plist_path(state, FINISHED)) + 30;
+
+    for _ in 0..3 {
+        assert_eq!(heal_finished_jobs(state, &[], &jobs, young), 0);
+    }
+
+    assert!(jobs.bootouts.lock().unwrap().is_empty());
+    assert!(plist_path(state, FINISHED).exists());
 }
