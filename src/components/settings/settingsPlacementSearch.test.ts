@@ -181,9 +181,10 @@ const scenarios: Record<string, () => void> = {
           (e.labelKey.startsWith("settings.experimental.realtime.") ||
             e.labelKey === "converse.voice.latency.label"),
       );
+      // 15 rows: the Realtime "Speak replies aloud" duplicate was removed (#172).
       assert.equal(
         rows.length,
-        16,
+        15,
         `found ${rows.length} realtime/latency rows`,
       );
       for (const e of rows) {

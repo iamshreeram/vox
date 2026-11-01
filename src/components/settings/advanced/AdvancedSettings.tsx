@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { useSettings } from "../../../hooks/useSettings";
 import { ShowOverlay } from "../ShowOverlay";
 import { CustomWords } from "../CustomWords";
 import { SettingsGroup } from "../../ui/SettingsGroup";
@@ -21,11 +22,17 @@ import { PlacedGroups } from "../PlacedGroups";
 
 export const AdvancedSettings: React.FC = () => {
   const { t } = useTranslation();
+  const { getSetting } = useSettings();
+  // Start Hidden only means something while the tray icon is shown (lib.rs opens the
+  // window when the tray is off). Same default as ShowTrayIcon.
+  const showTrayIcon = getSetting("show_tray_icon") ?? true;
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
       <SettingsGroup title={t("settings.advanced.groups.app")}>
-        <StartHidden descriptionMode="tooltip" grouped={true} />
+        {showTrayIcon && (
+          <StartHidden descriptionMode="tooltip" grouped={true} />
+        )}
         <AutostartToggle descriptionMode="tooltip" grouped={true} />
         <ShowTrayIcon descriptionMode="tooltip" grouped={true} />
         <ShowOverlay descriptionMode="tooltip" grouped={true} />

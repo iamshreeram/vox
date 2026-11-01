@@ -9,6 +9,9 @@ import { AppDataDirectory } from "../AppDataDirectory";
 import { AppLanguageSelector } from "../AppLanguageSelector";
 import { ShowWhatsNewOnUpdate } from "../ShowWhatsNewOnUpdate";
 import { LogDirectory } from "../debug";
+import { UpdateChecksToggle } from "../UpdateChecksToggle";
+import { AutoUpdateToggle } from "../AutoUpdateToggle";
+import { AutoUpdateStatusLine } from "../AutoUpdateStatusLine";
 
 export const AboutSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -59,6 +62,12 @@ export const AboutSettings: React.FC = () => {
 
         <AppDataDirectory descriptionMode="tooltip" grouped={true} />
         <LogDirectory grouped={true} />
+      </SettingsGroup>
+
+      <SettingsGroup title={t("settings.about.updates.title")}>
+        <UpdateChecksToggle descriptionMode="tooltip" grouped={true} />
+        <AutoUpdateToggle descriptionMode="tooltip" grouped={true} />
+        <AutoUpdateStatusLine />
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.about.acknowledgments.title")}>
