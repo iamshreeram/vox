@@ -77,14 +77,17 @@ test.describe("source update check failure footer", () => {
 
     await page.getByRole("button", { name: "Check for updates" }).click();
 
-    // Visible text stays the generic label; the specific reason is exposed as
-    // the tooltip and as the control's accessible name.
+    // Visible text stays the generic label and is the accessible name (WCAG
+    // 2.5.3); the specific reason is the tooltip and the accessible description.
     await expect(page.getByText(GENERIC_ERROR, { exact: true })).toBeVisible();
+    const control = page.getByRole("button", {
+      name: GENERIC_ERROR,
+      exact: true,
+    });
+    await expect(control).toHaveAccessibleName(GENERIC_ERROR);
+    await expect(control).toHaveAccessibleDescription(BACKEND_SENTENCE);
     await expect(
       page.getByTitle(BACKEND_SENTENCE, { exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: BACKEND_SENTENCE, exact: true }),
     ).toBeVisible();
   });
 

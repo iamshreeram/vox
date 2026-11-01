@@ -318,7 +318,6 @@ const SourceUpdateChecker: React.FC<SourceUpdateCheckerProps> = ({
             type="button"
             onClick={handleFooterClick}
             title={footerTitle}
-            aria-label={errorReason}
             className={`transition-colors disabled:opacity-50 tabular-nums ${
               isAvailable
                 ? "text-logo-primary hover:text-logo-primary/80 font-medium"

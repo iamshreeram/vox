@@ -709,9 +709,11 @@ pub fn describe_failure(err: &UpdateCheckError, proxy_configured: bool, retried:
 /// GET `url` with the proxy choice and retry rule (N1). Returns the outcome and the
 /// number of attempts made (1, or 2 when the direct retry ran).
 ///
-/// Timing: each attempt has the full `timeout`, so the worst case is two attempts,
-/// about 2 x `timeout` in total (plus negligible connect overhead). The per-attempt
-/// timeout is unchanged from the single-attempt design.
+/// Timing: `timeout` is the per-attempt timeout chosen by the caller. One request has at
+/// most 2 attempts, so at most 2 x `timeout`. A check makes at most 2 requests (commits,
+/// then compare when the window misses), so the worst case is 4 x `timeout`: 60 s with
+/// `FETCH_TIMEOUT` = 15 s. A learned direct route (see [`fetch_checked`]) cuts the second
+/// request to one attempt, so a check that learned it costs at most 3 x `timeout`.
 pub async fn fetch_text_inner(
     url: &str,
     max_bytes: usize,
@@ -727,6 +729,27 @@ pub async fn fetch_text_inner(
         }
         Err((_, err)) => (Err(err), 1),
     }
+}
+
+/// One request of a check, with the per-check memory (MINOR 4). `direct_known` is set once
+/// a direct fallback has answered in this check; later requests of the same check then go
+/// direct at once, with no proxy attempt and no retry (attempts == 1).
+pub async fn fetch_checked(
+    url: &str,
+    max_bytes: usize,
+    timeout: Duration,
+    proxy: ProxyChoice,
+    proxy_configured: bool,
+    direct_known: &AtomicBool,
+) -> (Result<(u16, String), UpdateCheckError>, u32) {
+    if direct_known.load(Ordering::SeqCst) {
+        return fetch_text_inner(url, max_bytes, timeout, ProxyChoice::Direct, false).await;
+    }
+    let (res, attempts) = fetch_text_inner(url, max_bytes, timeout, proxy, proxy_configured).await;
+    if attempts > 1 && res.is_ok() {
+        direct_known.store(true, Ordering::SeqCst);
+    }
+    (res, attempts)
 }
 
 /// One attempt. The error carries its [`FailKind`] for the retry decision.
@@ -942,12 +965,19 @@ pub async fn check_and_publish(
     let generation = runtime.generation.load(Ordering::SeqCst);
     let proxy_configured = proxy_env_configured(|name| std::env::var(name).ok());
     let retried = AtomicBool::new(false);
+    let direct_known = AtomicBool::new(false);
     let checked = check_with(BUILD_COMMIT, |url: String, max: usize| {
-        let retried = &retried;
+        let (retried, direct_known) = (&retried, &direct_known);
         async move {
-            let (res, attempts) =
-                fetch_text_inner(&url, max, FETCH_TIMEOUT, ProxyChoice::Env, proxy_configured)
-                    .await;
+            let (res, attempts) = fetch_checked(
+                &url,
+                max,
+                FETCH_TIMEOUT,
+                ProxyChoice::Env,
+                proxy_configured,
+                direct_known,
+            )
+            .await;
             if attempts > 1 {
                 retried.store(true, Ordering::SeqCst);
             }
@@ -1418,9 +1448,8 @@ pub fn spawn_scheduler(app: AppHandle) {
         tokio::time::sleep(SCHEDULER_START_DELAY).await;
         loop {
             if current_mode() == SourceUpdateMode::Source && effective_checks_enabled(&app) {
-                if let Err(e) = check_and_publish(&app, true).await {
-                    warn!("source update check failed: {e}");
-                }
+                // A failed check is logged once, content-free, by check_and_publish.
+                let _ = check_and_publish(&app, true).await;
             }
             tokio::time::sleep(SCHEDULER_INTERVAL).await;
         }
@@ -2487,3 +2516,83 @@ mod live_github {
 #[cfg(test)]
 #[path = "source_update_wiring_tests.rs"]
 mod wiring_tests;
+
+#[cfg(test)]
+mod direct_memory_tests {
+    //! MINOR 4: a direct fallback that answered is remembered for the rest of one check.
+    //! Loopback only; no process environment is read (ProxyChoice::Explicit).
+    use super::*;
+    use std::sync::atomic::Ordering as AtomicOrdering;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    const TIMEOUT: Duration = Duration::from_secs(5);
+
+    /// Loopback server answering `200 ok` to every connection.
+    async fn serve_ok() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 4096];
+                    let _ = sock.read(&mut buf).await;
+                    let _ = sock
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                        )
+                        .await;
+                    let _ = sock.shutdown().await;
+                });
+            }
+        });
+        port
+    }
+
+    async fn dead_port() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        drop(listener);
+        port
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn second_request_goes_direct_at_once_after_a_fallback_succeeded() {
+        let target = serve_ok().await;
+        let dead = dead_port().await;
+        let proxy = ProxyChoice::Explicit(format!("http://127.0.0.1:{dead}"));
+        let url = format!("http://127.0.0.1:{target}/repos/x/commits");
+        let learned = AtomicBool::new(false);
+
+        let (first, first_attempts) =
+            fetch_checked(&url, 1024, TIMEOUT, proxy.clone(), true, &learned).await;
+        assert_eq!(first, Ok((200, "ok".to_string())));
+        assert_eq!(first_attempts, 2, "proxy attempt, then one direct retry");
+        assert!(
+            learned.load(AtomicOrdering::SeqCst),
+            "fallback success is remembered"
+        );
+
+        let (second, second_attempts) =
+            fetch_checked(&url, 1024, TIMEOUT, proxy, true, &learned).await;
+        assert_eq!(second, Ok((200, "ok".to_string())));
+        assert_eq!(
+            second_attempts, 1,
+            "second request of the same check skips the dead proxy"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn failed_fallback_is_not_remembered() {
+        let dead_target = dead_port().await;
+        let dead_proxy = dead_port().await;
+        let proxy = ProxyChoice::Explicit(format!("http://127.0.0.1:{dead_proxy}"));
+        let url = format!("http://127.0.0.1:{dead_target}/repos/x/commits");
+        let learned = AtomicBool::new(false);
+
+        let (res, attempts) = fetch_checked(&url, 1024, TIMEOUT, proxy, true, &learned).await;
+        assert!(matches!(res, Err(UpdateCheckError::Network(_))), "{res:?}");
+        assert_eq!(attempts, 2);
+        assert!(!learned.load(AtomicOrdering::SeqCst));
+    }
+}

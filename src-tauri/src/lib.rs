@@ -167,11 +167,10 @@ fn with_suppressed_log_targets(mut builder: LogBuilder) -> LogBuilder {
         builder = builder.level_for(*target, log::LevelFilter::Off);
     }
     // NET (#190): HTTP client targets print proxy addresses and destinations at Debug;
-    // cap them at Warn for every sink. Same mechanism, see `log_filter`.
-    for target in log_filter::CAPPED_TARGETS {
-        builder = builder.level_for(*target, log::LevelFilter::Warn);
-    }
-    builder
+    // capped at Warn for every sink by the shared gate in `log_filter`.
+    log_filter::apply_log_caps(builder, |builder, target, level| {
+        builder.level_for(target, level)
+    })
 }
 
 fn build_console_filter() -> env_filter::Filter {
