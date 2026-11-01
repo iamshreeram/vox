@@ -214,7 +214,10 @@ function installTauriMockInPage(arg: MockInitArg): void {
   const PERSISTED_SETTING_ARG: Record<string, [string, string]> = {
     change_selected_language_setting: ["selected_language", "language"],
     change_stt_tamil_enabled_setting: ["stt_tamil_enabled", "enabled"],
-    change_stt_auto_language_enabled_setting: ["stt_auto_language_enabled", "enabled"],
+    change_stt_auto_language_enabled_setting: [
+      "stt_auto_language_enabled",
+      "enabled",
+    ],
   };
   const emitted: Array<{ label: string; event: string; payload: unknown }> = [];
   let appearanceRev = 1;
