@@ -17,6 +17,21 @@ detection".
    - Other languages use the Whisper model's own transcript.
 4. Otherwise the original transcript is kept, unchanged.
 
+### When the English model returns nothing
+
+English-only models often return an empty transcript for speech in another language. When
+that happens and the audio clearly contains speech (at least one second that Vox's own voice
+detector marks as speech), Vox asks the multilingual model anyway. It accepts the answer only
+if a language other than English is reported, the text has at least two words and six letters,
+and the letters match that language's script (Tamil letters for Tamil, non-Latin letters for
+the others). Silence, breathing, keyboard clicks, hum and constant noise do not reach the
+model.
+
+Background noise can occasionally be taken for speech and answered. In a synthetic test with
+58 noise and system-sound clips, the voice detector let 23 through (tones and system sounds);
+the acceptance rules rejected all of them. That test used generated and system audio only, not
+recorded human noise, so treat it as a lower bound on the risk.
+
 Custom words, filler-word removal and Chinese script conversion are applied once, to
 the transcript that is finally used.
 

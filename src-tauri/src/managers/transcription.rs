@@ -624,6 +624,13 @@ impl TranscriptionManager {
             slot: &self.indic_slot,
             policy,
         };
+        if let Some((applied, facts)) = route_auto_empty(&ctx, &lid, &tamil, &EarshotMeter) {
+            info!(
+                "{}",
+                format_empty_log(&facts, started.elapsed().as_millis())
+            );
+            return applied;
+        }
         let (applied, facts) = route_auto(&ctx, &lid, &tamil);
         if let Some(facts) = facts {
             log_auto_decision(facts.gate, &facts.source, facts.tokens_per_word, started);
@@ -2041,6 +2048,10 @@ use crate::managers::auto_lang::{
     tokens_per_word, AutoInput, AutoRefined, LidCandidate, LidIdentify, LidOutcome, Source,
     TamilPackRoute, LID_MAX_SECS, SAMPLE_RATE_HZ,
 };
+use crate::managers::auto_lang_empty::{
+    empty_text_check_allowed, format_empty_log, refine_admitted, AutoEmptyLogFacts, EarshotMeter,
+    SpeechMeter,
+};
 use crate::managers::model::ModelInfo;
 
 /// Language identifier for `auto_refine`: the shared `LidSlot`. Passes at most `LID_MAX_SECS`
@@ -2223,6 +2234,63 @@ fn route_auto(
     }
 
     (AutoApplied::KeepActive, None)
+}
+
+/// Empty-text path (DESIGN Revision 5 and 6). Returns `None` unless ALL hold: the setting is on,
+/// the active model does not detect language itself, `auto_route_active(...)` is true (language
+/// auto, translate off, audio >= 0.5 s, token rows present) and the active text is blank. In that
+/// case it always returns `Some`: a clip without enough speech gives `(KeepActive, admitted =
+/// false)` and calls neither the pack-readiness closure, the identifier nor the Tamil pack.
+/// Otherwise the pack-readiness closure runs (then `on_pack_use` when ready) and
+/// `auto_refine_empty` decides. Non-blank text always returns `None`, leaving `route_auto`
+/// untouched.
+fn route_auto_empty(
+    ctx: &AutoRouteCtx<'_>,
+    lid: &dyn LidIdentify,
+    tamil: &dyn TamilPackRoute,
+    meter: &dyn SpeechMeter,
+) -> Option<(AutoApplied, AutoEmptyLogFacts)> {
+    let audio_secs = ctx.audio.len() as f32 / SAMPLE_RATE_HZ;
+    let applies = ctx.settings_enabled
+        && !ctx.active_detects_language
+        && auto_route_active(
+            ctx.selected_language,
+            ctx.settings_enabled,
+            ctx.translate_to_english,
+            audio_secs,
+            ctx.token_count.is_some(),
+        )
+        && ctx.active_text.trim().is_empty();
+    if !applies {
+        return None;
+    }
+
+    let (allowed, speech_s) = empty_text_check_allowed(ctx.active_text, ctx.audio, meter);
+    if !allowed {
+        let facts = AutoEmptyLogFacts {
+            speech_s,
+            admitted: false,
+            source: "keep".to_string(),
+        };
+        return Some((AutoApplied::KeepActive, facts));
+    }
+
+    let tamil_pack_ready = ctx.tamil_enabled && (ctx.tamil_pack_ready)();
+    if tamil_pack_ready {
+        (ctx.on_pack_use)();
+    }
+    let refined = refine_admitted(ctx.active_text, ctx.audio, tamil_pack_ready, lid, tamil);
+    let source = match &refined.source {
+        Source::KeepActive => "keep".to_string(),
+        Source::TamilPack => "tamil_pack".to_string(),
+        Source::LidText { lang } => format!("lid_text:{lang}"),
+    };
+    let facts = AutoEmptyLogFacts {
+        speech_s,
+        admitted: true,
+        source,
+    };
+    Some((classify_refined(refined), facts))
 }
 
 /// Unload policy for the language-check model in the idle thread. When the auto language
@@ -3442,3 +3510,7 @@ mod auto_adapter_tests;
 #[cfg(test)]
 #[path = "transcription_auto_route_tests.rs"]
 mod auto_route_tests;
+
+#[cfg(test)]
+#[path = "transcription_auto_empty_route_tests.rs"]
+mod auto_empty_route_tests;

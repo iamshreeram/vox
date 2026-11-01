@@ -83,6 +83,12 @@ test.describe("Automatic language detection row", () => {
     );
     await expect(tip).toContainText("Everything stays on this device");
     await expect(tip).toContainText("Live streaming dictation is unchanged");
+    await expect(tip).toContainText(
+      "returns nothing for audio that clearly contains speech",
+    );
+    await expect(tip).toContainText(
+      "background noise can occasionally be taken",
+    );
     await expect(autoRow(page)).not.toBeChecked();
     await expect(statusLine(page)).toHaveCount(0);
   });
