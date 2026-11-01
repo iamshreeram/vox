@@ -240,7 +240,7 @@ See the [Troubleshooting](README.md#troubleshooting) section in README.md.
 
 ## GitHub workflow for AI coding assistants
 
-Before preparing a change for review, read the current repository PR template and follow it. AI assistants may help implement and validate changes, but must not open or submit PRs for this personal repository; prepare the branch and summary for Ram to submit. Never invent human-written text or claim that a PR was opened when it was not.
+Before preparing a change for review, read the current repository PR template and follow it. AI assistants may push branches and open PRs when Ram explicitly asks in the current session, and may merge a PR only when Ram names that PR and asks for the merge. Before merging, confirm the PR's base is `main` (never merge a stacked PR into another PR's branch; merge bottom-up and retarget first), check the required checks and tell Ram about any failing one. Never force-push a shared branch, bypass branch protection, or merge on your own initiative. Fill the PR template truthfully: mark AI assistance as used, label drafted description text as AI-drafted for Ram to confirm, and never claim a PR was opened or merged when it was not.
 
 - **Opening an issue:** use the Vox issue template and personal repository links.
 - **Proposing a feature:** document scope and tests in the relevant design/phase file before implementation.
