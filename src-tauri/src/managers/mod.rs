@@ -217,6 +217,8 @@ pub mod source_update_commit;
 pub mod source_update_commit_env;
 pub mod source_update_commit_plan;
 pub mod source_update_driver;
+#[cfg(test)]
+mod source_update_net_tests;
 pub mod source_update_pending;
 pub mod source_update_runner;
 pub mod source_update_runner_poll;

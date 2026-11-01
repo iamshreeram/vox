@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
@@ -632,32 +632,157 @@ pub fn current_mode() -> SourceUpdateMode {
 /// The body is read incrementally and the call fails with [`UpdateCheckError::TooLarge`]
 /// as soon as more than `max_bytes` arrive. Transport failures (including the
 /// timeout) become [`UpdateCheckError::Network`]; the UI never shows that text.
+#[cfg_attr(not(test), allow(dead_code))]
 pub async fn fetch_text(
     url: &str,
     max_bytes: usize,
     timeout: Duration,
 ) -> Result<(u16, String), UpdateCheckError> {
-    let network = |e: reqwest::Error| UpdateCheckError::Network(e.to_string());
-    let client = reqwest::Client::builder()
-        .timeout(timeout)
-        .user_agent(format!("vox-update-check/{}", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(network)?;
+    let configured = proxy_env_configured(|name| std::env::var(name).ok());
+    fetch_text_inner(url, max_bytes, timeout, ProxyChoice::Env, configured)
+        .await
+        .0
+}
+
+/// How the HTTP client picks its proxy. `Explicit` and `Status` are built only by tests
+/// (production uses `Env` and never classifies a status as a transport failure).
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProxyChoice {
+    /// reqwest's own environment handling (production). Its `NO_PROXY` handling applies;
+    /// an already-direct `NO_PROXY` request may receive one redundant direct retry (harmless).
+    Env,
+    /// Route through exactly this proxy URL; the process environment is never read (tests).
+    Explicit(String),
+    /// No proxy at all, including environment proxies (the retry leg).
+    Direct,
+}
+
+/// Failure kind, as far as the retry decision cares.
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailKind {
+    /// Could not establish the connection (includes a refused or failed CONNECT tunnel).
+    Connect,
+    /// The request timed out before the response headers arrived.
+    Timeout,
+    /// An HTTP status was received.
+    Status,
+    /// The body exceeded the cap.
+    TooLarge,
+    /// Failure while reading the body after the headers.
+    Body,
+    /// Anything else.
+    Other,
+}
+
+/// Proxy variables that count as configured (N1). Blank or whitespace-only values do not.
+pub fn proxy_env_configured(get: impl Fn(&str) -> Option<String>) -> bool {
+    ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"]
+        .iter()
+        .any(|name| get(name).is_some_and(|value| !value.trim().is_empty()))
+}
+
+/// Retry direct only for a connect or timeout failure, when a proxy is configured,
+/// and only once (N1).
+pub fn should_retry_direct(kind: FailKind, proxy_configured: bool, already_retried: bool) -> bool {
+    matches!(kind, FailKind::Connect | FailKind::Timeout) && proxy_configured && !already_retried
+}
+
+/// The one content-free diagnostic line for a failed check (N2). It never contains a
+/// URL, host, proxy value or raw error text; raw reqwest errors are never logged.
+pub fn describe_failure(err: &UpdateCheckError, proxy_configured: bool, retried: bool) -> String {
+    let class = match err {
+        UpdateCheckError::Network(_) => "network",
+        UpdateCheckError::RateLimited => "rate_limited",
+        UpdateCheckError::Http(_) => "http",
+        UpdateCheckError::Malformed(_) => "malformed",
+        UpdateCheckError::EmptyHistory => "empty",
+        UpdateCheckError::BadBuildCommit => "bad_build",
+        UpdateCheckError::TooLarge => "too_large",
+    };
+    format!(
+        "source update check failed: class={class} proxy_configured={proxy_configured} retried_direct={retried}"
+    )
+}
+
+/// GET `url` with the proxy choice and retry rule (N1). Returns the outcome and the
+/// number of attempts made (1, or 2 when the direct retry ran).
+///
+/// Timing: each attempt has the full `timeout`, so the worst case is two attempts,
+/// about 2 x `timeout` in total (plus negligible connect overhead). The per-attempt
+/// timeout is unchanged from the single-attempt design.
+pub async fn fetch_text_inner(
+    url: &str,
+    max_bytes: usize,
+    timeout: Duration,
+    proxy: ProxyChoice,
+    proxy_configured: bool,
+) -> (Result<(u16, String), UpdateCheckError>, u32) {
+    match fetch_once(url, max_bytes, timeout, &proxy).await {
+        Ok(ok) => (Ok(ok), 1),
+        Err((kind, _)) if should_retry_direct(kind, proxy_configured, false) => {
+            let direct = fetch_once(url, max_bytes, timeout, &ProxyChoice::Direct).await;
+            (direct.map_err(|(_, err)| err), 2)
+        }
+        Err((_, err)) => (Err(err), 1),
+    }
+}
+
+/// One attempt. The error carries its [`FailKind`] for the retry decision.
+async fn fetch_once(
+    url: &str,
+    max_bytes: usize,
+    timeout: Duration,
+    proxy: &ProxyChoice,
+) -> Result<(u16, String), (FailKind, UpdateCheckError)> {
+    let client = build_client(timeout, proxy)
+        .map_err(|e| (FailKind::Other, UpdateCheckError::Network(e.to_string())))?;
     let mut response = client
         .get(url)
         .header(reqwest::header::ACCEPT, "application/vnd.github+json")
         .send()
         .await
-        .map_err(network)?;
+        .map_err(|e| {
+            let kind = if e.is_timeout() {
+                FailKind::Timeout
+            } else if e.is_connect() {
+                FailKind::Connect
+            } else {
+                FailKind::Other
+            };
+            (kind, UpdateCheckError::Network(e.to_string()))
+        })?;
     let status = response.status().as_u16();
     let mut body: Vec<u8> = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(network)? {
+    loop {
+        let chunk = response
+            .chunk()
+            .await
+            .map_err(|e| (FailKind::Body, UpdateCheckError::Network(e.to_string())))?;
+        let Some(chunk) = chunk else {
+            break;
+        };
         if body.len().saturating_add(chunk.len()) > max_bytes {
-            return Err(UpdateCheckError::TooLarge);
+            return Err((FailKind::TooLarge, UpdateCheckError::TooLarge));
         }
         body.extend_from_slice(&chunk);
     }
     Ok((status, String::from_utf8_lossy(&body).into_owned()))
+}
+
+fn build_client(timeout: Duration, proxy: &ProxyChoice) -> Result<reqwest::Client, reqwest::Error> {
+    let builder = reqwest::Client::builder()
+        .timeout(timeout)
+        .user_agent(format!("vox-update-check/{}", env!("CARGO_PKG_VERSION")));
+    match proxy {
+        ProxyChoice::Env => builder.build(),
+        ProxyChoice::Direct => builder.no_proxy().build(),
+        ProxyChoice::Explicit(url) => builder
+            .no_proxy()
+            .proxy(reqwest::Proxy::all(url.as_str())?)
+            .build(),
+    }
 }
 
 /// The injectable orchestration: `fetch(url, max_bytes)` returns `(status, body)`.
@@ -815,11 +940,31 @@ pub async fn check_and_publish(
     }
 
     let generation = runtime.generation.load(Ordering::SeqCst);
-    let mut info = check_with(BUILD_COMMIT, |url: String, max: usize| async move {
-        fetch_text(&url, max, FETCH_TIMEOUT).await
+    let proxy_configured = proxy_env_configured(|name| std::env::var(name).ok());
+    let retried = AtomicBool::new(false);
+    let checked = check_with(BUILD_COMMIT, |url: String, max: usize| {
+        let retried = &retried;
+        async move {
+            let (res, attempts) =
+                fetch_text_inner(&url, max, FETCH_TIMEOUT, ProxyChoice::Env, proxy_configured)
+                    .await;
+            if attempts > 1 {
+                retried.store(true, Ordering::SeqCst);
+            }
+            res
+        }
     })
-    .await
-    .map_err(|e| e.user_message())?;
+    .await;
+    let mut info = match checked {
+        Ok(info) => info,
+        Err(err) => {
+            warn!(
+                "{}",
+                describe_failure(&err, proxy_configured, retried.load(Ordering::SeqCst))
+            );
+            return Err(err.user_message());
+        }
+    };
 
     let checks_disabled = !effective_checks_enabled(app);
     if info.state == SourceUpdateState::Available {
