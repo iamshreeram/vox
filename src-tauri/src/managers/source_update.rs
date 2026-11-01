@@ -1357,8 +1357,9 @@ pub fn run_finished(app: &AppHandle, run_id: &str) {
 pub fn recheck_after_done(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = check_and_publish(&app, true).await {
-            warn!("post-update check failed: {error}");
+        // The failure itself is already logged (content-free) by check_and_publish.
+        if check_and_publish(&app, true).await.is_err() {
+            log::debug!("post-update re-check did not complete");
         }
     });
 }
