@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 
 import ModelSelector from "../model-selector";
 import UpdateChecker from "../update-checker";
+import AutoUpdateFailureNotice from "./AutoUpdateFailureNotice";
 import { versionLabel } from "./footerLabels";
 
 const Footer: React.FC = () => {
@@ -26,20 +27,23 @@ const Footer: React.FC = () => {
 
   return (
     <div className="w-full border-t border-mid-gray/20 pt-3">
-      <div className="flex justify-between items-center text-xs px-4 pb-3 text-muted">
+      <div className="flex flex-wrap gap-y-1 justify-between items-center text-xs px-4 pb-3 text-muted">
         <div className="flex min-w-0 items-center gap-4">
           <ModelSelector />
         </div>
 
         {/* Update Status */}
-        <div className="flex shrink-0 items-center gap-1">
-          <UpdateChecker />
-          {label !== null && (
-            <>
-              <span>•</span>
-              <span title={label}>{label}</span>
-            </>
-          )}
+        <div className="flex min-w-0 items-center gap-1">
+          <AutoUpdateFailureNotice />
+          <div className="flex shrink-0 items-center gap-1">
+            <UpdateChecker />
+            {label !== null && (
+              <>
+                <span>•</span>
+                <span title={label}>{label}</span>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

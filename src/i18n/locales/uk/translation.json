@@ -1669,6 +1669,11 @@
     "installing": "Встановлення...",
     "preparing": "Підготовка...",
     "checkForUpdates": "Перевірити оновлення",
+    "autoUpdate": {
+      "failed": "Last automatic update failed. {{reason}}",
+      "failedTarget": "Last automatic update to {{target}} failed. {{reason}}",
+      "dismiss": "Dismiss"
+    },
     "portableUpdateTitle": "Потрібне ручне оновлення",
     "portableUpdateMessage": "Портативні встановлення не можна оновити автоматично. Завантажте нижче інсталятор для вашої системи, запустіть його та встановіть у ту саму теку — ваша тека Data/ (налаштування, моделі, записи) залишиться на місці.",
     "portableUpdateButton": "Завантажити інсталятор",

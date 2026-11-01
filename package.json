@@ -22,6 +22,8 @@
     "test:source-update": "bun src/components/update-checker/sourceUpdateState.test.ts",
     "test:source-update:e2e": "playwright test tests/source-update-progress.spec.ts --reporter=line",
     "test:auto-update:e2e": "playwright test tests/auto-update.spec.ts --reporter=line",
+    "test:auto-update-failure": "bun src/components/update-checker/autoUpdateFailure.test.ts",
+    "test:auto-update-failure:e2e": "playwright test tests/auto-update-failure.spec.ts --reporter=line",
     "test:natural-voice": "bun src/components/settings/naturalVoiceState.test.ts",
     "test:tts-engine": "bun src/components/settings/ttsEngineState.test.ts",
     "test:brain-model": "bun src/components/settings/brain/brainModel.test.ts",

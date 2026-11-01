@@ -1669,6 +1669,11 @@
     "installing": "इंस्टॉल हो रहा है...",
     "preparing": "तैयारी हो रही है...",
     "checkForUpdates": "अपडेट जांचें",
+    "autoUpdate": {
+      "failed": "Last automatic update failed. {{reason}}",
+      "failedTarget": "Last automatic update to {{target}} failed. {{reason}}",
+      "dismiss": "Dismiss"
+    },
     "portableUpdateTitle": "मैन्युअल अपडेट ज़रूरी है",
     "portableUpdateMessage": "पोर्टेबल इंस्टॉल अपने आप अपडेट नहीं हो सकते. नीचे से अपने सिस्टम के लिए इंस्टॉलर डाउनलोड करें, उसे चलाएँ और उसी फ़ोल्डर में इंस्टॉल करें — आपका Data/ फ़ोल्डर (सेटिंग, मॉडल, रिकॉर्डिंग) जहाँ है वहीं बना रहता है.",
     "portableUpdateButton": "इंस्टॉलर डाउनलोड करें",

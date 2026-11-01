@@ -1669,6 +1669,11 @@
     "installing": "S'està instal·lant...",
     "preparing": "S'està preparant...",
     "checkForUpdates": "Comprova si hi ha actualitzacions",
+    "autoUpdate": {
+      "failed": "Last automatic update failed. {{reason}}",
+      "failedTarget": "Last automatic update to {{target}} failed. {{reason}}",
+      "dismiss": "Dismiss"
+    },
     "portableUpdateTitle": "Cal actualitzar manualment",
     "portableUpdateMessage": "Les instal·lacions portables no es poden actualitzar automàticament. Baixa l'instal·lador per al vostre sistema a continuació, executeu-lo i instal·leu-lo a la mateixa carpeta. La carpeta Data/ (configuració, models i enregistraments) es conserva.",
     "portableUpdateButton": "Baixa l'instal·lador",
