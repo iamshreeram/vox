@@ -21,6 +21,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::source_update_pending::{PendingRun, PendingState, PENDING_FILE_NAME};
+
 /// Largest status file accepted, in bytes.
 pub const MAX_STATUS_BYTES: usize = 4096;
 /// Longest accepted status `message`, in characters.
@@ -590,7 +592,35 @@ const PLIST_HEADER: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYP
 /// validated first; all text is XML-escaped. The environment is an
 /// allow-list: nothing from Vox's own environment is inherited except the
 /// validated proxy variables and `USER`.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn build_job_plist(params: &JobParams) -> Result<String, RunnerError> {
+    build_job_plist_kind(params, RunKind::All)
+}
+
+/// Which phase of the update a job runs (DESIGN R7-1).
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(not(test), allow(dead_code))]
+pub enum RunKind<'a> {
+    /// Manual single-phase run (build and install in one job). Bytes unchanged from the first runner.
+    All,
+    /// Build phase: stages the app and exits without installing.
+    Build {
+        /// True when an automatic policy started the run.
+        origin_auto: bool,
+    },
+    /// Install phase for a record already moved to `committing`.
+    Install {
+        /// The committing record; its install run id must equal `JobParams::run_id`.
+        pending: &'a PendingRun,
+    },
+}
+
+/// Percent floor the install phase reports (the resting build percent).
+pub const INSTALL_PERCENT_FLOOR: u8 = 91;
+
+/// Builds the plist for one phase of the update. [`RunKind::All`] yields exactly
+/// the bytes of [`build_job_plist`]. Each phase adds only its own keys.
+pub fn build_job_plist_kind(params: &JobParams, kind: RunKind<'_>) -> Result<String, RunnerError> {
     if !is_valid_run_id(&params.run_id) {
         return Err(RunnerError::InvalidValue("run_id"));
     }
@@ -624,12 +654,14 @@ pub fn build_job_plist(params: &JobParams) -> Result<String, RunnerError> {
         ("VOX_UPDATE_RUN_ID".into(), params.run_id.clone()),
         ("VOX_UPDATE_STATUS_FILE".into(), status_file.clone()),
         ("VOX_UPDATE_STATE_DIR".into(), state_dir),
-        ("VOX_UPDATE_TARGET_SHA".into(), params.target_full.clone()),
-        ("VOX_UPDATE_NONINTERACTIVE".into(), "1".into()),
-        ("VOX_UPDATE_LOCK_DIR".into(), lock_dir),
-        ("CARGO_TERM_PROGRESS_WHEN".into(), "always".into()),
-        ("CARGO_TERM_PROGRESS_WIDTH".into(), "100".into()),
     ];
+    env.extend(kind_env(params, &kind)?);
+    env.extend([
+        ("VOX_UPDATE_NONINTERACTIVE".to_string(), "1".to_string()),
+        ("VOX_UPDATE_LOCK_DIR".to_string(), lock_dir),
+        ("CARGO_TERM_PROGRESS_WHEN".to_string(), "always".to_string()),
+        ("CARGO_TERM_PROGRESS_WIDTH".to_string(), "100".to_string()),
+    ]);
     env.extend(proxies);
 
     let mut xml = String::from(PLIST_HEADER);
@@ -653,6 +685,44 @@ pub fn build_job_plist(params: &JobParams) -> Result<String, RunnerError> {
     }
     xml.push_str("\t</dict>\n</dict>\n</plist>\n");
     Ok(xml)
+}
+
+/// The phase-specific environment keys, placed where the target sha sits for `All`.
+fn kind_env(params: &JobParams, kind: &RunKind<'_>) -> Result<Vec<(String, String)>, RunnerError> {
+    match kind {
+        RunKind::All => Ok(vec![(
+            "VOX_UPDATE_TARGET_SHA".to_string(),
+            params.target_full.clone(),
+        )]),
+        RunKind::Build { origin_auto } => {
+            let origin = if *origin_auto { "auto" } else { "manual" };
+            Ok(vec![
+                (
+                    "VOX_UPDATE_TARGET_SHA".to_string(),
+                    params.target_full.clone(),
+                ),
+                ("VOX_UPDATE_PHASE".to_string(), "build".to_string()),
+                ("VOX_UPDATE_ORIGIN".to_string(), origin.to_string()),
+            ])
+        }
+        RunKind::Install { pending } => {
+            let PendingState::Committing(info) = &pending.state else {
+                return Err(RunnerError::InvalidValue("install state"));
+            };
+            if info.install_run_id != params.run_id {
+                return Err(RunnerError::InvalidValue("install run id"));
+            }
+            let pending_file = abs_text("pending_file", &params.state_dir.join(PENDING_FILE_NAME))?;
+            Ok(vec![
+                ("VOX_UPDATE_PHASE".to_string(), "install".to_string()),
+                ("VOX_UPDATE_PENDING_FILE".to_string(), pending_file),
+                (
+                    "VOX_UPDATE_PERCENT_FLOOR".to_string(),
+                    INSTALL_PERCENT_FLOOR.to_string(),
+                ),
+            ])
+        }
+    }
 }
 
 /// Checks that `source_dir` is absolute and contains a regular (non-symlink)
@@ -856,6 +926,8 @@ pub enum RunnerError {
     },
     /// An I/O failure.
     Io(io::Error),
+    /// A run, lock, pending record or install plist already exists, so nothing new may start.
+    Busy(&'static str),
 }
 
 impl fmt::Display for RunnerError {
@@ -877,6 +949,7 @@ impl fmt::Display for RunnerError {
                 None => write!(f, "launchctl {operation} failed"),
             },
             RunnerError::Io(error) => write!(f, "I/O error: {error}"),
+            RunnerError::Busy(what) => write!(f, "an update is already in progress: {what}"),
         }
     }
 }

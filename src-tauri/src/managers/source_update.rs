@@ -20,12 +20,13 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 use super::source_update_auto::consent;
+use super::source_update_commit_env::{note_process_start, UpdateAdmission};
 use super::source_update_runner::{
     self as runner, file_age_secs, now_unix, plist_path, proxy_env_from, read_status_bounded,
     run_id_in_status, status_path, update_state_dir, JobControl, ReconcileInput, RunPhase,
     UpdateProgress, INTERRUPTED_AFTER_SECS,
 };
-use super::source_update_runner_poller::{self as poller, PollerConfig};
+use super::source_update_runner_poller::{self as poller, PollerConfig, PollerRegistry};
 use super::source_update_runner_run::{
     adopt_plan, cleanup_run, launch, start_gate, AdoptPlan, LaunchInputs, StartGate,
 };
@@ -726,6 +727,10 @@ pub struct SourceUpdateRuntime {
     progress: Mutex<Option<UpdateProgress>>,
     /// The run this process is watching, if any.
     active: Mutex<Option<ActiveRun>>,
+    /// The poller of the run being watched; stopped and joined before an install commit.
+    pub pollers: PollerRegistry,
+    /// Admission guards held while an install is in flight (B3b-2b releases them).
+    pub admission: UpdateAdmission,
 }
 
 /// A run this process started or adopted and is watching.
@@ -742,7 +747,10 @@ pub struct ActiveRun {
 impl SourceUpdateRuntime {
     /// Empty runtime with the standard launch window.
     pub fn new() -> Self {
+        note_process_start();
         Self {
+            pollers: PollerRegistry::new(),
+            admission: UpdateAdmission::new(),
             cached: Mutex::new(None),
             last_ok: Mutex::new(None),
             check_lock: tokio::sync::Mutex::new(()),
@@ -1005,7 +1013,9 @@ fn start_watching(app: &AppHandle, runtime: &SourceUpdateRuntime, config: Poller
         label: config.label.clone(),
         started: Instant::now(),
     });
-    poller::spawn(app.clone(), config);
+    let run_id = config.run_id.clone();
+    let handle = poller::spawn(app.clone(), config);
+    runtime.pollers.replace(&run_id, handle);
 }
 
 /// The full SHA a new update must build: the latest `main` commit from the last
@@ -1018,6 +1028,11 @@ pub fn pinned_target(info: Option<&SourceUpdateInfo>) -> Option<String> {
         && is_full_sha(full)
         && full.bytes().all(|b| !b.is_ascii_uppercase()))
     .then(|| full.clone())
+}
+
+/// The checkout root the update scripts are read from.
+pub fn checkout_dir() -> PathBuf {
+    PathBuf::from(SOURCE_DIR)
 }
 
 /// Full SHA of the running build, or empty when it is unknown.
