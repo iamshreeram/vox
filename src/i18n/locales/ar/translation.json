@@ -1392,7 +1392,7 @@
       "autoLanguage": {
         "title": "Automatic language detection",
         "experimentalBadge": "Experimental",
-        "description": "When the speech model is English-only, Vox can run a second multilingual Whisper model on short clips (up to 29 seconds) to spot other languages such as Hindi or Tamil, then re-transcribe them. Everything stays on this device. It uses extra memory and a little extra time per dictation, and it only applies when Language is set to Auto and Translate to English is off. Live streaming dictation is unchanged.",
+        "description": "When the speech model is English-only, Vox can run a second multilingual Whisper model on short dictations (up to 29 seconds) that look like they are not English, to spot languages such as Hindi or Tamil, then re-transcribe them. The first check after the model loads takes about 2 seconds and later checks about 0.8 seconds; ordinary English dictations are not slowed down. One- or two-word replies are not detected. Everything stays on this device, and the extra model uses memory while it is loaded. It only applies when Language is Auto and Translate to English is off. Live streaming dictation is unchanged.",
         "statusNeedsModel": "Needs a multilingual Whisper model (for example Turbo). Download one under Models.",
         "statusModel": "Language check model: {{name}}",
         "statusModelLoaded": "Language check model: {{name}} (loaded)"

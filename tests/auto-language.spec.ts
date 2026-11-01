@@ -71,6 +71,18 @@ test.describe("Automatic language detection row", () => {
     // Description is shown in the tooltip of the info button, like the Tamil row.
     await row.getByRole("button", { name: "More information" }).hover();
     await expect(page.getByText(DESCRIPTION_START)).toBeVisible();
+    // The disclosure must state the cost and the limits, not only the benefit.
+    const tip = page.getByText(DESCRIPTION_START);
+    await expect(tip).toContainText("about 2 seconds");
+    await expect(tip).toContainText("about 0.8 seconds");
+    await expect(tip).toContainText(
+      "ordinary English dictations are not slowed down",
+    );
+    await expect(tip).toContainText(
+      "One- or two-word replies are not detected",
+    );
+    await expect(tip).toContainText("Everything stays on this device");
+    await expect(tip).toContainText("Live streaming dictation is unchanged");
     await expect(autoRow(page)).not.toBeChecked();
     await expect(statusLine(page)).toHaveCount(0);
   });

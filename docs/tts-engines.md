@@ -301,3 +301,15 @@ first Tamil turn after a load takes longer than later ones.
 The model is IndicConformer 600M multilingual by AI4Bharat (MIT). The int8 ONNX
 files are a community repackage by yashwork-byte (MIT), pinned to one revision.
 The licence texts and links are in [Third-party notices](NOTICE.md).
+
+## Tamil replies after a spoken acknowledgement
+
+In a live conversation Vox may speak a short fixed English acknowledgement ("One moment.")
+while the real reply is still being written. The English voices (Phonon and Natural)
+cannot speak Tamil. If a mostly-Tamil sentence arrives while one of them is still
+speaking, Vox now stops that voice and starts the Tamil voice at once, so the reply is
+heard. The acknowledgement is cut short in that case. The system voice is not changed.
+
+If you do not hear Tamil, search the log for `speech route:`. Each decision is one line
+with the voice chosen, whether a handover happened and the sentence length; the text
+itself is never logged.

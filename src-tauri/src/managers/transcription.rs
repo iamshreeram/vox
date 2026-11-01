@@ -372,9 +372,10 @@ impl TranscriptionManager {
                     let settings = get_settings(&app_handle_cloned);
                     let timeout = settings.model_unload_timeout;
 
-                    // The language identifier follows the same unload setting. This runs before
-                    // the Immediately `continue` below, so that setting unloads it too.
-                    lid_idle.tick(indic_unload_policy(timeout));
+                    // The language identifier follows the same unload setting, and is released
+                    // at once when the auto language feature is off. This runs before the
+                    // Immediately `continue` below, so that setting unloads it too.
+                    lid_idle.tick(lid_tick_policy(settings.stt_auto_language_enabled, timeout));
 
                     // Skip Immediately — that variant is handled by
                     // maybe_unload_immediately() after each transcription.
@@ -595,77 +596,39 @@ impl TranscriptionManager {
             return AutoApplied::KeepActive;
         }
         let started = Instant::now();
-        let audio_secs = audio.len() as f32 / SAMPLE_RATE_HZ;
         let active_detects = self
             .model_manager
             .get_model_info(active_model)
             .is_some_and(|info| info.supports_language_detection);
         let policy = indic_unload_policy(settings.model_unload_timeout);
-
-        if !active_detects
-            && auto_route_active(
-                &settings.selected_language,
-                settings.stt_auto_language_enabled,
-                settings.translate_to_english,
-                audio_secs,
-                token_count.is_some(),
-            )
-        {
-            let tokens = token_count.unwrap_or(0);
-            let tamil_pack_ready = settings.stt_tamil_enabled && self.indic_pack_ready();
-            if tamil_pack_ready {
-                self.ensure_indic_watcher();
-            }
-            let gate = needs_language_check(active_text, tokens, audio_secs);
-            let input = AutoInput {
-                active_text,
-                token_count: tokens,
-                audio,
-                tamil_pack_ready,
-            };
-            let lid = SlotLid {
-                slot: self.lid_slot.clone(),
-                policy,
-            };
-            let tamil = SlotTamil {
-                slot: &self.indic_slot,
-                policy,
-            };
-            let refined = auto_refine(&input, &lid, &tamil);
-            let source = match &refined.source {
-                Source::KeepActive => "keep".to_string(),
-                Source::TamilPack => "tamil_pack".to_string(),
-                Source::LidText { lang } => format!("lid_text:{lang}"),
-            };
-            log_auto_decision(gate, &source, tokens_per_word(active_text, tokens), started);
-            return classify_refined(refined);
-        }
-
-        if should_upgrade_to_tamil_pack(
+        let pack_ready = || self.indic_pack_ready();
+        let on_pack_use = || self.ensure_indic_watcher();
+        let ctx = AutoRouteCtx {
+            settings_enabled: settings.stt_auto_language_enabled,
+            selected_language: &settings.selected_language,
+            translate_to_english: settings.translate_to_english,
+            active_detects_language: active_detects,
+            audio,
+            active_text,
+            token_count,
             detected_language,
-            settings.stt_tamil_enabled && self.indic_pack_ready(),
-            settings.stt_auto_language_enabled,
-            &settings.selected_language,
-            settings.translate_to_english,
-        ) {
-            self.ensure_indic_watcher();
-            let tamil = SlotTamil {
-                slot: &self.indic_slot,
-                policy,
-            };
-            return match tamil.transcribe(audio) {
-                Some(text) => {
-                    log_auto_decision(false, "tamil_pack", None, started);
-                    AutoApplied::Tamil(text)
-                }
-                None => {
-                    log_auto_decision(false, "keep", None, started);
-                    AutoApplied::KeepActive
-                }
-            };
+            tamil_enabled: settings.stt_tamil_enabled,
+            tamil_pack_ready: &pack_ready,
+            on_pack_use: &on_pack_use,
+        };
+        let lid = SlotLid {
+            slot: self.lid_slot.clone(),
+            policy,
+        };
+        let tamil = SlotTamil {
+            slot: &self.indic_slot,
+            policy,
+        };
+        let (applied, facts) = route_auto(&ctx, &lid, &tamil);
+        if let Some(facts) = facts {
+            log_auto_decision(facts.gate, &facts.source, facts.tokens_per_word, started);
         }
-
-        AutoApplied::KeepActive
+        applied
     }
 
     /// Unloads the model immediately if the setting is enabled and the model is loaded
@@ -2140,6 +2103,138 @@ fn classify_refined(refined: AutoRefined) -> AutoApplied {
     }
 }
 
+/// Environment facts for `route_auto`. The two closures run only when the decision needs them:
+/// readiness after the language gate (branch A) or after the setting checks (branch C).
+struct AutoRouteCtx<'a> {
+    /// The `stt_auto_language_enabled` setting.
+    settings_enabled: bool,
+    selected_language: &'a str,
+    translate_to_english: bool,
+    /// The active model reports its own language, so the language check is not needed.
+    active_detects_language: bool,
+    audio: &'a [f32],
+    active_text: &'a str,
+    /// Token rows of the active run that have text; `None` when the engine returned none.
+    token_count: Option<usize>,
+    /// The language the active model reported, if any.
+    detected_language: Option<&'a str>,
+    /// The `stt_tamil_enabled` setting.
+    tamil_enabled: bool,
+    /// True when the Tamil speech pack is installed and ready (a file stat).
+    tamil_pack_ready: &'a dyn Fn() -> bool,
+    /// Called right before the Tamil pack is used, to start its idle watcher.
+    on_pack_use: &'a dyn Fn(),
+}
+
+/// The values `decide_auto_route` logs for one decision: the gate, the source label and the
+/// tokens-per-word ratio.
+#[derive(Debug, Clone, PartialEq)]
+struct AutoLogFacts {
+    gate: bool,
+    source: String,
+    tokens_per_word: Option<f32>,
+}
+
+/// The auto language decision with every environment fact passed in. Returns the action and,
+/// when a decision was made, the facts to log. The pack is checked and used only after the
+/// language gate (branch A) and only after the setting checks (branch C).
+fn route_auto(
+    ctx: &AutoRouteCtx<'_>,
+    lid: &dyn LidIdentify,
+    tamil: &dyn TamilPackRoute,
+) -> (AutoApplied, Option<AutoLogFacts>) {
+    if !ctx.settings_enabled {
+        return (AutoApplied::KeepActive, None);
+    }
+    let audio_secs = ctx.audio.len() as f32 / SAMPLE_RATE_HZ;
+
+    if !ctx.active_detects_language
+        && auto_route_active(
+            ctx.selected_language,
+            ctx.settings_enabled,
+            ctx.translate_to_english,
+            audio_secs,
+            ctx.token_count.is_some(),
+        )
+    {
+        let tokens = ctx.token_count.unwrap_or(0);
+        let gate = needs_language_check(ctx.active_text, tokens, audio_secs);
+        let ratio = tokens_per_word(ctx.active_text, tokens);
+        if !gate {
+            let facts = AutoLogFacts {
+                gate,
+                source: "keep".to_string(),
+                tokens_per_word: ratio,
+            };
+            return (AutoApplied::KeepActive, Some(facts));
+        }
+        let tamil_pack_ready = ctx.tamil_enabled && (ctx.tamil_pack_ready)();
+        if tamil_pack_ready {
+            (ctx.on_pack_use)();
+        }
+        let input = AutoInput {
+            active_text: ctx.active_text,
+            token_count: tokens,
+            audio: ctx.audio,
+            tamil_pack_ready,
+        };
+        let refined = auto_refine(&input, lid, tamil);
+        let source = match &refined.source {
+            Source::KeepActive => "keep".to_string(),
+            Source::TamilPack => "tamil_pack".to_string(),
+            Source::LidText { lang } => format!("lid_text:{lang}"),
+        };
+        let facts = AutoLogFacts {
+            gate,
+            source,
+            tokens_per_word: ratio,
+        };
+        return (classify_refined(refined), Some(facts));
+    }
+
+    // Branch C. The readiness closure runs only when the other conditions already hold.
+    if should_upgrade_to_tamil_pack(
+        ctx.detected_language,
+        ctx.tamil_enabled,
+        ctx.settings_enabled,
+        ctx.selected_language,
+        ctx.translate_to_english,
+    ) && (ctx.tamil_pack_ready)()
+    {
+        (ctx.on_pack_use)();
+        return match tamil.transcribe(ctx.audio) {
+            Some(text) => {
+                let facts = AutoLogFacts {
+                    gate: false,
+                    source: "tamil_pack".to_string(),
+                    tokens_per_word: None,
+                };
+                (AutoApplied::Tamil(text), Some(facts))
+            }
+            None => {
+                let facts = AutoLogFacts {
+                    gate: false,
+                    source: "keep".to_string(),
+                    tokens_per_word: None,
+                };
+                (AutoApplied::KeepActive, Some(facts))
+            }
+        };
+    }
+
+    (AutoApplied::KeepActive, None)
+}
+
+/// Unload policy for the language-check model in the idle thread. When the auto language
+/// feature is off, the model is released at the next tick whatever the unload setting says.
+fn lid_tick_policy(enabled: bool, timeout: ModelUnloadTimeout) -> UnloadPolicy {
+    if enabled {
+        indic_unload_policy(timeout)
+    } else {
+        UnloadPolicy::Immediately
+    }
+}
+
 /// One info line per auto decision. It carries no text: only the gate, the source, the
 /// tokens-per-word ratio and the elapsed time.
 fn log_auto_decision(gate: bool, source: &str, tokens_per_word: Option<f32>, started: Instant) {
@@ -3343,3 +3438,7 @@ mod auto_tests;
 #[cfg(test)]
 #[path = "transcription_auto_adapter_tests.rs"]
 mod auto_adapter_tests;
+
+#[cfg(test)]
+#[path = "transcription_auto_route_tests.rs"]
+mod auto_route_tests;
