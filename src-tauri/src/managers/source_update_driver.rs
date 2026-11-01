@@ -33,7 +33,7 @@ use crate::managers::source_update_auto::consent::{
 use crate::managers::source_update_auto::status::emit_auto_update_changed;
 use crate::managers::source_update_auto::{
     auto_update_decision, load_auto_state, save_auto_state, should_retry, update_coordinator,
-    AutoDecision, AutoFacts, AutoResult, AutoState, SkipReason, VerifiedState,
+    AutoDecision, AutoFacts, AutoResult, AutoState, SkipReason, VerifiedState, WaitReason,
 };
 use crate::managers::source_update_commit::{revoke_install, CommitEnv, DeferReason, RevokeResult};
 use crate::managers::source_update_commit_env::{
@@ -43,12 +43,13 @@ use crate::managers::source_update_commit_plan::{
     plan_recovery, PendingInput, RecoveryAction, RecoveryInput, StatusInput,
 };
 use crate::managers::source_update_pending::{PendingRun, PendingState, PendingStore};
+use crate::managers::source_update_runner::RunnerError;
 use crate::managers::source_update_runner::{
     is_lower_hex, now_unix, parse_status, proxy_env_from, read_status_bounded, run_id_in_status,
     status_path, update_state_dir, JobControl, JobProbe, LaunchctlJobControl, RunPhase,
     UpdateProgress, INSTALL_PERCENT_FLOOR,
 };
-use crate::managers::source_update_runner_run::{cleanup_run, RunSite};
+use crate::managers::source_update_runner_run::{cleanup_run, heal_finished_jobs, RunSite};
 use crate::managers::source_update_verify::{check_commit, GithubCommitVerifier};
 use crate::settings::{auto_update_effective, get_settings, update_checks_effectively_enabled};
 
@@ -100,6 +101,31 @@ const fn fast() -> Next {
 pub struct DriverMemory {
     last_record: Option<(String, &'static str)>,
     last_defer: Option<DeferReason>,
+    last_wait: Option<&'static str>,
+    /// Consecutive ticks whose launch was refused as Busy (F4).
+    busy_streak: u32,
+}
+
+/// Every this many consecutive Busy refusals, finished unreferenced update jobs are healed (F4,
+/// F4b: a young plist is skipped and retried at the next multiple).
+const BUSY_HEAL_TICKS: u32 = 3;
+
+/// Why the launcher refused to start a build (see [`DriverEnv::launch_build`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaunchRefusal {
+    /// The launcher is busy: an update run, a pending record, the lock or a registered run
+    /// exists. A wait, not a failed attempt (issue #160).
+    Busy,
+    /// Any other launch error: a failed attempt.
+    Failed,
+}
+
+/// Pure: the refusal of a launcher error. Only the runner's Busy refusal is a wait (issue #160).
+pub fn launch_refusal_of(error: &RunnerError) -> LaunchRefusal {
+    match error {
+        RunnerError::Busy(_) => LaunchRefusal::Busy,
+        _ => LaunchRefusal::Failed,
+    }
 }
 
 /// Facts gathered for one start decision. Everything except the verified-commit check.
@@ -145,8 +171,10 @@ pub trait DriverEnv {
     fn gather(&self) -> EnvFacts;
     /// Runs the verified-commit check for `full_sha`. Only called when everything else says Start.
     fn verify(&self, full_sha: &str) -> VerifiedState;
+    /// Removes finished, unreferenced update job registrations (F4). Never fails the tick.
+    fn heal_finished_jobs(&self);
     /// Starts the automatic build of `target`.
-    fn launch_build(&self, target: &str) -> Result<(), ()>;
+    fn launch_build(&self, target: &str) -> Result<(), LaunchRefusal>;
     /// Persists the attempt state and announces the change.
     fn save_state(&self, state: &AutoState);
     /// An update run is active in this process.
@@ -413,15 +441,18 @@ pub fn tick<E: DriverEnv>(env: &E, memory: &mut DriverMemory) -> Next {
         Err(()) => return slow(),
     };
     match pending {
-        Some(run) => match run.state {
-            PendingState::Committing(_) => {
-                if !env.install_running(&run) {
-                    env.recover();
+        Some(run) => {
+            memory.busy_streak = 0;
+            match run.state {
+                PendingState::Committing(_) => {
+                    if !env.install_running(&run) {
+                        env.recover();
+                    }
+                    fast()
                 }
-                fast()
+                PendingState::Built => tick_built(env, memory, &run),
             }
-            PendingState::Built => tick_built(env, memory, &run),
-        },
+        }
         None => tick_idle(env, memory),
     }
 }
@@ -465,6 +496,8 @@ fn tick_built<E: DriverEnv>(env: &E, memory: &mut DriverMemory, run: &PendingRun
 
 /// No pending record: the start decision for a new automatic build.
 fn tick_idle<E: DriverEnv>(env: &E, memory: &mut DriverMemory) -> Next {
+    // Only consecutive Busy refusals count: any other tick starts the streak again (F4).
+    let streak = std::mem::take(&mut memory.busy_streak);
     if !env.auto_effective() {
         return slow();
     }
@@ -483,13 +516,28 @@ fn tick_idle<E: DriverEnv>(env: &E, memory: &mut DriverMemory) -> Next {
         (other, _) => other,
     };
     match (decision, facts.target.as_deref()) {
-        (AutoDecision::Start, Some(target)) => {
-            if env.launch_build(target).is_err() {
-                record(env, memory, &facts, target, "spawn_failed");
-            } else {
+        (AutoDecision::Start, Some(target)) => match env.launch_build(target) {
+            Ok(()) => {
+                memory.last_wait = None;
                 mark_started(env, &facts, target);
             }
-        }
+            // Issue #160: a Busy refusal is a wait. Nothing is persisted and there is no backoff;
+            // the next tick retries. The wait is logged once per change.
+            Err(LaunchRefusal::Busy) => {
+                memory.busy_streak = streak.saturating_add(1);
+                if memory.busy_streak.is_multiple_of(BUSY_HEAL_TICKS) {
+                    env.heal_finished_jobs();
+                }
+                if memory.last_wait != Some(WaitReason::Busy.code()) {
+                    memory.last_wait = Some(WaitReason::Busy.code());
+                    info!("automatic update waits: the launcher is busy");
+                }
+            }
+            Err(LaunchRefusal::Failed) => {
+                memory.last_wait = None;
+                record(env, memory, &facts, target, "spawn_failed");
+            }
+        },
         (other, Some(target)) => record(env, memory, &facts, target, other.code()),
         (_, None) => {}
     }
@@ -646,6 +694,52 @@ pub fn restore_admission(app: &AppHandle) {
     if outcome != RestoreOutcome::Nothing {
         info!("automatic update admission restored");
     }
+    heal_finished_jobs_on_disk(app);
+}
+
+/// The run ids a heal must keep (F4, F4c): the pending record's build and install runs, the active
+/// run, and the status file's run whatever its phase. A status file that cannot be read fails
+/// closed (`Err`).
+pub fn heal_live_ids(
+    state_dir: &Path,
+    pending: Option<&PendingRun>,
+    active: Option<String>,
+) -> Result<Vec<String>, ()> {
+    let mut live: Vec<String> = Vec::new();
+    if let Some(run) = pending {
+        live.push(run.run_id.clone());
+        live.extend(install_run_of(run).map(str::to_string));
+    }
+    live.extend(active);
+    let bytes = read_status_bounded(&status_path(state_dir)).map_err(|_| ())?;
+    // F4c: the status run is live whatever its phase, as in live_marker_ids. A terminal run still
+    // needs adoption to publish its result and remove its plist.
+    live.extend(bytes.as_deref().and_then(run_id_in_status));
+    Ok(live)
+}
+
+/// Heals finished, unreferenced update jobs on disk (F4) and sweeps the markers they leave.
+/// An unreadable pending record or status file heals nothing.
+pub fn heal_finished_jobs_on_disk(app: &AppHandle) {
+    let Some(state_dir) = state_dir_of(app) else {
+        return;
+    };
+    let Ok(pending) = PendingStore::new(&state_dir).load() else {
+        return;
+    };
+    let Ok(live) = heal_live_ids(&state_dir, pending.as_ref(), active_run_id(app)) else {
+        return;
+    };
+    let healed = heal_finished_jobs(
+        &state_dir,
+        &live,
+        &LaunchctlJobControl::current(),
+        now_unix(),
+    );
+    if healed > 0 {
+        info!("removed finished automatic update jobs");
+    }
+    sweep_markers(app);
 }
 
 /// The outstanding automatic record on disk, for a manual start. An unreadable record counts as
@@ -1300,8 +1394,12 @@ impl DriverEnv for AppDriverEnv<'_> {
         check_commit(&GithubCommitVerifier::default(), full_sha)
     }
 
-    fn launch_build(&self, target: &str) -> Result<(), ()> {
-        start_auto_build(self.app, target).map_err(|_| ())
+    fn heal_finished_jobs(&self) {
+        heal_finished_jobs_on_disk(self.app);
+    }
+
+    fn launch_build(&self, target: &str) -> Result<(), LaunchRefusal> {
+        start_auto_build(self.app, target)
     }
 
     fn save_state(&self, state: &AutoState) {

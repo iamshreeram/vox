@@ -9,7 +9,7 @@ use super::source_update_runner::build_job_plist;
 use super::source_update_runner::{
     build_job_plist_kind, ensure_state_dir, is_valid_run_id, job_label, lock_state, log_path,
     plist_path, process_alive, reconcile, rotate_logs, status_path, update_state_dir,
-    validate_source_dir, write_plist_file, Decision, JobControl, JobParams, LockState,
+    validate_source_dir, write_plist_file, Decision, JobControl, JobParams, JobProbe, LockState,
     ReconcileInput, RunKind, RunnerError, KEEP_RUN_LOGS,
 };
 use log::warn;
@@ -334,3 +334,73 @@ fn remove_quietly(path: &Path) {
 #[cfg(test)]
 #[path = "source_update_runner_run_tests.rs"]
 mod tests;
+
+/// A plist must be at least this old before it can be healed (F4b): a manual start writes its
+/// plist before its job is watched, and a young plist may still belong to such a start.
+pub const HEAL_MIN_AGE_SECS: u64 = 120;
+
+/// Removes the registration and the plist of finished update jobs that no live state refers to
+/// (F4). A job is healed only when its probe is `Absent` or `Registered` without a pid; a running
+/// job, an `Unknown` probe and every id in `live_ids` are left alone (fail closed). Only regular
+/// `run-<id>.plist` files with a valid run id are considered; symlinks are never followed. Logs,
+/// the status file, `pending.json` and staged files are never touched; markers are swept by the
+/// caller. A plist is healed only when its mtime is readable, at least [`HEAL_MIN_AGE_SECS`] old
+/// at `now_unix` and not in the future (F4b). Returns the number of jobs healed.
+pub fn heal_finished_jobs(
+    state_dir: &Path,
+    live_ids: &[String],
+    jobs: &dyn JobControl,
+    now_unix: u64,
+) -> usize {
+    let Ok(entries) = fs::read_dir(state_dir) else {
+        return 0;
+    };
+    let mut healed = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(run_id) = name.to_str().and_then(plist_run_id) else {
+            continue;
+        };
+        if live_ids.iter().any(|live| live == run_id) {
+            continue;
+        }
+        let path = entry.path();
+        let Ok(meta) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if !meta.file_type().is_file() || !is_old_enough(&meta, now_unix) {
+            continue;
+        }
+        let finished = match jobs.probe(&job_label(run_id)) {
+            JobProbe::Absent | JobProbe::Registered { pid: None, .. } => true,
+            JobProbe::Registered { pid: Some(_), .. } | JobProbe::Unknown => false,
+        };
+        if !finished {
+            continue;
+        }
+        if let Err(error) = jobs.bootout(&job_label(run_id)) {
+            warn!("could not remove a finished update job: {error}");
+        }
+        remove_quietly(&path);
+        healed += 1;
+    }
+    healed
+}
+
+/// True when the mtime is readable, not in the future and at least the minimum age in the past.
+fn is_old_enough(meta: &fs::Metadata, now_unix: u64) -> bool {
+    let Ok(modified) = meta.modified() else {
+        return false;
+    };
+    let Ok(age) = modified.duration_since(std::time::UNIX_EPOCH) else {
+        return false;
+    };
+    let mtime = age.as_secs();
+    mtime <= now_unix && now_unix - mtime >= HEAL_MIN_AGE_SECS
+}
+
+/// The run id of a `run-<id>.plist` file name, when the id is valid.
+fn plist_run_id(name: &str) -> Option<&str> {
+    let run_id = name.strip_prefix("run-")?.strip_suffix(".plist")?;
+    is_valid_run_id(run_id).then_some(run_id)
+}

@@ -26,7 +26,8 @@ use crate::managers::source_update_pending::{
     encode_pending, staged_app_path, CommitInfo, PendingOrigin,
 };
 use crate::managers::source_update_runner::{
-    job_label, plist_path, write_private_atomic, JobProbe, RunPhase,
+    job_label, plist_path, status_path, write_private_atomic, write_status_file, JobProbe,
+    RunPhase, RunStatus, StatusMethod,
 };
 
 const RUN: &str = "0123456789abcdef";
@@ -99,6 +100,9 @@ struct FakeEnv {
     verify_calls: Cell<u32>,
     launches: RefCell<Vec<String>>,
     launch_fails: bool,
+    launch_busy: Cell<bool>,
+    heals: Cell<u32>,
+    heal_frees_launcher: Cell<bool>,
     saves: RefCell<Vec<AutoState>>,
     marker: bool,
     manual_request_run: Option<&'static str>,
@@ -118,6 +122,9 @@ impl FakeEnv {
             verify_calls: Cell::new(0),
             launches: RefCell::new(Vec::new()),
             launch_fails: false,
+            launch_busy: Cell::new(false),
+            heals: Cell::new(0),
+            heal_frees_launcher: Cell::new(true),
             saves: RefCell::new(Vec::new()),
             marker: true,
             manual_request_run: None,
@@ -151,10 +158,12 @@ impl DriverEnv for FakeEnv {
         self.verify_calls.set(self.verify_calls.get() + 1);
         self.verify_result
     }
-    fn launch_build(&self, target: &str) -> Result<(), ()> {
+    fn launch_build(&self, target: &str) -> Result<(), LaunchRefusal> {
         self.launches.borrow_mut().push(target.to_string());
-        if self.launch_fails {
-            Err(())
+        if self.launch_busy.get() {
+            Err(LaunchRefusal::Busy)
+        } else if self.launch_fails {
+            Err(LaunchRefusal::Failed)
         } else {
             self.facts.borrow_mut().run_active = true;
             Ok(())
@@ -162,6 +171,14 @@ impl DriverEnv for FakeEnv {
     }
     fn save_state(&self, state: &AutoState) {
         self.saves.borrow_mut().push(state.clone());
+    }
+    fn heal_finished_jobs(&self) {
+        // F4: a heal frees the registration that made the launcher refuse.
+        self.heals.set(self.heals.get() + 1);
+        self.facts.borrow_mut().run_active = false;
+        if self.heal_frees_launcher.get() {
+            self.launch_busy.set(false);
+        }
     }
     fn run_active(&self) -> bool {
         self.facts.borrow().run_active
@@ -321,6 +338,77 @@ fn failed_launch_records_spawn_failure_and_does_not_retry_at_once() {
     env.facts.borrow_mut().attempt = Ok(Some(recorded));
     tick(&env, &mut memory);
     assert_eq!(env.launches.borrow().len(), 1);
+}
+
+// Issue #160: a Busy refusal of the launcher is a wait, not a failed attempt. Nothing is
+// persisted, there is no backoff, and the next tick tries again.
+#[test]
+fn busy_launch_refusal_is_a_wait_not_a_failure() {
+    let mut env = FakeEnv::new(facts());
+    env.launch_busy.set(true);
+    let mut memory = DriverMemory::default();
+    tick(&env, &mut memory);
+    assert!(
+        env.saves.borrow().is_empty(),
+        "a busy refusal records nothing"
+    );
+    assert_eq!(env.launches.borrow().len(), 1, "the launch was attempted");
+    tick(&env, &mut memory);
+    assert_eq!(
+        env.launches.borrow().len(),
+        2,
+        "no backoff: retried on the next tick"
+    );
+    assert!(env.saves.borrow().is_empty(), "still nothing recorded");
+    env.launch_busy.set(false);
+    tick(&env, &mut memory);
+    assert_eq!(
+        env.launches.borrow().len(),
+        3,
+        "the build starts once the launcher is free"
+    );
+    assert!(
+        env.saves.borrow().is_empty(),
+        "no failure was ever recorded"
+    );
+}
+
+// Issue #160: the seam from the launcher's own error to the driver's refusal. Only a Busy
+// refusal of the runner is a wait; every other launch error is a failed attempt.
+#[test]
+fn only_a_runner_busy_refusal_maps_to_a_wait() {
+    use crate::managers::source_update_runner::RunnerError;
+    let busy = RunnerError::Busy("an update run is registered");
+    assert_eq!(launch_refusal_of(&busy), LaunchRefusal::Busy);
+    let others = [
+        RunnerError::InvalidPath("state dir"),
+        RunnerError::InvalidValue("target"),
+        RunnerError::ScriptMissing,
+        RunnerError::LabelRefused,
+        RunnerError::Launchctl {
+            operation: "bootstrap",
+            code: Some(5),
+        },
+        RunnerError::Io(std::io::Error::other("disk")),
+    ];
+    for error in &others {
+        assert_eq!(launch_refusal_of(error), LaunchRefusal::Failed, "{error}");
+    }
+}
+
+// Issue #160: with a Busy wait and no active run and no failed record, the notice must not stay
+// hidden. The existing rule hides it only while an automatic run is marked active or a built or
+// committing record exists for the target, so the notice stays visible here.
+#[test]
+fn busy_wait_without_active_run_or_record_keeps_the_notice_visible() {
+    let hidden = auto_pending(&AutoPendingFacts {
+        auto_effective: true,
+        active_run_marked: false,
+        pending: None,
+        target: SHA,
+        last: None,
+    });
+    assert!(!hidden, "no active run and no record: the notice is shown");
 }
 
 #[test]
@@ -1518,4 +1606,194 @@ fn f2_unremembered_terminal_without_marker_is_ignored() {
     };
     assert_eq!(settle_terminal(&env, &report), TerminalAction::Ignore);
     assert!(env.calls.borrow().is_empty());
+}
+
+// F4: three consecutive Busy refusals heal the finished leftovers once; the fourth tick launches.
+#[test]
+fn three_busy_ticks_heal_once_and_the_fourth_launches() {
+    let mut env = FakeEnv::new(facts());
+    env.launch_busy.set(true);
+    let mut memory = DriverMemory::default();
+    for _ in 0..3 {
+        tick(&env, &mut memory);
+    }
+    assert_eq!(
+        env.heals.get(),
+        1,
+        "healed on the third consecutive busy tick"
+    );
+    assert_eq!(env.launches.borrow().len(), 3);
+    tick(&env, &mut memory);
+    assert_eq!(env.launches.borrow().len(), 4, "the fourth tick launches");
+    assert_eq!(env.heals.get(), 1, "the heal runs once, not again");
+    tick(&env, &mut memory);
+    assert_eq!(env.heals.get(), 1);
+}
+
+// F4: the live set of a heal keeps the pending build and install, the active run and a
+// non-terminal status run; a finished status run does not protect its job.
+#[test]
+fn heal_live_ids_keep_pending_active_and_every_status_run() {
+    let dir = tempfile::tempdir().expect("dir");
+    let state = dir.path();
+    let pending = committing_run(state);
+    let active = "7777777777777777".to_string();
+    let status_run = RunStatus {
+        run_id: "6666666666666666".to_string(),
+        phase: RunPhase::Compiling,
+        percent: 40,
+        target: "0123456".to_string(),
+        target_full: SHA.to_string(),
+        message: "building".to_string(),
+        method: StatusMethod::Exact,
+        ts: NOW,
+    };
+    write_status_file(&status_path(state), &status_run).expect("status");
+    let live = heal_live_ids(state, Some(&pending), Some(active.clone())).expect("live");
+    for id in [RUN, INSTALL, "6666666666666666", active.as_str()] {
+        assert!(live.iter().any(|kept| kept == id), "{id} is kept");
+    }
+
+    let done = RunStatus {
+        run_id: "8888888888888888".to_string(),
+        phase: RunPhase::Done,
+        percent: 100,
+        ..status_run
+    };
+    write_status_file(&status_path(state), &done).expect("status");
+    // F4c: a terminal status run is live too (as in live_marker_ids): adoption still has to
+    // publish its result and remove its plist, so the heal must not boot it out first.
+    let live = heal_live_ids(state, None, None).expect("live");
+    assert!(
+        live.iter().any(|kept| kept == "8888888888888888"),
+        "a terminal status run is kept"
+    );
+}
+
+/// Fake launchd for the F4c scenario: one probe per label, and the bootouts it saw.
+#[derive(Default)]
+struct HealProbes {
+    probes: std::collections::HashMap<String, JobProbe>,
+    bootouts: RefCell<Vec<String>>,
+}
+
+impl JobControl for HealProbes {
+    fn probe(&self, label: &str) -> JobProbe {
+        self.probes.get(label).copied().unwrap_or(JobProbe::Absent)
+    }
+    fn bootstrap(&self, _plist: &Path) -> Result<(), RunnerError> {
+        Ok(())
+    }
+    fn bootout(&self, label: &str) -> Result<(), RunnerError> {
+        self.bootouts.borrow_mut().push(label.to_string());
+        Ok(())
+    }
+}
+
+// F4c (validator major): the startup heal runs before adoption. A run whose status is done and
+// whose job exited (plist 10 minutes old) must keep its job and plist, so adoption watches it and
+// the result is recorded; another old unreferenced run in the same pass is still healed.
+#[test]
+fn terminal_status_run_keeps_its_job_for_adoption_while_another_old_run_is_healed() {
+    use crate::managers::source_update_runner::{
+        LockState, ReconcileInput, INTERRUPTED_AFTER_SECS,
+    };
+    use crate::managers::source_update_runner_run::{adopt_plan, heal_finished_jobs, AdoptPlan};
+    let dir = tempfile::tempdir().expect("dir");
+    let state = dir.path();
+    let done_run = "9999999999999999";
+    let stale_run = "aaaaaaaaaaaaaaaa";
+    let status = RunStatus {
+        run_id: done_run.to_string(),
+        phase: RunPhase::Done,
+        percent: 100,
+        target: "0123456".to_string(),
+        target_full: SHA.to_string(),
+        message: String::new(),
+        method: StatusMethod::Exact,
+        ts: NOW,
+    };
+    write_status_file(&status_path(state), &status).expect("status");
+    let finished = JobProbe::Registered {
+        pid: None,
+        last_exit: Some(0),
+    };
+    let old = std::time::SystemTime::now() - Duration::from_secs(600);
+    for id in [done_run, stale_run] {
+        let path = plist_path(state, id);
+        write_private_atomic(&path, b"<plist/>").expect("plist");
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .expect("open")
+            .set_modified(old)
+            .expect("mtime");
+    }
+    let jobs = HealProbes {
+        probes: [(done_run, finished), (stale_run, finished)]
+            .into_iter()
+            .map(|(id, probe)| (job_label(id), probe))
+            .collect(),
+        ..HealProbes::default()
+    };
+
+    let live = heal_live_ids(state, None, None).expect("live");
+    assert_eq!(heal_finished_jobs(state, &live, &jobs, now_unix()), 1);
+    assert_eq!(*jobs.bootouts.borrow(), vec![job_label(stale_run)]);
+    assert!(
+        plist_path(state, done_run).exists(),
+        "the finished run keeps its plist"
+    );
+    assert!(!plist_path(state, stale_run).exists());
+
+    let input = ReconcileInput {
+        status: Some(status),
+        status_age_secs: 600,
+        job: finished,
+        lock: LockState::Free,
+        running_build_sha: "",
+        published: false,
+        interrupted_after_secs: INTERRUPTED_AFTER_SECS,
+        pending_built: false,
+    };
+    assert_eq!(adopt_plan(&input, true), AdoptPlan::Watch);
+
+    // The automatic install ending after its record is gone settles as recorded (updated).
+    assert_eq!(
+        terminal_action(None, done_run, RunPhase::Done, 100, true, None),
+        TerminalAction::FinishRecorded
+    );
+    let settle = FakeSettle {
+        previous: AutoState::default(),
+        calls: RefCell::new(Vec::new()),
+        saved: RefCell::new(None),
+    };
+    settle_recorded(&settle, done_run, Some(SHA), true, NOW);
+    assert_eq!(
+        settle
+            .saved
+            .borrow()
+            .as_ref()
+            .and_then(|state| state.last_result),
+        Some(AutoResult::Updated)
+    );
+}
+
+// F4b: the Busy trigger repeats every BUSY_HEAL_TICKS busy ticks, so a young plist that was
+// skipped is retried later; a streak that never ends does not heal on every tick.
+#[test]
+fn busy_streak_retries_the_heal_every_three_busy_ticks_not_on_every_tick() {
+    let mut env = FakeEnv::new(facts());
+    env.launch_busy.set(true);
+    env.heal_frees_launcher.set(false);
+    let mut memory = DriverMemory::default();
+    for _ in 0..6 {
+        tick(&env, &mut memory);
+    }
+    assert_eq!(
+        env.heals.get(),
+        2,
+        "healed at the third and the sixth busy tick"
+    );
+    assert_eq!(env.launches.borrow().len(), 6);
 }
