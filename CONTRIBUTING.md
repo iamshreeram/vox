@@ -48,7 +48,7 @@ Do not include employer branding or internal company references, workplace-speci
 
 ## Pull requests
 
-AI assistants must not open or submit pull requests for this repository. Prepare the branch and an accurate summary; Ram submits the PR. Do not invent human-written text or claim a PR was opened when it was not.
+AI assistants may push branches and open pull requests when Ram explicitly asks in the current session, and may merge a pull request only when Ram names it and asks for the merge. Base every PR on `main`; if a PR is stacked on another PR's branch, merge bottom-up and retarget the upper PR to `main` before merging it. Report failing checks instead of bypassing them, and never force-push a shared branch. Fill in the PR template truthfully: mark AI assistance as used, label drafted description text as AI-drafted for Ram to confirm, and never claim a PR was opened or merged when it was not.
 
 Describe the problem, behavior change, tests actually run, compatibility implications, and known limitations. Do not claim releases, websites, package listings, or integrations exist unless verified.
 

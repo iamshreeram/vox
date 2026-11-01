@@ -78,4 +78,4 @@ Run the phase's required full validation commands. Report pre-existing failures 
 
 ## STEP 7: Finish
 
-Push the phase branch after the identity and content audits. Update the phase row to `in_review` in the phase branch. Do not open the PR. Give Ram the branch and PR URL to submit manually, plus truthful test results and any known gaps.
+Push the phase branch after the identity and content audits. Update the phase row to `in_review` in the phase branch. Open the PR only if Ram asked for it in this session (see AGENTS.md); otherwise give Ram the branch and PR URL to submit manually. Either way report truthful test results and any known gaps.
