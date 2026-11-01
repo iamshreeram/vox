@@ -104,6 +104,20 @@ pub fn silent_for_run(state_dir: &Path, run_id: &str) -> bool {
     AutoMarker::new(state_dir).exists(run_id)
 }
 
+/// Whether a commit makes its install silent (R7-7 a). Only an automatic record that no manual
+/// conversion touched qualifies. `manual` is true when the owner converted the run, either by
+/// removing the build marker or by consuming the manual-commit request.
+pub fn install_is_silent(origin: PendingOrigin, manual: bool) -> bool {
+    origin == PendingOrigin::Auto && !manual
+}
+
+/// Silence of an install adopted from `pending.json` at startup (R7-7 a). The marker on disk is
+/// the signal, and only an automatic origin can carry one, so this agrees with
+/// [`install_is_silent`] for every record the commit writes.
+pub fn silent_after_adoption(origin: PendingOrigin, marker_exists: bool) -> bool {
+    origin == PendingOrigin::Auto && marker_exists
+}
+
 /// Facts behind the availability flag `auto_pending` (R7-7 b).
 #[derive(Debug, Clone, Copy)]
 pub struct AutoPendingFacts<'a> {
@@ -313,13 +327,28 @@ pub fn take_manual_commit_request() -> bool {
     MANUAL_COMMIT.take()
 }
 
-/// Sets the silent flag of a progress value from the marker on disk.
+/// Sets the silent flag of a progress value from the marker on disk (see [`progress_silent`]).
 pub fn annotate_progress(app: &AppHandle, mut progress: UpdateProgress) -> UpdateProgress {
     progress.silent = match crate::portable::app_data_dir(app) {
-        Ok(app_data) => silent_for_run(&update_state_dir(&app_data), &progress.run_id),
+        Ok(app_data) => progress_silent(&update_state_dir(&app_data), &progress.run_id),
         Err(_) => false,
     };
     progress
+}
+
+/// Silent flag of progress for `run_id` (R7-7 a). The install run of a committing record is
+/// silent only when its origin is automatic and its marker exists (see
+/// [`silent_after_adoption`]). Every other run is silent exactly when its marker exists.
+pub fn progress_silent(state_dir: &Path, run_id: &str) -> bool {
+    let marker = silent_for_run(state_dir, run_id);
+    match PendingStore::new(state_dir).load() {
+        Ok(Some(PendingRun {
+            origin,
+            state: PendingState::Committing(info),
+            ..
+        })) if info.install_run_id == run_id => silent_after_adoption(origin, marker),
+        _ => marker,
+    }
 }
 
 /// Sets `auto_pending` of a published check result from settings, the marker, the pending

@@ -10,6 +10,7 @@
 //! [`UpdateCoordinator`] guard, so consent cannot change between the check and
 //! the commit.
 
+use super::source_update_auto::consent::install_is_silent;
 use super::source_update_auto::UpdateCoordinator;
 use super::source_update_pending::{PendingRun, PendingState};
 use super::source_update_runner::JobProbe;
@@ -58,8 +59,9 @@ pub trait CommitEnv: Pacer {
         built: &PendingRun,
         install_run_id: &str,
     ) -> Result<PendingRun, StepFailed>;
-    /// Writes the install job's plist.
-    fn write_install_plist(&self, committing: &PendingRun) -> Result<(), StepFailed>;
+    /// Writes the install job's plist. When `silent`, the install marker is written first, so it
+    /// exists before bootstrap (R7-7 a). A failure here is handled like a failed bootstrap.
+    fn write_install_plist(&self, committing: &PendingRun, silent: bool) -> Result<(), StepFailed>;
     /// Registers the install job with launchd.
     fn bootstrap(&self, committing: &PendingRun) -> Result<(), StepFailed>;
     /// Three-valued probe of the install label.
@@ -224,7 +226,9 @@ pub fn commit<E: CommitEnv>(
         Ok(committing) => committing,
         Err(StepFailed) => return CommitOutcome::Deferred(DeferReason::Fs),
     };
-    if env.write_install_plist(&committing).is_err() || env.bootstrap(&committing).is_err() {
+    let silent = install_is_silent(built.origin, manual);
+    if env.write_install_plist(&committing, silent).is_err() || env.bootstrap(&committing).is_err()
+    {
         return after_failed_spawn(env, lease, reservation, committing);
     }
     env.start_install_poller(&committing);

@@ -20,7 +20,6 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 use super::source_update_auto::consent;
-use super::source_update_commit::DeferReason;
 use super::source_update_commit_env::{note_process_start, CommitStatus, UpdateAdmission};
 use super::source_update_driver as driver;
 use super::source_update_runner::{
@@ -911,11 +910,11 @@ pub async fn start_update(app: &AppHandle) -> Result<(), String> {
     // A run whose outcome is already published is not attached to: a new start
     // then goes through the lock like any other start.
     let attach_to = attachable_run(lock_state(&runtime.active).as_ref(), progress(app).as_ref());
-    let built_pending = converted.is_some_and(|plan| plan.request_commit);
-    if driver::manual_start_plan(attach_to.is_some(), built_pending)
-        == driver::ManualStart::CommitBuilt
-    {
-        return commit_built_now(app).await;
+    let outstanding = driver::outstanding_kind_on_disk(app);
+    match driver::manual_start_plan(attach_to.is_some(), outstanding) {
+        driver::ManualStart::CommitBuilt => return commit_built_now(app).await,
+        driver::ManualStart::InProgress => return Ok(()),
+        driver::ManualStart::Attach | driver::ManualStart::Launch => {}
     }
     match start_gate(
         attach_to.is_some(),
@@ -978,17 +977,11 @@ async fn commit_built_now(app: &AppHandle) -> Result<(), String> {
     let status = tokio::task::spawn_blocking(move || driver::commit_now(&manual_app, true))
         .await
         .map_err(|_| LAUNCH_FAILED.to_string())?;
-    match status {
-        CommitStatus::Committed(_) => {
-            info!("manual start committed the built update");
-            Ok(())
-        }
-        // The driver may have committed the same record a moment earlier.
-        CommitStatus::Deferred(DeferReason::NoBuiltRun) if driver::committing_on_disk(app) => {
-            Ok(())
-        }
-        CommitStatus::Deferred(_) | CommitStatus::Unresolved(_) => Err(LAUNCH_FAILED.to_string()),
+    if matches!(status, CommitStatus::Committed(_)) {
+        info!("manual start committed the built update");
     }
+    driver::commit_built_outcome(&status, driver::committing_on_disk(app))
+        .map_err(|()| LAUNCH_FAILED.to_string())
 }
 
 /// Starts the automatic build of `target` (R6-5): the single-phase launch with the auto marker

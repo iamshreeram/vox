@@ -262,7 +262,17 @@ impl JobControl for FakeControl {
             .flatten()
             .is_some_and(|run| matches!(run.state, PendingState::Committing(_)));
         let plist_there = plist.exists();
-        let marker_there = AutoMarker::new(&self.state).exists(RUN);
+        let marker_there = match PendingStore::new(&self.state)
+            .load()
+            .ok()
+            .flatten()
+            .map(|run| run.state)
+        {
+            Some(PendingState::Committing(info)) => {
+                AutoMarker::new(&self.state).exists(&info.install_run_id)
+            }
+            _ => AutoMarker::new(&self.state).exists(RUN),
+        };
         *self.marker_at_bootstrap.lock().unwrap() = Some(marker_there);
         record(
             &self.log,
@@ -652,6 +662,12 @@ fn happy_path_stops_poller_then_commits_on_disk_then_bootstraps_in_order() {
         ]
     );
     assert!(plist_path(&fx.state, &pending_install_id(&pending)).exists());
+    assert_eq!(
+        *control.marker_at_bootstrap.lock().unwrap(),
+        Some(true),
+        "install marker exists before bootstrap"
+    );
+    assert!(AutoMarker::new(&fx.state).exists(&pending_install_id(&pending)));
     let on_disk = PendingStore::new(&fx.state).load().unwrap().unwrap();
     assert!(matches!(on_disk.state, PendingState::Committing(_)));
     assert_eq!(host.gate.holder(), Some(Owner::Updater));
@@ -716,6 +732,31 @@ fn gate_busy_writes_nothing() {
         .is_some_and(|r| r.state == PendingState::Built));
 }
 
+fn auto_markers(state: &Path) -> Vec<String> {
+    fs::read_dir(state)
+        .unwrap()
+        .flatten()
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| n.starts_with("run-") && n.ends_with(".auto"))
+        .collect()
+}
+
+#[test]
+fn manual_commit_writes_no_install_marker() {
+    let fx = fixture();
+    write_record(&fx.state, &built_record(&fx.state));
+    let log = new_log();
+    let host = FakeHost::new(&fx, Arc::clone(&log));
+    let control = FakeControl::new(Arc::clone(&log), &fx.state);
+    let outcome = commit_once(&host, &control, &fx, true);
+    assert!(matches!(outcome, CommitOutcome::Committed { .. }));
+    assert_eq!(*control.marker_at_bootstrap.lock().unwrap(), Some(false));
+    assert!(
+        auto_markers(&fx.state).is_empty(),
+        "manual install is not silent"
+    );
+}
+
 #[test]
 fn bootstrap_failure_revokes_and_releases_everything() {
     let fx = fixture();
@@ -726,6 +767,10 @@ fn bootstrap_failure_revokes_and_releases_everything() {
     let outcome = commit_once(&host, &control, &fx, false);
     assert_eq!(reason(&outcome), Some(DeferReason::BootstrapFailed));
     assert!(plist_files(&fx.state).is_empty(), "plist removed");
+    assert!(
+        auto_markers(&fx.state).is_empty(),
+        "marker removed on revoke"
+    );
     assert_eq!(control.calls("bootout:"), 1);
     assert_eq!(control.calls("probe:"), 2, "two confirmed absent probes");
     let restored = PendingStore::new(&fx.state).load().unwrap().unwrap();

@@ -10,7 +10,8 @@ use std::time::Duration;
 
 use super::*;
 use crate::managers::source_update_auto::consent::{
-    cleanup_after_build_without_consent, CleanupPlan,
+    apply_manual_conversion, cleanup_after_build_without_consent, silent_for_run,
+    take_manual_commit_request, AutoMarker, CleanupPlan,
 };
 use crate::managers::source_update_auto::load_auto_state;
 use crate::managers::source_update_pending::{
@@ -474,10 +475,16 @@ fn committing_record_with_a_running_poller_is_left_alone() {
 
 #[test]
 fn manual_start_plan_table() {
-    assert_eq!(manual_start_plan(true, true), ManualStart::Attach);
-    assert_eq!(manual_start_plan(true, false), ManualStart::Attach);
-    assert_eq!(manual_start_plan(false, true), ManualStart::CommitBuilt);
-    assert_eq!(manual_start_plan(false, false), ManualStart::Launch);
+    use OutstandingKind as K;
+    assert_eq!(manual_start_plan(true, K::None), ManualStart::Attach);
+    assert_eq!(manual_start_plan(true, K::Built), ManualStart::Attach);
+    assert_eq!(manual_start_plan(true, K::Committing), ManualStart::Attach);
+    assert_eq!(manual_start_plan(false, K::Built), ManualStart::CommitBuilt);
+    assert_eq!(
+        manual_start_plan(false, K::Committing),
+        ManualStart::InProgress
+    );
+    assert_eq!(manual_start_plan(false, K::None), ManualStart::Launch);
 }
 
 /// Fake of the startup restore effects; records the order of the calls.
@@ -749,4 +756,207 @@ fn stable_reason_codes_cover_every_code_the_driver_records() {
             "{code} must be a stable code"
         );
     }
+}
+
+#[test]
+fn terminal_action_table() {
+    let dir = tempfile::tempdir().expect("dir");
+    let install = committing_run(dir.path());
+    // The install's own terminal outcome settles it.
+    assert_eq!(
+        terminal_action(Some(&install), INSTALL, RunPhase::Done, false),
+        TerminalAction::FinishInstall
+    );
+    assert_eq!(
+        terminal_action(Some(&install), INSTALL, RunPhase::Failed, true),
+        TerminalAction::FinishInstall
+    );
+    // A non-terminal phase never settles anything, so nothing is released.
+    assert_eq!(
+        terminal_action(Some(&install), INSTALL, RunPhase::Installing, false),
+        TerminalAction::Ignore
+    );
+    // Another run's outcome does not settle the install.
+    assert_eq!(
+        terminal_action(Some(&install), "aaaaaaaaaaaaaaaa", RunPhase::Failed, false),
+        TerminalAction::Ignore
+    );
+    // A failed automatic build is recorded; a finished one is not.
+    assert_eq!(
+        terminal_action(None, RUN, RunPhase::Failed, true),
+        TerminalAction::BuildFailed
+    );
+    assert_eq!(
+        terminal_action(None, RUN, RunPhase::Done, true),
+        TerminalAction::Ignore
+    );
+    assert_eq!(
+        terminal_action(None, RUN, RunPhase::Failed, false),
+        TerminalAction::Ignore
+    );
+}
+
+/// Fake of the settle effects; records the order of the calls.
+#[derive(Default)]
+struct FakeSettle {
+    previous: AutoState,
+    calls: RefCell<Vec<String>>,
+    saved: RefCell<Option<AutoState>>,
+}
+
+impl FakeSettle {
+    fn push(&self, entry: String) {
+        self.calls.borrow_mut().push(entry);
+    }
+}
+
+impl SettleEnv for FakeSettle {
+    fn previous(&self) -> AutoState {
+        self.previous.clone()
+    }
+    fn save(&self, state: &AutoState) {
+        self.push("save".to_string());
+        *self.saved.borrow_mut() = Some(state.clone());
+    }
+    fn remove_marker(&self, run_id: &str) {
+        self.push(format!("marker:{run_id}"));
+    }
+    fn remove_pending(&self) {
+        self.push("pending".to_string());
+    }
+    fn release(&self) {
+        self.push("release".to_string());
+    }
+    fn announce(&self) {
+        self.push("announce".to_string());
+    }
+}
+
+#[test]
+fn settled_install_records_updated_and_cleans_everything() {
+    let dir = tempfile::tempdir().expect("dir");
+    let run = committing_run(dir.path());
+    let env = FakeSettle::default();
+    settle_install(&env, &run, INSTALL, true, NOW);
+    let saved = env.saved.borrow().clone().expect("state saved");
+    assert_eq!(saved.last_result, Some(AutoResult::Updated));
+    assert_eq!(saved.last_target.as_deref(), Some(SHA));
+    assert_eq!(
+        *env.calls.borrow(),
+        [
+            "save".to_string(),
+            format!("marker:{INSTALL}"),
+            "pending".to_string(),
+            "release".to_string(),
+            "announce".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn settled_failed_install_records_install_failed_and_still_cleans_up() {
+    let dir = tempfile::tempdir().expect("dir");
+    let run = committing_run(dir.path());
+    let env = FakeSettle::default();
+    settle_install(&env, &run, INSTALL, false, NOW);
+    let saved = env.saved.borrow().clone().expect("state saved");
+    assert_eq!(saved.last_result, Some(AutoResult::Failed));
+    assert_eq!(saved.reason_code.as_deref(), Some("install_failed"));
+    assert_eq!(saved.last_target.as_deref(), Some(SHA));
+    assert_eq!(
+        env.calls.borrow().last().map(String::as_str),
+        Some("announce")
+    );
+    assert!(env.calls.borrow().contains(&"release".to_string()));
+    assert!(env.calls.borrow().contains(&format!("marker:{INSTALL}")));
+    assert!(env.calls.borrow().contains(&"pending".to_string()));
+}
+
+/// A manual install that fails also records `failed` for its target (the settle rule has no
+/// origin check). The automatic path then waits out the 24 h cooldown for that target only.
+#[test]
+fn failed_manual_install_backs_off_the_automatic_path_for_its_target() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut run = committing_run(dir.path());
+    run.origin = PendingOrigin::Manual;
+    let saved = settled_state(&AutoState::default(), &run, false, NOW);
+    assert!(!should_retry(&saved, SHA, NOW + 1));
+    assert!(!should_retry(&saved, SHA, NOW + 23 * 60 * 60));
+    assert!(should_retry(&saved, SHA, NOW + 25 * 60 * 60));
+    assert!(should_retry(&saved, OTHER_SHA, NOW + 1));
+}
+
+#[test]
+fn commit_built_outcome_table() {
+    let dir = tempfile::tempdir().expect("dir");
+    let committing = committing_run(dir.path());
+    assert!(commit_built_outcome(&CommitStatus::Committed(committing.clone()), false).is_ok());
+    // The driver committed the same record a moment earlier: the start is attached.
+    assert!(commit_built_outcome(&CommitStatus::Deferred(DeferReason::NoBuiltRun), true).is_ok());
+    assert!(commit_built_outcome(&CommitStatus::Deferred(DeferReason::NoBuiltRun), false).is_err());
+    assert!(commit_built_outcome(&CommitStatus::Deferred(DeferReason::Busy), true).is_err());
+    assert!(commit_built_outcome(&CommitStatus::Unresolved(committing), false).is_err());
+}
+
+#[test]
+fn manual_start_over_a_built_update_requests_the_commit_and_launches_nothing() {
+    let dir = tempfile::tempdir().expect("dir");
+    write_record(dir.path(), &built_run(dir.path()));
+    let plan = apply_manual_conversion(dir.path(), None).expect("plan");
+    assert!(plan.request_commit);
+    let outstanding =
+        outstanding_kind(PendingStore::new(dir.path()).load().ok().flatten().as_ref());
+    assert_eq!(outstanding, OutstandingKind::Built);
+    assert_eq!(
+        manual_start_plan(false, outstanding),
+        ManualStart::CommitBuilt,
+        "no new build is launched"
+    );
+    // Consume the one-shot request so the process-wide flag does not leak into other tests.
+    assert!(take_manual_commit_request());
+}
+
+#[test]
+fn manual_start_over_a_running_auto_build_converts_it_and_attaches() {
+    let dir = tempfile::tempdir().expect("dir");
+    AutoMarker::new(dir.path()).write(RUN).expect("marker");
+    let plan = apply_manual_conversion(dir.path(), Some(RUN)).expect("plan");
+    assert!(plan.remove_active_marker && !plan.request_commit);
+    assert!(
+        !silent_for_run(dir.path(), RUN),
+        "progress is no longer silent"
+    );
+    assert_eq!(
+        manual_start_plan(true, OutstandingKind::None),
+        ManualStart::Attach
+    );
+}
+
+#[test]
+fn manual_start_over_an_outstanding_install_never_starts_another() {
+    let dir = tempfile::tempdir().expect("dir");
+    write_record(dir.path(), &committing_run(dir.path()));
+    let plan = apply_manual_conversion(dir.path(), None).expect("plan");
+    assert!(
+        !plan.request_commit,
+        "a committing record is never re-committed"
+    );
+    let outstanding =
+        outstanding_kind(PendingStore::new(dir.path()).load().ok().flatten().as_ref());
+    assert_eq!(outstanding, OutstandingKind::Committing);
+    assert_eq!(
+        manual_start_plan(false, outstanding),
+        ManualStart::InProgress
+    );
+}
+
+#[test]
+fn restore_unknown_probe_with_a_running_install_releases_nothing() {
+    let dir = tempfile::tempdir().expect("dir");
+    write_record(dir.path(), &committing_run(dir.path()));
+    let fake = FakeRestore::new(JobProbe::Unknown, Some(RunPhase::Installing));
+    restore_with(&fake, &PendingStore::new(dir.path()));
+    assert!(!fake.saw("finish:done") && !fake.saw("finish:failed"));
+    assert!(!fake.saw("revoke"));
+    assert!(PendingStore::new(dir.path()).path().exists());
 }

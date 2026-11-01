@@ -199,27 +199,136 @@ pub fn skip_record(previous: &AutoState, target: &str, code: &str, now: u64) -> 
     (!kept_updated).then(|| previous.with_skipped(target, code, now))
 }
 
+/// The outstanding automatic record on disk, as far as a manual start cares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutstandingKind {
+    /// No record (or an unreadable one: the launch itself refuses while a record exists).
+    None,
+    /// A built update waiting for a commit.
+    Built,
+    /// An install is outstanding; nothing new may start.
+    Committing,
+}
+
+/// Pure: the outstanding kind of a loaded record.
+pub fn outstanding_kind(pending: Option<&PendingRun>) -> OutstandingKind {
+    match pending.map(|run| &run.state) {
+        None => OutstandingKind::None,
+        Some(PendingState::Built) => OutstandingKind::Built,
+        Some(PendingState::Committing(_)) => OutstandingKind::Committing,
+    }
+}
+
 /// Pure: the manual start decision (R7-7 c). Attaching wins; a built record is committed now;
-/// otherwise a fresh single-phase run starts.
+/// an outstanding install is reported as in progress and never started again; otherwise a
+/// fresh single-phase run starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ManualStart {
     /// Attach to the run this process already watches.
     Attach,
-    /// Commit the built automatic update now.
+    /// Commit the built automatic update now (a manual commit, no new build).
     CommitBuilt,
+    /// An install is already outstanding: report it as in progress, start nothing.
+    InProgress,
     /// Launch a fresh run.
     Launch,
 }
 
-/// Decides a manual start from the attachable run and the built record.
-pub fn manual_start_plan(attachable: bool, built_pending: bool) -> ManualStart {
-    if attachable {
-        ManualStart::Attach
-    } else if built_pending {
-        ManualStart::CommitBuilt
-    } else {
-        ManualStart::Launch
+/// Decides a manual start from the attachable run and the outstanding record.
+pub fn manual_start_plan(attachable: bool, outstanding: OutstandingKind) -> ManualStart {
+    match (attachable, outstanding) {
+        (true, _) => ManualStart::Attach,
+        (false, OutstandingKind::Built) => ManualStart::CommitBuilt,
+        (false, OutstandingKind::Committing) => ManualStart::InProgress,
+        (false, OutstandingKind::None) => ManualStart::Launch,
     }
+}
+
+/// Pure: the answer of a manual "Update now" to a commit of a built record. `Ok` when the
+/// commit happened, or when the driver committed the same record a moment earlier (the
+/// record is then committing on disk and the start is attached). Anything else is a failure.
+pub fn commit_built_outcome(status: &CommitStatus, committing_on_disk: bool) -> Result<(), ()> {
+    match status {
+        CommitStatus::Committed(_) => Ok(()),
+        CommitStatus::Deferred(DeferReason::NoBuiltRun) if committing_on_disk => Ok(()),
+        CommitStatus::Deferred(_) | CommitStatus::Unresolved(_) => Err(()),
+    }
+}
+
+/// What the poller's terminal report of a run does (see [`on_terminal`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalAction {
+    /// The install run ended: settle the install (state, cleanup, admission).
+    FinishInstall,
+    /// An automatic build failed: record the build failure and drop its marker.
+    BuildFailed,
+    /// Nothing to do.
+    Ignore,
+}
+
+/// Pure: decides the effect of a terminal report. A non-terminal phase never settles anything.
+pub fn terminal_action(
+    pending: Option<&PendingRun>,
+    run_id: &str,
+    phase: RunPhase,
+    marker_exists: bool,
+) -> TerminalAction {
+    if !phase.is_terminal() {
+        return TerminalAction::Ignore;
+    }
+    if pending.and_then(install_run_of) == Some(run_id) {
+        return TerminalAction::FinishInstall;
+    }
+    if phase != RunPhase::Done && marker_exists {
+        TerminalAction::BuildFailed
+    } else {
+        TerminalAction::Ignore
+    }
+}
+
+/// Effects of settling a terminal install. Real: [`AppSettle`]; tests: fakes.
+pub trait SettleEnv {
+    /// The persisted attempt state before this settle (default when none).
+    fn previous(&self) -> AutoState;
+    /// Persists the attempt state and announces nothing.
+    fn save(&self, state: &AutoState);
+    /// Removes the install marker of `run_id`.
+    fn remove_marker(&self, run_id: &str);
+    /// Removes `pending.json` and the staged directory.
+    fn remove_pending(&self);
+    /// Releases the install admission (gate lease and job reservation).
+    fn release(&self);
+    /// Tells the footer and the tray that the state changed.
+    fn announce(&self);
+}
+
+/// Pure: the attempt state after an install ends. A finished install records `updated`. A failed
+/// install records `failed` with `install_failed` for its target. This holds for a manual install
+/// too: a failed manual install also puts its target in the 24 h automatic cooldown, so the
+/// automatic path does not retry that same commit at once.
+pub fn settled_state(previous: &AutoState, run: &PendingRun, done: bool, now: u64) -> AutoState {
+    if done {
+        previous.with_updated(&run.target_full, now)
+    } else {
+        previous.with_failure(&run.target_full, "install_failed", now)
+    }
+}
+
+/// Settles a terminal install (state, marker, record, admission, announcement), in that order.
+/// Idempotent: each step is a no-op when already done.
+pub fn settle_install<E: SettleEnv>(
+    env: &E,
+    run: &PendingRun,
+    install_run_id: &str,
+    done: bool,
+    now: u64,
+) {
+    let next = settled_state(&env.previous(), run, done, now);
+    env.save(&next);
+    env.remove_marker(install_run_id);
+    env.remove_pending();
+    env.release();
+    env.announce();
 }
 
 /// One wake of the driver.
@@ -445,6 +554,15 @@ pub fn restore_admission(app: &AppHandle) {
     }
 }
 
+/// The outstanding automatic record on disk, for a manual start. An unreadable record counts as
+/// none; the launch itself refuses while any record exists.
+pub fn outstanding_kind_on_disk(app: &AppHandle) -> OutstandingKind {
+    let Some(state_dir) = state_dir_of(app) else {
+        return OutstandingKind::None;
+    };
+    outstanding_kind(PendingStore::new(&state_dir).load().ok().flatten().as_ref())
+}
+
 /// True when `pending.json` holds an install that is outstanding. Adoption of a build run
 /// leaves such a record to the restore step.
 pub fn committing_on_disk(app: &AppHandle) -> bool {
@@ -493,25 +611,27 @@ fn publish_install_started(app: &AppHandle, run: &PendingRun) {
     );
 }
 
-/// Called by the poller when a run reaches its outcome (done or failed).
+/// Called by the poller when a run reaches its outcome (done or failed). The decision is
+/// [`terminal_action`]; the effects are [`settle_install`] or the build-failure record.
 pub fn on_terminal(app: &AppHandle, run_id: &str, progress: &UpdateProgress) {
     let Some(state_dir) = state_dir_of(app) else {
         return;
     };
-    let done = progress.phase == RunPhase::Done;
     let pending = PendingStore::new(&state_dir).load().ok().flatten();
-    if let Some(run) = pending.as_ref() {
-        if install_run_of(run) == Some(run_id) {
-            finish_install(app, &state_dir, run, done);
-            return;
+    let marker_exists = AutoMarker::new(&state_dir).exists(run_id);
+    match terminal_action(pending.as_ref(), run_id, progress.phase, marker_exists) {
+        TerminalAction::FinishInstall => {
+            if let Some(run) = pending.as_ref() {
+                finish_install(app, &state_dir, run, progress.phase == RunPhase::Done);
+            }
         }
-    }
-    let markers = AutoMarker::new(&state_dir);
-    if !done && markers.exists(run_id) {
-        record_build_failed(app, &state_dir);
-        if let Err(error) = markers.remove(run_id) {
-            warn!("could not remove the automatic marker: {error}");
+        TerminalAction::BuildFailed => {
+            record_build_failed(app, &state_dir);
+            if let Err(error) = AutoMarker::new(&state_dir).remove(run_id) {
+                warn!("could not remove the automatic marker: {error}");
+            }
         }
+        TerminalAction::Ignore => {}
     }
 }
 
@@ -529,31 +649,57 @@ fn record_build_failed(app: &AppHandle, state_dir: &Path) {
     emit_auto_update_changed(app);
 }
 
-/// Settles a terminal install: records the outcome, removes the record and the marker, and
-/// releases admission. Idempotent.
+/// The Tauri-backed [`SettleEnv`] of one install.
+struct AppSettle<'a> {
+    app: &'a AppHandle,
+    state_dir: &'a Path,
+}
+
+impl SettleEnv for AppSettle<'_> {
+    fn previous(&self) -> AutoState {
+        load_auto_state(self.state_dir)
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+    }
+
+    fn save(&self, state: &AutoState) {
+        save_or_warn(self.state_dir, state);
+    }
+
+    fn remove_marker(&self, run_id: &str) {
+        if let Err(error) = AutoMarker::new(self.state_dir).remove(run_id) {
+            warn!("could not remove the install marker: {error}");
+        }
+    }
+
+    fn remove_pending(&self) {
+        if let Err(error) = PendingStore::new(self.state_dir).remove_all() {
+            warn!("could not remove the finished update: {error}");
+        }
+    }
+
+    fn release(&self) {
+        release_admission(self.app);
+    }
+
+    fn announce(&self) {
+        emit_auto_update_changed(self.app);
+    }
+}
+
+/// Settles a terminal install through [`settle_install`]. Idempotent.
 fn finish_install(app: &AppHandle, state_dir: &Path, run: &PendingRun, done: bool) {
     let Some(install_id) = install_run_of(run) else {
         return;
     };
-    let previous = load_auto_state(state_dir)
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-    let now = now_unix();
-    let next = if done {
-        previous.with_updated(&run.target_full, now)
-    } else {
-        previous.with_failure(&run.target_full, "install_failed", now)
-    };
-    save_or_warn(state_dir, &next);
-    if let Err(error) = AutoMarker::new(state_dir).remove(install_id) {
-        warn!("could not remove the install marker: {error}");
-    }
-    if let Err(error) = PendingStore::new(state_dir).remove_all() {
-        warn!("could not remove the finished update: {error}");
-    }
-    release_admission(app);
-    emit_auto_update_changed(app);
+    settle_install(
+        &AppSettle { app, state_dir },
+        run,
+        install_id,
+        done,
+        now_unix(),
+    );
     info!("automatic update install finished");
 }
 

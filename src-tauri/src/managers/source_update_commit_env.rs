@@ -19,6 +19,7 @@ use crate::job_runtime::JobWiring;
 use crate::managers::agent_jobs::{JobManager, UpdateReservation};
 use crate::managers::ownership::{self, idle_for, Lease, Owner, OwnershipGate};
 use crate::managers::source_update::{checkout_dir, running_build_sha, SourceUpdateRuntime};
+use crate::managers::source_update_auto::consent::AutoMarker;
 use crate::managers::source_update_auto::{update_coordinator, AUTO_IDLE};
 use crate::settings::{get_settings, update_checks_effectively_enabled};
 
@@ -184,10 +185,16 @@ impl<C: JobControl, H: CommitHost> CommitEnv for AppCommitEnv<'_, C, H> {
             .map_err(|_| StepFailed)
     }
 
-    fn write_install_plist(&self, committing: &PendingRun) -> Result<(), StepFailed> {
+    fn write_install_plist(&self, committing: &PendingRun, silent: bool) -> Result<(), StepFailed> {
         let PendingState::Committing(info) = &committing.state else {
             return Err(StepFailed);
         };
+        if silent {
+            // The marker must exist before bootstrap, so the first progress frame is silent.
+            AutoMarker::new(self.store.state_dir())
+                .write(&info.install_run_id)
+                .map_err(|_| StepFailed)?;
+        }
         let inputs = self
             .site
             .inputs(&info.install_run_id, &committing.target_full);
@@ -215,11 +222,20 @@ impl<C: JobControl, H: CommitHost> CommitEnv for AppCommitEnv<'_, C, H> {
         run::bootout_install(self.control, committing).map_err(|_| StepFailed)
     }
 
+    /// Reverts to `built` and removes the install marker. Called only after a conclusive
+    /// revocation, so a live install (adopted instead) keeps its marker and its silence.
     fn revert_to_built(&self, committing: &PendingRun) -> Result<(), StepFailed> {
         self.store
             .revert(committing)
             .map(|_| ())
-            .map_err(|_| StepFailed)
+            .map_err(|_| StepFailed)?;
+        if let PendingState::Committing(info) = &committing.state {
+            if let Err(error) = AutoMarker::new(self.store.state_dir()).remove(&info.install_run_id)
+            {
+                log::warn!("could not remove the install marker after revocation: {error}");
+            }
+        }
+        Ok(())
     }
 
     fn start_install_poller(&self, committing: &PendingRun) {

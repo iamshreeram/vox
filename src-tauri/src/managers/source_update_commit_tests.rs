@@ -256,7 +256,10 @@ impl CommitEnv for Fake<'_> {
         Ok(committing)
     }
 
-    fn write_install_plist(&self, _: &PendingRun) -> Result<(), StepFailed> {
+    fn write_install_plist(&self, _: &PendingRun, silent: bool) -> Result<(), StepFailed> {
+        if silent {
+            self.step("marker");
+        }
         self.step("plist");
         self.result(Fail::PlistWrite)
     }
@@ -346,6 +349,7 @@ const HAPPY: &[&str] = &[
     "stop",
     "run_id",
     "begin",
+    "marker",
     "plist",
     "bootstrap",
     "start_poller",
@@ -361,6 +365,32 @@ const BOOTSTRAP_REVOKE: &[&str] = &[
     "probe",
     "revert",
 ];
+
+#[test]
+fn auto_commit_writes_the_install_marker_before_bootstrap() {
+    // R7-7 a: an automatic commit (no conversion) marks the install silent before bootstrap.
+    let coord = UpdateCoordinator::new();
+    let fake = Fake::new(&coord, cfg());
+    let _ = commit(&fake, &coord, false);
+    let calls = fake.calls();
+    let marker = calls.iter().position(|c| *c == "marker");
+    let bootstrap = calls.iter().position(|c| *c == "bootstrap");
+    assert!(marker.is_some(), "marker written");
+    assert!(marker < bootstrap, "marker before bootstrap");
+    assert_eq!(fake.calls().iter().filter(|c| **c == "marker").count(), 1);
+}
+
+#[test]
+fn manual_commit_writes_no_install_marker() {
+    let coord = UpdateCoordinator::new();
+    let fake = Fake::new(&coord, cfg());
+    let outcome = commit(&fake, &coord, true);
+    assert!(matches!(outcome, CommitOutcome::Committed { .. }));
+    assert!(
+        !fake.calls().contains(&"marker"),
+        "manual install is not silent"
+    );
+}
 
 #[test]
 fn happy_path_calls_in_contract_order_and_keeps_guards() {

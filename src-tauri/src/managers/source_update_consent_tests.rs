@@ -384,3 +384,51 @@ fn published_info_without_the_flag_reads_as_not_pending() {
     let back: SourceUpdateInfo = serde_json::from_value(value).unwrap();
     assert!(!back.auto_pending);
 }
+
+#[test]
+fn install_is_silent_only_for_an_automatic_commit_without_conversion() {
+    // R7-7 a: the install marker is written only for an automatic record that no manual
+    // conversion touched (the `manual` input of the commit covers both conversion paths).
+    assert!(super::install_is_silent(PendingOrigin::Auto, false));
+    assert!(!super::install_is_silent(PendingOrigin::Auto, true));
+    assert!(!super::install_is_silent(PendingOrigin::Manual, false));
+    assert!(!super::install_is_silent(PendingOrigin::Manual, true));
+}
+
+#[test]
+fn adopted_install_is_silent_exactly_when_an_auto_marker_exists() {
+    // Restore adoption recomputes silence from the record origin and the marker on disk.
+    assert!(super::silent_after_adoption(PendingOrigin::Auto, true));
+    assert!(!super::silent_after_adoption(PendingOrigin::Auto, false));
+    assert!(!super::silent_after_adoption(PendingOrigin::Manual, true));
+    assert!(!super::silent_after_adoption(PendingOrigin::Manual, false));
+}
+
+#[test]
+fn progress_of_an_adopted_install_follows_origin_and_marker() {
+    // The install run of a committing record is silent only for an automatic origin with its
+    // marker on disk. Every other run is silent exactly when its marker exists.
+    let dir = tempfile::tempdir().expect("dir");
+    write_pending(dir.path(), &committing_run(dir.path()));
+    assert!(
+        !super::progress_silent(dir.path(), INSTALL),
+        "no marker yet"
+    );
+    AutoMarker::new(dir.path()).write(INSTALL).expect("marker");
+    assert!(super::progress_silent(dir.path(), INSTALL));
+
+    let mut manual = committing_run(dir.path());
+    manual.origin = PendingOrigin::Manual;
+    write_pending(dir.path(), &manual);
+    assert!(
+        !super::progress_silent(dir.path(), INSTALL),
+        "a manual origin is never silent"
+    );
+    AutoMarker::new(dir.path())
+        .write(RUN)
+        .expect("build marker");
+    assert!(
+        super::progress_silent(dir.path(), RUN),
+        "other runs use the marker alone"
+    );
+}
