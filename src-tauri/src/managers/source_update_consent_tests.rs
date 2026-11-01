@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use super::{
     apply_manual_conversion, auto_marker_path, auto_pending, cleanup_after_build_without_consent,
-    cleanup_plan, manual_conversion_plan, silent_for_run, AutoMarker, AutoPendingFacts,
-    CleanupPlan, CommitRequest,
+    cleanup_plan, manual_conversion_plan, silent_for_run, sweep_stale_markers, AutoMarker,
+    AutoPendingFacts, CleanupPlan, CommitRequest,
 };
 use crate::managers::source_update::{SourceUpdateInfo, SourceUpdateState};
 use crate::managers::source_update_auto::{
@@ -458,4 +458,54 @@ fn progress_of_an_adopted_install_follows_origin_and_marker() {
         super::progress_silent(dir.path(), RUN),
         "other runs use the marker alone"
     );
+}
+
+#[test]
+fn consent_withdrawn_cleanup_removes_the_build_marker_too() {
+    let dir = tempfile::tempdir().unwrap();
+    write_pending(dir.path(), &built_run(dir.path(), PendingOrigin::Auto));
+    make_staged(dir.path());
+    AutoMarker::new(dir.path()).write(RUN).unwrap();
+
+    let plan = cleanup_after_build_without_consent(dir.path(), false, 500).unwrap();
+
+    assert_eq!(plan, CleanupPlan::RemoveBuilt);
+    assert!(!AutoMarker::new(dir.path()).exists(RUN));
+}
+
+#[test]
+fn sweep_removes_only_stale_auto_markers() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path();
+    let stale = "aaaaaaaaaaaaaaaa";
+    let live = "bbbbbbbbbbbbbbbb";
+    AutoMarker::new(state).write(stale).unwrap();
+    AutoMarker::new(state).write(live).unwrap();
+    // Names that only look like markers are never removed.
+    fs::write(state.join("run-cccccccccccccccc.auto.bak"), b"x").unwrap();
+    fs::write(state.join("run-DDDDDDDDDDDDDDDD.auto"), b"x").unwrap();
+    fs::write(state.join("run-short.auto"), b"x").unwrap();
+    fs::write(state.join("notes.auto"), b"x").unwrap();
+    // A symlink named like a stale marker is neither followed nor removed.
+    let victim = state.join("victim.txt");
+    fs::write(&victim, b"keep").unwrap();
+    symlink(&victim, state.join("run-eeeeeeeeeeeeeeee.auto")).unwrap();
+
+    let removed = sweep_stale_markers(state, &[live]);
+
+    assert_eq!(removed, 1);
+    assert!(!AutoMarker::new(state).exists(stale));
+    assert!(AutoMarker::new(state).exists(live));
+    assert!(state.join("run-cccccccccccccccc.auto.bak").exists());
+    assert!(state.join("run-DDDDDDDDDDDDDDDD.auto").exists());
+    assert!(state.join("run-short.auto").exists());
+    assert!(state.join("notes.auto").exists());
+    assert!(victim.exists());
+    assert!(fs::symlink_metadata(state.join("run-eeeeeeeeeeeeeeee.auto")).is_ok());
+}
+
+#[test]
+fn sweep_on_a_missing_directory_removes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(sweep_stale_markers(&dir.path().join("absent"), &[]), 0);
 }

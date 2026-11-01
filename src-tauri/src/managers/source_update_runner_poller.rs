@@ -354,6 +354,7 @@ fn apply(
                 if let Err(error) = cleanup_run(control, &config.state_dir, &config.run_id) {
                     warn!("update cleanup did not finish: {error}");
                 }
+                crate::managers::source_update_driver::sweep_markers(app);
             }
             Effect::Stop => return true,
         }

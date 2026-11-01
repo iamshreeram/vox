@@ -6,7 +6,12 @@ use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
+
+use crate::managers::agent_jobs::JobManager;
+use crate::managers::ownership::OwnershipGate;
+use crate::managers::source_update_commit_env::UpdateAdmission;
 
 use super::*;
 use crate::managers::source_update_auto::consent::{
@@ -997,38 +1002,95 @@ fn stable_reason_codes_cover_every_code_the_driver_records() {
 fn terminal_action_table() {
     let dir = tempfile::tempdir().expect("dir");
     let install = committing_run(dir.path());
-    // The install's own terminal outcome settles it.
+    // pending.json still names this install: it settles from the record, whatever the phase.
     assert_eq!(
-        terminal_action(Some(&install), INSTALL, RunPhase::Done, false),
+        terminal_action(Some(&install), INSTALL, RunPhase::Done, 100, false, None),
         TerminalAction::FinishInstall
     );
     assert_eq!(
-        terminal_action(Some(&install), INSTALL, RunPhase::Failed, true),
+        terminal_action(Some(&install), INSTALL, RunPhase::Failed, 93, true, None),
         TerminalAction::FinishInstall
     );
     // A non-terminal phase never settles anything, so nothing is released.
     assert_eq!(
-        terminal_action(Some(&install), INSTALL, RunPhase::Installing, false),
+        terminal_action(
+            Some(&install),
+            INSTALL,
+            RunPhase::Installing,
+            92,
+            true,
+            None
+        ),
         TerminalAction::Ignore
     );
     // Another run's outcome does not settle the install.
     assert_eq!(
-        terminal_action(Some(&install), "aaaaaaaaaaaaaaaa", RunPhase::Failed, false),
+        terminal_action(
+            Some(&install),
+            "aaaaaaaaaaaaaaaa",
+            RunPhase::Failed,
+            93,
+            false,
+            None
+        ),
         TerminalAction::Ignore
     );
-    // A failed automatic build is recorded; a finished one is not.
+    // Native finding: the script removes pending.json before `done`. The install is still
+    // settled from its marker (after a restart) or from the in-memory memory of the commit.
     assert_eq!(
-        terminal_action(None, RUN, RunPhase::Failed, true),
+        terminal_action(None, INSTALL, RunPhase::Done, 100, true, None),
+        TerminalAction::FinishRecorded
+    );
+    assert_eq!(
+        terminal_action(None, INSTALL, RunPhase::Done, 100, false, Some(INSTALL)),
+        TerminalAction::FinishRecorded
+    );
+    assert_eq!(
+        terminal_action(None, INSTALL, RunPhase::Failed, 93, true, None),
+        TerminalAction::FinishRecorded
+    );
+    assert_eq!(
+        terminal_action(None, INSTALL, RunPhase::Failed, 93, false, Some(INSTALL)),
+        TerminalAction::FinishRecorded
+    );
+    // A manual install has neither a marker nor a memory: nothing is recorded.
+    assert_eq!(
+        terminal_action(None, INSTALL, RunPhase::Done, 100, false, None),
+        TerminalAction::Ignore
+    );
+    assert_eq!(
+        terminal_action(None, INSTALL, RunPhase::Failed, 93, false, None),
+        TerminalAction::Ignore
+    );
+    // The memory names another run: this run is not the install.
+    assert_eq!(
+        terminal_action(None, RUN, RunPhase::Failed, 40, false, Some(INSTALL)),
+        TerminalAction::Ignore
+    );
+    // A failed automatic build (marker, failed before the install band) is recorded as a build
+    // failure; without a marker nothing is recorded.
+    assert_eq!(
+        terminal_action(None, RUN, RunPhase::Failed, 40, true, None),
         TerminalAction::BuildFailed
     );
     assert_eq!(
-        terminal_action(None, RUN, RunPhase::Done, true),
+        terminal_action(None, RUN, RunPhase::Failed, 40, false, None),
         TerminalAction::Ignore
     );
-    assert_eq!(
-        terminal_action(None, RUN, RunPhase::Failed, false),
-        TerminalAction::Ignore
-    );
+}
+
+#[test]
+fn terminal_action_ignores_non_terminal_phases_even_with_marker_and_memory() {
+    for phase in [
+        RunPhase::Installing,
+        RunPhase::Restarting,
+        RunPhase::Waiting,
+    ] {
+        assert_eq!(
+            terminal_action(None, INSTALL, phase, 95, true, Some(INSTALL)),
+            TerminalAction::Ignore
+        );
+    }
 }
 
 /// Fake of the settle effects; records the order of the calls.
@@ -1194,4 +1256,266 @@ fn restore_unknown_probe_with_a_running_install_releases_nothing() {
     assert!(!fake.saw("finish:done") && !fake.saw("finish:failed"));
     assert!(!fake.saw("revoke"));
     assert!(PendingStore::new(dir.path()).path().exists());
+}
+
+fn count(env: &FakeSettle, entry: &str) -> usize {
+    env.calls
+        .borrow()
+        .iter()
+        .filter(|call| *call == entry)
+        .count()
+}
+
+#[test]
+fn recorded_install_done_without_pending_records_updated_and_releases_once() {
+    // pending.json already gone (the script removes it before `done`); marker or memory is set.
+    let env = FakeSettle::default();
+    settle_recorded(&env, INSTALL, Some(SHA), true, NOW);
+    let saved = env.saved.borrow().clone().expect("state saved");
+    assert_eq!(saved.last_result, Some(AutoResult::Updated));
+    assert_eq!(saved.last_target.as_deref(), Some(SHA));
+    assert_eq!(count(&env, &format!("marker:{INSTALL}")), 1);
+    assert_eq!(count(&env, "release"), 1);
+    assert_eq!(count(&env, "pending"), 0, "no pending record is touched");
+    assert_eq!(
+        env.calls.borrow().last().map(String::as_str),
+        Some("announce")
+    );
+}
+
+#[test]
+fn recorded_install_failed_without_pending_records_install_failed() {
+    let env = FakeSettle::default();
+    settle_recorded(&env, INSTALL, Some(SHA), false, NOW);
+    let saved = env.saved.borrow().clone().expect("state saved");
+    assert_eq!(saved.last_result, Some(AutoResult::Failed));
+    assert_eq!(saved.reason_code.as_deref(), Some("install_failed"));
+    assert_eq!(saved.last_target.as_deref(), Some(SHA));
+    assert_eq!(count(&env, &format!("marker:{INSTALL}")), 1);
+    assert_eq!(count(&env, "release"), 1);
+}
+
+#[test]
+fn recorded_install_without_a_known_target_settles_admission_but_records_nothing() {
+    let env = FakeSettle::default();
+    settle_recorded(&env, INSTALL, None, true, NOW);
+    assert!(
+        env.saved.borrow().is_none(),
+        "nothing recorded without a target"
+    );
+    assert_eq!(count(&env, &format!("marker:{INSTALL}")), 1);
+    assert_eq!(count(&env, "release"), 1);
+}
+
+// ---- F2 (validator findings on PR #159): sweep, settle through the memory, admission ----
+
+const STALE: &str = "aaaaaaaaaaaaaaaa";
+
+/// Writes a valid `status.json` of `run_id` in `phase` for the full target [`SHA`], stamped now.
+fn write_status(state: &Path, run_id: &str, phase: &str, percent: u8) {
+    let body = format!(
+        r#"{{"v":1,"run_id":"{run_id}","phase":"{phase}","percent":{percent},"target":"0123456","target_full":"{SHA}","message":"m","method":"exact","ts":{ts}}}"#,
+        ts = now_unix()
+    );
+    write_private_atomic(&status_path(state), body.as_bytes()).expect("status");
+}
+
+/// Removes the stale markers the way the restore sweep does, with the live ids of the state.
+fn sweep(state: &Path, pending: Option<&PendingRun>) {
+    let live = live_marker_ids(state, pending, None);
+    let refs: Vec<&str> = live.iter().map(String::as_str).collect();
+    sweep_stale_markers(state, &refs);
+}
+
+#[test]
+fn f2_finished_install_status_keeps_its_marker_until_it_settles() {
+    let dir = tempfile::tempdir().expect("dir");
+    write_status(dir.path(), INSTALL, "done", 100);
+    assert_eq!(
+        status_target(dir.path(), INSTALL).as_deref(),
+        Some(SHA),
+        "fixture is a readable done status"
+    );
+    AutoMarker::new(dir.path()).write(INSTALL).expect("marker");
+    sweep(dir.path(), None);
+    assert!(
+        AutoMarker::new(dir.path()).exists(INSTALL),
+        "the status run is live for the sweep even when terminal"
+    );
+}
+
+#[test]
+fn f2_restore_sweep_then_done_report_records_updated_and_releases_once() {
+    let dir = tempfile::tempdir().expect("dir");
+    write_status(dir.path(), INSTALL, "done", 100);
+    AutoMarker::new(dir.path()).write(INSTALL).expect("marker");
+    fs::write(plist_path(dir.path(), INSTALL), b"plist").expect("plist");
+    sweep(dir.path(), None);
+    let env = FakeSettle::default();
+    let target = status_target(dir.path(), INSTALL);
+    let report = TerminalReport {
+        run_id: INSTALL,
+        pending: None,
+        phase: RunPhase::Done,
+        percent: 100,
+        marker_exists: AutoMarker::new(dir.path()).exists(INSTALL),
+        remembered: None,
+        status_target: target.as_deref(),
+        now: NOW,
+    };
+    assert_eq!(
+        settle_terminal(&env, &report),
+        TerminalAction::FinishRecorded
+    );
+    let saved = env.saved.borrow().clone().expect("updated recorded");
+    assert_eq!(saved.last_result, Some(AutoResult::Updated));
+    assert_eq!(saved.last_target.as_deref(), Some(SHA));
+    assert_eq!(count(&env, &format!("marker:{INSTALL}")), 1, "marker once");
+    assert_eq!(count(&env, "release"), 1, "admission released once");
+}
+
+#[test]
+fn f2_build_marker_with_a_plist_and_no_status_survives_restore() {
+    let dir = tempfile::tempdir().expect("dir");
+    AutoMarker::new(dir.path()).write(RUN).expect("marker");
+    fs::write(plist_path(dir.path(), RUN), b"plist").expect("plist");
+    AutoMarker::new(dir.path())
+        .write(STALE)
+        .expect("stale marker");
+    sweep(dir.path(), None);
+    assert!(AutoMarker::new(dir.path()).exists(RUN), "build marker kept");
+    assert!(
+        !AutoMarker::new(dir.path()).exists(STALE),
+        "stale marker swept"
+    );
+}
+
+/// The gate lease and job reservation a commit holds, taken the way the commit takes them.
+fn held_admission() -> (Arc<OwnershipGate>, Arc<JobManager>, UpdateAdmission) {
+    let gate = OwnershipGate::new();
+    let jobs = JobManager::new();
+    let admission = UpdateAdmission::new();
+    admission
+        .hold_with(
+            || gate.try_acquire(Owner::Updater).map_err(|_| ()),
+            || jobs.try_reserve_for_update().map_err(|_| ()),
+        )
+        .expect("held");
+    (gate, jobs, admission)
+}
+
+/// Settle effects over the real admission: `release` releases the real guards.
+struct AdmissionSettle<'a> {
+    admission: &'a UpdateAdmission,
+    saved: RefCell<Option<AutoState>>,
+}
+
+impl SettleEnv for AdmissionSettle<'_> {
+    fn previous(&self) -> AutoState {
+        AutoState::default()
+    }
+    fn save(&self, state: &AutoState) {
+        *self.saved.borrow_mut() = Some(state.clone());
+    }
+    fn remove_marker(&self, _run_id: &str) {}
+    fn remove_pending(&self) {}
+    fn release(&self) {
+        self.admission.release();
+    }
+    fn announce(&self) {}
+}
+
+/// Settles a manual install whose record and marker are gone, through its commit memory.
+fn settle_manual_install(phase: RunPhase, percent: u8) -> (AutoState, bool, bool) {
+    let dir = tempfile::tempdir().expect("dir");
+    let run = committing_run(dir.path());
+    let memory = install_memory(&run);
+    let (gate, jobs, admission) = held_admission();
+    let env = AdmissionSettle {
+        admission: &admission,
+        saved: RefCell::new(None),
+    };
+    let report = TerminalReport {
+        run_id: INSTALL,
+        pending: None,
+        phase,
+        percent,
+        marker_exists: false,
+        remembered: memory.as_ref(),
+        status_target: None,
+        now: NOW,
+    };
+    assert_eq!(
+        settle_terminal(&env, &report),
+        TerminalAction::FinishRecorded
+    );
+    let saved = env.saved.borrow().clone().expect("settled state recorded");
+    let gate_free = gate.try_acquire(Owner::Updater).is_ok();
+    let jobs_free = jobs.try_reserve_for_update().is_ok();
+    (saved, gate_free, jobs_free)
+}
+
+#[test]
+fn f2_manual_install_that_fails_after_pending_is_gone_frees_admission() {
+    let (saved, gate_free, jobs_free) = settle_manual_install(RunPhase::Failed, 93);
+    assert_eq!(saved.last_result, Some(AutoResult::Failed));
+    assert_eq!(saved.reason_code.as_deref(), Some("install_failed"));
+    assert_eq!(saved.last_target.as_deref(), Some(SHA));
+    assert!(gate_free, "the gate is free again");
+    assert!(jobs_free, "agent jobs are allowed again");
+}
+
+#[test]
+fn f2_manual_install_that_finishes_after_pending_is_gone_records_updated() {
+    let (saved, gate_free, jobs_free) = settle_manual_install(RunPhase::Done, 100);
+    assert_eq!(saved.last_result, Some(AutoResult::Updated));
+    assert_eq!(saved.last_target.as_deref(), Some(SHA));
+    assert!(gate_free && jobs_free, "admission released");
+}
+
+#[test]
+fn f2_adopted_install_memory_settles_a_failure_after_the_marker_is_swept() {
+    // Restore/adopt of a committing record with its job live: the memory is set from the record.
+    let dir = tempfile::tempdir().expect("dir");
+    let committing = committing_run(dir.path());
+    let memory = install_memory(&committing).expect("adopted install remembered");
+    assert_eq!(memory.run_id, INSTALL);
+    assert_eq!(memory.target, SHA);
+    let (gate, jobs, admission) = held_admission();
+    let env = AdmissionSettle {
+        admission: &admission,
+        saved: RefCell::new(None),
+    };
+    let report = TerminalReport {
+        run_id: INSTALL,
+        pending: None,
+        phase: RunPhase::Failed,
+        percent: 93,
+        marker_exists: false,
+        remembered: Some(&memory),
+        status_target: None,
+        now: NOW,
+    };
+    settle_terminal(&env, &report);
+    let saved = env.saved.borrow().clone().expect("recorded");
+    assert_eq!(saved.reason_code.as_deref(), Some("install_failed"));
+    assert!(gate.try_acquire(Owner::Updater).is_ok());
+    assert!(jobs.try_reserve_for_update().is_ok());
+}
+
+#[test]
+fn f2_unremembered_terminal_without_marker_is_ignored() {
+    let env = FakeSettle::default();
+    let report = TerminalReport {
+        run_id: INSTALL,
+        pending: None,
+        phase: RunPhase::Failed,
+        percent: 93,
+        marker_exists: false,
+        remembered: None,
+        status_target: None,
+        now: NOW,
+    };
+    assert_eq!(settle_terminal(&env, &report), TerminalAction::Ignore);
+    assert!(env.calls.borrow().is_empty());
 }

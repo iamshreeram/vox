@@ -487,3 +487,24 @@ fn run_id_in_status_needs_a_valid_run_id_and_nothing_else() {
     assert_eq!(run_id_in_status(b"not json"), None);
     assert_eq!(run_id_in_status(br#"{"run_id":5}"#), None);
 }
+
+#[test]
+fn resting_build_cleanup_boots_out_its_job_and_removes_its_plist_only() {
+    // A finished build job (exit 0, no pid) is still registered and its plist is on disk.
+    let fx = Fixture::new();
+    let state = fx.state_dir();
+    let proxy: Vec<(String, String)> = Vec::new();
+    let control = FakeJobControl::new(JobProbe::Unknown);
+    launch(&control, &fx.inputs(RUN, &proxy)).unwrap();
+    let marker = state.join(format!("run-{RUN}.auto"));
+    fs::write(&marker, b"auto\n").unwrap();
+
+    cleanup_run(&control, &state, RUN).unwrap();
+
+    assert_eq!(*control.bootouts.lock().unwrap(), vec![job_label(RUN)]);
+    assert!(!plist_path(&state, RUN).exists());
+    assert!(
+        marker.exists(),
+        "the build marker is removed with the pending record, not here"
+    );
+}
