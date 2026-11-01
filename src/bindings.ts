@@ -264,28 +264,6 @@ async changeMemoryEnabledSetting(enabled: boolean) : Promise<Result<null, string
     else return { status: "error", error: e  as any };
 }
 },
-async clearConversationMemory() : Promise<Result<number, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("clear_conversation_memory") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async conversationMemoryCount() : Promise<number> {
-    return await TAURI_INVOKE("conversation_memory_count");
-},
-/**
- * Persists the opt-in setting, then bumps the epoch (after the write, on every call).
- */
-async changeConversationMemorySetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_conversation_memory_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 /**
  * Turns conversation records (SQLite) on or off. Off by default.
  */
@@ -1071,12 +1049,6 @@ async getCachedSourceUpdate() : Promise<SourceUpdateInfo | null> {
     return await TAURI_INVOKE("get_cached_source_update");
 },
 /**
- * The latest progress of the running (or last finished) background update.
- */
-async getSourceUpdateProgress() : Promise<UpdateProgress | null> {
-    return await TAURI_INVOKE("get_source_update_progress");
-},
-/**
  * Why an install cannot start right now, or `None` when it can.
  */
 async getSourceUpdateInstallBlocker() : Promise<string | null> {
@@ -1093,6 +1065,32 @@ async startSourceUpdate() : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * The latest progress of the running (or last finished) background update.
+ */
+async getSourceUpdateProgress() : Promise<UpdateProgress | null> {
+    return await TAURI_INVOKE("get_source_update_progress");
+},
+/**
+ * Turns automatic source updates on or off (R6-8, R7-6). The whole read-modify-write runs under
+ * the update coordinator, so it is serialised with the commit sequence. Enabling needs a source
+ * build with update checks on. Turning it off discards a built-but-not-committed update.
+ */
+async changeAutoUpdateSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_auto_update_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The status of the automatic update for the Settings page (R6-8). Built from the settings,
+ * the attempt state, the pending record and the active run. Stable codes only.
+ */
+async getAutoUpdateStatus() : Promise<AutoUpdateStatus> {
+    return await TAURI_INVOKE("get_auto_update_status");
 },
 async getAppDirPath() : Promise<Result<string, string>> {
     try {
@@ -1548,6 +1546,28 @@ async memoryForget(id: number) : Promise<Result<null, string>> {
 async memorySetEnabled(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("memory_set_enabled", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async clearConversationMemory() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_conversation_memory") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async conversationMemoryCount() : Promise<number> {
+    return await TAURI_INVOKE("conversation_memory_count");
+},
+/**
+ * Persists the opt-in setting, then bumps the epoch (after the write, on every call).
+ */
+async changeConversationMemorySetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_conversation_memory_setting", { enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2174,12 +2194,12 @@ async chatHideWindow() : Promise<Result<null, string>> {
  * Stops the conversation session `session_id`, but only while it is still the running one
  * (compare-and-stop). This is the same primitive an orb click uses on an active session
  * (`ActivationDecision::RequestStopIf` -> `ConverseController::stop_if`).
- *  
+ * 
  * Effect: a Running session moves to Draining and its cancel signal is sent. The session task
  * then runs its normal finalizer and ends as `cancelled` (the state goes to idle and the
  * existing system end line is appended). An agent action in flight is ended with the session:
  * the loop releases its agent slot, and the slot's Drop cancels the live agent run once.
- *  
+ * 
  * Returns false and changes nothing when the id is stale or was never the current session, the
  * session is idle, still starting, or already draining. No dictation fallback and no tray path.
  * `converse_stop` is untouched. Only the chat window may call it (live gate `CHAT_COMMANDS`).
@@ -2194,7 +2214,7 @@ async orbPointerDown(id: number) : Promise<void> {
     await TAURI_INVOKE("orb_pointer_down", { id });
 },
 /**
- * Keyboard activation of the orb: toggles the conversation surface.
+ * Keyboard activation of the orb: starts or stops a voice conversation.
  */
 async orbActivate() : Promise<void> {
     await TAURI_INVOKE("orb_activate");
@@ -2428,7 +2448,12 @@ shortcut_activation?: ShortcutActivation;
  * Hold-or-toggle only: a press held at least this long is push-to-talk,
  * anything shorter is a tap that locks recording on.
  */
-hold_threshold_ms?: number; audio_feedback?: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; show_whats_new_on_update?: boolean; 
+hold_threshold_ms?: number; audio_feedback?: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; 
+/**
+ * Opt-in silent source update (R6-8). Off by default. Changed only by
+ * `change_auto_update_setting`; whole-object writers keep the committed value.
+ */
+auto_update_enabled?: boolean; show_whats_new_on_update?: boolean; 
 /**
  * The app version whose What's New the user has already seen. Fresh installs
  * default to the current version (nothing is "new" to them). Existing users
@@ -2832,7 +2857,80 @@ visual_style: VisualStyle;
  */
 orb_accent: OrbColor }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
+/**
+ * Outcome of the last automatic attempt.
+ */
+export type AutoLastResult = 
+/**
+ * No attempt is recorded.
+ */
+"none" | 
+/**
+ * The last attempt installed the update.
+ */
+"updated" | 
+/**
+ * The last attempt failed or was interrupted.
+ */
+"failed" | 
+/**
+ * The last attempt was refused by the policy.
+ */
+"skipped"
+/**
+ * Phase of the automatic update as the Settings page describes it.
+ */
+export type AutoPhase = 
+/**
+ * Nothing is running or waiting.
+ */
+"idle" | 
+/**
+ * A build run is in progress.
+ */
+"building" | 
+/**
+ * A build is staged and waits for a quiet moment.
+ */
+"waiting" | 
+/**
+ * The install job has been started.
+ */
+"installing"
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
+/**
+ * Status of the automatic update for the Settings page. Carries stable codes only, never
+ * free text: `reason_code` is one of the known codes, `target_short` the first eight hex digits.
+ */
+export type AutoUpdateStatus = { 
+/**
+ * The owner switched automatic updates on.
+ */
+enabled: boolean; 
+/**
+ * Enabled and effective in this build (source build, checks on).
+ */
+effective: boolean; 
+/**
+ * Current phase.
+ */
+phase: AutoPhase; 
+/**
+ * Outcome of the last attempt.
+ */
+last_result: AutoLastResult; 
+/**
+ * Stable reason code of a failed or skipped attempt, or `None`.
+ */
+reason_code: string | null; 
+/**
+ * First eight hex digits of the target the status is about, or `None`.
+ */
+target_short: string | null; 
+/**
+ * Unix seconds of the last recorded attempt, or `None`.
+ */
+ts: number | null }
 export type AuxError = "busy" | "cancelled" | "not_installed" | "corrupt" | "url_not_allowed" | "download" | "io"
 /**
  * Payload of `aux-model-finished`: the state after the attempt and the reason, if any.
@@ -3405,6 +3503,10 @@ export type RunPhase =
  */
 "bundling" | 
 /**
+ * Resting: the build is staged and waits for a commit (non-terminal, R7-1).
+ */
+"waiting" | 
+/**
  * Installer staging and swap.
  */
 "installing" | 
@@ -3512,7 +3614,12 @@ note: string | null;
  * Filled in by the caller from [`install_blocker`]; `evaluate_*` leave it
  * `false`/`None`.
  */
-can_install: boolean; install_blocker: string | null }
+can_install: boolean; install_blocker: string | null; 
+/**
+ * True while an automatic attempt on `latest_full` is healthy (R7-7 b): the footer and tray
+ * then treat an `Available` state as idle. Set by the publisher, never by the check itself.
+ */
+auto_pending?: boolean }
 /**
  * Which update flow the footer should use.
  */
@@ -3705,6 +3812,7 @@ name: string;
  * Locale code such as `en_US` or `es_419`.
  */
 locale: string }
+export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 /**
  * What the UI and tray receive for a run.
  */
@@ -3732,8 +3840,12 @@ message: string;
 /**
  * True when the percent is an estimate.
  */
-estimated: boolean }
-export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
+estimated: boolean; 
+/**
+ * True for an automatic run (its `run-<id>.auto` marker exists). The footer and the tray
+ * ignore silent progress; results appear only in the Settings status.
+ */
+silent?: boolean }
 export type VadBackend = "silero" | "earshot"
 /**
  * One preview hit (DESIGN Rev 5, 3.6). Plain text fields only.

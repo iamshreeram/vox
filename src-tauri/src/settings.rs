@@ -835,6 +835,10 @@ pub struct AppSettings {
     pub autostart_enabled: bool,
     #[serde(default = "default_update_checks_enabled")]
     pub update_checks_enabled: bool,
+    /// Opt-in silent source update (R6-8). Off by default. Changed only by
+    /// `change_auto_update_setting`; whole-object writers keep the committed value.
+    #[serde(default = "default_auto_update_enabled")]
+    pub auto_update_enabled: bool,
     #[serde(default = "default_show_whats_new_on_update")]
     pub show_whats_new_on_update: bool,
     /// The app version whose What's New the user has already seen. Fresh installs
@@ -1637,9 +1641,11 @@ pub fn dictation_agent_enabled(s: &AppSettings) -> bool {
 /// the first-run fields, the orb and chat presentation fields (`chat_presentation`,
 /// `orb_visible`, `orb_size`, `orb_size_px`, `orb_position`, `chat_opacity_pct`) and the
 /// appearance fields (`theme`, `custom_theme_colors`, `accent`, `chat_theme`, `visual_style`,
-/// `orb_accent`, changed only by `appearance::commit_appearance`). Returns `incoming` with those fields replaced by the
+/// `orb_accent`, changed only by `appearance::commit_appearance`), and the automatic-update switch
+/// `auto_update_enabled` (changed only by `change_auto_update_setting`). Returns `incoming` with those fields replaced by the
 /// committed values, and every other field as incoming.
 pub fn preserve_launch_fields(mut incoming: AppSettings, committed: &AppSettings) -> AppSettings {
+    incoming.auto_update_enabled = committed.auto_update_enabled;
     incoming.acp_agent_enabled = committed.acp_agent_enabled;
     incoming.acp_dictation_enabled = committed.acp_dictation_enabled;
     incoming.acp_agent_command = committed.acp_agent_command.clone();
@@ -2058,6 +2064,11 @@ fn default_update_checks_enabled() -> bool {
     true
 }
 
+/// Automatic source updates are opt-in: a missing key means off.
+fn default_auto_update_enabled() -> bool {
+    false
+}
+
 fn default_show_whats_new_on_update() -> bool {
     true
 }
@@ -2470,6 +2481,7 @@ pub fn get_default_settings() -> AppSettings {
         start_hidden: default_start_hidden(),
         autostart_enabled: default_autostart_enabled(),
         update_checks_enabled: default_update_checks_enabled(),
+        auto_update_enabled: default_auto_update_enabled(),
         show_whats_new_on_update: default_show_whats_new_on_update(),
         whats_new_last_seen_version: default_whats_new_last_seen_version(),
         selected_model: "".to_string(),
@@ -3007,6 +3019,34 @@ pub fn update_checks_effectively_enabled(settings: &AppSettings) -> bool {
     settings.update_checks_enabled && !update_checks_forced_disabled()
 }
 
+/// Automatic source updates are effective only when the owner opted in, update checks are
+/// effectively on, and this build is a source build (the same test as the rest of the feature).
+pub fn auto_update_effective(settings: &AppSettings) -> bool {
+    let source_build = crate::managers::source_update::current_mode()
+        == crate::managers::source_update::SourceUpdateMode::Source;
+    auto_update_effective_with(settings, source_build)
+}
+
+/// [`auto_update_effective`] with the build flavour passed in, so every rule is testable.
+pub fn auto_update_effective_with(settings: &AppSettings, source_build: bool) -> bool {
+    auto_update_effective_forced(settings, source_build, update_checks_forced_disabled())
+}
+
+/// The rule behind [`auto_update_effective_with`], with the forced-off state passed in.
+fn auto_update_effective_forced(
+    settings: &AppSettings,
+    source_build: bool,
+    forced_off: bool,
+) -> bool {
+    settings.auto_update_enabled && settings.update_checks_enabled && !forced_off && source_build
+}
+
+/// The consent part of [`auto_update_effective`]: the owner's switch and checks being on.
+/// Withdrawing consent means this goes from true to false.
+pub fn auto_update_consent(settings: &AppSettings) -> bool {
+    settings.auto_update_enabled && update_checks_effectively_enabled(settings)
+}
+
 /// Serializes whole-object writes of the stored settings. `write_settings` reads the committed
 /// launch fields and then writes, and that pair must not interleave with another writer.
 static SETTINGS_WRITE_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -3021,23 +3061,52 @@ fn lock_settings_writes() -> std::sync::MutexGuard<'static, ()> {
 /// committed values (Stage 4 A8). A caller that holds a stale whole object (for example one read
 /// before a launch-field change) cannot restore an old executable, flag, hand-off or specialist
 /// profile. Launch fields change only through `write_settings_gated`.
+///
+/// Consent (R7-6): a write that changes `update_checks_enabled` takes the
+/// `UpdateCoordinator` guard for the whole write, so it is serialised with the auto-update
+/// commit sequence. Every other write does not take it. Withdrawing consent (checks or the
+/// automatic switch turned off) also discards a built-but-not-committed auto update.
+///
+/// Must not be called while the coordinator guard is held by the same thread (the guard is not
+/// re-entrant). Code that already holds it writes with `write_settings_gated` instead.
 pub fn write_settings(app: &AppHandle, incoming: AppSettings) {
     let store = app
         .store(crate::portable::store_path(SETTINGS_STORE_PATH))
         .expect("Failed to initialize store");
-    let _guard = lock_settings_writes();
-    let settings = match store.get("settings") {
-        Some(stored) => {
-            let committed = serde_json::from_value::<AppSettings>(stored.clone())
-                .unwrap_or_else(|_| salvage_settings(&stored));
-            merge_for_write(incoming, &committed)
+    let checks_change = read_committed(&store)
+        .is_some_and(|committed| committed.update_checks_enabled != incoming.update_checks_enabled);
+    let coordinator =
+        checks_change.then(|| crate::managers::source_update_auto::update_coordinator().guard());
+    let withdrawn = {
+        let _guard = lock_settings_writes();
+        let committed = read_committed(&store);
+        let settings = match &committed {
+            Some(committed) => merge_for_write(incoming, committed),
+            None => incoming,
+        };
+        let withdrawn = committed
+            .as_ref()
+            .is_some_and(|c| auto_update_consent(c) && !auto_update_consent(&settings));
+        match serde_json::to_value(&settings) {
+            Ok(value) => store.set("settings", value),
+            Err(e) => {
+                warn!("Failed to serialize settings ({e}); the stored settings are unchanged")
+            }
         }
-        None => incoming,
+        withdrawn
     };
-    match serde_json::to_value(&settings) {
-        Ok(value) => store.set("settings", value),
-        Err(e) => warn!("Failed to serialize settings ({e}); the stored settings are unchanged"),
+    drop(coordinator);
+    if withdrawn {
+        crate::managers::source_update_auto::consent::on_consent_withdrawn(app);
     }
+}
+
+/// The committed settings object as stored, or `None` when none is stored yet.
+fn read_committed(store: &tauri_plugin_store::Store<tauri::Wry>) -> Option<AppSettings> {
+    store.get("settings").map(|stored| {
+        serde_json::from_value::<AppSettings>(stored.clone())
+            .unwrap_or_else(|_| salvage_settings(&stored))
+    })
 }
 
 /// Changes launch-affecting settings (Stage 4 A3-R3, A8). `apply` runs on the settings read
@@ -3873,6 +3942,68 @@ mod tests {
         assert_eq!(settings.orb_size_px, Some(180));
         assert!(settings.ambient_mode_enabled);
         assert_eq!(settings.overlay_style, OverlayStyle::Live);
+    }
+
+    #[test]
+    fn auto_update_is_off_by_default() {
+        assert!(!get_default_settings().auto_update_enabled);
+    }
+
+    #[test]
+    fn auto_update_key_missing_from_old_settings_reads_as_off() {
+        let mut value = serde_json::to_value(get_default_settings()).unwrap();
+        value.as_object_mut().unwrap().remove("auto_update_enabled");
+        let settings: AppSettings = serde_json::from_value(value).unwrap();
+        assert!(!settings.auto_update_enabled);
+    }
+
+    #[test]
+    fn auto_update_switch_round_trips_through_json() {
+        let mut settings = get_default_settings();
+        settings.auto_update_enabled = true;
+        let value = serde_json::to_value(&settings).unwrap();
+        assert_eq!(value["auto_update_enabled"], serde_json::json!(true));
+        let back: AppSettings = serde_json::from_value(value).unwrap();
+        assert!(back.auto_update_enabled);
+    }
+
+    #[test]
+    fn whole_object_writes_keep_the_committed_auto_update_switch() {
+        let committed = get_default_settings();
+        let mut incoming = get_default_settings();
+        incoming.auto_update_enabled = true;
+        assert!(!preserve_launch_fields(incoming, &committed).auto_update_enabled);
+    }
+
+    #[test]
+    fn auto_update_needs_switch_checks_and_a_source_build() {
+        let mut settings = get_default_settings();
+        settings.auto_update_enabled = true;
+        settings.update_checks_enabled = true;
+        assert!(auto_update_effective_forced(&settings, true, false));
+        assert!(
+            !auto_update_effective_forced(&settings, false, false),
+            "plugin build"
+        );
+        settings.update_checks_enabled = false;
+        assert!(
+            !auto_update_effective_forced(&settings, true, false),
+            "checks off"
+        );
+        settings.update_checks_enabled = true;
+        settings.auto_update_enabled = false;
+        assert!(
+            !auto_update_effective_forced(&settings, true, false),
+            "switch off"
+        );
+    }
+
+    #[test]
+    fn forced_off_updater_makes_auto_update_ineffective() {
+        let mut settings = get_default_settings();
+        settings.auto_update_enabled = true;
+        settings.update_checks_enabled = true;
+        assert!(!auto_update_effective_forced(&settings, true, true));
     }
 
     #[test]

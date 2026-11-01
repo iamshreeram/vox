@@ -137,6 +137,10 @@ pub struct UpdateProgress {
     pub message: String,
     /// True when the percent is an estimate.
     pub estimated: bool,
+    /// True for an automatic run (its `run-<id>.auto` marker exists). The footer and the tray
+    /// ignore silent progress; results appear only in the Settings status.
+    #[serde(default)]
+    pub silent: bool,
 }
 
 impl From<&RunStatus> for UpdateProgress {
@@ -148,6 +152,7 @@ impl From<&RunStatus> for UpdateProgress {
             target: status.target.clone(),
             message: status.message.clone(),
             estimated: status.method == StatusMethod::Estimated,
+            silent: false,
         }
     }
 }

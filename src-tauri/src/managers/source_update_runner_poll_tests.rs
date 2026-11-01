@@ -253,6 +253,7 @@ fn first_progress_refreshes_the_tray_and_publish_precedes_it() {
                 target: "0123456".to_string(),
                 message: "start".to_string(),
                 estimated: false,
+                silent: false,
             }),
             Effect::RefreshTray,
         ]

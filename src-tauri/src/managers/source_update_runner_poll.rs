@@ -343,6 +343,7 @@ fn failed_progress(state: &PollState, message: &str) -> UpdateProgress {
             target: String::new(),
             message: String::new(),
             estimated: false,
+            silent: false,
         });
     UpdateProgress {
         phase: RunPhase::Failed,

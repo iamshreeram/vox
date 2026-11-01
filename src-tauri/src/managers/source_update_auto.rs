@@ -18,6 +18,13 @@ use serde_json::{json, Map, Value};
 
 use super::source_update_runner::{is_lower_hex, write_private_atomic};
 
+/// Consent-dependent state: markers, silent and auto-pending flags, cleanup, manual conversion.
+#[path = "source_update_consent.rs"]
+pub mod consent;
+/// Settings and footer status of the automatic update, and its change event.
+#[path = "source_update_status.rs"]
+pub mod status;
+
 /// Quiet time required before an automatic start (R6-5).
 pub const AUTO_IDLE_SECS: u64 = 60;
 /// A failed or cancelled target is not retried for this long (R6-6).
@@ -507,6 +514,14 @@ impl UpdateCoordinator {
             Err(std::sync::TryLockError::WouldBlock)
         )
     }
+}
+
+/// The one process-wide coordinator (R7-6).
+static COORDINATOR: UpdateCoordinator = UpdateCoordinator::new();
+
+/// The process-wide [`UpdateCoordinator`] shared by the commit sequence and consent changes.
+pub fn update_coordinator() -> &'static UpdateCoordinator {
+    &COORDINATOR
 }
 
 #[cfg(test)]

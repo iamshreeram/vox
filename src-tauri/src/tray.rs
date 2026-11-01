@@ -857,8 +857,12 @@ fn update_slot(inputs: &MenuInputs, forced_disabled: bool) -> UpdateSlot {
     }
 }
 
-/// Tray view of a progress: none once done, failed or progress otherwise.
+/// Tray view of a progress: none once done, failed or progress otherwise. Silent progress (an
+/// automatic run) has no tray view at all, in any phase (R6-7).
 pub fn tray_progress_from(progress: &UpdateProgress) -> Option<TrayUpdateProgress> {
+    if progress.silent {
+        return None;
+    }
     match progress.phase {
         RunPhase::Done => None,
         RunPhase::Failed => Some(TrayUpdateProgress {
@@ -1281,6 +1285,7 @@ mod update_progress_item_tests {
             target: "0123456".to_string(),
             message: String::new(),
             estimated: false,
+            silent: false,
         }
     }
 
@@ -1350,6 +1355,35 @@ mod update_progress_item_tests {
     #[test]
     fn done_has_no_tray_item() {
         assert_eq!(tray_progress_from(&progress(RunPhase::Done, 100)), None);
+    }
+
+    #[test]
+    fn silent_progress_has_no_tray_item_in_any_phase() {
+        for phase in [
+            RunPhase::Preparing,
+            RunPhase::Compiling,
+            RunPhase::Waiting,
+            RunPhase::Installing,
+            RunPhase::Failed,
+            RunPhase::Done,
+        ] {
+            let silent = UpdateProgress {
+                silent: true,
+                ..progress(phase, 55)
+            };
+            assert_eq!(tray_progress_from(&silent), None, "{phase:?}");
+        }
+    }
+
+    #[test]
+    fn manual_waiting_run_shows_the_generic_progress() {
+        assert_eq!(
+            tray_progress_from(&progress(RunPhase::Waiting, 60)),
+            Some(TrayUpdateProgress {
+                percent: 60,
+                failed: false
+            })
+        );
     }
 
     #[test]

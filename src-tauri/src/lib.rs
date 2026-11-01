@@ -1320,6 +1320,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::source_update::get_source_update_install_blocker,
             commands::source_update::start_source_update,
             commands::source_update::get_source_update_progress,
+            commands::source_update::change_auto_update_setting,
+            commands::source_update::get_auto_update_status,
             commands::get_app_dir_path,
             commands::get_app_settings,
             commands::get_default_settings,
