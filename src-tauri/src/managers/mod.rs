@@ -112,6 +112,8 @@ pub mod converse_queue;
 mod converse_rag_probe_tests;
 #[cfg(test)]
 mod converse_rag_tests;
+#[cfg(test)]
+mod converse_reply_lang_tests;
 pub mod converse_role;
 pub mod converse_runtime;
 pub mod converse_stream;
