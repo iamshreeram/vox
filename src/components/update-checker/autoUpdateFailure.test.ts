@@ -66,7 +66,10 @@ const cases: Record<string, () => void> = {
   },
   "the dismissed failure stays hidden, a newer one shows again"() {
     assert.equal(autoUpdateFailureNotice(status(), 1700000000), null);
-    const again = autoUpdateFailureNotice(status({ ts: 1700000500 }), 1700000000);
+    const again = autoUpdateFailureNotice(
+      status({ ts: 1700000500 }),
+      1700000000,
+    );
     assert.equal(again?.ts, 1700000500);
   },
   "unknown or missing reason codes use the generic reason"() {
@@ -114,5 +117,7 @@ for (const [name, run] of Object.entries(cases)) {
     console.error(`FAIL - ${name}\n${error}`);
   }
 }
-console.log(`${Object.keys(cases).length - failed}/${Object.keys(cases).length} passed`);
+console.log(
+  `${Object.keys(cases).length - failed}/${Object.keys(cases).length} passed`,
+);
 if (failed > 0) process.exit(1);
