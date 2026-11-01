@@ -25,3 +25,6 @@ src-tauri/tests/fixtures/voice
 
 # Hand-styled single-file manual test guide; its structure is checked by docs/manual-testing/check-guide.mjs
 docs/manual-testing/experimental-features.html
+
+# Generated Tamil voice goldens (scripts/tamil_tts_golden.py) stay exactly as the script writes them
+src-tauri/tests/fixtures/tamil

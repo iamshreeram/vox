@@ -959,6 +959,10 @@ pub struct AppSettings {
     /// Curated natural voice id (see `managers::natural_voices`); unknown ids mean the default.
     #[serde(default = "default_tts_natural_voice")]
     pub tts_natural_voice: String,
+    /// Speak Tamil text with the Tamil neural voice when its pack is installed. A missing key
+    /// means on.
+    #[serde(default = "default_tts_tamil_enabled")]
+    pub tts_tamil_enabled: bool,
     /// Speech composer (spoken-reply summarizer). See docs/spoken-replies.md.
     #[serde(default)]
     pub tts_composer_mode: crate::managers::composer_config::TtsComposerMode,
@@ -1852,6 +1856,11 @@ fn default_tts_natural_voice() -> String {
     crate::managers::natural_engine::DEFAULT_NATURAL_VOICE.to_string()
 }
 
+/// Serde default for `tts_tamil_enabled`: on for stores that lack the key.
+fn default_tts_tamil_enabled() -> bool {
+    true
+}
+
 /// Which engine speaks spoken replies.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
@@ -2525,6 +2534,7 @@ pub fn get_default_settings() -> AppSettings {
         tts_rate_wpm: default_tts_rate_wpm(),
         tts_engine: TtsEngine::default(),
         tts_natural_voice: default_tts_natural_voice(),
+        tts_tamil_enabled: default_tts_tamil_enabled(),
         tts_composer_mode: Default::default(),
         tts_composer_provider_id: default_tts_composer_provider_id(),
         tts_composer_model: String::new(),
@@ -3561,6 +3571,33 @@ mod tests {
         let loaded: AppSettings = serde_json::from_value(settings).unwrap();
         assert_eq!(loaded.tts_engine, TtsEngine::System);
         assert_eq!(loaded.tts_natural_voice, "af_heart");
+    }
+
+    #[test]
+    fn tamil_voice_setting_is_on_by_default() {
+        assert!(get_default_settings().tts_tamil_enabled);
+    }
+
+    #[test]
+    fn tamil_voice_setting_defaults_on_when_missing_from_legacy_settings() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("tts_tamil_enabled");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(loaded.tts_tamil_enabled);
+    }
+
+    #[test]
+    fn tamil_voice_setting_false_survives_a_round_trip() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings["tts_tamil_enabled"] = serde_json::Value::Bool(false);
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.tts_tamil_enabled);
+        let again: AppSettings =
+            serde_json::from_value(serde_json::to_value(&loaded).unwrap()).unwrap();
+        assert!(!again.tts_tamil_enabled);
     }
 
     #[test]

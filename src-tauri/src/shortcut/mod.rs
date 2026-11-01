@@ -1372,6 +1372,23 @@ pub fn change_tts_natural_voice_setting(app: AppHandle, voice: String) -> Result
     Ok(())
 }
 
+/// Sets whether Tamil text is spoken with the Tamil neural voice on `settings`. Pure, so the
+/// stored value can be tested without Tauri. The router reads the live value per burst, so no
+/// speech reset is needed (a running Tamil burst is not cut by this switch).
+pub fn apply_tts_tamil_enabled(settings: &mut crate::settings::AppSettings, enabled: bool) {
+    settings.tts_tamil_enabled = enabled;
+}
+
+/// Stores whether Tamil text is spoken with the Tamil neural voice when its pack is installed.
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_tamil_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    apply_tts_tamil_enabled(&mut settings, enabled);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// Speaks a short test phrase with the saved voice and rate. Works even when
 /// spoken replies are disabled so the user can audition a voice first. The
 /// text is never logged.
@@ -2355,8 +2372,18 @@ mod tests {
 
 #[cfg(test)]
 mod tts_command_tests {
-    use super::{normalize_tts_voice, tts_error_message};
+    use super::{apply_tts_tamil_enabled, normalize_tts_voice, tts_error_message};
     use crate::managers::tts::TtsError;
+
+    #[test]
+    fn tamil_switch_stores_false_and_true() {
+        let mut settings = crate::settings::get_default_settings();
+        assert!(settings.tts_tamil_enabled);
+        apply_tts_tamil_enabled(&mut settings, false);
+        assert!(!settings.tts_tamil_enabled);
+        apply_tts_tamil_enabled(&mut settings, true);
+        assert!(settings.tts_tamil_enabled);
+    }
 
     #[test]
     fn missing_or_blank_voice_means_system_default() {

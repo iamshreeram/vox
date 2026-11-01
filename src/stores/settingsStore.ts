@@ -473,6 +473,8 @@ const settingUpdaters: {
   tts_engine: (value) => commands.changeTtsEngineSetting(value as TtsEngine),
   tts_natural_voice: (value) =>
     commands.changeTtsNaturalVoiceSetting(value as string),
+  tts_tamil_enabled: (value) =>
+    commands.changeTtsTamilEnabledSetting(value as boolean),
   converse_silence_ms: (value) =>
     commands.changeConverseSilenceMsSetting(value as number),
   converse_barge_in: async (value) => {

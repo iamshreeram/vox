@@ -132,4 +132,4 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development and personal-repository
 
 ## License
 
-See [`LICENSE`](LICENSE).
+See [`LICENSE`](LICENSE). Third-party model and code credits, with their licences: [`docs/NOTICE.md`](docs/NOTICE.md).

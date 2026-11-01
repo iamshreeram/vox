@@ -6,8 +6,9 @@
 #![allow(dead_code)]
 
 use crate::managers::emotion::Emotion;
-use crate::managers::natural_chunk::{is_mostly_latin, is_probably_english};
+use crate::managers::natural_chunk::{is_mostly_latin, is_mostly_tamil, is_probably_english};
 use crate::managers::natural_engine::NaturalHealth;
+use crate::managers::natural_text::has_speakable_tamil;
 use crate::managers::tts::{SpeechBackend, SpeechHandle};
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -32,6 +33,21 @@ pub struct RouterConfig {
     pub model_ready: Arc<dyn Fn() -> bool + Send + Sync>,
     /// True when the Phonon model files are installed and its voice is usable.
     pub phonon_ready: Arc<dyn Fn() -> bool + Send + Sync>,
+}
+
+/// The Tamil peer route (R2-A, R4 amendment), attached with `EngineBackend::with_tamil_route`.
+/// It mirrors the Phonon peer: `backend` is the queue-capable Tamil speaker and `health` its own
+/// health. `enabled` and `ready` are read on every call (like `RouterChoice`), so the toggle and
+/// the pack state apply at once.
+pub struct TamilRoute {
+    /// The Tamil speaker (`QueueBackend` over the Tamil core in production).
+    pub backend: Box<dyn SpeechBackend>,
+    /// The Tamil engine health, independent of Phonon's and Kokoro's.
+    pub health: Arc<NaturalHealth>,
+    /// `tts_tamil_enabled` (live setting).
+    pub enabled: Arc<dyn Fn() -> bool + Send + Sync>,
+    /// True when the Tamil pack is installed and usable.
+    pub ready: Arc<dyn Fn() -> bool + Send + Sync>,
 }
 
 /// Routes (all `SpeechBackend`s): `system` = today's system backend; `system_queue` = a
@@ -69,6 +85,14 @@ pub struct RouterConfig {
 ///   EVERY route's last handle (never stopping early after one failure), clears the tracked
 ///   handles and returns true only if all confirmed.
 /// * `stop_all()` does the same as `kill()` without needing a handle.
+/// * Tamil (`with_tamil_route`, R2-A and the R4 amendment): a burst START chooses TAMIL first, iff
+///   the route is active (`enabled()` and `ready()`), its health is Ready after the automatic
+///   retry, and `is_mostly_tamil(text)`. A running TAMIL burst is pinned like Phonon, except that a
+///   sentence with nothing speakable is an intentional skip (`tamil_skipped_unspeakable`).
+///   Tracking mode: when Tamil is active or speaking (and no peer is selected) every route's speech
+///   is tracked, so English is tracked too (handle identity passthrough is relaxed there). A spawn
+///   that targets TAMIL, or arrives while TAMIL runs, first stops every tracked route; an
+///   unconfirmed stop returns `WouldBlock` without starting a new route.
 pub struct EngineBackend {
     system: Box<dyn SpeechBackend>,
     system_queue: Box<dyn SpeechBackend>,
@@ -78,6 +102,8 @@ pub struct EngineBackend {
     phonon_health: Arc<NaturalHealth>,
     config: RouterConfig,
     shared: Arc<Shared>,
+    /// The Tamil peer route; `None` unless attached with `with_tamil_route`.
+    tamil: Option<TamilRoute>,
 }
 
 /// Slot indices into `Shared::tracked`.
@@ -85,14 +111,17 @@ const NATURAL: usize = 0;
 const PHONON: usize = 1;
 const SYSTEM: usize = 2;
 const SYSTEM_QUEUE: usize = 3;
+const TAMIL: usize = 4;
 
-type Slots = [Option<Box<dyn SpeechHandle>>; 4];
+type Slots = [Option<Box<dyn SpeechHandle>>; 5];
 
 /// Router-wide state shared by the router and every handle it returned.
 struct Shared {
-    /// Last handle returned by each route (natural, phonon, system, system_queue).
+    /// Last handle returned by each route (natural, phonon, system, system_queue, tamil).
     tracked: Mutex<Slots>,
     dropped: AtomicUsize,
+    /// Intentionally skipped Tamil enqueues (nothing speakable, R2-B).
+    tamil_skipped: AtomicUsize,
 }
 
 impl Shared {
@@ -103,18 +132,7 @@ impl Shared {
     /// Kills every tracked handle (no early return); clears confirmed slots and keeps the
     /// unconfirmed ones so `is_running` keeps polling them. True only if all confirmed.
     fn kill_all(&self) -> bool {
-        let mut slots = self.lock();
-        let mut all_ok = true;
-        for slot in slots.iter_mut() {
-            if let Some(handle) = slot.as_mut() {
-                if handle.kill() {
-                    *slot = None;
-                } else {
-                    all_ok = false;
-                }
-            }
-        }
-        all_ok
+        kill_slots(&mut self.lock())
     }
 
     fn any_running(&self) -> bool {
@@ -135,6 +153,22 @@ impl Shared {
             .as_mut()
             .is_some_and(|handle| handle.is_running())
     }
+}
+
+/// Kills every tracked handle (no early return); clears confirmed slots and keeps the
+/// unconfirmed ones so `is_running` keeps polling them. True only if all confirmed.
+fn kill_slots(slots: &mut Slots) -> bool {
+    let mut all_ok = true;
+    for slot in slots.iter_mut() {
+        if let Some(handle) = slot.as_mut() {
+            if handle.kill() {
+                *slot = None;
+            } else {
+                all_ok = false;
+            }
+        }
+    }
+    all_ok
 }
 
 /// Handle over the router-wide state (see `EngineBackend`).
@@ -200,11 +234,25 @@ impl EngineBackend {
             phonon,
             phonon_health,
             config,
+            tamil: None,
             shared: Arc::new(Shared {
-                tracked: Mutex::new([None, None, None, None]),
+                tracked: Mutex::new([None, None, None, None, None]),
                 dropped: AtomicUsize::new(0),
+                tamil_skipped: AtomicUsize::new(0),
             }),
         }
+    }
+
+    /// Attaches the Tamil peer route (builder style). Without this call the router is exactly
+    /// the router without Tamil; existing constructors are unchanged.
+    pub fn with_tamil_route(mut self, route: TamilRoute) -> Self {
+        self.tamil = Some(route);
+        self
+    }
+
+    /// Tamil sentences skipped inside a running Tamil burst because nothing was speakable.
+    pub fn tamil_skipped_unspeakable(&self) -> usize {
+        self.shared.tamil_skipped.load(Ordering::SeqCst)
     }
 
     pub fn stop_all(&self) -> bool {
@@ -224,6 +272,15 @@ impl EngineBackend {
     /// The Phonon route exists and Phonon is selected.
     fn phonon_on(&self, choice: &RouterChoice) -> bool {
         choice.phonon && self.phonon.is_some()
+    }
+
+    /// Tracking mode (R4 amendment): the router tracks every speech it starts. True when a peer
+    /// is selected, or when the Tamil route is active or currently speaking. Otherwise the router
+    /// is a pure passthrough (the system's own handles, no wrapping), exactly as before.
+    fn tracking_on(&self, choice: &RouterChoice) -> bool {
+        self.natural_on(choice)
+            || self.phonon_on(choice)
+            || (self.tamil.is_some() && (self.tamil_active() || self.shared.running_in(TAMIL)))
     }
 
     /// The peer backend behind a peer slot (`NATURAL` or `PHONON`).
@@ -268,6 +325,18 @@ impl EngineBackend {
                     .system_queue
                     .spawn_styled(text, voice, rate_wpm, emotion),
             },
+            TAMIL => {
+                // The Tamil route takes no voice (one bundled voice, like Phonon).
+                let backend = self
+                    .tamil
+                    .as_ref()
+                    .map(|route| route.backend.as_ref())
+                    .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))?;
+                match via {
+                    Via::Enqueue => backend.enqueue_styled(text, None, rate_wpm, emotion),
+                    _ => backend.spawn_styled(text, None, rate_wpm, emotion),
+                }
+            }
             _ => {
                 // Peer routes: Natural takes the chosen voice, Phonon ignores voices.
                 let backend = self
@@ -283,7 +352,30 @@ impl EngineBackend {
     }
 
     /// The route for the first sentence of a burst that has no running route yet.
+    /// Tamil is active (`enabled()` and `ready()`, read now) and the Tamil route exists.
+    fn tamil_active(&self) -> bool {
+        self.tamil
+            .as_ref()
+            .is_some_and(|route| (route.enabled)() && (route.ready)())
+    }
+
+    /// Whether the Tamil route is chosen for a burst START: active, healthy after the automatic
+    /// retry (like Phonon) and mostly Tamil. Checked before Phonon and Natural.
+    fn tamil_chosen(&self, text: &str) -> bool {
+        if !self.tamil_active() {
+            return false;
+        }
+        let Some(route) = self.tamil.as_ref() else {
+            return false;
+        };
+        route.health.maybe_auto_retry(Instant::now());
+        route.health.is_ready() && is_mostly_tamil(text)
+    }
+
     fn first_sentence_slot(&self, choice: &RouterChoice, text: &str, via: Via) -> usize {
+        if self.tamil_chosen(text) {
+            return TAMIL;
+        }
         if self.phonon_on(choice) {
             self.phonon_health.maybe_auto_retry(Instant::now());
             if self.phonon_health.is_ready()
@@ -300,9 +392,11 @@ impl EngineBackend {
             }
             return self.fallback_slot();
         }
-        // Phonon selected but not eligible: the system voice, unchanged for spawns.
+        // Phonon selected but not eligible: the system voice, unchanged for spawns. With no peer
+        // selected (only a Tamil route tracking the system) both spawn and enqueue use the system
+        // slot itself, so an enqueue is refused exactly as the system refuses it.
         match via {
-            Via::Enqueue => self.fallback_slot(),
+            Via::Enqueue if self.phonon_on(choice) => self.fallback_slot(),
             _ => SYSTEM,
         }
     }
@@ -340,16 +434,32 @@ impl EngineBackend {
                 self.shared.dropped.fetch_add(1, Ordering::SeqCst);
                 return Ok(routed());
             }
+            // A running Tamil burst: a sentence with nothing speakable is an intentional skip
+            // (R2-B). Nothing is submitted; health and pending state are not touched.
+            Some(TAMIL) if !has_speakable_tamil(text) => {
+                self.shared.tamil_skipped.fetch_add(1, Ordering::SeqCst);
+                return Ok(routed());
+            }
             // A running Phonon burst keeps every sentence, even a non-English one (documented
             // trade-off: the first sentence's decision stands for the whole burst).
             Some(index) => index,
             None => self.first_sentence_slot(choice, text, via),
         };
+        // A spawn that targets Tamil, or arrives while Tamil runs, first stops EVERY tracked route
+        // (no early return). An unconfirmed stop refuses the new route with WouldBlock.
+        if via != Via::Enqueue {
+            let tamil_running = slots[TAMIL]
+                .as_mut()
+                .is_some_and(|handle| handle.is_running());
+            if (chosen == TAMIL || tamil_running) && !kill_slots(&mut slots) {
+                return Err(io::Error::from(io::ErrorKind::WouldBlock));
+            }
+        }
         let call =
             |slot: usize| self.call_slot(slot, &choice.voice, text, voice, rate_wpm, emotion, via);
         let (slot, result) = match call(chosen) {
             Err(err)
-                if (chosen == NATURAL || chosen == PHONON)
+                if (chosen == NATURAL || chosen == PHONON || chosen == TAMIL)
                     && err.kind() != io::ErrorKind::WouldBlock =>
             {
                 let fallback = self.fallback_slot();
@@ -373,7 +483,7 @@ impl EngineBackend {
         let choice = (self.config.choice)();
         // The Phonon pin is checked BEFORE the choice: a running Phonon burst is never moved.
         let phonon_burst = via == Via::Enqueue && self.shared.running_in(PHONON);
-        if phonon_burst || self.natural_on(&choice) || self.phonon_on(&choice) {
+        if phonon_burst || self.tracking_on(&choice) {
             return self.start(&choice, text, voice, rate_wpm, emotion, via);
         }
         match via {
@@ -402,6 +512,10 @@ impl SpeechBackend for EngineBackend {
     ) -> io::Result<Box<dyn SpeechHandle>> {
         self.route(text, voice, rate_wpm, emotion, Via::Styled)
     }
+    /// Queue capability. It reads only the choice (`natural_on` / `phonon_on`) and the system
+    /// backend's own answer. It never reads `self.tamil`, `tamil_active()` or the TAMIL slot, so
+    /// Tamil activity cannot change it. Reason (R2-A): converse_queue opens its streaming session
+    /// through `TtsManager::queue_capable()` before any sentence exists.
     fn supports_queue(&self) -> bool {
         let choice = (self.config.choice)();
         if self.natural_on(&choice) || self.phonon_on(&choice) {
