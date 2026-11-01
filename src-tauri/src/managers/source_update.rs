@@ -947,7 +947,7 @@ pub async fn start_update(app: &AppHandle) -> Result<(), String> {
     }
     let config = match launch_run(app, &lock_dir, &target, false) {
         Ok(config) => config,
-        Err(message) => {
+        Err((message, _)) => {
             runtime.guard.release();
             return Err(message);
         }
@@ -987,19 +987,21 @@ async fn commit_built_now(app: &AppHandle) -> Result<(), String> {
 /// Starts the automatic build of `target` (R6-5): the single-phase launch with the auto marker
 /// written before the job starts. It never attaches and never publishes a notice; progress is
 /// silent. Refused by the launch itself while a pending record, a registered run or the lock exists.
-pub fn start_auto_build(app: &AppHandle, target: &str) -> Result<(), String> {
+///
+/// A refusal is typed (issue #160): a Busy refusal is a wait for the driver, anything else a failure.
+pub fn start_auto_build(app: &AppHandle, target: &str) -> Result<(), driver::LaunchRefusal> {
     let runtime = app
         .try_state::<SourceUpdateRuntime>()
-        .ok_or_else(|| NOT_READY.to_string())?;
+        .ok_or(driver::LaunchRefusal::Failed)?;
     if !runtime.guard.try_acquire(Instant::now()) {
-        return Err(LAUNCH_BUSY.to_string());
+        return Err(driver::LaunchRefusal::Busy);
     }
     let lock_dir = PathBuf::from(update_lock_path());
     let config = match launch_run(app, &lock_dir, target, true) {
         Ok(config) => config,
-        Err(message) => {
+        Err((_, refusal)) => {
             runtime.guard.release();
-            return Err(message);
+            return Err(refusal);
         }
     };
     cache_progress(
@@ -1027,10 +1029,10 @@ fn launch_run(
     lock_dir: &Path,
     target: &str,
     auto: bool,
-) -> Result<PollerConfig, String> {
+) -> Result<PollerConfig, (String, driver::LaunchRefusal)> {
     let fail = |reason: String| {
         warn!("update launch failed: {reason}");
-        LAUNCH_FAILED.to_string()
+        (LAUNCH_FAILED.to_string(), driver::LaunchRefusal::Failed)
     };
     let app_data = crate::portable::app_data_dir(app).map_err(|e| fail(e.to_string()))?;
     let home = std::env::var("HOME")
@@ -1059,7 +1061,10 @@ fn launch_run(
     } else {
         launch(&control, &inputs)
     }
-    .map_err(|e| fail(e.to_string()))?;
+    .map_err(|e| {
+        let refusal = driver::launch_refusal_of(&e);
+        (fail(e.to_string()).0, refusal)
+    })?;
     Ok(PollerConfig {
         run_id,
         label: launched.label,

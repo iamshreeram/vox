@@ -33,7 +33,7 @@ use crate::managers::source_update_auto::consent::{
 use crate::managers::source_update_auto::status::emit_auto_update_changed;
 use crate::managers::source_update_auto::{
     auto_update_decision, load_auto_state, save_auto_state, should_retry, update_coordinator,
-    AutoDecision, AutoFacts, AutoResult, AutoState, SkipReason, VerifiedState,
+    AutoDecision, AutoFacts, AutoResult, AutoState, SkipReason, VerifiedState, WaitReason,
 };
 use crate::managers::source_update_commit::{revoke_install, CommitEnv, DeferReason, RevokeResult};
 use crate::managers::source_update_commit_env::{
@@ -43,6 +43,7 @@ use crate::managers::source_update_commit_plan::{
     plan_recovery, PendingInput, RecoveryAction, RecoveryInput, StatusInput,
 };
 use crate::managers::source_update_pending::{PendingRun, PendingState, PendingStore};
+use crate::managers::source_update_runner::RunnerError;
 use crate::managers::source_update_runner::{
     is_lower_hex, now_unix, parse_status, proxy_env_from, read_status_bounded, run_id_in_status,
     status_path, update_state_dir, JobControl, JobProbe, LaunchctlJobControl, RunPhase,
@@ -100,6 +101,25 @@ const fn fast() -> Next {
 pub struct DriverMemory {
     last_record: Option<(String, &'static str)>,
     last_defer: Option<DeferReason>,
+    last_wait: Option<&'static str>,
+}
+
+/// Why the launcher refused to start a build (see [`DriverEnv::launch_build`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaunchRefusal {
+    /// The launcher is busy: an update run, a pending record, the lock or a registered run
+    /// exists. A wait, not a failed attempt (issue #160).
+    Busy,
+    /// Any other launch error: a failed attempt.
+    Failed,
+}
+
+/// Pure: the refusal of a launcher error. Only the runner's Busy refusal is a wait (issue #160).
+pub fn launch_refusal_of(error: &RunnerError) -> LaunchRefusal {
+    match error {
+        RunnerError::Busy(_) => LaunchRefusal::Busy,
+        _ => LaunchRefusal::Failed,
+    }
 }
 
 /// Facts gathered for one start decision. Everything except the verified-commit check.
@@ -146,7 +166,7 @@ pub trait DriverEnv {
     /// Runs the verified-commit check for `full_sha`. Only called when everything else says Start.
     fn verify(&self, full_sha: &str) -> VerifiedState;
     /// Starts the automatic build of `target`.
-    fn launch_build(&self, target: &str) -> Result<(), ()>;
+    fn launch_build(&self, target: &str) -> Result<(), LaunchRefusal>;
     /// Persists the attempt state and announces the change.
     fn save_state(&self, state: &AutoState);
     /// An update run is active in this process.
@@ -483,13 +503,24 @@ fn tick_idle<E: DriverEnv>(env: &E, memory: &mut DriverMemory) -> Next {
         (other, _) => other,
     };
     match (decision, facts.target.as_deref()) {
-        (AutoDecision::Start, Some(target)) => {
-            if env.launch_build(target).is_err() {
-                record(env, memory, &facts, target, "spawn_failed");
-            } else {
+        (AutoDecision::Start, Some(target)) => match env.launch_build(target) {
+            Ok(()) => {
+                memory.last_wait = None;
                 mark_started(env, &facts, target);
             }
-        }
+            // Issue #160: a Busy refusal is a wait. Nothing is persisted and there is no backoff;
+            // the next tick retries. The wait is logged once per change.
+            Err(LaunchRefusal::Busy) => {
+                if memory.last_wait != Some(WaitReason::Busy.code()) {
+                    memory.last_wait = Some(WaitReason::Busy.code());
+                    info!("automatic update waits: the launcher is busy");
+                }
+            }
+            Err(LaunchRefusal::Failed) => {
+                memory.last_wait = None;
+                record(env, memory, &facts, target, "spawn_failed");
+            }
+        },
         (other, Some(target)) => record(env, memory, &facts, target, other.code()),
         (_, None) => {}
     }
@@ -1300,8 +1331,8 @@ impl DriverEnv for AppDriverEnv<'_> {
         check_commit(&GithubCommitVerifier::default(), full_sha)
     }
 
-    fn launch_build(&self, target: &str) -> Result<(), ()> {
-        start_auto_build(self.app, target).map_err(|_| ())
+    fn launch_build(&self, target: &str) -> Result<(), LaunchRefusal> {
+        start_auto_build(self.app, target)
     }
 
     fn save_state(&self, state: &AutoState) {

@@ -99,6 +99,7 @@ struct FakeEnv {
     verify_calls: Cell<u32>,
     launches: RefCell<Vec<String>>,
     launch_fails: bool,
+    launch_busy: bool,
     saves: RefCell<Vec<AutoState>>,
     marker: bool,
     manual_request_run: Option<&'static str>,
@@ -118,6 +119,7 @@ impl FakeEnv {
             verify_calls: Cell::new(0),
             launches: RefCell::new(Vec::new()),
             launch_fails: false,
+            launch_busy: false,
             saves: RefCell::new(Vec::new()),
             marker: true,
             manual_request_run: None,
@@ -151,10 +153,12 @@ impl DriverEnv for FakeEnv {
         self.verify_calls.set(self.verify_calls.get() + 1);
         self.verify_result
     }
-    fn launch_build(&self, target: &str) -> Result<(), ()> {
+    fn launch_build(&self, target: &str) -> Result<(), LaunchRefusal> {
         self.launches.borrow_mut().push(target.to_string());
-        if self.launch_fails {
-            Err(())
+        if self.launch_busy {
+            Err(LaunchRefusal::Busy)
+        } else if self.launch_fails {
+            Err(LaunchRefusal::Failed)
         } else {
             self.facts.borrow_mut().run_active = true;
             Ok(())
@@ -321,6 +325,77 @@ fn failed_launch_records_spawn_failure_and_does_not_retry_at_once() {
     env.facts.borrow_mut().attempt = Ok(Some(recorded));
     tick(&env, &mut memory);
     assert_eq!(env.launches.borrow().len(), 1);
+}
+
+// Issue #160: a Busy refusal of the launcher is a wait, not a failed attempt. Nothing is
+// persisted, there is no backoff, and the next tick tries again.
+#[test]
+fn busy_launch_refusal_is_a_wait_not_a_failure() {
+    let mut env = FakeEnv::new(facts());
+    env.launch_busy = true;
+    let mut memory = DriverMemory::default();
+    tick(&env, &mut memory);
+    assert!(
+        env.saves.borrow().is_empty(),
+        "a busy refusal records nothing"
+    );
+    assert_eq!(env.launches.borrow().len(), 1, "the launch was attempted");
+    tick(&env, &mut memory);
+    assert_eq!(
+        env.launches.borrow().len(),
+        2,
+        "no backoff: retried on the next tick"
+    );
+    assert!(env.saves.borrow().is_empty(), "still nothing recorded");
+    env.launch_busy = false;
+    tick(&env, &mut memory);
+    assert_eq!(
+        env.launches.borrow().len(),
+        3,
+        "the build starts once the launcher is free"
+    );
+    assert!(
+        env.saves.borrow().is_empty(),
+        "no failure was ever recorded"
+    );
+}
+
+// Issue #160: the seam from the launcher's own error to the driver's refusal. Only a Busy
+// refusal of the runner is a wait; every other launch error is a failed attempt.
+#[test]
+fn only_a_runner_busy_refusal_maps_to_a_wait() {
+    use crate::managers::source_update_runner::RunnerError;
+    let busy = RunnerError::Busy("an update run is registered");
+    assert_eq!(launch_refusal_of(&busy), LaunchRefusal::Busy);
+    let others = [
+        RunnerError::InvalidPath("state dir"),
+        RunnerError::InvalidValue("target"),
+        RunnerError::ScriptMissing,
+        RunnerError::LabelRefused,
+        RunnerError::Launchctl {
+            operation: "bootstrap",
+            code: Some(5),
+        },
+        RunnerError::Io(std::io::Error::other("disk")),
+    ];
+    for error in &others {
+        assert_eq!(launch_refusal_of(error), LaunchRefusal::Failed, "{error}");
+    }
+}
+
+// Issue #160: with a Busy wait and no active run and no failed record, the notice must not stay
+// hidden. The existing rule hides it only while an automatic run is marked active or a built or
+// committing record exists for the target, so the notice stays visible here.
+#[test]
+fn busy_wait_without_active_run_or_record_keeps_the_notice_visible() {
+    let hidden = auto_pending(&AutoPendingFacts {
+        auto_effective: true,
+        active_run_marked: false,
+        pending: None,
+        target: SHA,
+        last: None,
+    });
+    assert!(!hidden, "no active run and no record: the notice is shown");
 }
 
 #[test]
