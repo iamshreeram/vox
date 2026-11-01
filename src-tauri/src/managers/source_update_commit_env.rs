@@ -268,9 +268,10 @@ struct AdmissionState {
     /// A lease taken by a restore whose reservation was refused. Kept, so the retry only
     /// takes the reservation (B6 minor 6).
     partial_lease: Option<Lease>,
-    /// A commit attempt is running and may store guards at its end.
-    commit_in_flight: bool,
-    /// A release arrived during the attempt, before the guards were stored (B6 minor 5).
+    /// Commit attempts that have begun and not finished. Counted, not flagged: a second attempt
+    /// may begin while the first still waits to store its guards (B7 minor).
+    attempts_in_flight: u32,
+    /// A release arrived during an attempt, before the guards were stored (B6 minor 5).
     release_requested: bool,
 }
 
@@ -288,18 +289,21 @@ impl UpdateAdmission {
     }
 
     /// Marks the start of a commit attempt. The install poller can settle before the attempt
-    /// stores its guards, so a release in this window is remembered (B6 minor 5).
+    /// stores its guards, so a release in this window is remembered (B6 minor 5). Beginning an
+    /// attempt never forgets a release requested by an earlier attempt (B7 minor).
     pub fn begin(&self) {
         let mut state = self.guard();
-        state.commit_in_flight = true;
-        state.release_requested = false;
+        state.attempts_in_flight += 1;
     }
 
-    /// Marks the end of a commit attempt. Nothing is remembered past this point.
+    /// Marks the end of a commit attempt. A remembered release is dropped only when the last
+    /// attempt in flight has finished.
     pub fn finish(&self) {
         let mut state = self.guard();
-        state.commit_in_flight = false;
-        state.release_requested = false;
+        state.attempts_in_flight = state.attempts_in_flight.saturating_sub(1);
+        if state.attempts_in_flight == 0 {
+            state.release_requested = false;
+        }
     }
 
     /// Keeps `hold`. If a release was requested during the attempt, the guards are released
@@ -321,7 +325,7 @@ impl UpdateAdmission {
         let (taken, partial) = {
             let mut state = self.guard();
             let taken = state.hold.take();
-            if taken.is_none() && state.commit_in_flight {
+            if taken.is_none() && state.attempts_in_flight > 0 {
                 state.release_requested = true;
             }
             (taken, state.partial_lease.take())

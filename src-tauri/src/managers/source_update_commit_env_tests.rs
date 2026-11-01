@@ -911,6 +911,35 @@ fn b6_release_that_arrives_before_the_guards_are_stored_releases_them() {
     admission.release();
 }
 
+// B7 minor: a second commit attempt that begins after the poller's release, but before the first
+// attempt stores its guards, must not erase that release. The first attempt's store releases.
+#[test]
+fn b7_second_attempt_begin_does_not_lose_an_earlier_release() {
+    let gate = OwnershipGate::new();
+    let jobs = JobManager::new();
+    let admission = UpdateAdmission::new();
+    admission.begin(); // attempt 1
+    let lease = gate.try_acquire(Owner::Updater).expect("updater acquire");
+    let reservation = jobs.try_reserve_for_update().expect("reserve");
+    admission.release(); // the install poller settles before attempt 1 stores
+    admission.begin(); // attempt 2 starts in that window
+    admission.store(AdmissionHold::new(lease, reservation));
+    assert!(
+        !admission.is_held(),
+        "attempt 1's release is honoured after attempt 2 began"
+    );
+    assert_eq!(gate.holder(), None);
+    assert!(jobs.try_reserve_for_update().is_ok());
+    admission.finish();
+    admission.finish();
+    // Both attempts ended: a later release with nothing held leaks into nothing.
+    let lease = gate.try_acquire(Owner::Updater).expect("updater acquire");
+    let reservation = jobs.try_reserve_for_update().expect("reserve");
+    admission.store(AdmissionHold::new(lease, reservation));
+    assert!(admission.is_held());
+    admission.release();
+}
+
 // B6 (validator minor 6): a refused reservation keeps the lease and retries only the reservation.
 #[test]
 fn b6_refused_reservation_keeps_the_lease_and_retries_only_the_reservation() {

@@ -75,6 +75,8 @@ pub async fn change_auto_update_setting(app: AppHandle, enabled: bool) -> Result
 
 /// The blocking body of [`change_auto_update_setting`].
 fn apply_auto_update_setting(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    // Lock order: command mutex -> update coordinator (see `shortcut::SETTINGS_ANNOUNCE_ORDER`).
+    let _order = crate::shortcut::settings_announce_order();
     let coordinator = update_coordinator().guard();
     let before = get_settings(app);
     if enabled {
@@ -88,11 +90,12 @@ fn apply_auto_update_setting(app: &AppHandle, enabled: bool) -> Result<(), Strin
     let after = get_settings(app);
     drop(coordinator);
 
+    // Announces the value read back from the settings, never the argument.
     let _ = app.emit(
         "settings-changed",
         serde_json::json!({
             "setting": "auto_update_enabled",
-            "value": enabled
+            "value": after.auto_update_enabled
         }),
     );
     if auto_update_consent(&before) && !auto_update_consent(&after) {

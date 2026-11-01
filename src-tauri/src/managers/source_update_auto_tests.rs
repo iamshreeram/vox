@@ -96,6 +96,24 @@ fn each_single_failing_rule_gives_its_reason() {
     }
 }
 
+// B7 major: an update run of ours holds the update lock, so the blocker is present while the
+// run is active. The active run must win, so the attempt is a wait and never a persisted skip.
+#[test]
+fn active_run_beats_blocked_in_the_decision_order() {
+    let mut facts = good();
+    facts.run_active = true;
+    facts.install_blocker_none = false;
+    assert_eq!(
+        auto_update_decision(&facts),
+        AutoDecision::Wait(WaitReason::ActiveRun)
+    );
+    facts.run_active = false;
+    assert_eq!(
+        auto_update_decision(&facts),
+        AutoDecision::Skip(SkipReason::Blocked)
+    );
+}
+
 #[test]
 fn consent_is_checked_before_everything_else() {
     let mut facts = good();

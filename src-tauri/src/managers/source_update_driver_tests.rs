@@ -207,6 +207,7 @@ fn no_start_combinations_never_verify_or_launch() {
         ("checks off", Box::new(|f| f.checks_effective = false), None),
         ("not source", Box::new(|f| f.source_mode = false), None),
         ("no update", Box::new(|f| f.state_available = false), None),
+        // B7 major: a blocker is never persisted (our own build holds the update lock).
         (
             "blocked",
             Box::new(|f| f.install_blocker_none = false),
@@ -260,12 +261,6 @@ fn no_start_combinations_never_verify_or_launch() {
         assert_eq!(env.verify_calls.get(), 0, "{name}: must not verify");
         match code {
             // B6 major 3: only terminal refusals are persisted. A wait or backoff is not a result.
-            Some("blocked") => {
-                let saved = env.saves.borrow();
-                assert_eq!(saved.len(), 1, "{name}: one record");
-                assert_eq!(saved[0].reason_code.as_deref(), Some("blocked"), "{name}");
-                assert_eq!(saved[0].last_result, Some(AutoResult::Skipped), "{name}");
-            }
             Some(wait) => assert!(
                 env.saves.borrow().is_empty(),
                 "{name}: the wait ({wait}) is not persisted"
@@ -347,7 +342,14 @@ fn skip_reason_is_recorded_once_per_change() {
 // B6 major 3: waits are never persisted, so a healthy run is not reported as failed.
 #[test]
 fn b6_wait_reasons_are_never_persisted() {
-    for code in ["not_idle", "busy", "verifying", "active_run", "backoff"] {
+    for code in [
+        "not_idle",
+        "busy",
+        "verifying",
+        "active_run",
+        "backoff",
+        "blocked",
+    ] {
         assert_eq!(
             skip_record(&AutoState::default(), SHA, code, NOW),
             None,
@@ -356,6 +358,82 @@ fn b6_wait_reasons_are_never_persisted() {
     }
     assert!(skip_record(&AutoState::default(), SHA, "unverified", NOW).is_some());
     assert!(skip_record(&AutoState::default(), SHA, "verify_failed", NOW).is_some());
+}
+
+// B7 major: while our own build holds the update lock, the blocker is reported together with
+// the active run. Those ticks must record nothing, and the notice stays hidden through the build,
+// the built wait and the install.
+#[test]
+fn b7_own_build_holding_the_lock_is_never_recorded_and_keeps_the_notice_hidden() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut f = facts();
+    f.attempt = Ok(Some(AutoState::default().with_skipped(
+        SHA,
+        "unverified",
+        NOW - 50,
+    )));
+    f.idle_for = Duration::from_secs(120);
+    let mut env = FakeEnv::new(f);
+    let mut memory = DriverMemory::default();
+    tick(&env, &mut memory);
+    assert_eq!(env.launches.borrow().len(), 1, "the build starts");
+    let started = env.saves.borrow().last().cloned().expect("started record");
+    assert_eq!(env.saves.borrow().len(), 1, "only the started record");
+    // The build holds the update lock: the blocker is present while the run is active.
+    env.facts.borrow_mut().install_blocker_none = false;
+    for _ in 0..4 {
+        tick(&env, &mut memory);
+    }
+    assert_eq!(
+        env.saves.borrow().len(),
+        1,
+        "nothing saved during the build"
+    );
+    assert_eq!(env.saves.borrow()[0], started, "state unchanged");
+    let during_build = AutoPendingFacts {
+        auto_effective: true,
+        active_run_marked: true,
+        pending: None,
+        target: SHA,
+        last: Some(&started),
+    };
+    assert!(auto_pending(&during_build), "during the build");
+    // Built record waits: the driver never reaches the idle decision.
+    let built = built_run(dir.path());
+    env.pending = Some(built.clone());
+    env.facts.borrow_mut().run_active = false;
+    for _ in 0..3 {
+        tick(&env, &mut memory);
+    }
+    assert_eq!(
+        env.saves.borrow().len(),
+        1,
+        "nothing saved while built waits"
+    );
+    let waiting = AutoPendingFacts {
+        active_run_marked: false,
+        pending: Some(&built),
+        ..during_build
+    };
+    assert!(auto_pending(&waiting), "while the built record waits");
+    // Install in progress, lock still held by the install.
+    let committing = committing_run(dir.path());
+    env.pending = Some(committing.clone());
+    env.install_running = true;
+    for _ in 0..3 {
+        tick(&env, &mut memory);
+    }
+    assert_eq!(
+        env.saves.borrow().len(),
+        1,
+        "nothing saved during the install"
+    );
+    let installing = AutoPendingFacts {
+        active_run_marked: false,
+        pending: Some(&committing),
+        ..during_build
+    };
+    assert!(auto_pending(&installing), "during the install");
 }
 
 // B6 major 3: Wait -> Start -> build, wait and install all keep the notice hidden.

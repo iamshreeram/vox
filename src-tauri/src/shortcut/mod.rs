@@ -66,6 +66,34 @@ static CANCEL_REQUESTED: AtomicBool = AtomicBool::new(false);
 #[cfg(not(target_os = "linux"))]
 static CANCEL_REGISTERED: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
 
+/// The command mutex for the commands that change a setting and announce it in `settings-changed`
+/// (update checks, automatic updates). Two quick toggles then announce in the order they were
+/// applied, and each announces the value read back from the settings.
+///
+/// Lock order (outermost first, the same everywhere): command mutex -> update coordinator -> settings gate -> store.
+/// Nothing takes the command mutex while holding a lower lock, and no command takes it twice.
+static SETTINGS_ANNOUNCE_ORDER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Takes the command mutex of the settings announcements. Recovers from poisoning.
+pub fn settings_announce_order() -> std::sync::MutexGuard<'static, ()> {
+    SETTINGS_ANNOUNCE_ORDER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Runs `write`, reads the value back, announces it and returns it, all under the command mutex.
+pub fn write_read_back_and_announce<T>(
+    write: impl FnOnce(),
+    read_back: impl FnOnce() -> T,
+    announce: impl FnOnce(&T),
+) -> T {
+    let _order = settings_announce_order();
+    write();
+    let value = read_back();
+    announce(&value);
+    value
+}
+
 /// Register the cancel shortcut (called when recording starts)
 pub fn register_cancel_shortcut(app: &AppHandle) {
     // Track recording lifecycle independently of the current implementation so
@@ -889,19 +917,26 @@ fn apply_update_checks_setting(app: AppHandle, enabled: bool) -> Result<(), Stri
         );
     }
 
-    let mut settings = settings::get_settings(&app);
-    settings.update_checks_enabled = enabled;
-    settings::write_settings(&app, settings);
-
-    let _ = app.emit(
-        "settings-changed",
-        serde_json::json!({
-            "setting": "update_checks_enabled",
-            "value": enabled
-        }),
+    // Written and announced under the command mutex; the announced value is read back.
+    let applied = write_read_back_and_announce(
+        || {
+            let mut settings = settings::get_settings(&app);
+            settings.update_checks_enabled = enabled;
+            settings::write_settings(&app, settings);
+        },
+        || settings::get_settings(&app).update_checks_enabled,
+        |value| {
+            let _ = app.emit(
+                "settings-changed",
+                serde_json::json!({
+                    "setting": "update_checks_enabled",
+                    "value": value
+                }),
+            );
+        },
     );
 
-    if enabled {
+    if applied {
         // Check right away instead of waiting for the next scheduled run.
         let app2 = app.clone();
         tauri::async_runtime::spawn(async move {
@@ -2431,5 +2466,41 @@ mod ambient_experimental_transition_tests {
         );
         assert_eq!(transition(true, true, true, false), AmbientTransition::None);
         assert_eq!(transition(true, true, false, true), AmbientTransition::None);
+    }
+}
+
+/// B7 minor: the update-checks and automatic-update commands announce a setting in
+/// `settings-changed` under one command mutex, so two quick toggles announce in order.
+#[cfg(test)]
+mod settings_announce_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// Two sequential toggles announce the value read back after each write, in order.
+    #[test]
+    fn two_sequential_toggles_announce_the_read_back_value() {
+        let stored = Mutex::new(false);
+        let announced = Mutex::new(Vec::new());
+        for enabled in [true, false] {
+            let applied = write_read_back_and_announce(
+                || *stored.lock().unwrap() = enabled,
+                || *stored.lock().unwrap(),
+                |value| announced.lock().unwrap().push(*value),
+            );
+            assert_eq!(applied, enabled);
+        }
+        assert_eq!(*announced.lock().unwrap(), vec![true, false]);
+        assert!(!*stored.lock().unwrap());
+    }
+
+    /// The lock order is written next to the command mutex (outermost first).
+    #[test]
+    fn lock_order_is_documented_on_the_announce_mutex() {
+        let source = include_str!("mod.rs");
+        let documented = source.lines().any(|line| {
+            line.trim_start().starts_with("/// Lock order")
+                && line.contains("command mutex -> update coordinator -> settings gate -> store")
+        });
+        assert!(documented, "lock order doc comment missing");
     }
 }

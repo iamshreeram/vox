@@ -203,10 +203,12 @@ pub fn skip_record(previous: &AutoState, target: &str, code: &str, now: u64) -> 
 
 /// Skip codes that are persisted as the last result: refusals that stay refused until the owner
 /// or the published state changes. Everything else is either a wait or a transient refusal.
+/// `blocked` is not terminal (B7 major): an install blocker may be our own update lock, so it is
+/// never persisted as a result.
 fn is_terminal_skip(code: &str) -> bool {
     matches!(
         code,
-        "disabled" | "not_source" | "blocked" | "unverified" | "verify_failed"
+        "disabled" | "not_source" | "unverified" | "verify_failed"
     )
 }
 
@@ -421,6 +423,11 @@ fn tick_built<E: DriverEnv>(env: &E, memory: &mut DriverMemory, run: &PendingRun
 /// No pending record: the start decision for a new automatic build.
 fn tick_idle<E: DriverEnv>(env: &E, memory: &mut DriverMemory) -> Next {
     if !env.auto_effective() {
+        return slow();
+    }
+    // B7 major: while a run is active (our own build holds the update lock, so the blocker is
+    // reported too) nothing is decided and nothing is recorded.
+    if env.run_active() {
         return slow();
     }
     let facts = env.gather();

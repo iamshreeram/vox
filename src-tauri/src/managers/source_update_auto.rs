@@ -160,7 +160,7 @@ impl AutoDecision {
 }
 
 /// Pure start decision (R6-5). The first failing rule decides, in this order:
-/// consent and source mode, availability, blockers, active run, retry rule,
+/// consent and source mode, availability, active run, blockers, retry rule,
 /// verification, admission gate, idleness.
 pub fn auto_update_decision(facts: &AutoFacts) -> AutoDecision {
     if !facts.checks_effective || !facts.auto_enabled {
@@ -172,11 +172,13 @@ pub fn auto_update_decision(facts: &AutoFacts) -> AutoDecision {
     if !facts.state_available {
         return AutoDecision::Skip(SkipReason::NoUpdate);
     }
-    if !facts.install_blocker_none {
-        return AutoDecision::Skip(SkipReason::Blocked);
-    }
+    // B7: an active run wins over a blocker. Our own build holds the update lock, so the blocker
+    // is present exactly while the run is active; that is a wait, never a refusal.
     if facts.run_active {
         return AutoDecision::Wait(WaitReason::ActiveRun);
+    }
+    if !facts.install_blocker_none {
+        return AutoDecision::Skip(SkipReason::Blocked);
     }
     if !facts.backoff_clear {
         return AutoDecision::Skip(SkipReason::Backoff);
