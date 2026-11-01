@@ -319,7 +319,7 @@ fn every_refusal_constant_in_the_converse_sources_is_classified() {
     use crate::managers::converse_runtime as runtime;
     // (constant name, its value, the StartError it must classify to). A constant that is not
     // in this table fails the test, so a new refusal cannot ship unclassified.
-    let table: [(&str, &str, StartError); 8] = [
+    let table: [(&str, &str, StartError); 9] = [
         (
             "DICTATION_BUSY",
             platform::DICTATION_BUSY,
@@ -351,6 +351,9 @@ fn every_refusal_constant_in_the_converse_sources_is_classified() {
             StartError::AlreadyRunning,
         ),
         ("START_FAILED", runtime::START_FAILED, StartError::Unmapped),
+        // B2a: the orb has no notice for the update refusal yet, so it stays Unmapped (generic,
+        // never shown raw). A dedicated StartError needs orb_converse.rs, which is out of scope.
+        ("UPDATE_BUSY", platform::UPDATE_BUSY, StartError::Unmapped),
         ("TEXT_ENDING", runtime::TEXT_ENDING, StartError::TextEnding),
     ];
     let mut declared = refusal_const_names(include_str!("managers/converse_platform.rs"));

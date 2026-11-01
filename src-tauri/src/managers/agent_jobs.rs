@@ -103,6 +103,8 @@ pub enum JobError {
     SpawnFailed,
     /// The app is closing; no new jobs are admitted.
     ShuttingDown,
+    /// An update is being installed (`UpdateReservation`); no job starts until it ends.
+    UpdateInProgress,
 }
 
 /// Receives job progress and completion.
@@ -190,12 +192,15 @@ struct Active {
     done: Arc<Mutex<bool>>,
 }
 
-/// Mutable manager state guarded by one mutex.
+/// Mutable manager state guarded by one mutex. Admission and the update reservation
+/// are both decided under this mutex, so they cannot interleave.
 struct State {
     /// Next job id.
     next_id: u64,
     /// Admission is closed (close_admission).
     closed: bool,
+    /// An `UpdateReservation` is held: every start is refused with `UpdateInProgress`.
+    updating: bool,
     /// Current or most recent job.
     job: Option<Active>,
 }
@@ -210,12 +215,41 @@ pub struct JobManager {
     drain: Duration,
     /// M4: admission and close hooks. None until `set_hooks` is called.
     hooks: Mutex<Option<JobHooks>>,
+    /// Monotonic time of the last admission or job end (creation time until then).
+    activity: Arc<Mutex<Instant>>,
+}
+
+/// Proof that no agent job will start while an update installs. Dropping it (including
+/// during a panic) re-admits jobs. Taken with `JobManager::try_reserve_for_update`.
+#[must_use = "dropping the reservation at once re-admits jobs"]
+// Taken by the update install (B2b); until then only the tests take it.
+#[allow(dead_code)]
+pub struct UpdateReservation {
+    manager: Arc<JobManager>,
+}
+
+impl Drop for UpdateReservation {
+    fn drop(&mut self) {
+        lock_state(&self.manager.state).updating = false;
+    }
 }
 
 fn lock_state(state: &Mutex<State>) -> MutexGuard<'_, State> {
     state
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn lock_activity(activity: &Mutex<Instant>) -> MutexGuard<'_, Instant> {
+    activity
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Moves the activity clock forward to now. Never moves it back, even if two threads race.
+fn bump_activity(activity: &Mutex<Instant>) {
+    let mut last = lock_activity(activity);
+    *last = (*last).max(Instant::now());
 }
 
 impl JobManager {
@@ -230,12 +264,14 @@ impl JobManager {
             state: Mutex::new(State {
                 next_id: 1,
                 closed: false,
+                updating: false,
                 job: None,
             }),
             delivery: Arc::new(Delivery::spawn()),
             term_grace,
             drain,
             hooks: Mutex::new(None),
+            activity: Arc::new(Mutex::new(Instant::now())),
         })
     }
 
@@ -252,9 +288,15 @@ impl JobManager {
     ) -> Result<u64, JobError> {
         #[cfg(not(unix))]
         {
-            // Jobs need process groups, signals and fchdir: none exist off unix.
+            // Jobs need process groups, signals and fchdir: none exist off unix. The update
+            // reservation is still honoured first, so the refusal reason stays the same.
+            let updating = lock_state(&self.state).updating;
             let _ = (spec, observer);
-            Err(JobError::Unsupported)
+            if updating {
+                Err(JobError::UpdateInProgress)
+            } else {
+                Err(JobError::Unsupported)
+            }
         }
         #[cfg(unix)]
         {
@@ -272,6 +314,9 @@ impl JobManager {
         let mut st = lock_state(&self.state);
         if st.closed {
             return Err(JobError::ShuttingDown);
+        }
+        if st.updating {
+            return Err(JobError::UpdateInProgress);
         }
         if let Some(active) = st.job.as_ref() {
             if !*lock_done(&active.done) {
@@ -314,6 +359,7 @@ impl JobManager {
         }));
         let done = Arc::new(Mutex::new(false));
         let done_flag = Arc::clone(&done);
+        let activity = Arc::clone(&self.activity);
         let owner = Owner {
             child,
             pgid,
@@ -331,6 +377,7 @@ impl JobManager {
             leader_exited: false,
             on_done: Some(Box::new(move || {
                 *lock_done(&done_flag) = true;
+                bump_activity(&activity);
             })),
             capture: capture_for(&spec.launch),
         };
@@ -344,8 +391,34 @@ impl JobManager {
             self.delivery.cancel_reservation();
             return Err(JobError::SpawnFailed);
         }
+        bump_activity(&self.activity);
         st.job = Some(Active { tx, record, done });
         Ok(id)
+    }
+
+    /// Takes the update reservation: refused with `Busy` while a job is running or not yet
+    /// delivered, while delivery holds a reservation, while another reservation is held, or
+    /// during shutdown. Held reservations make every start return `UpdateInProgress`.
+    // Taken by the update install (B2b); until then only the tests take it.
+    #[allow(dead_code)]
+    pub fn try_reserve_for_update(self: &Arc<Self>) -> Result<UpdateReservation, JobError> {
+        let mut st = lock_state(&self.state);
+        let job_running = st.job.as_ref().is_some_and(|a| !*lock_done(&a.done));
+        if st.closed || st.updating || job_running || !self.delivery.is_idle() {
+            return Err(JobError::Busy);
+        }
+        st.updating = true;
+        Ok(UpdateReservation {
+            manager: Arc::clone(self),
+        })
+    }
+
+    /// Monotonic instant of the last admission or job end; the creation time until then.
+    /// Used to judge idleness without sampling.
+    // Read by the update idleness check (B2b); until then only the tests read it.
+    #[allow(dead_code)]
+    pub fn last_activity(&self) -> Instant {
+        *lock_activity(&self.activity)
     }
 
     /// Cancels the active job. Returns `true` if one was cancelled.
