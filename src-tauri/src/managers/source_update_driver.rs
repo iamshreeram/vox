@@ -10,6 +10,7 @@
 //! planner, [`restore_with`], runs again from the driver while an install is outstanding and
 //! its poller is not running.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
@@ -681,8 +682,8 @@ pub fn commit_now(app: &AppHandle, manual: bool) -> CommitStatus {
     }
     if let CommitStatus::Committed(run) = &status {
         let silent = install_is_silent(run.origin, manual);
-        if let (true, PendingState::Committing(info)) = (silent, &run.state) {
-            remember_install(&info.install_run_id, &run.target_full);
+        if let Some(install) = install_memory(run) {
+            remember_install(install);
         }
         if let Some(state_dir) = state_dir_of(app) {
             if let Some(progress) = install_started_progress(&state_dir, run, silent) {
@@ -729,8 +730,55 @@ pub fn install_started_progress(
     })
 }
 
+/// The inputs of one terminal report, read from the record, the marker, the memory and the
+/// status file before anything is settled.
+#[derive(Debug)]
+struct TerminalReport<'a> {
+    run_id: &'a str,
+    pending: Option<&'a PendingRun>,
+    phase: RunPhase,
+    percent: u8,
+    marker_exists: bool,
+    remembered: Option<&'a RememberedInstall>,
+    status_target: Option<&'a str>,
+    now: u64,
+}
+
+/// Decides and settles one terminal report through `env` (the effects of [`settle_install`],
+/// [`settle_recorded`] or nothing). A build failure is left to the caller, which needs the app.
+fn settle_terminal<E: SettleEnv>(env: &E, report: &TerminalReport<'_>) -> TerminalAction {
+    let remembered_id = report.remembered.map(|install| install.run_id.as_str());
+    let action = terminal_action(
+        report.pending,
+        report.run_id,
+        report.phase,
+        report.percent,
+        report.marker_exists,
+        remembered_id,
+    );
+    let done = report.phase == RunPhase::Done;
+    match action {
+        TerminalAction::FinishInstall => {
+            if let Some(run) = report.pending {
+                settle_install(env, run, report.run_id, done, report.now);
+            }
+        }
+        TerminalAction::FinishRecorded => {
+            let target = report.status_target.map(str::to_string).or_else(|| {
+                report
+                    .remembered
+                    .filter(|install| install.run_id == report.run_id)
+                    .map(|install| install.target.clone())
+            });
+            settle_recorded(env, report.run_id, target.as_deref(), done, report.now);
+        }
+        TerminalAction::BuildFailed | TerminalAction::Ignore => {}
+    }
+    action
+}
+
 /// Called by the poller when a run reaches its outcome (done or failed). The decision is
-/// [`terminal_action`]; the effects are [`settle_install`] or the build-failure record.
+/// [`terminal_action`]; the effects are [`settle_terminal`] or the build-failure record.
 pub fn on_terminal(app: &AppHandle, run_id: &str, progress: &UpdateProgress) {
     let Some(state_dir) = state_dir_of(app) else {
         return;
@@ -738,40 +786,24 @@ pub fn on_terminal(app: &AppHandle, run_id: &str, progress: &UpdateProgress) {
     let pending = PendingStore::new(&state_dir).load().ok().flatten();
     let marker_exists = AutoMarker::new(&state_dir).exists(run_id);
     let remembered = remembered_install();
-    let action = terminal_action(
-        pending.as_ref(),
+    let status = status_target(&state_dir, run_id);
+    let report = TerminalReport {
         run_id,
-        progress.phase,
-        progress.percent,
+        pending: pending.as_ref(),
+        phase: progress.phase,
+        percent: progress.percent,
         marker_exists,
-        remembered.as_ref().map(|install| install.run_id.as_str()),
-    );
-    let done = progress.phase == RunPhase::Done;
-    match action {
-        TerminalAction::FinishInstall => {
-            if let Some(run) = pending.as_ref() {
-                finish_install(app, &state_dir, run, done);
-            }
+        remembered: remembered.as_ref(),
+        status_target: status.as_deref(),
+        now: now_unix(),
+    };
+    let env = AppSettle {
+        app,
+        state_dir: &state_dir,
+    };
+    match settle_terminal(&env, &report) {
+        TerminalAction::FinishInstall | TerminalAction::FinishRecorded => {
             forget_install(run_id);
-        }
-        TerminalAction::FinishRecorded => {
-            let target = status_target(&state_dir, run_id).or_else(|| {
-                remembered
-                    .filter(|install| install.run_id == run_id)
-                    .map(|install| install.target)
-            });
-            settle_recorded(
-                &AppSettle {
-                    app,
-                    state_dir: &state_dir,
-                },
-                run_id,
-                target.as_deref(),
-                done,
-                now_unix(),
-            );
-            forget_install(run_id);
-            emit_auto_update_changed(app);
             info!("automatic update install finished");
         }
         TerminalAction::BuildFailed => {
@@ -785,8 +817,8 @@ pub fn on_terminal(app: &AppHandle, run_id: &str, progress: &UpdateProgress) {
     sweep_markers(app);
 }
 
-/// An automatic install this process committed: its run id and full target. Kept only in memory
-/// so that a `done` report that arrives after `pending.json` is gone can still be recorded.
+/// An install this process committed (manual or automatic): its run id and full target. Kept only
+/// in memory so that its terminal report can be settled after `pending.json` is gone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RememberedInstall {
     run_id: String,
@@ -795,11 +827,20 @@ struct RememberedInstall {
 
 static REMEMBERED: Mutex<Option<RememberedInstall>> = Mutex::new(None);
 
-fn remember_install(run_id: &str, target: &str) {
-    *lock(&REMEMBERED) = Some(RememberedInstall {
-        run_id: run_id.to_string(),
-        target: target.to_string(),
-    });
+/// The install a committed record starts, to be remembered (F2 major 2). Every committed install
+/// is remembered, manual ones included: their terminal report must settle admission too.
+fn install_memory(run: &PendingRun) -> Option<RememberedInstall> {
+    match &run.state {
+        PendingState::Committing(info) => Some(RememberedInstall {
+            run_id: info.install_run_id.clone(),
+            target: run.target_full.clone(),
+        }),
+        PendingState::Built => None,
+    }
+}
+
+fn remember_install(install: RememberedInstall) {
+    *lock(&REMEMBERED) = Some(install);
 }
 
 fn remembered_install() -> Option<RememberedInstall> {
@@ -826,17 +867,14 @@ fn status_target(state_dir: &Path, run_id: &str) -> Option<String> {
         .then_some(status.target_full)
 }
 
-/// The run id of the status file while that run is not terminal. A status that names a run but
-/// does not parse counts as live (fail closed: its marker is kept).
+/// The run id of the status file, whatever its phase (F2 major 1: a terminal status keeps its
+/// install marker until the settle removes it). A status whose run id is readable counts as live
+/// even when the rest does not parse (fail closed: its marker is kept).
 fn live_status_run(state_dir: &Path) -> Option<String> {
     let bytes = read_status_bounded(&status_path(state_dir))
         .ok()
         .flatten()?;
-    let run_id = run_id_in_status(&bytes)?;
-    match parse_status(&bytes, &run_id, None, now_unix()) {
-        Ok(status) if status.phase.is_terminal() => None,
-        _ => Some(run_id),
-    }
+    run_id_in_status(&bytes)
 }
 
 /// Removes the automatic markers no run needs (best effort). Live: the pending record's build and
@@ -849,17 +887,48 @@ pub fn sweep_markers(app: &AppHandle) {
     let Ok(pending) = PendingStore::new(&state_dir).load() else {
         return;
     };
-    let mut live: Vec<String> = Vec::new();
-    if let Some(run) = pending.as_ref() {
-        live.push(run.run_id.clone());
-        live.extend(install_run_of(run).map(str::to_string));
-    }
-    live.extend(active_run_id(app));
-    live.extend(live_status_run(&state_dir));
+    let live = live_marker_ids(&state_dir, pending.as_ref(), active_run_id(app));
     let refs: Vec<&str> = live.iter().map(String::as_str).collect();
     if sweep_stale_markers(&state_dir, &refs) > 0 {
         info!("removed stale automatic update markers");
     }
+}
+
+/// The run ids whose markers must stay: the pending record's build and install runs, the active
+/// run, the status file's run (terminal or not, until its settle removes the marker) and every
+/// run that still has a `run-<id>.plist` (a build marker written before its status file exists).
+pub fn live_marker_ids(
+    state_dir: &Path,
+    pending: Option<&PendingRun>,
+    active: Option<String>,
+) -> Vec<String> {
+    let mut live: Vec<String> = Vec::new();
+    if let Some(run) = pending {
+        live.push(run.run_id.clone());
+        live.extend(install_run_of(run).map(str::to_string));
+    }
+    live.extend(active);
+    live.extend(live_status_run(state_dir));
+    live.extend(plist_run_ids(state_dir));
+    live
+}
+
+/// The run ids that have a `run-<id>.plist` in the state directory.
+fn plist_run_ids(state_dir: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(state_dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let id = name
+                .to_str()?
+                .strip_prefix("run-")?
+                .strip_suffix(".plist")?;
+            is_lower_hex(id, 16).then(|| id.to_string())
+        })
+        .collect()
 }
 
 fn record_build_failed(app: &AppHandle, state_dir: &Path) {
@@ -1054,6 +1123,9 @@ impl RestoreEnv for AppRestore<'_> {
         let PendingState::Committing(info) = &committing.state else {
             return;
         };
+        if let Some(install) = install_memory(committing) {
+            remember_install(install);
+        }
         let Some(runtime) = self
             .app
             .try_state::<crate::managers::source_update::SourceUpdateRuntime>()
@@ -1149,6 +1221,9 @@ fn revoke_until_settled(app: &AppHandle, state_dir: &Path, committing: &PendingR
                 return;
             }
             RevokeResult::Adopted => {
+                if let Some(install) = install_memory(committing) {
+                    remember_install(install);
+                }
                 env.start_install_poller(committing);
                 info!("outstanding automatic install is live; adopted");
                 return;
