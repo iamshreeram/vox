@@ -1076,6 +1076,9 @@ async getSourceUpdateProgress() : Promise<UpdateProgress | null> {
  * Turns automatic source updates on or off (R6-8, R7-6). The whole read-modify-write runs under
  * the update coordinator, so it is serialised with the commit sequence. Enabling needs a source
  * build with update checks on. Turning it off discards a built-but-not-committed update.
+ * 
+ * Async, and the work runs on a blocking thread: the coordinator guard can be held for seconds by
+ * a commit, and a sync command would wait for it on the main thread (B6 minor 8).
  */
 async changeAutoUpdateSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {

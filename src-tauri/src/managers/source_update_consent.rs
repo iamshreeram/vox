@@ -12,7 +12,7 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use log::{info, warn};
 use tauri::AppHandle;
@@ -268,7 +268,7 @@ pub fn apply_manual_conversion(
     if let Some(run) = pending.as_ref().filter(|_| pending_built) {
         // A marker of the built run is only ever written by the auto start; drop it too.
         let _ = markers.remove(&run.run_id);
-        request_manual_commit();
+        request_manual_commit(&run.run_id);
     }
     Ok(plan)
 }
@@ -289,42 +289,66 @@ pub fn convert_to_manual_now(
     }
 }
 
-/// A one-shot request, recorded by a manual start, for the commit sequence to consume.
+/// A one-shot request, recorded by a manual start for one built run, for the commit sequence
+/// to consume. A request applies only to the run id it names (B6 major 2): a request left over
+/// from one run can never commit a later automatic build.
 #[derive(Debug, Default)]
 pub struct CommitRequest {
-    requested: AtomicBool,
+    run_id: Mutex<Option<String>>,
 }
 
 impl CommitRequest {
     /// No request pending.
     pub const fn new() -> Self {
         Self {
-            requested: AtomicBool::new(false),
+            run_id: Mutex::new(None),
         }
     }
 
-    /// Records a request.
-    pub fn request(&self) {
-        self.requested.store(true, Ordering::SeqCst);
+    /// Records a request for `run_id`, replacing any earlier one.
+    pub fn request(&self, run_id: &str) {
+        *self.guard() = Some(run_id.to_string());
     }
 
-    /// Returns whether a request was pending and clears it.
-    pub fn take(&self) -> bool {
-        self.requested.swap(false, Ordering::SeqCst)
+    /// True when a request for exactly `run_id` is pending. Does not consume it.
+    pub fn holds(&self, run_id: &str) -> bool {
+        self.guard().as_deref() == Some(run_id)
+    }
+
+    /// Returns whether a request for exactly `run_id` was pending and clears it. Any other
+    /// pending request is left alone.
+    pub fn take(&self, run_id: &str) -> bool {
+        let mut slot = self.guard();
+        if slot.as_deref() == Some(run_id) {
+            *slot = None;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn guard(&self) -> MutexGuard<'_, Option<String>> {
+        self.run_id.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
 /// The process-wide manual-commit request.
 static MANUAL_COMMIT: CommitRequest = CommitRequest::new();
 
-/// Records that the owner asked for a manual commit of the built update.
-pub fn request_manual_commit() {
-    MANUAL_COMMIT.request();
+/// Records that the owner asked for a manual commit of the built run `run_id`.
+pub fn request_manual_commit(run_id: &str) {
+    MANUAL_COMMIT.request(run_id);
 }
 
-/// Consumes the manual-commit request. The commit sequence (next step) calls this.
-pub fn take_manual_commit_request() -> bool {
-    MANUAL_COMMIT.take()
+/// True while a manual-commit request for `run_id` is pending. Does not consume it.
+pub fn manual_commit_requested(run_id: &str) -> bool {
+    MANUAL_COMMIT.holds(run_id)
+}
+
+/// Consumes the manual-commit request for `run_id`. The commit sequence calls this once the
+/// manual commit of that run has been performed.
+pub fn take_manual_commit_request(run_id: &str) -> bool {
+    MANUAL_COMMIT.take(run_id)
 }
 
 /// Sets the silent flag of a progress value from the marker on disk (see [`progress_silent`]).

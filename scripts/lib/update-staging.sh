@@ -270,6 +270,8 @@ staging_validate_pending() {
   [ "$st" = "committing" ] || staging_reject "Pending install is not committed" || return 1
   status_hex_of_len "$run_id" 16 || staging_reject "Pending install has a bad run id" || return 1
   if [ "$ins" != "$VOX_UPDATE_RUN_ID" ]; then
+    # Another run's record: it is never this run's cleanup target (B6 minor 9).
+    STAGING_PENDING=""
     staging_reject "Pending install belongs to another run" || return 1
   fi
   status_hex_of_len "$target" 40 || staging_reject "Pending install has a bad target" || return 1

@@ -1433,3 +1433,42 @@ fn reconcile_silent_exit_without_a_status_waits_for_the_threshold() {
         Decision::CleanupFinished
     );
 }
+
+// B6 minor 7: launchctl calls are bounded. A hanging call is killed and reported as an error,
+// and a timed-out probe is Unknown, never Absent or Registered.
+#[test]
+fn b6_a_hanging_launchctl_call_is_bounded_and_killed() {
+    let started = Instant::now();
+    let result = run_bounded(
+        std::ffi::OsStr::new("/bin/sleep"),
+        &["5".to_string()],
+        Duration::from_millis(200),
+    );
+    let error = result.err().expect("a call past its limit is an error");
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "the wait is bounded, not the child's own 5 s"
+    );
+}
+
+#[test]
+fn b6_a_quick_launchctl_call_returns_its_output() {
+    let output = run_bounded(
+        std::ffi::OsStr::new("/bin/echo"),
+        &["hi".to_string()],
+        Duration::from_secs(5),
+    )
+    .expect("quick call");
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"hi\n".to_vec());
+}
+
+#[test]
+fn b6_a_timed_out_probe_is_unknown() {
+    let timed_out = Err(io::Error::new(
+        io::ErrorKind::TimedOut,
+        "launchctl timed out",
+    ));
+    assert_eq!(probe_from_run(timed_out), JobProbe::Unknown);
+}

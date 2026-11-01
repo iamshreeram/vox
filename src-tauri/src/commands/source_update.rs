@@ -61,11 +61,22 @@ pub fn get_source_update_progress(app: AppHandle) -> Option<UpdateProgress> {
 /// Turns automatic source updates on or off (R6-8, R7-6). The whole read-modify-write runs under
 /// the update coordinator, so it is serialised with the commit sequence. Enabling needs a source
 /// build with update checks on. Turning it off discards a built-but-not-committed update.
+///
+/// Async, and the work runs on a blocking thread: the coordinator guard can be held for seconds by
+/// a commit, and a sync command would wait for it on the main thread (B6 minor 8).
 #[tauri::command]
 #[specta::specta]
-pub fn change_auto_update_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+pub async fn change_auto_update_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let blocking_app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || apply_auto_update_setting(&blocking_app, enabled))
+        .await
+        .map_err(|_| "The automatic update setting could not be changed.".to_string())?
+}
+
+/// The blocking body of [`change_auto_update_setting`].
+fn apply_auto_update_setting(app: &AppHandle, enabled: bool) -> Result<(), String> {
     let coordinator = update_coordinator().guard();
-    let before = get_settings(&app);
+    let before = get_settings(app);
     if enabled {
         let mut candidate = before.clone();
         candidate.auto_update_enabled = true;
@@ -73,8 +84,8 @@ pub fn change_auto_update_setting(app: AppHandle, enabled: bool) -> Result<(), S
             return Err("Automatic updates need a source build with update checks on.".into());
         }
     }
-    write_settings_gated(&app, |settings| settings.auto_update_enabled = enabled);
-    let after = get_settings(&app);
+    write_settings_gated(app, |settings| settings.auto_update_enabled = enabled);
+    let after = get_settings(app);
     drop(coordinator);
 
     let _ = app.emit(
@@ -85,9 +96,9 @@ pub fn change_auto_update_setting(app: AppHandle, enabled: bool) -> Result<(), S
         }),
     );
     if auto_update_consent(&before) && !auto_update_consent(&after) {
-        on_consent_withdrawn(&app);
+        on_consent_withdrawn(app);
     } else {
-        emit_auto_update_changed(&app);
+        emit_auto_update_changed(app);
     }
     Ok(())
 }

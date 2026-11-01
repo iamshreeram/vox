@@ -13,6 +13,9 @@ use crate::managers::source_update_auto::consent::{
     apply_manual_conversion, cleanup_after_build_without_consent, silent_for_run,
     take_manual_commit_request, AutoMarker, CleanupPlan,
 };
+use crate::managers::source_update_auto::consent::{
+    auto_pending, manual_commit_requested, request_manual_commit, AutoPendingFacts,
+};
 use crate::managers::source_update_auto::load_auto_state;
 use crate::managers::source_update_pending::{
     encode_pending, staged_app_path, CommitInfo, PendingOrigin,
@@ -93,7 +96,7 @@ struct FakeEnv {
     launch_fails: bool,
     saves: RefCell<Vec<AutoState>>,
     marker: bool,
-    manual_request: bool,
+    manual_request_run: Option<&'static str>,
     commit_script: RefCell<VecDeque<CommitStatus>>,
     commits: RefCell<Vec<bool>>,
     cleanups: Cell<u32>,
@@ -112,7 +115,7 @@ impl FakeEnv {
             launch_fails: false,
             saves: RefCell::new(Vec::new()),
             marker: true,
-            manual_request: false,
+            manual_request_run: None,
             commit_script: RefCell::new(VecDeque::new()),
             commits: RefCell::new(Vec::new()),
             cleanups: Cell::new(0),
@@ -158,8 +161,8 @@ impl DriverEnv for FakeEnv {
     fn run_active(&self) -> bool {
         self.facts.borrow().run_active
     }
-    fn take_manual_request(&self) -> bool {
-        self.manual_request
+    fn manual_request_for(&self, run_id: &str) -> bool {
+        self.manual_request_run == Some(run_id)
     }
     fn marker_exists(&self, _run_id: &str) -> bool {
         self.marker
@@ -256,12 +259,17 @@ fn no_start_combinations_never_verify_or_launch() {
         assert!(env.launches.borrow().is_empty(), "{name}: must not launch");
         assert_eq!(env.verify_calls.get(), 0, "{name}: must not verify");
         match code {
-            Some(code) => {
+            // B6 major 3: only terminal refusals are persisted. A wait or backoff is not a result.
+            Some("blocked") => {
                 let saved = env.saves.borrow();
                 assert_eq!(saved.len(), 1, "{name}: one record");
-                assert_eq!(saved[0].reason_code.as_deref(), Some(code), "{name}");
+                assert_eq!(saved[0].reason_code.as_deref(), Some("blocked"), "{name}");
                 assert_eq!(saved[0].last_result, Some(AutoResult::Skipped), "{name}");
             }
+            Some(wait) => assert!(
+                env.saves.borrow().is_empty(),
+                "{name}: the wait ({wait}) is not persisted"
+            ),
             None => assert!(env.saves.borrow().is_empty(), "{name}: nothing recorded"),
         }
     }
@@ -317,28 +325,177 @@ fn failed_launch_records_spawn_failure_and_does_not_retry_at_once() {
 
 #[test]
 fn skip_reason_is_recorded_once_per_change() {
+    // B6 major 3: a wait (gate busy) is never persisted; a terminal refusal is persisted once.
     let mut f = facts();
     f.gate_free = false;
-    let env = FakeEnv::new(f.clone());
+    let mut env = FakeEnv::new(f.clone());
     let mut memory = DriverMemory::default();
     tick(&env, &mut memory);
     tick(&env, &mut memory);
-    assert_eq!(env.saves.borrow().len(), 1);
+    assert!(env.saves.borrow().is_empty(), "a wait is not a result");
+    env.verify_result = VerifiedState::Unverified;
     env.facts.borrow_mut().gate_free = true;
-    env.facts.borrow_mut().idle_for = Duration::from_secs(10);
     tick(&env, &mut memory);
-    assert_eq!(env.saves.borrow().len(), 2);
+    tick(&env, &mut memory);
+    assert_eq!(env.saves.borrow().len(), 1, "the refusal is recorded once");
     assert_eq!(
-        env.saves.borrow()[1].reason_code.as_deref(),
-        Some("not_idle")
+        env.saves.borrow()[0].reason_code.as_deref(),
+        Some("unverified")
     );
+}
+
+// B6 major 3: waits are never persisted, so a healthy run is not reported as failed.
+#[test]
+fn b6_wait_reasons_are_never_persisted() {
+    for code in ["not_idle", "busy", "verifying", "active_run", "backoff"] {
+        assert_eq!(
+            skip_record(&AutoState::default(), SHA, code, NOW),
+            None,
+            "{code} must not be persisted"
+        );
+    }
+    assert!(skip_record(&AutoState::default(), SHA, "unverified", NOW).is_some());
+    assert!(skip_record(&AutoState::default(), SHA, "verify_failed", NOW).is_some());
+}
+
+// B6 major 3: Wait -> Start -> build, wait and install all keep the notice hidden.
+#[test]
+fn b6_start_after_a_wait_keeps_auto_pending_through_build_wait_and_install() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut f = facts();
+    f.attempt = Ok(Some(AutoState::default().with_skipped(
+        SHA,
+        "unverified",
+        NOW - 50,
+    )));
+    f.idle_for = Duration::from_secs(5);
+    let env = FakeEnv::new(f);
+    let mut memory = DriverMemory::default();
+    tick(&env, &mut memory);
+    assert!(env.saves.borrow().is_empty(), "the wait is not persisted");
+    env.facts.borrow_mut().idle_for = Duration::from_secs(120);
+    tick(&env, &mut memory);
+    assert_eq!(env.launches.borrow().len(), 1, "the build starts");
+    let started = env.saves.borrow().last().cloned().expect("started record");
+    assert_eq!(started.last_result, None);
+    assert_eq!(started.last_target.as_deref(), Some(SHA));
+    let during_build = AutoPendingFacts {
+        auto_effective: true,
+        active_run_marked: true,
+        pending: None,
+        target: SHA,
+        last: Some(&started),
+    };
+    assert!(auto_pending(&during_build), "during the build");
+    let built = built_run(dir.path());
+    let waiting = AutoPendingFacts {
+        active_run_marked: false,
+        pending: Some(&built),
+        ..during_build
+    };
+    assert!(auto_pending(&waiting), "while the built record waits");
+    let committing = committing_run(dir.path());
+    let installing = AutoPendingFacts {
+        active_run_marked: false,
+        pending: Some(&committing),
+        ..during_build
+    };
+    assert!(auto_pending(&installing), "during the install");
+}
+
+// B6 major 3: an unverified skip brings the notice back; a build failure keeps it back.
+#[test]
+fn b6_terminal_skip_and_build_failure_decide_auto_pending() {
+    let mut env = FakeEnv::new(facts());
+    env.verify_result = VerifiedState::Unverified;
+    tick_once(&env);
+    let skipped = env.saves.borrow().last().cloned().expect("skip recorded");
+    let facts_skipped = AutoPendingFacts {
+        auto_effective: true,
+        active_run_marked: true,
+        pending: None,
+        target: SHA,
+        last: Some(&skipped),
+    };
+    assert!(!auto_pending(&facts_skipped), "unverified: notice returns");
+    let failed = AutoState::default().with_failure(SHA, "build_failed", NOW);
+    let facts_failed = AutoPendingFacts {
+        last: Some(&failed),
+        ..facts_skipped
+    };
+    assert!(
+        !auto_pending(&facts_failed),
+        "build failure: notice returns"
+    );
+}
+
+#[test]
+fn b6_started_record_clears_only_a_failure_or_skip_for_the_same_target() {
+    let skipped = AutoState::default().with_skipped(SHA, "unverified", NOW - 5);
+    let started = started_record(&skipped, SHA, NOW).expect("cleared");
+    assert_eq!(started.last_result, None);
+    assert_eq!(started.reason_code, None);
+    assert_eq!(started_record(&skipped, OTHER_SHA, NOW), None);
+    let updated = AutoState::default().with_updated(SHA, NOW - 5);
+    assert_eq!(started_record(&updated, SHA, NOW), None);
+}
+
+// B6 major 2: a request left for run A never commits a later automatic build B.
+#[test]
+fn b6_stale_manual_request_never_commits_a_later_auto_build() {
+    const FIRST: &str = "aaaaaaaaaaaaaaaa";
+    let dir = tempfile::tempdir().expect("dir");
+    request_manual_commit(FIRST);
+    let mut f = facts();
+    f.auto_enabled = false;
+    let mut env = FakeEnv::new(f);
+    env.pending = Some(built_run(dir.path()));
+    tick_once(&env);
+    assert!(env.commits.borrow().is_empty(), "no manual commit of run B");
+    assert_eq!(env.cleanups.get(), 1, "withdrawn consent removes run B");
+    assert!(!manual_commit_requested(RUN), "no flag for run B");
+    assert!(
+        take_manual_commit_request(FIRST),
+        "run A's flag is still its own"
+    );
+}
+
+// B6 minor 4: a manual install writes no marker and is not silent; an automatic one does.
+#[test]
+fn b6_install_start_marks_only_a_silent_install() {
+    let dir = tempfile::tempdir().expect("dir");
+    let run = committing_run(dir.path());
+    let manual = install_started_progress(dir.path(), &run, false).expect("progress");
+    assert!(!manual.silent);
+    assert!(
+        !AutoMarker::new(dir.path()).exists(INSTALL),
+        "no marker for manual"
+    );
+    let auto = install_started_progress(dir.path(), &run, true).expect("progress");
+    assert!(auto.silent);
+    assert_eq!(auto.phase, RunPhase::Installing);
+    assert_eq!(auto.run_id, INSTALL);
+    assert!(
+        AutoMarker::new(dir.path()).exists(INSTALL),
+        "marker for silent"
+    );
+}
+
+#[test]
+fn b6_install_started_progress_is_none_for_a_built_record() {
+    let dir = tempfile::tempdir().expect("dir");
+    assert!(install_started_progress(dir.path(), &built_run(dir.path()), true).is_none());
 }
 
 #[test]
 fn skip_record_keeps_a_completed_update_and_ignores_start() {
     let updated = AutoState::default().with_updated(SHA, NOW - 5);
     assert_eq!(skip_record(&updated, SHA, "not_idle", NOW), None);
-    assert!(skip_record(&updated, OTHER_SHA, "not_idle", NOW).is_some());
+    assert_eq!(
+        skip_record(&updated, OTHER_SHA, "unverified", NOW).is_some(),
+        true
+    );
+    assert_eq!(skip_record(&updated, SHA, "unverified", NOW), None);
     assert_eq!(skip_record(&AutoState::default(), SHA, "start", NOW), None);
     assert_eq!(
         skip_record(&AutoState::default(), SHA, "no_update", NOW),
@@ -439,7 +596,7 @@ fn manual_conversion_without_marker_commits_manually() {
 fn manual_request_commits_manually_even_with_the_marker() {
     let dir = tempfile::tempdir().expect("dir");
     let mut env = FakeEnv::new(facts());
-    env.manual_request = true;
+    env.manual_request_run = Some(RUN);
     env.pending = Some(built_run(dir.path()));
     tick_once(&env);
     assert_eq!(*env.commits.borrow(), vec![true]);
@@ -913,7 +1070,7 @@ fn manual_start_over_a_built_update_requests_the_commit_and_launches_nothing() {
         "no new build is launched"
     );
     // Consume the one-shot request so the process-wide flag does not leak into other tests.
-    assert!(take_manual_commit_request());
+    assert!(take_manual_commit_request(RUN));
 }
 
 #[test]

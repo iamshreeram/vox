@@ -873,7 +873,16 @@ pub fn change_autostart_setting(app: AppHandle, enabled: bool) -> Result<(), Str
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_update_checks_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+pub async fn change_update_checks_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    // `write_settings` takes the update coordinator when this setting changes, and a commit can
+    // hold it for seconds: run on a blocking thread so the main thread never waits for it.
+    tauri::async_runtime::spawn_blocking(move || apply_update_checks_setting(app, enabled))
+        .await
+        .map_err(|_| "The update checks setting could not be changed.".to_string())?
+}
+
+/// The blocking body of [`change_update_checks_setting`].
+fn apply_update_checks_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     if settings::update_checks_forced_disabled() {
         return Err(
             "Update checks are disabled by system configuration (HANDY_DISABLE_UPDATER)".into(),

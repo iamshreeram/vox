@@ -824,6 +824,129 @@ fn a_registered_install_label_is_adopted_not_revoked() {
     assert!(matches!(outcome, CommitOutcome::Committed { .. }));
 }
 
+// B6 (validator major 1): deferred commits keep retrying on the 15 s cadence and commit once
+// 60 s have passed since the last real activity. Restart case: the process started at +100 s,
+// so the 60 s clock starts there, not at the gate's creation. The shared gate carries the idle
+// instant across attempts. (The gate reads the real monotonic clock, so the lease-drop reset
+// itself is pinned by ownership's b6_updater_lease_drop_keeps_the_idle_instant.)
+#[test]
+fn b6_deferred_commits_retry_until_sixty_seconds_after_process_start() {
+    let fx = fixture();
+    write_record(&fx.state, &built_record(&fx.state));
+    let log = new_log();
+    let base = Instant::now();
+    let gate = OwnershipGate::new();
+    let jobs = JobManager::new();
+    let attempt = |offset_secs: u64| {
+        let mut host = FakeHost::new(&fx, Arc::clone(&log));
+        host.gate = Arc::clone(&gate);
+        host.jobs = Arc::clone(&jobs);
+        host.start = base + Duration::from_secs(100);
+        host.now = base + Duration::from_secs(offset_secs);
+        commit_once(
+            &host,
+            &FakeControl::new(Arc::clone(&log), &fx.state),
+            &fx,
+            false,
+        )
+    };
+    for offset in [115, 130] {
+        assert_eq!(
+            reason(&attempt(offset)),
+            Some(DeferReason::NotIdle),
+            "t={offset}s: not yet 60 quiet seconds after the process start"
+        );
+        assert_eq!(gate.holder(), None, "a deferred commit releases the lease");
+    }
+    let outcome = attempt(161);
+    assert!(
+        matches!(outcome, CommitOutcome::Committed { .. }),
+        "t=161s: 61 s after the process start, the commit goes ahead"
+    );
+    assert_eq!(gate.holder(), Some(Owner::Updater));
+}
+
+#[test]
+fn b6_gate_idle_instant_survives_repeated_deferred_attempts() {
+    let gate = OwnershipGate::new();
+    let idle_at_start = gate.idle_since().expect("free gate is idle");
+    for _ in 0..4 {
+        let snapshot = gate.idle_since();
+        let lease = gate.try_acquire(Owner::Updater).expect("updater acquire");
+        assert_eq!(
+            snapshot,
+            Some(idle_at_start),
+            "every retry sees the same idle instant"
+        );
+        drop(lease);
+    }
+    assert_eq!(gate.idle_since(), Some(idle_at_start));
+}
+
+// B6 (validator minor 5): a terminal install that settles before the guards are stored must
+// still end with the guards released.
+#[test]
+fn b6_release_that_arrives_before_the_guards_are_stored_releases_them() {
+    let gate = OwnershipGate::new();
+    let jobs = JobManager::new();
+    let admission = UpdateAdmission::new();
+    admission.begin();
+    let lease = gate.try_acquire(Owner::Updater).expect("updater acquire");
+    let reservation = jobs.try_reserve_for_update().expect("reserve");
+    admission.release();
+    admission.store(AdmissionHold::new(lease, reservation));
+    assert!(
+        !admission.is_held(),
+        "the early release applies to the late guards"
+    );
+    assert_eq!(gate.holder(), None);
+    assert!(jobs.try_reserve_for_update().is_ok());
+    admission.finish();
+    // Outside a commit, a release with nothing held does not leak into a later store.
+    admission.release();
+    let lease = gate.try_acquire(Owner::Updater).expect("updater acquire");
+    let reservation = jobs.try_reserve_for_update().expect("reserve");
+    admission.store(AdmissionHold::new(lease, reservation));
+    assert!(admission.is_held());
+    admission.release();
+}
+
+// B6 (validator minor 6): a refused reservation keeps the lease and retries only the reservation.
+#[test]
+fn b6_refused_reservation_keeps_the_lease_and_retries_only_the_reservation() {
+    let gate = OwnershipGate::new();
+    let jobs = JobManager::new();
+    let admission = UpdateAdmission::new();
+    let mut lease_calls = 0;
+    let first = admission.hold_with(
+        || {
+            lease_calls += 1;
+            gate.try_acquire(Owner::Updater).map_err(|_| ())
+        },
+        || Err(()),
+    );
+    assert!(first.is_err(), "reservation refused");
+    assert_eq!(
+        gate.holder(),
+        Some(Owner::Updater),
+        "lease kept while refused"
+    );
+    assert!(!admission.is_held());
+    let second = admission.hold_with(
+        || {
+            lease_calls += 1;
+            gate.try_acquire(Owner::Updater).map_err(|_| ())
+        },
+        || jobs.try_reserve_for_update().map_err(|_| ()),
+    );
+    assert!(second.is_ok());
+    assert_eq!(lease_calls, 1, "the lease is taken once");
+    assert!(admission.is_held());
+    assert_eq!(gate.holder(), Some(Owner::Updater));
+    admission.release();
+    assert_eq!(gate.holder(), None);
+}
+
 #[test]
 fn admission_keeps_and_releases_the_guards() {
     let gate = OwnershipGate::new();

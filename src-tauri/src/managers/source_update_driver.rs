@@ -26,16 +26,15 @@ use crate::managers::source_update::{
     start_auto_build, update_lock_path, SourceUpdateMode, SourceUpdateState,
 };
 use crate::managers::source_update_auto::consent::{
-    cleanup_after_build_without_consent, take_manual_commit_request, AutoMarker, CleanupPlan,
+    cleanup_after_build_without_consent, install_is_silent, manual_commit_requested,
+    take_manual_commit_request, AutoMarker, CleanupPlan,
 };
 use crate::managers::source_update_auto::status::emit_auto_update_changed;
 use crate::managers::source_update_auto::{
     auto_update_decision, load_auto_state, save_auto_state, should_retry, update_coordinator,
     AutoDecision, AutoFacts, AutoResult, AutoState, SkipReason, VerifiedState,
 };
-use crate::managers::source_update_commit::{
-    revoke_install, AdmissionHold, CommitEnv, DeferReason, RevokeResult,
-};
+use crate::managers::source_update_commit::{revoke_install, CommitEnv, DeferReason, RevokeResult};
 use crate::managers::source_update_commit_env::{
     app_commit, release_admission, AppCommitEnv, CommitStatus, TauriHost, REVOKE_PAUSE,
 };
@@ -150,8 +149,9 @@ pub trait DriverEnv {
     fn save_state(&self, state: &AutoState);
     /// An update run is active in this process.
     fn run_active(&self) -> bool;
-    /// Consumes a manual-commit request.
-    fn take_manual_request(&self) -> bool;
+    /// True while a manual-commit request names exactly `run_id` (B6 major 2). Does not consume it:
+    /// the commit consumes it once performed.
+    fn manual_request_for(&self, run_id: &str) -> bool;
     /// True when the `run-<id>.auto` marker of `run_id` exists.
     fn marker_exists(&self, run_id: &str) -> bool;
     /// Removes a built record that has lost its consent (R9-1).
@@ -189,14 +189,44 @@ pub fn auto_facts(facts: &EnvFacts, verified: VerifiedState) -> AutoFacts {
 }
 
 /// Pure: the attempt state after a Wait or Skip for `target`, or `None` when nothing is recorded.
-/// `start` and `no_update` are never recorded. A completed update for the same target is kept.
+/// Only terminal refusals are persisted (B6 major 3): a wait is never a result, because a
+/// healthy run would then look failed. `start`, `no_update`, `backoff` and the wait reasons are
+/// never recorded. A completed update for the same target is kept.
 pub fn skip_record(previous: &AutoState, target: &str, code: &str, now: u64) -> Option<AutoState> {
-    if matches!(code, "start" | "no_update") {
+    if !is_terminal_skip(code) {
         return None;
     }
     let kept_updated = previous.last_result == Some(AutoResult::Updated)
         && previous.last_target.as_deref() == Some(target);
     (!kept_updated).then(|| previous.with_skipped(target, code, now))
+}
+
+/// Skip codes that are persisted as the last result: refusals that stay refused until the owner
+/// or the published state changes. Everything else is either a wait or a transient refusal.
+fn is_terminal_skip(code: &str) -> bool {
+    matches!(
+        code,
+        "disabled" | "not_source" | "blocked" | "unverified" | "verify_failed"
+    )
+}
+
+/// Pure: the attempt state after a launch of `target` (B6 major 3). A previous failure or skip
+/// for the same target is cleared to a neutral started state, so the notice stays hidden during
+/// the build, the wait and the install. The failure stamp (cooldown) is kept. `None` when the
+/// previous result is not a failure or skip for `target`.
+pub fn started_record(previous: &AutoState, target: &str, now: u64) -> Option<AutoState> {
+    let failed_or_skipped = previous.last_target.as_deref() == Some(target)
+        && matches!(
+            previous.last_result,
+            Some(AutoResult::Failed | AutoResult::Skipped)
+        );
+    failed_or_skipped.then(|| AutoState {
+        last_target: Some(target.to_string()),
+        last_result: None,
+        reason_code: None,
+        ts: now,
+        ..previous.clone()
+    })
 }
 
 /// The outstanding automatic record on disk, as far as a manual start cares.
@@ -360,7 +390,7 @@ fn tick_built<E: DriverEnv>(env: &E, memory: &mut DriverMemory, run: &PendingRun
         env.cleanup_built();
         return slow();
     }
-    let manual = env.take_manual_request() || !env.marker_exists(&run.run_id);
+    let manual = env.manual_request_for(&run.run_id) || !env.marker_exists(&run.run_id);
     if !manual && !env.auto_enabled() {
         env.cleanup_built();
         return slow();
@@ -406,6 +436,8 @@ fn tick_idle<E: DriverEnv>(env: &E, memory: &mut DriverMemory) -> Next {
         (AutoDecision::Start, Some(target)) => {
             if env.launch_build(target).is_err() {
                 record(env, memory, &facts, target, "spawn_failed");
+            } else {
+                mark_started(env, &facts, target);
             }
         }
         (other, Some(target)) => record(env, memory, &facts, target, other.code()),
@@ -414,7 +446,19 @@ fn tick_idle<E: DriverEnv>(env: &E, memory: &mut DriverMemory) -> Next {
     slow()
 }
 
-/// Records a Wait or Skip reason once per change (debounce).
+/// Clears an earlier failure or skip for `target` once its build has started (B6 major 3).
+fn mark_started<E: DriverEnv>(env: &E, facts: &EnvFacts, target: &str) {
+    let Ok(previous) = &facts.attempt else {
+        return;
+    };
+    let previous = previous.clone().unwrap_or_default();
+    if let Some(next) = started_record(&previous, target, facts.now) {
+        env.save_state(&next);
+    }
+}
+
+/// Records a terminal Skip or a failure once per change (debounce). Wait reasons are only
+/// remembered in memory for the debounce; they are never persisted (B6 major 3).
 fn record<E: DriverEnv>(
     env: &E,
     memory: &mut DriverMemory,
@@ -578,37 +622,59 @@ pub fn committing_on_disk(app: &AppHandle) -> bool {
     )
 }
 
-/// Runs the commit sequence on the app and announces the install it started (R7-7 a).
+/// Runs the commit sequence on the app and announces the install it started (R7-7 a). A manual
+/// commit consumes the manual request of the built run it performed (B6 major 2).
 pub fn commit_now(app: &AppHandle, manual: bool) -> CommitStatus {
+    let built_id = built_run_id_on_disk(app);
     let status = app_commit(app, manual);
+    if let Some(run_id) = built_id.as_deref().filter(|_| manual) {
+        take_manual_commit_request(run_id);
+    }
     if let CommitStatus::Committed(run) = &status {
-        publish_install_started(app, run);
+        let silent = install_is_silent(run.origin, manual);
+        if let Some(state_dir) = state_dir_of(app) {
+            if let Some(progress) = install_started_progress(&state_dir, run, silent) {
+                crate::managers::source_update::cache_progress(app, progress);
+            }
+        }
     }
     status
 }
 
-/// Marks a started install as silent and publishes its first progress (phase install, 91%).
-fn publish_install_started(app: &AppHandle, run: &PendingRun) {
+/// The run id of the built record on disk, if there is one.
+fn built_run_id_on_disk(app: &AppHandle) -> Option<String> {
+    let state_dir = state_dir_of(app)?;
+    match PendingStore::new(&state_dir).load() {
+        Ok(Some(run)) if run.state == PendingState::Built => Some(run.run_id),
+        _ => None,
+    }
+}
+
+/// Progress of a started install (phase install, 91%). A silent install also gets its marker,
+/// written here so the first frame is silent; a manual install gets neither (B6 minor 4).
+/// `None` for a record that is not committing.
+pub fn install_started_progress(
+    state_dir: &Path,
+    run: &PendingRun,
+    silent: bool,
+) -> Option<UpdateProgress> {
     let PendingState::Committing(info) = &run.state else {
-        return;
+        return None;
     };
-    if let Some(state_dir) = state_dir_of(app) {
-        if let Err(error) = AutoMarker::new(&state_dir).write(&info.install_run_id) {
+    if silent {
+        if let Err(error) = AutoMarker::new(state_dir).write(&info.install_run_id) {
             warn!("could not mark the automatic install as silent: {error}");
         }
     }
-    crate::managers::source_update::cache_progress(
-        app,
-        UpdateProgress {
-            run_id: info.install_run_id.clone(),
-            phase: RunPhase::Installing,
-            percent: INSTALL_PERCENT_FLOOR,
-            target: crate::managers::source_update::short_sha(&run.target_full),
-            message: "Installing the update.".to_string(),
-            estimated: false,
-            silent: true,
-        },
-    );
+    Some(UpdateProgress {
+        run_id: info.install_run_id.clone(),
+        phase: RunPhase::Installing,
+        percent: INSTALL_PERCENT_FLOOR,
+        target: crate::managers::source_update::short_sha(&run.target_full),
+        message: "Installing the update.".to_string(),
+        estimated: false,
+        silent,
+    })
 }
 
 /// Called by the poller when a run reaches its outcome (done or failed). The decision is
@@ -804,18 +870,16 @@ impl RestoreEnv for AppRestore<'_> {
             .app
             .try_state::<crate::managers::source_update::SourceUpdateRuntime>()
             .ok_or(())?;
-        if runtime.admission.is_held() {
-            return Ok(());
-        }
-        let lease = ownership::global()
-            .try_acquire(Owner::Updater)
-            .map_err(|_| ())?;
         let jobs = self.app.try_state::<JobWiring>().ok_or(())?;
-        let reservation = jobs.manager.try_reserve_for_update().map_err(|_| ())?;
-        runtime
-            .admission
-            .store(AdmissionHold::new(lease, reservation));
-        Ok(())
+        // A lease from a refused attempt is kept; only the reservation is retried (B6 minor 6).
+        runtime.admission.hold_with(
+            || {
+                ownership::global()
+                    .try_acquire(Owner::Updater)
+                    .map_err(|_| ())
+            },
+            || jobs.manager.try_reserve_for_update().map_err(|_| ()),
+        )
     }
 
     fn adopt(&self, committing: &PendingRun) {
@@ -1005,8 +1069,8 @@ impl DriverEnv for AppDriverEnv<'_> {
         active_run_id(self.app).is_some()
     }
 
-    fn take_manual_request(&self) -> bool {
-        take_manual_commit_request()
+    fn manual_request_for(&self, run_id: &str) -> bool {
+        manual_commit_requested(run_id)
     }
 
     fn marker_exists(&self, run_id: &str) -> bool {

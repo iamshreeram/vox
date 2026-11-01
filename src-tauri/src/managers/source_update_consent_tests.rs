@@ -315,9 +315,9 @@ fn manual_start_requests_a_commit_of_a_built_update() {
         !silent_for_run(dir.path(), RUN),
         "the built run's marker is dropped"
     );
-    assert!(super::take_manual_commit_request());
+    assert!(super::take_manual_commit_request(RUN));
     assert!(
-        !super::take_manual_commit_request(),
+        !super::take_manual_commit_request(RUN),
         "the request is one-shot"
     );
 }
@@ -325,10 +325,37 @@ fn manual_start_requests_a_commit_of_a_built_update() {
 #[test]
 fn commit_request_is_one_shot() {
     let request = CommitRequest::new();
-    assert!(!request.take());
-    request.request();
-    assert!(request.take());
-    assert!(!request.take());
+    assert!(!request.take(RUN));
+    request.request(RUN);
+    assert!(request.take(RUN));
+    assert!(!request.take(RUN));
+}
+
+// B6 (validator major 2): a manual request is tied to the built run it was made for. Another
+// run's request never applies, and a request is not visible after its run is gone.
+#[test]
+fn b6_manual_request_only_applies_to_the_run_it_was_made_for() {
+    const FIRST: &str = "aaaaaaaaaaaaaaaa";
+    const SECOND: &str = "bbbbbbbbbbbbbbbb";
+    let request = CommitRequest::new();
+    request.request(FIRST);
+    assert!(request.holds(FIRST));
+    assert!(!request.holds(SECOND));
+    assert!(!request.take(SECOND), "a later run never consumes it");
+    assert!(request.take(FIRST));
+    assert!(!request.holds(FIRST));
+}
+
+// B6 (validator major 2): the process-wide request is run-scoped as well.
+#[test]
+fn b6_global_manual_request_is_scoped_to_its_run() {
+    const FIRST: &str = "aaaaaaaaaaaaaaaa";
+    const SECOND: &str = "bbbbbbbbbbbbbbbb";
+    super::request_manual_commit(FIRST);
+    assert!(super::manual_commit_requested(FIRST));
+    assert!(!super::manual_commit_requested(SECOND));
+    assert!(!super::take_manual_commit_request(SECOND));
+    assert!(super::take_manual_commit_request(FIRST));
 }
 
 #[test]

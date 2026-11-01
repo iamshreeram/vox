@@ -260,11 +260,25 @@ impl<C: JobControl, H: CommitHost> CommitEnv for AppCommitEnv<'_, C, H> {
     }
 }
 
+/// Admission state behind [`UpdateAdmission`]. One mutex guards all of it.
+#[derive(Default)]
+struct AdmissionState {
+    /// The guards of an install in flight, once stored.
+    hold: Option<AdmissionHold<Lease, UpdateReservation>>,
+    /// A lease taken by a restore whose reservation was refused. Kept, so the retry only
+    /// takes the reservation (B6 minor 6).
+    partial_lease: Option<Lease>,
+    /// A commit attempt is running and may store guards at its end.
+    commit_in_flight: bool,
+    /// A release arrived during the attempt, before the guards were stored (B6 minor 5).
+    release_requested: bool,
+}
+
 /// Admission guards kept while an install is in flight (R7-2 step 7, R9-3).
 /// Released by [`release_admission`] once the install is terminal or gone.
 #[derive(Default)]
 pub struct UpdateAdmission {
-    hold: Mutex<Option<AdmissionHold<Lease, UpdateReservation>>>,
+    state: Mutex<AdmissionState>,
 }
 
 impl UpdateAdmission {
@@ -273,27 +287,81 @@ impl UpdateAdmission {
         Self::default()
     }
 
-    /// Keeps `hold`. A previous hold is released by being dropped (the gate
-    /// cannot be held twice, so this is not expected).
-    pub fn store(&self, hold: AdmissionHold<Lease, UpdateReservation>) {
-        *self.guard() = Some(hold);
+    /// Marks the start of a commit attempt. The install poller can settle before the attempt
+    /// stores its guards, so a release in this window is remembered (B6 minor 5).
+    pub fn begin(&self) {
+        let mut state = self.guard();
+        state.commit_in_flight = true;
+        state.release_requested = false;
     }
 
-    /// Releases the held guards, if any.
+    /// Marks the end of a commit attempt. Nothing is remembered past this point.
+    pub fn finish(&self) {
+        let mut state = self.guard();
+        state.commit_in_flight = false;
+        state.release_requested = false;
+    }
+
+    /// Keeps `hold`. If a release was requested during the attempt, the guards are released
+    /// at once instead.
+    pub fn store(&self, hold: AdmissionHold<Lease, UpdateReservation>) {
+        let mut state = self.guard();
+        if state.release_requested {
+            state.release_requested = false;
+            drop(state);
+            hold.release();
+            return;
+        }
+        state.hold = Some(hold);
+    }
+
+    /// Releases the held guards (and any partial lease). With nothing held during a commit
+    /// attempt, the release is remembered for [`UpdateAdmission::store`].
     pub fn release(&self) {
-        let taken = self.guard().take();
+        let (taken, partial) = {
+            let mut state = self.guard();
+            let taken = state.hold.take();
+            if taken.is_none() && state.commit_in_flight {
+                state.release_requested = true;
+            }
+            (taken, state.partial_lease.take())
+        };
+        drop(partial);
         if let Some(hold) = taken {
             hold.release();
         }
     }
 
-    /// True while guards are held.
+    /// True while guards are held. Only the tests observe this; production gates on the
+    /// restore and release paths.
+    #[cfg(test)]
     pub fn is_held(&self) -> bool {
-        self.guard().is_some()
+        self.guard().hold.is_some()
     }
 
-    fn guard(&self) -> MutexGuard<'_, Option<AdmissionHold<Lease, UpdateReservation>>> {
-        self.hold.lock().unwrap_or_else(PoisonError::into_inner)
+    /// Takes the admission for a restore. A lease from an earlier refused attempt is kept and
+    /// `take_lease` is not called again; if `take_reservation` is refused, the lease stays.
+    /// Nothing happens when the admission is already held.
+    pub fn hold_with(
+        &self,
+        take_lease: impl FnOnce() -> Result<Lease, ()>,
+        take_reservation: impl FnOnce() -> Result<UpdateReservation, ()>,
+    ) -> Result<(), ()> {
+        let mut state = self.guard();
+        if state.hold.is_some() {
+            return Ok(());
+        }
+        if state.partial_lease.is_none() {
+            state.partial_lease = Some(take_lease()?);
+        }
+        let reservation = take_reservation()?;
+        let lease = state.partial_lease.take().ok_or(())?;
+        state.hold = Some(AdmissionHold::new(lease, reservation));
+        Ok(())
+    }
+
+    fn guard(&self) -> MutexGuard<'_, AdmissionState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -394,7 +462,9 @@ pub fn app_commit(app: &AppHandle, manual: bool) -> CommitStatus {
         PendingStore::new(&state_dir),
         REVOKE_PAUSE,
     );
-    match commit(&env, update_coordinator(), manual) {
+    // Begin before the commit: the install poller may settle before the guards are stored.
+    runtime.admission.begin();
+    let status = match commit(&env, update_coordinator(), manual) {
         CommitOutcome::Committed {
             lease,
             reservation,
@@ -416,7 +486,9 @@ pub fn app_commit(app: &AppHandle, manual: bool) -> CommitStatus {
             CommitStatus::Unresolved(pending)
         }
         CommitOutcome::Deferred(reason) => CommitStatus::Deferred(reason),
-    }
+    };
+    runtime.admission.finish();
+    status
 }
 
 /// Releases the install admission guards held by [`app_commit`], if any.

@@ -19,7 +19,8 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::source_update_pending::{PendingRun, PendingState, PENDING_FILE_NAME};
 
@@ -1066,18 +1067,11 @@ impl JobControl for LaunchctlJobControl {
         if validate_job_label(label).is_err() {
             return JobProbe::Unknown;
         }
-        match Command::new(LAUNCHCTL_PATH)
-            .args(print_args(self.uid, label))
-            .output()
-        {
-            Ok(output) if output.status.success() => {
-                parse_launchctl_print(&String::from_utf8_lossy(&output.stdout))
-            }
-            Ok(output) if output.status.code() == Some(LAUNCHCTL_NOT_FOUND_CODE) => {
-                JobProbe::Absent
-            }
-            _ => JobProbe::Unknown,
-        }
+        probe_from_run(run_bounded(
+            std::ffi::OsStr::new(LAUNCHCTL_PATH),
+            &print_args(self.uid, label),
+            LAUNCHCTL_TIMEOUT,
+        ))
     }
 
     fn bootstrap(&self, plist: &Path) -> Result<(), RunnerError> {
@@ -1102,7 +1096,11 @@ impl JobControl for LaunchctlJobControl {
 }
 
 fn run_launchctl(operation: &'static str, args: &[String]) -> Result<(), RunnerError> {
-    let output = Command::new(LAUNCHCTL_PATH).args(args).output()?;
+    let output = run_bounded(
+        std::ffi::OsStr::new(LAUNCHCTL_PATH),
+        args,
+        LAUNCHCTL_TIMEOUT,
+    )?;
     if output.status.success() {
         Ok(())
     } else {
@@ -1110,6 +1108,76 @@ fn run_launchctl(operation: &'static str, args: &[String]) -> Result<(), RunnerE
             operation,
             code: output.status.code(),
         })
+    }
+}
+
+/// Longest a single launchctl call may run before it is killed (B6 minor 7). A hang must not
+/// block the driver thread for longer than this.
+pub const LAUNCHCTL_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How often a bounded call checks whether its child has exited.
+const LAUNCHCTL_POLL: Duration = Duration::from_millis(20);
+
+/// The finished output of a bounded call.
+#[derive(Debug)]
+pub struct BoundedOutput {
+    /// Exit status of the child.
+    pub status: std::process::ExitStatus,
+    /// Everything the child wrote to stdout.
+    pub stdout: Vec<u8>,
+}
+
+/// Runs `program` with `args` and waits at most `limit`. A child still running at the deadline
+/// is killed and reaped, and the call fails with `TimedOut`. Stdout is drained on its own thread
+/// so a chatty child cannot stall the wait.
+pub fn run_bounded(
+    program: &std::ffi::OsStr,
+    args: &[String],
+    limit: Duration,
+) -> io::Result<BoundedOutput> {
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    let stdout = child.stdout.take();
+    let reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        if let Some(mut pipe) = stdout {
+            // A read error only shortens the captured output; the exit status still decides.
+            let _ = pipe.read_to_end(&mut bytes);
+        }
+        bytes
+    });
+    let deadline = Instant::now() + limit;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            let stdout = reader.join().unwrap_or_default();
+            return Ok(BoundedOutput { status, stdout });
+        }
+        if Instant::now() >= deadline {
+            // Kill and reap; the reader thread ends with the closed pipe.
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "launchctl call timed out",
+            ));
+        }
+        thread::sleep(LAUNCHCTL_POLL);
+    }
+}
+
+/// Maps the result of a `launchctl print` call to a probe (B6 minor 7). A timed-out or failed
+/// call is `Unknown`: it never reads as Absent, which would let an install be treated as gone.
+pub fn probe_from_run(run: io::Result<BoundedOutput>) -> JobProbe {
+    match run {
+        Ok(output) if output.status.success() => {
+            parse_launchctl_print(&String::from_utf8_lossy(&output.stdout))
+        }
+        Ok(output) if output.status.code() == Some(LAUNCHCTL_NOT_FOUND_CODE) => JobProbe::Absent,
+        _ => JobProbe::Unknown,
     }
 }
 

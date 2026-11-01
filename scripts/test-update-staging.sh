@@ -509,7 +509,23 @@ scenario_install_wrong_run_id_refused() {
   run_script
   check "wrong run id: non-zero exit" [ "$RUN_RC" -ne 0 ]
   check "installer not called" no_log "install-ran"
-  check "pending.json removed" [ ! -e "$PENDING" ]
+  # Validator round 1, minor 9: a record that belongs to ANOTHER run is never deleted by a rejected
+  # run (the Rust recovery owns its cleanup), so this assertion changed from "removed" to "kept".
+  check "pending.json kept (belongs to another run)" [ -e "$PENDING" ]
+}
+
+# B6 minor 9: an install rejected because the record belongs to another run never deletes that
+# run's pending.json.
+scenario_install_other_run_pending_is_kept() {
+  setup_env "$1" || fail "sandbox setup failed"
+  prepare_built
+  commit_pending
+  export_install
+  export VOX_UPDATE_RUN_ID="0000000000000000"
+  run_script
+  check "other run: non-zero exit" [ "$RUN_RC" -ne 0 ]
+  check "other run: installer not called" no_log "install-ran"
+  check "other run: the other run's pending.json is kept" [ -f "$PENDING" ]
 }
 
 scenario_install_noncanonical_staged_app_refused() {
@@ -674,6 +690,7 @@ run_scenario "(I11) bad exe_name: failed, no install" scenario_install_bad_exe_n
 run_scenario "(I12) unsupported pending version: failed, no install" scenario_install_bad_version_refused
 run_scenario "(I13) bad percent floor: refused before the lock" scenario_install_bad_floor_refused
 run_scenario "(I14) relative VOX_UPDATE_PENDING_FILE refused" scenario_install_relative_pending_refused
+run_scenario "(I15) other run's record: rejected, its pending.json kept" scenario_install_other_run_pending_is_kept
 
 echo "$PASSED passed, $FAILED failed"
 [ "$FAILED" -eq 0 ]

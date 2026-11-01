@@ -66,9 +66,12 @@ impl OwnershipGate {
         match slot.holder {
             Some(current) => Err(Busy(current)),
             None => {
+                let idle_before = slot.idle_since;
                 slot.holder = Some(who);
                 Ok(Lease {
                     gate: Arc::clone(self),
+                    owner: who,
+                    idle_before,
                 })
             }
         }
@@ -113,13 +116,21 @@ pub fn idle_for(now: Instant, since: Instant) -> Duration {
 #[derive(Debug)]
 pub struct Lease {
     gate: Arc<OwnershipGate>,
+    owner: Owner,
+    /// The idle instant the gate had just before this lease was taken.
+    idle_before: Instant,
 }
 
 impl Drop for Lease {
     fn drop(&mut self) {
         let mut slot = lock_slot(&self.gate.slot);
         slot.holder = None;
-        slot.idle_since = Instant::now();
+        // The update installer is not user activity: releasing it restores the idle instant
+        // it found, so a failed or deferred commit does not restart the idle clock (B6).
+        slot.idle_since = match self.owner {
+            Owner::Updater => self.idle_before,
+            Owner::Dictation | Owner::Conversation | Owner::Enrollment => Instant::now(),
+        };
     }
 }
 
@@ -459,6 +470,38 @@ mod tests {
             drop(lease);
             assert_eq!(gate.current(), None);
         }
+    }
+
+    // B6 (validator major 1): an Updater lease is not user activity. Dropping it restores the
+    // idle instant the gate had before, so a deferred commit cannot keep the idle clock reset.
+    #[test]
+    fn b6_updater_lease_drop_keeps_the_idle_instant() {
+        let gate = OwnershipGate::new();
+        let before = gate.idle_since().expect("a free gate is idle");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let lease = gate.try_acquire(Owner::Updater).expect("updater acquire");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        drop(lease);
+        assert_eq!(
+            gate.idle_since(),
+            Some(before),
+            "updater release must not refresh idleness"
+        );
+    }
+
+    // B6: user work still refreshes idleness on release.
+    #[test]
+    fn b6_dictation_lease_drop_refreshes_the_idle_instant() {
+        let gate = OwnershipGate::new();
+        let before = gate.idle_since().expect("a free gate is idle");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let lease = gate
+            .try_acquire(Owner::Dictation)
+            .expect("dictation acquire");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        drop(lease);
+        let after = gate.idle_since().expect("released gate is idle");
+        assert!(after > before, "dictation release must restart idleness");
     }
 
     #[test]
