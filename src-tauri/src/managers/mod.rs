@@ -170,6 +170,8 @@ mod natural_phonon_model_tests;
 mod natural_phonon_tests;
 pub mod natural_router;
 #[cfg(test)]
+mod natural_router_handover_tests;
+#[cfg(test)]
 mod natural_router_phonon_tests;
 #[cfg(test)]
 mod natural_router_tamil_tests;
