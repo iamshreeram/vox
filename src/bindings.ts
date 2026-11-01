@@ -564,6 +564,22 @@ async changeTtsTamilEnabledSetting(enabled: boolean) : Promise<Result<null, stri
     else return { status: "error", error: e  as any };
 }
 },
+async changeSttTamilEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_stt_tamil_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeSttAutoLanguageEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_stt_auto_language_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async naturalVoiceStatus() : Promise<Result<NaturalVoiceStatus, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("natural_voice_status") };
@@ -631,6 +647,21 @@ async phononVoiceStatus() : Promise<Result<NaturalVoiceStatus, string>> {
  */
 async tamilVoiceStatus() : Promise<TamilVoiceStatus> {
     return await TAURI_INVOKE("tamil_voice_status");
+},
+/**
+ * Status of the Tamil speech recognition pack for the settings row. The pack is checked by
+ * stat only; the engine failure comes from the transcription manager and `enabled` is the live
+ * setting.
+ */
+async tamilSttStatus() : Promise<TamilSttStatus> {
+    return await TAURI_INVOKE("tamil_stt_status");
+},
+/**
+ * Status of the auto language route for the settings row. Reads the settings, the installed
+ * models, the language-check model state and the Tamil pack. Read only.
+ */
+async autoLanguageStatus() : Promise<AutoLanguageStatus> {
+    return await TAURI_INVOKE("auto_language_status");
 },
 async phononVoiceInstall() : Promise<Result<null, string>> {
     try {
@@ -2482,7 +2513,18 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
  * Which input channel to use on the selected microphone device.
  * None means "average all channels" (original behavior).
  */
-selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; memory_enabled?: boolean; 
+selected_channel?: number | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; 
+/**
+ * Recognise Tamil speech with the Tamil speech pack (`aux_models/indic_conformer_int8`)
+ * when `selected_language` is "ta" and the pack is installed. A missing key means on.
+ * Off (or a missing pack) keeps the active model for every language.
+ */
+stt_tamil_enabled?: boolean; /**
+ * Experimental, opt-in: when `selected_language` is "auto", re-check batch transcripts with
+ * a language-ID pass and use the result only when it is clearly another language. A missing
+ * key means off.
+ */
+stt_auto_language_enabled?: boolean; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; memory_enabled?: boolean; 
 /**
  * Prepend remembered facts (when `memory_enabled`) and the last few
  * exchanges to agent-bridge prompts. Opt-in: it sends more data to the
@@ -3734,6 +3776,68 @@ export type StreamTextEvent = { committed: string; tentative: string }
  * Semantic kind of "working" phase, used to localize the spinner label.
  */
 export type StreamWorkKind = "transcribing" | "polishing"
+/**
+ * Status of the Tamil speech recognition pack for the settings row (the `tamil_stt_status` command).
+ * `ready` is the pack verified and no engine failure; `enabled` is the `stt_tamil_enabled`
+ * setting. The UI combines the two.
+ */
+export type TamilSttStatus = { 
+/**
+ * The four pack files are present with their exact sizes.
+ */
+installed: boolean; 
+/**
+ * Installed and the Tamil speech engine has not failed.
+ */
+ready: boolean; 
+/**
+ * The `stt_tamil_enabled` setting.
+ */
+enabled: boolean; 
+/**
+ * The pack folder.
+ */
+dir: string; 
+/**
+ * File names absent from the pack (empty when installed).
+ */
+missing: string[]; 
+/**
+ * The first file present with the wrong size, or none.
+ */
+wrong_size: string | null; 
+/**
+ * User-safe message of the last engine failure, or none.
+ */
+engine_error: string | null }
+/**
+ * Status of the auto language route for the settings row (the `auto_language_status` command).
+ * `enabled` is the opt-in `stt_auto_language_enabled` setting. `lid_model_id` and
+ * `lid_model_name` name the multilingual Whisper the route would use (none when no eligible
+ * model is installed). `lid_loaded` is whether that model is loaded now. `tamil_pack_ready` is
+ * `stt_tamil_enabled` with the Tamil speech pack ready.
+ */
+export type AutoLanguageStatus = { 
+/**
+ * The `stt_auto_language_enabled` setting.
+ */
+enabled: boolean; 
+/**
+ * Id of the multilingual Whisper the route would use, or none.
+ */
+lid_model_id: string | null; 
+/**
+ * Display name of that model, or none.
+ */
+lid_model_name: string | null; 
+/**
+ * The language-check model is loaded.
+ */
+lid_loaded: boolean; 
+/**
+ * `stt_tamil_enabled` and the Tamil speech pack is ready.
+ */
+tamil_pack_ready: boolean }
 /**
  * Status of the Tamil voice for the settings row (the `tamil_voice_status` command).
  */

@@ -230,3 +230,86 @@ vendor's claims and are not verified by Vox.
 Do not use Phonon to impersonate a real person, and do not use it to clone a
 voice without that person's consent. This is the model's responsible-use
 condition.
+
+## Tamil speech recognition
+
+Tamil speech is recognised by a local model, IndicConformer 600M multilingual
+(MIT), run through ONNX Runtime. It is used for push-to-talk and for conversation
+mode when the speech language is Tamil. English stays on the speech model you
+selected, as before. Tamil speech recognition is separate from the Tamil voice
+above: the voice speaks Tamil, and this recognises it.
+
+### Installing the Tamil speech pack
+
+Run the download script from the repository root:
+
+```sh
+./scripts/download_indic_stt.sh
+```
+
+The script downloads four files, about 676 MB, from Hugging Face. It checks each
+file against its pinned size and SHA-256 checksum, skips files that already
+verify, and can be run again if a download fails. It puts the files in
+`~/Library/Application Support/com.iamshreeram.vox/aux_models/indic_conformer_int8`.
+
+If your network uses a proxy that blocks large downloads, download the files in a
+browser from https://huggingface.co/yashwork-byte/indic-conformer-600m-int8-onnx
+(revision `9c590ef62f537c30de47df62e525539938549f13`, folder `assets/`) and place
+them in that folder. The file names must match.
+
+### How it is chosen
+
+Tamil recognition is used when all three are true:
+
+- the speech language is Tamil (Settings > Models > Speech-to-text, language),
+- the **Tamil speech recognition** switch is on (on by default), and
+- the pack is installed and the engine has not failed.
+
+When these hold, Tamil appears in the language list even if the active model does
+not list Tamil (for example an English-only model), and the picker shows a short
+note that Tamil is recognised by the Tamil speech pack. If the pack is removed or
+the switch is turned off, the picker shows the fallback language again. The
+saved choice stays Tamil and is used again once the pack is back.
+
+The Tamil row shows one of: installed and ready; not installed, with the folder to
+install into; an incomplete download; or the engine error.
+
+### Memory and speed
+
+The model needs about 1.1 GB of memory while it is loaded. It loads on the first
+Tamil use, not at startup, and unloads when it has been idle for a while. The
+first Tamil turn after a load takes longer than later ones.
+
+### Limits
+
+- **Greedy CTC decoding only.** The model's CTC head is used with greedy decoding.
+  The transducer head is not used.
+- **No translation to English.** When translate-to-English is on, that turn does
+  not use the Tamil model. It uses the normal speech model, as before.
+- **English words in Tamil script.** English words spoken in a Tamil sentence are
+  written in Tamil script. Speech is not translated and the language is not
+  detected automatically: Tamil is chosen with the language setting.
+- **Long audio is split.** Audio longer than 30 seconds is split at the quietest
+  point, so a word spoken across a split can be damaged.
+- **Barge-in.** A barge-in that overlaps a Tamil turn can report that recognition is
+  busy.
+- **Stop words.** The list of Tamil stop words is an initial list and is still being
+  reviewed.
+
+### Credit
+
+The model is IndicConformer 600M multilingual by AI4Bharat (MIT). The int8 ONNX
+files are a community repackage by yashwork-byte (MIT), pinned to one revision.
+The licence texts and links are in [Third-party notices](NOTICE.md).
+
+## Tamil replies after a spoken acknowledgement
+
+In a live conversation Vox may speak a short fixed English acknowledgement ("One moment.")
+while the real reply is still being written. The English voices (Phonon and Natural)
+cannot speak Tamil. If a mostly-Tamil sentence arrives while one of them is still
+speaking, Vox now stops that voice and starts the Tamil voice at once, so the reply is
+heard. The acknowledgement is cut short in that case. The system voice is not changed.
+
+If you do not hear Tamil, search the log for `speech route:`. Each decision is one line
+with the voice chosen, whether a handover happened and the sentence length; the text
+itself is never logged.

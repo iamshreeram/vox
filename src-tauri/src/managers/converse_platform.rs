@@ -55,8 +55,8 @@ use crate::managers::converse_confirm_judge::{
 use crate::managers::converse_latency::{LatencyEvent, EVENT_NAME};
 use crate::managers::converse_overlay::{OverlayDispatcher, ReadyGate};
 use crate::managers::converse_plan::{
-    build_plan_prompt, JobParsePolicy, PlanError, PlanInput, PlanKind, PlanPrompt, StepKind,
-    TurnPlan,
+    build_plan_prompt, reply_language_directive, JobParsePolicy, PlanError, PlanInput, PlanKind,
+    PlanPrompt, StepKind, TurnPlan,
 };
 use crate::managers::converse_queue::TtsQueueSession;
 use crate::managers::converse_runtime::{
@@ -1129,7 +1129,7 @@ pub(crate) async fn plan_with_tools(
         role_active: input.role.is_some(),
         ..job_parse_policy(settings)
     };
-    let prompt = planner_prompt_for_policy(&base, &policy);
+    let prompt = planner_prompt_localised(&base, &policy, &settings.selected_language);
     let system = format!("{}{TOOLS_ADDENDUM}", prompt.system);
     let mut first_user = String::new();
     if let Some(block) = memory {
@@ -2463,6 +2463,38 @@ pub(crate) fn planner_prompt_for_policy(input: &PlanInput, policy: &JobParsePoli
     crate::managers::converse_plan::plan_prompt_with_job_policy(input, policy)
 }
 
+/// U8: the planner prompt the voice paths send, with the reply-language directive when it
+/// applies (`reply_language_directive`). Byte-identical to `planner_prompt_for_policy` otherwise.
+pub(crate) fn planner_prompt_localised(
+    input: &PlanInput,
+    policy: &JobParsePolicy,
+    selected_language: &str,
+) -> PlanPrompt {
+    with_reply_language(
+        planner_prompt_for_policy(input, policy),
+        input.utterance,
+        selected_language,
+    )
+}
+
+/// U8: appends the reply-language directive to a planner prompt. The directive goes once after
+/// the system text; `combined` is rebuilt as `system + "\n\n" + user`. A second call, or a
+/// prompt that already carries the directive, changes nothing. `None` returns the prompt as is.
+pub(crate) fn with_reply_language(
+    mut prompt: PlanPrompt,
+    utterance: &str,
+    selected_language: &str,
+) -> PlanPrompt {
+    let Some(directive) = reply_language_directive(selected_language, utterance) else {
+        return prompt;
+    };
+    if !prompt.system.contains(directive) {
+        prompt.system = format!("{}\n{directive}", prompt.system);
+        prompt.combined = format!("{}\n\n{}", prompt.system, prompt.user);
+    }
+    prompt
+}
+
 /// The parse call the brain makes, with the policy read at parse time.
 #[allow(dead_code)] // production parses with parse_plan_with_job_policy; kept for the policy contract tests
 pub(crate) fn parse_with_policy(
@@ -2848,7 +2880,7 @@ async fn plan_plain(
         role_active: input.role.is_some(),
         ..job_parse_policy(settings)
     };
-    let prompt = planner_prompt_for_policy(input, &policy);
+    let prompt = planner_prompt_localised(input, &policy, &settings.selected_language);
     let raw = match on_text {
         Some(on_text) => {
             complete_streaming(

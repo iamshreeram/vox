@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { SettingContainer } from "../ui/SettingContainer";
 import { ResetButton } from "../ui/ResetButton";
 import { useSettings } from "../../hooks/useSettings";
+import { useTamilSttStatus } from "../../hooks/useTamilSttStatus";
 import {
   getLanguageLabel,
   LANGUAGES,
@@ -18,6 +19,8 @@ interface LanguageSelectorProps {
   // must-pick models (no detection) omit it and force a concrete choice.
   supportsLanguageDetection?: boolean;
 }
+
+const TAMIL_CODE = "ta";
 
 // Mirrors the matching logic of `effective_language` in
 // src-tauri/src/managers/model.rs. The Rust function is authoritative for the
@@ -45,6 +48,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
 }) => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, resetSetting, isUpdating } = useSettings();
+  const { available: tamilAvailable } = useTamilSttStatus();
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -53,11 +57,29 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   // The persisted *intent* (auto | code). What's actually used/shown is the
   // effective value resolved against the current model's capabilities.
   const intent = getSetting("selected_language") || "auto";
+
+  // Tamil is recognised by the Tamil speech pack when it is installed and enabled, whatever the
+  // active model lists. Only the offered and displayed capabilities change here; the persisted
+  // selected_language is never rewritten by the UI (not on a model switch, not when the pack
+  // becomes unavailable: the closed picker then shows the fallback and the saved value stays).
+  const capabilityLanguages = useMemo(() => {
+    const base = supportedLanguages ?? [];
+    if (
+      tamilAvailable &&
+      base.length > 0 &&
+      !supportsLanguageCode(base, TAMIL_CODE)
+    ) {
+      return [...base, TAMIL_CODE];
+    }
+    return base;
+  }, [supportedLanguages, tamilAvailable]);
+
   const selectedLanguage = effectiveLanguage(
     intent,
-    supportedLanguages ?? [],
+    capabilityLanguages,
     supportsLanguageDetection,
   );
+  const showTamilHelper = tamilAvailable && selectedLanguage === TAMIL_CODE;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -83,14 +105,13 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   }, [isOpen]);
 
   const availableLanguages = useMemo(() => {
-    if (!supportedLanguages || supportedLanguages.length === 0)
-      return LANGUAGES;
+    if (capabilityLanguages.length === 0) return LANGUAGES;
     return LANGUAGES.filter((lang) =>
       lang.value === "auto"
         ? supportsLanguageDetection
-        : supportsLanguageCode(supportedLanguages, lang.value),
+        : supportsLanguageCode(capabilityLanguages, lang.value),
     );
-  }, [supportedLanguages, supportsLanguageDetection]);
+  }, [capabilityLanguages, supportsLanguageDetection]);
 
   const filteredLanguages = useMemo(
     () =>
@@ -217,6 +238,11 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
           disabled={isUpdating("selected_language")}
         />
       </div>
+      {showTamilHelper && (
+        <p className="text-xs text-muted" data-testid="tamil-stt-helper">
+          {t("settings.general.language.tamilHelper")}
+        </p>
+      )}
       {isUpdating("selected_language") && (
         <div className="absolute inset-0 bg-mid-gray/10 rounded flex items-center justify-center">
           <div className="w-4 h-4 border-2 border-logo-primary border-t-transparent rounded-full animate-spin"></div>

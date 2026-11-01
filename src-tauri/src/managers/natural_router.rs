@@ -65,7 +65,9 @@ pub struct TamilRoute {
 ///   `system.supports_queue()` at call time, else `system_queue`.
 /// * A running Phonon burst is pinned BEFORE the choice is read for routing: a later sentence
 ///   (`enqueue_styled`) stays on Phonon whatever the choice or readiness says, even when it is
-///   not English (documented trade-off; never two routes at once).
+///   not English (documented trade-off; never two routes at once). Exception (handover): a
+///   mostly-Tamil sentence enqueued while a PHONON or NATURAL burst is running stops that burst
+///   and starts TAMIL, atomically under the router lock; SYSTEM pins are unchanged.
 /// * A burst START (`spawn`, `spawn_styled`, or `enqueue_styled` while no route is running)
 ///   chooses PHONON iff `choice().phonon`, a Phonon backend exists, Phonon health is Ready (after
 ///   `maybe_auto_retry`), `phonon_ready()` and `is_probably_english(text)`. Otherwise, if Natural
@@ -189,10 +191,42 @@ impl SpeechHandle for RoutedHandle {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Via {
+pub(crate) enum Via {
     Spawn,
     Styled,
     Enqueue,
+}
+
+/// The one structured decision record per `start` call (DESIGN.md Logging). Metadata only: it
+/// takes no text argument, so no spoken text can reach a log line. The key order is fixed.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn speech_route_record(
+    via: Via,
+    pinned: Option<usize>,
+    chosen: usize,
+    chars: usize,
+    mostly_tamil: bool,
+    tamil_ready: bool,
+    handover: bool,
+    fell_back: bool,
+) -> String {
+    let pinned = pinned.map_or("none", slot_name);
+    format!(
+        "speech route: via={via:?} pinned={pinned} chosen={} chars={chars} mostly_tamil={mostly_tamil} tamil_ready={tamil_ready} handover={handover} fell_back={fell_back}",
+        slot_name(chosen)
+    )
+}
+
+/// The log name of a slot index (`none` is written by the caller for an absent pin).
+fn slot_name(slot: usize) -> &'static str {
+    match slot {
+        NATURAL => "natural",
+        PHONON => "phonon",
+        SYSTEM => "system",
+        SYSTEM_QUEUE => "system_queue",
+        TAMIL => "tamil",
+        _ => "unknown",
+    }
 }
 
 impl EngineBackend {
@@ -401,7 +435,10 @@ impl EngineBackend {
         }
     }
 
-    /// Peer-selected path (see the type-level contract).
+    /// Peer-selected path (see the type-level contract). Enqueue handover (Tamil only): a
+    /// mostly-Tamil sentence while a PHONON or NATURAL burst runs stops that burst and starts
+    /// TAMIL, all under the same lock hold (no wait, no release, no new state). Exactly one
+    /// `speech route` decision record is written per call that reaches a decision.
     #[allow(clippy::too_many_arguments)]
     fn start(
         &self,
@@ -429,31 +466,71 @@ impl EngineBackend {
                 shared: self.shared.clone(),
             })
         };
-        let chosen = match pinned {
-            Some(NATURAL) if !is_mostly_latin(text) => {
-                self.shared.dropped.fetch_add(1, Ordering::SeqCst);
-                return Ok(routed());
+        // Metadata only for the decision record of this call; the text is never logged.
+        let chars = text.chars().count();
+        let record = |chosen: usize, handover: bool, fell_back: bool| {
+            let mostly_tamil = self.tamil.is_some() && is_mostly_tamil(text);
+            let tamil_ready = self.tamil_active()
+                && self
+                    .tamil
+                    .as_ref()
+                    .is_some_and(|route| route.health.is_ready());
+            log::info!(
+                "{}",
+                speech_route_record(
+                    via,
+                    pinned,
+                    chosen,
+                    chars,
+                    mostly_tamil,
+                    tamil_ready,
+                    handover,
+                    fell_back,
+                )
+            );
+        };
+        // Handover (Enqueue only): a mostly-Tamil sentence while a PHONON or NATURAL burst runs.
+        // It is tested FIRST, so the decisions below never run for it.
+        let handover = via == Via::Enqueue
+            && matches!(pinned, Some(NATURAL) | Some(PHONON))
+            && self.tamil_chosen(text);
+        let chosen = if handover {
+            TAMIL
+        } else {
+            match pinned {
+                Some(NATURAL) if !is_mostly_latin(text) => {
+                    self.shared.dropped.fetch_add(1, Ordering::SeqCst);
+                    log::warn!("natural route dropped a non-Latin sentence: chars={chars}");
+                    record(NATURAL, false, false);
+                    return Ok(routed());
+                }
+                // A running Tamil burst: a sentence with nothing speakable is an intentional skip
+                // (R2-B). Nothing is submitted; health and pending state are not touched.
+                Some(TAMIL) if !has_speakable_tamil(text) => {
+                    self.shared.tamil_skipped.fetch_add(1, Ordering::SeqCst);
+                    record(TAMIL, false, false);
+                    return Ok(routed());
+                }
+                // A running Phonon burst keeps every sentence, even a non-English one (documented
+                // trade-off: the first sentence's decision stands for the whole burst). Exception
+                // (handover): a mostly-Tamil sentence while a PHONON or NATURAL burst runs is
+                // handed to TAMIL above, so it never reaches this arm.
+                Some(index) => index,
+                None => self.first_sentence_slot(choice, text, via),
             }
-            // A running Tamil burst: a sentence with nothing speakable is an intentional skip
-            // (R2-B). Nothing is submitted; health and pending state are not touched.
-            Some(TAMIL) if !has_speakable_tamil(text) => {
-                self.shared.tamil_skipped.fetch_add(1, Ordering::SeqCst);
-                return Ok(routed());
-            }
-            // A running Phonon burst keeps every sentence, even a non-English one (documented
-            // trade-off: the first sentence's decision stands for the whole burst).
-            Some(index) => index,
-            None => self.first_sentence_slot(choice, text, via),
         };
         // A spawn that targets Tamil, or arrives while Tamil runs, first stops EVERY tracked route
         // (no early return). An unconfirmed stop refuses the new route with WouldBlock.
-        if via != Via::Enqueue {
-            let tamil_running = slots[TAMIL]
+        // A handover stops the running burst the same way, under this same lock hold.
+        let tamil_running = via != Via::Enqueue
+            && slots[TAMIL]
                 .as_mut()
                 .is_some_and(|handle| handle.is_running());
-            if (chosen == TAMIL || tamil_running) && !kill_slots(&mut slots) {
-                return Err(io::Error::from(io::ErrorKind::WouldBlock));
-            }
+        if ((via != Via::Enqueue && (chosen == TAMIL || tamil_running)) || handover)
+            && !kill_slots(&mut slots)
+        {
+            record(chosen, handover, false);
+            return Err(io::Error::from(io::ErrorKind::WouldBlock));
         }
         let call =
             |slot: usize| self.call_slot(slot, &choice.voice, text, voice, rate_wpm, emotion, via);
@@ -462,11 +539,18 @@ impl EngineBackend {
                 if (chosen == NATURAL || chosen == PHONON || chosen == TAMIL)
                     && err.kind() != io::ErrorKind::WouldBlock =>
             {
+                if chosen == TAMIL {
+                    log::warn!(
+                        "tamil route call failed ({:?}); the fallback slot is used",
+                        err.kind()
+                    );
+                }
                 let fallback = self.fallback_slot();
                 (fallback, call(fallback))
             }
             other => (chosen, other),
         };
+        record(slot, handover, slot != chosen);
         let handle = result?;
         slots[slot] = Some(handle);
         Ok(routed())

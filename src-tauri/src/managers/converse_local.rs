@@ -42,6 +42,16 @@ const END_PHRASES: &[&[&str]] = &[
     &["never", "mind"],
     &["nevermind"],
     &["exit"],
+    // Tamil. Initial list, to be reviewed by a native speaker. Each entry is a
+    // whole-utterance match exactly like the English entries above, so a Tamil
+    // word inside a longer request is not an end phrase. A bare "no" (வேண்டாம்) or
+    // "cancel" (ரத்து) is deliberately NOT listed: English has no bare "no"/"cancel"
+    // end phrase either, and a plain answer to a question must not end the conversation.
+    &["நிறுத்து"],
+    &["நிறுத்துங்கள்"],
+    &["நிறுத்துங்க"],
+    &["நிறுத்தவும்"],
+    &["போதும்"],
 ];
 
 /// Dictation prefixes, ordered longest first so the longest match wins.
@@ -62,10 +72,14 @@ struct Word {
     key: String,
 }
 
-/// Word key: lowercase, with ASCII punctuation and apostrophes (incl. U+2019) removed.
+/// Word key: lowercase, with ASCII punctuation, apostrophes (incl. U+2019) and the
+/// Devanagari/Indic danda (U+0964, U+0965) removed. Speech models may emit a danda after
+/// a sentence, so it must not stop a word from matching.
 fn word_key(raw: &str) -> String {
     raw.chars()
-        .filter(|c| !c.is_ascii_punctuation() && *c != '\u{2019}')
+        .filter(|c| {
+            !c.is_ascii_punctuation() && !matches!(*c, '\u{2019}' | '\u{0964}' | '\u{0965}')
+        })
         .flat_map(|c| c.to_lowercase())
         .collect()
 }
@@ -399,6 +413,43 @@ mod tests {
         assert_eq!(classify_local("what's the weather like"), LocalIntent::None);
         assert_eq!(classify_local("open Safari"), LocalIntent::None);
         assert_eq!(classify_local("   "), LocalIntent::None);
+    }
+
+    #[test]
+    fn tamil_end_words_match_whole_utterance() {
+        for p in [
+            "நிறுத்து",
+            "நிறுத்துங்கள்",
+            "நிறுத்துங்க",
+            "நிறுத்தவும்",
+            "போதும்",
+            "நிறுத்து.",
+            "போதும்!",
+            "  நிறுத்து  ",
+            "நிறுத்து\u{0964}",
+        ] {
+            assert_eq!(classify_local(p), LocalIntent::End, "phrase: {p:?}");
+        }
+    }
+
+    #[test]
+    fn tamil_end_word_inside_a_longer_request_is_not_end() {
+        for p in [
+            "நிறுத்து இசையை",
+            "தயவுசெய்து நிறுத்து",
+            "போதும் இசை",
+            "எனக்கு வேண்டாம் இட்லி",
+            "வேண்டாம் என்று சொல்லாதே",
+            "ரத்து செய்",
+            "வேண்டாம்",
+            "ரத்து",
+            "வேண்டாம்.",
+            "நிறுத்து இசையை.",
+            "stop நிறுத்து",
+            "நிறுத்து stop",
+        ] {
+            assert_eq!(classify_local(p), LocalIntent::None, "phrase: {p:?}");
+        }
     }
 }
 

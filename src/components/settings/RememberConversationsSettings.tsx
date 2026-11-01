@@ -12,7 +12,7 @@ interface RememberConversationsSettingsProps {
 }
 
 /**
- * Opt-in "Remember recent conversations" toggle, plus the clear control and the count of
+ * "Remember recent conversations" toggle (on by default for new installs), plus the clear control and the count of
  * remembered summaries. Separate from the transcript-saving toggles above it: that feature
  * writes records; this one keeps short summaries that are sent back to the model later.
  * The clear uses an inline two-step confirm (no native dialog). A failed count read shows
@@ -22,7 +22,7 @@ export const RememberConversationsSettings: React.FC<RememberConversationsSettin
   React.memo(({ descriptionMode = "tooltip", grouped = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
-    const enabled = getSetting("conversation_memory_enabled") ?? false;
+    const enabled = getSetting("conversation_memory_enabled") ?? true;
 
     // null = unknown (the count command failed or has not answered yet).
     const [count, setCount] = useState<number | null>(null);

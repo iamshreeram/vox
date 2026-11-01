@@ -76,11 +76,68 @@ export const APPEARANCE_CONSUMER_LABELS = [
   "orb-bubbles",
 ] as const;
 
+/**
+ * An English-only transcription model (Parakeet-like): its language list has one entry, so
+ * without the Tamil speech pack the language picker offers English only.
+ */
+export const MOCK_ENGLISH_ONLY_MODEL = {
+  id: "mock-english-only",
+  name: "Mock English Only",
+  description: "An English-only model used by the tests.",
+  filename: "mock-english-only-int8",
+  source: "Local",
+  size_mb: 10,
+  is_downloaded: true,
+  is_downloading: false,
+  partial_size: 0,
+  is_directory: true,
+  engine_type: "Parakeet",
+  accuracy_score: 0.5,
+  speed_score: 0.5,
+  supports_translation: false,
+  is_recommended: false,
+  supported_languages: ["en"],
+  supports_language_selection: true,
+  is_custom: false,
+  supports_streaming: false,
+  supports_language_detection: false,
+};
+
+/** A multilingual transcription model, used to switch the active model away and back. */
+export const MOCK_MULTILINGUAL_MODEL = {
+  id: "mock-multilingual",
+  name: "Mock Multilingual",
+  description: "A multilingual model used by the tests.",
+  filename: "mock-multilingual.bin",
+  source: "Local",
+  size_mb: 10,
+  is_downloaded: true,
+  is_downloading: false,
+  partial_size: 0,
+  is_directory: false,
+  engine_type: "TranscribeCpp",
+  accuracy_score: 0.5,
+  speed_score: 0.5,
+  supports_translation: false,
+  is_recommended: false,
+  supported_languages: ["en", "de"],
+  supports_language_selection: true,
+  is_custom: false,
+  supports_streaming: false,
+  supports_language_detection: true,
+};
+
 export const DEFAULT_MOCK_SETTINGS: Readonly<MockSettings> = {
   settings_schema_version: 1,
   onboarding_completed: true,
   app_language: "en",
   post_process_enabled: false,
+  // Tamil speech recognition row (TamilSttRow) and its toggle; on by default.
+  stt_tamil_enabled: true,
+  // Experimental auto-language check: opt-in, so off by default (matches the real backend).
+  stt_auto_language_enabled: false,
+  // Conversation memory is on by default for fresh installs (matches the real backend).
+  conversation_memory_enabled: true,
   debug_mode: false,
   experimental_enabled: false,
   update_checks_enabled: false,
@@ -153,6 +210,15 @@ function installTauriMockInPage(arg: MockInitArg): void {
     change_orb_accent_setting: ["orb_accent", "color"],
   };
   const CONSUMER_LABELS = ["chat", "orb", "orb-bubbles"];
+  // Setting writers whose value is kept in `settings` (command -> [key, argument name]).
+  const PERSISTED_SETTING_ARG: Record<string, [string, string]> = {
+    change_selected_language_setting: ["selected_language", "language"],
+    change_stt_tamil_enabled_setting: ["stt_tamil_enabled", "enabled"],
+    change_stt_auto_language_enabled_setting: [
+      "stt_auto_language_enabled",
+      "enabled",
+    ],
+  };
   const emitted: Array<{ label: string; event: string; payload: unknown }> = [];
   let appearanceRev = 1;
   const committedAppearance = (): Record<string, unknown> => ({
@@ -219,6 +285,31 @@ function installTauriMockInPage(arg: MockInitArg): void {
     list_personas: () => [],
     list_tts_voices: () => [],
     list_natural_voices: () => [],
+    // Tamil speech recognition (TamilSttRow and LanguageSelector). Default: pack NOT installed.
+    // Tests flip it with setMockCommand(page, "tamil_stt_status", ...) and then dispatch a
+    // window focus event, which makes the hook refetch.
+    tamil_stt_status: () => ({
+      installed: false,
+      ready: false,
+      enabled: true,
+      dir: "/tmp/vox-test/aux_models/indic_conformer_int8",
+      missing: [
+        "encoder.onnx",
+        "ctc_decoder.onnx",
+        "vocab.json",
+        "language_masks.json",
+      ],
+      wrong_size: null,
+      engine_error: null,
+    }),
+    // Auto language route (opt-in, experimental). Default: off, no language-check model, no pack.
+    auto_language_status: () => ({
+      enabled: false,
+      lid_model_id: null,
+      lid_model_name: null,
+      lid_loaded: false,
+      tamil_pack_ready: false,
+    }),
     // Tamil voice row (TamilVoiceRow) reads this on mount; shape follows src/bindings.ts.
     tamil_voice_status: () => ({
       installed: false,
@@ -339,6 +430,13 @@ function installTauriMockInPage(arg: MockInitArg): void {
       return Promise.resolve(null);
     }
     if (command.startsWith("change_") && command.endsWith("_setting")) {
+      // Speech-language and Tamil recognition writes are persisted, as the backend does, so a
+      // later settings read (after a model switch or a refresh) sees the saved value.
+      const persisted = PERSISTED_SETTING_ARG[command];
+      if (persisted !== undefined) {
+        const [key, argName] = persisted;
+        settings[key] = clone(args[argName]);
+      }
       return Promise.resolve(null);
     }
     if (command in overrides) {

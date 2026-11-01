@@ -867,6 +867,16 @@ pub struct AppSettings {
     pub translate_to_english: bool,
     #[serde(default = "default_selected_language")]
     pub selected_language: String,
+    /// Recognise Tamil speech with the Tamil speech pack (`aux_models/indic_conformer_int8`)
+    /// when `selected_language` is "ta" and the pack is installed. A missing key means on.
+    /// Off (or a missing pack) keeps the active model for every language.
+    #[serde(default = "default_stt_tamil_enabled")]
+    pub stt_tamil_enabled: bool,
+    /// Experimental, opt-in: when `selected_language` is "auto", re-check batch transcripts with
+    /// a language-ID pass and use the result only when it is clearly another language. A missing
+    /// key means off.
+    #[serde(default = "default_stt_auto_language_enabled")]
+    pub stt_auto_language_enabled: bool,
     #[serde(default = "default_overlay_position")]
     pub overlay_position: OverlayPosition,
     #[serde(default = "default_debug_mode")]
@@ -1222,10 +1232,11 @@ pub struct AppSettings {
     /// Also write a Markdown note into the vault (needs `conversation_records_enabled`).
     #[serde(default)]
     pub conversation_records_to_vault: bool,
-    /// Remember recent conversations so later ones can continue them. Opt-in, default OFF.
+    /// Remember recent conversations so later ones can continue them. Default ON for fresh
+    /// installs only; an existing store keeps its explicit value (no migration).
     /// When on, finished conversation turns are summarised with the configured summary
     /// model and the summaries are sent to the conversation model at later sessions.
-    #[serde(default)]
+    #[serde(default = "default_conversation_memory_enabled")]
     pub conversation_memory_enabled: bool,
     /// Absolute path of the notes vault folder used for notes and vault context.
     #[serde(default)]
@@ -2061,6 +2072,10 @@ fn default_translate_to_english() -> bool {
     false
 }
 
+fn default_conversation_memory_enabled() -> bool {
+    true
+}
+
 fn default_start_hidden() -> bool {
     false
 }
@@ -2088,6 +2103,16 @@ fn default_whats_new_last_seen_version() -> String {
 
 fn default_selected_language() -> String {
     "auto".to_string()
+}
+
+/// Serde default for `stt_tamil_enabled`: on for stores that lack the key.
+fn default_stt_tamil_enabled() -> bool {
+    true
+}
+
+/// Serde default for `stt_auto_language_enabled`: opt-in, so off for stores that lack the key.
+fn default_stt_auto_language_enabled() -> bool {
+    false
 }
 
 fn default_overlay_position() -> OverlayPosition {
@@ -2502,6 +2527,8 @@ pub fn get_default_settings() -> AppSettings {
         selected_output_device: None,
         translate_to_english: false,
         selected_language: "auto".to_string(),
+        stt_tamil_enabled: default_stt_tamil_enabled(),
+        stt_auto_language_enabled: default_stt_auto_language_enabled(),
         overlay_position: default_overlay_position(),
         debug_mode: false,
         log_level: default_log_level(),
@@ -2630,7 +2657,7 @@ pub fn get_default_settings() -> AppSettings {
         exp_rt_timing_log: false,
         conversation_records_enabled: false,
         conversation_records_to_vault: false,
-        conversation_memory_enabled: false,
+        conversation_memory_enabled: true,
         vault_path: String::new(),
         vault_context_enabled: false,
         vault_rag_enabled: false,
@@ -3574,6 +3601,56 @@ mod tests {
     }
 
     #[test]
+    fn stt_auto_language_enabled_defaults_to_false_and_absent_key_loads_false() {
+        assert!(!get_default_settings().stt_auto_language_enabled);
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("stt_auto_language_enabled");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.stt_auto_language_enabled);
+    }
+
+    #[test]
+    fn explicit_true_is_kept_on_round_trip() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings["stt_auto_language_enabled"] = serde_json::Value::Bool(true);
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(loaded.stt_auto_language_enabled);
+        let again: AppSettings =
+            serde_json::from_value(serde_json::to_value(&loaded).unwrap()).unwrap();
+        assert!(again.stt_auto_language_enabled);
+    }
+
+    #[test]
+    fn stt_tamil_setting_is_on_by_default() {
+        assert!(get_default_settings().stt_tamil_enabled);
+    }
+
+    #[test]
+    fn stt_tamil_setting_defaults_on_when_missing_from_stored_settings() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("stt_tamil_enabled");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(loaded.stt_tamil_enabled);
+    }
+
+    #[test]
+    fn stt_tamil_explicit_false_stays_false_across_a_round_trip() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings["stt_tamil_enabled"] = serde_json::Value::Bool(false);
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.stt_tamil_enabled);
+        let again: AppSettings =
+            serde_json::from_value(serde_json::to_value(&loaded).unwrap()).unwrap();
+        assert!(!again.stt_tamil_enabled);
+    }
+
+    #[test]
     fn tamil_voice_setting_is_on_by_default() {
         assert!(get_default_settings().tts_tamil_enabled);
     }
@@ -3721,20 +3798,34 @@ mod tests {
     }
 
     #[test]
-    fn conversation_memory_defaults_off() {
+    fn conversation_memory_defaults_on() {
         let settings = get_default_settings();
-        assert!(!settings.conversation_memory_enabled);
+        assert!(settings.conversation_memory_enabled);
     }
 
     #[test]
-    fn conversation_memory_defaults_off_when_missing_from_legacy_settings() {
+    fn conversation_memory_defaults_on_when_missing_from_legacy_settings() {
         let mut settings = serde_json::to_value(get_default_settings()).unwrap();
         settings
             .as_object_mut()
             .unwrap()
             .remove("conversation_memory_enabled");
         let loaded: AppSettings = serde_json::from_value(settings).unwrap();
-        assert!(!loaded.conversation_memory_enabled);
+        assert!(loaded.conversation_memory_enabled);
+    }
+
+    #[test]
+    fn conversation_memory_explicit_false_survives_load_path() {
+        // A store that already holds an explicit false keeps it through the same
+        // parse, migration and merge steps that get_settings runs on every read.
+        let mut stored = serde_json::to_value(get_default_settings()).unwrap();
+        stored["conversation_memory_enabled"] = serde_json::json!(false);
+        let mut settings: AppSettings = serde_json::from_value(stored.clone()).unwrap();
+        assert!(!settings.conversation_memory_enabled);
+        apply_settings_migrations(&mut settings, &stored);
+        merge_missing_default_bindings(&mut settings);
+        ensure_post_process_defaults(&mut settings);
+        assert!(!settings.conversation_memory_enabled);
     }
 
     #[test]
@@ -3744,6 +3835,18 @@ mod tests {
         let json = serde_json::to_string(&settings).unwrap();
         let loaded: AppSettings = serde_json::from_str(&json).unwrap();
         assert!(loaded.conversation_memory_enabled);
+    }
+
+    #[test]
+    fn conversation_memory_setter_values_round_trip_false_and_true() {
+        // The change command stores the requested value as given, so both must persist.
+        for value in [false, true] {
+            let mut settings = get_default_settings();
+            settings.conversation_memory_enabled = value;
+            let json = serde_json::to_string(&settings).unwrap();
+            let loaded: AppSettings = serde_json::from_str(&json).unwrap();
+            assert_eq!(loaded.conversation_memory_enabled, value);
+        }
     }
 
     #[test]

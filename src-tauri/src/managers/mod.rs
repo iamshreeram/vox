@@ -112,6 +112,8 @@ pub mod converse_queue;
 mod converse_rag_probe_tests;
 #[cfg(test)]
 mod converse_rag_tests;
+#[cfg(test)]
+mod converse_reply_lang_tests;
 pub mod converse_role;
 pub mod converse_runtime;
 pub mod converse_stream;
@@ -167,6 +169,8 @@ mod natural_phonon_model_tests;
 #[cfg(all(test, target_os = "macos"))]
 mod natural_phonon_tests;
 pub mod natural_router;
+#[cfg(test)]
+mod natural_router_handover_tests;
 #[cfg(test)]
 mod natural_router_phonon_tests;
 #[cfg(test)]
@@ -297,3 +301,31 @@ pub mod voice_shortcuts;
 mod wake_conversation_tests;
 pub mod wakeword;
 pub mod wakeword_listener;
+
+// Tamil speech recognition (IndicConformer, CTC greedy) -- see docs/tts-engines.md.
+pub mod auto_lang;
+pub mod auto_lang_empty;
+#[cfg(test)]
+mod auto_lang_empty_corpus_tests;
+#[cfg(test)]
+mod auto_lang_empty_tests;
+#[cfg(test)]
+mod auto_lang_tests;
+pub mod indic_stt_core;
+#[cfg(test)]
+mod indic_stt_core_tests;
+pub mod indic_stt_mel;
+#[cfg(test)]
+mod indic_stt_mel_tests;
+pub mod indic_stt_ort;
+#[cfg(test)]
+mod indic_stt_ort_tests;
+pub mod indic_stt_slot;
+#[cfg(test)]
+mod indic_stt_slot_tests;
+#[cfg(test)]
+mod indic_stt_text_tests;
+pub mod lid_slot;
+#[cfg(test)]
+mod lid_slot_tests;
+pub mod lid_whisper;
