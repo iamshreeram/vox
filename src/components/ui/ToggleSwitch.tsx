@@ -11,6 +11,8 @@ interface ToggleSwitchProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
   tooltipPosition?: "top" | "bottom";
+  /** Optional badge beside the label (for example "Experimental"). Absent means no change. */
+  badge?: React.ReactNode;
 }
 
 export const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
@@ -23,6 +25,7 @@ export const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
   descriptionMode = "tooltip",
   grouped = false,
   tooltipPosition = "top",
+  badge,
 }) => {
   return (
     <SettingContainer
@@ -32,6 +35,7 @@ export const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
       grouped={grouped}
       disabled={disabled}
       tooltipPosition={tooltipPosition}
+      badge={badge}
     >
       <label
         className={`flex items-center ${disabled || isUpdating ? "cursor-not-allowed" : "cursor-pointer"}`}

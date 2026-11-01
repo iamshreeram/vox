@@ -234,6 +234,8 @@ const settingUpdaters: {
     commands.changeSelectedLanguageSetting(value as string),
   stt_tamil_enabled: (value) =>
     commands.changeSttTamilEnabledSetting(value as boolean),
+  stt_auto_language_enabled: (value) =>
+    commands.changeSttAutoLanguageEnabledSetting(value as boolean),
   overlay_position: (value) =>
     commands.changeOverlayPositionSetting(value as string),
   debug_mode: (value) => commands.changeDebugModeSetting(value as boolean),

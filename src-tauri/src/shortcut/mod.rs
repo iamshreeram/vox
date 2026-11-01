@@ -1405,6 +1405,25 @@ pub fn change_stt_tamil_enabled_setting(app: AppHandle, enabled: bool) -> Result
     Ok(())
 }
 
+/// Sets whether the experimental auto-language check is on in `settings`. Pure, so the stored
+/// value can be tested without Tauri. Off by default (opt-in).
+pub fn apply_stt_auto_language_enabled(settings: &mut crate::settings::AppSettings, enabled: bool) {
+    settings.stt_auto_language_enabled = enabled;
+}
+
+/// Stores whether the experimental auto-language check is on (opt-in, off by default).
+#[tauri::command]
+#[specta::specta]
+pub fn change_stt_auto_language_enabled_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    apply_stt_auto_language_enabled(&mut settings, enabled);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// Speaks a short test phrase with the saved voice and rate. Works even when
 /// spoken replies are disabled so the user can audition a voice first. The
 /// text is never logged.
@@ -2383,6 +2402,21 @@ mod tests {
             normalize_agent_bridge_binary_path(Some(multibyte)).is_ok(),
             "counted in chars, not bytes"
         );
+    }
+}
+
+#[cfg(test)]
+mod stt_auto_language_switch_tests {
+    use super::apply_stt_auto_language_enabled;
+
+    #[test]
+    fn stt_auto_language_switch_stores_true_and_false_and_defaults_off() {
+        let mut settings = crate::settings::get_default_settings();
+        assert!(!settings.stt_auto_language_enabled);
+        apply_stt_auto_language_enabled(&mut settings, true);
+        assert!(settings.stt_auto_language_enabled);
+        apply_stt_auto_language_enabled(&mut settings, false);
+        assert!(!settings.stt_auto_language_enabled);
     }
 }
 

@@ -11,6 +11,8 @@ interface SettingContainerProps {
   title: string;
   description: string;
   children: React.ReactNode;
+  /** Optional badge shown beside the title (horizontal layout only). Absent means no change. */
+  badge?: React.ReactNode;
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
   layout?: "horizontal" | "stacked";
@@ -27,6 +29,7 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
   layout = "horizontal",
   disabled = false,
   tooltipPosition = "top",
+  badge,
 }) => {
   const [showTooltip, setShowTooltip] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -150,18 +153,22 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
   const horizontalContainerClasses = grouped
     ? `flex items-center justify-between ${groupedRowClass(density)}`
     : "flex items-center justify-between min-h-12 px-4 p-2 rounded-lg border border-mid-gray/20";
+  const heading = (
+    <h3
+      id={titleId}
+      className={`text-sm font-medium ${disabled ? "text-muted" : ""}`}
+    >
+      {title}
+    </h3>
+  );
 
   if (descriptionMode === "tooltip") {
     return (
       <div className={horizontalContainerClasses} data-setting-title={title}>
         <div className="max-w-2/3">
           <div className="flex items-center gap-2">
-            <h3
-              id={titleId}
-              className={`text-sm font-medium ${disabled ? "text-muted" : ""}`}
-            >
-              {title}
-            </h3>
+            {heading}
+            {badge}
             <div
               ref={tooltipRef}
               className="relative"
@@ -213,12 +220,14 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
   return (
     <div className={horizontalContainerClasses} data-setting-title={title}>
       <div className="max-w-2/3">
-        <h3
-          id={titleId}
-          className={`text-sm font-medium ${disabled ? "text-muted" : ""}`}
-        >
-          {title}
-        </h3>
+        {badge === undefined ? (
+          heading
+        ) : (
+          <div className="flex items-center gap-2">
+            {heading}
+            {badge}
+          </div>
+        )}
         <p className={`text-sm ${disabled ? "text-muted" : ""}`}>
           {description}
         </p>

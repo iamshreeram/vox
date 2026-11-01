@@ -134,6 +134,8 @@ export const DEFAULT_MOCK_SETTINGS: Readonly<MockSettings> = {
   post_process_enabled: false,
   // Tamil speech recognition row (TamilSttRow) and its toggle; on by default.
   stt_tamil_enabled: true,
+  // Experimental auto-language check: opt-in, so off by default (matches the real backend).
+  stt_auto_language_enabled: false,
   // Conversation memory is on by default for fresh installs (matches the real backend).
   conversation_memory_enabled: true,
   debug_mode: false,
@@ -212,6 +214,7 @@ function installTauriMockInPage(arg: MockInitArg): void {
   const PERSISTED_SETTING_ARG: Record<string, [string, string]> = {
     change_selected_language_setting: ["selected_language", "language"],
     change_stt_tamil_enabled_setting: ["stt_tamil_enabled", "enabled"],
+    change_stt_auto_language_enabled_setting: ["stt_auto_language_enabled", "enabled"],
   };
   const emitted: Array<{ label: string; event: string; payload: unknown }> = [];
   let appearanceRev = 1;
@@ -295,6 +298,14 @@ function installTauriMockInPage(arg: MockInitArg): void {
       ],
       wrong_size: null,
       engine_error: null,
+    }),
+    // Auto language route (opt-in, experimental). Default: off, no language-check model, no pack.
+    auto_language_status: () => ({
+      enabled: false,
+      lid_model_id: null,
+      lid_model_name: null,
+      lid_loaded: false,
+      tamil_pack_ready: false,
     }),
     // Tamil voice row (TamilVoiceRow) reads this on mount; shape follows src/bindings.ts.
     tamil_voice_status: () => ({

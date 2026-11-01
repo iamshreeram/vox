@@ -303,6 +303,9 @@ pub mod wakeword;
 pub mod wakeword_listener;
 
 // Tamil speech recognition (IndicConformer, CTC greedy) -- see docs/tts-engines.md.
+pub mod auto_lang;
+#[cfg(test)]
+mod auto_lang_tests;
 pub mod indic_stt_core;
 #[cfg(test)]
 mod indic_stt_core_tests;
@@ -317,3 +320,7 @@ pub mod indic_stt_slot;
 mod indic_stt_slot_tests;
 #[cfg(test)]
 mod indic_stt_text_tests;
+pub mod lid_slot;
+#[cfg(test)]
+mod lid_slot_tests;
+pub mod lid_whisper;

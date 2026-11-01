@@ -872,6 +872,11 @@ pub struct AppSettings {
     /// Off (or a missing pack) keeps the active model for every language.
     #[serde(default = "default_stt_tamil_enabled")]
     pub stt_tamil_enabled: bool,
+    /// Experimental, opt-in: when `selected_language` is "auto", re-check batch transcripts with
+    /// a language-ID pass and use the result only when it is clearly another language. A missing
+    /// key means off.
+    #[serde(default = "default_stt_auto_language_enabled")]
+    pub stt_auto_language_enabled: bool,
     #[serde(default = "default_overlay_position")]
     pub overlay_position: OverlayPosition,
     #[serde(default = "default_debug_mode")]
@@ -2105,6 +2110,11 @@ fn default_stt_tamil_enabled() -> bool {
     true
 }
 
+/// Serde default for `stt_auto_language_enabled`: opt-in, so off for stores that lack the key.
+fn default_stt_auto_language_enabled() -> bool {
+    false
+}
+
 fn default_overlay_position() -> OverlayPosition {
     // Position only matters when the overlay is shown; whether it shows at all is
     // `overlay_style` (Linux defaults that to None). So a single default suffices.
@@ -2518,6 +2528,7 @@ pub fn get_default_settings() -> AppSettings {
         translate_to_english: false,
         selected_language: "auto".to_string(),
         stt_tamil_enabled: default_stt_tamil_enabled(),
+        stt_auto_language_enabled: default_stt_auto_language_enabled(),
         overlay_position: default_overlay_position(),
         debug_mode: false,
         log_level: default_log_level(),
@@ -3587,6 +3598,29 @@ mod tests {
         let loaded: AppSettings = serde_json::from_value(settings).unwrap();
         assert_eq!(loaded.tts_engine, TtsEngine::System);
         assert_eq!(loaded.tts_natural_voice, "af_heart");
+    }
+
+    #[test]
+    fn stt_auto_language_enabled_defaults_to_false_and_absent_key_loads_false() {
+        assert!(!get_default_settings().stt_auto_language_enabled);
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("stt_auto_language_enabled");
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(!loaded.stt_auto_language_enabled);
+    }
+
+    #[test]
+    fn explicit_true_is_kept_on_round_trip() {
+        let mut settings = serde_json::to_value(get_default_settings()).unwrap();
+        settings["stt_auto_language_enabled"] = serde_json::Value::Bool(true);
+        let loaded: AppSettings = serde_json::from_value(settings).unwrap();
+        assert!(loaded.stt_auto_language_enabled);
+        let again: AppSettings =
+            serde_json::from_value(serde_json::to_value(&loaded).unwrap()).unwrap();
+        assert!(again.stt_auto_language_enabled);
     }
 
     #[test]

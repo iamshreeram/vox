@@ -4,11 +4,14 @@ use crate::audio_toolkit::{
 };
 use crate::chinese_script::{convert_chinese_script, ChineseVariety};
 use crate::managers::audio::AudioRecordingManager;
+use crate::managers::auto_lang::pick_lid_model;
 use crate::managers::indic_stt_core::{indic_pack_status, pack_dir, IndicPackStatus};
 use crate::managers::indic_stt_ort::load_engine;
 use crate::managers::indic_stt_slot::{
     spawn_watcher, IndicSession, IndicSlot, SlotOutcome, SystemClock, UnloadPolicy,
 };
+use crate::managers::lid_slot::LidSlot;
+use crate::managers::lid_whisper::whisper_lid_loader;
 use crate::managers::model::{EngineType, ModelManager};
 use crate::settings::{
     get_settings, AppSettings, ChineseScript, ModelUnloadTimeout, OrtAcceleratorSetting,
@@ -289,6 +292,9 @@ pub struct TranscriptionManager {
     indic_slot: Arc<IndicSlot>,
     /// Folder of the Tamil speech pack, stat-checked on each Tamil-language call.
     indic_pack_dir: PathBuf,
+    /// Language identifier for the auto language route (`lid_slot`). Cheap to build: the
+    /// multilingual Whisper model loads on the first auto check only.
+    lid_slot: Arc<LidSlot>,
 }
 
 impl TranscriptionManager {
@@ -301,6 +307,27 @@ impl TranscriptionManager {
             Box::new(move || {
                 load_engine(&loader_dir, "ta")
                     .map(|engine| Box::new(engine) as Box<dyn IndicSession>)
+            }),
+            Arc::new(SystemClock::new()),
+        ));
+
+        // The identifier model is chosen when it loads, not when the manager is built, so a model
+        // installed or removed later is picked up on the next load.
+        let lid_models = model_manager.clone();
+        let lid_app = app_handle.clone();
+        let lid_slot = Arc::new(LidSlot::new(
+            Box::new(move || {
+                let settings = get_settings(&lid_app);
+                let candidates = lid_candidates_from(
+                    &lid_models.get_available_models(),
+                    &settings.selected_model,
+                );
+                let id = pick_lid_model(&candidates)
+                    .ok_or_else(|| "no multilingual Whisper model installed".to_string())?;
+                let path = lid_models
+                    .get_model_path(&id)
+                    .map_err(|error| format!("cannot find language model {id}: {error}"))?;
+                whisper_lid_loader(path)()
             }),
             Arc::new(SystemClock::new()),
         ));
@@ -323,6 +350,7 @@ impl TranscriptionManager {
             active_engine_lease: Arc::new(AtomicU64::new(0)),
             indic_slot,
             indic_pack_dir,
+            lid_slot,
         };
 
         // Start the idle watcher
@@ -330,6 +358,7 @@ impl TranscriptionManager {
             let app_handle_cloned = app_handle.clone();
             let manager_cloned = manager.clone();
             let shutdown_signal = manager.shutdown_signal.clone();
+            let lid_idle = manager.lid_slot.clone();
             let handle = thread::spawn(move || {
                 debug!("Idle watcher thread started");
                 while !shutdown_signal.load(Ordering::Relaxed) {
@@ -342,6 +371,10 @@ impl TranscriptionManager {
 
                     let settings = get_settings(&app_handle_cloned);
                     let timeout = settings.model_unload_timeout;
+
+                    // The language identifier follows the same unload setting. This runs before
+                    // the Immediately `continue` below, so that setting unloads it too.
+                    lid_idle.tick(indic_unload_policy(timeout));
 
                     // Skip Immediately — that variant is handled by
                     // maybe_unload_immediately() after each transcription.
@@ -505,6 +538,11 @@ impl TranscriptionManager {
         self.indic_slot.last_error()
     }
 
+    /// True while the auto language route's identifier model is loaded (`lid_slot`).
+    pub fn lid_loaded(&self) -> bool {
+        self.lid_slot.is_loaded()
+    }
+
     /// Starts the single Tamil speech watcher on the first Tamil call. It applies the model
     /// unload setting every 10 s; later calls do nothing.
     fn ensure_indic_watcher(&self) {
@@ -535,6 +573,99 @@ impl TranscriptionManager {
         }
         self.maybe_unload_immediately("tamil transcription");
         text
+    }
+
+    /// The auto language route for one batch result (opt-in). Inert unless
+    /// `stt_auto_language_enabled` is on: the setting is the first check, so nothing else runs.
+    ///
+    /// Branch A: the active model has no language detection and reported token rows. The
+    /// language check decides whether to re-run the audio (`auto_refine`). Branch C: the active
+    /// model detected Tamil and the Tamil pack is ready, so the pack transcribes the whole audio.
+    /// Neither branch holds the main model's engine lock (it is returned before this runs).
+    fn decide_auto_route(
+        &self,
+        settings: &AppSettings,
+        active_model: &str,
+        audio: &[f32],
+        active_text: &str,
+        token_count: Option<usize>,
+        detected_language: Option<&str>,
+    ) -> AutoApplied {
+        if !settings.stt_auto_language_enabled {
+            return AutoApplied::KeepActive;
+        }
+        let started = Instant::now();
+        let audio_secs = audio.len() as f32 / SAMPLE_RATE_HZ;
+        let active_detects = self
+            .model_manager
+            .get_model_info(active_model)
+            .is_some_and(|info| info.supports_language_detection);
+        let policy = indic_unload_policy(settings.model_unload_timeout);
+
+        if !active_detects
+            && auto_route_active(
+                &settings.selected_language,
+                settings.stt_auto_language_enabled,
+                settings.translate_to_english,
+                audio_secs,
+                token_count.is_some(),
+            )
+        {
+            let tokens = token_count.unwrap_or(0);
+            let tamil_pack_ready = settings.stt_tamil_enabled && self.indic_pack_ready();
+            if tamil_pack_ready {
+                self.ensure_indic_watcher();
+            }
+            let gate = needs_language_check(active_text, tokens, audio_secs);
+            let input = AutoInput {
+                active_text,
+                token_count: tokens,
+                audio,
+                tamil_pack_ready,
+            };
+            let lid = SlotLid {
+                slot: self.lid_slot.clone(),
+                policy,
+            };
+            let tamil = SlotTamil {
+                slot: &self.indic_slot,
+                policy,
+            };
+            let refined = auto_refine(&input, &lid, &tamil);
+            let source = match &refined.source {
+                Source::KeepActive => "keep".to_string(),
+                Source::TamilPack => "tamil_pack".to_string(),
+                Source::LidText { lang } => format!("lid_text:{lang}"),
+            };
+            log_auto_decision(gate, &source, tokens_per_word(active_text, tokens), started);
+            return classify_refined(refined);
+        }
+
+        if should_upgrade_to_tamil_pack(
+            detected_language,
+            settings.stt_tamil_enabled && self.indic_pack_ready(),
+            settings.stt_auto_language_enabled,
+            &settings.selected_language,
+            settings.translate_to_english,
+        ) {
+            self.ensure_indic_watcher();
+            let tamil = SlotTamil {
+                slot: &self.indic_slot,
+                policy,
+            };
+            return match tamil.transcribe(audio) {
+                Some(text) => {
+                    log_auto_decision(false, "tamil_pack", None, started);
+                    AutoApplied::Tamil(text)
+                }
+                None => {
+                    log_auto_decision(false, "keep", None, started);
+                    AutoApplied::KeepActive
+                }
+            };
+        }
+
+        AutoApplied::KeepActive
     }
 
     /// Unloads the model immediately if the setting is enabled and the model is loaded
@@ -1357,7 +1488,7 @@ impl TranscriptionManager {
         // Perform transcription with the appropriate engine.
         // We use catch_unwind to prevent engine panics from poisoning the mutex,
         // which would make the app hang indefinitely on subsequent operations.
-        let (result, output_language, model_languages) = {
+        let (result, output_language, model_languages, auto_detected_language, auto_token_count) = {
             let mut engine_guard = self.lock_engine();
 
             // Take the engine out so we own it during transcription.
@@ -1389,6 +1520,8 @@ impl TranscriptionManager {
             let mut output_was_translated = false;
             let mut applied_language_hint: Option<String> = None;
             let mut model_detected_language: Option<String> = None;
+            // Non-blank token rows of the transcribe-cpp run (None for every other engine).
+            let mut token_count: Option<usize> = None;
             if let LoadedEngine::TranscribeCpp(session) = &engine {
                 let model = session.model();
                 let caps = model.capabilities();
@@ -1453,6 +1586,9 @@ impl TranscriptionManager {
                                 // Whisper's audio-based LID (auto mode only;
                                 // `None` when a language hint was passed).
                                 model_detected_language = t.language;
+                                token_count = Some(count_nonblank_tokens(
+                                    t.tokens.iter().map(|token| token.text.as_str()),
+                                ));
                                 t.text
                             })
                             .map_err(|e| {
@@ -1588,11 +1724,17 @@ impl TranscriptionManager {
                     &model_languages,
                     output_was_translated,
                 ),
-                model_detected_language,
+                model_detected_language.clone(),
             );
             debug!("Output language evidence: {:?}", output_language);
 
-            (text, output_language, model_languages)
+            (
+                text,
+                output_language,
+                model_languages,
+                model_detected_language,
+                token_count,
+            )
         };
 
         // Apply fuzzy word correction if custom words are configured — UNLESS the
@@ -1600,13 +1742,28 @@ impl TranscriptionManager {
         // family). We don't pass a prompt to non-whisper models (it requires the
         // whisper-kind run extension), so they still get fuzzy correction here,
         // same as the ONNX engines.
-        let filtered_result = post_process_transcription_text(
-            result,
+        // Auto language route (opt-in, experimental). KeepActive takes the normal path with all of
+        // the active engine's evidence. A Tamil-pack result is finalised once, as the Tamil route
+        // does. A language-ID transcript gets its own finalisation (custom words, fillers and
+        // Chinese script all happen inside `finalize_lid_text`).
+        let filtered_result = match self.decide_auto_route(
             &settings,
-            model_is_whisper,
-            &output_language,
-            &model_languages,
-        );
+            &active_model,
+            &audio,
+            &result,
+            auto_token_count,
+            auto_detected_language.as_deref(),
+        ) {
+            AutoApplied::Tamil(text) => return Ok(self.finish_tamil_text(text, &settings)),
+            AutoApplied::Replaced { text, lang } => finalize_lid_text(text, &lang, &settings),
+            AutoApplied::KeepActive => post_process_transcription_text(
+                result,
+                &settings,
+                model_is_whisper,
+                &output_language,
+                &model_languages,
+            ),
+        };
 
         let et = std::time::Instant::now();
         let translation_note = if settings.translate_to_english {
@@ -1914,6 +2071,134 @@ fn run_tamil_route(
             None
         }
     }
+}
+
+use crate::managers::auto_lang::{
+    auto_refine, auto_route_active, needs_language_check, should_upgrade_to_tamil_pack,
+    tokens_per_word, AutoInput, AutoRefined, LidCandidate, LidIdentify, LidOutcome, Source,
+    TamilPackRoute, LID_MAX_SECS, SAMPLE_RATE_HZ,
+};
+use crate::managers::model::ModelInfo;
+
+/// Language identifier for `auto_refine`: the shared `LidSlot`. Passes at most `LID_MAX_SECS`
+/// of audio, the most the identifier model sees anyway, and returns its outcome unchanged.
+struct SlotLid {
+    slot: Arc<LidSlot>,
+    policy: UnloadPolicy,
+}
+
+impl LidIdentify for SlotLid {
+    fn identify(&self, samples: &[f32]) -> LidOutcome {
+        let cap = (LID_MAX_SECS * SAMPLE_RATE_HZ) as usize;
+        let take = samples.len().min(cap);
+        let capped = samples.get(..take).unwrap_or(samples);
+        self.slot.identify(capped, self.policy)
+    }
+}
+
+/// Tamil pack for `auto_refine`: the shared `IndicSlot`, whole audio. Non-blank text only;
+/// busy, unavailable and blank results all mean `None`, the same as `run_tamil_route`.
+struct SlotTamil<'a> {
+    slot: &'a IndicSlot,
+    policy: UnloadPolicy,
+}
+
+impl TamilPackRoute for SlotTamil<'_> {
+    fn transcribe(&self, samples: &[f32]) -> Option<String> {
+        match self.slot.transcribe(samples, self.policy) {
+            SlotOutcome::Text(text) if !text.trim().is_empty() => Some(text),
+            SlotOutcome::Text(_) | SlotOutcome::Busy => None,
+            SlotOutcome::Unavailable(message) => {
+                warn!(
+                    "Tamil speech recognition unavailable for the auto route: {}",
+                    message
+                );
+                None
+            }
+        }
+    }
+}
+
+/// What `transcribe` does with an auto-refined result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AutoApplied {
+    KeepActive,
+    Tamil(String),
+    Replaced { text: String, lang: String },
+}
+
+/// Maps the refinement to an action: KeepActive discards the refined text; TamilPack -> Tamil(text);
+/// LidText{lang} -> Replaced{text, lang}.
+fn classify_refined(refined: AutoRefined) -> AutoApplied {
+    match refined.source {
+        Source::KeepActive => AutoApplied::KeepActive,
+        Source::TamilPack => AutoApplied::Tamil(refined.text),
+        Source::LidText { lang } => AutoApplied::Replaced {
+            text: refined.text,
+            lang,
+        },
+    }
+}
+
+/// One info line per auto decision. It carries no text: only the gate, the source, the
+/// tokens-per-word ratio and the elapsed time.
+fn log_auto_decision(gate: bool, source: &str, tokens_per_word: Option<f32>, started: Instant) {
+    let ratio = tokens_per_word.map_or_else(|| "n/a".to_string(), |value| format!("{value:.2}"));
+    info!(
+        "auto language: gate={} source={} tokens_per_word={} ms={}",
+        gate,
+        source,
+        ratio,
+        started.elapsed().as_millis()
+    );
+}
+
+/// Finalises text from the language-ID model: `post_process_transcription_text(text, settings,
+/// false, &OutputLanguageEvidence::ModelDetected(lang), &[lang])`.
+fn finalize_lid_text(text: String, lang: &str, settings: &AppSettings) -> String {
+    post_process_transcription_text(
+        text,
+        settings,
+        false,
+        &OutputLanguageEvidence::ModelDetected(lang.to_string()),
+        &[lang.to_string()],
+    )
+}
+
+/// Number of token rows whose trimmed text is non-empty.
+fn count_nonblank_tokens<'a>(texts: impl Iterator<Item = &'a str>) -> usize {
+    texts.filter(|text| !text.trim().is_empty()).count()
+}
+
+/// Bytes per megabyte, for the model size in `ModelInfo::size_mb`.
+const BYTES_PER_MB: u64 = 1_048_576;
+
+/// True when a downloaded, idle, multilingual Whisper model on the transcribe-cpp engine can
+/// identify languages: at least two supported languages (not an English-only `.en` model),
+/// language detection on, and "whisper" in its id or file name.
+fn is_lid_eligible(model: &ModelInfo) -> bool {
+    let names_whisper = model.id.to_ascii_lowercase().contains("whisper")
+        || model.filename.to_ascii_lowercase().contains("whisper");
+    matches!(model.engine_type, EngineType::TranscribeCpp)
+        && model.is_downloaded
+        && !model.is_downloading
+        && model.supports_language_detection
+        && model.supported_languages.len() > 1
+        && names_whisper
+}
+
+/// Eligible language-ID models from the downloaded-model list; `is_active` is id == active_id.
+pub(crate) fn lid_candidates_from(models: &[ModelInfo], active_id: &str) -> Vec<LidCandidate> {
+    models
+        .iter()
+        .filter(|model| is_lid_eligible(model))
+        .map(|model| LidCandidate {
+            id: model.id.clone(),
+            bytes: model.size_mb.saturating_mul(BYTES_PER_MB),
+            multilingual_whisper: true,
+            is_active: model.id == active_id,
+        })
+        .collect()
 }
 
 fn post_process_transcription_text(
@@ -3050,3 +3335,11 @@ mod tamil_stt_route_tests {
         assert_eq!(out, text, "an exact custom word stays intact");
     }
 }
+
+#[cfg(test)]
+#[path = "transcription_auto_tests.rs"]
+mod auto_tests;
+
+#[cfg(test)]
+#[path = "transcription_auto_adapter_tests.rs"]
+mod auto_adapter_tests;

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { LanguageSelector } from "../LanguageSelector";
 import { TranslateToEnglish } from "../TranslateToEnglish";
 import { TamilSttRow } from "../TamilSttRow";
+import { AutoLanguageRow } from "../AutoLanguageRow";
 import { useModelStore } from "../../../stores/modelStore";
 import { useTamilSttStatus } from "../../../hooks/useTamilSttStatus";
 import type { ModelInfo } from "@/bindings";
@@ -47,6 +48,7 @@ export const ModelSettingsCard: React.FC = () => {
         <TranslateToEnglish descriptionMode="tooltip" grouped={true} />
       )}
       <TamilSttRow descriptionMode="tooltip" grouped={true} />
+      <AutoLanguageRow descriptionMode="tooltip" grouped={true} />
     </>
   );
 };

@@ -204,6 +204,14 @@
         "statusOff": "Off. Tamil speech is recognised by the selected model.",
         "memoryNote": "Needs about 1.1 GB of memory while loaded. It loads on the first Tamil use and unloads when idle.",
         "credit": "Model: AI4Bharat IndicConformer 600M multilingual (MIT), int8 repackage by yashwork-byte (MIT)"
+      },
+      "autoLanguage": {
+        "title": "Automatic language detection",
+        "experimentalBadge": "Experimental",
+        "description": "When the speech model is English-only, Vox can run a second multilingual Whisper model on short clips (up to 29 seconds) to spot other languages such as Hindi or Tamil, then re-transcribe them. Everything stays on this device. It uses extra memory and a little extra time per dictation, and it only applies when Language is set to Auto and Translate to English is off. Live streaming dictation is unchanged.",
+        "statusNeedsModel": "Needs a multilingual Whisper model (for example Turbo). Download one under Models.",
+        "statusModel": "Language check model: {{name}}",
+        "statusModelLoaded": "Language check model: {{name}} (loaded)"
       }
     },
     "general": {
