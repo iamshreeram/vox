@@ -1660,6 +1660,11 @@
     "installing": "Установка...",
     "preparing": "Подготовка...",
     "checkForUpdates": "Проверить наличие обновлений",
+    "autoUpdate": {
+      "failed": "Last automatic update failed. {{reason}}",
+      "failedTarget": "Last automatic update to {{target}} failed. {{reason}}",
+      "dismiss": "Dismiss"
+    },
     "portableUpdateTitle": "Требуется ручное обновление",
     "portableUpdateMessage": "Портативные установки нельзя обновить автоматически. Скачайте ниже установщик для вашей системы, запустите его и установите в ту же папку — папка Data/ (настройки, модели, записи) останется на месте.",
     "portableUpdateButton": "Скачать установщик",

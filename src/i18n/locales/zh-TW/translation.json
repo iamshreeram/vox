@@ -1660,6 +1660,11 @@
     "installing": "安裝中...",
     "preparing": "準備中...",
     "checkForUpdates": "檢查更新",
+    "autoUpdate": {
+      "failed": "Last automatic update failed. {{reason}}",
+      "failedTarget": "Last automatic update to {{target}} failed. {{reason}}",
+      "dismiss": "Dismiss"
+    },
     "portableUpdateTitle": "需要手動更新",
     "portableUpdateMessage": "可攜式安裝無法自動更新。請透過下方按鈕下載適用於你的系統的安裝程式，執行後安裝到相同資料夾，你的 Data/ 資料夾（設定、模型、錄音）會保留在原處。",
     "portableUpdateButton": "下載安裝程式",

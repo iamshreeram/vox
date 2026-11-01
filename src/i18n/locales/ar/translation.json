@@ -1660,6 +1660,11 @@
     "installing": "...جاري التثبيت",
     "preparing": "...جاري التحضير",
     "checkForUpdates": "التحقق من وجود تحديثات",
+    "autoUpdate": {
+      "failed": "Last automatic update failed. {{reason}}",
+      "failedTarget": "Last automatic update to {{target}} failed. {{reason}}",
+      "dismiss": "Dismiss"
+    },
     "portableUpdateTitle": "التحديث اليدوي مطلوب",
     "portableUpdateMessage": "لا يمكن تحديث التثبيتات المحمولة تلقائيًا. نزّل المثبّت المناسب لنظامك من الزر أدناه، شغّله، وثبّته في المجلد نفسه — يبقى مجلد Data/ (الإعدادات والنماذج والتسجيلات) في مكانه.",
     "portableUpdateButton": "تنزيل المثبّت",

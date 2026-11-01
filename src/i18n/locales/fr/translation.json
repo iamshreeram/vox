@@ -1660,6 +1660,11 @@
     "installing": "Installation...",
     "preparing": "Préparation...",
     "checkForUpdates": "Rechercher des mises à jour",
+    "autoUpdate": {
+      "failed": "Last automatic update failed. {{reason}}",
+      "failedTarget": "Last automatic update to {{target}} failed. {{reason}}",
+      "dismiss": "Dismiss"
+    },
     "portableUpdateTitle": "Mise à jour manuelle requise",
     "portableUpdateMessage": "Les installations portables ne peuvent pas être mises à jour automatiquement. Téléchargez ci-dessous l’installateur correspondant à votre système, exécutez-le et installez-le dans le même dossier : votre dossier Data/ (paramètres, modèles, enregistrements) est conservé.",
     "portableUpdateButton": "Télécharger l’installateur",

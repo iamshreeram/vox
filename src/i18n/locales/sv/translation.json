@@ -1660,6 +1660,11 @@
     "installing": "Installerar...",
     "preparing": "Förbereder...",
     "checkForUpdates": "Sök efter uppdateringar",
+    "autoUpdate": {
+      "failed": "Last automatic update failed. {{reason}}",
+      "failedTarget": "Last automatic update to {{target}} failed. {{reason}}",
+      "dismiss": "Dismiss"
+    },
     "portableUpdateTitle": "Manuell uppdatering krävs",
     "portableUpdateMessage": "Portabla installationer kan inte uppdateras automatiskt. Ladda ner installeraren för ditt system nedan, kör den och installera i samma mapp — din Data/-mapp (inställningar, modeller, inspelningar) behålls.",
     "portableUpdateButton": "Ladda ner installeraren",

@@ -1660,6 +1660,11 @@
     "installing": "Instalando...",
     "preparing": "Preparando...",
     "checkForUpdates": "Verificar atualizações",
+    "autoUpdate": {
+      "failed": "Last automatic update failed. {{reason}}",
+      "failedTarget": "Last automatic update to {{target}} failed. {{reason}}",
+      "dismiss": "Dismiss"
+    },
     "portableUpdateTitle": "Atualização manual necessária",
     "portableUpdateMessage": "Instalações portáteis não podem ser atualizadas automaticamente. Baixe abaixo o instalador para o seu sistema, execute-o e instale na mesma pasta — a sua pasta Data/ (configurações, modelos, gravações) é mantida.",
     "portableUpdateButton": "Baixar instalador",
