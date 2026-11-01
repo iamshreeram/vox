@@ -62,7 +62,12 @@ assert.deepEqual(
 );
 
 // The guard itself must be able to fail: prove the parser sees real keys.
-for (const key of ["theme", "experimental_enabled", "audio_feedback"]) {
+for (const key of [
+  "theme",
+  "experimental_enabled",
+  "audio_feedback",
+  "auto_update_enabled",
+]) {
   assert.ok(updaterKeys.has(key), `sanity: expected an updater for ${key}`);
 }
 

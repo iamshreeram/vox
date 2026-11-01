@@ -39,6 +39,7 @@ export { HistoryLimit } from "./HistoryLimit";
 export { RecordingRetentionPeriodSelector } from "./RecordingRetentionPeriod";
 export { AutostartToggle } from "./AutostartToggle";
 export { UpdateChecksToggle } from "./UpdateChecksToggle";
+export { AutoUpdateToggle } from "./AutoUpdateToggle";
 export { ShowWhatsNewOnUpdate } from "./ShowWhatsNewOnUpdate";
 export { MemoryToggle } from "./MemoryToggle";
 export { AgentContextToggle } from "./AgentContextToggle";

@@ -1063,6 +1063,40 @@
         "permissionsButton": "الأذونات",
         "modelsButton": "اختيار النموذج",
         "exitButton": "إنهاء المعاينة"
+      },
+      "autoUpdate": {
+        "label": "Install updates automatically",
+        "description": "Installs only versions GitHub shows as verified, and only after Vox has been idle for a minute. Vox restarts briefly to finish the update. The update builds in the background and never opens Terminal. You can turn this off at any time. A build that is already running finishes, but nothing is installed after you turn this off.",
+        "checksOffDescription": "Turn on Check for Updates first. Automatic updates need update checks.",
+        "notSourceDescription": "Only available in source builds. This copy of Vox updates another way.",
+        "status": {
+          "building": "Preparing an update in the background",
+          "waiting": "Update ready; installing when Vox is idle",
+          "installing": "Installing the update",
+          "updated": "Last automatic update: {{target}}",
+          "updatedAt": "Last automatic update: {{target}} ({{date}})",
+          "failed": "Last automatic update did not finish. {{reason}}",
+          "skipped": "Last automatic update was skipped. {{reason}}"
+        },
+        "reasons": {
+          "disabled": "Automatic updates are off.",
+          "not_source": "This copy of Vox is not a source build.",
+          "no_update": "No newer version was found.",
+          "blocked": "The checkout has changes that block the update.",
+          "backoff": "Waiting before trying again.",
+          "unverified": "The newest version is not verified on GitHub.",
+          "verify_failed": "The newest version could not be verified on GitHub.",
+          "active_run": "Another update is already running.",
+          "busy": "Vox was busy.",
+          "not_idle": "Vox was in use, so the install waited.",
+          "verifying": "The update is still being verified.",
+          "interrupted": "The update was interrupted.",
+          "build_failed": "The build failed.",
+          "install_failed": "The install failed.",
+          "spawn_failed": "Could not start the installer.",
+          "invalid_pending": "The prepared update was not valid.",
+          "unknown": "Unknown reason."
+        }
       }
     },
     "about": {
@@ -1657,7 +1691,8 @@
         "compiling": "Compiling",
         "bundling": "Bundling",
         "installing": "Installing",
-        "restarting": "Restarting"
+        "restarting": "Restarting",
+        "waiting": "Ready to install"
       },
       "updated": "Up to date · {{version}} ({{sha}})",
       "failed": "Update failed",
