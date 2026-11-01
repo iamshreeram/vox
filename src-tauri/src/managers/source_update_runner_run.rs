@@ -152,7 +152,7 @@ pub fn adopt_plan(input: &ReconcileInput<'_>, plist_exists: bool) -> AdoptPlan {
         return AdoptPlan::Nothing;
     }
     match reconcile(input) {
-        Decision::None => AdoptPlan::Nothing,
+        Decision::None | Decision::Rest => AdoptPlan::Nothing,
         Decision::CleanupFinished => AdoptPlan::CleanupNow,
         Decision::Adopt
         | Decision::PublishDone

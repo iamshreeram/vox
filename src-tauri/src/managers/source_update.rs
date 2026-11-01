@@ -1112,11 +1112,12 @@ pub fn adopt_existing_run(app: &AppHandle) {
         status_age_secs: file_age_secs(&status_file)
             .or_else(|| file_age_secs(&plist))
             .unwrap_or(0),
-        job: control.state(&runner::job_label(&run_id)),
+        job: control.probe(&runner::job_label(&run_id)),
         lock: runner::lock_state(&lock_dir, &runner::process_alive),
         running_build_sha: &running,
         published: false,
         interrupted_after_secs: INTERRUPTED_AFTER_SECS,
+        pending_built: super::source_update_pending::pending_built_for(&state_dir, &run_id),
     };
     match adopt_plan(&input, plist.exists()) {
         AdoptPlan::Nothing => {}

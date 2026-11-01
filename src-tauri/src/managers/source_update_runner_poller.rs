@@ -5,9 +5,10 @@
 use super::source_update::{
     cache_progress, recheck_after_done, release_launch_guard, run_finished,
 };
+use super::source_update_pending::pending_built_for;
 use super::source_update_runner::{
     file_age_secs, lock_state, now_unix, process_alive, read_status_bounded, write_status_file,
-    JobControl, JobState, LaunchctlJobControl, LockState,
+    JobControl, JobProbe, LaunchctlJobControl, LockState,
 };
 use super::source_update_runner_poll::{poll_step, status_age_for, Effect, PollInput, PollState};
 use super::source_update_runner_run::cleanup_run;
@@ -51,18 +52,17 @@ async fn run(app: AppHandle, config: PollerConfig) {
     let control = LaunchctlJobControl::current();
     let started = Instant::now();
     let mut state = PollState::new(&config.run_id);
-    let mut probe: Option<(Instant, JobState, LockState)> = None;
+    let mut probe: Option<Probed> = None;
     loop {
-        let due = probe
-            .as_ref()
-            .is_none_or(|(at, _, _)| at.elapsed() >= PROBE_EVERY);
+        let due = probe.as_ref().is_none_or(|p| p.at.elapsed() >= PROBE_EVERY);
         if due {
             probe = probe_now(&control, &config).await.or(probe);
         }
-        let (job, lock) = probe.as_ref().map_or(
-            (JobState::Absent, LockState::HeldAlive),
-            |(_, job, lock)| (*job, *lock),
-        );
+        let (job, lock, pending_built) = probe
+            .as_ref()
+            .map_or((JobProbe::Unknown, LockState::HeldAlive, false), |p| {
+                (p.job, p.lock, p.pending_built)
+            });
         let bytes = read_status_bounded(&config.status_file).ok().flatten();
         let age = status_age_for(
             state.has_status(),
@@ -76,6 +76,7 @@ async fn run(app: AppHandle, config: PollerConfig) {
             job,
             lock,
             running_build_sha: &config.running_build_sha,
+            pending_built,
             now_unix: now_unix(),
             now_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
         };
@@ -88,20 +89,27 @@ async fn run(app: AppHandle, config: PollerConfig) {
     run_finished(&app, &config.run_id);
 }
 
-/// Reads launchd and the lock off the async runtime. `None` if the probe task failed.
-async fn probe_now(
-    control: &LaunchctlJobControl,
-    config: &PollerConfig,
-) -> Option<(Instant, JobState, LockState)> {
+/// One launchd, lock and pending probe, with the instant it was taken.
+#[derive(Debug, Clone, Copy)]
+struct Probed {
+    at: Instant,
+    job: JobProbe,
+    lock: LockState,
+    pending_built: bool,
+}
+
+/// Reads launchd, the lock and the pending file off the async runtime. `None` if the probe task failed.
+async fn probe_now(control: &LaunchctlJobControl, config: &PollerConfig) -> Option<Probed> {
     let control = *control;
     let label = config.label.clone();
     let lock_dir = config.lock_dir.clone();
-    tokio::task::spawn_blocking(move || {
-        (
-            Instant::now(),
-            control.state(&label),
-            lock_state(&lock_dir, &process_alive),
-        )
+    let state_dir = config.state_dir.clone();
+    let run_id = config.run_id.clone();
+    tokio::task::spawn_blocking(move || Probed {
+        at: Instant::now(),
+        job: control.probe(&label),
+        lock: lock_state(&lock_dir, &process_alive),
+        pending_built: pending_built_for(&state_dir, &run_id),
     })
     .await
     .ok()

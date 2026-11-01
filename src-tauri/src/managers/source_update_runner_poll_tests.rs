@@ -2,7 +2,7 @@
 //! Wired from the poll module with `#[path]`.
 
 use super::*;
-use crate::managers::source_update_runner::{JobState, LockState, RunPhase, StatusMethod};
+use crate::managers::source_update_runner::{JobProbe, LockState, RunPhase, StatusMethod};
 
 const RUN: &str = "0123456789abcdef";
 const FULL: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -16,15 +16,15 @@ fn status_bytes(phase: &str, pct: u32, message: &str) -> Vec<u8> {
     .into_bytes()
 }
 
-fn live() -> JobState {
-    JobState::Registered {
+fn live() -> JobProbe {
+    JobProbe::Registered {
         pid: Some(4242),
         last_exit: None,
     }
 }
 
-fn dead() -> JobState {
-    JobState::Registered {
+fn dead() -> JobProbe {
+    JobProbe::Registered {
         pid: None,
         last_exit: None,
     }
@@ -34,7 +34,7 @@ fn dead() -> JobState {
 fn tick(
     state: &mut PollState,
     bytes: Option<&[u8]>,
-    job: JobState,
+    job: JobProbe,
     lock: LockState,
     running: &str,
     age: u64,
@@ -48,6 +48,7 @@ fn tick(
             job,
             lock,
             running_build_sha: running,
+            pending_built: false,
             now_unix: NOW,
             now_ms,
         },
@@ -675,8 +676,8 @@ fn done_waits_for_restart_only_for_a_live_mismatched_done() {
 
 // ---- status age for a run without its own status (A5 fix 2) ----------------
 
-fn exited_with(code: i32) -> JobState {
-    JobState::Registered {
+fn exited_with(code: i32) -> JobProbe {
+    JobProbe::Registered {
         pid: None,
         last_exit: Some(code),
     }
