@@ -11,8 +11,7 @@ detection".
 ## What it does
 
 1. The normal model transcribes the clip as usual.
-2. If the transcript looks suspicious (many sound units per word, or no usable words),
-   Vox asks a multilingual Whisper model which language was spoken.
+2. If the transcript looks suspicious (many sound units per word), Vox asks a multilingual Whisper model which language was spoken.
 3. If the answer is a non-Latin-script language, the clip is transcribed again:
    - Tamil goes to the Tamil speech pack when it is installed and ready.
    - Other languages use the Whisper model's own transcript.
@@ -49,7 +48,8 @@ When the setting is off, none of this code runs.
 - One- or two-word replies are not detected.
 - Only non-Latin-script results replace the original. Spanish, French and other Latin
   script languages are not rerouted.
-- Clips longer than 29 seconds are never replaced.
+- Clips longer than 29 seconds are never replaced by the Whisper model's text. Tamil
+  clips of any length can still go to the Tamil speech pack when it is ready.
 - It was measured on synthetic speech (system voices), not on a large set of recorded
   human speech. Treat the accuracy as unproven and report wrong switches.
 - Live streaming push-to-talk is unchanged.
