@@ -28,3 +28,6 @@ docs/manual-testing/experimental-features.html
 
 # Generated Tamil voice goldens (scripts/tamil_tts_golden.py) stay exactly as the script writes them
 src-tauri/tests/fixtures/tamil
+
+# Generated Tamil speech goldens (scripts/tamil_stt_golden.py) stay exactly as the script writes them
+src-tauri/tests/fixtures/tamil_stt/*.json

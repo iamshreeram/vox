@@ -7,17 +7,17 @@ used to judge recognition quality.
 
 ## Files
 
-| file | size (bytes) | role |
-|---|---|---|
-| encoder.onnx | 693 | `audio_signal` [1,80,T] f32, `length` [1] i64 -> `outputs` [1,16,T'] f32, `encoded_lengths` [1] i64, T' = ceil(T/8) |
-| ctc_decoder.onnx | 835 | `encoder_output` [1,16,T'] f32 -> `logprobs` [1,T',5633] f32 |
+| file             | size (bytes) | role                                                                                                                |
+| ---------------- | ------------ | ------------------------------------------------------------------------------------------------------------------- |
+| encoder.onnx     | 693          | `audio_signal` [1,80,T] f32, `length` [1] i64 -> `outputs` [1,16,T'] f32, `encoded_lengths` [1] i64, T' = ceil(T/8) |
+| ctc_decoder.onnx | 835          | `encoder_output` [1,16,T'] f32 -> `logprobs` [1,T',5633] f32                                                        |
 
 Behaviour (deterministic, no RNG):
+
 - The encoder averages band 0 over blocks of 8 frames (AveragePool, ceil_mode) and repeats the
   result over 16 channels.
 - The decoder reads channel 0 per step. Value > 0 selects column 4865; otherwise column 4869.
-  `logprobs[t, v] = -(v - target[t])^2`, so the argmax over the Tamil columns (4864..5119 and
-  5632) is the target column.
+  `logprobs[t, v] = -(v - target[t])^2`, so the argmax over the Tamil columns (4864..5119 and 5632) is the target column.
 - Known input: band 0 = +1 for 8 frames, then -1 for 8 frames, then 0 for 8 frames gives the
   argmax path [4865, 4869, 4869].
 
