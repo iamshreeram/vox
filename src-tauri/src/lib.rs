@@ -52,6 +52,8 @@ mod input;
 mod job_runtime;
 mod llm_client;
 #[cfg(test)]
+mod log_filter_tests;
+#[cfg(test)]
 mod orb_accent_tests;
 mod orb_converse;
 #[cfg(test)]
@@ -91,6 +93,7 @@ mod window_commands_bubbles_tests;
 #[cfg(test)]
 mod window_policy_tests;
 use crate::managers::agent_jobs::ShutdownConfig;
+mod log_filter;
 mod managers;
 mod memory;
 mod overlay;
@@ -163,7 +166,11 @@ fn with_suppressed_log_targets(mut builder: LogBuilder) -> LogBuilder {
     for target in managers::natural_voices::SUPPRESSED_LOG_TARGETS {
         builder = builder.level_for(*target, log::LevelFilter::Off);
     }
-    builder
+    // NET (#190): HTTP client targets print proxy addresses and destinations at Debug;
+    // capped at Warn for every sink by the shared gate in `log_filter`.
+    log_filter::apply_log_caps(builder, |builder, target, level| {
+        builder.level_for(target, level)
+    })
 }
 
 fn build_console_filter() -> env_filter::Filter {

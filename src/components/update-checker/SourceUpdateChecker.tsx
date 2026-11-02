@@ -149,8 +149,15 @@ const SourceUpdateChecker: React.FC<SourceUpdateCheckerProps> = ({
     blocker !== null;
   const showInstallError = state.phase === "error" && info !== null;
 
+  // A failed check keeps the generic visible label; the specific reason is the
+  // tooltip and the accessible name of the control (DESIGN.md R4-1).
+  const errorReason =
+    state.phase === "error" && state.error ? state.error : undefined;
+
   const footerTitle =
-    state.phase === "untracked" && info?.note ? info.note : undefined;
+    state.phase === "untracked" && info?.note
+      ? info.note
+      : (errorReason ?? undefined);
 
   return (
     <>

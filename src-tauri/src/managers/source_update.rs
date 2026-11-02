@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
@@ -632,32 +632,180 @@ pub fn current_mode() -> SourceUpdateMode {
 /// The body is read incrementally and the call fails with [`UpdateCheckError::TooLarge`]
 /// as soon as more than `max_bytes` arrive. Transport failures (including the
 /// timeout) become [`UpdateCheckError::Network`]; the UI never shows that text.
+#[cfg_attr(not(test), allow(dead_code))]
 pub async fn fetch_text(
     url: &str,
     max_bytes: usize,
     timeout: Duration,
 ) -> Result<(u16, String), UpdateCheckError> {
-    let network = |e: reqwest::Error| UpdateCheckError::Network(e.to_string());
-    let client = reqwest::Client::builder()
-        .timeout(timeout)
-        .user_agent(format!("vox-update-check/{}", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(network)?;
+    let configured = proxy_env_configured(|name| std::env::var(name).ok());
+    fetch_text_inner(url, max_bytes, timeout, ProxyChoice::Env, configured)
+        .await
+        .0
+}
+
+/// How the HTTP client picks its proxy. `Explicit` and `Status` are built only by tests
+/// (production uses `Env` and never classifies a status as a transport failure).
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProxyChoice {
+    /// reqwest's own environment handling (production). Its `NO_PROXY` handling applies;
+    /// an already-direct `NO_PROXY` request may receive one redundant direct retry (harmless).
+    Env,
+    /// Route through exactly this proxy URL; the process environment is never read (tests).
+    Explicit(String),
+    /// No proxy at all, including environment proxies (the retry leg).
+    Direct,
+}
+
+/// Failure kind, as far as the retry decision cares.
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailKind {
+    /// Could not establish the connection (includes a refused or failed CONNECT tunnel).
+    Connect,
+    /// The request timed out before the response headers arrived.
+    Timeout,
+    /// An HTTP status was received.
+    Status,
+    /// The body exceeded the cap.
+    TooLarge,
+    /// Failure while reading the body after the headers.
+    Body,
+    /// Anything else.
+    Other,
+}
+
+/// Proxy variables that count as configured (N1). Blank or whitespace-only values do not.
+pub fn proxy_env_configured(get: impl Fn(&str) -> Option<String>) -> bool {
+    ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"]
+        .iter()
+        .any(|name| get(name).is_some_and(|value| !value.trim().is_empty()))
+}
+
+/// Retry direct only for a connect or timeout failure, when a proxy is configured,
+/// and only once (N1).
+pub fn should_retry_direct(kind: FailKind, proxy_configured: bool, already_retried: bool) -> bool {
+    matches!(kind, FailKind::Connect | FailKind::Timeout) && proxy_configured && !already_retried
+}
+
+/// The one content-free diagnostic line for a failed check (N2). It never contains a
+/// URL, host, proxy value or raw error text; raw reqwest errors are never logged.
+pub fn describe_failure(err: &UpdateCheckError, proxy_configured: bool, retried: bool) -> String {
+    let class = match err {
+        UpdateCheckError::Network(_) => "network",
+        UpdateCheckError::RateLimited => "rate_limited",
+        UpdateCheckError::Http(_) => "http",
+        UpdateCheckError::Malformed(_) => "malformed",
+        UpdateCheckError::EmptyHistory => "empty",
+        UpdateCheckError::BadBuildCommit => "bad_build",
+        UpdateCheckError::TooLarge => "too_large",
+    };
+    format!(
+        "source update check failed: class={class} proxy_configured={proxy_configured} retried_direct={retried}"
+    )
+}
+
+/// GET `url` with the proxy choice and retry rule (N1). Returns the outcome and the
+/// number of attempts made (1, or 2 when the direct retry ran).
+///
+/// Timing: `timeout` is the per-attempt timeout chosen by the caller. One request has at
+/// most 2 attempts, so at most 2 x `timeout`. A check makes at most 2 requests (commits,
+/// then compare when the window misses), so the worst case is 4 x `timeout`: 60 s with
+/// `FETCH_TIMEOUT` = 15 s. A learned direct route (see [`fetch_checked`]) cuts the second
+/// request to one attempt, so a check that learned it costs at most 3 x `timeout`.
+pub async fn fetch_text_inner(
+    url: &str,
+    max_bytes: usize,
+    timeout: Duration,
+    proxy: ProxyChoice,
+    proxy_configured: bool,
+) -> (Result<(u16, String), UpdateCheckError>, u32) {
+    match fetch_once(url, max_bytes, timeout, &proxy).await {
+        Ok(ok) => (Ok(ok), 1),
+        Err((kind, _)) if should_retry_direct(kind, proxy_configured, false) => {
+            let direct = fetch_once(url, max_bytes, timeout, &ProxyChoice::Direct).await;
+            (direct.map_err(|(_, err)| err), 2)
+        }
+        Err((_, err)) => (Err(err), 1),
+    }
+}
+
+/// One request of a check, with the per-check memory (MINOR 4). `direct_known` is set once
+/// a direct fallback has answered in this check; later requests of the same check then go
+/// direct at once, with no proxy attempt and no retry (attempts == 1).
+pub async fn fetch_checked(
+    url: &str,
+    max_bytes: usize,
+    timeout: Duration,
+    proxy: ProxyChoice,
+    proxy_configured: bool,
+    direct_known: &AtomicBool,
+) -> (Result<(u16, String), UpdateCheckError>, u32) {
+    if direct_known.load(Ordering::SeqCst) {
+        return fetch_text_inner(url, max_bytes, timeout, ProxyChoice::Direct, false).await;
+    }
+    let (res, attempts) = fetch_text_inner(url, max_bytes, timeout, proxy, proxy_configured).await;
+    if attempts > 1 && res.is_ok() {
+        direct_known.store(true, Ordering::SeqCst);
+    }
+    (res, attempts)
+}
+
+/// One attempt. The error carries its [`FailKind`] for the retry decision.
+async fn fetch_once(
+    url: &str,
+    max_bytes: usize,
+    timeout: Duration,
+    proxy: &ProxyChoice,
+) -> Result<(u16, String), (FailKind, UpdateCheckError)> {
+    let client = build_client(timeout, proxy)
+        .map_err(|e| (FailKind::Other, UpdateCheckError::Network(e.to_string())))?;
     let mut response = client
         .get(url)
         .header(reqwest::header::ACCEPT, "application/vnd.github+json")
         .send()
         .await
-        .map_err(network)?;
+        .map_err(|e| {
+            let kind = if e.is_timeout() {
+                FailKind::Timeout
+            } else if e.is_connect() {
+                FailKind::Connect
+            } else {
+                FailKind::Other
+            };
+            (kind, UpdateCheckError::Network(e.to_string()))
+        })?;
     let status = response.status().as_u16();
     let mut body: Vec<u8> = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(network)? {
+    loop {
+        let chunk = response
+            .chunk()
+            .await
+            .map_err(|e| (FailKind::Body, UpdateCheckError::Network(e.to_string())))?;
+        let Some(chunk) = chunk else {
+            break;
+        };
         if body.len().saturating_add(chunk.len()) > max_bytes {
-            return Err(UpdateCheckError::TooLarge);
+            return Err((FailKind::TooLarge, UpdateCheckError::TooLarge));
         }
         body.extend_from_slice(&chunk);
     }
     Ok((status, String::from_utf8_lossy(&body).into_owned()))
+}
+
+fn build_client(timeout: Duration, proxy: &ProxyChoice) -> Result<reqwest::Client, reqwest::Error> {
+    let builder = reqwest::Client::builder()
+        .timeout(timeout)
+        .user_agent(format!("vox-update-check/{}", env!("CARGO_PKG_VERSION")));
+    match proxy {
+        ProxyChoice::Env => builder.build(),
+        ProxyChoice::Direct => builder.no_proxy().build(),
+        ProxyChoice::Explicit(url) => builder
+            .no_proxy()
+            .proxy(reqwest::Proxy::all(url.as_str())?)
+            .build(),
+    }
 }
 
 /// The injectable orchestration: `fetch(url, max_bytes)` returns `(status, body)`.
@@ -815,11 +963,38 @@ pub async fn check_and_publish(
     }
 
     let generation = runtime.generation.load(Ordering::SeqCst);
-    let mut info = check_with(BUILD_COMMIT, |url: String, max: usize| async move {
-        fetch_text(&url, max, FETCH_TIMEOUT).await
+    let proxy_configured = proxy_env_configured(|name| std::env::var(name).ok());
+    let retried = AtomicBool::new(false);
+    let direct_known = AtomicBool::new(false);
+    let checked = check_with(BUILD_COMMIT, |url: String, max: usize| {
+        let (retried, direct_known) = (&retried, &direct_known);
+        async move {
+            let (res, attempts) = fetch_checked(
+                &url,
+                max,
+                FETCH_TIMEOUT,
+                ProxyChoice::Env,
+                proxy_configured,
+                direct_known,
+            )
+            .await;
+            if attempts > 1 {
+                retried.store(true, Ordering::SeqCst);
+            }
+            res
+        }
     })
-    .await
-    .map_err(|e| e.user_message())?;
+    .await;
+    let mut info = match checked {
+        Ok(info) => info,
+        Err(err) => {
+            warn!(
+                "{}",
+                describe_failure(&err, proxy_configured, retried.load(Ordering::SeqCst))
+            );
+            return Err(err.user_message());
+        }
+    };
 
     let checks_disabled = !effective_checks_enabled(app);
     if info.state == SourceUpdateState::Available {
@@ -1182,8 +1357,9 @@ pub fn run_finished(app: &AppHandle, run_id: &str) {
 pub fn recheck_after_done(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = check_and_publish(&app, true).await {
-            warn!("post-update check failed: {error}");
+        // The failure itself is already logged (content-free) by check_and_publish.
+        if check_and_publish(&app, true).await.is_err() {
+            log::debug!("post-update re-check did not complete");
         }
     });
 }
@@ -1273,9 +1449,8 @@ pub fn spawn_scheduler(app: AppHandle) {
         tokio::time::sleep(SCHEDULER_START_DELAY).await;
         loop {
             if current_mode() == SourceUpdateMode::Source && effective_checks_enabled(&app) {
-                if let Err(e) = check_and_publish(&app, true).await {
-                    warn!("source update check failed: {e}");
-                }
+                // A failed check is logged once, content-free, by check_and_publish.
+                let _ = check_and_publish(&app, true).await;
             }
             tokio::time::sleep(SCHEDULER_INTERVAL).await;
         }
@@ -2342,3 +2517,83 @@ mod live_github {
 #[cfg(test)]
 #[path = "source_update_wiring_tests.rs"]
 mod wiring_tests;
+
+#[cfg(test)]
+mod direct_memory_tests {
+    //! MINOR 4: a direct fallback that answered is remembered for the rest of one check.
+    //! Loopback only; no process environment is read (ProxyChoice::Explicit).
+    use super::*;
+    use std::sync::atomic::Ordering as AtomicOrdering;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    const TIMEOUT: Duration = Duration::from_secs(5);
+
+    /// Loopback server answering `200 ok` to every connection.
+    async fn serve_ok() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 4096];
+                    let _ = sock.read(&mut buf).await;
+                    let _ = sock
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                        )
+                        .await;
+                    let _ = sock.shutdown().await;
+                });
+            }
+        });
+        port
+    }
+
+    async fn dead_port() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        drop(listener);
+        port
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn second_request_goes_direct_at_once_after_a_fallback_succeeded() {
+        let target = serve_ok().await;
+        let dead = dead_port().await;
+        let proxy = ProxyChoice::Explicit(format!("http://127.0.0.1:{dead}"));
+        let url = format!("http://127.0.0.1:{target}/repos/x/commits");
+        let learned = AtomicBool::new(false);
+
+        let (first, first_attempts) =
+            fetch_checked(&url, 1024, TIMEOUT, proxy.clone(), true, &learned).await;
+        assert_eq!(first, Ok((200, "ok".to_string())));
+        assert_eq!(first_attempts, 2, "proxy attempt, then one direct retry");
+        assert!(
+            learned.load(AtomicOrdering::SeqCst),
+            "fallback success is remembered"
+        );
+
+        let (second, second_attempts) =
+            fetch_checked(&url, 1024, TIMEOUT, proxy, true, &learned).await;
+        assert_eq!(second, Ok((200, "ok".to_string())));
+        assert_eq!(
+            second_attempts, 1,
+            "second request of the same check skips the dead proxy"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn failed_fallback_is_not_remembered() {
+        let dead_target = dead_port().await;
+        let dead_proxy = dead_port().await;
+        let proxy = ProxyChoice::Explicit(format!("http://127.0.0.1:{dead_proxy}"));
+        let url = format!("http://127.0.0.1:{dead_target}/repos/x/commits");
+        let learned = AtomicBool::new(false);
+
+        let (res, attempts) = fetch_checked(&url, 1024, TIMEOUT, proxy, true, &learned).await;
+        assert!(matches!(res, Err(UpdateCheckError::Network(_))), "{res:?}");
+        assert_eq!(attempts, 2);
+        assert!(!learned.load(AtomicOrdering::SeqCst));
+    }
+}
